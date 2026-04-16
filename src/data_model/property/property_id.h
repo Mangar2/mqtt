@@ -1,11 +1,19 @@
 #pragma once
 
+/**
+ * @file property_id.h
+ * @brief MQTT 5.0 Property Identifiers (Section 2.2.2.2, Table 2-4).
+ */
+
 #include <cstdint>
 
 namespace mqtt {
 
-// MQTT 5.0 Property Identifiers (Section 2.2.2.2, Table 2-4).
-// All 27 defined property IDs.
+/**
+ * @brief MQTT 5.0 Property Identifiers.
+ *
+ * All 27 property IDs defined by the MQTT 5.0 specification.
+ */
 enum class PropertyId : uint8_t {
     PayloadFormatIndicator          = 0x01,
     MessageExpiryInterval           = 0x02,

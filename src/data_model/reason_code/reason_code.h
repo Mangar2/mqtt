@@ -1,14 +1,23 @@
 #pragma once
 
+/**
+ * @file reason_code.h
+ * @brief MQTT 5.0 Reason Codes and classification helpers (Section 2.4 / Appendix B).
+ */
+
 #include <cstdint>
 
 namespace mqtt {
 
-// MQTT 5.0 Reason Codes (Section 2.4 / Appendix B).
-// One enumerator per distinct wire value (39 distinct values).
+/**
+ * @brief MQTT 5.0 Reason Code.
+ *
+ * One enumerator per distinct wire value (39 distinct values).
+ * Values below 0x80 are success/informational; values from 0x80 upwards are errors.
+ */
 enum class ReasonCode : uint8_t {
     // ── Success / informational (0x00–0x1F) ─────────────────────────────────
-    Success                 = 0x00,  // also: Normal Disconnection, Granted QoS 0
+    Success                 = 0x00,  ///< Also: Normal Disconnection, Granted QoS 0.
     GrantedQoS1             = 0x01,
     GrantedQoS2             = 0x02,
     DisconnectWithWill      = 0x04,
@@ -55,22 +64,32 @@ enum class ReasonCode : uint8_t {
     WildcardSubscriptionsNotSupported   = 0xA2,
 };
 
-// Aliases for spec-defined alternate names of 0x00.
+/// @brief Alias for ReasonCode::Success when used as Normal Disconnection (0x00).
 inline constexpr ReasonCode k_normal_disconnection = ReasonCode::Success;
+
+/// @brief Alias for ReasonCode::Success when used as Granted QoS 0 (0x00).
 inline constexpr ReasonCode k_granted_qos0         = ReasonCode::Success;
 
 // ── Classification (Module 1.2.2) ─────────────────────────────────────────────
 
-// Returns true for success / informational codes (wire value < 0x80).
-[[nodiscard]] constexpr bool is_success(ReasonCode rc) noexcept
+/**
+ * @brief Returns true for success / informational codes.
+ * @param code Reason code to test.
+ * @return `true` if the wire value is below 0x80.
+ */
+[[nodiscard]] constexpr bool is_success(ReasonCode code) noexcept
 {
-    return static_cast<uint8_t>(rc) < 0x80U;
+    return static_cast<uint8_t>(code) < 0x80U;
 }
 
-// Returns true for error codes (wire value >= 0x80).
-[[nodiscard]] constexpr bool is_error(ReasonCode rc) noexcept
+/**
+ * @brief Returns true for error codes.
+ * @param code Reason code to test.
+ * @return `true` if the wire value is 0x80 or above.
+ */
+[[nodiscard]] constexpr bool is_error(ReasonCode code) noexcept
 {
-    return static_cast<uint8_t>(rc) >= 0x80U;
+    return static_cast<uint8_t>(code) >= 0x80U;
 }
 
 } // namespace mqtt

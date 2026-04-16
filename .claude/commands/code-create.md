@@ -57,7 +57,7 @@ Generate unit tests based on `TEST_SPEC.md`.
 - Follow the `/unit-test` skill for test style and execution.
 - Never implement a test not listed in `TEST_SPEC.md` — update the spec file first.
 
-## 7. Build and verify — mandatory final step
+## 7. Build and verify
 
 Every implementation ends with a successful build **and** all tests passing.
 Run the following commands from the **project root** (`c:\Development\mqtt`):
@@ -74,9 +74,19 @@ cmake --build --preset debug
 ctest --preset debug
 ```
 
-**Success criteria:**
-- Build output ends with no errors (warnings are errors due to `-Werror`).
-- `ctest` reports `100% tests passed`.
-- The new module's tests appear by name in the ctest output.
+## 8. Completion checklist — mandatory gate
 
-Do not report a module as complete until both conditions are met.
+Do not mark any module or feature as complete until **every item** below passes.
+This list is intentionally extensible — add new entries whenever a new class of issue is
+discovered.
+
+| # | Criterion | How to verify |
+|---|-----------|---------------|
+| 1 | **Build clean** | `cmake --build --preset debug` exits with zero errors |
+| 2 | **No compiler warnings** | Guaranteed by `-Werror` — any warning is a build failure |
+| 3 | **No linter / IDE warnings** | All clang-tidy diagnostics in the IDE panel are resolved; target state is zero warnings |
+| 4 | **All tests pass** | `ctest --preset debug` reports `100% tests passed`; the new module's tests appear by name |
+| 5 | **Test coverage ≥ 90 %** | Line and branch coverage for the new or changed module is at least 90 % |
+| 6 | **SPEC.md is current** | Every touched directory has a SPEC.md that accurately describes the final implementation |
+| 7 | **TEST_SPEC.md is current** | Every test in code has a matching entry; removed tests are removed from the spec |
+| 8 | **Doxygen on all public API** | Every header in touched directories follows the documentation rules in `/cpp-dev` |

@@ -1,12 +1,19 @@
 #pragma once
 
+/**
+ * @file property_maps.h
+ * @brief MQTT 5.0 property data-type and packet-allowed mappings (Module 1.3.2 / 1.3.3).
+ */
+
 #include <cstdint>
 #include "property_id.h"
 #include "data_model/packet/packet_type.h"
 
 namespace mqtt {
 
-// Data type categories for MQTT 5.0 property values (Module 1.3.2).
+/**
+ * @brief Data type categories for MQTT 5.0 property values (Module 1.3.2).
+ */
 enum class PropertyDataType : uint8_t {
     Byte,
     TwoByteInteger,
@@ -17,8 +24,13 @@ enum class PropertyDataType : uint8_t {
     BinaryData,
 };
 
-// Returns the wire data type mandated by the MQTT 5.0 spec for the given property ID.
-// Behaviour is well-defined for every valid PropertyId enumerator.
+/**
+ * @brief Returns the wire data type mandated by the MQTT 5.0 spec for the given property ID.
+ * @param id A valid PropertyId enumerator.
+ * @return The PropertyDataType associated with @p id.
+ *
+ * Behaviour is well-defined for every valid PropertyId enumerator.
+ */
 [[nodiscard]] constexpr PropertyDataType property_data_type(PropertyId id) noexcept
 {
     switch (id) {
@@ -53,9 +65,12 @@ enum class PropertyDataType : uint8_t {
     return PropertyDataType::Byte; // unreachable — satisfies non-void return
 }
 
-// Returns true when the MQTT 5.0 spec allows `prop` to appear in a `pkt` packet
-// (or in the Will Properties block when pkt == PacketType::Will).
-// Module 1.3.3.
+/**
+ * @brief Returns true when the spec allows @p prop to appear in a @p pkt packet.
+ * @param prop Property identifier to check.
+ * @param pkt  Packet type to check against; use PacketType::Will for will properties.
+ * @return `true` if the property is permitted in the given packet type.
+ */
 [[nodiscard]] constexpr bool is_property_allowed(PropertyId prop, PacketType pkt) noexcept
 {
     switch (prop) {

@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file connect_packet.h
+ * @brief MQTT 5.0 CONNECT and CONNACK packet structs (Sections 3.1 / 3.2).
+ */
+
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -11,36 +16,43 @@
 
 namespace mqtt {
 
-// Will data transmitted inside a CONNECT packet payload (MQTT 5.0 Section 3.1.3.2).
+/**
+ * @brief Will data transmitted inside a CONNECT packet payload (Section 3.1.3.2).
+ */
 struct WillData {
-    QoS                   qos{QoS::AtMostOnce};
-    bool                  retain{false};
-    Utf8String            topic;
-    BinaryData            payload;
-    std::vector<Property> properties;  // Will Properties block
+    QoS                   qos{QoS::AtMostOnce};  ///< Will QoS level.
+    bool                  retain{false};           ///< Will retain flag.
+    Utf8String            topic;                   ///< Will topic.
+    BinaryData            payload;                 ///< Will payload.
+    std::vector<Property> properties;              ///< Will Properties block.
 
     bool operator==(const WillData&) const noexcept = default;
 };
 
-// CONNECT packet (MQTT 5.0 Section 3.1).
-// Protocol name ("MQTT") and version (5) are constants — not stored here.
+/**
+ * @brief CONNECT packet (Section 3.1).
+ *
+ * Protocol name ("MQTT") and protocol version (5) are constants and are not stored here.
+ */
 struct ConnectPacket {
-    uint16_t                   keep_alive{0};   // seconds; 0 = disabled
-    bool                       clean_start{true};
-    Utf8String                 client_id;
-    std::optional<WillData>    will;
-    std::optional<Utf8String>  username;
-    std::optional<BinaryData>  password;
-    std::vector<Property>      properties;      // Connect Properties block
+    uint16_t                   keep_alive{0};    ///< Keep-alive in seconds; 0 disables keep-alive.
+    bool                       clean_start{true};///< When true, discard any existing session.
+    Utf8String                 client_id;         ///< Client identifier.
+    std::optional<WillData>    will;              ///< Will message; absent when no will is set.
+    std::optional<Utf8String>  username;          ///< Optional username credential.
+    std::optional<BinaryData>  password;          ///< Optional password credential.
+    std::vector<Property>      properties;        ///< Connect Properties block.
 
     bool operator==(const ConnectPacket&) const noexcept = default;
 };
 
-// CONNACK packet (MQTT 5.0 Section 3.2).
+/**
+ * @brief CONNACK packet (Section 3.2).
+ */
 struct ConnackPacket {
-    bool                  session_present{false};
-    ReasonCode            reason_code{ReasonCode::Success};
-    std::vector<Property> properties;
+    bool                  session_present{false};           ///< True if a previous session was resumed.
+    ReasonCode            reason_code{ReasonCode::Success}; ///< Connection result.
+    std::vector<Property> properties;                       ///< Connack Properties block.
 
     bool operator==(const ConnackPacket&) const noexcept = default;
 };
