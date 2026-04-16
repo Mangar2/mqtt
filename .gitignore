@@ -1,0 +1,43 @@
+# Build output
+build/
+out/
+
+# CMake generated
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# Ninja
+.ninja_deps
+.ninja_log
+
+# IDE – VS Code
+.vscode/
+
+# IDE – JetBrains / CLion
+.idea/
+cmake-build-*/
+
+# IDE – Xcode
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Compiled binaries
+*.exe
+*.out
+*.app
+*.so
+*.dylib
+*.dll
+*.a
+*.lib

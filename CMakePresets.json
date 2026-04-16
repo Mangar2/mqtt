@@ -1,0 +1,113 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER":            "clang++",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+
+    {
+      "name":        "debug",
+      "displayName": "Debug (host)",
+      "inherits":    "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING":    "ON"
+      }
+    },
+
+    {
+      "name":        "release",
+      "displayName": "Release (host)",
+      "inherits":    "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING":    "OFF"
+      }
+    },
+
+    {
+      "name":        "debug-sanitize",
+      "displayName": "Debug + Sanitizers (host)",
+      "inherits":    "debug",
+      "cacheVariables": {
+        "MQTT_SANITIZE": "ON"
+      }
+    },
+
+    {
+      "name":        "test",
+      "displayName": "Test (host, Debug)",
+      "inherits":    "debug"
+    },
+
+    {
+      "name":        "test-coverage",
+      "displayName": "Test + Coverage (host, Debug)",
+      "inherits":    "test",
+      "cacheVariables": {
+        "MQTT_COVERAGE": "ON"
+      }
+    },
+
+    {
+      "name":          "arm-base",
+      "hidden":        true,
+      "inherits":      "base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/arm-linux-gnueabihf.cmake",
+      "cacheVariables": {
+        "BUILD_TESTING": "OFF"
+      }
+    },
+
+    {
+      "name":        "arm-debug",
+      "displayName": "Debug (Raspberry Pi Zero 2 – ARM 32-bit)",
+      "inherits":    "arm-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+
+    {
+      "name":        "arm-release",
+      "displayName": "Release (Raspberry Pi Zero 2 – ARM 32-bit)",
+      "inherits":    "arm-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+
+  "buildPresets": [
+    { "name": "debug",          "displayName": "Build Debug (host)",                  "configurePreset": "debug"          },
+    { "name": "release",        "displayName": "Build Release (host)",                "configurePreset": "release"        },
+    { "name": "debug-sanitize", "displayName": "Build Debug + Sanitizers (host)",     "configurePreset": "debug-sanitize" },
+    { "name": "test",           "displayName": "Build Tests (host)",                  "configurePreset": "test"           },
+    { "name": "test-coverage",  "displayName": "Build Tests + Coverage (host)",       "configurePreset": "test-coverage"  },
+    { "name": "arm-debug",      "displayName": "Build Debug (ARM 32-bit)",            "configurePreset": "arm-debug"      },
+    { "name": "arm-release",    "displayName": "Build Release (ARM 32-bit)",          "configurePreset": "arm-release"    }
+  ],
+
+  "testPresets": [
+    {
+      "name":            "test",
+      "displayName":     "Run Tests (host)",
+      "configurePreset": "test",
+      "output":          { "outputOnFailure": true }
+    },
+    {
+      "name":            "test-coverage",
+      "displayName":     "Run Tests + Coverage (host)",
+      "configurePreset": "test-coverage",
+      "output":          { "outputOnFailure": true }
+    }
+  ]
+}
