@@ -36,13 +36,18 @@ set(MQTT_LINK_OPTIONS
     $<$<BOOL:${MQTT_COVERAGE}>:-fprofile-instr-generate>
 )
 
+# ── Source discovery ───────────────────────────────────────────────────────────
+# Collect all production .cpp files, then exclude test directories.
+file(GLOB_RECURSE MQTT_ALL_SOURCES  CONFIGURE_DEPENDS "src/*.cpp")
+file(GLOB_RECURSE MQTT_TEST_SOURCES CONFIGURE_DEPENDS "src/*_test.cpp")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/test/")
+
 # ── Main executable ────────────────────────────────────────────────────────────
-add_executable(mqtt-broker
-    src/main.cpp
-)
+add_executable(mqtt-broker ${MQTT_ALL_SOURCES})
 
 target_compile_options(mqtt-broker PRIVATE ${MQTT_COMPILE_OPTIONS})
 target_link_options(mqtt-broker    PRIVATE ${MQTT_LINK_OPTIONS})
+target_include_directories(mqtt-broker PRIVATE src)
 
 # ── Unit tests ─────────────────────────────────────────────────────────────────
 include(CTest)
@@ -57,13 +62,18 @@ if(BUILD_TESTING)
     )
     FetchContent_MakeAvailable(Catch2)
 
+    # Placeholder keeps the test target valid before any real tests exist.
+    file(GLOB_RECURSE MQTT_PLACEHOLDER CONFIGURE_DEPENDS "tests/unit/*.cpp")
+
     add_executable(mqtt-broker-tests
-        tests/unit/test_placeholder.cpp
+        ${MQTT_PLACEHOLDER}
+        ${MQTT_TEST_SOURCES}
     )
 
     target_compile_options(mqtt-broker-tests PRIVATE ${MQTT_COMPILE_OPTIONS})
     target_link_options(mqtt-broker-tests    PRIVATE ${MQTT_LINK_OPTIONS})
     target_link_libraries(mqtt-broker-tests  PRIVATE Catch2::Catch2WithMain)
+    target_include_directories(mqtt-broker-tests PRIVATE src)
 
     include(Catch)
     catch_discover_tests(mqtt-broker-tests)

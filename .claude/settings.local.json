@@ -6,7 +6,13 @@
       "Bash(c:/Development/mqtt/build/debug/mqtt-broker.exe)",
       "Bash(cmake --preset test)",
       "Bash(cmake --build --preset test)",
-      "Bash(ctest --preset test --output-on-failure)"
+      "Bash(ctest --preset test --output-on-failure)",
+      "Bash(./mqtt-broker-tests.exe)",
+      "Bash(cmake --build --preset debug --clean-first)",
+      "Bash(./build/debug/mqtt-broker-tests.exe --list-tests)",
+      "Bash(cmake --preset test-coverage)",
+      "Bash(cmake --build --preset test-coverage)",
+      "Bash(ctest --preset test-coverage)"
     ]
   }
 }

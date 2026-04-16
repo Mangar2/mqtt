@@ -2,53 +2,100 @@
 
 ## Framework
 
-Catch2 v3. Test files live under `tests/unit/`.  
-One test file per production module (e.g. `test_variable_byte_integer.cpp` for module 2.1.1).
+Catch2 v3 (`Catch2::Catch2WithMain`), already linked to the test target.
 
-## Running tests
+## Test file location
 
-```sh
-# Configure + build + run
-cmake --preset test
-cmake --build --preset test
-ctest --preset test --output-on-failure
+Tests live **co-located** with the production code they test:
+
+```
+src/<module>/test/<module>_test.cpp
 ```
 
-## Coverage
-
-```sh
-cmake --preset test-coverage
-cmake --build --preset test-coverage
-ctest --preset test-coverage
-
-# Generate report (requires llvm-profdata and llvm-cov on PATH)
-llvm-profdata merge -sparse build/test-coverage/default.profraw -o coverage.profdata
-llvm-cov report build/test-coverage/mqtt-broker-tests \
-    -instr-profile=coverage.profdata \
-    --ignore-filename-regex="(catch2|_deps)"
+Examples:
+```
+src/data_model/types/test/types_test.cpp
+src/data_model/message/test/message_test.cpp
 ```
 
-**Minimum required: 90% line coverage for all production code.**  
-A task is not complete until coverage is verified.
+One `*_test.cpp` file per module directory.
+The `TEST_SPEC.md` lives in the same `test/` subdirectory.
 
-## Analysing test failures
+CMake discovers all `src/*_test.cpp` files automatically — no manual registration needed.
 
-When a test fails, establish the root cause before touching any code:
+## Running tests — exact commands
 
-1. Read the full failure output — assertion, file, line, expected vs. actual.
-2. Locate the relevant specification (see `spec/implementierungsplan.md` and `spec/anforderungskatalog.md`).
-3. Decide: is the **implementation wrong** or is the **test wrong**?
-   - If the spec clearly defines the expected behaviour and the implementation deviates → fix the code.
-   - If the test asserts something that contradicts the spec or makes a wrong assumption → fix the test.
-   - If it is genuinely ambiguous, ask before proceeding.
-4. State your conclusion in one sentence before making any change.
-5. Fix **either** the code **or** the test — never both in the same step unless they are provably independent.
+All commands are run from the **project root**: `c:\Development\mqtt`
 
-Never mark a test `[!shouldfail]`, skip it, or comment it out to make the build green.
+### First time or after a clean build
+
+```sh
+cmake --preset debug
+cmake --build --preset debug
+ctest --preset debug
+```
+
+### Incremental build + test (most common)
+
+CMake reconfigures automatically when files are added or removed:
+
+```sh
+cmake --build --preset debug && ctest --preset debug
+```
+
+### With memory and undefined-behaviour checks (recommended before merging)
+
+```sh
+cmake --preset debug-sanitize
+cmake --build --preset debug-sanitize
+ctest --preset debug-sanitize
+```
+
+### Run only tests for a specific module (by tag)
+
+```sh
+./build/debug/mqtt-broker-tests.exe [message]
+./build/debug/mqtt-broker-tests.exe [packet]
+```
+
+### Run a single test by name
+
+```sh
+./build/debug/mqtt-broker-tests.exe "message_defaults"
+```
+
+### List all registered tests
+
+```sh
+./build/debug/mqtt-broker-tests.exe --list-tests
+```
+
+## Test output binary
+
+```
+build/debug/mqtt-broker-tests.exe
+build/debug-sanitize/mqtt-broker-tests.exe
+```
 
 ## Writing tests
 
-- Test one behaviour per `TEST_CASE`.
+- One `TEST_CASE` per behaviour.
 - Use `SECTION` to group related assertions within a case.
-- Name test cases descriptively: `"Variable Byte Integer encodes 0 as single byte 0x00"`.
+- Name test cases as `snake_case` identifiers matching the `TEST_SPEC.md` table.
+- Tag every test case with `[<module>]` (e.g. `[message]`, `[packet]`).
+- Use `STATIC_CHECK` for `constexpr` expressions, `CHECK` for runtime assertions.
 - Do not test implementation details — test observable behaviour.
+- Never mark a test `[!shouldfail]`, skip it, or comment it out to make the build green.
+
+## Analysing test failures
+
+When a test fails:
+
+1. Read the full failure output — assertion, file, line, expected vs. actual.
+2. Locate the relevant `SPEC.md` and `TEST_SPEC.md` in the module directory.
+3. Decide: is the **implementation wrong** or is the **test wrong**?
+   - Spec clearly defines the behaviour and implementation deviates → fix the code.
+   - Test asserts something that contradicts the spec → fix the test.
+   - Genuinely ambiguous → ask before proceeding.
+4. State the conclusion in one sentence before making any change.
+5. Fix **either** the code **or** the test — never both in the same step unless provably independent.

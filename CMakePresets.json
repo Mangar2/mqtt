@@ -43,15 +43,9 @@
     },
 
     {
-      "name":        "test",
-      "displayName": "Test (host, Debug)",
-      "inherits":    "debug"
-    },
-
-    {
       "name":        "test-coverage",
       "displayName": "Test + Coverage (host, Debug)",
-      "inherits":    "test",
+      "inherits":    "debug",
       "cacheVariables": {
         "MQTT_COVERAGE": "ON"
       }
@@ -90,7 +84,6 @@
     { "name": "debug",          "displayName": "Build Debug (host)",                  "configurePreset": "debug"          },
     { "name": "release",        "displayName": "Build Release (host)",                "configurePreset": "release"        },
     { "name": "debug-sanitize", "displayName": "Build Debug + Sanitizers (host)",     "configurePreset": "debug-sanitize" },
-    { "name": "test",           "displayName": "Build Tests (host)",                  "configurePreset": "test"           },
     { "name": "test-coverage",  "displayName": "Build Tests + Coverage (host)",       "configurePreset": "test-coverage"  },
     { "name": "arm-debug",      "displayName": "Build Debug (ARM 32-bit)",            "configurePreset": "arm-debug"      },
     { "name": "arm-release",    "displayName": "Build Release (ARM 32-bit)",          "configurePreset": "arm-release"    }
@@ -98,9 +91,9 @@
 
   "testPresets": [
     {
-      "name":            "test",
+      "name":            "debug",
       "displayName":     "Run Tests (host)",
-      "configurePreset": "test",
+      "configurePreset": "debug",
       "output":          { "outputOnFailure": true }
     },
     {

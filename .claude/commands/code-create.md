@@ -1,17 +1,19 @@
 Full workflow for creating or extending code in this project. Follow every step in order.
 
-## 0. CMakeLists.txt registration — mandatory for every new file
+## 0. CMakeLists.txt — no manual file registration needed
 
-**Never read CMakeLists.txt or CMakePresets.json.** The relevant facts are recorded here once:
+**Never edit CMakeLists.txt for source file registration.** It uses `file(GLOB_RECURSE … CONFIGURE_DEPENDS)` to discover sources automatically:
 
-- Production sources → `add_executable(mqtt-broker …)` block: add every new `src/**/*.cpp` file.
-- Test sources → `add_executable(mqtt-broker-tests …)` block: add every new `src/**/test/*_test.cpp` file.
+- `src/*.cpp` (excluding any path containing `/test/`) → compiled into `mqtt-broker`.
+- `src/*_test.cpp` (any depth) → compiled into `mqtt-broker-tests`.
+
+CMake re-runs the glob at every build invocation and reconfigures automatically when files are added or removed. No manual edits are needed.
+
+Other facts to know (do not read CMakePresets.json):
 - Test framework: **Catch2 v3** (`Catch2::Catch2WithMain`), already linked to the test target.
-- Compile flags: `MQTT_COMPILE_OPTIONS` is already applied to both targets — do not add per-file flags.
+- Compile flags: `MQTT_COMPILE_OPTIONS` (`-Wall -Wextra -Wpedantic -Werror`) is applied to both targets.
+- Both targets have `src/` on their include path, so headers are included as `data_model/…`.
 - Build presets and commands: see `/build` skill.
-
-After creating or deleting any `.cpp` file, update `CMakeLists.txt` in the same step.
-Verify the build compiles without errors before considering the task done.
 
 ## 1. File count rule
 
@@ -54,3 +56,27 @@ Generate unit tests based on `TEST_SPEC.md`.
 - The `TEST_SPEC.md` lives inside that `test/` directory.
 - Follow the `/unit-test` skill for test style and execution.
 - Never implement a test not listed in `TEST_SPEC.md` — update the spec file first.
+
+## 7. Build and verify — mandatory final step
+
+Every implementation ends with a successful build **and** all tests passing.
+Run the following commands from the **project root** (`c:\Development\mqtt`):
+
+```sh
+cmake --build --preset debug && ctest --preset debug
+```
+
+If this is the first build or after a clean:
+
+```sh
+cmake --preset debug
+cmake --build --preset debug
+ctest --preset debug
+```
+
+**Success criteria:**
+- Build output ends with no errors (warnings are errors due to `-Werror`).
+- `ctest` reports `100% tests passed`.
+- The new module's tests appear by name in the ctest output.
+
+Do not report a module as complete until both conditions are met.
