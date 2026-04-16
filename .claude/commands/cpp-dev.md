@@ -2,9 +2,10 @@ C++20 coding rules for this project.
 
 ## Standard
 
-- Use **C++20** exclusively. No C++17 fallbacks, no compiler extensions (`CMAKE_CXX_EXTENSIONS OFF`).
-- Prefer C++20 features where they improve clarity: concepts, ranges, `std::span`, `std::format`,
-  coroutines, designated initialisers, `consteval`, `constinit`.
+- Use **C++20** exclusively. No C++17 fallbacks, no compiler extensions .
+- Use C++20 features: concepts, ranges, std::span, std::format,
+  coroutines, consteval, constinit, designated initializeers.
+- Use designated initialisers for aggregates.
 
 ## Compiler warnings
 
@@ -89,4 +90,3 @@ uint32_t value{0};  ///< Encoded integer value; must not exceed k_max_value.
 - Use `/** */` block style for all standalone doc blocks (not `///`).
 - Do **not** repeat what the type signature already says — focus on *why* and *constraints*.
 - Enum values use `///<` trailing comments when the name alone is ambiguous.
-- Length of all variable and parameter names >=3

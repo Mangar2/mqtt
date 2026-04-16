@@ -26,7 +26,8 @@ TEST_CASE("message_set_fields", "[message]") {
   msg.qos = QoS::AtLeastOnce;
   msg.retain = true;
   msg.properties.push_back(
-      Property{PropertyId::ContentType, Utf8String{"text/plain"}});
+      Property{.id = PropertyId::ContentType,
+               .value = Utf8String{.value = "text/plain"}});
 
   CHECK(msg.topic.value == "sensors/temp");
   CHECK(msg.payload.data.size() == 3U);

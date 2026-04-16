@@ -8,6 +8,7 @@ Respond to the user in the language they write in.
 ## Skills
 
 **Skill files are stored as `.md` files in `.claude/commands/` (project root).**
+- Skill files are written exclusively for AI consumption — be token-minimal: no prose, no examples, no redundancy.
 - To create a new skill: create `.claude/commands/<skill-name>.md` — never put skill content inline in this file.
 - This table is only the index. Never search for skill files elsewhere. Never check if the directory exists — it is always at `.claude/commands/`.
 - When adding a new skill: create the file AND extend the table below.
