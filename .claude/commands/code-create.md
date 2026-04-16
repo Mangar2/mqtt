@@ -2,15 +2,21 @@ Full workflow for creating or extending code in this project. Follow every step 
 
 ## Branch and commit workflow
 
-**Before making any code changes, create a dedicated Git branch:**
+**One branch per top-level module (e.g. `3. Topic Engine`).** All sub-modules (3.1, 3.2, …) are committed on the same branch. When the entire top-level module is complete, open a Pull Request and merge it into `master`.
+
+**Before starting a new top-level module, create its branch:**
 
 ```sh
-git checkout -b <feature-or-fix-name>
+git checkout master
+git pull
+git checkout -b <module-name>    # e.g. topic-engine, codec, session-store
 ```
 
-Branch names must be short, lowercase, hyphen-separated, and descriptive of the change (e.g. `add-session-expiry`, `fix-publish-qos2`).
+Branch names must be short, lowercase, hyphen-separated, and match the module name (e.g. `topic-engine`, `protocol-codec`, `in-memory-store`).
 
 All code changes are committed on this branch — never directly on `master`.
+
+**After the entire top-level module is done:** open a Pull Request `<branch> → master` and merge it.
 
 **Automatic commit after successful completion:**
 
