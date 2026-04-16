@@ -46,42 +46,42 @@ TEST_CASE("rc_aliases", "[reason_code]")
 
 TEST_CASE("rc_is_success_true", "[reason_code]")
 {
-    STATIC_CHECK(is_success(ReasonCode::Success));
-    STATIC_CHECK(is_success(ReasonCode::GrantedQoS1));
-    STATIC_CHECK(is_success(ReasonCode::GrantedQoS2));
-    STATIC_CHECK(is_success(ReasonCode::ContinueAuthentication));
-    STATIC_CHECK(is_success(ReasonCode::ReAuthenticate));
+    CHECK(is_success(ReasonCode::Success));
+    CHECK(is_success(ReasonCode::GrantedQoS1));
+    CHECK(is_success(ReasonCode::GrantedQoS2));
+    CHECK(is_success(ReasonCode::ContinueAuthentication));
+    CHECK(is_success(ReasonCode::ReAuthenticate));
 }
 
 TEST_CASE("rc_is_success_false", "[reason_code]")
 {
-    STATIC_CHECK(!is_success(ReasonCode::UnspecifiedError));
-    STATIC_CHECK(!is_success(ReasonCode::NotAuthorized));
+    CHECK(!is_success(ReasonCode::UnspecifiedError));
+    CHECK(!is_success(ReasonCode::NotAuthorized));
 }
 
 TEST_CASE("rc_is_error_true", "[reason_code]")
 {
-    STATIC_CHECK(is_error(ReasonCode::UnspecifiedError));
-    STATIC_CHECK(is_error(ReasonCode::NotAuthorized));
-    STATIC_CHECK(is_error(ReasonCode::WildcardSubscriptionsNotSupported));
+    CHECK(is_error(ReasonCode::UnspecifiedError));
+    CHECK(is_error(ReasonCode::NotAuthorized));
+    CHECK(is_error(ReasonCode::WildcardSubscriptionsNotSupported));
 }
 
 TEST_CASE("rc_is_error_false", "[reason_code]")
 {
-    STATIC_CHECK(!is_error(ReasonCode::Success));
-    STATIC_CHECK(!is_error(ReasonCode::GrantedQoS1));
+    CHECK(!is_error(ReasonCode::Success));
+    CHECK(!is_error(ReasonCode::GrantedQoS1));
 }
 
 TEST_CASE("rc_boundary_0x7F", "[reason_code]")
 {
-    constexpr auto rc = static_cast<ReasonCode>(0x7FU);
-    STATIC_CHECK(is_success(rc));
-    STATIC_CHECK(!is_error(rc));
+    const auto code = static_cast<ReasonCode>(0x7FU);
+    CHECK(is_success(code));
+    CHECK(!is_error(code));
 }
 
 TEST_CASE("rc_boundary_0x80", "[reason_code]")
 {
-    constexpr auto rc = static_cast<ReasonCode>(0x80U);
-    STATIC_CHECK(is_error(rc));
-    STATIC_CHECK(!is_success(rc));
+    const auto code = static_cast<ReasonCode>(0x80U);
+    CHECK(is_error(code));
+    CHECK(!is_success(code));
 }

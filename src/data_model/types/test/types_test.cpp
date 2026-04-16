@@ -18,26 +18,26 @@ TEST_CASE("vbi_default_value", "[types][vbi]")
 
 TEST_CASE("vbi_encoded_size_1byte", "[types][vbi]")
 {
-    STATIC_CHECK(VariableByteInteger{0}.encoded_size()   == 1);
-    STATIC_CHECK(VariableByteInteger{127}.encoded_size() == 1);
+    CHECK(VariableByteInteger{0}.encoded_size()   == 1);
+    CHECK(VariableByteInteger{127}.encoded_size() == 1);
 }
 
 TEST_CASE("vbi_encoded_size_2byte", "[types][vbi]")
 {
-    STATIC_CHECK(VariableByteInteger{128}.encoded_size()   == 2);
-    STATIC_CHECK(VariableByteInteger{16383}.encoded_size() == 2);
+    CHECK(VariableByteInteger{128}.encoded_size()   == 2);
+    CHECK(VariableByteInteger{16383}.encoded_size() == 2);
 }
 
 TEST_CASE("vbi_encoded_size_3byte", "[types][vbi]")
 {
-    STATIC_CHECK(VariableByteInteger{16384}.encoded_size()   == 3);
-    STATIC_CHECK(VariableByteInteger{2097151}.encoded_size() == 3);
+    CHECK(VariableByteInteger{16384}.encoded_size()   == 3);
+    CHECK(VariableByteInteger{2097151}.encoded_size() == 3);
 }
 
 TEST_CASE("vbi_encoded_size_4byte", "[types][vbi]")
 {
-    STATIC_CHECK(VariableByteInteger{2097152}.encoded_size()   == 4);
-    STATIC_CHECK(VariableByteInteger{268435455}.encoded_size() == 4);
+    CHECK(VariableByteInteger{2097152}.encoded_size()   == 4);
+    CHECK(VariableByteInteger{268435455}.encoded_size() == 4);
 }
 
 TEST_CASE("vbi_max_value_constant", "[types][vbi]")

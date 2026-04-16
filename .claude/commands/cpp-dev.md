@@ -27,6 +27,9 @@ Never suppress warnings globally or disable `-Werror`.
 - Constants: `constexpr` or `constinit`, prefixed `k_` (e.g. `k_max_clients`).
 - One class / struct per header file.
 - Include order: own header, C++ standard library, third-party, project headers.
+- **Variable names must be at least 3 characters long.** Single-letter and two-letter
+  variable names are forbidden — even in loop indices, lambdas, and test files.
+  Use descriptive names (`idx`, `buf`, `pkt`, `val`, etc.).
 
 ## Documentation
 

@@ -14,6 +14,7 @@
 | `connect_defaults` | Default-constructed packet | none | `clean_start == true, keep_alive == 0, no will, no username, no password` |
 | `connect_with_will` | Packet with will | WillData set | `will.has_value() == true` |
 | `connect_equality` | operator== | two identical packets | equal |
+| `will_data_equality` | WillData operator== | two identical / differing WillData | equal / not equal |
 
 ## ConnackPacket (1.4.2)
 

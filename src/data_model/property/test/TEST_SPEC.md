@@ -38,3 +38,6 @@
 | `prop_allowed_will_delay_only_will` | Only in Will context | WillDelayInterval, Publish | false |
 | `prop_allowed_will_delay_in_will` | Allowed in Will | WillDelayInterval, Will | true |
 | `prop_allowed_session_expiry_multi` | Allowed in Connect/Connack/Disconnect | SessionExpiryInterval | true for all three |
+| `prop_allowed_publish_or_will_in_will` | `|| Will` branch via Will context | MessageExpiryInterval, ContentType, ResponseTopic, CorrelationData with Will | true |
+| `prop_allowed_auth_false_path` | Connack+Auth branch via wrong packet | AuthenticationMethod, AuthenticationData with Publish | false |
+| `prop_allowed_reason_and_server_ref_false_path` | All branches via non-matching packet | ReasonString with Connect, ServerReference with Publish | false |

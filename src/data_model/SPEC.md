@@ -5,13 +5,15 @@ All types live in the `mqtt` namespace.
 
 ## Sub-modules
 
-| Directory       | Plan ref | Contents |
-|-----------------|----------|----------|
-| `types/`        | 1.1      | Primitive MQTT wire types |
-| `reason_code/`  | 1.2      | Reason code enum and classification |
-| `property/`     | 1.3      | Property identifier enum and value/mapping types |
-| `packet/`       | 1.4      | Packet struct definitions for all 15 MQTT packet types |
-| `message/`      | 1.5      | Protocol-agnostic Message and WillMessage model |
+| Directory        | Plan ref | Contents |
+|------------------|----------|----------|
+| `types/`         | 1.1      | Primitive MQTT wire types |
+| `reason_code/`   | 1.2      | Reason code enum and classification |
+| `property/`      | 1.3      | Property identifier enum and value/mapping types |
+| `packet/`        | 1.4      | Packet struct definitions for all 15 MQTT packet types |
+| `message/`       | 1.5      | Protocol-agnostic Message and WillMessage model |
+| `subscription/`  | 1.6      | Subscription, SubscriptionOptions, SharedSubscription |
+| `session/`       | 1.7      | SessionState, InflightEntry and supporting enums |
 
 ## Design rules
 

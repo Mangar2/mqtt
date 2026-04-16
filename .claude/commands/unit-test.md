@@ -15,7 +15,7 @@ src/<module>/test/<module>_test.cpp
 Examples:
 ```
 src/data_model/types/test/types_test.cpp
-src/data_model/message/test/message_test.cpp
+src/codec/primitive/test/primitive_codec_test.cpp
 ```
 
 One `*_test.cpp` file per module directory.
@@ -25,7 +25,9 @@ CMake discovers all `src/*_test.cpp` files automatically — no manual registrat
 
 ## Running tests — exact commands
 
-All commands are run from the **project root**: `c:\Development\mqtt`
+All commands are run from the **project root**: `c:\Development\mqtt`.
+Never pipe build or test output through `tail` or any other filter —
+full output is needed to catch all errors.
 
 ### First time or after a clean build
 
@@ -54,14 +56,14 @@ ctest --preset debug-sanitize
 ### Run only tests for a specific module (by tag)
 
 ```sh
-./build/debug/mqtt-broker-tests.exe [message]
-./build/debug/mqtt-broker-tests.exe [packet]
+./build/debug/mqtt-broker-tests.exe [primitive]
+./build/debug/mqtt-broker-tests.exe [properties]
 ```
 
 ### Run a single test by name
 
 ```sh
-./build/debug/mqtt-broker-tests.exe "message_defaults"
+./build/debug/mqtt-broker-tests.exe "vbi_roundtrip"
 ```
 
 ### List all registered tests
@@ -82,10 +84,137 @@ build/debug-sanitize/mqtt-broker-tests.exe
 - One `TEST_CASE` per behaviour.
 - Use `SECTION` to group related assertions within a case.
 - Name test cases as `snake_case` identifiers matching the `TEST_SPEC.md` table.
-- Tag every test case with `[<module>]` (e.g. `[message]`, `[packet]`).
-- Use `STATIC_CHECK` for `constexpr` expressions, `CHECK` for runtime assertions.
+- Tag every test case with `[<module>]` (e.g. `[primitive]`, `[properties]`).
+- Use `CHECK` by default — including for `constexpr` functions. `STATIC_CHECK` is only for cases where compile-time evaluability is itself the property under test (rare). `STATIC_CHECK` generates zero runtime coverage.
 - Do not test implementation details — test observable behaviour.
 - Never mark a test `[!shouldfail]`, skip it, or comment it out to make the build green.
+
+## Exception testing with `[[nodiscard]]` functions
+
+When a test verifies that a `[[nodiscard]]` function **throws**, the return value
+is intentionally not used. Suppress the `-Wunused-result` warning with a `(void)` cast:
+
+```cpp
+// correct — no compiler warning
+try {
+    (void)decode_variable_byte_integer(reader);
+    FAIL("Expected CodecException");
+} catch (const CodecException& e) {
+    CHECK(e.error() == CodecError::BufferTooShort);
+}
+```
+
+Never remove `[[nodiscard]]` from production code to silence this warning.
+
+## Coverage pitfall — `std::visit` with runtime dispatch
+
+Avoid combining `std::visit` (which instantiates the lambda per variant type) with a
+**runtime switch** inside the lambda:
+
+```cpp
+// BAD — each of the 7 type instantiations compiles all 7 switch cases,
+// producing 49 regions of which only 7 are ever reached.
+std::visit([expected](const auto& v) noexcept -> bool {
+    using T = std::decay_t<decltype(v)>;
+    switch (expected) {          // runtime switch inside per-type lambda
+        case PropertyDataType::Byte: return std::is_same_v<T, uint8_t>;
+        ...
+    }
+}, value);
+```
+
+Use `std::holds_alternative` with a single runtime switch instead — one function,
+one region per case, fully coverable:
+
+```cpp
+// GOOD — 7 regions, all reachable
+switch (expected) {
+    case PropertyDataType::Byte:  return std::holds_alternative<uint8_t>(value);
+    case PropertyDataType::TwoByteInteger: return std::holds_alternative<TwoByteInteger>(value);
+    ...
+}
+```
+
+## Coverage analysis — exact workflow
+
+Coverage uses **clang source-based instrumentation** (`-fprofile-instr-generate` /
+`-fcoverage-mapping`). The `test-coverage` CMake preset enables it automatically.
+
+> **Critical:** Never use `ctest` to collect coverage.
+> `catch_discover_tests` runs every `TEST_CASE` as its own subprocess; each one
+> overwrites `default.profraw`, so only the last test case's data survives.
+> Always run the test binary directly.
+
+### Running coverage — always use the Python script
+
+**Never run individual coverage commands manually.** The script `run_coverage.py`
+at the project root handles all steps. Three modes:
+
+Full run (build + test + full report):
+```sh
+python run_coverage.py
+```
+
+Scoped report for one or more modules (reuses existing profdata):
+```sh
+python run_coverage.py --scope src/codec/primitive/ src/codec/properties/
+```
+
+Line-level detail for a single file below threshold:
+```sh
+python run_coverage.py --show src/codec/properties/properties_codec.cpp
+```
+
+> **Warning:** `--scope` and `--show` reuse the existing `coverage.profdata`.
+> After adding or changing tests, always run the full `python run_coverage.py` first
+> to regenerate the profile — otherwise the output reflects the old test run.
+
+### Improving coverage — one file at a time
+
+When the full report shows files below 90%, work through them **strictly one at a time**:
+
+1. Pick the first file below threshold.
+2. Run `--show` for that file only — no other commands in parallel:
+   ```sh
+   python run_coverage.py --show src/<module>/<file>
+   ```
+3. Read the `TEST_SPEC.md` for that module — one file read, nothing else in parallel.
+4. Analyse: which uncovered lines correspond to which missing test cases?
+5. Write or extend the test, then run the full suite to verify:
+   ```sh
+   cmake --build --preset debug && ctest --preset debug
+   ```
+6. Only after that file reaches ≥ 90 %: move to the next file below threshold.
+
+**Never run `--show` for multiple files at once.** The output volume makes it
+impossible to reason about each file correctly.
+
+### Reading the report columns
+
+| Column | What it measures | Threshold |
+|--------|-----------------|-----------|
+| **Regions Cover** | % of source code regions executed (finest grain) | ≥ 90 % |
+| **Functions Executed** | % of functions called at least once | ≥ 90 % |
+| **Lines Cover** | % of source lines executed | ≥ 90 % |
+| **Branches Cover** | % of branch paths taken | informational only |
+
+**Target:** production files must reach ≥ 90 % on Regions, Functions, and Lines.
+Branch coverage in `*_test.cpp` files will typically read ~50 % — normal and not a failure.
+
+---
+
+### Coverage in the completion report
+
+```
+### Coverage — <module name>
+
+<paste the scoped llvm-cov report table here>
+
+Production headers: Regions <X>%, Functions <X>%, Lines <X>%
+→ threshold met ✓  /  NOT met ✗ (list files below threshold)
+```
+
+---
 
 ## Analysing test failures
 

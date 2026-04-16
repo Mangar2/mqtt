@@ -65,9 +65,14 @@ if(BUILD_TESTING)
     # Placeholder keeps the test target valid before any real tests exist.
     file(GLOB_RECURSE MQTT_PLACEHOLDER CONFIGURE_DEPENDS "tests/unit/*.cpp")
 
+    # Exclude main.cpp from the test binary (it defines main; Catch2 provides its own).
+    set(MQTT_LIB_SOURCES ${MQTT_ALL_SOURCES})
+    list(FILTER MQTT_LIB_SOURCES EXCLUDE REGEX "/main\\.cpp$")
+
     add_executable(mqtt-broker-tests
         ${MQTT_PLACEHOLDER}
         ${MQTT_TEST_SOURCES}
+        ${MQTT_LIB_SOURCES}
     )
 
     target_compile_options(mqtt-broker-tests PRIVATE ${MQTT_COMPILE_OPTIONS})
