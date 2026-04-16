@@ -74,6 +74,8 @@ Document non-obvious parameters and return values with `@param` and `@return`:
 [[nodiscard]] constexpr uint8_t encoded_size() const noexcept;
 ```
 
+Length of all variable and parameter names >=3
+
 ### Trailing member documentation
 
 Use `///<` (not `//`) for inline member comments:
@@ -87,3 +89,4 @@ uint32_t value{0};  ///< Encoded integer value; must not exceed k_max_value.
 - Use `/** */` block style for all standalone doc blocks (not `///`).
 - Do **not** repeat what the type signature already says — focus on *why* and *constraints*.
 - Enum values use `///<` trailing comments when the name alone is ambiguous.
+- Length of all variable and parameter names >=3

@@ -1,6 +1,29 @@
 Full workflow for creating or extending code in this project. Follow every step in order.
 
-## 0. Build structure — read CMakeLists.txt first
+## Branch and commit workflow
+
+**Before making any code changes, create a dedicated Git branch:**
+
+```sh
+git checkout -b <feature-or-fix-name>
+```
+
+Branch names must be short, lowercase, hyphen-separated, and descriptive of the change (e.g. `add-session-expiry`, `fix-publish-qos2`).
+
+All code changes are committed on this branch — never directly on `master`.
+
+**Automatic commit after successful completion:**
+
+Once the completion checklist (see below) is fully satisfied — all tests pass **and** test coverage is ≥ 90 % for all changed modules — commit the changes automatically:
+
+```sh
+git add -A
+git commit -m "<short imperative description of the change>"
+```
+
+Do **not** commit if any test fails or if coverage is below 90 %. Fix the issues first, then commit.
+
+## Build structure — read CMakeLists.txt first
 
 **Before writing any `.cpp` file in a new module, read `CMakeLists.txt`** to verify
 the glob patterns and link structure are compatible. Never guess.
@@ -21,13 +44,13 @@ Other facts (do not read CMakePresets.json):
 - Compile flags: `-Wall -Wextra -Wpedantic -Werror` on both targets.
 - CMake re-globs at every build invocation — no manual file registration needed.
 
-## 1. File count rule
+## File count rule
 
 Keep the number of code files per directory (and subdirectory) below 10.
 Before adding a new file, check the current count. If a directory is near the
 limit, split into subdirectories first.
 
-## 2. Documentation-first: target spec (SPEC.md)
+## Documentation-first: target spec (SPEC.md)
 
 Before writing any code, create or update a `SPEC.md` in the target directory.
 
@@ -36,18 +59,18 @@ Before writing any code, create or update a `SPEC.md` in the target directory.
 - `SPEC.md` describes: purpose, public API, data structures, behaviour, constraints.
 - The code must match `SPEC.md` — it is the implementation guide.
 
-## 3. Documentation and code stay in sync
+## Documentation and code stay in sync
 
 - When new insights contradict `SPEC.md`: update `SPEC.md` first, then continue.
 - Before a new feature: update `SPEC.md` first, then implement.
 - Never let code and documentation diverge.
 
-## 4. No redundant regeneration
+## No redundant regeneration
 
 Only generate or rewrite code when behaviour actually changes.
 Never regenerate a file with identical behaviour. If a file is correct, leave it.
 
-## 5. Unit-test specification (TEST_SPEC.md)
+## Unit-test specification (TEST_SPEC.md)
 
 For every directory with testable code, maintain a `TEST_SPEC.md`.
 
@@ -55,7 +78,7 @@ For every directory with testable code, maintain a `TEST_SPEC.md`.
 - Before writing new tests: add to `TEST_SPEC.md` first, then implement.
 - Keep `TEST_SPEC.md` current — remove deleted tests, add entries for new behaviour.
 
-## 6. Unit-test implementation
+## Unit-test implementation
 
 Generate unit tests based on `TEST_SPEC.md`.
 
@@ -64,7 +87,7 @@ Generate unit tests based on `TEST_SPEC.md`.
 - Follow the `/unit-test` skill for test style, coverage, and execution.
 - Never implement a test not listed in `TEST_SPEC.md` — add it to the spec first.
 
-## 7. Build and verify
+## Build and verify
 
 Every implementation ends with a successful build **and** all tests passing.
 All commands run from the **project root** (`c:\Development\mqtt`).
@@ -89,7 +112,7 @@ CMake reconfigures automatically when files are added or removed (glob
 `CONFIGURE_DEPENDS`), so the two-step form is only needed the very first time or
 after an explicit clean.
 
-## 8. Measure test coverage
+## Measure test coverage
 
 Run the coverage analysis for every new or changed module.
 All four commands are run sequentially — never skip or reorder them.
@@ -117,7 +140,7 @@ After reviewing the report, if coverage is below threshold run
 `llvm-cov show` on the specific file to see which lines are missed — **do not
 guess from the aggregate numbers alone**.
 
-## 9. Completion checklist — mandatory gate
+## Completion checklist — mandatory gate
 
 Do not mark any module complete until **every item** below passes.
 
@@ -126,13 +149,14 @@ Do not mark any module complete until **every item** below passes.
 | 1 | **Build clean** | `cmake --build --preset debug` exits 0 errors, 0 warnings |
 | 2 | **No compiler warnings** | Guaranteed by `-Werror` — any warning is a build failure |
 | 3 | **No linter / IDE warnings** | All clang-tidy diagnostics resolved |
-| 4 | **All tests pass** | `ctest --preset debug` → `100% tests passed`; new tests appear by name |
-| 5 | **Test coverage ≥ 90 %** | Regions, Functions, Lines ≥ 90 % for production files |
-| 6 | **SPEC.md is current** | Every touched directory has an accurate SPEC.md |
-| 7 | **TEST_SPEC.md is current** | Every test in code has a matching entry; removed tests removed from spec |
-| 8 | **Doxygen on all public API** | Every header follows the documentation rules in `/cpp-dev` |
+| 4 | **VS Code Problems panel clear** | Use `get_errors` tool on all changed files — zero errors and zero warnings; every diagnostic reported by the IDE must be fixed before marking the task done |
+| 5 | **All tests pass** | `ctest --preset debug` → `100% tests passed`; new tests appear by name |
+| 6 | **Test coverage ≥ 90 %** | Regions, Functions, Lines ≥ 90 % for production files |
+| 7 | **SPEC.md is current** | Every touched directory has an accurate SPEC.md |
+| 8 | **TEST_SPEC.md is current** | Every test in code has a matching entry; removed tests removed from spec |
+| 9 | **Doxygen on all public API** | Every header follows the documentation rules in `/cpp-dev` |
 
-## 10. Completion report — required format
+## Completion report — required format
 
 End every implementation with this report. All sections are mandatory.
 

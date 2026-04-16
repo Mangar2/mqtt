@@ -43,19 +43,19 @@ TEST_CASE("connect_with_will", "[packet][connect]") {
 }
 
 TEST_CASE("connect_equality", "[packet][connect]") {
-  ConnectPacket a{};
-  ConnectPacket b{};
-  CHECK(a == b);
-  b.keep_alive = 60;
-  CHECK(a != b);
+  ConnectPacket lhs{};
+  ConnectPacket rhs{};
+  CHECK(lhs == rhs);
+  rhs.keep_alive = 60;
+  CHECK(lhs != rhs);
 }
 
 TEST_CASE("will_data_equality", "[packet][connect]") {
-  WillData a{};
-  WillData b{};
-  CHECK(a == b);
-  b.retain = true;
-  CHECK(a != b);
+  WillData lhs{};
+  WillData rhs{};
+  CHECK(lhs == rhs);
+  rhs.retain = true;
+  CHECK(lhs != rhs);
 }
 
 // ── ConnackPacket (1.4.2)
@@ -69,11 +69,11 @@ TEST_CASE("connack_defaults", "[packet][connack]") {
 }
 
 TEST_CASE("connack_equality", "[packet][connack]") {
-  ConnackPacket a{};
-  ConnackPacket b{};
-  CHECK(a == b);
-  b.session_present = true;
-  CHECK(a != b);
+  ConnackPacket lhs{};
+  ConnackPacket rhs{};
+  CHECK(lhs == rhs);
+  rhs.session_present = true;
+  CHECK(lhs != rhs);
 }
 
 // ── PublishPacket (1.4.3)
@@ -97,11 +97,11 @@ TEST_CASE("publish_qos1_has_packet_id", "[packet][publish]") {
 }
 
 TEST_CASE("publish_equality", "[packet][publish]") {
-  PublishPacket a{};
-  PublishPacket b{};
-  CHECK(a == b);
-  b.retain = true;
-  CHECK(a != b);
+  PublishPacket lhs{};
+  PublishPacket rhs{};
+  CHECK(lhs == rhs);
+  rhs.retain = true;
+  CHECK(lhs != rhs);
 }
 
 // ── ACK packets (1.4.4–1.4.7) ────────────────────────────────────────────────
@@ -142,7 +142,7 @@ TEST_CASE("subscribe_defaults", "[packet][subscribe]") {
 }
 
 TEST_CASE("subscribe_options_defaults", "[packet][subscribe]") {
-  SubscriptionOptions opts{};
+  SubscribeOptions opts{};
   CHECK(opts.max_qos == QoS::AtMostOnce);
   CHECK(opts.no_local == false);
   CHECK(opts.retain_as_published == false);

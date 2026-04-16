@@ -27,7 +27,12 @@ struct Subscription {
     SubscriptionOptions options;               ///< Delivery options (No Local, Retain As Published, Retain Handling).
     std::optional<uint32_t> identifier;        ///< Subscription Identifier [1, 268 435 455]; absent if not provided.
 
-    bool operator==(const Subscription&) const noexcept = default;
+    bool operator==(const Subscription& other) const noexcept {
+        return topic_filter == other.topic_filter
+            && qos         == other.qos
+            && options     == other.options
+            && identifier  == other.identifier;
+    }
 };
 
 } // namespace mqtt

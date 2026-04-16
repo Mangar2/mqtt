@@ -24,6 +24,10 @@ enum class CodecError : uint8_t {
     PropertyNotAllowed,           ///< Property is not permitted in the given packet type.
     InvalidPacketType,            ///< Fixed-header type nibble is 0 (reserved).
     InvalidFlags,                 ///< Fixed-header flags are not valid for the packet type.
+    InvalidProtocolName,          ///< CONNECT: protocol name is not "MQTT".
+    InvalidProtocolVersion,       ///< CONNECT: protocol version is not 5.
+    InvalidQoS,                   ///< QoS field contains the reserved value 3.
+    MalformedPacket,              ///< Protocol constraint violated (reserved bits, conflicting fields, etc.).
 };
 
 /**

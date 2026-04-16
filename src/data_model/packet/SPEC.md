@@ -11,7 +11,7 @@ handled by the codec module (2.3).
 | `packet_type.h`       | `PacketType` enum (1–15 + internal `Will`) |
 | `connect_packet.h`    | `WillData`, `ConnectPacket` (1.4.1), `ConnackPacket` (1.4.2) |
 | `publish_packets.h`   | `PublishPacket` (1.4.3), `PubackPacket` (1.4.4), `PubrecPacket` (1.4.5), `PubrelPacket` (1.4.6), `PubcompPacket` (1.4.7) |
-| `subscribe_packets.h` | `SubscriptionOptions`, `SubscribeFilter`, `SubscribePacket` (1.4.8), `SubackPacket` (1.4.9), `UnsubscribePacket` (1.4.10), `UnsubackPacket` (1.4.11) |
+| `subscribe_packets.h` | `SubscribeOptions`, `SubscribeFilter`, `SubscribePacket` (1.4.8), `SubackPacket` (1.4.9), `UnsubscribePacket` (1.4.10), `UnsubackPacket` (1.4.11) |
 | `control_packets.h`   | `PingreqPacket` (1.4.12), `PingrespPacket` (1.4.13), `DisconnectPacket` (1.4.14), `AuthPacket` (1.4.15) |
 
 ## Common conventions
