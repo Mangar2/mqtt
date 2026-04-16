@@ -9,6 +9,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 |----------------|----------|-------------|
 | `data_model/`  | 1        | Pure data structures — primitive types, reason codes, properties, packet structs, message, subscription, session models. Header-only, no external dependencies. |
 | `codec/`       | 2        | Serialization / deserialization of all MQTT 5.0 wire packets. Depends on `data_model/`. |
+| `topic/`       | 3        | Topic-name and topic-filter validation; system-topic detection. Depends on `data_model/`. |
 
 ## `data_model/` sub-modules
 
@@ -33,6 +34,13 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `codec/codec_error.h`      | —         | `CodecError` enum and `CodecException` |
 | `codec/read_buffer.h`      | —         | `ReadBuffer` — read-only cursor over a byte span |
 | `codec/write_buffer.h`     | —         | `WriteBuffer` — alias for `std::vector<uint8_t>` |
+
+## `topic/` sub-modules
+
+| Directory / File                     | Plan ref | Contents |
+|--------------------------------------|----------|----------|
+| `topic/topic_error.h`                | 3.1      | `TopicError` enum and `TopicException` |
+| `topic/topic_validator.h/.cpp`       | 3.1      | `validate_topic_name`, `validate_topic_filter`, `is_system_topic` |
 
 ## Entry point
 

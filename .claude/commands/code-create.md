@@ -23,6 +23,8 @@ git commit -m "<short imperative description of the change>"
 
 Do **not** commit if any test fails or if coverage is below 90 %. Fix the issues first, then commit.
 
+**Coverage must be measured and reported before every commit — skipping it is not allowed.**
+
 ## Build structure — read CMakeLists.txt first
 
 **Before writing any `.cpp` file in a new module, read `CMakeLists.txt`** to verify
@@ -112,33 +114,26 @@ CMake reconfigures automatically when files are added or removed (glob
 `CONFIGURE_DEPENDS`), so the two-step form is only needed the very first time or
 after an explicit clean.
 
-## Measure test coverage
+## Measure test coverage — mandatory before commit
 
-Run the coverage analysis for every new or changed module.
-All four commands are run sequentially — never skip or reorder them.
+Run the coverage analysis for every new or changed module **as part of the build-and-verify step, before committing**.
+Do not proceed to the completion report or commit without a coverage report in hand.
+
+**Always use the project's Python script — never invoke llvm-profdata or llvm-cov directly.**
 
 ```sh
-# 1. Configure and build with coverage instrumentation
-cmake --preset test-coverage
-cmake --build --preset test-coverage
+# Full run (build + test + full report):
+python run_coverage.py
 
-# 2. Run the binary directly (NEVER ctest — it overwrites profraw per test)
-LLVM_PROFILE_FILE="build/test-coverage/coverage.profraw" \
-  ./build/test-coverage/mqtt-broker-tests.exe
+# Scoped report for the changed module (skips rebuild, uses existing profdata):
+python run_coverage.py --scope src/<module-path>/
 
-# 3. Merge
-llvm-profdata merge -sparse build/test-coverage/coverage.profraw \
-  -o build/test-coverage/coverage.profdata
-
-# 4. Report scoped to the changed module(s)
-llvm-cov report build/test-coverage/mqtt-broker-tests.exe \
-  -instr-profile=build/test-coverage/coverage.profdata \
-  src/<module-path>/
+# Line-level detail for a file below threshold:
+python run_coverage.py --show src/<module-path>/<file>.cpp
 ```
 
-After reviewing the report, if coverage is below threshold run
-`llvm-cov show` on the specific file to see which lines are missed — **do not
-guess from the aggregate numbers alone**.
+After reviewing the report, if coverage is below threshold use `--show` on the
+specific file to see which lines are missed — **do not guess from aggregate numbers alone**.
 
 ## Completion checklist — mandatory gate
 
@@ -151,7 +146,7 @@ Do not mark any module complete until **every item** below passes.
 | 3 | **No linter / IDE warnings** | All clang-tidy diagnostics resolved |
 | 4 | **VS Code Problems panel clear** | Use `get_errors` tool on all changed files — zero errors and zero warnings; every diagnostic reported by the IDE must be fixed before marking the task done |
 | 5 | **All tests pass** | `ctest --preset debug` → `100% tests passed`; new tests appear by name |
-| 6 | **Test coverage ≥ 90 %** | Regions, Functions, Lines ≥ 90 % for production files |
+| 6 | **Test coverage measured and ≥ 90 %** | Run the four coverage commands and paste the `llvm-cov report` output. Regions, Functions, Lines all ≥ 90 % for every production file in the changed module. This step blocks the commit — it may not be skipped. |
 | 7 | **SPEC.md is current** | Every touched directory has an accurate SPEC.md |
 | 8 | **TEST_SPEC.md is current** | Every test in code has a matching entry; removed tests removed from spec |
 | 9 | **Doxygen on all public API** | Every header follows the documentation rules in `/cpp-dev` |
