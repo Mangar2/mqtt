@@ -4,11 +4,13 @@ Serialization and deserialization of all MQTT 5.0 wire data. Depends on: Module 
 
 ## Sub-modules
 
-| Directory       | Plan ref | Contents |
-|-----------------|----------|----------|
-| `primitive/`    | 2.1      | Encode / decode of all MQTT primitive wire types |
-| `properties/`   | 2.2      | Properties section encoder, decoder, and validator |
-| `fixed_header/` | 2.3      | Fixed-header encoder and decoder |
+| Directory        | Plan ref  | Contents |
+|------------------|-----------|----------|
+| `primitive/`     | 2.1       | Encode / decode of all MQTT primitive wire types |
+| `properties/`    | 2.2       | Properties section encoder, decoder, and validator |
+| `fixed_header/`  | 2.3       | Fixed-header encoder and decoder |
+| `packet/`        | 2.4–2.12  | Variable-header + payload codecs for all 15 control packet types |
+| `packet_reader/` | 2.13      | Top-level packet reader: reads a full wire packet and returns `AnyPacket` |
 
 ## Shared infrastructure (this directory)
 
