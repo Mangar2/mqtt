@@ -1,7 +1,8 @@
-# broker — Broker Orchestrator (Module 15)
+# broker — Broker Orchestrator + Concurrency Layer (Modules 15, 17)
 
-Wires all modules together and controls broker startup / shutdown.
-Depends on: all previous modules (1–14).
+Wires all modules together, controls broker startup / shutdown, and provides
+thread-safe access to shared broker state.
+Depends on: all previous modules (1–14), plus shared-state coordination for Module 17.
 
 ---
 
@@ -14,6 +15,8 @@ Depends on: all previous modules (1–14).
 - Install SIGTERM / SIGINT signal handlers.
 - Perform ordered startup and ordered shutdown.
 - Track active connections so the message router can deliver to online clients.
+- Guard all shared mutable broker state with one broker-level mutex.
+- Provide thread-safe wrappers for session connect / disconnect / connection-loss paths.
 
 ---
 
@@ -24,7 +27,7 @@ Depends on: all previous modules (1–14).
 | `broker_error.h`    | 15   | `BrokerError` enum and `BrokerException` |
 | `broker_config.h`   | 15.1 | `BrokerConfig` struct with all configuration parameters |
 | `config_loader.h/.cpp` | 15.1.1 | `ConfigLoader` — INI-file parser → `BrokerConfig` |
-| `broker.h/.cpp`     | 15.2–15.3 | `Broker` — component wiring, startup/shutdown, signal handling |
+| `broker.h/.cpp`     | 15.2–15.3, 17 | `Broker` — component wiring, startup/shutdown, signal handling, broker-level locking |
 
 ---
 
@@ -134,6 +137,15 @@ void shutdown() noexcept;
 [[nodiscard]] AclEngine&        acl_engine()       noexcept;
 [[nodiscard]] WillPublisher&    will_publisher()   noexcept;
 
+// Thread-safe session lifecycle wrappers (Module 17.3)
+SessionOpenResult handle_connect(const ConnectPacket& connect_packet,
+                                 std::function<void()> close_callback);
+void handle_disconnect(std::string_view client_id, ReasonCode reason_code,
+                       std::optional<uint32_t> expiry_override,
+                       std::chrono::steady_clock::time_point now);
+void handle_connection_lost(std::string_view client_id,
+                            std::chrono::steady_clock::time_point now);
+
 // Connection registration — call from connection handler
 using SendFn = std::function<void(const Message&)>;
 void register_connection(std::string_view client_id, SendFn send_fn);
@@ -178,11 +190,24 @@ and `SIGINT` that sets the internal `shutdown_requested_` atomic flag to `true`.
 Callers should poll `Broker::shutdown_requested()` in their main loop and call
 `shutdown()` when it returns `true`.
 
+#### Concurrency layer (17)
+
+- `Broker` owns a `std::shared_mutex` and acquires an exclusive lock around
+   `register_connection()`, `unregister_connection()`, `route_message()`, and `tick()`.
+- `handle_connect()` wraps `SessionManager::handle_connect()` under the same lock.
+- `handle_disconnect()` wraps will handling, connection unregister, and
+   `SessionManager::handle_disconnect()` under one lock.
+- `handle_connection_lost()` wraps will handling, connection unregister, and
+   session teardown under one lock.
+- Direct public accessors to internal mutable stores are intentionally removed
+   from `Broker` to prevent unguarded external mutation.
+
 ---
 
 ## Constraints
 
-- `startup()` / `shutdown()` are not thread-safe; call from a single thread.
+- `startup()` / `shutdown()` should still be orchestrated from a single thread.
+- Shared mutable runtime state is protected by the broker mutex.
 - Module accessors must not be called before `startup()`.
 - `TcpListener`, `SessionPersistence`, `RetainedMessagePersistence`, and
   `InflightPersistence` are constructed during `startup()`; the class does

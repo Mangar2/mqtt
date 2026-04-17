@@ -1,7 +1,9 @@
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <string_view>
+#include <thread>
 
 #include "broker/broker.h"
 #include "broker/broker_config.h"
@@ -14,6 +16,8 @@ constexpr std::string_view k_version = "0.1.0";
 
 int main(int argc, char *argv[]) {
   std::cout << "mqtt-broker " << k_version << '\n';
+  std::cout << "Warning: ClientHandler is currently a placeholder and closes "
+               "connections immediately.\n";
 
   // Load configuration from the first argument, or use defaults.
   mqtt::BrokerConfig config;
@@ -47,6 +51,7 @@ int main(int argc, char *argv[]) {
   // Accept loops run on background threads started by Broker::startup().
   while (!mqtt::Broker::shutdown_requested()) {
     broker.tick();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
   broker.shutdown();

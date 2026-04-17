@@ -52,9 +52,16 @@ All tests are tagged `[broker]`.
 | `broker_destructor_auto_shutdown` | destructor | Let Broker go out of scope while running | ephemeral port | no crash |
 | `broker_shutdown_requested_false_initially` | signal | Before install_signal_handlers | — | shutdown_requested() == false |
 | `broker_with_persistence_startup` | persistence | Startup with persistence enabled | temp dir, persistence_enabled=true | is_running() == true, loads empty stores |
+| `broker_persistence_startup_loads_seeded_records` | persistence | Startup with persisted session/retained/inflight snapshots | temp dir with pre-saved records | startup succeeds and clean_start=false reconnect reports session_present=true |
 | `broker_statistics_collector_accessor` | monitoring | statistics_collector() | after startup | snapshot all-zero |
 | `broker_register_increments_connected_clients` | monitoring | register/unregister | 2 clients | connected_clients tracks correctly |
+| `broker_register_same_client_does_not_double_count` | monitoring | re-register existing client ID | same client registered twice | connected_clients remains 1 |
+| `broker_unregister_unknown_client_keeps_count` | monitoring | unregister idempotence | missing + existing client IDs | connected_clients never underflows |
 | `broker_route_message_counts_inbound` | monitoring | route_message() | 2 publishes | messages_inbound==2 |
-| `broker_deliver_counts_outbound` | monitoring | deliver callback | 1 subscriber online | messages_outbound==1 |
+| `broker_route_message_without_subscribers_is_safe` | monitoring | route without subscribers | 1 publish | no throw, messages_inbound increments |
 | `broker_tick_returns_false_when_sys_disabled` | monitoring | tick() with interval=0 | far-future now | returns false |
 | `broker_tick_publishes_sys_topics_when_enabled` | monitoring | tick() with interval=60 | far-future now | returns true |
+| `broker_handle_connect_returns_session_result` | concurrency facade | wrapped session connect | clean_start=false CONNECT | returns SessionOpenResult without throw |
+| `broker_handle_disconnect_unregisters_client` | concurrency facade | wrapped disconnect path | registered client + ReasonCode::Success | connected_clients decremented to 0 |
+| `broker_handle_connection_lost_unregisters_client` | concurrency facade | wrapped connection-loss path | registered client + stored will | connected_clients decremented to 0 |
+| `broker_accept_loop_invokes_client_handler` | accept loop | real TCP loopback client connects | mqtt_port=18885 | accept thread runs client handler path and shutdown succeeds |

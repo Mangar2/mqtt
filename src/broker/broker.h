@@ -7,9 +7,11 @@
  */
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -24,6 +26,8 @@
 #include "broker/broker_config.h"
 #include "connection/topic_alias_table.h"
 #include "data_model/message/message.h"
+#include "data_model/packet/connect_packet.h"
+#include "data_model/reason_code/reason_code.h"
 #include "message_router/inbound_publish_processor.h"
 #include "message_router/message_router.h"
 #include "message_router/offline_queue.h"
@@ -36,6 +40,7 @@
 #include "persistence/session_persistence.h"
 #include "session_manager/session_expiry_scheduler.h"
 #include "session_manager/session_manager.h"
+#include "session_manager/session_open_result.h"
 #include "session_manager/session_takeover_handler.h"
 #include "store/inflight_store.h"
 #include "store/retained_message_store.h"
@@ -64,8 +69,8 @@ namespace mqtt {
  * (so the message router can deliver to online clients) and
  * `unregister_connection()` when it disconnects.
  *
- * Thread safety: `startup()` / `shutdown()` / `register_connection()` /
- * `unregister_connection()` are not thread-safe; call from a single thread.
+ * Thread safety: all mutating Broker APIs take an internal exclusive lock
+ * (`std::shared_mutex`) around shared mutable state.
  * `shutdown_requested()` is thread-safe (reads an atomic flag).
  */
 class Broker {
@@ -156,15 +161,46 @@ public:
   /// @return Reference to the `WillPublisher` (Module 11).
   [[nodiscard]] WillPublisher &will_publisher() noexcept;
 
-  /// @return Reference to the `SubscriptionStore` (Module 4).
-  [[nodiscard]] SubscriptionStore &subscription_store() noexcept;
-  /// @return Reference to the `RetainedMessageStore` (Module 4.2).
-  [[nodiscard]] RetainedMessageStore &retained_message_store() noexcept;
-
-  /// @return Reference to the `InflightStore` (Module 4.4).
-  [[nodiscard]] InflightStore &inflight_store() noexcept;
   /// @return Reference to the `StatisticsCollector` (Module 16).
   [[nodiscard]] StatisticsCollector &statistics_collector() noexcept;
+
+  /**
+   * @brief Thread-safe wrapper around `SessionManager::handle_connect`
+   *        (Module 17.3.1).
+   *
+   * @param connect_packet CONNECT packet.
+   * @param close_callback Connection close callback for session takeover.
+   * @return Session open result from SessionManager.
+   */
+  SessionOpenResult handle_connect(const ConnectPacket &connect_packet,
+                                   std::function<void()> close_callback);
+
+  /**
+   * @brief Thread-safe wrapper for disconnect handling (Module 17.3.2).
+   *
+   * Applies will handling for DISCONNECT reason codes, unregisters the
+   * connection, and delegates session cleanup to SessionManager.
+   *
+   * @param client_id       Disconnecting client identifier.
+   * @param reason_code     DISCONNECT reason code.
+   * @param expiry_override Optional Session Expiry Interval override.
+   * @param now             Current timestamp.
+   */
+  void handle_disconnect(std::string_view client_id, ReasonCode reason_code,
+                         std::optional<uint32_t> expiry_override,
+                         std::chrono::steady_clock::time_point now);
+
+  /**
+   * @brief Thread-safe wrapper for abrupt connection loss (Module 17.3.3).
+   *
+   * Triggers will logic for connection loss, unregisters the connection,
+   * and delegates session cleanup to SessionManager.
+   *
+   * @param client_id Client identifier.
+   * @param now       Current timestamp.
+   */
+  void handle_connection_lost(std::string_view client_id,
+                              std::chrono::steady_clock::time_point now);
 
   /**
    * @brief Route an inbound PUBLISH message through the broker (16.1.2).
@@ -238,6 +274,12 @@ public:
   [[nodiscard]] static bool shutdown_requested() noexcept;
 
 private:
+  /// Register connection when broker_mutex_ is already held exclusively.
+  void register_connection_locked(std::string_view client_id, SendFn send_fn);
+
+  /// Unregister connection when broker_mutex_ is already held exclusively.
+  void unregister_connection_locked(std::string_view client_id) noexcept;
+
   // ── Internal helpers ──────────────────────────────────────────────────────
 
   /// Instantiate all module objects (15.2.1).
@@ -313,6 +355,8 @@ private:
 
   // ── Connection tracking ───────────────────────────────────────────────────
 
+  mutable std::shared_mutex
+      broker_mutex_; ///< Guards shared mutable Broker state.
   std::unordered_map<std::string, SendFn> active_connections_;
 
   // ── Monitoring (Module 16) ─────────────────────────────────────────────────

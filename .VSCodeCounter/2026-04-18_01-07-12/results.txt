@@ -1,22 +1,30 @@
-Date : 2026-04-17 12:38:16
+Date : 2026-04-18 01:07:12
 Directory : c:\Development\mqtt\src
-Total : 159 files,  10448 codes, 3074 comments, 2992 blanks, all 16514 lines
+Total : 249 files,  18808 codes, 5751 comments, 5266 blanks, all 29825 lines
 
 Languages
 +----------+------------+------------+------------+------------+------------+
 | language | files      | code       | comment    | blank      | total      |
 +----------+------------+------------+------------+------------+------------+
-| C++      |        121 |      8,514 |      3,074 |      2,356 |     13,944 |
-| Markdown |         38 |      1,934 |          0 |        636 |      2,570 |
+| C++      |        194 |     15,601 |      5,751 |      4,210 |     25,562 |
+| Markdown |         55 |      3,207 |          0 |      1,056 |      4,263 |
 +----------+------------+------------+------------+------------+------------+
 
 Directories
 +-----------------------------------------------------------------------------+------------+------------+------------+------------+------------+
 | path                                                                        | files      | code       | comment    | blank      | total      |
 +-----------------------------------------------------------------------------+------------+------------+------------+------------+------------+
-| .                                                                           |        159 |     10,448 |      3,074 |      2,992 |     16,514 |
-| . (Files)                                                                   |          2 |         85 |          0 |         23 |        108 |
-| auth                                                                        |         10 |        405 |        320 |        153 |        878 |
+| .                                                                           |        249 |     18,808 |      5,751 |      5,266 |     29,825 |
+| . (Files)                                                                   |          2 |        167 |          3 |         40 |        210 |
+| auth                                                                        |         12 |        913 |        339 |        239 |      1,491 |
+| auth (Files)                                                                |         10 |        399 |        321 |        155 |        875 |
+| auth\test                                                                   |          2 |        514 |         18 |         84 |        616 |
+| authz                                                                       |          9 |        603 |        281 |        199 |      1,083 |
+| authz (Files)                                                               |          7 |        308 |        256 |        120 |        684 |
+| authz\test                                                                  |          2 |        295 |         25 |         79 |        399 |
+| broker                                                                      |         10 |      1,255 |        461 |        393 |      2,109 |
+| broker (Files)                                                              |          7 |        766 |        411 |        258 |      1,435 |
+| broker\test                                                                 |          3 |        489 |         50 |        135 |        674 |
 | codec                                                                       |         39 |      3,557 |        874 |        969 |      5,400 |
 | codec (Files)                                                               |          4 |        102 |         69 |         35 |        206 |
 | codec\fixed_header                                                          |          6 |        309 |         57 |         75 |        441 |
@@ -34,9 +42,9 @@ Directories
 | codec\properties                                                            |          5 |        559 |         77 |         99 |        735 |
 | codec\properties (Files)                                                    |          3 |        206 |         55 |         49 |        310 |
 | codec\properties\test                                                       |          2 |        353 |         22 |         50 |        425 |
-| connection                                                                  |         12 |        641 |        285 |        182 |      1,108 |
-| connection (Files)                                                          |         10 |        288 |        277 |        121 |        686 |
-| connection\test                                                             |          2 |        353 |          8 |         61 |        422 |
+| connection                                                                  |         14 |        707 |        312 |        210 |      1,229 |
+| connection (Files)                                                          |         12 |        330 |        302 |        141 |        773 |
+| connection\test                                                             |          2 |        377 |         10 |         69 |        456 |
 | data_model                                                                  |         45 |      1,820 |        383 |        548 |      2,751 |
 | data_model (Files)                                                          |          1 |         19 |          0 |          6 |         25 |
 | data_model\message                                                          |          4 |        147 |         21 |         42 |        210 |
@@ -60,35 +68,74 @@ Directories
 | data_model\types                                                            |          8 |        222 |         59 |         87 |        368 |
 | data_model\types (Files)                                                    |          6 |         88 |         54 |         51 |        193 |
 | data_model\types\test                                                       |          2 |        134 |          5 |         36 |        175 |
-| network                                                                     |         14 |      1,139 |        376 |        341 |      1,856 |
-| network (Files)                                                             |         12 |        673 |        327 |        223 |      1,223 |
+| message_router                                                              |         16 |      1,463 |        522 |        382 |      2,367 |
+| message_router (Files)                                                      |         14 |        683 |        449 |        240 |      1,372 |
+| message_router\test                                                         |          2 |        780 |         73 |        142 |        995 |
+| monitoring                                                                  |          7 |        445 |        152 |        155 |        752 |
+| monitoring (Files)                                                          |          5 |        214 |        133 |         90 |        437 |
+| monitoring\test                                                             |          2 |        231 |         19 |         65 |        315 |
+| network                                                                     |         14 |      1,170 |        391 |        347 |      1,908 |
+| network (Files)                                                             |         12 |        704 |        342 |        229 |      1,275 |
 | network\test                                                                |          2 |        466 |         49 |        118 |        633 |
-| qos                                                                         |         10 |        947 |        331 |        252 |      1,530 |
-| qos (Files)                                                                 |          8 |        423 |        318 |        132 |        873 |
+| persistence                                                                 |         13 |      1,294 |        431 |        307 |      2,032 |
+| persistence (Files)                                                         |         11 |        777 |        386 |        198 |      1,361 |
+| persistence\test                                                            |          2 |        517 |         45 |        109 |        671 |
+| qos                                                                         |         10 |        945 |        331 |        252 |      1,528 |
+| qos (Files)                                                                 |          8 |        421 |        318 |        132 |        871 |
 | qos\test                                                                    |          2 |        524 |         13 |        120 |        657 |
-| store                                                                       |         15 |        828 |        256 |        221 |      1,305 |
-| store (Files)                                                               |         10 |        369 |        254 |        129 |        752 |
-| store\test                                                                  |          5 |        459 |          2 |         92 |        553 |
+| session_manager                                                             |         11 |        667 |        257 |        186 |      1,110 |
+| session_manager (Files)                                                     |          9 |        374 |        232 |        127 |        733 |
+| session_manager\test                                                        |          2 |        293 |         25 |         59 |        377 |
+| store                                                                       |         15 |        873 |        272 |        229 |      1,374 |
+| store (Files)                                                               |         10 |        387 |        270 |        133 |        790 |
+| store\test                                                                  |          5 |        486 |          2 |         96 |        584 |
 | topic                                                                       |         12 |      1,026 |        249 |        303 |      1,578 |
 | topic (Files)                                                               |          8 |        423 |        218 |        144 |        785 |
 | topic\test                                                                  |          4 |        603 |         31 |        159 |        793 |
+| transport                                                                   |         10 |      1,310 |        279 |        328 |      1,917 |
+| transport (Files)                                                           |          8 |        673 |        254 |        182 |      1,109 |
+| transport\test                                                              |          2 |        637 |         25 |        146 |        808 |
+| will_manager                                                                |         10 |        593 |        214 |        179 |        986 |
+| will_manager (Files)                                                        |          8 |        296 |        200 |        114 |        610 |
+| will_manager\test                                                           |          2 |        297 |         14 |         65 |        376 |
 +-----------------------------------------------------------------------------+------------+------------+------------+------------+------------+
 
 Files
 +-----------------------------------------------------------------------------+----------+------------+------------+------------+------------+
 | filename                                                                    | language | code       | comment    | blank      | total      |
 +-----------------------------------------------------------------------------+----------+------------+------------+------------+------------+
-| c:\Development\mqtt\src\SPEC.md                                             | Markdown |         75 |          0 |         20 |         95 |
+| c:\Development\mqtt\src\SPEC.md                                             | Markdown |        119 |          0 |         30 |        149 |
 | c:\Development\mqtt\src\auth\SPEC.md                                        | Markdown |         90 |          0 |         37 |        127 |
-| c:\Development\mqtt\src\auth\anonymous_authenticator.cpp                    | C++      |         14 |          0 |          6 |         20 |
-| c:\Development\mqtt\src\auth\anonymous_authenticator.h                      | C++      |         17 |         34 |         10 |         61 |
-| c:\Development\mqtt\src\auth\auth_error.h                                   | C++      |         21 |         23 |          9 |         53 |
-| c:\Development\mqtt\src\auth\authenticator.cpp                              | C++      |         23 |          2 |          9 |         34 |
-| c:\Development\mqtt\src\auth\authenticator.h                                | C++      |         45 |         79 |         17 |        141 |
-| c:\Development\mqtt\src\auth\enhanced_auth_handler.cpp                      | C++      |        116 |         10 |         28 |        154 |
-| c:\Development\mqtt\src\auth\enhanced_auth_handler.h                        | C++      |         36 |        128 |         17 |        181 |
-| c:\Development\mqtt\src\auth\password_authenticator.cpp                     | C++      |         26 |          0 |         10 |         36 |
-| c:\Development\mqtt\src\auth\password_authenticator.h                       | C++      |         17 |         44 |         10 |         71 |
+| c:\Development\mqtt\src\auth\anonymous_authenticator.cpp                    | C++      |         19 |          0 |          6 |         25 |
+| c:\Development\mqtt\src\auth\anonymous_authenticator.h                      | C++      |         17 |         34 |         11 |         62 |
+| c:\Development\mqtt\src\auth\auth_error.h                                   | C++      |         21 |         24 |          9 |         54 |
+| c:\Development\mqtt\src\auth\authenticator.cpp                              | C++      |         27 |          4 |         10 |         41 |
+| c:\Development\mqtt\src\auth\authenticator.h                                | C++      |         45 |         79 |         18 |        142 |
+| c:\Development\mqtt\src\auth\enhanced_auth_handler.cpp                      | C++      |        102 |         12 |         27 |        141 |
+| c:\Development\mqtt\src\auth\enhanced_auth_handler.h                        | C++      |         33 |        124 |         16 |        173 |
+| c:\Development\mqtt\src\auth\password_authenticator.cpp                     | C++      |         29 |          0 |         10 |         39 |
+| c:\Development\mqtt\src\auth\password_authenticator.h                       | C++      |         16 |         44 |         11 |         71 |
+| c:\Development\mqtt\src\auth\test\TEST_SPEC.md                              | Markdown |         71 |          0 |         21 |         92 |
+| c:\Development\mqtt\src\auth\test\auth_test.cpp                             | C++      |        443 |         18 |         63 |        524 |
+| c:\Development\mqtt\src\authz\SPEC.md                                       | Markdown |         89 |          0 |         40 |        129 |
+| c:\Development\mqtt\src\authz\acl_engine.cpp                                | C++      |         76 |         17 |         21 |        114 |
+| c:\Development\mqtt\src\authz\acl_engine.h                                  | C++      |         33 |         99 |         16 |        148 |
+| c:\Development\mqtt\src\authz\acl_loader.cpp                                | C++      |         46 |          9 |         14 |         69 |
+| c:\Development\mqtt\src\authz\acl_loader.h                                  | C++      |         24 |         75 |         12 |        111 |
+| c:\Development\mqtt\src\authz\acl_rule.h                                    | C++      |         21 |         32 |          8 |         61 |
+| c:\Development\mqtt\src\authz\authz_error.h                                 | C++      |         19 |         24 |          9 |         52 |
+| c:\Development\mqtt\src\authz\test\TEST_SPEC.md                             | Markdown |         61 |          0 |         23 |         84 |
+| c:\Development\mqtt\src\authz\test\authz_test.cpp                           | C++      |        234 |         25 |         56 |        315 |
+| c:\Development\mqtt\src\broker\SPEC.md                                      | Markdown |        165 |          0 |         50 |        215 |
+| c:\Development\mqtt\src\broker\broker.cpp                                   | C++      |        265 |         53 |         72 |        390 |
+| c:\Development\mqtt\src\broker\broker.h                                     | C++      |        119 |        192 |         67 |        378 |
+| c:\Development\mqtt\src\broker\broker_config.h                              | C++      |         18 |         44 |         20 |         82 |
+| c:\Development\mqtt\src\broker\broker_error.h                               | C++      |         20 |         20 |          9 |         49 |
+| c:\Development\mqtt\src\broker\config_loader.cpp                            | C++      |        160 |         12 |         26 |        198 |
+| c:\Development\mqtt\src\broker\config_loader.h                              | C++      |         19 |         90 |         14 |        123 |
+| c:\Development\mqtt\src\broker\test\TEST_SPEC.md                            | Markdown |         55 |          0 |         11 |         66 |
+| c:\Development\mqtt\src\broker\test\broker_config_test.cpp                  | C++      |        150 |         13 |         32 |        195 |
+| c:\Development\mqtt\src\broker\test\broker_test.cpp                         | C++      |        284 |         37 |         92 |        413 |
 | c:\Development\mqtt\src\codec\SPEC.md                                       | Markdown |         22 |          0 |          8 |         30 |
 | c:\Development\mqtt\src\codec\codec_error.h                                 | C++      |         31 |         22 |          9 |         62 |
 | c:\Development\mqtt\src\codec\fixed_header\SPEC.md                          | Markdown |         40 |          0 |         15 |         55 |
@@ -128,7 +175,9 @@ Files
 | c:\Development\mqtt\src\codec\properties\test\properties_codec_test.cpp     | C++      |        321 |         22 |         43 |        386 |
 | c:\Development\mqtt\src\codec\read_buffer.h                                 | C++      |         43 |         37 |         12 |         92 |
 | c:\Development\mqtt\src\codec\write_buffer.h                                | C++      |          6 |         10 |          6 |         22 |
-| c:\Development\mqtt\src\connection\SPEC.md                                  | Markdown |         38 |          0 |         13 |         51 |
+| c:\Development\mqtt\src\connection\SPEC.md                                  | Markdown |         54 |          0 |         19 |         73 |
+| c:\Development\mqtt\src\connection\client_handler.cpp                       | C++      |         14 |          4 |          7 |         25 |
+| c:\Development\mqtt\src\connection\client_handler.h                         | C++      |         12 |         21 |          7 |         40 |
 | c:\Development\mqtt\src\connection\connection_error.h                       | C++      |         22 |         29 |          9 |         60 |
 | c:\Development\mqtt\src\connection\connection_state.cpp                     | C++      |         47 |          0 |         11 |         58 |
 | c:\Development\mqtt\src\connection\connection_state.h                       | C++      |         24 |         65 |         15 |        104 |
@@ -136,8 +185,8 @@ Files
 | c:\Development\mqtt\src\connection\keep_alive_timer.h                       | C++      |         17 |         49 |         11 |         77 |
 | c:\Development\mqtt\src\connection\receive_maximum.cpp                      | C++      |         29 |          0 |         13 |         42 |
 | c:\Development\mqtt\src\connection\receive_maximum.h                        | C++      |         16 |         55 |         12 |         83 |
-| c:\Development\mqtt\src\connection\test\TEST_SPEC.md                        | Markdown |         57 |          0 |          9 |         66 |
-| c:\Development\mqtt\src\connection\test\connection_test.cpp                 | C++      |        296 |          8 |         52 |        356 |
+| c:\Development\mqtt\src\connection\test\TEST_SPEC.md                        | Markdown |         62 |          0 |         11 |         73 |
+| c:\Development\mqtt\src\connection\test\connection_test.cpp                 | C++      |        315 |         10 |         58 |        383 |
 | c:\Development\mqtt\src\connection\topic_alias_table.cpp                    | C++      |         45 |          0 |         13 |         58 |
 | c:\Development\mqtt\src\connection\topic_alias_table.h                      | C++      |         26 |         79 |         14 |        119 |
 | c:\Development\mqtt\src\data_model\SPEC.md                                  | Markdown |         19 |          0 |          6 |         25 |
@@ -185,14 +234,37 @@ Files
 | c:\Development\mqtt\src\data_model\types\test\types_test.cpp                | C++      |        101 |          5 |         25 |        131 |
 | c:\Development\mqtt\src\data_model\types\utf8_string.h                      | C++      |         15 |         15 |         10 |         40 |
 | c:\Development\mqtt\src\data_model\types\variable_byte_integer.h            | C++      |         16 |         14 |          9 |         39 |
-| c:\Development\mqtt\src\main.cpp                                            | C++      |         10 |          0 |          3 |         13 |
+| c:\Development\mqtt\src\main.cpp                                            | C++      |         48 |          3 |         10 |         61 |
+| c:\Development\mqtt\src\message_router\SPEC.md                              | Markdown |        111 |          0 |         43 |        154 |
+| c:\Development\mqtt\src\message_router\inbound_publish_processor.cpp        | C++      |         53 |          3 |         15 |         71 |
+| c:\Development\mqtt\src\message_router\inbound_publish_processor.h          | C++      |         25 |         52 |         10 |         87 |
+| c:\Development\mqtt\src\message_router\message_expiry_controller.cpp        | C++      |         31 |          2 |         14 |         47 |
+| c:\Development\mqtt\src\message_router\message_expiry_controller.h          | C++      |         13 |         38 |          7 |         58 |
+| c:\Development\mqtt\src\message_router\message_router.cpp                   | C++      |         52 |         11 |         19 |         82 |
+| c:\Development\mqtt\src\message_router\message_router.h                     | C++      |         36 |         81 |         13 |        130 |
+| c:\Development\mqtt\src\message_router\message_router_error.h               | C++      |         20 |         22 |          9 |         51 |
+| c:\Development\mqtt\src\message_router\offline_queue.cpp                    | C++      |         38 |          0 |         12 |         50 |
+| c:\Development\mqtt\src\message_router\offline_queue.h                      | C++      |         29 |         61 |         14 |        104 |
+| c:\Development\mqtt\src\message_router\shared_subscription_dispatcher.cpp   | C++      |        163 |         27 |         43 |        233 |
+| c:\Development\mqtt\src\message_router\shared_subscription_dispatcher.h     | C++      |         43 |        101 |         17 |        161 |
+| c:\Development\mqtt\src\message_router\subscriber_fanout.cpp                | C++      |         47 |          6 |         15 |         68 |
+| c:\Development\mqtt\src\message_router\subscriber_fanout.h                  | C++      |         22 |         45 |          9 |         76 |
+| c:\Development\mqtt\src\message_router\test\TEST_SPEC.md                    | Markdown |         48 |          0 |          2 |         50 |
+| c:\Development\mqtt\src\message_router\test\message_router_test.cpp         | C++      |        732 |         73 |        140 |        945 |
+| c:\Development\mqtt\src\monitoring\SPEC.md                                  | Markdown |         79 |          0 |         33 |        112 |
+| c:\Development\mqtt\src\monitoring\statistics_collector.cpp                 | C++      |         32 |          4 |         11 |         47 |
+| c:\Development\mqtt\src\monitoring\statistics_collector.h                   | C++      |         35 |         62 |         21 |        118 |
+| c:\Development\mqtt\src\monitoring\sys_topic_publisher.cpp                  | C++      |         46 |          4 |         12 |         62 |
+| c:\Development\mqtt\src\monitoring\sys_topic_publisher.h                    | C++      |         22 |         63 |         13 |         98 |
+| c:\Development\mqtt\src\monitoring\test\TEST_SPEC.md                        | Markdown |         25 |          0 |          9 |         34 |
+| c:\Development\mqtt\src\monitoring\test\monitoring_test.cpp                 | C++      |        206 |         19 |         56 |        281 |
 | c:\Development\mqtt\src\network\SPEC.md                                     | Markdown |        101 |          0 |         40 |        141 |
 | c:\Development\mqtt\src\network\network_error.h                             | C++      |         24 |         20 |          9 |         53 |
 | c:\Development\mqtt\src\network\stream_buffer.cpp                           | C++      |         51 |          3 |         12 |         66 |
 | c:\Development\mqtt\src\network\stream_buffer.h                             | C++      |         18 |         68 |         11 |         97 |
-| c:\Development\mqtt\src\network\tcp_connection.h                            | C++      |         24 |         66 |         18 |        108 |
-| c:\Development\mqtt\src\network\tcp_connection_posix.cpp                    | C++      |         51 |          3 |         19 |         73 |
-| c:\Development\mqtt\src\network\tcp_connection_win32.cpp                    | C++      |         51 |          1 |         17 |         69 |
+| c:\Development\mqtt\src\network\tcp_connection.h                            | C++      |         27 |         81 |         20 |        128 |
+| c:\Development\mqtt\src\network\tcp_connection_posix.cpp                    | C++      |         67 |          3 |         21 |         91 |
+| c:\Development\mqtt\src\network\tcp_connection_win32.cpp                    | C++      |         63 |          1 |         19 |         83 |
 | c:\Development\mqtt\src\network\tcp_listener.h                              | C++      |         22 |         64 |         17 |        103 |
 | c:\Development\mqtt\src\network\tcp_listener_posix.cpp                      | C++      |        113 |          8 |         24 |        145 |
 | c:\Development\mqtt\src\network\tcp_listener_win32.cpp                      | C++      |        122 |         19 |         25 |        166 |
@@ -200,30 +272,54 @@ Files
 | c:\Development\mqtt\src\network\test\network_test.cpp                       | C++      |        419 |         49 |        104 |        572 |
 | c:\Development\mqtt\src\network\write_queue.cpp                             | C++      |         67 |          0 |         15 |         82 |
 | c:\Development\mqtt\src\network\write_queue.h                               | C++      |         29 |         75 |         16 |        120 |
+| c:\Development\mqtt\src\persistence\SPEC.md                                 | Markdown |         42 |          0 |         15 |         57 |
+| c:\Development\mqtt\src\persistence\crash_safe_file.cpp                     | C++      |        154 |         26 |         34 |        214 |
+| c:\Development\mqtt\src\persistence\crash_safe_file.h                       | C++      |         25 |         93 |         14 |        132 |
+| c:\Development\mqtt\src\persistence\inflight_persistence.cpp                | C++      |        168 |         16 |         28 |        212 |
+| c:\Development\mqtt\src\persistence\inflight_persistence.h                  | C++      |         19 |         45 |         11 |         75 |
+| c:\Development\mqtt\src\persistence\persistence_error.h                     | C++      |         22 |         23 |          9 |         54 |
+| c:\Development\mqtt\src\persistence\record_codec.h                          | C++      |         98 |         91 |         21 |        210 |
+| c:\Development\mqtt\src\persistence\retained_message_persistence.cpp        | C++      |        137 |         11 |         25 |        173 |
+| c:\Development\mqtt\src\persistence\retained_message_persistence.h          | C++      |         14 |         33 |         10 |         57 |
+| c:\Development\mqtt\src\persistence\session_persistence.cpp                 | C++      |         84 |          6 |         21 |        111 |
+| c:\Development\mqtt\src\persistence\session_persistence.h                   | C++      |         14 |         42 |         10 |         66 |
+| c:\Development\mqtt\src\persistence\test\TEST_SPEC.md                       | Markdown |         22 |          0 |          3 |         25 |
+| c:\Development\mqtt\src\persistence\test\persistence_test.cpp               | C++      |        495 |         45 |        106 |        646 |
 | c:\Development\mqtt\src\qos\SPEC.md                                         | Markdown |         55 |          0 |         20 |         75 |
 | c:\Development\mqtt\src\qos\packet_id_manager.cpp                           | C++      |         42 |          4 |         15 |         61 |
 | c:\Development\mqtt\src\qos\packet_id_manager.h                             | C++      |         23 |         66 |         13 |        102 |
-| c:\Development\mqtt\src\qos\qos1_state_machine.cpp                          | C++      |         89 |          9 |         21 |        119 |
+| c:\Development\mqtt\src\qos\qos1_state_machine.cpp                          | C++      |         88 |          9 |         21 |        118 |
 | c:\Development\mqtt\src\qos\qos1_state_machine.h                            | C++      |         25 |         80 |         12 |        117 |
-| c:\Development\mqtt\src\qos\qos2_state_machine.cpp                          | C++      |        137 |         13 |         27 |        177 |
+| c:\Development\mqtt\src\qos\qos2_state_machine.cpp                          | C++      |        136 |         13 |         27 |        176 |
 | c:\Development\mqtt\src\qos\qos2_state_machine.h                            | C++      |         33 |        122 |         15 |        170 |
 | c:\Development\mqtt\src\qos\qos_error.h                                     | C++      |         19 |         24 |          9 |         52 |
 | c:\Development\mqtt\src\qos\test\TEST_SPEC.md                               | Markdown |         50 |          0 |          8 |         58 |
 | c:\Development\mqtt\src\qos\test\qos_test.cpp                               | C++      |        474 |         13 |        112 |        599 |
-| c:\Development\mqtt\src\store\SPEC.md                                       | Markdown |         62 |          0 |         21 |         83 |
-| c:\Development\mqtt\src\store\inflight_store.cpp                            | C++      |         80 |          5 |         14 |         99 |
+| c:\Development\mqtt\src\session_manager\SPEC.md                             | Markdown |         96 |          0 |         33 |        129 |
+| c:\Development\mqtt\src\session_manager\session_expiry_scheduler.cpp        | C++      |         39 |          0 |         10 |         49 |
+| c:\Development\mqtt\src\session_manager\session_expiry_scheduler.h          | C++      |         25 |         49 |         11 |         85 |
+| c:\Development\mqtt\src\session_manager\session_manager.cpp                 | C++      |        104 |         17 |         28 |        149 |
+| c:\Development\mqtt\src\session_manager\session_manager.h                   | C++      |         38 |         75 |         12 |        125 |
+| c:\Development\mqtt\src\session_manager\session_manager_error.h             | C++      |         18 |         21 |          9 |         48 |
+| c:\Development\mqtt\src\session_manager\session_open_result.h               | C++      |          7 |         13 |          5 |         25 |
+| c:\Development\mqtt\src\session_manager\session_takeover_handler.cpp        | C++      |         29 |          2 |          8 |         39 |
+| c:\Development\mqtt\src\session_manager\session_takeover_handler.h          | C++      |         18 |         55 |         11 |         84 |
+| c:\Development\mqtt\src\session_manager\test\TEST_SPEC.md                   | Markdown |         38 |          0 |         13 |         51 |
+| c:\Development\mqtt\src\session_manager\test\session_manager_test.cpp       | C++      |        255 |         25 |         46 |        326 |
+| c:\Development\mqtt\src\store\SPEC.md                                       | Markdown |         64 |          0 |         21 |         85 |
+| c:\Development\mqtt\src\store\inflight_store.cpp                            | C++      |         78 |          5 |         14 |         97 |
 | c:\Development\mqtt\src\store\inflight_store.h                              | C++      |         31 |         68 |         14 |        113 |
-| c:\Development\mqtt\src\store\retained_message_store.cpp                    | C++      |         31 |          3 |          8 |         42 |
-| c:\Development\mqtt\src\store\retained_message_store.h                      | C++      |         18 |         36 |         10 |         64 |
-| c:\Development\mqtt\src\store\session_store.cpp                             | C++      |         60 |          2 |         18 |         80 |
-| c:\Development\mqtt\src\store\session_store.h                               | C++      |         29 |         68 |         14 |        111 |
+| c:\Development\mqtt\src\store\retained_message_store.cpp                    | C++      |         39 |          3 |          9 |         51 |
+| c:\Development\mqtt\src\store\retained_message_store.h                      | C++      |         19 |         45 |         11 |         75 |
+| c:\Development\mqtt\src\store\session_store.cpp                             | C++      |         68 |          2 |         19 |         89 |
+| c:\Development\mqtt\src\store\session_store.h                               | C++      |         30 |         75 |         15 |        120 |
 | c:\Development\mqtt\src\store\store_error.h                                 | C++      |         18 |         23 |          9 |         50 |
 | c:\Development\mqtt\src\store\subscription_store.cpp                        | C++      |         20 |          0 |          9 |         29 |
 | c:\Development\mqtt\src\store\subscription_store.h                          | C++      |         20 |         49 |         12 |         81 |
-| c:\Development\mqtt\src\store\test\TEST_SPEC.md                             | Markdown |         67 |          0 |         14 |         81 |
+| c:\Development\mqtt\src\store\test\TEST_SPEC.md                             | Markdown |         71 |          0 |         14 |         85 |
 | c:\Development\mqtt\src\store\test\inflight_store_test.cpp                  | C++      |        105 |          0 |         20 |        125 |
-| c:\Development\mqtt\src\store\test\retained_message_store_test.cpp          | C++      |         88 |          0 |         18 |        106 |
-| c:\Development\mqtt\src\store\test\session_store_test.cpp                   | C++      |        116 |          2 |         22 |        140 |
+| c:\Development\mqtt\src\store\test\retained_message_store_test.cpp          | C++      |         99 |          0 |         20 |        119 |
+| c:\Development\mqtt\src\store\test\session_store_test.cpp                   | C++      |        128 |          2 |         24 |        154 |
 | c:\Development\mqtt\src\store\test\subscription_store_test.cpp              | C++      |         83 |          0 |         18 |        101 |
 | c:\Development\mqtt\src\topic\SPEC.md                                       | Markdown |        111 |          0 |         48 |        159 |
 | c:\Development\mqtt\src\topic\subscription_trie.cpp                         | C++      |         90 |          8 |         20 |        118 |
@@ -237,5 +333,25 @@ Files
 | c:\Development\mqtt\src\topic\topic_matcher.h                               | C++      |         22 |         40 |          9 |         71 |
 | c:\Development\mqtt\src\topic\topic_validator.cpp                           | C++      |         58 |          4 |         16 |         78 |
 | c:\Development\mqtt\src\topic\topic_validator.h                             | C++      |          7 |         49 |          8 |         64 |
-| Total                                                                       |          |     10,448 |      3,074 |      2,992 |     16,514 |
+| c:\Development\mqtt\src\transport\SPEC.md                                   | Markdown |         99 |          0 |         39 |        138 |
+| c:\Development\mqtt\src\transport\test\TEST_SPEC.md                         | Markdown |         63 |          0 |         17 |         80 |
+| c:\Development\mqtt\src\transport\test\websocket_test.cpp                   | C++      |        574 |         25 |        129 |        728 |
+| c:\Development\mqtt\src\transport\transport_error.h                         | C++      |         21 |         18 |          9 |         48 |
+| c:\Development\mqtt\src\transport\websocket_frame_codec.cpp                 | C++      |        154 |         11 |         34 |        199 |
+| c:\Development\mqtt\src\transport\websocket_frame_codec.h                   | C++      |         38 |         77 |         16 |        131 |
+| c:\Development\mqtt\src\transport\websocket_handshake.cpp                   | C++      |        241 |         17 |         40 |        298 |
+| c:\Development\mqtt\src\transport\websocket_handshake.h                     | C++      |         18 |         45 |         10 |         73 |
+| c:\Development\mqtt\src\transport\websocket_transport.cpp                   | C++      |         71 |          6 |         18 |         95 |
+| c:\Development\mqtt\src\transport\websocket_transport.h                     | C++      |         31 |         80 |         16 |        127 |
+| c:\Development\mqtt\src\will_manager\SPEC.md                                | Markdown |         96 |          0 |         39 |        135 |
+| c:\Development\mqtt\src\will_manager\test\TEST_SPEC.md                      | Markdown |         42 |          0 |         11 |         53 |
+| c:\Development\mqtt\src\will_manager\test\will_manager_test.cpp             | C++      |        255 |         14 |         54 |        323 |
+| c:\Development\mqtt\src\will_manager\will_delay_timer.cpp                   | C++      |         27 |          0 |          8 |         35 |
+| c:\Development\mqtt\src\will_manager\will_delay_timer.h                     | C++      |         28 |         48 |         11 |         87 |
+| c:\Development\mqtt\src\will_manager\will_manager_error.h                   | C++      |         17 |         21 |          9 |         47 |
+| c:\Development\mqtt\src\will_manager\will_publisher.cpp                     | C++      |         60 |          4 |         12 |         76 |
+| c:\Development\mqtt\src\will_manager\will_publisher.h                       | C++      |         30 |         89 |         16 |        135 |
+| c:\Development\mqtt\src\will_manager\will_store.cpp                         | C++      |         18 |          0 |          8 |         26 |
+| c:\Development\mqtt\src\will_manager\will_store.h                           | C++      |         20 |         38 |         11 |         69 |
+| Total                                                                       |          |     18,808 |      5,751 |      5,266 |     29,825 |
 +-----------------------------------------------------------------------------+----------+------------+------------+------------+------------+

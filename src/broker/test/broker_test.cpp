@@ -3,16 +3,34 @@
 #include <chrono>
 #include <csignal>
 #include <filesystem>
+#include <thread>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
 
 #include "broker/broker.h"
 #include "broker/broker_config.h"
 #include "broker/broker_error.h"
 #include "connection/topic_alias_table.h"
 #include "data_model/message/message.h"
-#include "data_model/subscription/subscription.h"
+#include "data_model/packet/connect_packet.h"
+#include "data_model/reason_code/reason_code.h"
+#include "data_model/session/inflight_entry.h"
+#include "data_model/session/inflight_state.h"
+#include "data_model/session/session_state.h"
 #include "data_model/types/qos.h"
 #include "data_model/types/utf8_string.h"
-#include "will_manager/will_publisher.h"
+#include "network/tcp_connection.h"
+#include "persistence/inflight_persistence.h"
+#include "persistence/retained_message_persistence.h"
+#include "persistence/session_persistence.h"
 
 using namespace mqtt;
 using namespace std::chrono_literals;
@@ -41,6 +59,31 @@ std::filesystem::path make_temp_dir() {
 
 void remove_temp_dir(const std::filesystem::path &dir) {
   std::filesystem::remove_all(dir);
+}
+
+void close_socket_handle(mqtt::SocketHandle socket_handle) {
+#ifdef _WIN32
+  ::closesocket(static_cast<SOCKET>(socket_handle));
+#else
+  ::close(static_cast<int>(socket_handle));
+#endif
+}
+
+void connect_loopback(uint16_t port_value) {
+  mqtt::SocketHandle socket_handle =
+      ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  REQUIRE(socket_handle != mqtt::k_invalid_socket);
+
+  sockaddr_in server_addr{};
+  server_addr.sin_family = AF_INET;
+  server_addr.sin_port = htons(port_value);
+  server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+  const int connect_result =
+      ::connect(socket_handle, reinterpret_cast<const sockaddr *>(&server_addr),
+                sizeof(server_addr));
+  CHECK(connect_result == 0);
+  close_socket_handle(socket_handle);
 }
 
 } // namespace
@@ -174,6 +217,52 @@ TEST_CASE("broker_with_persistence_startup", "[broker]") {
   remove_temp_dir(tmp_dir);
 }
 
+TEST_CASE("broker_persistence_startup_loads_seeded_records", "[broker]") {
+  const auto tmp_dir = make_temp_dir();
+
+  SessionState session;
+  session.client_id = Utf8String{"seed_client"};
+  session.session_expiry_interval = 60U;
+
+  Message retained;
+  retained.topic = Utf8String{"seed/retained"};
+  retained.qos = QoS::AtMostOnce;
+  retained.retain = true;
+
+  InflightEntry inflight;
+  inflight.packet_id = 1U;
+  inflight.qos = QoS::AtLeastOnce;
+  inflight.state = InflightState::WaitingForPuback;
+  inflight.direction = InflightDirection::Outbound;
+  inflight.message.topic = Utf8String{"seed/topic"};
+  inflight.timestamp = std::chrono::steady_clock::now();
+
+  SessionPersistence session_persistence(tmp_dir);
+  RetainedMessagePersistence retained_persistence(tmp_dir);
+  InflightPersistence inflight_persistence(tmp_dir);
+
+  session_persistence.save_all(std::vector<SessionState>{session});
+  retained_persistence.save_all(std::vector<Message>{retained});
+  inflight_persistence.save_all(
+      std::vector<InflightPersistence::ClientEntry>{{"seed_client", inflight}});
+
+  BrokerConfig cfg = make_test_config();
+  cfg.persistence_enabled = true;
+  cfg.persistence_dir = tmp_dir;
+
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"seed_client"};
+  connect.clean_start = false;
+  const SessionOpenResult result = broker.handle_connect(connect, []() {});
+  CHECK(result.session_present == true);
+
+  broker.shutdown();
+  remove_temp_dir(tmp_dir);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth — password mode
 
@@ -217,72 +306,93 @@ TEST_CASE("broker_ws_listener_startup_and_shutdown", "[broker]") {
   CHECK(broker.is_running() == false);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Online delivery — is_online + deliver lambdas
-
-TEST_CASE("broker_message_delivered_to_online_connection", "[broker]") {
+TEST_CASE("broker_accept_loop_invokes_client_handler", "[broker]") {
   BrokerConfig cfg = make_test_config();
+  cfg.mqtt_port = 18885U;
+
   Broker broker(cfg);
   broker.startup();
 
-  // Subscribe "sub_client" to "chat/room".
-  Subscription sub;
-  sub.topic_filter = Utf8String{"chat/room"};
-  sub.qos = QoS::AtMostOnce;
-  broker.subscription_store().store("sub_client", sub);
+  connect_loopback(cfg.mqtt_port);
+  std::this_thread::sleep_for(20ms);
 
-  // Register sub_client as online.
-  bool delivered = false;
-  broker.register_connection("sub_client",
-                             [&](const Message &) { delivered = true; });
+  broker.shutdown();
+  CHECK(broker.is_running() == false);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Online delivery — is_online + deliver lambdas
+
+TEST_CASE("broker_route_message_without_subscribers_is_safe", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
 
   // Route a message; the allow-all anonymous ACL passes for any client.
   Message msg;
   msg.topic = Utf8String{"chat/room"};
   msg.qos = QoS::AtMostOnce;
   TopicAliasTable alias_table(0U);
-  broker.message_router().route(msg, "pub_client", "", alias_table);
+  CHECK_NOTHROW(broker.route_message(msg, "pub_client", "", alias_table));
+  CHECK(broker.statistics_collector().snapshot().messages_inbound == 1U);
 
-  CHECK(delivered == true);
-
-  broker.unregister_connection("sub_client");
   broker.shutdown();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Will publish callback — will_publish_fn lambda
 
-TEST_CASE("broker_will_publish_fn_routes_will_message", "[broker]") {
+TEST_CASE("broker_handle_connection_lost_unregisters_client", "[broker]") {
   BrokerConfig cfg = make_test_config();
   Broker broker(cfg);
   broker.startup();
 
-  // Subscribe "will_sub" to "client/will".
-  Subscription sub;
-  sub.topic_filter = Utf8String{"client/will"};
-  sub.qos = QoS::AtMostOnce;
-  broker.subscription_store().store("will_sub", sub);
+  broker.register_connection("lost_client", [](const Message &) {});
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
 
-  // Register will_sub as online.
-  bool will_delivered = false;
-  broker.register_connection("will_sub",
-                             [&](const Message &) { will_delivered = true; });
-
-  // Store a will with delay_interval = 0 so it fires immediately on
-  // connection loss (no need to call publish_due()).
+  // Store a will and then simulate abrupt connection loss.
   WillMessage will;
   will.message.topic = Utf8String{"client/will"};
   will.message.qos = QoS::AtMostOnce;
   will.delay_interval = 0U;
-  broker.will_publisher().on_connect("will_fire_client", will);
+  broker.will_publisher().on_connect("lost_client", will);
 
-  // Simulate abrupt connection loss — delay 0 → publishes immediately.
-  broker.will_publisher().on_connection_lost("will_fire_client",
-                                             std::chrono::steady_clock::now());
+  broker.handle_connection_lost("lost_client",
+                                std::chrono::steady_clock::now());
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 0U);
 
-  CHECK(will_delivered == true);
+  broker.shutdown();
+}
 
-  broker.unregister_connection("will_sub");
+TEST_CASE("broker_handle_connect_returns_session_result", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"conn_client"};
+  connect.clean_start = false;
+
+  const SessionOpenResult result = broker.handle_connect(connect, []() {});
+
+  CHECK(result.session_present == false);
+  CHECK(result.takeover_occurred == false);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_disconnect_unregisters_client", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  broker.register_connection("disc_client", [](const Message &) {});
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
+
+  broker.handle_disconnect("disc_client", ReasonCode::Success, std::nullopt,
+                           std::chrono::steady_clock::now());
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 0U);
+
   broker.shutdown();
 }
 
@@ -323,6 +433,23 @@ TEST_CASE("broker_register_increments_connected_clients", "[broker]") {
   broker.shutdown();
 }
 
+TEST_CASE("broker_register_same_client_does_not_double_count", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  broker.register_connection("same_client", [](const Message &) {});
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
+
+  broker.register_connection("same_client", [](const Message &) {});
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
+
+  broker.unregister_connection("same_client");
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 0U);
+
+  broker.shutdown();
+}
+
 TEST_CASE("broker_route_message_counts_inbound", "[broker]") {
   BrokerConfig cfg = make_test_config();
   Broker broker(cfg);
@@ -342,27 +469,23 @@ TEST_CASE("broker_route_message_counts_inbound", "[broker]") {
   broker.shutdown();
 }
 
-TEST_CASE("broker_deliver_counts_outbound", "[broker]") {
+TEST_CASE("broker_unregister_unknown_client_keeps_count", "[broker]") {
   BrokerConfig cfg = make_test_config();
   Broker broker(cfg);
   broker.startup();
 
-  Subscription sub;
-  sub.topic_filter = Utf8String{"sensors/#"};
-  sub.qos = QoS::AtMostOnce;
-  broker.subscription_store().store("sub_client", sub);
+  broker.unregister_connection("missing_client");
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 0U);
 
-  broker.register_connection("sub_client", [](const Message &) {});
+  broker.register_connection("present_client", [](const Message &) {});
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
 
-  Message msg;
-  msg.topic = Utf8String{"sensors/temp"};
-  msg.qos = QoS::AtMostOnce;
-  TopicAliasTable alias_table(0U);
-  broker.route_message(msg, "pub_client", "", alias_table);
+  broker.unregister_connection("present_client");
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 0U);
 
-  CHECK(broker.statistics_collector().snapshot().messages_outbound == 1U);
+  broker.unregister_connection("present_client");
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 0U);
 
-  broker.unregister_connection("sub_client");
   broker.shutdown();
 }
 

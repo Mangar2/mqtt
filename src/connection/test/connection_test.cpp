@@ -1,10 +1,16 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <memory>
+
+#include "broker/broker.h"
+#include "broker/broker_config.h"
+#include "connection/client_handler.h"
 #include "connection/connection_error.h"
 #include "connection/connection_state.h"
 #include "connection/keep_alive_timer.h"
 #include "connection/receive_maximum.h"
 #include "connection/topic_alias_table.h"
+#include "network/tcp_connection.h"
 
 namespace mqtt {
 
@@ -350,6 +356,27 @@ TEST_CASE("release_throws_when_inflight_zero", "[connection]") {
   } catch (const ConnectionException &exc) {
     CHECK(exc.error() == ConnectionError::InvalidState);
   }
+}
+
+// ── ClientHandler placeholder (Module 17)
+// ────────────────────────────────────────────────────────────────────────────
+
+TEST_CASE("client_handler_run_with_connection_pointer", "[connection]") {
+  BrokerConfig cfg;
+  Broker broker(cfg);
+  ClientHandler handler;
+
+  auto conn = std::make_unique<TcpConnection>(k_invalid_socket);
+  CHECK_NOTHROW(handler.run(std::move(conn), broker, cfg, false));
+}
+
+TEST_CASE("client_handler_run_with_null_connection", "[connection]") {
+  BrokerConfig cfg;
+  Broker broker(cfg);
+  ClientHandler handler;
+
+  std::unique_ptr<TcpConnection> conn;
+  CHECK_NOTHROW(handler.run(std::move(conn), broker, cfg, true));
 }
 
 } // namespace mqtt

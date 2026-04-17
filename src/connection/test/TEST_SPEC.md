@@ -63,3 +63,10 @@
 | `available_increases_after_release` | Resume after ACK | ReceiveMaximum(2), acquire() x2, release() | available() == 1 |
 | `release_restores_capacity` | ACK frees slot | ReceiveMaximum(1), acquire(), release(), acquire() | last acquire returns true |
 | `release_throws_when_inflight_zero` | Underflow guard | ReceiveMaximum(5), release() | ConnectionException(InvalidState) |
+
+## ClientHandler placeholder (17)
+
+| Test name | Scenario | Input | Expected |
+|-----------|----------|-------|----------|
+| `client_handler_run_with_connection_pointer` | Run with non-null connection pointer | `unique_ptr<TcpConnection>(k_invalid_socket)` | no throw; returns after close-path |
+| `client_handler_run_with_null_connection` | Run with null connection pointer | `nullptr` | no throw; returns immediately |

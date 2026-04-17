@@ -7,6 +7,8 @@
 #include "broker/broker.h"
 
 #include <csignal>
+#include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <utility>
 
@@ -83,31 +85,46 @@ AclEngine &Broker::acl_engine() noexcept { return *acl_engine_; }
 
 WillPublisher &Broker::will_publisher() noexcept { return *will_publisher_; }
 
-SubscriptionStore &Broker::subscription_store() noexcept {
-  return *subscription_store_;
-}
-
-RetainedMessageStore &Broker::retained_message_store() noexcept {
-  return *retained_store_;
-}
-
-InflightStore &Broker::inflight_store() noexcept { return *inflight_store_; }
-
 StatisticsCollector &Broker::statistics_collector() noexcept {
   return *stats_collector_;
+}
+
+SessionOpenResult Broker::handle_connect(const ConnectPacket &connect_packet,
+                                         std::function<void()> close_callback) {
+  std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+  return session_manager_->handle_connect(connect_packet,
+                                          std::move(close_callback));
+}
+
+void Broker::handle_disconnect(std::string_view client_id,
+                               ReasonCode reason_code,
+                               std::optional<uint32_t> expiry_override,
+                               std::chrono::steady_clock::time_point now) {
+  std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+  will_publisher_->on_disconnect(client_id, reason_code, now);
+  unregister_connection_locked(client_id);
+  session_manager_->handle_disconnect(client_id, expiry_override, now);
+}
+
+void Broker::handle_connection_lost(std::string_view client_id,
+                                    std::chrono::steady_clock::time_point now) {
+  std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+  will_publisher_->on_connection_lost(client_id, now);
+  unregister_connection_locked(client_id);
+  session_manager_->handle_disconnect(client_id, std::nullopt, now);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Connection registration
 
 void Broker::register_connection(std::string_view client_id, SendFn send_fn) {
-  active_connections_[std::string(client_id)] = std::move(send_fn);
-  stats_collector_->on_client_connected();
+  std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+  register_connection_locked(client_id, std::move(send_fn));
 }
 
 void Broker::unregister_connection(std::string_view client_id) noexcept {
-  active_connections_.erase(std::string(client_id));
-  stats_collector_->on_client_disconnected();
+  std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+  unregister_connection_locked(client_id);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,12 +133,32 @@ void Broker::unregister_connection(std::string_view client_id) noexcept {
 void Broker::route_message(Message &msg, std::string_view client_id,
                            std::string_view username,
                            TopicAliasTable &alias_table) {
+  std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
   stats_collector_->on_message_inbound();
   message_router_->route(msg, client_id, username, alias_table);
 }
 
 bool Broker::tick(std::chrono::steady_clock::time_point now) {
+  std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
   return sys_publisher_->tick(now);
+}
+
+void Broker::register_connection_locked(std::string_view client_id,
+                                        SendFn send_fn) {
+  const std::string key(client_id);
+  const bool existed = active_connections_.contains(key);
+  active_connections_[key] = std::move(send_fn);
+  if (!existed) {
+    stats_collector_->on_client_connected();
+  }
+}
+
+void Broker::unregister_connection_locked(std::string_view client_id) noexcept {
+  const std::size_t erase_count =
+      active_connections_.erase(std::string(client_id));
+  if (erase_count > 0U) {
+    stats_collector_->on_client_disconnected();
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -310,9 +347,9 @@ void Broker::open_listeners() {
           if (!conn) {
             continue;
           }
-          std::thread([this, c = std::move(conn), is_ws]() mutable {
+          std::thread([this, connection = std::move(conn), is_ws]() mutable {
             ClientHandler handler;
-            handler.run(std::move(c), *this, config_, is_ws);
+            handler.run(std::move(connection), *this, config_, is_ws);
           }).detach();
         } catch (...) {
           // accept() throws when the listener is closed during shutdown

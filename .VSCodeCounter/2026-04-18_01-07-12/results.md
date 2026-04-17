@@ -1,25 +1,33 @@
 # Summary
 
-Date : 2026-04-17 12:38:16
+Date : 2026-04-18 01:07:12
 
 Directory c:\\Development\\mqtt\\src
 
-Total : 159 files,  10448 codes, 3074 comments, 2992 blanks, all 16514 lines
+Total : 249 files,  18808 codes, 5751 comments, 5266 blanks, all 29825 lines
 
 Summary / [Details](details.md) / [Diff Summary](diff.md) / [Diff Details](diff-details.md)
 
 ## Languages
 | language | files | code | comment | blank | total |
 | :--- | ---: | ---: | ---: | ---: | ---: |
-| C++ | 121 | 8,514 | 3,074 | 2,356 | 13,944 |
-| Markdown | 38 | 1,934 | 0 | 636 | 2,570 |
+| C++ | 194 | 15,601 | 5,751 | 4,210 | 25,562 |
+| Markdown | 55 | 3,207 | 0 | 1,056 | 4,263 |
 
 ## Directories
 | path | files | code | comment | blank | total |
 | :--- | ---: | ---: | ---: | ---: | ---: |
-| . | 159 | 10,448 | 3,074 | 2,992 | 16,514 |
-| . (Files) | 2 | 85 | 0 | 23 | 108 |
-| auth | 10 | 405 | 320 | 153 | 878 |
+| . | 249 | 18,808 | 5,751 | 5,266 | 29,825 |
+| . (Files) | 2 | 167 | 3 | 40 | 210 |
+| auth | 12 | 913 | 339 | 239 | 1,491 |
+| auth (Files) | 10 | 399 | 321 | 155 | 875 |
+| auth\\test | 2 | 514 | 18 | 84 | 616 |
+| authz | 9 | 603 | 281 | 199 | 1,083 |
+| authz (Files) | 7 | 308 | 256 | 120 | 684 |
+| authz\\test | 2 | 295 | 25 | 79 | 399 |
+| broker | 10 | 1,255 | 461 | 393 | 2,109 |
+| broker (Files) | 7 | 766 | 411 | 258 | 1,435 |
+| broker\\test | 3 | 489 | 50 | 135 | 674 |
 | codec | 39 | 3,557 | 874 | 969 | 5,400 |
 | codec (Files) | 4 | 102 | 69 | 35 | 206 |
 | codec\\fixed_header | 6 | 309 | 57 | 75 | 441 |
@@ -37,9 +45,9 @@ Summary / [Details](details.md) / [Diff Summary](diff.md) / [Diff Details](diff-
 | codec\\properties | 5 | 559 | 77 | 99 | 735 |
 | codec\\properties (Files) | 3 | 206 | 55 | 49 | 310 |
 | codec\\properties\\test | 2 | 353 | 22 | 50 | 425 |
-| connection | 12 | 641 | 285 | 182 | 1,108 |
-| connection (Files) | 10 | 288 | 277 | 121 | 686 |
-| connection\\test | 2 | 353 | 8 | 61 | 422 |
+| connection | 14 | 707 | 312 | 210 | 1,229 |
+| connection (Files) | 12 | 330 | 302 | 141 | 773 |
+| connection\\test | 2 | 377 | 10 | 69 | 456 |
 | data_model | 45 | 1,820 | 383 | 548 | 2,751 |
 | data_model (Files) | 1 | 19 | 0 | 6 | 25 |
 | data_model\\message | 4 | 147 | 21 | 42 | 210 |
@@ -63,17 +71,35 @@ Summary / [Details](details.md) / [Diff Summary](diff.md) / [Diff Details](diff-
 | data_model\\types | 8 | 222 | 59 | 87 | 368 |
 | data_model\\types (Files) | 6 | 88 | 54 | 51 | 193 |
 | data_model\\types\\test | 2 | 134 | 5 | 36 | 175 |
-| network | 14 | 1,139 | 376 | 341 | 1,856 |
-| network (Files) | 12 | 673 | 327 | 223 | 1,223 |
+| message_router | 16 | 1,463 | 522 | 382 | 2,367 |
+| message_router (Files) | 14 | 683 | 449 | 240 | 1,372 |
+| message_router\\test | 2 | 780 | 73 | 142 | 995 |
+| monitoring | 7 | 445 | 152 | 155 | 752 |
+| monitoring (Files) | 5 | 214 | 133 | 90 | 437 |
+| monitoring\\test | 2 | 231 | 19 | 65 | 315 |
+| network | 14 | 1,170 | 391 | 347 | 1,908 |
+| network (Files) | 12 | 704 | 342 | 229 | 1,275 |
 | network\\test | 2 | 466 | 49 | 118 | 633 |
-| qos | 10 | 947 | 331 | 252 | 1,530 |
-| qos (Files) | 8 | 423 | 318 | 132 | 873 |
+| persistence | 13 | 1,294 | 431 | 307 | 2,032 |
+| persistence (Files) | 11 | 777 | 386 | 198 | 1,361 |
+| persistence\\test | 2 | 517 | 45 | 109 | 671 |
+| qos | 10 | 945 | 331 | 252 | 1,528 |
+| qos (Files) | 8 | 421 | 318 | 132 | 871 |
 | qos\\test | 2 | 524 | 13 | 120 | 657 |
-| store | 15 | 828 | 256 | 221 | 1,305 |
-| store (Files) | 10 | 369 | 254 | 129 | 752 |
-| store\\test | 5 | 459 | 2 | 92 | 553 |
+| session_manager | 11 | 667 | 257 | 186 | 1,110 |
+| session_manager (Files) | 9 | 374 | 232 | 127 | 733 |
+| session_manager\\test | 2 | 293 | 25 | 59 | 377 |
+| store | 15 | 873 | 272 | 229 | 1,374 |
+| store (Files) | 10 | 387 | 270 | 133 | 790 |
+| store\\test | 5 | 486 | 2 | 96 | 584 |
 | topic | 12 | 1,026 | 249 | 303 | 1,578 |
 | topic (Files) | 8 | 423 | 218 | 144 | 785 |
 | topic\\test | 4 | 603 | 31 | 159 | 793 |
+| transport | 10 | 1,310 | 279 | 328 | 1,917 |
+| transport (Files) | 8 | 673 | 254 | 182 | 1,109 |
+| transport\\test | 2 | 637 | 25 | 146 | 808 |
+| will_manager | 10 | 593 | 214 | 179 | 986 |
+| will_manager (Files) | 8 | 296 | 200 | 114 | 610 |
+| will_manager\\test | 2 | 297 | 14 | 65 | 376 |
 
 Summary / [Details](details.md) / [Diff Summary](diff.md) / [Diff Details](diff-details.md)
