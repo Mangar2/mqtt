@@ -14,6 +14,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `qos/`         | 5        | QoS Engine — Packet ID allocation, QoS 1 and QoS 2 state machines with retransmission. Depends on `data_model/` and `store/`. |
 | `network/`     | 6        | Network Layer — TCP listener, connection wrapper, incoming stream buffer, and outgoing write queue. No MQTT knowledge. No external dependencies. |
 | `connection/`  | 7        | Connection Handler — lifecycle state machine, keep-alive timer, topic alias table, and receive-maximum flow controller for a single client connection. |
+| `auth/`        | 8        | Authentication Module — pluggable authenticator interface, username/password and anonymous authenticators, and enhanced AUTH packet handler. |
 
 ## `data_model/` sub-modules
 
@@ -86,6 +87,16 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `connection/keep_alive_timer.h/.cpp` | 7.2 | `KeepAliveTimer` — 1.5 × Keep Alive deadline with reset-on-packet |
 | `connection/topic_alias_table.h/.cpp` | 7.3 | `TopicAliasTable` — inbound and outbound alias↔topic mappings with maximum enforcement |
 | `connection/receive_maximum.h/.cpp` | 7.4 | `ReceiveMaximum` — inflight QoS 1/2 packet counter with pause/resume flow control |
+
+## `auth/` sub-modules
+
+| Directory / File | Plan ref | Contents |
+|------------------|----------|----------|
+| `auth/auth_error.h`              | 8   | `AuthError` enum and `AuthException` |
+| `auth/authenticator.h/.cpp`      | 8.1 | `AuthStatus`, `AuthResult`, `IAuthenticator` abstract base, `CallbackAuthenticator` |
+| `auth/anonymous_authenticator.h/.cpp` | 8.4 | `AnonymousAuthenticator` — policy-driven allow/deny without inspecting credentials |
+| `auth/password_authenticator.h/.cpp`  | 8.2 | `PasswordAuthenticator` — username/password credential store and validator |
+| `auth/enhanced_auth_handler.h/.cpp`   | 8.3 | `EnhancedAuthHandler` — AUTH packet state machine for multi-step and re-authentication |
 
 ## Entry point
 
