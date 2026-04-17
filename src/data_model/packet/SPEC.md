@@ -17,7 +17,6 @@ handled by the codec module (2.3).
 ## Common conventions
 
 - Properties are stored as `std::vector<Property>`.
-- All packet structs provide `operator==` defaulted.
 - Optional fields use `std::optional<T>`.
 - Packet IDs are `uint16_t`; present only where the spec requires them.
 - `WillData` represents the Will topic, payload, QoS, retain flag, and properties
