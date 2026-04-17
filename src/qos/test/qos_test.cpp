@@ -175,7 +175,7 @@ TEST_CASE("on_publish_received_returns_puback", "[qos1]") {
   Qos1StateMachine machine("client1", mgr, store);
 
   const PublishPacket pkt = make_publish(QoS::AtLeastOnce, 7);
-  const PubackPacket ack = machine.on_publish_received(pkt);
+  const PubackPacket ack = Qos1StateMachine::on_publish_received(pkt);
   CHECK(ack.packet_id == 7);
 }
 
@@ -205,9 +205,9 @@ TEST_CASE("on_publish_received_missing_packet_id_throws", "[qos1]") {
   pkt.topic = Utf8String{"t"};
   pkt.packet_id = std::nullopt;
 
-  CHECK_THROWS_AS(machine.on_publish_received(pkt), QosException);
+  CHECK_THROWS_AS(Qos1StateMachine::on_publish_received(pkt), QosException);
   try {
-    (void)machine.on_publish_received(pkt);
+    (void)Qos1StateMachine::on_publish_received(pkt);
   } catch (const QosException &exc) {
     CHECK(exc.error() == QosError::InvalidPacket);
   }
@@ -218,7 +218,8 @@ TEST_CASE("initiate_publish_allocates_id", "[qos1]") {
   InflightStore store;
   Qos1StateMachine machine("client1", mgr, store);
 
-  const PublishPacket pkt = machine.initiate_publish(make_message(QoS::AtLeastOnce));
+  const PublishPacket pkt =
+      machine.initiate_publish(make_message(QoS::AtLeastOnce));
   REQUIRE(pkt.packet_id.has_value());
   CHECK(mgr.is_in_use(pkt.packet_id.value(), InflightDirection::Outbound));
 }
@@ -228,7 +229,8 @@ TEST_CASE("initiate_publish_creates_inflight_entry", "[qos1]") {
   InflightStore store;
   Qos1StateMachine machine("client1", mgr, store);
 
-  const PublishPacket pkt = machine.initiate_publish(make_message(QoS::AtLeastOnce));
+  const PublishPacket pkt =
+      machine.initiate_publish(make_message(QoS::AtLeastOnce));
   const auto entries = store.entries_for("client1");
   REQUIRE(entries.size() == 1);
   CHECK(entries[0].state == InflightState::WaitingForPuback);
@@ -267,7 +269,8 @@ TEST_CASE("on_puback_received_removes_entry", "[qos1]") {
   InflightStore store;
   Qos1StateMachine machine("client1", mgr, store);
 
-  const PublishPacket pkt = machine.initiate_publish(make_message(QoS::AtLeastOnce));
+  const PublishPacket pkt =
+      machine.initiate_publish(make_message(QoS::AtLeastOnce));
   const uint16_t pid = pkt.packet_id.value();
 
   machine.on_puback_received(make_puback(pid));
@@ -312,7 +315,8 @@ TEST_CASE("retransmit_updates_timestamp", "[qos1]") {
   InflightStore store;
   Qos1StateMachine machine("client1", mgr, store);
 
-  const PublishPacket pkt = machine.initiate_publish(make_message(QoS::AtLeastOnce));
+  const PublishPacket pkt =
+      machine.initiate_publish(make_message(QoS::AtLeastOnce));
   const uint16_t pid = pkt.packet_id.value();
   const auto old_ts = store.entries_for("client1")[0].timestamp;
 
@@ -344,7 +348,8 @@ TEST_CASE("inbound_publish_creates_entry_and_returns_pubrec", "[qos2]") {
   InflightStore store;
   Qos2StateMachine machine("client1", mgr, store);
 
-  const auto result = machine.on_publish_received(make_publish(QoS::ExactlyOnce, 5));
+  const auto result =
+      machine.on_publish_received(make_publish(QoS::ExactlyOnce, 5));
 
   CHECK(result.pubrec.packet_id == 5);
   CHECK_FALSE(result.is_duplicate);
@@ -380,8 +385,9 @@ TEST_CASE("inbound_publish_invalid_qos_throws", "[qos2]") {
     CHECK_THROWS_AS(machine.on_publish_received(pkt), QosException);
   }
   SECTION("qos1") {
-    CHECK_THROWS_AS(machine.on_publish_received(make_publish(QoS::AtLeastOnce, 1)),
-                    QosException);
+    CHECK_THROWS_AS(
+        machine.on_publish_received(make_publish(QoS::AtLeastOnce, 1)),
+        QosException);
   }
 }
 
@@ -459,7 +465,8 @@ TEST_CASE("on_pubrec_advances_state_and_returns_pubrel", "[qos2]") {
   InflightStore store;
   Qos2StateMachine machine("client1", mgr, store);
 
-  const PublishPacket pub = machine.initiate_publish(make_message(QoS::ExactlyOnce));
+  const PublishPacket pub =
+      machine.initiate_publish(make_message(QoS::ExactlyOnce));
   const uint16_t pid = pub.packet_id.value();
 
   const PubrelPacket rel = machine.on_pubrec_received(make_pubrec(pid));
@@ -475,7 +482,8 @@ TEST_CASE("on_pubrec_duplicate_is_idempotent", "[qos2]") {
   InflightStore store;
   Qos2StateMachine machine("client1", mgr, store);
 
-  const PublishPacket pub = machine.initiate_publish(make_message(QoS::ExactlyOnce));
+  const PublishPacket pub =
+      machine.initiate_publish(make_message(QoS::ExactlyOnce));
   const uint16_t pid = pub.packet_id.value();
 
   (void)machine.on_pubrec_received(make_pubrec(pid));
@@ -502,7 +510,8 @@ TEST_CASE("on_pubcomp_removes_entry", "[qos2]") {
   InflightStore store;
   Qos2StateMachine machine("client1", mgr, store);
 
-  const PublishPacket pub = machine.initiate_publish(make_message(QoS::ExactlyOnce));
+  const PublishPacket pub =
+      machine.initiate_publish(make_message(QoS::ExactlyOnce));
   const uint16_t pid = pub.packet_id.value();
 
   (void)machine.on_pubrec_received(make_pubrec(pid));
@@ -548,7 +557,8 @@ TEST_CASE("retransmit_before_pubcomp_returns_pubrel", "[qos2]") {
   InflightStore store;
   Qos2StateMachine machine("client1", mgr, store);
 
-  const PublishPacket pub = machine.initiate_publish(make_message(QoS::ExactlyOnce));
+  const PublishPacket pub =
+      machine.initiate_publish(make_message(QoS::ExactlyOnce));
   const uint16_t pid = pub.packet_id.value();
   (void)machine.on_pubrec_received(make_pubrec(pid));
 
@@ -562,7 +572,8 @@ TEST_CASE("retransmit_updates_timestamp", "[qos2]") {
   InflightStore store;
   Qos2StateMachine machine("client1", mgr, store);
 
-  const PublishPacket pub = machine.initiate_publish(make_message(QoS::ExactlyOnce));
+  const PublishPacket pub =
+      machine.initiate_publish(make_message(QoS::ExactlyOnce));
   const uint16_t pid = pub.packet_id.value();
   const auto old_ts = store.entries_for("client1")[0].timestamp;
 
