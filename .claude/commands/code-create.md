@@ -97,49 +97,37 @@ Generate unit tests based on `TEST_SPEC.md`.
 
 ## Build and verify
 
-Every implementation ends with a successful build **and** all tests passing.
-All commands run from the **project root** (`c:\Development\mqtt`).
-Never pipe build output through `tail` or any filter — full output is required to
-catch all errors and warnings.
+Run from the **project root** (`c:\Development\mqtt`). Use only the Python script — never call cmake, ctest, llvm-profdata or llvm-cov directly.
 
-### Standard build + test (most common)
+### Standard workflow — one command does everything
 
 ```sh
-cmake --build --preset debug && ctest --preset debug
-```
-
-### First build or after a clean
-
-```sh
-cmake --preset debug
-cmake --build --preset debug
-ctest --preset debug
-```
-
-CMake reconfigures automatically when files are added or removed (glob
-`CONFIGURE_DEPENDS`), so the two-step form is only needed the very first time or
-after an explicit clean.
-
-## Measure test coverage — mandatory before commit
-
-Run the coverage analysis for every new or changed module **as part of the build-and-verify step, before committing**.
-Do not proceed to the completion report or commit without a coverage report in hand.
-
-**Always use the project's Python script — never invoke llvm-profdata or llvm-cov directly.**
-
-```sh
-# Full run (build + test + full report):
 python run_coverage.py
+```
 
-# Scoped report for the changed module (skips rebuild, uses existing profdata):
-python run_coverage.py --scope src/<module-path>/
+This runs four steps in sequence and stops immediately on any failure:
+1. Compile debug binary
+2. Run all unit tests
+3. Compile coverage binary
+4. Measure and report coverage
 
-# Line-level detail for a file below threshold:
+On success it prints a compact summary table (tests passed + coverage per file).
+Full output is saved to `build/run.log` — read it only when diagnosing a failure.
+
+### Investigate a file below threshold
+
+```sh
 python run_coverage.py --show src/<module-path>/<file>.cpp
 ```
 
-After reviewing the report, if coverage is below threshold use `--show` on the
-specific file to see which lines are missed — **do not guess from aggregate numbers alone**.
+### Scoped coverage report (reuses existing profdata)
+
+```sh
+python run_coverage.py --scope src/<module-path>/
+```
+
+> **Warning:** `--scope` and `--show` reuse the current `coverage.profdata`.
+> After adding or changing tests, always run the full `python run_coverage.py` first.
 
 ## Completion checklist — mandatory gate
 
@@ -147,12 +135,12 @@ Do not mark any module complete until **every item** below passes.
 
 | # | Criterion | How to verify |
 |---|-----------|---------------|
-| 1 | **Build clean** | `cmake --build --preset debug` exits 0 errors, 0 warnings |
+| 1 | **Build clean** | `python run_coverage.py` step 1 exits with 0 errors, 0 warnings |
 | 2 | **No compiler warnings** | Guaranteed by `-Werror` — any warning is a build failure |
 | 3 | **No linter / IDE warnings** | All clang-tidy diagnostics resolved |
 | 4 | **VS Code Problems panel clear** | Use `get_errors` tool on all changed files — zero errors and zero warnings; every diagnostic reported by the IDE must be fixed before marking the task done |
-| 5 | **All tests pass** | `ctest --preset debug` → `100% tests passed`; new tests appear by name |
-| 6 | **Test coverage measured and ≥ 90 %** | Run the four coverage commands and paste the `llvm-cov report` output. Regions, Functions, Lines all ≥ 90 % for every production file in the changed module. This step blocks the commit — it may not be skipped. |
+| 5 | **All tests pass** | `python run_coverage.py` summary shows `Tests: N/N [OK]`; new tests appear by name in ctest |
+| 6 | **Test coverage ≥ 90 %** | `python run_coverage.py` summary shows `Threshold: MET` and all production files ≥ 90 % for Regions, Functions, Lines. This step blocks the commit — it may not be skipped. |
 | 7 | **SPEC.md is current** | Every touched directory has an accurate SPEC.md |
 | 8 | **TEST_SPEC.md is current** | Every test in code has a matching entry; removed tests removed from spec |
 | 9 | **Doxygen on all public API** | Every header follows the documentation rules in `/cpp-dev` |
@@ -164,14 +152,16 @@ End every implementation with this report. All sections are mandatory.
 ```
 ## Completion report — <Module name>
 
-### Build
-cmake --build --preset debug → clean (0 errors, 0 warnings)
+### Build + Tests + Coverage
+python run_coverage.py → summary output:
 
-### Tests
-ctest --preset debug → 100 % passed  (<N> new tests, <M> total)
-
-### Coverage — <module path>
-<paste llvm-cov report table here>
+```
+Tests      : <N>/<N>  [OK]
+File                  Regions  Functions  Lines  Branches
+...                   ...      ...        ...    ...
+TOTAL                 ...      ...        ...    ...
+Threshold  : MET  (all production files >= 90%)
+```
 
 Production headers: Regions <X>%, Functions <X>%, Lines <X>%
 → threshold met ✓  /  NOT met ✗ (list files below threshold)

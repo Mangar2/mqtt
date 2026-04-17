@@ -23,60 +23,40 @@ The `TEST_SPEC.md` lives in the same `test/` subdirectory.
 
 CMake discovers all `src/*_test.cpp` files automatically — no manual registration needed.
 
-## Running tests — exact commands
+## Running tests — always use the Python script
 
 All commands are run from the **project root**: `c:\Development\mqtt`.
-Never pipe build or test output through `tail` or any other filter —
-full output is needed to catch all errors.
+**Never call cmake, ctest, llvm-profdata or llvm-cov directly.** Use only the script.
 
-### First time or after a clean build
-
-```sh
-cmake --preset debug
-cmake --build --preset debug
-ctest --preset debug
-```
-
-### Incremental build + test (most common)
-
-CMake reconfigures automatically when files are added or removed:
+### Full workflow (most common)
 
 ```sh
-cmake --build --preset debug && ctest --preset debug
+python run_coverage.py
 ```
 
-### With memory and undefined-behaviour checks (recommended before merging)
+Runs in sequence: (1) build debug, (2) run tests, (3) build coverage binary, (4) measure coverage.  
+Stops immediately on failure and prints a focused error summary.  
+On success prints a compact table — tests passed and coverage per production file.  
+Full output goes to `build/run.log` — read it only when diagnosing a failure.
+
+### Line-level detail for a file below threshold
 
 ```sh
-cmake --preset debug-sanitize
-cmake --build --preset debug-sanitize
-ctest --preset debug-sanitize
+python run_coverage.py --show src/<module>/<file>.cpp
 ```
 
-### Run only tests for a specific module (by tag)
+### Scoped report (reuses existing profdata — no rebuild)
 
 ```sh
-./build/debug/mqtt-broker-tests.exe [primitive]
-./build/debug/mqtt-broker-tests.exe [properties]
+python run_coverage.py --scope src/<module>/
 ```
 
-### Run a single test by name
+> After adding or changing tests, always run the full script first to regenerate profdata.
+
+### Run a specific module's tests only (by Catch2 tag)
 
 ```sh
-./build/debug/mqtt-broker-tests.exe "vbi_roundtrip"
-```
-
-### List all registered tests
-
-```sh
-./build/debug/mqtt-broker-tests.exe --list-tests
-```
-
-## Test output binary
-
-```
-build/debug/mqtt-broker-tests.exe
-build/debug-sanitize/mqtt-broker-tests.exe
+.\build\debug\mqtt-broker-tests.exe [subscription_trie]
 ```
 
 ## Writing tests
@@ -135,7 +115,7 @@ switch (expected) {
 }
 ```
 
-## Coverage analysis — exact workflow
+## Coverage analysis
 
 Coverage uses **clang source-based instrumentation** (`-fprofile-instr-generate` /
 `-fcoverage-mapping`). The `test-coverage` CMake preset enables it automatically.
@@ -143,31 +123,9 @@ Coverage uses **clang source-based instrumentation** (`-fprofile-instr-generate`
 > **Critical:** Never use `ctest` to collect coverage.
 > `catch_discover_tests` runs every `TEST_CASE` as its own subprocess; each one
 > overwrites `default.profraw`, so only the last test case's data survives.
-> Always run the test binary directly.
+> The Python script already handles this correctly by running the binary directly.
 
-### Running coverage — always use the Python script
-
-**Never run individual coverage commands manually.** The script `run_coverage.py`
-at the project root handles all steps. Three modes:
-
-Full run (build + test + full report):
-```sh
-python run_coverage.py
-```
-
-Scoped report for one or more modules (reuses existing profdata):
-```sh
-python run_coverage.py --scope src/codec/primitive/ src/codec/properties/
-```
-
-Line-level detail for a single file below threshold:
-```sh
-python run_coverage.py --show src/codec/properties/properties_codec.cpp
-```
-
-> **Warning:** `--scope` and `--show` reuse the existing `coverage.profdata`.
-> After adding or changing tests, always run the full `python run_coverage.py` first
-> to regenerate the profile — otherwise the output reflects the old test run.
+**Always use `python run_coverage.py` — never run llvm-profdata or llvm-cov manually.**
 
 ### Improving coverage — one file at a time
 
