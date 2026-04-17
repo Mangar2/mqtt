@@ -11,6 +11,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `codec/`       | 2        | Serialization / deserialization of all MQTT 5.0 wire packets. Depends on `data_model/`. |
 | `topic/`       | 3        | Topic-name and topic-filter validation, subscription trie storage, and topic matching. Depends on `data_model/`. |
 | `store/`       | 4        | In-memory runtime state: subscription store, retained message store, session store, and inflight store. Depends on `data_model/` and `topic/`. |
+| `qos/`         | 5        | QoS Engine — Packet ID allocation, QoS 1 and QoS 2 state machines with retransmission. Depends on `data_model/` and `store/`. |
 
 ## `data_model/` sub-modules
 
@@ -54,6 +55,15 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `store/retained_message_store.h/.cpp`          | 4.2      | In-memory map of retained messages keyed by topic name |
 | `store/session_store.h/.cpp`                   | 4.3      | In-memory map of `SessionState` records keyed by client ID |
 | `store/inflight_store.h/.cpp`                  | 4.4      | Per-session `InflightEntry` arrays; tracks in-use packet IDs |
+
+## `qos/` sub-modules
+
+| Directory / File                              | Plan ref | Contents |
+|-----------------------------------------------|----------|----------|
+| `qos/qos_error.h`                              | 5        | `QosError` enum and `QosException` |
+| `qos/packet_id_manager.h/.cpp`                 | 5.1      | Per-session Packet Identifier allocator; separate inbound/outbound spaces |
+| `qos/qos1_state_machine.h/.cpp`                | 5.2      | QoS 1 (AtLeastOnce) inbound/outbound handshake and retransmission logic |
+| `qos/qos2_state_machine.h/.cpp`                | 5.3      | QoS 2 (ExactlyOnce) inbound/outbound handshake, duplicate detection, retransmission |
 
 ## Entry point
 
