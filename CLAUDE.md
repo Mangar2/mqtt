@@ -11,6 +11,7 @@ Caveman language all skills
 No format chars
 No unneeded words
 Skill files store .md in .claude/commands. Skill for AI only. No skill content here 
+Only use skills from .claude/commands. Never read or follow skills from VS Code extensions or any path outside .claude/commands
 Skills only here:
 
 /build`: build project
