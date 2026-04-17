@@ -15,7 +15,8 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `network/`     | 6        | Network Layer — TCP listener, connection wrapper, incoming stream buffer, and outgoing write queue. No MQTT knowledge. No external dependencies. |
 | `connection/`  | 7        | Connection Handler — lifecycle state machine, keep-alive timer, topic alias table, and receive-maximum flow controller for a single client connection. |
 | `auth/`        | 8        | Authentication Module — pluggable authenticator interface, username/password and anonymous authenticators, and enhanced AUTH packet handler. |
-| `authz/`       | 9        | Authorization Module — ACL engine with MQTT wildcard topic matching, ACL rule structure, and configuration loader with runtime reload. |
+| `authz/`            | 9        | Authorization Module — ACL engine with MQTT wildcard topic matching, ACL rule structure, and configuration loader with runtime reload. |
+| `session_manager/`  | 10       | Session Manager — session lifecycle controller (create/resume/discard), session takeover handler (Client ID collision, Reason 0x8E), and session expiry scheduler. Depends on `store/`, `connection/`, `auth/`. |
 
 ## `data_model/` sub-modules
 
@@ -107,6 +108,16 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `authz/acl_rule.h`         | 9.1.1 | `AclAction`, `AclEffect`, `AclRule` aggregate |
 | `authz/acl_engine.h/.cpp`  | 9.1   | `AclEngine` — ordered rule evaluation with MQTT wildcard topic matching |
 | `authz/acl_loader.h/.cpp`  | 9.2   | `AclLoader` — parse `AclRuleConfig` strings into rules; initial load and runtime reload |
+
+## `session_manager/` sub-modules
+
+| Directory / File | Plan ref | Contents |
+|------------------|----------|----------|
+| `session_manager/session_manager_error.h`       | 10   | `SessionManagerError` enum and `SessionManagerException` |
+| `session_manager/session_open_result.h`          | 10.1 | `SessionOpenResult` — result of `handle_connect` carrying `session_present` and `takeover_occurred` |
+| `session_manager/session_manager.h/.cpp`         | 10.1 | `SessionManager` — lifecycle coordinator: create/resume session, disconnect, cleanup expired |
+| `session_manager/session_takeover_handler.h/.cpp`| 10.2 | `SessionTakeoverHandler` — tracks active connections; closes old connection with 0x8E on Client ID collision |
+| `session_manager/session_expiry_scheduler.h/.cpp`| 10.3 | `SessionExpiryScheduler` — records disconnect timestamps; reports sessions past their expiry deadline |
 
 ## Entry point
 
