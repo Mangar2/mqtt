@@ -13,15 +13,15 @@ AclEngine::AclEngine(std::vector<AclRule> rules) : rules_(std::move(rules)) {}
 // ---------------------------------------------------------------------------
 
 bool AclEngine::check_publish(std::string_view client_id,
-                               std::string_view username,
-                               std::string_view topic) const noexcept {
+                              std::string_view username,
+                              std::string_view topic) const noexcept {
   return evaluate(client_id, username, topic, AclAction::Publish) ==
          AclEffect::Allow;
 }
 
 bool AclEngine::check_subscribe(std::string_view client_id,
-                                 std::string_view username,
-                                 std::string_view topic_filter) const noexcept {
+                                std::string_view username,
+                                std::string_view topic_filter) const noexcept {
   return evaluate(client_id, username, topic_filter, AclAction::Subscribe) ==
          AclEffect::Allow;
 }
@@ -37,8 +37,8 @@ const std::vector<AclRule> &AclEngine::rules() const noexcept { return rules_; }
 // ---------------------------------------------------------------------------
 
 bool AclEngine::matches_principal(const AclRule &rule,
-                                   std::string_view client_id,
-                                   std::string_view username) noexcept {
+                                  std::string_view client_id,
+                                  std::string_view username) noexcept {
   if (rule.principal == "*") {
     return true;
   }
@@ -46,7 +46,7 @@ bool AclEngine::matches_principal(const AclRule &rule,
 }
 
 bool AclEngine::matches_topic_pattern(std::string_view pattern,
-                                       std::string_view topic) noexcept {
+                                      std::string_view topic) noexcept {
   // Iterative level-by-level matching.
   // pos_p: current position in pattern; pos_t: current position in topic.
   std::size_t pos_p = 0U;
@@ -87,15 +87,14 @@ bool AclEngine::matches_topic_pattern(std::string_view pattern,
 }
 
 bool AclEngine::action_covers(AclAction rule_action,
-                               AclAction requested) noexcept {
+                              AclAction requested) noexcept {
   return rule_action == AclAction::PublishAndSubscribe ||
          rule_action == requested;
 }
 
 AclEffect AclEngine::evaluate(std::string_view client_id,
-                               std::string_view username,
-                               std::string_view topic,
-                               AclAction action) const noexcept {
+                              std::string_view username, std::string_view topic,
+                              AclAction action) const noexcept {
   for (const AclRule &rule : rules_) {
     if (!matches_principal(rule, client_id, username)) {
       continue;

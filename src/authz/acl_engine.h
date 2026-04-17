@@ -30,7 +30,8 @@ namespace mqtt {
  */
 class AclEngine {
 public:
-  /** @brief Construct an engine with an empty rule set (all requests denied). */
+  /** @brief Construct an engine with an empty rule set (all requests denied).
+   */
   AclEngine() = default;
 
   /**
@@ -67,9 +68,9 @@ public:
    * @return `true` when the first matching rule has effect `Allow`;
    *         `false` otherwise.
    */
-  [[nodiscard]] bool check_subscribe(std::string_view client_id,
-                                     std::string_view username,
-                                     std::string_view topic_filter) const noexcept;
+  [[nodiscard]] bool
+  check_subscribe(std::string_view client_id, std::string_view username,
+                  std::string_view topic_filter) const noexcept;
 
   /**
    * @brief Replace the active rule set (9.2.2 runtime reload).

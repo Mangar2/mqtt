@@ -38,22 +38,26 @@ TEST_CASE("empty_engine_denies_subscribe", "[authz]") {
 }
 
 TEST_CASE("exact_publish_allow", "[authz]") {
-  AclEngine engine({make_rule("*", "a/b", AclAction::Publish, AclEffect::Allow)});
+  AclEngine engine(
+      {make_rule("*", "a/b", AclAction::Publish, AclEffect::Allow)});
   CHECK(engine.check_publish("cli", "user", "a/b"));
 }
 
 TEST_CASE("exact_publish_deny", "[authz]") {
-  AclEngine engine({make_rule("*", "a/b", AclAction::Publish, AclEffect::Deny)});
+  AclEngine engine(
+      {make_rule("*", "a/b", AclAction::Publish, AclEffect::Deny)});
   CHECK_FALSE(engine.check_publish("cli", "user", "a/b"));
 }
 
 TEST_CASE("exact_subscribe_allow", "[authz]") {
-  AclEngine engine({make_rule("*", "a/b", AclAction::Subscribe, AclEffect::Allow)});
+  AclEngine engine(
+      {make_rule("*", "a/b", AclAction::Subscribe, AclEffect::Allow)});
   CHECK(engine.check_subscribe("cli", "user", "a/b"));
 }
 
 TEST_CASE("exact_subscribe_deny", "[authz]") {
-  AclEngine engine({make_rule("*", "a/b", AclAction::Subscribe, AclEffect::Deny)});
+  AclEngine engine(
+      {make_rule("*", "a/b", AclAction::Subscribe, AclEffect::Deny)});
   CHECK_FALSE(engine.check_subscribe("cli", "user", "a/b"));
 }
 
@@ -62,17 +66,20 @@ TEST_CASE("exact_subscribe_deny", "[authz]") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("publish_rule_does_not_cover_subscribe", "[authz]") {
-  AclEngine engine({make_rule("*", "a/b", AclAction::Publish, AclEffect::Allow)});
+  AclEngine engine(
+      {make_rule("*", "a/b", AclAction::Publish, AclEffect::Allow)});
   CHECK_FALSE(engine.check_subscribe("cli", "user", "a/b"));
 }
 
 TEST_CASE("subscribe_rule_does_not_cover_publish", "[authz]") {
-  AclEngine engine({make_rule("*", "a/b", AclAction::Subscribe, AclEffect::Allow)});
+  AclEngine engine(
+      {make_rule("*", "a/b", AclAction::Subscribe, AclEffect::Allow)});
   CHECK_FALSE(engine.check_publish("cli", "user", "a/b"));
 }
 
 TEST_CASE("combined_action_covers_both", "[authz]") {
-  AclEngine engine({make_rule("*", "a/b", AclAction::PublishAndSubscribe, AclEffect::Allow)});
+  AclEngine engine({make_rule("*", "a/b", AclAction::PublishAndSubscribe,
+                              AclEffect::Allow)});
   CHECK(engine.check_publish("cli", "user", "a/b"));
   CHECK(engine.check_subscribe("cli", "user", "a/b"));
 }
@@ -102,23 +109,27 @@ TEST_CASE("first_deny_wins_over_later_allow", "[authz]") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("wildcard_principal_matches_any_client", "[authz]") {
-  AclEngine engine({make_rule("*", "a/b", AclAction::Publish, AclEffect::Allow)});
+  AclEngine engine(
+      {make_rule("*", "a/b", AclAction::Publish, AclEffect::Allow)});
   CHECK(engine.check_publish("anyone", "", "a/b"));
   CHECK(engine.check_publish("other", "whoever", "a/b"));
 }
 
 TEST_CASE("principal_matches_client_id", "[authz]") {
-  AclEngine engine({make_rule("dev1", "a/b", AclAction::Publish, AclEffect::Allow)});
+  AclEngine engine(
+      {make_rule("dev1", "a/b", AclAction::Publish, AclEffect::Allow)});
   CHECK(engine.check_publish("dev1", "", "a/b"));
 }
 
 TEST_CASE("principal_matches_username", "[authz]") {
-  AclEngine engine({make_rule("alice", "a/b", AclAction::Publish, AclEffect::Allow)});
+  AclEngine engine(
+      {make_rule("alice", "a/b", AclAction::Publish, AclEffect::Allow)});
   CHECK(engine.check_publish("cli", "alice", "a/b"));
 }
 
 TEST_CASE("principal_no_match", "[authz]") {
-  AclEngine engine({make_rule("dev1", "a/b", AclAction::Publish, AclEffect::Allow)});
+  AclEngine engine(
+      {make_rule("dev1", "a/b", AclAction::Publish, AclEffect::Allow)});
   CHECK_FALSE(engine.check_publish("dev2", "bob", "a/b"));
 }
 
@@ -127,22 +138,26 @@ TEST_CASE("principal_no_match", "[authz]") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("plus_wildcard_single_level", "[authz]") {
-  AclEngine engine({make_rule("*", "a/+/c", AclAction::Publish, AclEffect::Allow)});
+  AclEngine engine(
+      {make_rule("*", "a/+/c", AclAction::Publish, AclEffect::Allow)});
   CHECK(engine.check_publish("cli", "", "a/b/c"));
 }
 
 TEST_CASE("plus_wildcard_does_not_match_multi_level", "[authz]") {
-  AclEngine engine({make_rule("*", "a/+", AclAction::Publish, AclEffect::Allow)});
+  AclEngine engine(
+      {make_rule("*", "a/+", AclAction::Publish, AclEffect::Allow)});
   CHECK_FALSE(engine.check_publish("cli", "", "a/b/c"));
 }
 
 TEST_CASE("hash_wildcard_matches_remaining_levels", "[authz]") {
-  AclEngine engine({make_rule("*", "a/#", AclAction::Publish, AclEffect::Allow)});
+  AclEngine engine(
+      {make_rule("*", "a/#", AclAction::Publish, AclEffect::Allow)});
   CHECK(engine.check_publish("cli", "", "a/b/c/d"));
 }
 
 TEST_CASE("hash_wildcard_matches_single_level", "[authz]") {
-  AclEngine engine({make_rule("*", "a/#", AclAction::Publish, AclEffect::Allow)});
+  AclEngine engine(
+      {make_rule("*", "a/#", AclAction::Publish, AclEffect::Allow)});
   CHECK(engine.check_publish("cli", "", "a/b"));
 }
 
@@ -152,13 +167,15 @@ TEST_CASE("hash_wildcard_exact_prefix", "[authz]") {
 }
 
 TEST_CASE("no_wildcard_no_match", "[authz]") {
-  AclEngine engine({make_rule("*", "a/b", AclAction::Publish, AclEffect::Allow)});
+  AclEngine engine(
+      {make_rule("*", "a/b", AclAction::Publish, AclEffect::Allow)});
   CHECK_FALSE(engine.check_publish("cli", "", "a/c"));
 }
 
 TEST_CASE("subscribe_filter_as_literal", "[authz]") {
   // # in ACL pattern covers subscribe filter "sensor/+" (treated as literal)
-  AclEngine engine({make_rule("*", "sensor/#", AclAction::Subscribe, AclEffect::Allow)});
+  AclEngine engine(
+      {make_rule("*", "sensor/#", AclAction::Subscribe, AclEffect::Allow)});
   CHECK(engine.check_subscribe("cli", "", "sensor/+"));
 }
 
@@ -167,7 +184,8 @@ TEST_CASE("subscribe_filter_as_literal", "[authz]") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("reload_replaces_rules", "[authz]") {
-  AclEngine engine({make_rule("*", "a/b", AclAction::Publish, AclEffect::Allow)});
+  AclEngine engine(
+      {make_rule("*", "a/b", AclAction::Publish, AclEffect::Allow)});
   REQUIRE(engine.check_publish("cli", "", "a/b"));
 
   engine.reload({make_rule("*", "a/b", AclAction::Publish, AclEffect::Deny)});
@@ -175,7 +193,8 @@ TEST_CASE("reload_replaces_rules", "[authz]") {
 }
 
 TEST_CASE("reload_with_empty_clears_rules", "[authz]") {
-  AclEngine engine({make_rule("*", "a/b", AclAction::Publish, AclEffect::Allow)});
+  AclEngine engine(
+      {make_rule("*", "a/b", AclAction::Publish, AclEffect::Allow)});
   REQUIRE(engine.check_publish("cli", "", "a/b"));
 
   engine.reload({});
@@ -220,9 +239,9 @@ TEST_CASE("loader_invalid_action_throws", "[authz]") {
   AclLoader loader(engine);
 
   const AclRuleConfig bad_config{.principal = "*",
-                                  .topic_pattern = "a/b",
-                                  .action = "write",
-                                  .effect = "allow"};
+                                 .topic_pattern = "a/b",
+                                 .action = "write",
+                                 .effect = "allow"};
   try {
     loader.load({bad_config});
     FAIL("Expected AuthzException");
@@ -236,9 +255,9 @@ TEST_CASE("loader_invalid_effect_throws", "[authz]") {
   AclLoader loader(engine);
 
   const AclRuleConfig bad_config{.principal = "*",
-                                  .topic_pattern = "a/b",
-                                  .action = "publish",
-                                  .effect = "maybe"};
+                                 .topic_pattern = "a/b",
+                                 .action = "publish",
+                                 .effect = "maybe"};
   try {
     loader.load({bad_config});
     FAIL("Expected AuthzException");
@@ -252,9 +271,18 @@ TEST_CASE("loader_all_action_strings", "[authz]") {
   AclLoader loader(engine);
 
   CHECK_NOTHROW(loader.load({
-      {.principal = "*", .topic_pattern = "a", .action = "publish", .effect = "allow"},
-      {.principal = "*", .topic_pattern = "b", .action = "subscribe", .effect = "allow"},
-      {.principal = "*", .topic_pattern = "c", .action = "publish_and_subscribe", .effect = "allow"},
+      {.principal = "*",
+       .topic_pattern = "a",
+       .action = "publish",
+       .effect = "allow"},
+      {.principal = "*",
+       .topic_pattern = "b",
+       .action = "subscribe",
+       .effect = "allow"},
+      {.principal = "*",
+       .topic_pattern = "c",
+       .action = "publish_and_subscribe",
+       .effect = "allow"},
   }));
 
   const auto &rules = engine.rules();
@@ -269,8 +297,14 @@ TEST_CASE("loader_all_effect_strings", "[authz]") {
   AclLoader loader(engine);
 
   CHECK_NOTHROW(loader.load({
-      {.principal = "*", .topic_pattern = "a", .action = "publish", .effect = "allow"},
-      {.principal = "*", .topic_pattern = "b", .action = "publish", .effect = "deny"},
+      {.principal = "*",
+       .topic_pattern = "a",
+       .action = "publish",
+       .effect = "allow"},
+      {.principal = "*",
+       .topic_pattern = "b",
+       .action = "publish",
+       .effect = "deny"},
   }));
 
   const auto &rules = engine.rules();

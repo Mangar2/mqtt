@@ -49,8 +49,10 @@ enum class AclEffect : uint8_t {
  * treated as a plain string (its own `+`/`#` characters are literals).
  */
 struct AclRule {
-  std::string principal;     ///< Principal pattern: `"*"` or exact client_id / username.
-  std::string topic_pattern; ///< MQTT-style topic filter; wildcards `+` and `#` allowed.
+  std::string
+      principal; ///< Principal pattern: `"*"` or exact client_id / username.
+  std::string topic_pattern; ///< MQTT-style topic filter; wildcards `+` and `#`
+                             ///< allowed.
   AclAction action;          ///< Operation type this rule governs.
   AclEffect effect;          ///< Grant or revoke access.
 };
