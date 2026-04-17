@@ -13,7 +13,7 @@ Message make_message(const std::string &topic,
                      const std::string &payload = "data") {
   Message msg;
   msg.topic.value = topic;
-    msg.payload.data = std::vector<uint8_t>(payload.begin(), payload.end());
+  msg.payload.data = std::vector<uint8_t>(payload.begin(), payload.end());
   msg.retain = true;
   return msg;
 }
@@ -34,8 +34,8 @@ TEST_CASE("store_overwrites_existing", "[store]") {
 
   const auto results = store.find("a/b");
   REQUIRE(results.size() == 1U);
-    const std::string payload(results.front().payload.data.begin(),
-                               results.front().payload.data.end());
+  const std::string payload(results.front().payload.data.begin(),
+                            results.front().payload.data.end());
   CHECK(payload == "second");
 }
 
