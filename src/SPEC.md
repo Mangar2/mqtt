@@ -9,7 +9,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 |----------------|----------|-------------|
 | `data_model/`  | 1        | Pure data structures — primitive types, reason codes, properties, packet structs, message, subscription, session models. Header-only, no external dependencies. |
 | `codec/`       | 2        | Serialization / deserialization of all MQTT 5.0 wire packets. Depends on `data_model/`. |
-| `topic/`       | 3        | Topic-name and topic-filter validation; system-topic detection. Depends on `data_model/`. |
+| `topic/`       | 3        | Topic-name and topic-filter validation, subscription trie storage, and topic matching. Depends on `data_model/`. |
 
 ## `data_model/` sub-modules
 
@@ -41,6 +41,8 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 |--------------------------------------|----------|----------|
 | `topic/topic_error.h`                | 3.1      | `TopicError` enum and `TopicException` |
 | `topic/topic_validator.h/.cpp`       | 3.1      | `validate_topic_name`, `validate_topic_filter`, `is_system_topic` |
+| `topic/subscription_trie.h/.cpp`     | 3.2      | `SubscriptionTrie` — trie storage for MQTT subscriptions (insert, remove, remove_all) |
+| `topic/topic_matcher.h/.cpp`         | 3.3      | `TopicMatcher` — matches a publish topic name against all trie subscriptions (exact, `+`, `#`, system-topic exclusion) |
 
 ## Entry point
 

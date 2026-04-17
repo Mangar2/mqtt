@@ -52,11 +52,42 @@ Other facts (do not read CMakePresets.json):
 - Compile flags: `-Wall -Wextra -Wpedantic -Werror` on both targets.
 - CMake re-globs at every build invocation — no manual file registration needed.
 
+## Directory structure rule — flat source layout
+
+**A directory that contains source-code files (`.h` / `.cpp`) must never have
+subdirectories that also contain source-code files.**
+
+Source files must always reside at a single level within their module directory.
+The only permitted subdirectory inside a source directory is `test/` (for unit tests).
+
+Valid layout:
+```
+src/my_module/
+    my_class.h
+    my_class.cpp
+    test/
+        my_class_test.cpp
+        TEST_SPEC.md
+    SPEC.md
+```
+
+Invalid layout (source files at two levels):
+```
+src/my_module/          ← has .h/.cpp files
+    my_class.h
+    sub/                ← also has .h/.cpp files  ✗
+        helper.h
+```
+
+If a module grows beyond the file count limit, promote it to a set of sibling
+directories under the parent rather than nesting one inside another.
+
 ## File count rule
 
 Keep the number of code files per directory (and subdirectory) below 10.
 Before adding a new file, check the current count. If a directory is near the
-limit, split into subdirectories first.
+limit, split into sibling subdirectories under the parent — never nest source
+directories inside one another.
 
 ## Documentation-first: target spec (SPEC.md)
 
@@ -66,6 +97,7 @@ Before writing any code, create or update a `SPEC.md` in the target directory.
 - A `SPEC.md` in a parent directory summarises all its subdirectories.
 - `SPEC.md` describes: purpose, public API, data structures, behaviour, constraints.
 - The code must match `SPEC.md` — it is the implementation guide.
+- **`src/SPEC.md` is the top-level index of all modules.** Whenever a new module or sub-module directory is added (or an existing one is extended), update the relevant row in `src/SPEC.md` as part of the same commit. Never leave `src/SPEC.md` out of date.
 
 ## Documentation and code stay in sync
 

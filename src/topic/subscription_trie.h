@@ -3,6 +3,9 @@
 /**
  * @file subscription_trie.h
  * @brief Trie-based storage for MQTT 5.0 subscriptions (Module 3.2).
+ *
+ * Moved from topic/trie/ — source files must not be nested inside another
+ * source directory (see code-create skill).
  */
 
 #include <cstddef>

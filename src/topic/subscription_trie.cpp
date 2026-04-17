@@ -1,4 +1,4 @@
-#include "topic/trie/subscription_trie.h"
+#include "topic/subscription_trie.h"
 
 #include <string>
 #include <vector>

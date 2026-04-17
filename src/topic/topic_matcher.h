@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "data_model/subscription/subscription.h"
-#include "topic/trie/subscription_trie.h"
+#include "topic/subscription_trie.h"
 
 namespace mqtt {
 

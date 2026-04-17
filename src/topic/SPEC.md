@@ -9,7 +9,7 @@ Depends on: `data_model/` (Module 1).
 |------------------------|----------|----------|
 | `topic/topic_error.h`  | 3.1      | `TopicError` enum and `TopicException`. |
 | `topic/topic_validator.h/.cpp` | 3.1 | Topic-name and topic-filter validation, system-topic detection. |
-| `topic/trie/`          | 3.2      | `SubscriptionTrie` — trie storage for MQTT subscriptions. |
+| `topic/subscription_trie.h/.cpp` | 3.2 | `SubscriptionTrie` — trie storage for MQTT subscriptions. |
 | `topic/topic_matcher.h/.cpp`   | 3.3 | `TopicMatcher` — topic-name matching against a `SubscriptionTrie`. |
 
 ## Module 3.1 — Topic Validator
