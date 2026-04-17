@@ -17,6 +17,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `auth/`        | 8        | Authentication Module — pluggable authenticator interface, username/password and anonymous authenticators, and enhanced AUTH packet handler. |
 | `authz/`            | 9        | Authorization Module — ACL engine with MQTT wildcard topic matching, ACL rule structure, and configuration loader with runtime reload. |
 | `session_manager/`  | 10       | Session Manager — session lifecycle controller (create/resume/discard), session takeover handler (Client ID collision, Reason 0x8E), and session expiry scheduler. Depends on `store/`, `connection/`, `auth/`. |
+| `will_manager/`     | 11       | Will Manager — will store, will-delay timer, and will publisher. Stores Will Messages on connect, suppresses them on normal disconnect, and publishes them (with optional delay) on connection loss or session expiry. Depends on `data_model/`, `store/`, `session_manager/`. |
 
 ## `data_model/` sub-modules
 
@@ -118,6 +119,15 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `session_manager/session_manager.h/.cpp`         | 10.1 | `SessionManager` — lifecycle coordinator: create/resume session, disconnect, cleanup expired |
 | `session_manager/session_takeover_handler.h/.cpp`| 10.2 | `SessionTakeoverHandler` — tracks active connections; closes old connection with 0x8E on Client ID collision |
 | `session_manager/session_expiry_scheduler.h/.cpp`| 10.3 | `SessionExpiryScheduler` — records disconnect timestamps; reports sessions past their expiry deadline |
+
+## `will_manager/` sub-modules
+
+| Directory / File | Plan ref | Contents |
+|------------------|----------|----------|
+| `will_manager/will_manager_error.h`    | 11   | `WillManagerError` enum and `WillManagerException` |
+| `will_manager/will_store.h/.cpp`       | 11.1 | `WillStore` — in-memory map of `WillMessage` records keyed by Client ID |
+| `will_manager/will_delay_timer.h/.cpp` | 11.2 | `WillDelayTimer` — per-client disconnect timestamp + will-delay interval tracking |
+| `will_manager/will_publisher.h/.cpp`   | 11.3 | `WillPublisher` — orchestrates store, timer, and publish decisions |
 
 ## Entry point
 
