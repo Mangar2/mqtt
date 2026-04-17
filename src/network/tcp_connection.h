@@ -69,7 +69,7 @@ public:
    * @return Number of bytes read (≥ 1), 0 when the peer closed the
    *         connection, or -1 on a socket error.
    */
-  [[nodiscard]] std::ptrdiff_t read(std::span<uint8_t> buf) noexcept;
+  [[nodiscard]] std::ptrdiff_t read(std::span<uint8_t> buf) const noexcept;
 
   /**
    * @brief Blocking send of all bytes in `buf`.
@@ -79,7 +79,7 @@ public:
    * @param buf Data to transmit.
    * @return `true` on full success; `false` on any socket error.
    */
-  [[nodiscard]] bool write(std::span<const uint8_t> buf) noexcept;
+  [[nodiscard]] bool write(std::span<const uint8_t> buf) const noexcept;
 
   /**
    * @brief Shutdown and close the socket.

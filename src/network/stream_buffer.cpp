@@ -1,6 +1,5 @@
 #include "network/stream_buffer.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -33,7 +32,7 @@ std::optional<std::size_t> StreamBuffer::front_packet_size() const noexcept {
       return std::nullopt; // need more bytes
     }
     uint8_t byte = buffer_[buf_idx];
-    rl_value |= (static_cast<std::size_t>(byte & k_value_mask) << (7u * idx));
+    rl_value |= (static_cast<std::size_t>(byte & k_value_mask) << (7U * idx));
     ++rl_bytes;
     if ((byte & k_continuation_bit) == 0) {
       break; // last RL byte

@@ -33,13 +33,13 @@ TcpConnection &TcpConnection::operator=(TcpConnection &&other) noexcept {
   return *this;
 }
 
-std::ptrdiff_t TcpConnection::read(std::span<uint8_t> buf) noexcept {
+std::ptrdiff_t TcpConnection::read(std::span<uint8_t> buf) const noexcept {
   int result = ::recv(to_socket(fd_), reinterpret_cast<char *>(buf.data()),
                       static_cast<int>(buf.size()), 0);
   return static_cast<std::ptrdiff_t>(result);
 }
 
-bool TcpConnection::write(std::span<const uint8_t> buf) noexcept {
+bool TcpConnection::write(std::span<const uint8_t> buf) const noexcept {
   std::size_t sent = 0;
   while (sent < buf.size()) {
     int result = ::send(to_socket(fd_),

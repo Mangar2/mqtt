@@ -81,50 +81,56 @@ TcpListener &TcpListener::operator=(TcpListener &&other) noexcept {
 TcpListener TcpListener::listen(uint16_t port, bool ipv6) {
   ensure_wsa_initialized();
 
-  int    domain = ipv6 ? AF_INET6 : AF_INET;
-  SOCKET sfd    = ::socket(domain, SOCK_STREAM, IPPROTO_TCP);
-  if (sfd == INVALID_SOCKET)
+  int domain = ipv6 ? AF_INET6 : AF_INET;
+  SOCKET sfd = ::socket(domain, SOCK_STREAM, IPPROTO_TCP);
+  if (sfd == INVALID_SOCKET) {
     throw NetworkException(NetworkError::SocketCreateFailed,
                            make_error_msg("socket()"));
+  }
 
   BOOL opt = TRUE;
   if (::setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR,
                    reinterpret_cast<const char *>(&opt),
-                   sizeof(opt)) == SOCKET_ERROR)
+                   sizeof(opt)) == SOCKET_ERROR) {
     close_and_fail(sfd, NetworkError::SetSockOptFailed,
                    "setsockopt(SO_REUSEADDR)");
+  }
 
   if (ipv6) {
     DWORD v6only = 0;
     if (::setsockopt(sfd, IPPROTO_IPV6, IPV6_V6ONLY,
                      reinterpret_cast<const char *>(&v6only),
-                     sizeof(v6only)) == SOCKET_ERROR)
+                     sizeof(v6only)) == SOCKET_ERROR) {
       close_and_fail(sfd, NetworkError::SetSockOptFailed,
                      "setsockopt(IPV6_V6ONLY)");
+    }
     sockaddr_in6 addr{};
     addr.sin6_family = AF_INET6;
-    addr.sin6_port   = htons(port);
-    addr.sin6_addr   = in6addr_any;
+    addr.sin6_port = htons(port);
+    addr.sin6_addr = in6addr_any;
     if (::bind(sfd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) ==
-        SOCKET_ERROR)
+        SOCKET_ERROR) {
       close_and_fail(sfd, NetworkError::BindFailed, "bind()");
+    }
   } else {
     sockaddr_in addr{};
-    addr.sin_family      = AF_INET;
-    addr.sin_port        = htons(port);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
     addr.sin_addr.s_addr = INADDR_ANY;
     if (::bind(sfd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) ==
-        SOCKET_ERROR)
+        SOCKET_ERROR) {
       close_and_fail(sfd, NetworkError::BindFailed, "bind()");
+    }
   }
 
   constexpr int k_backlog = 128;
-  if (::listen(sfd, k_backlog) == SOCKET_ERROR)
+  if (::listen(sfd, k_backlog) == SOCKET_ERROR) {
     close_and_fail(sfd, NetworkError::ListenFailed, "listen()");
+  }
   return TcpListener{static_cast<SocketHandle>(sfd)};
 }
 
-std::unique_ptr<TcpConnection> TcpListener::accept() {
+std::unique_ptr<TcpConnection> TcpListener::accept() const {
   SOCKET conn_fd = ::accept(to_socket(fd_), nullptr, nullptr);
   if (conn_fd == INVALID_SOCKET) {
     throw NetworkException(NetworkError::AcceptFailed,

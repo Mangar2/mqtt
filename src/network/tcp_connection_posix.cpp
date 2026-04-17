@@ -1,3 +1,7 @@
+// This file is POSIX-only; excluded on Windows via CMake.
+// The guard also silences IntelliSense on Windows.
+#if !defined(_WIN32)
+
 #include "network/tcp_connection.h"
 
 #include <sys/socket.h>
@@ -34,14 +38,14 @@ TcpConnection &TcpConnection::operator=(TcpConnection &&other) noexcept {
   return *this;
 }
 
-std::ptrdiff_t TcpConnection::read(std::span<uint8_t> buf) noexcept {
+std::ptrdiff_t TcpConnection::read(std::span<uint8_t> buf) const noexcept {
   return ::recv(to_fd(fd_), buf.data(), buf.size(), 0);
 }
 
-bool TcpConnection::write(std::span<const uint8_t> buf) noexcept {
+bool TcpConnection::write(std::span<const uint8_t> buf) const noexcept {
   std::size_t sent = 0;
   while (sent < buf.size()) {
-    ssize_t result =
+    std::ptrdiff_t result =
         ::send(to_fd(fd_), buf.data() + sent, buf.size() - sent, MSG_NOSIGNAL);
     if (result <= 0) {
       return false;
@@ -64,3 +68,5 @@ bool TcpConnection::is_open() const noexcept { return fd_ != k_invalid_socket; }
 SocketHandle TcpConnection::fd() const noexcept { return fd_; }
 
 } // namespace mqtt
+
+#endif // !defined(_WIN32)

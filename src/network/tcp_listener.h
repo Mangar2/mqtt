@@ -55,7 +55,7 @@ public:
    * @return Heap-allocated `TcpConnection` owning the accepted socket fd.
    * @throws NetworkException(AcceptFailed) when `accept()` returns an error.
    */
-  [[nodiscard]] std::unique_ptr<TcpConnection> accept();
+  [[nodiscard]] std::unique_ptr<TcpConnection> accept() const;
 
   /**
    * @brief Close the server socket.
@@ -93,7 +93,7 @@ public:
   TcpListener &operator=(TcpListener &&other) noexcept;
 
 private:
-  explicit TcpListener(SocketHandle fd) noexcept;
+  explicit TcpListener(SocketHandle hdl) noexcept;
 
   SocketHandle fd_{k_invalid_socket}; ///< Owned server socket handle;
                                       ///< k_invalid_socket when closed.

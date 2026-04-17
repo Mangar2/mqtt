@@ -492,13 +492,13 @@ TEST_CASE("tcp_listener_ipv4_bind_failure_throws", "[network]") {
   SOCKET blocker = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   REQUIRE(blocker != INVALID_SOCKET);
 
-  BOOL ex = TRUE;
+  BOOL exclusive = TRUE;
   ::setsockopt(blocker, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
-               reinterpret_cast<const char *>(&ex), sizeof(ex));
+               reinterpret_cast<const char *>(&exclusive), sizeof(exclusive));
 
   sockaddr_in addr{};
-  addr.sin_family      = AF_INET;
-  addr.sin_port        = 0;
+  addr.sin_family = AF_INET;
+  addr.sin_port = 0;
   addr.sin_addr.s_addr = INADDR_ANY;
   REQUIRE(::bind(blocker, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) ==
           0);
@@ -519,9 +519,9 @@ TEST_CASE("tcp_listener_ipv6_bind_failure_throws", "[network]") {
   SOCKET blocker = ::socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
   REQUIRE(blocker != INVALID_SOCKET);
 
-  BOOL ex = TRUE;
+  BOOL exclusive = TRUE;
   ::setsockopt(blocker, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
-               reinterpret_cast<const char *>(&ex), sizeof(ex));
+               reinterpret_cast<const char *>(&exclusive), sizeof(exclusive));
 
   // Match the dual-stack mode our TcpListener uses (IPV6_V6ONLY=0) so the OS
   // treats blocker and listener as bound to the same address.
@@ -531,8 +531,8 @@ TEST_CASE("tcp_listener_ipv6_bind_failure_throws", "[network]") {
 
   sockaddr_in6 addr{};
   addr.sin6_family = AF_INET6;
-  addr.sin6_port   = 0;
-  addr.sin6_addr   = in6addr_any;
+  addr.sin6_port = 0;
+  addr.sin6_addr = in6addr_any;
   REQUIRE(::bind(blocker, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) ==
           0);
   ::listen(blocker, 1);

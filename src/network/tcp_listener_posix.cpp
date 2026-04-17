@@ -1,3 +1,7 @@
+// This file is POSIX-only; excluded on Windows via CMake.
+// The guard also silences IntelliSense on Windows.
+#if !defined(_WIN32)
+
 #include "network/tcp_listener.h"
 
 #include <netinet/in.h>
@@ -103,7 +107,7 @@ TcpListener TcpListener::listen(uint16_t port, bool ipv6) {
   return TcpListener{static_cast<SocketHandle>(sfd)};
 }
 
-std::unique_ptr<TcpConnection> TcpListener::accept() {
+std::unique_ptr<TcpConnection> TcpListener::accept() const {
   int conn_fd = ::accept(to_fd(fd_), nullptr, nullptr);
   if (conn_fd < 0) {
     throw NetworkException(NetworkError::AcceptFailed,
@@ -136,3 +140,5 @@ uint16_t TcpListener::port() const noexcept {
 }
 
 } // namespace mqtt
+
+#endif // !defined(_WIN32)

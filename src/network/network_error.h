@@ -15,7 +15,7 @@ namespace mqtt {
 /**
  * @brief Error codes for socket and I/O failures in the Network Layer.
  */
-enum class NetworkError {
+enum class NetworkError : std::uint8_t {
   SocketCreateFailed, ///< socket() system call failed.
   BindFailed,         ///< bind() system call failed.
   ListenFailed,       ///< listen() system call failed.

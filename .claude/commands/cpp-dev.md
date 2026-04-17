@@ -40,6 +40,17 @@ Never suppress warnings globally or disable `-Werror`.
   ```
   Apply the same filter to test sources.
 
+## Checklist — run before writing any code
+
+1. **Variable/parameter names ≥ 3 chars.** `ex`, `fd`, `op`, `fn`, `id` are all forbidden. Use `hdl`, `opt`, `buf`, `idx`, etc.
+2. **`const` on methods** that do not modify member variables.
+3. **Braces on every `if`/`else`/`for`/`while` body** — even single-statement ones.
+4. **Enum base type** — always specify: `enum class Foo : std::uint8_t { … }`.
+5. **`_posix.cpp` files** — wrap entire content in `#if !defined(_WIN32) … #endif` so IntelliSense on Windows stays silent.
+6. **Remove unused `#include`s** — only include headers whose symbols are directly used.
+7. **Integer suffixes uppercase** — `7U`, `0xFFU`, `1ULL`, never `7u`, `0xffu`.
+8. **Do not start a build while `get_errors` reports errors.** Fix all errors first.
+
 ## Code style
 
 - No raw owning pointers — use `std::unique_ptr` / `std::shared_ptr`.
@@ -49,9 +60,7 @@ Never suppress warnings globally or disable `-Werror`.
 - Constants: `constexpr` or `constinit`, prefixed `k_` (e.g. `k_max_clients`).
 - One class / struct per header file.
 - Include order: own header, C++ standard library, third-party, project headers.
-- **Variable names must be at least 3 characters long.** Single-letter and two-letter
-  variable names are forbidden — even in loop indices, lambdas, and test files.
-  Use descriptive names (`idx`, `buf`, `pkt`, `val`, etc.).
+- **Variable and parameter names ≥ 3 characters.** Forbidden: `ex`, `fd`, `op`, `fn`, `id`, single letters. Use `hdl`, `opt`, `buf`, `idx`, `val`, `pkt`, `len`, `err`.
 
 ## Documentation
 
@@ -96,7 +105,7 @@ Document non-obvious parameters and return values with `@param` and `@return`:
 [[nodiscard]] constexpr uint8_t encoded_size() const noexcept;
 ```
 
-Length of all variable and parameter names >=3
+Length of all variable and parameter names ≥ 3. Forbidden 2-char names include: `ex`, `fd`, `op`, `fn`, `id`, `to`, `ok`.
 
 ### Trailing member documentation
 
