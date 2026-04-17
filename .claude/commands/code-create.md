@@ -127,6 +127,19 @@ Generate unit tests based on `TEST_SPEC.md`.
 - Follow the `/unit-test` skill for test style, coverage, and execution.
 - Never implement a test not listed in `TEST_SPEC.md` — add it to the spec first.
 
+## IDE diagnostics — mandatory pre-flight
+
+**Before running the test script**, call `get_errors` on every file that was created or modified. All diagnostics reported by the IDE must be resolved first — regardless of whether they would cause a compiler error.
+
+This includes:
+- Short variable/parameter names (< 3 characters)
+- Unused includes
+- "Can be made static" / "can be `const`" hints
+- Cognitive complexity warnings
+- Any other clang-tidy or IDE hint
+
+Do **not** treat "it only triggers `-Werror` so it would already fail the build" as a reason to skip this step. IDE hints that do **not** produce compiler errors must still be fixed before the test run.
+
 ## Build and verify
 
 Run from the **project root** (`c:\Development\mqtt`). Use only the Python script — never call cmake, ctest, llvm-profdata or llvm-cov directly.
