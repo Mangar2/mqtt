@@ -15,6 +15,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `network/`     | 6        | Network Layer — TCP listener, connection wrapper, incoming stream buffer, and outgoing write queue. No MQTT knowledge. No external dependencies. |
 | `connection/`  | 7        | Connection Handler — lifecycle state machine, keep-alive timer, topic alias table, and receive-maximum flow controller for a single client connection. |
 | `auth/`        | 8        | Authentication Module — pluggable authenticator interface, username/password and anonymous authenticators, and enhanced AUTH packet handler. |
+| `authz/`       | 9        | Authorization Module — ACL engine with MQTT wildcard topic matching, ACL rule structure, and configuration loader with runtime reload. |
 
 ## `data_model/` sub-modules
 
@@ -97,6 +98,15 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `auth/anonymous_authenticator.h/.cpp` | 8.4 | `AnonymousAuthenticator` — policy-driven allow/deny without inspecting credentials |
 | `auth/password_authenticator.h/.cpp`  | 8.2 | `PasswordAuthenticator` — username/password credential store and validator |
 | `auth/enhanced_auth_handler.h/.cpp`   | 8.3 | `EnhancedAuthHandler` — AUTH packet state machine for multi-step and re-authentication |
+
+## `authz/` sub-modules
+
+| Directory / File | Plan ref | Contents |
+|------------------|----------|----------|
+| `authz/authz_error.h`      | 9     | `AuthzError` enum and `AuthzException` |
+| `authz/acl_rule.h`         | 9.1.1 | `AclAction`, `AclEffect`, `AclRule` aggregate |
+| `authz/acl_engine.h/.cpp`  | 9.1   | `AclEngine` — ordered rule evaluation with MQTT wildcard topic matching |
+| `authz/acl_loader.h/.cpp`  | 9.2   | `AclLoader` — parse `AclRuleConfig` strings into rules; initial load and runtime reload |
 
 ## Entry point
 
