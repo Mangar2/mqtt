@@ -6,6 +6,7 @@ C++20 coding rules for this project.
 - Use C++20 features: concepts, ranges, std::span, std::format,
   coroutines, consteval, constinit, designated initializeers.
 - Use designated initialisers for aggregates.
+- Use range algorithms
 
 ## Compiler warnings
 
