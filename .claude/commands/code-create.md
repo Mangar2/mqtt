@@ -148,39 +148,11 @@ Do **not** treat "it only triggers `-Werror` so it would already fail the build"
 
 ## Build and verify
 
-Run from the **project root** (`c:\Development\mqtt`). Use only the Python script — never call cmake, ctest, llvm-profdata or llvm-cov directly.
-
-The script lives in `test/run_coverage.py`. All generated files (`run.log`, `coverage.profraw`, `coverage.profdata`) are written to `test/` — never to the project root or `build/`.
-
-### Standard workflow — one command does everything
+See `/build` skill for all commands. Use Python script only — never cmake/ctest/llvm directly.
 
 ```sh
 python test/run_coverage.py
 ```
-
-This runs four steps in sequence and stops immediately on any failure:
-1. Compile debug binary
-2. Run all unit tests
-3. Compile coverage binary
-4. Measure and report coverage
-
-On success it prints a compact summary table (tests passed + coverage per file).
-Full output is saved to `test/run.log` — read it only when diagnosing a failure.
-
-### Investigate a file below threshold
-
-```sh
-python test/run_coverage.py --show src/<module-path>/<file>.cpp
-```
-
-### Scoped coverage report (reuses existing profdata)
-
-```sh
-python test/run_coverage.py --scope src/<module-path>/
-```
-
-> **Warning:** `--scope` and `--show` reuse the current `test/coverage.profdata`.
-> After adding or changing tests, always run the full `python test/run_coverage.py` first.
 
 ## Completion checklist — mandatory gate
 

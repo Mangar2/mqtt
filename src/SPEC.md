@@ -13,6 +13,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `store/`       | 4        | In-memory runtime state: subscription store, retained message store, session store, and inflight store. Depends on `data_model/` and `topic/`. |
 | `qos/`         | 5        | QoS Engine — Packet ID allocation, QoS 1 and QoS 2 state machines with retransmission. Depends on `data_model/` and `store/`. |
 | `network/`     | 6        | Network Layer — TCP listener, connection wrapper, incoming stream buffer, and outgoing write queue. No MQTT knowledge. No external dependencies. |
+| `connection/`  | 7        | Connection Handler — lifecycle state machine, keep-alive timer, topic alias table, and receive-maximum flow controller for a single client connection. |
 
 ## `data_model/` sub-modules
 
@@ -75,6 +76,16 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `network/tcp_listener.h/.cpp`                  | 6.1.1–2  | `TcpListener` — opens server socket, blocks on accept, hands off connections |
 | `network/stream_buffer.h/.cpp`                 | 6.2      | `StreamBuffer` — accumulates TCP bytes, extracts complete MQTT packets via VBI framing |
 | `network/write_queue.h/.cpp`                   | 6.3      | `WriteQueue` — thread-safe outgoing packet queue; async drain with backpressure |
+
+## `connection/` sub-modules
+
+| Directory / File | Plan ref | Contents |
+|------------------|----------|----------|
+| `connection/connection_error.h` | 7 | `ConnectionError` enum and `ConnectionException` |
+| `connection/connection_state.h/.cpp` | 7.1 | `ConnectionStateMachine` — lifecycle states Connecting → Connected → Disconnecting → Closed |
+| `connection/keep_alive_timer.h/.cpp` | 7.2 | `KeepAliveTimer` — 1.5 × Keep Alive deadline with reset-on-packet |
+| `connection/topic_alias_table.h/.cpp` | 7.3 | `TopicAliasTable` — inbound and outbound alias↔topic mappings with maximum enforcement |
+| `connection/receive_maximum.h/.cpp` | 7.4 | `ReceiveMaximum` — inflight QoS 1/2 packet counter with pause/resume flow control |
 
 ## Entry point
 
