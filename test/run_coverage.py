@@ -13,7 +13,8 @@ Scoped coverage report for one or more paths (reuses existing profdata):
 Line-level detail for a single file (reuses existing profdata):
     python run_coverage.py --show src/topic/trie/subscription_trie.cpp
 
-All output is also written to build/run.log -- read it only when debugging failures.
+All output is also written to test/run.log -- read it only when debugging failures.
+Always run from the project root or from the test/ directory.
 """
 
 import argparse
@@ -24,15 +25,17 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.resolve()
+# Script lives in <project>/test/ — project root is one level up.
+TEST_DIR     = Path(__file__).parent.resolve()
+PROJECT_ROOT = TEST_DIR.parent
 DEBUG_DIR    = PROJECT_ROOT / "build" / "debug"
-COV_DIR      = PROJECT_ROOT / "build" / "test-coverage"
+COV_DIR      = PROJECT_ROOT / "build" / "test-coverage"   # cmake preset output (fixed)
 DEBUG_BINARY = DEBUG_DIR / ("mqtt-broker-tests.exe" if sys.platform == "win32" else "mqtt-broker-tests")
 COV_BINARY   = COV_DIR  / ("mqtt-broker-tests.exe" if sys.platform == "win32" else "mqtt-broker-tests")
-PROFRAW      = COV_DIR  / "coverage.profraw"
-PROFDATA     = COV_DIR  / "coverage.profdata"
+PROFRAW      = TEST_DIR / "coverage.profraw"
+PROFDATA     = TEST_DIR / "coverage.profdata"
 SRC_DIR      = PROJECT_ROOT / "src"
-LOG_FILE     = PROJECT_ROOT / "build" / "run.log"
+LOG_FILE     = TEST_DIR / "run.log"
 
 THRESHOLD = 90.0  # minimum coverage percent
 

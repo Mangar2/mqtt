@@ -99,10 +99,12 @@ Generate unit tests based on `TEST_SPEC.md`.
 
 Run from the **project root** (`c:\Development\mqtt`). Use only the Python script — never call cmake, ctest, llvm-profdata or llvm-cov directly.
 
+The script lives in `test/run_coverage.py`. All generated files (`run.log`, `coverage.profraw`, `coverage.profdata`) are written to `test/` — never to the project root or `build/`.
+
 ### Standard workflow — one command does everything
 
 ```sh
-python run_coverage.py
+python test/run_coverage.py
 ```
 
 This runs four steps in sequence and stops immediately on any failure:
@@ -112,22 +114,22 @@ This runs four steps in sequence and stops immediately on any failure:
 4. Measure and report coverage
 
 On success it prints a compact summary table (tests passed + coverage per file).
-Full output is saved to `build/run.log` — read it only when diagnosing a failure.
+Full output is saved to `test/run.log` — read it only when diagnosing a failure.
 
 ### Investigate a file below threshold
 
 ```sh
-python run_coverage.py --show src/<module-path>/<file>.cpp
+python test/run_coverage.py --show src/<module-path>/<file>.cpp
 ```
 
 ### Scoped coverage report (reuses existing profdata)
 
 ```sh
-python run_coverage.py --scope src/<module-path>/
+python test/run_coverage.py --scope src/<module-path>/
 ```
 
-> **Warning:** `--scope` and `--show` reuse the current `coverage.profdata`.
-> After adding or changing tests, always run the full `python run_coverage.py` first.
+> **Warning:** `--scope` and `--show` reuse the current `test/coverage.profdata`.
+> After adding or changing tests, always run the full `python test/run_coverage.py` first.
 
 ## Completion checklist — mandatory gate
 
@@ -139,8 +141,8 @@ Do not mark any module complete until **every item** below passes.
 | 2 | **No compiler warnings** | Guaranteed by `-Werror` — any warning is a build failure |
 | 3 | **No linter / IDE warnings** | All clang-tidy diagnostics resolved |
 | 4 | **VS Code Problems panel clear** | Use `get_errors` tool on all changed files — zero errors and zero warnings; every diagnostic reported by the IDE must be fixed before marking the task done |
-| 5 | **All tests pass** | `python run_coverage.py` summary shows `Tests: N/N [OK]`; new tests appear by name in ctest |
-| 6 | **Test coverage ≥ 90 %** | `python run_coverage.py` summary shows `Threshold: MET` and all production files ≥ 90 % for Regions, Functions, Lines. This step blocks the commit — it may not be skipped. |
+| 5 | **All tests pass** | `python test/run_coverage.py` summary shows `Tests: N/N [OK]`; new tests appear by name in ctest |
+| 6 | **Test coverage ≥ 90 %** | `python test/run_coverage.py` summary shows `Threshold: MET` and all production files ≥ 90 % for Regions, Functions, Lines. This step blocks the commit — it may not be skipped. |
 | 7 | **SPEC.md is current** | Every touched directory has an accurate SPEC.md |
 | 8 | **TEST_SPEC.md is current** | Every test in code has a matching entry; removed tests removed from spec |
 | 9 | **Doxygen on all public API** | Every header follows the documentation rules in `/cpp-dev` |
@@ -153,7 +155,7 @@ End every implementation with this report. All sections are mandatory.
 ## Completion report — <Module name>
 
 ### Build + Tests + Coverage
-python run_coverage.py → summary output:
+python test/run_coverage.py -> summary output:
 
 ```
 Tests      : <N>/<N>  [OK]

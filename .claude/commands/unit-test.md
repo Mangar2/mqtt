@@ -28,27 +28,30 @@ CMake discovers all `src/*_test.cpp` files automatically — no manual registrat
 All commands are run from the **project root**: `c:\Development\mqtt`.
 **Never call cmake, ctest, llvm-profdata or llvm-cov directly.** Use only the script.
 
+The script lives at `test/run_coverage.py`.  
+All generated files (`run.log`, `coverage.profraw`, `coverage.profdata`) are written to `test/` — never to the project root or `build/`.
+
 ### Full workflow (most common)
 
 ```sh
-python run_coverage.py
+python test/run_coverage.py
 ```
 
 Runs in sequence: (1) build debug, (2) run tests, (3) build coverage binary, (4) measure coverage.  
 Stops immediately on failure and prints a focused error summary.  
 On success prints a compact table — tests passed and coverage per production file.  
-Full output goes to `build/run.log` — read it only when diagnosing a failure.
+Full output goes to `test/run.log` — read it only when diagnosing a failure.
 
 ### Line-level detail for a file below threshold
 
 ```sh
-python run_coverage.py --show src/<module>/<file>.cpp
+python test/run_coverage.py --show src/<module>/<file>.cpp
 ```
 
 ### Scoped report (reuses existing profdata — no rebuild)
 
 ```sh
-python run_coverage.py --scope src/<module>/
+python test/run_coverage.py --scope src/<module>/
 ```
 
 > After adding or changing tests, always run the full script first to regenerate profdata.
@@ -125,7 +128,7 @@ Coverage uses **clang source-based instrumentation** (`-fprofile-instr-generate`
 > overwrites `default.profraw`, so only the last test case's data survives.
 > The Python script already handles this correctly by running the binary directly.
 
-**Always use `python run_coverage.py` — never run llvm-profdata or llvm-cov manually.**
+**Always use `python test/run_coverage.py` — never run llvm-profdata or llvm-cov manually.**
 
 ### Improving coverage — one file at a time
 
