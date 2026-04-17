@@ -369,37 +369,183 @@ Module structure for a fully specification-compliant MQTT 5.0 broker. Each modul
 
 ---
 
-## 17. Connection Pipeline
+## 17. Broker Concurrency Layer
 
-*Binds all modules into a working per-client MQTT session loop. This is the missing "glue" that turns the collection of independently-tested modules into a running broker. Depends on: all previous.*
+*Thread safety for the Broker and all shared mutable state. Currently the only mutex in the codebase is in `WriteQueue`. Every `ClientHandler::run()` executes on a detached thread, but `register_connection()`, `unregister_connection()`, `route_message()`, `SessionManager`, `WillPublisher`, all stores, and all Broker accessors are completely unprotected. This module adds synchronisation so that concurrent client threads cannot corrupt shared state. Depends on: 4, 10, 11, 12, 15.*
 
-- 17.1 Client Handler
-  - 17.1.1 Spawn one handler per accepted TCP connection (own thread or task)
-  - 17.1.2 Detect transport: plain TCP vs. WebSocket upgrade (via `WebSocketHandshake`)
-  - 17.1.3 Wrap connection in `StreamBuffer` (inbound) and `WriteQueue` (outbound)
-  - 17.1.4 Send / receive serialized packets using the Codec (Module 2)
-- 17.2 CONNECT Handshake
-  - 17.2.1 Read and decode the first packet; reject non-CONNECT with protocol error
-  - 17.2.2 Authenticate credentials via `IAuthenticator` (Module 8)
-  - 17.2.3 Create / resume session via `SessionManager` (Module 10)
-  - 17.2.4 Send CONNACK (Session Present flag, Reason Code, server properties)
-- 17.3 Per-Packet Dispatch Loop
-  - 17.3.1 Read next complete packet from `StreamBuffer`
-  - 17.3.2 Reset `KeepAliveTimer` on every received packet (Module 7.2)
-  - 17.3.3 Dispatch PUBLISH → `Broker::route_message()` (Module 16 / 12)
-  - 17.3.4 Dispatch SUBSCRIBE → `SessionManager` / store; send SUBACK; deliver retained messages
-  - 17.3.5 Dispatch UNSUBSCRIBE → `SessionManager`; send UNSUBACK
-  - 17.3.6 Dispatch PUBACK / PUBREC / PUBREL / PUBCOMP → QoS state machine (Module 5)
-  - 17.3.7 Dispatch PINGREQ → send PINGRESP
-  - 17.3.8 Dispatch DISCONNECT → `WillPublisher.on_disconnect()`, close cleanly
-  - 17.3.9 Dispatch AUTH → `EnhancedAuthHandler` (Module 8.3)
-- 17.4 Outbound Delivery Integration
-  - 17.4.1 Register `SendFn` with `Broker::register_connection()` on successful CONNACK
-  - 17.4.2 Encode outbound messages and enqueue to `WriteQueue`
-  - 17.4.3 Respect `ReceiveMaximum` flow control (Module 7.4): pause outbound when limit hit
-  - 17.4.4 Run `WriteQueue::run_drain()` on a dedicated drain thread per connection
-- 17.5 Connection Teardown
-  - 17.5.1 On Keep-Alive timeout: send DISCONNECT (Reason 0x8D), close socket
-  - 17.5.2 On TCP error / EOF: call `WillPublisher.on_connection_lost()`, unregister connection
-  - 17.5.3 Flush offline queue for returning clients (`MessageRouter::flush_offline_queue()`)
-  - 17.5.4 Unregister connection from broker (`Broker::unregister_connection()`)
+- 17.1 Broker Mutex
+  - 17.1.1 Add a `std::shared_mutex` to `Broker` guarding all mutable shared state
+  - 17.1.2 `register_connection()` and `unregister_connection()` acquire exclusive lock
+  - 17.1.3 `route_message()` acquires exclusive lock (writes to stores, reads connection map)
+  - 17.1.4 `tick()` acquires exclusive lock (publishes `$SYS`, runs housekeeping)
+- 17.2 Thread-Safe Store Access
+  - 17.2.1 Remove direct public store accessors (`subscription_store()`, `retained_message_store()`, `inflight_store()`) from `Broker` — external code must use facade methods (see Module 18/19) instead of reaching into internals
+  - 17.2.2 Internal store access within already-locked Broker methods remains direct (no double locking)
+- 17.3 Thread-Safe Session Manager Access
+  - 17.3.1 `Broker::handle_connect()` wraps `SessionManager::handle_connect()` under exclusive lock
+  - 17.3.2 `Broker::handle_disconnect()` wraps `SessionManager::handle_disconnect()` under exclusive lock
+  - 17.3.3 `Broker::handle_connection_lost()` wraps will and session teardown under exclusive lock
+
+---
+
+## 18. Broker Facade — Connect / Disconnect
+
+*Complete, thread-safe, high-level methods on `Broker` that encapsulate the multi-step connect and disconnect workflows. The client handler calls one method instead of orchestrating 5+ sub-calls. Depends on: 8, 10, 11, 15, 17.*
+
+- 18.1 Connect Result
+  - 18.1.1 `ConnectResult` struct: `session_present`, `reason_code`, `connack_properties`, `client_id`
+  - 18.1.2 Encapsulates the full outcome of the handshake in one return value
+- 18.2 `Broker::handle_connect(ConnectPacket, close_fn) → ConnectResult`
+  - 18.2.1 Authenticate via `IAuthenticator` (Module 8) — return failure reason on auth error
+  - 18.2.2 Open / resume session via `SessionManager` (Module 10)
+  - 18.2.3 Store Will Message if present (Module 11) — extract `WillMessage` from CONNECT internally
+  - 18.2.4 Build CONNACK properties (Receive Maximum, Topic Alias Maximum from config)
+  - 18.2.5 Register connection send callback (see Module 20 outbound queue)
+  - 18.2.6 Flush offline queue for resumed sessions
+  - 18.2.7 All steps under exclusive lock (Module 17)
+- 18.3 `Broker::handle_disconnect(client_id, reason_code, expiry_override, now)`
+  - 18.3.1 Call `WillPublisher::on_disconnect()` (suppresses will on reason 0x00, publishes on 0x04)
+  - 18.3.2 Unregister connection from active map
+  - 18.3.3 Call `SessionManager::handle_disconnect()`
+  - 18.3.4 All steps under exclusive lock
+- 18.4 `Broker::handle_connection_lost(client_id, now)`
+  - 18.4.1 Call `WillPublisher::on_connection_lost()`
+  - 18.4.2 Unregister connection from active map
+  - 18.4.3 Call `SessionManager::handle_disconnect()`
+  - 18.4.4 All steps under exclusive lock
+
+---
+
+## 19. Broker Facade — Subscribe / Unsubscribe / Publish
+
+*Complete, thread-safe, high-level methods on `Broker` for the three most common per-packet operations. Removes direct store access from the client handler. Depends on: 4, 9, 12, 15, 17.*
+
+- 19.1 `Broker::handle_subscribe(client_id, SubscribePacket) → SubackPacket`
+  - 19.1.1 Iterate filters: store each subscription in `SubscriptionStore`
+  - 19.1.2 Check subscribe authorisation via `AclEngine` per filter
+  - 19.1.3 Collect reason codes (granted QoS or error)
+  - 19.1.4 Retrieve and deliver retained messages per filter
+  - 19.1.5 Build and return `SubackPacket`
+  - 19.1.6 All steps under exclusive lock
+- 19.2 `Broker::handle_unsubscribe(client_id, UnsubscribePacket) → UnsubackPacket`
+  - 19.2.1 Remove each filter from `SubscriptionStore`
+  - 19.2.2 Build and return `UnsubackPacket` with per-filter reason codes
+  - 19.2.3 All steps under exclusive lock
+- 19.3 `Broker::handle_publish(msg, client_id, username, alias_table)`
+  - 19.3.1 Wraps `route_message()` with inbound statistics increment
+  - 19.3.2 Under exclusive lock
+  - 19.3.3 Replaces old `route_message()` public API
+
+---
+
+## 20. Outbound Message Queue
+
+*Thread-safe per-client message queue that decouples the publishing thread from the receiving client's QoS state. Currently `SendFn` is a closure that captures per-client `Qos1StateMachine`, `Qos2StateMachine`, `ReceiveMaximum`, and `WriteQueue` by reference — but it is called from the publishing client's thread, causing data races on all these objects. This module moves outbound QoS processing to the receiving client's own thread. Depends on: 1, 6, 17.*
+
+- 20.1 `OutboundQueue` Class
+  - 20.1.1 Thread-safe FIFO queue of `Message` objects (mutex + condition variable)
+  - 20.1.2 `push(Message)` — called from any thread (the broker's `SendFn`)
+  - 20.1.3 `try_pop() → optional<Message>` — non-blocking poll, called by client thread
+  - 20.1.4 `stop()` — signal shutdown, unblock any waiting consumer
+  - 20.1.5 Configurable max queue depth (backpressure: drop or block)
+- 20.2 Broker Integration
+  - 20.2.1 `Broker::register_connection()` takes a `shared_ptr<OutboundQueue>` instead of a raw `SendFn`
+  - 20.2.2 `MessageRouter` fanout pushes `Message` into the target client's `OutboundQueue`
+  - 20.2.3 No QoS processing on the publishing thread — just queue the message
+
+---
+
+## 21. Client Session Context
+
+*Bundles all per-connection state into a single object with per-packet handler methods. Eliminates the 8+ loose local variables in the current monolithic `run()`. Depends on: 2, 5, 7, 20.*
+
+- 21.1 `ClientSession` Class
+  - 21.1.1 Owns: `PacketIdManager`, `Qos1StateMachine`, `Qos2StateMachine`, `ReceiveMaximum`, `TopicAliasTable`, `KeepAliveTimer`, `ConnectionStateMachine`, `EnhancedAuthHandler`
+  - 21.1.2 Owns: `shared_ptr<OutboundQueue>` (Module 20)
+  - 21.1.3 Holds: `client_id`, `username` (copied from CONNECT)
+  - 21.1.4 Constructor takes CONNECT result parameters (keep-alive, receive-max, alias-max, etc.)
+- 21.2 Inbound Packet Handlers (return encoded response bytes)
+  - 21.2.1 `on_publish(PublishPacket) → vector<WriteBuffer>` — QoS 0: nothing; QoS 1: PUBACK; QoS 2: PUBREC; returns message for routing
+  - 21.2.2 `on_puback(PubackPacket)` — forwards to `Qos1StateMachine`, releases `ReceiveMaximum` slot
+  - 21.2.3 `on_pubrec(PubrecPacket) → WriteBuffer` — forwards to `Qos2StateMachine`, returns PUBREL
+  - 21.2.4 `on_pubrel(PubrelPacket) → WriteBuffer` — forwards to `Qos2StateMachine`, returns PUBCOMP
+  - 21.2.5 `on_pubcomp(PubcompPacket)` — forwards to `Qos2StateMachine`, releases `ReceiveMaximum` slot
+  - 21.2.6 `on_auth(AuthPacket) → AuthHandlerResult` — forwards to `EnhancedAuthHandler`
+- 21.3 Outbound Delivery (drains `OutboundQueue` on client's own thread)
+  - 21.3.1 `drain_outbound() → vector<WriteBuffer>` — pops messages from queue, applies QoS initiation (`initiate_publish`), respects `ReceiveMaximum`, returns encoded PUBLISH packets
+  - 21.3.2 All QoS state modification happens here — on the owning thread, no races
+
+---
+
+## 22. Broker Housekeeping
+
+*Periodic maintenance tasks integrated into `Broker::tick()`. Currently `tick()` only publishes `$SYS` stats. Missing: will publish due, session expiry cleanup, QoS retransmission. Also: the main loop in `main.cpp` is a busy-spin with no sleep. Depends on: 5, 10, 11, 15, 17.*
+
+- 22.1 Will Publish Due
+  - 22.1.1 Call `WillPublisher::publish_due(now)` inside `Broker::tick()`
+  - 22.1.2 Publishes will messages whose delay timer has expired
+- 22.2 Session Expiry Cleanup
+  - 22.2.1 Call `SessionManager::cleanup_expired(now)` inside `Broker::tick()`
+  - 22.2.2 For each expired session: clean up subscriptions, inflight state, will data
+  - 22.2.3 Call `WillPublisher::on_session_expired(client_id)` for each expired session
+- 22.3 QoS Retransmission Timer
+  - 22.3.1 Track outstanding outbound QoS 1/2 packets with timestamps per session
+  - 22.3.2 On timeout (configurable, e.g. 20 s): call `retransmit()` on QoS state machines
+  - 22.3.3 Set DUP flag on retransmitted PUBLISH (already implemented in state machines)
+  - 22.3.4 Push retransmitted packets into the client's `OutboundQueue`
+- 22.4 Main Loop Throttle
+  - 22.4.1 Add configurable tick interval (e.g. 100 ms) in main loop
+  - 22.4.2 Use `std::this_thread::sleep_for()` or condition variable to avoid busy spin
+
+---
+
+## 23. Accept Loop Thread Management
+
+*Replace `std::thread(...).detach()` in the accept loop with tracked threads that are properly joined on shutdown. Currently, on broker shutdown, detached client threads continue running with dangling references to the broker and its stores — undefined behaviour. Depends on: 15, 17.*
+
+- 23.1 Client Thread Registry
+  - 23.1.1 `Broker` maintains a `vector<jthread>` (or similar) of active client threads
+  - 23.1.2 Each accept spawns a `jthread` that is added to the registry
+  - 23.1.3 Completed threads are periodically removed (e.g. in `tick()` or on accept)
+- 23.2 Graceful Client Shutdown
+  - 23.2.1 On `Broker::shutdown()`: set running flag to false
+  - 23.2.2 Close all TCP listeners (breaks accept loops)
+  - 23.2.3 Signal all `OutboundQueue`s to stop (wakes blocked clients)
+  - 23.2.4 Join all client threads with a timeout
+  - 23.2.5 Force-close remaining connections after timeout
+
+---
+
+## 24. Lean Client Handler
+
+*Thin orchestration layer — the only module that touches I/O. All business logic has been pushed into Broker facades (Modules 18/19) and ClientSession (Module 21). This module reads packets, delegates to the appropriate facade, and writes responses. Target: ~150–200 lines. Depends on: all previous.*
+
+- 24.1 Transport Setup
+  - 24.1.1 Detect and complete WebSocket upgrade if applicable
+  - 24.1.2 Set socket receive timeout for keep-alive polling
+  - 24.1.3 Create `StreamBuffer` (inbound) and `WriteQueue` (outbound)
+  - 24.1.4 Start drain thread for `WriteQueue`
+- 24.2 CONNECT Handshake
+  - 24.2.1 Read first packet from `StreamBuffer`; reject non-CONNECT
+  - 24.2.2 Call `Broker::handle_connect()` — single method call (Module 18)
+  - 24.2.3 Handle multi-step enhanced auth loop if needed (AUTH packets)
+  - 24.2.4 Encode and send CONNACK; on failure send error CONNACK and return
+  - 24.2.5 Construct `ClientSession` from connect result (Module 21)
+- 24.3 Per-Packet Dispatch Loop
+  - 24.3.1 Read next chunk from transport; append to `StreamBuffer`
+  - 24.3.2 On received data: reset `KeepAliveTimer` (via `ClientSession`)
+  - 24.3.3 On keep-alive expiry: send DISCONNECT (0x8D), break
+  - 24.3.4 Drain `OutboundQueue` via `ClientSession::drain_outbound()`, enqueue results to `WriteQueue`
+  - 24.3.5 Decode complete packets and dispatch:
+    - PUBLISH → `ClientSession::on_publish()` + `Broker::handle_publish()`; send QoS response
+    - SUBSCRIBE → `Broker::handle_subscribe()` (Module 19); send SUBACK; deliver retained
+    - UNSUBSCRIBE → `Broker::handle_unsubscribe()` (Module 19); send UNSUBACK
+    - PUBACK / PUBREC / PUBREL / PUBCOMP → `ClientSession::on_*()` methods; send response
+    - PINGREQ → encode and send PINGRESP
+    - DISCONNECT → record reason, break
+    - AUTH → `ClientSession::on_auth()`; send response
+  - 24.3.6 Check `broker.is_running()` each iteration (graceful shutdown)
+- 24.4 Teardown
+  - 24.4.1 Stop `WriteQueue`; drain thread joins via `jthread` destructor
+  - 24.4.2 On clean disconnect: call `Broker::handle_disconnect()` (Module 18)
+  - 24.4.3 On connection loss: call `Broker::handle_connection_lost()` (Module 18)
