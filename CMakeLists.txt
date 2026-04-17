@@ -37,10 +37,19 @@ set(MQTT_LINK_OPTIONS
 )
 
 # ── Source discovery ───────────────────────────────────────────────────────────
-# Collect all production .cpp files, then exclude test directories.
+# Collect all production .cpp files, then exclude test directories and the
+# platform-specific files for the OS we are NOT building on.
 file(GLOB_RECURSE MQTT_ALL_SOURCES  CONFIGURE_DEPENDS "src/*.cpp")
 file(GLOB_RECURSE MQTT_TEST_SOURCES CONFIGURE_DEPENDS "src/*_test.cpp")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/test/")
+
+if(WIN32)
+    list(FILTER MQTT_ALL_SOURCES  EXCLUDE REGEX "_posix\\.cpp$")
+    list(FILTER MQTT_TEST_SOURCES EXCLUDE REGEX "_posix\\.cpp$")
+else()
+    list(FILTER MQTT_ALL_SOURCES  EXCLUDE REGEX "_win32\\.cpp$")
+    list(FILTER MQTT_TEST_SOURCES EXCLUDE REGEX "_win32\\.cpp$")
+endif()
 
 # ── Main executable ────────────────────────────────────────────────────────────
 add_executable(mqtt-broker ${MQTT_ALL_SOURCES})
@@ -48,6 +57,9 @@ add_executable(mqtt-broker ${MQTT_ALL_SOURCES})
 target_compile_options(mqtt-broker PRIVATE ${MQTT_COMPILE_OPTIONS})
 target_link_options(mqtt-broker    PRIVATE ${MQTT_LINK_OPTIONS})
 target_include_directories(mqtt-broker PRIVATE src)
+if(WIN32)
+    target_link_libraries(mqtt-broker PRIVATE ws2_32)
+endif()
 
 # ── Unit tests ─────────────────────────────────────────────────────────────────
 include(CTest)
@@ -79,6 +91,9 @@ if(BUILD_TESTING)
     target_link_options(mqtt-broker-tests    PRIVATE ${MQTT_LINK_OPTIONS})
     target_link_libraries(mqtt-broker-tests  PRIVATE Catch2::Catch2WithMain)
     target_include_directories(mqtt-broker-tests PRIVATE src)
+    if(WIN32)
+        target_link_libraries(mqtt-broker-tests PRIVATE ws2_32)
+    endif()
 
     include(Catch)
     catch_discover_tests(mqtt-broker-tests)

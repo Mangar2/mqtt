@@ -12,6 +12,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `topic/`       | 3        | Topic-name and topic-filter validation, subscription trie storage, and topic matching. Depends on `data_model/`. |
 | `store/`       | 4        | In-memory runtime state: subscription store, retained message store, session store, and inflight store. Depends on `data_model/` and `topic/`. |
 | `qos/`         | 5        | QoS Engine — Packet ID allocation, QoS 1 and QoS 2 state machines with retransmission. Depends on `data_model/` and `store/`. |
+| `network/`     | 6        | Network Layer — TCP listener, connection wrapper, incoming stream buffer, and outgoing write queue. No MQTT knowledge. No external dependencies. |
 
 ## `data_model/` sub-modules
 
@@ -64,6 +65,16 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `qos/packet_id_manager.h/.cpp`                 | 5.1      | Per-session Packet Identifier allocator; separate inbound/outbound spaces |
 | `qos/qos1_state_machine.h/.cpp`                | 5.2      | QoS 1 (AtLeastOnce) inbound/outbound handshake and retransmission logic |
 | `qos/qos2_state_machine.h/.cpp`                | 5.3      | QoS 2 (ExactlyOnce) inbound/outbound handshake, duplicate detection, retransmission |
+
+## `network/` sub-modules
+
+| Directory / File                              | Plan ref | Contents |
+|-----------------------------------------------|----------|----------|
+| `network/network_error.h`                      | 6        | `NetworkError` enum and `NetworkException` |
+| `network/tcp_connection.h/.cpp`                | 6.1.3    | `TcpConnection` — owns a connected socket fd; blocking read/write/close |
+| `network/tcp_listener.h/.cpp`                  | 6.1.1–2  | `TcpListener` — opens server socket, blocks on accept, hands off connections |
+| `network/stream_buffer.h/.cpp`                 | 6.2      | `StreamBuffer` — accumulates TCP bytes, extracts complete MQTT packets via VBI framing |
+| `network/write_queue.h/.cpp`                   | 6.3      | `WriteQueue` — thread-safe outgoing packet queue; async drain with backpressure |
 
 ## Entry point
 

@@ -19,6 +19,27 @@ Acceptable resolutions:
 
 Never suppress warnings globally or disable `-Werror`.
 
+## OS-specific code
+
+- **One OS per file.** Never implement code for two different operating systems
+  in the same `.cpp` file. A file with `#ifdef _WIN32 … #else … #endif` for
+  diverging implementations is forbidden.
+- **Make the OS visible in the filename.** Use the suffix `_win32.cpp` for
+  Windows-only code and `_posix.cpp` for POSIX-only code.
+  Example: `tcp_connection_win32.cpp` / `tcp_connection_posix.cpp`.
+- **Never include `windows.h` in any header — not even indirectly.**
+  `winsock2.h` includes `windows.h`; only include it in `_win32.cpp` files.
+  All `.h` files must be free of platform SDK headers.
+- **CMakeLists.txt must filter sources by platform.** After globbing, add:
+  ```cmake
+  if(WIN32)
+      list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "_posix\\.cpp$")
+  else()
+      list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "_win32\\.cpp$")
+  endif()
+  ```
+  Apply the same filter to test sources.
+
 ## Code style
 
 - No raw owning pointers — use `std::unique_ptr` / `std::shared_ptr`.
