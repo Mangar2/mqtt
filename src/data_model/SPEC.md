@@ -18,7 +18,3 @@ All types live in the `mqtt` namespace.
 ## Design rules
 
 - Header-only: every type is defined in a `.h` file; no `.cpp` files in this module.
-- `#pragma once` guards on every header.
-- `constexpr` / `[[nodiscard]]` used wherever appropriate.
-- No raw owning pointers; heap types use `std::vector` / `std::optional`.
-- `operator==` provided on every struct via `= default`.

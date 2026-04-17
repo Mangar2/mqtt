@@ -64,7 +64,5 @@ Supports `operator==` via `= default`.
 ## Design rules
 
 - Header-only; one struct/enum per file.
-- `#pragma once` on every header.
-- `operator==` provided via `= default` on every struct.
 - `session_state.h` depends on `data_model/subscription/subscription.h`.
 - `inflight_entry.h` depends on `data_model/message/message.h`.

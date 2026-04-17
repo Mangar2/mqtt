@@ -32,6 +32,16 @@ Never suppress warnings globally or disable `-Werror`.
   variable names are forbidden — even in loop indices, lambdas, and test files.
   Use descriptive names (`idx`, `buf`, `pkt`, `val`, etc.).
 
+## Project-wide conventions
+
+These rules apply to every file in the codebase and must **not** be repeated in
+module-level `SPEC.md` files.
+
+- `#pragma once` on every header file (no `#ifndef` include guards).
+- All production types live in the `mqtt` namespace.
+- All exception types derive from `std::runtime_error`.
+- `operator==` provided via `= default` on every plain-data (`struct`) type.
+
 ## Documentation
 
 All header files must use **Doxygen** format exclusively. Plain `//` comments are not

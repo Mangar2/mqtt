@@ -62,5 +62,3 @@ Supports `operator==` via `= default`.
 ## Design rules
 
 - Header-only; one struct/enum per file.
-- `#pragma once` on every header.
-- `operator==` provided via `= default` on every struct.

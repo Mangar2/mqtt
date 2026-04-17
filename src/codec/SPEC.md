@@ -24,6 +24,6 @@ Serialization and deserialization of all MQTT 5.0 wire data. Depends on: Module 
 
 - Encode functions append bytes to a `WriteBuffer&` (alias for `std::vector<uint8_t>`).
 - Decode functions consume bytes from a `ReadBuffer&`; the cursor advances past decoded data.
-- All errors are reported via `CodecException` (derived from `std::runtime_error`).
-- No raw owning pointers; no dynamic allocation beyond `std::vector` / `std::string`.
+- All errors are reported via `CodecException`.
+- No dynamic allocation beyond `std::vector` / `std::string`.
 - Every decode function is `[[nodiscard]]`.

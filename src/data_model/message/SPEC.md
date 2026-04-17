@@ -51,5 +51,3 @@ because they travel with the PUBLISH when the will is eventually sent.
 ## Design rules
 
 - Header-only; defined in `message.h`.
-- All types in the `mqtt` namespace.
-- `operator==` defaulted on every struct.

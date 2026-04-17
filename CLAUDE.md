@@ -48,3 +48,10 @@ Each directory carries a `SPEC.md` as its authoritative description — navigate
 
 **Before creating or extending any code: read the `/code-create` skill first.**
 It defines all conventions (SPEC.md, TEST_SPEC.md, file count limits, test placement).
+
+## Design rules policy
+
+All **code design rules that are not specific to a single module** must be written in
+`.claude/commands/cpp-dev.md` only (see the `## Project-wide conventions` section there).
+Do **not** repeat general rules in `SPEC.md` files — only module-specific behaviour,
+interfaces, and constraints belong in a module's `SPEC.md`.
