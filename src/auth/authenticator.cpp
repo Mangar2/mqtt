@@ -8,7 +8,9 @@ namespace mqtt {
 // ────────────────────────────────────────────────────────────
 
 AuthResult IAuthenticator::on_auth(const AuthPacket & /*auth_pkt*/) {
-  return {AuthStatus::Failure, ReasonCode::NotAuthorized, {}};
+  return {.status = AuthStatus::Failure,
+          .reason_code = ReasonCode::NotAuthorized,
+          .auth_data = {}};
 }
 
 // ── CallbackAuthenticator

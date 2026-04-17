@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <format>
 
-
 namespace mqtt {
 
 // ── Construction ─────────────────────────────────────────────────────────────

@@ -13,7 +13,6 @@
 #include <memory>
 #include <string>
 
-
 namespace mqtt {
 
 /**

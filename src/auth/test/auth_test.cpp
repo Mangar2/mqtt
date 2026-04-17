@@ -509,8 +509,8 @@ TEST_CASE("enhanced_reauthenticate_failure", "[auth]") {
 }
 
 TEST_CASE("enhanced_initiate_with_method_failure", "[auth]") {
-  auto auth = std::make_shared<CallbackAuthenticator>(
-      [](const ConnectPacket &) {
+  auto auth =
+      std::make_shared<CallbackAuthenticator>([](const ConnectPacket &) {
         return AuthResult{AuthStatus::Failure, ReasonCode::NotAuthorized, {}};
       });
   EnhancedAuthHandler hdl(auth);

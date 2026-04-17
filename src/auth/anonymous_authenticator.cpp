@@ -8,9 +8,13 @@ AnonymousAuthenticator::AnonymousAuthenticator(AnonymousPolicy policy) noexcept
 AuthResult
 AnonymousAuthenticator::authenticate(const ConnectPacket & /*connect*/) {
   if (policy_ == AnonymousPolicy::Allow) {
-    return {AuthStatus::Success, ReasonCode::Success, {}};
+    return {.status = AuthStatus::Success,
+            .reason_code = ReasonCode::Success,
+            .auth_data = {}};
   }
-  return {AuthStatus::Failure, ReasonCode::NotAuthorized, {}};
+  return {.status = AuthStatus::Failure,
+          .reason_code = ReasonCode::NotAuthorized,
+          .auth_data = {}};
 }
 
 AnonymousPolicy AnonymousAuthenticator::policy() const noexcept {

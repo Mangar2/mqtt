@@ -12,8 +12,9 @@ void PasswordAuthenticator::remove_credential(const Utf8String &username) {
 }
 
 AuthResult PasswordAuthenticator::authenticate(const ConnectPacket &connect) {
-  AuthResult failure{
-      AuthStatus::Failure, ReasonCode::BadUserNameOrPassword, {}};
+  AuthResult failure{.status = AuthStatus::Failure,
+                     .reason_code = ReasonCode::BadUserNameOrPassword,
+                     .auth_data = {}};
 
   if (!connect.username.has_value()) {
     return failure;
@@ -29,7 +30,9 @@ AuthResult PasswordAuthenticator::authenticate(const ConnectPacket &connect) {
     return failure;
   }
 
-  return {AuthStatus::Success, ReasonCode::Success, {}};
+  return {.status = AuthStatus::Success,
+          .reason_code = ReasonCode::Success,
+          .auth_data = {}};
 }
 
 } // namespace mqtt
