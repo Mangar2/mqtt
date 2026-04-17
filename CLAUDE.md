@@ -20,6 +20,7 @@ Respond to the user in the language they write in.
 | `/cpp-dev` | C++20 rules and code style |
 | `/unit-test` | Run, write, or fix tests |
 | `/code-create` | Full workflow for creating or extending code |
+| `/github-pr` | Create and close GitHub branches and Pull Requests |
 
 ## Project Plan
 
