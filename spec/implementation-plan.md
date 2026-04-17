@@ -322,14 +322,14 @@ Module structure for a fully specification-compliant MQTT 5.0 broker. Each modul
 
 *Alternative transports beyond plain TCP. Depends on: 6.*
 
-- 14.1 TLS Transport
-  - 14.1.1 TLS handshake over existing TCP socket
-  - 14.1.2 Load and configure certificates
-  - 14.1.3 Mutual TLS (client certificate verification)
-- 14.2 WebSocket Transport
-  - 14.2.1 HTTP upgrade handshake (`Upgrade: websocket`)
-  - 14.2.2 WebSocket frame encoder / decoder
-  - 14.2.3 Extract MQTT payload from WebSocket frame
+- 14.1 TLS Transport — **NOT IMPLEMENTED**
+  - Provides encrypted MQTTS (port 8883) and WSS transport.
+  - Requires an external TLS library (e.g. OpenSSL, mbedTLS).
+  - Recommended alternative: use a reverse proxy (nginx, HAProxy, stunnel) for TLS termination.
+- 14.2 WebSocket Transport ✓
+  - 14.2.1 HTTP upgrade handshake (`Upgrade: websocket`) — validates RFC 6455 headers, computes `Sec-WebSocket-Accept` via SHA-1 + Base64 (no external dependencies)
+  - 14.2.2 WebSocket frame encoder / decoder — supports 1-byte, 16-bit, and 64-bit payload length; handles client-side masking; encodes server-side frames unmasked
+  - 14.2.3 Extract MQTT payload from WebSocket frame — binary frames carry MQTT packet bytes directly
 
 ---
 

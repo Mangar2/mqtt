@@ -18,6 +18,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `authz/`            | 9        | Authorization Module — ACL engine with MQTT wildcard topic matching, ACL rule structure, and configuration loader with runtime reload. |
 | `session_manager/`  | 10       | Session Manager — session lifecycle controller (create/resume/discard), session takeover handler (Client ID collision, Reason 0x8E), and session expiry scheduler. Depends on `store/`, `connection/`, `auth/`. |
 | `will_manager/`     | 11       | Will Manager — will store, will-delay timer, and will publisher. Stores Will Messages on connect, suppresses them on normal disconnect, and publishes them (with optional delay) on connection loss or session expiry. Depends on `data_model/`, `store/`, `session_manager/`. |
+| `transport/`        | 14.2     | Transport Extensions — WebSocket HTTP upgrade handshake, WebSocket frame encoder/decoder, and MQTT payload extraction from binary frames. **Module 14.1 (TLS) is not implemented** — use a reverse proxy for TLS termination. |
 
 ## `data_model/` sub-modules
 

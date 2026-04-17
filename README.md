@@ -69,6 +69,14 @@ mqtt/
 └── CMakePresets.json
 ```
 
+## Limitations
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| **TLS / MQTTS** (port 8883) | Not implemented | Module 14.1 requires an external TLS library (OpenSSL, mbedTLS, etc.). Use a reverse proxy (nginx, HAProxy, stunnel) to terminate TLS in front of the broker. |
+| **WSS** (WebSocket over TLS) | Not implemented | Depends on TLS — same note as above. |
+| WebSocket / WS (plain) | Implemented | Module 14.2 — no external dependencies. |
+
 ## License
 
 TBD
