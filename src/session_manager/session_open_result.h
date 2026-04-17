@@ -15,8 +15,10 @@ namespace mqtt {
  * displaced connection needs a final DISCONNECT write.
  */
 struct SessionOpenResult {
-    bool session_present;   ///< True when an existing session was resumed (Clean Start = 0 and session existed).
-    bool takeover_occurred; ///< True when an old connection with the same Client ID was displaced.
+  bool session_present;   ///< True when an existing session was resumed (Clean
+                          ///< Start = 0 and session existed).
+  bool takeover_occurred; ///< True when an old connection with the same Client
+                          ///< ID was displaced.
 };
 
 } // namespace mqtt
