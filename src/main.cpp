@@ -43,10 +43,11 @@ int main(int argc, char *argv[]) {
   }
   std::cout << '\n';
 
-  // Main loop — poll for shutdown signal.
+  // Main loop — poll for shutdown signal and tick monitoring.
   while (!mqtt::Broker::shutdown_requested()) {
     // A production implementation would run the accept loop here.
     // (accept loop requires per-connection MQTT protocol handler — Module 16+)
+    broker.tick();
   }
 
   broker.shutdown();

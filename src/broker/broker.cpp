@@ -12,6 +12,8 @@
 
 #include "broker/broker_error.h"
 #include "connection/topic_alias_table.h"
+#include "monitoring/statistics_collector.h"
+#include "monitoring/sys_topic_publisher.h"
 
 namespace mqtt {
 
@@ -84,15 +86,35 @@ SubscriptionStore &Broker::subscription_store() noexcept {
   return *subscription_store_;
 }
 
+StatisticsCollector &Broker::statistics_collector() noexcept {
+  return *stats_collector_;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Connection registration
 
 void Broker::register_connection(std::string_view client_id, SendFn send_fn) {
   active_connections_[std::string(client_id)] = std::move(send_fn);
+  stats_collector_->on_client_connected();
 }
 
 void Broker::unregister_connection(std::string_view client_id) noexcept {
   active_connections_.erase(std::string(client_id));
+  stats_collector_->on_client_disconnected();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Monitoring (Module 16)
+
+void Broker::route_message(Message &msg, std::string_view client_id,
+                           std::string_view username,
+                           TopicAliasTable &alias_table) {
+  stats_collector_->on_message_inbound();
+  message_router_->route(msg, client_id, username, alias_table);
+}
+
+bool Broker::tick(std::chrono::steady_clock::time_point now) {
+  return sys_publisher_->tick(now);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -179,6 +201,7 @@ void Broker::create_modules() {
   auto deliver_fn = [this](std::string_view cid, const Message &msg) {
     auto iter = active_connections_.find(std::string(cid));
     if (iter != active_connections_.end()) {
+      stats_collector_->on_message_outbound();
       iter->second(msg);
     }
   };
@@ -204,6 +227,21 @@ void Broker::create_modules() {
 
   will_publisher_ = std::make_unique<WillPublisher>(
       *will_store_, *will_delay_timer_, std::move(will_publish_fn));
+
+  // ── Monitoring (Module 16) ────────────────────────────────────────────
+  stats_collector_ = std::make_unique<StatisticsCollector>(*subscription_store_,
+                                                           *retained_store_);
+
+  // $SYS publish callback: route via MessageRouter using the reserved
+  // broker-internal client ID that the ACL allows to publish everywhere.
+  auto sys_publish_fn = [this](Message msg) {
+    TopicAliasTable alias_table(0U);
+    message_router_->route(msg, "_broker_will_system_", "", alias_table);
+  };
+
+  sys_publisher_ = std::make_unique<SysTopicPublisher>(
+      *stats_collector_, std::chrono::seconds(config_.sys_topic_interval),
+      std::move(sys_publish_fn));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

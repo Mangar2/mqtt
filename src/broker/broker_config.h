@@ -70,6 +70,12 @@ struct BrokerConfig {
 
   /// Directory for persistence snapshot files.
   std::filesystem::path persistence_dir{"./data"};
+
+  // ── Monitoring ────────────────────────────────────────────────────────────
+
+  /// Interval in seconds for publishing `$SYS` statistics topics.
+  /// 0 = disabled (Module 16.2.2).
+  uint32_t sys_topic_interval = 0U;
 };
 
 } // namespace mqtt

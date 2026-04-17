@@ -20,11 +20,14 @@
 #include "authz/acl_engine.h"
 #include "authz/acl_loader.h"
 #include "broker/broker_config.h"
+#include "connection/topic_alias_table.h"
 #include "data_model/message/message.h"
 #include "message_router/inbound_publish_processor.h"
 #include "message_router/message_router.h"
 #include "message_router/offline_queue.h"
 #include "message_router/shared_subscription_dispatcher.h"
+#include "monitoring/statistics_collector.h"
+#include "monitoring/sys_topic_publisher.h"
 #include "network/tcp_listener.h"
 #include "persistence/inflight_persistence.h"
 #include "persistence/retained_message_persistence.h"
@@ -39,6 +42,7 @@
 #include "will_manager/will_delay_timer.h"
 #include "will_manager/will_publisher.h"
 #include "will_manager/will_store.h"
+
 
 namespace mqtt {
 
@@ -153,6 +157,38 @@ public:
 
   /// @return Reference to the `SubscriptionStore` (Module 4).
   [[nodiscard]] SubscriptionStore &subscription_store() noexcept;
+
+  /// @return Reference to the `StatisticsCollector` (Module 16).
+  [[nodiscard]] StatisticsCollector &statistics_collector() noexcept;
+
+  /**
+   * @brief Route an inbound PUBLISH message through the broker (16.1.2).
+   *
+   * Increments the inbound message counter in the statistics collector and
+   * delegates to `MessageRouter::route()`.  Connection handlers should call
+   * this wrapper instead of `message_router().route()` directly so that
+   * throughput statistics are maintained.
+   *
+   * @param msg         Message to route; may be modified in-place.
+   * @param client_id   Publishing client identifier.
+   * @param username    Username of the publishing client; may be empty.
+   * @param alias_table Topic alias table for the publishing connection.
+   */
+  void route_message(Message &msg, std::string_view client_id,
+                     std::string_view username, TopicAliasTable &alias_table);
+
+  /**
+   * @brief Advance the monitoring timer and publish `$SYS` stats if due
+   *        (Module 16.2).
+   *
+   * Call from the main event loop.  Returns `true` when statistics were
+   * published during this invocation.
+   *
+   * @param now Current time; defaults to `steady_clock::now()`.
+   * @return `true` if `$SYS` topics were published.
+   */
+  bool tick(std::chrono::steady_clock::time_point now =
+                std::chrono::steady_clock::now());
 
   // ── Connection registration ────────────────────────────────────────────────
 
@@ -273,6 +309,11 @@ private:
   // ── Connection tracking ───────────────────────────────────────────────────
 
   std::unordered_map<std::string, SendFn> active_connections_;
+
+  // ── Monitoring (Module 16) ─────────────────────────────────────────────────
+
+  std::unique_ptr<StatisticsCollector> stats_collector_;
+  std::unique_ptr<SysTopicPublisher> sys_publisher_;
 
   // ── Signal flag ───────────────────────────────────────────────────────────
 

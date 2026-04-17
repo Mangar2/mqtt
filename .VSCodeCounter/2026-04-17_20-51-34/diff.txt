@@ -1,0 +1,52 @@
+Date : 2026-04-17 20:51:34
+Directory : c:\Development\mqtt\src
+Total : 20 files,  1095 codes, 419 comments, 346 blanks, all 1860 lines
+
+Languages
++----------+------------+------------+------------+------------+------------+
+| language | files      | code       | comment    | blank      | total      |
++----------+------------+------------+------------+------------+------------+
+| C++      |         15 |        894 |        419 |        286 |      1,599 |
+| Markdown |          5 |        201 |          0 |         60 |        261 |
++----------+------------+------------+------------+------------+------------+
+
+Directories
++--------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                               | files      | code       | comment    | blank      | total      |
++--------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                  |         20 |      1,095 |        419 |        346 |      1,860 |
+| . (Files)                                                          |          2 |         40 |          4 |          9 |         53 |
+| broker                                                             |         10 |      1,008 |        399 |        329 |      1,736 |
+| broker (Files)                                                     |          7 |        623 |        347 |        230 |      1,200 |
+| broker\test                                                        |          3 |        385 |         52 |         99 |        536 |
+| store                                                              |          8 |         47 |         16 |          8 |         71 |
+| store (Files)                                                      |          5 |         20 |         16 |          4 |         40 |
+| store\test                                                         |          3 |         27 |          0 |          4 |         31 |
++--------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++--------------------------------------------------------------------+----------+------------+------------+------------+------------+
+| filename                                                           | language | code       | comment    | blank      | total      |
++--------------------------------------------------------------------+----------+------------+------------+------------+------------+
+| c:\Development\mqtt\src\SPEC.md                                    | Markdown |          8 |          0 |          2 |         10 |
+| c:\Development\mqtt\src\broker\SPEC.md                             | Markdown |        143 |          0 |         47 |        190 |
+| c:\Development\mqtt\src\broker\broker.cpp                          | C++      |        173 |         47 |         60 |        280 |
+| c:\Development\mqtt\src\broker\broker.h                            | C++      |         91 |        137 |         56 |        284 |
+| c:\Development\mqtt\src\broker\broker_config.h                     | C++      |         17 |         41 |         18 |         76 |
+| c:\Development\mqtt\src\broker\broker_error.h                      | C++      |         20 |         20 |          9 |         49 |
+| c:\Development\mqtt\src\broker\config_loader.cpp                   | C++      |        160 |         12 |         26 |        198 |
+| c:\Development\mqtt\src\broker\config_loader.h                     | C++      |         19 |         90 |         14 |        123 |
+| c:\Development\mqtt\src\broker\test\TEST_SPEC.md                   | Markdown |         44 |          0 |         11 |         55 |
+| c:\Development\mqtt\src\broker\test\broker_config_test.cpp         | C++      |        150 |         13 |         32 |        195 |
+| c:\Development\mqtt\src\broker\test\broker_test.cpp                | C++      |        191 |         39 |         56 |        286 |
+| c:\Development\mqtt\src\main.cpp                                   | C++      |         32 |          4 |          7 |         43 |
+| c:\Development\mqtt\src\store\SPEC.md                              | Markdown |          2 |          0 |          0 |          2 |
+| c:\Development\mqtt\src\store\retained_message_store.cpp           | C++      |          8 |          0 |          1 |          9 |
+| c:\Development\mqtt\src\store\retained_message_store.h             | C++      |          1 |          9 |          1 |         11 |
+| c:\Development\mqtt\src\store\session_store.cpp                    | C++      |          8 |          0 |          1 |          9 |
+| c:\Development\mqtt\src\store\session_store.h                      | C++      |          1 |          7 |          1 |          9 |
+| c:\Development\mqtt\src\store\test\TEST_SPEC.md                    | Markdown |          4 |          0 |          0 |          4 |
+| c:\Development\mqtt\src\store\test\retained_message_store_test.cpp | C++      |         11 |          0 |          2 |         13 |
+| c:\Development\mqtt\src\store\test\session_store_test.cpp          | C++      |         12 |          0 |          2 |         14 |
+| Total                                                              |          |      1,095 |        419 |        346 |      1,860 |
++--------------------------------------------------------------------+----------+------------+------------+------------+------------+

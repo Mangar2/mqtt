@@ -15,6 +15,7 @@
 #include "will_manager/will_publisher.h"
 
 using namespace mqtt;
+using namespace std::chrono_literals;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -282,5 +283,111 @@ TEST_CASE("broker_will_publish_fn_routes_will_message", "[broker]") {
   CHECK(will_delivered == true);
 
   broker.unregister_connection("will_sub");
+  broker.shutdown();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Monitoring — Module 16 integration
+
+TEST_CASE("broker_statistics_collector_accessor", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  auto &stats = broker.statistics_collector();
+  const auto snap = stats.snapshot();
+  CHECK(snap.connected_clients == 0U);
+  CHECK(snap.messages_inbound == 0U);
+  CHECK(snap.messages_outbound == 0U);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_register_increments_connected_clients", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  broker.register_connection("c1", [](const Message &) {});
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
+
+  broker.register_connection("c2", [](const Message &) {});
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 2U);
+
+  broker.unregister_connection("c1");
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
+
+  broker.unregister_connection("c2");
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 0U);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_route_message_counts_inbound", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  Message msg;
+  msg.topic = Utf8String{"sensors/temp"};
+  msg.qos = QoS::AtMostOnce;
+  TopicAliasTable alias_table(0U);
+
+  broker.route_message(msg, "pub_client", "", alias_table);
+  CHECK(broker.statistics_collector().snapshot().messages_inbound == 1U);
+
+  broker.route_message(msg, "pub_client", "", alias_table);
+  CHECK(broker.statistics_collector().snapshot().messages_inbound == 2U);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_deliver_counts_outbound", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  Subscription sub;
+  sub.topic_filter = Utf8String{"sensors/#"};
+  sub.qos = QoS::AtMostOnce;
+  broker.subscription_store().store("sub_client", sub);
+
+  broker.register_connection("sub_client", [](const Message &) {});
+
+  Message msg;
+  msg.topic = Utf8String{"sensors/temp"};
+  msg.qos = QoS::AtMostOnce;
+  TopicAliasTable alias_table(0U);
+  broker.route_message(msg, "pub_client", "", alias_table);
+
+  CHECK(broker.statistics_collector().snapshot().messages_outbound == 1U);
+
+  broker.unregister_connection("sub_client");
+  broker.shutdown();
+}
+
+TEST_CASE("broker_tick_returns_false_when_sys_disabled", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.sys_topic_interval = 0U; // disabled
+  Broker broker(cfg);
+  broker.startup();
+
+  // Tick with a far-future time — should never publish when interval == 0.
+  const auto far_future = std::chrono::steady_clock::now() + 1000s;
+  CHECK_FALSE(broker.tick(far_future));
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_tick_publishes_sys_topics_when_enabled", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.sys_topic_interval = 60U; // 60-second interval
+  Broker broker(cfg);
+  broker.startup();
+
+  // First tick far in the future — interval always elapsed on first tick.
+  const auto far_future = std::chrono::steady_clock::now() + 1000s;
+  CHECK(broker.tick(far_future));
+
   broker.shutdown();
 }

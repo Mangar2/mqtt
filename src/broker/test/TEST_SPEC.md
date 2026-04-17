@@ -52,3 +52,9 @@ All tests are tagged `[broker]`.
 | `broker_destructor_auto_shutdown` | destructor | Let Broker go out of scope while running | ephemeral port | no crash |
 | `broker_shutdown_requested_false_initially` | signal | Before install_signal_handlers | — | shutdown_requested() == false |
 | `broker_with_persistence_startup` | persistence | Startup with persistence enabled | temp dir, persistence_enabled=true | is_running() == true, loads empty stores |
+| `broker_statistics_collector_accessor` | monitoring | statistics_collector() | after startup | snapshot all-zero |
+| `broker_register_increments_connected_clients` | monitoring | register/unregister | 2 clients | connected_clients tracks correctly |
+| `broker_route_message_counts_inbound` | monitoring | route_message() | 2 publishes | messages_inbound==2 |
+| `broker_deliver_counts_outbound` | monitoring | deliver callback | 1 subscriber online | messages_outbound==1 |
+| `broker_tick_returns_false_when_sys_disabled` | monitoring | tick() with interval=0 | far-future now | returns false |
+| `broker_tick_publishes_sys_topics_when_enabled` | monitoring | tick() with interval=60 | far-future now | returns true |
