@@ -12,7 +12,9 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
+#include <vector>
 
 #include "auth/anonymous_authenticator.h"
 #include "auth/authenticator.h"
@@ -42,7 +44,6 @@
 #include "will_manager/will_delay_timer.h"
 #include "will_manager/will_publisher.h"
 #include "will_manager/will_store.h"
-
 
 namespace mqtt {
 
@@ -157,7 +158,11 @@ public:
 
   /// @return Reference to the `SubscriptionStore` (Module 4).
   [[nodiscard]] SubscriptionStore &subscription_store() noexcept;
+  /// @return Reference to the `RetainedMessageStore` (Module 4.2).
+  [[nodiscard]] RetainedMessageStore &retained_message_store() noexcept;
 
+  /// @return Reference to the `InflightStore` (Module 4.4).
+  [[nodiscard]] InflightStore &inflight_store() noexcept;
   /// @return Reference to the `StatisticsCollector` (Module 16).
   [[nodiscard]] StatisticsCollector &statistics_collector() noexcept;
 
@@ -314,6 +319,10 @@ private:
 
   std::unique_ptr<StatisticsCollector> stats_collector_;
   std::unique_ptr<SysTopicPublisher> sys_publisher_;
+
+  // ── Accept threads (Module 17) ────────────────────────────────────────────
+
+  std::vector<std::thread> accept_threads_; ///< One thread per open listener.
 
   // ── Signal flag ───────────────────────────────────────────────────────────
 

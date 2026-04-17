@@ -34,9 +34,23 @@ TcpConnection &TcpConnection::operator=(TcpConnection &&other) noexcept {
 }
 
 std::ptrdiff_t TcpConnection::read(std::span<uint8_t> buf) const noexcept {
+  last_timed_out_ = false;
   int result = ::recv(to_socket(fd_), reinterpret_cast<char *>(buf.data()),
                       static_cast<int>(buf.size()), 0);
+  if (result == SOCKET_ERROR && WSAGetLastError() == WSAETIMEDOUT) {
+    last_timed_out_ = true;
+  }
   return static_cast<std::ptrdiff_t>(result);
+}
+
+void TcpConnection::set_receive_timeout(uint32_t milliseconds_val) noexcept {
+  DWORD val = static_cast<DWORD>(milliseconds_val);
+  ::setsockopt(to_socket(fd_), SOL_SOCKET, SO_RCVTIMEO,
+               reinterpret_cast<const char *>(&val), sizeof(val));
+}
+
+bool TcpConnection::last_read_timed_out() const noexcept {
+  return last_timed_out_;
 }
 
 bool TcpConnection::write(std::span<const uint8_t> buf) const noexcept {

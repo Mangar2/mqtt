@@ -5,6 +5,7 @@
 #include "network/tcp_connection.h"
 
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include <cstdint>
@@ -39,7 +40,24 @@ TcpConnection &TcpConnection::operator=(TcpConnection &&other) noexcept {
 }
 
 std::ptrdiff_t TcpConnection::read(std::span<uint8_t> buf) const noexcept {
-  return ::recv(to_fd(fd_), buf.data(), buf.size(), 0);
+  last_timed_out_ = false;
+  std::ptrdiff_t result = ::recv(to_fd(fd_), buf.data(), buf.size(), 0);
+  if (result < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+    last_timed_out_ = true;
+  }
+  return result;
+}
+
+void TcpConnection::set_receive_timeout(uint32_t milliseconds_val) noexcept {
+  struct timeval tv{};
+  tv.tv_sec = static_cast<time_t>(milliseconds_val / 1000U);
+  tv.tv_usec = static_cast<suseconds_t>((milliseconds_val % 1000U) * 1000U);
+  ::setsockopt(to_fd(fd_), SOL_SOCKET, SO_RCVTIMEO,
+               reinterpret_cast<const void *>(&tv), sizeof(tv));
+}
+
+bool TcpConnection::last_read_timed_out() const noexcept {
+  return last_timed_out_;
 }
 
 bool TcpConnection::write(std::span<const uint8_t> buf) const noexcept {

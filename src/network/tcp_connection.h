@@ -100,8 +100,28 @@ public:
    */
   [[nodiscard]] SocketHandle fd() const noexcept;
 
+  /**
+   * @brief Set the socket receive timeout (SO_RCVTIMEO).
+   *
+   * After this call, `read()` will return -1 and `last_read_timed_out()`
+   * will return `true` when no data arrives within @p milliseconds_val.
+   *
+   * Pass 0 to disable the timeout (block indefinitely).
+   *
+   * @param milliseconds_val Timeout in milliseconds.
+   */
+  void set_receive_timeout(uint32_t milliseconds_val) noexcept;
+
+  /**
+   * @brief Return whether the most recent `read()` call returned -1 due to a
+   *        receive timeout rather than a hard socket error.
+   * @return `true` if the last `read()` timed out; `false` otherwise.
+   */
+  [[nodiscard]] bool last_read_timed_out() const noexcept;
+
 private:
-  SocketHandle fd_{k_invalid_socket}; ///< Owned socket handle.
+  SocketHandle fd_{k_invalid_socket};  ///< Owned socket handle.
+  mutable bool last_timed_out_{false}; ///< Set by read() on SO_RCVTIMEO expiry.
 };
 
 } // namespace mqtt

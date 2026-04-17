@@ -26,6 +26,7 @@ same broker code without modification to the MQTT codec or connection handler.
 | `transport_error.h` | 14 | `TransportError` enum and `TransportException` |
 | `websocket_handshake.h/.cpp` | 14.2.1 | `WebSocketHandshake` — parses HTTP upgrade request; produces 101 response |
 | `websocket_frame_codec.h/.cpp` | 14.2.2–3 | `WsOpcode`, `WsFrame`, `WebSocketFrameCodec` — frame decoder (buffered), frame encoder |
+| `websocket_transport.h/.cpp` | 14.2.4 | `WebSocketTransport` — composed transport: performs WS handshake on construction, wraps `TcpConnection` reads/writes with transparent WS framing |
 
 ---
 
@@ -93,3 +94,44 @@ provides static helpers to encode outbound frames for the server side.
 
 Client-to-server frames are always masked; the codec unmasks transparently.
 Server-to-client frames are never masked.
+
+---
+
+### `WebSocketTransport` (14.2.4)
+
+Composed transport that performs the RFC 6455 handshake on construction and
+wraps a `TcpConnection` so that callers read and write raw MQTT bytes without
+needing to know about the WebSocket framing layer.
+
+**Constructor:** `WebSocketTransport(TcpConnection& conn)`
+- Reads the HTTP upgrade request from `conn` and writes the 101 response.
+- Throws `TransportException(InvalidHandshake)` on protocol failure.
+
+**`read_chunk()`** → `WsReadChunk`
+- Reads one TCP recv chunk, feeds raw bytes into `WebSocketFrameCodec`.
+- Collects all complete Binary-frame payloads into `WsReadChunk::data`.
+- Auto-responds to Ping frames with a Pong (sync write).
+- Returns `eof = true` on a Close frame or TCP EOF.
+- Returns `timed_out = true` on a recv timeout.
+
+**`write_frame(span<const uint8_t>)`** → `bool`
+- Wraps MQTT bytes in a WS Binary frame and writes synchronously to TCP.
+- Used for in-band writes before the async drain thread starts.
+
+**`encode_frame(span<const uint8_t>)`** → `vector<uint8_t>` *(static)*
+- Wraps MQTT bytes in a WS Binary frame for pre-framing into `WriteQueue`.
+
+**`set_receive_timeout(uint32_t ms)`** — delegates to the underlying `TcpConnection`.
+
+**`tcp()`** → `TcpConnection&` — returns the underlying connection for
+`WriteQueue::run_drain`.
+
+```cpp
+// Example usage in connection handler
+WebSocketTransport ws(conn);
+ws.set_receive_timeout(500U);
+WsReadChunk chunk = ws.read_chunk();
+if (!chunk.eof && !chunk.timed_out) {
+    stream_buf.append(chunk.data);
+}
+```

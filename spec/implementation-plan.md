@@ -366,3 +366,40 @@ Module structure for a fully specification-compliant MQTT 5.0 broker. Each modul
   - 16.2.1 Publish statistics periodically to `$SYS` topics
   - 16.2.2 Configurable publish interval
   - 16.2.3 Exclude `$SYS` topics from normal wildcard subscriptions
+
+---
+
+## 17. Connection Pipeline
+
+*Binds all modules into a working per-client MQTT session loop. This is the missing "glue" that turns the collection of independently-tested modules into a running broker. Depends on: all previous.*
+
+- 17.1 Client Handler
+  - 17.1.1 Spawn one handler per accepted TCP connection (own thread or task)
+  - 17.1.2 Detect transport: plain TCP vs. WebSocket upgrade (via `WebSocketHandshake`)
+  - 17.1.3 Wrap connection in `StreamBuffer` (inbound) and `WriteQueue` (outbound)
+  - 17.1.4 Send / receive serialized packets using the Codec (Module 2)
+- 17.2 CONNECT Handshake
+  - 17.2.1 Read and decode the first packet; reject non-CONNECT with protocol error
+  - 17.2.2 Authenticate credentials via `IAuthenticator` (Module 8)
+  - 17.2.3 Create / resume session via `SessionManager` (Module 10)
+  - 17.2.4 Send CONNACK (Session Present flag, Reason Code, server properties)
+- 17.3 Per-Packet Dispatch Loop
+  - 17.3.1 Read next complete packet from `StreamBuffer`
+  - 17.3.2 Reset `KeepAliveTimer` on every received packet (Module 7.2)
+  - 17.3.3 Dispatch PUBLISH → `Broker::route_message()` (Module 16 / 12)
+  - 17.3.4 Dispatch SUBSCRIBE → `SessionManager` / store; send SUBACK; deliver retained messages
+  - 17.3.5 Dispatch UNSUBSCRIBE → `SessionManager`; send UNSUBACK
+  - 17.3.6 Dispatch PUBACK / PUBREC / PUBREL / PUBCOMP → QoS state machine (Module 5)
+  - 17.3.7 Dispatch PINGREQ → send PINGRESP
+  - 17.3.8 Dispatch DISCONNECT → `WillPublisher.on_disconnect()`, close cleanly
+  - 17.3.9 Dispatch AUTH → `EnhancedAuthHandler` (Module 8.3)
+- 17.4 Outbound Delivery Integration
+  - 17.4.1 Register `SendFn` with `Broker::register_connection()` on successful CONNACK
+  - 17.4.2 Encode outbound messages and enqueue to `WriteQueue`
+  - 17.4.3 Respect `ReceiveMaximum` flow control (Module 7.4): pause outbound when limit hit
+  - 17.4.4 Run `WriteQueue::run_drain()` on a dedicated drain thread per connection
+- 17.5 Connection Teardown
+  - 17.5.1 On Keep-Alive timeout: send DISCONNECT (Reason 0x8D), close socket
+  - 17.5.2 On TCP error / EOF: call `WillPublisher.on_connection_lost()`, unregister connection
+  - 17.5.3 Flush offline queue for returning clients (`MessageRouter::flush_offline_queue()`)
+  - 17.5.4 Unregister connection from broker (`Broker::unregister_connection()`)

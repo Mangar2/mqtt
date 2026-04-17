@@ -50,3 +50,30 @@ All tests in `websocket_test.cpp`.  Catch2 tag: `[transport]`.
 | `frame_encode_binary_roundtrip` | Encode then decode → recovers original payload |
 | `frame_encode_control_ping` | `encode_control(Ping, {})` → FIN=1, opcode=Ping |
 | `frame_encode_control_close` | `encode_control(Close, {})` → FIN=1, opcode=Close |
+
+---
+
+## WebSocketTransport — encode (14.2.4)
+
+| Test case | Behaviour |
+|-----------|-----------|
+| `ws_transport_encode_frame_small` | `encode_frame` with ≤ 125 bytes → valid WS Binary frame |
+| `ws_transport_encode_frame_126_boundary` | `encode_frame` with exactly 126 bytes → 16-bit extended length field |
+| `ws_transport_encode_frame_empty` | `encode_frame` with empty span → 2-byte frame (FIN+Binary, payload=0) |
+| `ws_transport_encode_frame_roundtrip` | `encode_frame` then decode via `WebSocketFrameCodec` → original bytes recovered |
+
+---
+
+## WebSocketTransport — integration (14.2.4)
+
+| Test case | Behaviour |
+|-----------|-----------|
+| `ws_transport_handshake_and_read_binary` | Performs WS handshake over real loopback TCP and verifies `read_chunk()` returns MQTT bytes from a Binary frame |
+| `ws_transport_write_frame_to_client` | After handshake, `write_frame()` sends WS Binary frame bytes visible on the peer |
+| `ws_transport_ping_gets_pong` | `read_chunk()` auto-responds to Ping with Pong carrying the same payload |
+| `ws_transport_close_sets_eof` | Close frame is reported as `eof = true` by `read_chunk()` |
+| `ws_transport_constructor_throws_on_closed_socket` | Constructor throws `TransportException` when peer closes before completing handshake |
+| `ws_transport_read_chunk_timeout_sets_timed_out` | `read_chunk()` reports `timed_out = true`, `eof = false` on receive timeout |
+| `ws_transport_read_chunk_eof_on_tcp_close` | `read_chunk()` reports `eof = true` when TCP peer closes after handshake |
+| `ws_transport_read_chunk_invalid_frame_sets_eof` | Protocol-invalid WS frame causes `read_chunk()` to return `eof = true` |
+| `ws_transport_tcp_returns_underlying_connection` | `tcp()` exposes the wrapped `TcpConnection` handle |

@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "broker/broker_error.h"
+#include "connection/client_handler.h"
 #include "connection/topic_alias_table.h"
 #include "monitoring/statistics_collector.h"
 #include "monitoring/sys_topic_publisher.h"
@@ -85,6 +86,12 @@ WillPublisher &Broker::will_publisher() noexcept { return *will_publisher_; }
 SubscriptionStore &Broker::subscription_store() noexcept {
   return *subscription_store_;
 }
+
+RetainedMessageStore &Broker::retained_message_store() noexcept {
+  return *retained_store_;
+}
+
+InflightStore &Broker::inflight_store() noexcept { return *inflight_store_; }
 
 StatisticsCollector &Broker::statistics_collector() noexcept {
   return *stats_collector_;
@@ -295,11 +302,33 @@ void Broker::flush_persistence() noexcept {
 // Private — listeners (15.3.1 / 15.3.2)
 
 void Broker::open_listeners() {
+  auto spawn_accept_thread = [this](TcpListener &listener, bool is_ws) {
+    accept_threads_.emplace_back([this, &listener, is_ws]() {
+      while (!shutdown_requested_.load()) {
+        try {
+          auto conn = listener.accept();
+          if (!conn) {
+            continue;
+          }
+          std::thread([this, c = std::move(conn), is_ws]() mutable {
+            ClientHandler handler;
+            handler.run(std::move(c), *this, config_, is_ws);
+          }).detach();
+        } catch (...) {
+          // accept() throws when the listener is closed during shutdown
+          break;
+        }
+      }
+    });
+  };
+
   if (config_.mqtt_port != 0U) {
     mqtt_listener_ = TcpListener::listen(config_.mqtt_port);
+    spawn_accept_thread(*mqtt_listener_, false);
   }
   if (config_.ws_port != 0U) {
     ws_listener_ = TcpListener::listen(config_.ws_port);
+    spawn_accept_thread(*ws_listener_, true);
   }
 }
 
@@ -312,6 +341,12 @@ void Broker::close_listeners() noexcept {
     ws_listener_->close();
     ws_listener_.reset();
   }
+  for (auto &thr : accept_threads_) {
+    if (thr.joinable()) {
+      thr.join();
+    }
+  }
+  accept_threads_.clear();
 }
 
 } // namespace mqtt
