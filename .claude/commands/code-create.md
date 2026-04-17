@@ -99,6 +99,17 @@ Before writing any code, create or update a `SPEC.md` in the target directory.
 - The code must match `SPEC.md` — it is the implementation guide.
 - **`src/SPEC.md` is the top-level index of all modules.** Whenever a new module or sub-module directory is added (or an existing one is extended), update the relevant row in `src/SPEC.md` as part of the same commit. Never leave `src/SPEC.md` out of date.
 
+## Plan all subdirectories before starting a top-level module
+
+When beginning work on a new top-level module (e.g. `codec/`, `topic/`, `session/`),
+plan and document **all** subdirectories for that entire chapter up front — before
+writing any code.
+
+- List every sub-module directory in the parent `SPEC.md` with its plan-ref, contents, and file names.
+- This prevents renaming or restructuring directories mid-implementation.
+- If the full sub-module breakdown is not yet known, research it from the implementation plan (`spec/implementation-plan.md`) before proceeding.
+- Adding a subdirectory that was not planned is a signal to update the parent `SPEC.md` first.
+
 ## Documentation and code stay in sync
 
 - When new insights contradict `SPEC.md`: update `SPEC.md` first, then continue.
