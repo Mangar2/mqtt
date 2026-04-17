@@ -103,3 +103,16 @@ TEST_CASE("find_multiple_matches", "[store]") {
   const auto results = store.find("a/+");
   CHECK(results.size() == 2U);
 }
+
+TEST_CASE("all_returns_all_messages", "[store]") {
+  RetainedMessageStore store;
+  store.store(make_message("a/b"));
+  store.store(make_message("$SYS/x"));
+  const auto results = store.all();
+  CHECK(results.size() == 2U);
+}
+
+TEST_CASE("all_empty_when_no_messages", "[store]") {
+  RetainedMessageStore store;
+  CHECK(store.all().empty());
+}

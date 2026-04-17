@@ -37,6 +37,8 @@ All tests are tagged `[store]`.
 | `find_system_topic_excluded_from_wildcard` | find system | $SYS topic excluded from wildcard | stored "$SYS/b", filter "+/b" | empty |
 | `find_system_topic_exact` | find system exact | Exact filter still matches $SYS | stored "$SYS/b", filter "$SYS/b" | 1 result |
 | `find_multiple_matches` | find multi | Multiple stored topics match filter | stored "a/1","a/2", filter "a/+" | 2 results |
+| `all_returns_all_messages` | all | Enumerate all messages including system topics | stored "a/b" and "$SYS/x" | all() returns 2 results |
+| `all_empty_when_no_messages` | all empty | No messages stored | empty store | all() returns empty vector |
 
 ---
 
@@ -58,6 +60,8 @@ All tests are tagged `[store]`.
 | `expired_sessions_never_expires` | expiry never | session_expiry_interval==0xFFFFFFFF | any disconnect time | not in result |
 | `expired_sessions_no_disconnect_time` | no disconnect | No mark_disconnected call | connected session | not in result |
 | `remove_also_clears_disconnect_time` | remove clears | Remove then re-create | c1 removed and recreated | not expired |
+| `all_returns_all_sessions` | all | Enumerate all stored sessions | three sessions created | all() returns vector of size 3 |
+| `all_empty_when_no_sessions` | all empty | No sessions | empty store | all() returns empty vector |
 
 ---
 

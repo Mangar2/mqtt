@@ -137,3 +137,17 @@ TEST_CASE("remove_also_clears_disconnect_time", "[store]") {
   const auto expired = store.expired_sessions(now);
   CHECK(expired.empty());
 }
+
+TEST_CASE("all_returns_all_sessions", "[store]") {
+  SessionStore store;
+  store.create(make_session("c1"));
+  store.create(make_session("c2"));
+  store.create(make_session("c3"));
+  const auto all_sessions = store.all();
+  CHECK(all_sessions.size() == 3U);
+}
+
+TEST_CASE("all_empty_when_no_sessions", "[store]") {
+  SessionStore store;
+  CHECK(store.all().empty());
+}

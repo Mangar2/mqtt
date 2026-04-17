@@ -88,6 +88,15 @@ public:
   expired_sessions(std::chrono::steady_clock::time_point now) const;
 
   /**
+   * @brief Return copies of all stored sessions.
+   *
+   * Used by the persistence layer to snapshot the full session set.
+   *
+   * @return Vector containing every `SessionState` in the store.
+   */
+  [[nodiscard]] std::vector<SessionState> all() const;
+
+  /**
    * @brief Return the number of stored sessions.
    * @return Session count.
    */

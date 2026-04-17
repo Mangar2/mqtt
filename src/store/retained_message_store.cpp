@@ -38,4 +38,13 @@ std::size_t RetainedMessageStore::size() const noexcept {
   return messages_.size();
 }
 
+std::vector<Message> RetainedMessageStore::all() const {
+  std::vector<Message> result;
+  result.reserve(messages_.size());
+  for (const auto &[topic, msg] : messages_) {
+    result.push_back(msg);
+  }
+  return result;
+}
+
 } // namespace mqtt

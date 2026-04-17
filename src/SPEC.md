@@ -19,6 +19,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `session_manager/`  | 10       | Session Manager — session lifecycle controller (create/resume/discard), session takeover handler (Client ID collision, Reason 0x8E), and session expiry scheduler. Depends on `store/`, `connection/`, `auth/`. |
 | `will_manager/`     | 11       | Will Manager — will store, will-delay timer, and will publisher. Stores Will Messages on connect, suppresses them on normal disconnect, and publishes them (with optional delay) on connection loss or session expiry. Depends on `data_model/`, `store/`, `session_manager/`. |
 | `transport/`        | 14.2     | Transport Extensions — WebSocket HTTP upgrade handshake, WebSocket frame encoder/decoder, and MQTT payload extraction from binary frames. **Module 14.1 (TLS) is not implemented** — use a reverse proxy for TLS termination. |
+| `broker/`           | 15       | Broker Orchestrator — INI configuration loader, component wiring (instantiates and injects all modules), ordered startup/shutdown, and SIGTERM/SIGINT signal handling. |
 
 ## `data_model/` sub-modules
 
@@ -129,6 +130,15 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `will_manager/will_store.h/.cpp`       | 11.1 | `WillStore` — in-memory map of `WillMessage` records keyed by Client ID |
 | `will_manager/will_delay_timer.h/.cpp` | 11.2 | `WillDelayTimer` — per-client disconnect timestamp + will-delay interval tracking |
 | `will_manager/will_publisher.h/.cpp`   | 11.3 | `WillPublisher` — orchestrates store, timer, and publish decisions |
+
+## `broker/` (Module 15)
+
+| File | Plan ref | Contents |
+|------|----------|----------|
+| `broker/broker_error.h`     | 15   | `BrokerError` enum and `BrokerException` |
+| `broker/broker_config.h`    | 15.1 | `BrokerConfig` struct — all configuration parameters |
+| `broker/config_loader.h/.cpp` | 15.1.1 | `ConfigLoader` — INI-file parser → `BrokerConfig` |
+| `broker/broker.h/.cpp`      | 15.2–15.3 | `Broker` — component wiring, startup/shutdown, signal handling |
 
 ## Entry point
 

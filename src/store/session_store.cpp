@@ -72,6 +72,15 @@ std::vector<SessionState> SessionStore::expired_sessions(
 
 std::size_t SessionStore::size() const noexcept { return sessions_.size(); }
 
+std::vector<SessionState> SessionStore::all() const {
+  std::vector<SessionState> result;
+  result.reserve(sessions_.size());
+  for (const auto &[cid, state] : sessions_) {
+    result.push_back(state);
+  }
+  return result;
+}
+
 bool SessionStore::contains(std::string_view client_id) const noexcept {
   return sessions_.contains(std::string(client_id));
 }

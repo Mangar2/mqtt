@@ -50,6 +50,17 @@ public:
   [[nodiscard]] std::vector<Message> find(std::string_view topic_filter) const;
 
   /**
+   * @brief Return copies of all currently stored retained messages.
+   *
+   * Unlike `find()`, this method returns every stored message including
+   * those whose topic begins with `$` (system topics).  Use this method
+   * when persisting the full retained-message snapshot.
+   *
+   * @return Vector of all retained messages; order is unspecified.
+   */
+  [[nodiscard]] std::vector<Message> all() const;
+
+  /**
    * @brief Return the number of currently stored retained messages.
    * @return Count of entries in the store.
    */

@@ -32,7 +32,8 @@ Keyed by topic name (`std::string`). Only messages with a non-empty payload are 
 | Method | Description |
 |--------|-------------|
 | `store(msg)` | Store or overwrite a retained message. If `msg.payload` is empty, the entry is deleted (4.2.1 + 4.2.2). |
-| `find(topic_filter)` | Return all stored messages whose topic names match the filter (4.2.3). Wildcard matching uses `TopicMatcher`. |
+| `find(topic_filter)` | Return all stored messages whose topic names match the filter (4.2.3). Wildcard matching uses `TopicMatcher`. System topics (`$`-prefix) are excluded from wildcard results per §4.7.2. |
+| `all()` | Return copies of all stored messages including system topics.  Use this for persistence snapshots. |
 | `size()` | Number of currently stored retained messages. |
 
 ### Retained message lookup
@@ -54,6 +55,7 @@ session-expiry calculations.
 | `remove(client_id)` | Delete the session record and its disconnect timestamp (4.3.3). |
 | `mark_disconnected(client_id, timestamp)` | Record the time a session disconnected; used to compute when it expires. |
 | `expired_sessions(now)` | Return all sessions whose expiry interval has elapsed (4.3.4). Sessions with `session_expiry_interval == 0` are treated as expired immediately. Sessions with `0xFFFF'FFFF` never expire. Sessions with no recorded disconnect time are excluded. |
+| `all()` | Return copies of all stored sessions.  Used by the persistence layer to snapshot the full session set. |
 | `size()` | Number of stored sessions. |
 | `contains(client_id)` | True if a session exists for the given client ID. |
 
