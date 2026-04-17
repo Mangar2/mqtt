@@ -63,15 +63,15 @@ bool SubscriptionTrie::remove_recursive(Node &node,
   }
 
   const auto &lvl = levels[depth];
-  auto it = node.children.find(lvl);
-  if (it == node.children.end()) {
+  auto itr = node.children.find(lvl);
+  if (itr == node.children.end()) {
     return node.empty();
   }
 
   const bool child_empty =
-      remove_recursive(*it->second, levels, depth + 1, client_id);
+      remove_recursive(*itr->second, levels, depth + 1, client_id);
   if (child_empty) {
-    node.children.erase(it);
+    node.children.erase(itr);
   }
   return node.empty();
 }

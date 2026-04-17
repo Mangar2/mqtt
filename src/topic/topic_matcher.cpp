@@ -38,7 +38,7 @@ void TopicMatcher::collect_matches(const SubscriptionTrie::Node &node,
                                    std::vector<MatchResult> &results) {
   // Wildcard matching is suppressed at the first level (depth == 0) when the
   // publish topic is a system topic (MQTT 5.0 Section 4.7.2).
-  const bool allow_wildcards = !(depth == 0U && is_system);
+  const bool allow_wildcards = (depth != 0U || !is_system);
 
   // '#' child: matches all remaining levels, including zero.
   if (allow_wildcards) {
