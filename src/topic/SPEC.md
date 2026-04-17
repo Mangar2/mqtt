@@ -10,6 +10,7 @@ Depends on: `data_model/` (Module 1).
 | `topic/topic_error.h`  | 3.1      | `TopicError` enum and `TopicException`. |
 | `topic/topic_validator.h/.cpp` | 3.1 | Topic-name and topic-filter validation, system-topic detection. |
 | `topic/trie/`          | 3.2      | `SubscriptionTrie` — trie storage for MQTT subscriptions. |
+| `topic/topic_matcher.h/.cpp`   | 3.3 | `TopicMatcher` — topic-name matching against a `SubscriptionTrie`. |
 
 ## Module 3.1 — Topic Validator
 
@@ -91,3 +92,67 @@ Does not throw.
 - No dynamic allocation in the hot path.
 - All functions operate on `std::string_view` — no ownership semantics.
 - `is_system_topic` is `noexcept`.
+
+---
+
+## Module 3.3 — TopicMatcher
+
+### Purpose
+
+Matches a publish topic name against all subscriptions stored in a
+`SubscriptionTrie` and returns every `(client_id, Subscription)` pair whose
+topic filter matches the topic name, following MQTT 5.0 Section 4.7.
+
+### Public API
+
+```cpp
+namespace mqtt {
+
+struct MatchResult {
+    std::string  client_id;    // Subscribing client identifier.
+    Subscription subscription; // The matching subscription.
+};
+
+class TopicMatcher {
+public:
+    // Find all subscriptions in trie that match topic_name.
+    [[nodiscard]] static std::vector<MatchResult>
+    match(const SubscriptionTrie& trie, std::string_view topic_name);
+};
+
+} // namespace mqtt
+```
+
+### Behaviour
+
+#### Exact match (3.3.1)
+
+Each topic level split from `topic_name` on `/` must match the corresponding
+trie node via its exact string key.
+
+#### Single-level wildcard `+` (3.3.2)
+
+A `+` node in the trie matches exactly one topic level.  At each level during
+traversal the `+` child is followed in addition to the exact-level child,
+subject to the system-topic exclusion below.
+
+#### Multi-level wildcard `#` (3.3.3)
+
+A `#` child is checked at every trie node before descending further.
+Subscriptions stored at the `#` node are collected immediately; the `#` node
+matches the current level and all subsequent levels (zero or more), so it is
+checked at beginning of each recursive step.
+
+#### System topic exclusion (3.3.4)
+
+When `topic_name` begins with `$`, wildcard children (`+` and `#`) at the
+**root level only** (depth == 0) are skipped.  After the first exact-level
+step the normal wildcard rules apply (e.g. `$SYS/+` and `$SYS/#` do match
+`$SYS/info`).
+
+### Constraints
+
+- Does not validate `topic_name` — callers must ensure it contains no wildcards.
+- Thread safety: none — mirrors the `SubscriptionTrie` contract.
+- Multiple results for the same client are possible when subscriptions overlap;
+  callers are responsible for per-client deduplication and QoS merging.

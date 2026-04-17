@@ -75,9 +75,11 @@ public:
    */
   [[nodiscard]] std::size_t size() const noexcept;
 
-private:
   /**
    * @brief A single trie node representing one topic level.
+   *
+   * Exposed publicly to allow the Topic Matcher (Module 3.3) to traverse
+   * the trie without requiring friend-class access.
    */
   struct Node {
     std::unordered_map<std::string, std::unique_ptr<Node>>
@@ -92,6 +94,17 @@ private:
     }
   };
 
+  /**
+   * @brief Provides read-only access to the root node for trie traversal.
+   *
+   * Intended for use by the Topic Matcher (Module 3.3).
+   * The root node is a sentinel; it never holds subscriptions directly.
+   *
+   * @return Const reference to the root node.
+   */
+  [[nodiscard]] const Node &root() const noexcept { return *root_; }
+
+private:
   std::unique_ptr<Node> root_{std::make_unique<Node>()};
 
   /** @brief Splits @p filter on '/' and returns the resulting level strings. */

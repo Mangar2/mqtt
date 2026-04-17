@@ -58,3 +58,58 @@ Unit tests for Module 3.1: Topic Validator.
 | `system_topic_normal` | Normal topic | `"sport/tennis"` | `false` |
 | `system_topic_empty` | Empty string | `""` | `false` |
 | `system_topic_slash_prefix` | Starts with '/' | `"/sport"` | `false` |
+
+---
+
+# TEST_SPEC.md — topic/test (TopicMatcher, Module 3.3)
+
+## Tag
+
+`[topic_matcher]`
+
+## Test cases
+
+### Exact matching (3.3.1)
+
+| Name | Scenario | Filter(s) | Publish topic | Expected result count |
+|------|----------|-----------|---------------|-----------------------|
+| `match_exact_match` | Single exact filter matches | `"sport/tennis"` | `"sport/tennis"` | 1 |
+| `match_exact_no_match` | Exact filter does not match different topic | `"sport/tennis"` | `"sport/golf"` | 0 |
+| `match_exact_prefix_no_match` | Prefix alone does not match longer topic | `"sport"` | `"sport/tennis"` | 0 |
+| `match_empty_trie` | No subscriptions in trie | — | `"sport/tennis"` | 0 |
+| `match_returns_correct_subscription` | Returned subscription matches stored data | `"sport"` (QoS1) | `"sport"` | 1, QoS == AtLeastOnce |
+
+### Single-level wildcard `+` (3.3.2)
+
+| Name | Scenario | Filter(s) | Publish topic | Expected result count |
+|------|----------|-----------|---------------|-----------------------|
+| `match_plus_single_level` | `+` matches one level | `"sport/+/player"` | `"sport/tennis/player"` | 1 |
+| `match_plus_multiple_in_filter` | Multiple `+` wildcards | `"+/+/+"` | `"a/b/c"` | 1 |
+| `match_plus_root_level` | `+` at root matches any single-level topic | `"+"` | `"sport"` | 1 |
+| `match_plus_no_multi_level` | `+` does not match across `/` | `"+"` | `"sport/tennis"` | 0 |
+
+### Multi-level wildcard `#` (3.3.3)
+
+| Name | Scenario | Filter(s) | Publish topic | Expected result count |
+|------|----------|-----------|---------------|-----------------------|
+| `match_hash_only` | `#` alone matches any topic | `"#"` | `"sport/tennis"` | 1 |
+| `match_hash_multi_level` | `sport/#` matches deep topic | `"sport/#"` | `"sport/tennis/wimbledon"` | 1 |
+| `match_hash_zero_remaining` | `sport/#` matches topic with no sub-levels | `"sport/#"` | `"sport"` | 1 |
+| `match_hash_and_exact` | Both `sport/#` and `sport/tennis` match | `"sport/#"`, `"sport/tennis"` | `"sport/tennis"` | 2 |
+
+### System topic exclusion (3.3.4)
+
+| Name | Scenario | Filter(s) | Publish topic | Expected result count |
+|------|----------|-----------|---------------|-----------------------|
+| `match_system_topic_excluded_from_hash` | `#` does not match system topic | `"#"` | `"$SYS/info"` | 0 |
+| `match_system_topic_excluded_from_plus` | `+/info` does not match system topic | `"+/info"` | `"$SYS/info"` | 0 |
+| `match_system_topic_exact` | Exact filter matches system topic | `"$SYS/info"` | `"$SYS/info"` | 1 |
+| `match_system_topic_hash_after_prefix` | `$SYS/#` matches system topic | `"$SYS/#"` | `"$SYS/info"` | 1 |
+| `match_system_topic_plus_after_prefix` | `$SYS/+` matches system topic | `"$SYS/+"` | `"$SYS/info"` | 1 |
+
+### Multi-client scenarios
+
+| Name | Scenario | Clients / Filters | Publish topic | Expected result count |
+|------|----------|-------------------|---------------|-----------------------|
+| `match_multiple_clients_same_filter` | Two clients hold the same filter | A:`"sport/#"`, B:`"sport/#"` | `"sport/tennis"` | 2 |
+| `match_multiple_overlapping_filters` | Same client has overlapping filters | A:`"#"`, A:`"sport/#"` | `"sport/tennis"` | 2 |
