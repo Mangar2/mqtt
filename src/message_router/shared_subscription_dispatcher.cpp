@@ -97,10 +97,10 @@ void SharedSubscriptionDispatcher::add_member(std::string_view group,
   auto &state = groups_[make_key(group, topic_filter)];
 
   // Replace existing entry for this client if present.
-  auto member_it = std::find_if(state.members.begin(), state.members.end(),
-                                [client_id](const MemberEntry &entry) {
-                                  return entry.client_id == client_id;
-                                });
+  auto member_it = std::ranges::find_if(state.members,
+                                        [client_id](const MemberEntry &entry) {
+                                          return entry.client_id == client_id;
+                                        });
 
   if (member_it != state.members.end()) {
     member_it->subscription = sub;
@@ -122,10 +122,10 @@ void SharedSubscriptionDispatcher::remove_member(std::string_view group,
   }
 
   auto &state = group_it->second;
-  auto member_it = std::find_if(state.members.begin(), state.members.end(),
-                                [client_id](const MemberEntry &entry) {
-                                  return entry.client_id == client_id;
-                                });
+  auto member_it = std::ranges::find_if(state.members,
+                                        [client_id](const MemberEntry &entry) {
+                                          return entry.client_id == client_id;
+                                        });
 
   if (member_it == state.members.end()) {
     return;
@@ -154,10 +154,10 @@ void SharedSubscriptionDispatcher::remove_client(std::string_view client_id) {
   for (auto iter = groups_.begin(); iter != groups_.end();) {
     auto &state = iter->second;
 
-    auto member_it = std::find_if(state.members.begin(), state.members.end(),
-                                  [client_id](const MemberEntry &entry) {
-                                    return entry.client_id == client_id;
-                                  });
+    auto member_it = std::ranges::find_if(
+        state.members, [client_id](const MemberEntry &entry) {
+          return entry.client_id == client_id;
+        });
 
     if (member_it != state.members.end()) {
       const std::size_t removed_idx =

@@ -16,9 +16,10 @@ InboundPublishProcessor::InboundPublishProcessor(
 
 void InboundPublishProcessor::resolve_topic_alias(
     Message &msg, TopicAliasTable &alias_table) {
-  auto alias_it = std::find_if(
-      msg.properties.begin(), msg.properties.end(),
-      [](const Property &prop) { return prop.id == PropertyId::TopicAlias; });
+  auto alias_it =
+      std::ranges::find_if(msg.properties, [](const Property &prop) {
+        return prop.id == PropertyId::TopicAlias;
+      });
 
   if (alias_it == msg.properties.end()) {
     return; // No alias property — topic is already set.

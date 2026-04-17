@@ -36,9 +36,7 @@ Message SubscriberFanout::apply_subscription_rules(const Message &msg,
   Message out = msg;
 
   // 12.2.1 — QoS downgrade: cap at the subscription's maximum QoS.
-  if (out.qos > sub.qos) {
-    out.qos = sub.qos;
-  }
+  out.qos = std::min(out.qos, sub.qos);
 
   // 12.2.3 — Retain As Published: clear retain unless option is set.
   if (!sub.options.retain_as_published) {
@@ -49,8 +47,8 @@ Message SubscriberFanout::apply_subscription_rules(const Message &msg,
   if (sub.identifier.has_value()) {
     // Guard against duplicate SubscriptionIdentifier (should not occur on
     // inbound messages, but be defensive).
-    auto dup_it = std::find_if(
-        out.properties.begin(), out.properties.end(), [](const Property &prop) {
+    auto dup_it =
+        std::ranges::find_if(out.properties, [](const Property &prop) {
           return prop.id == PropertyId::SubscriptionIdentifier;
         });
     if (dup_it != out.properties.end()) {

@@ -13,8 +13,8 @@ bool MessageExpiryController::update_expiry(
     Message &msg, std::chrono::steady_clock::time_point enqueue_time,
     std::chrono::steady_clock::time_point now) {
 
-  auto expiry_it = std::find_if(
-      msg.properties.begin(), msg.properties.end(), [](const Property &prop) {
+  auto expiry_it =
+      std::ranges::find_if(msg.properties, [](const Property &prop) {
         return prop.id == PropertyId::MessageExpiryInterval;
       });
 

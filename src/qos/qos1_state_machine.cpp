@@ -83,11 +83,10 @@ void Qos1StateMachine::on_puback_received(const PubackPacket &pkt) {
 PublishPacket Qos1StateMachine::retransmit(uint16_t packet_id) {
   const auto all_entries = store_.entries_for(client_id_);
   const auto iter =
-      std::find_if(all_entries.begin(), all_entries.end(),
-                   [packet_id](const InflightEntry &ent) {
-                     return ent.packet_id == packet_id &&
-                            ent.direction == InflightDirection::Outbound;
-                   });
+      std::ranges::find_if(all_entries, [packet_id](const InflightEntry &ent) {
+        return ent.packet_id == packet_id &&
+               ent.direction == InflightDirection::Outbound;
+      });
 
   if (iter == all_entries.end()) {
     throw QosException(

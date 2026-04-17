@@ -14,11 +14,10 @@ namespace mqtt {
 std::vector<InflightEntry>::iterator
 InflightStore::find_entry(std::vector<InflightEntry> &list, uint16_t packet_id,
                           InflightDirection direction) noexcept {
-  return std::find_if(list.begin(), list.end(),
-                      [packet_id, direction](const InflightEntry &ent) {
-                        return ent.packet_id == packet_id &&
-                               ent.direction == direction;
-                      });
+  return std::ranges::find_if(
+      list, [packet_id, direction](const InflightEntry &ent) {
+        return ent.packet_id == packet_id && ent.direction == direction;
+      });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -80,11 +79,10 @@ bool InflightStore::is_packet_id_in_use(
     return false;
   }
   const auto &list = map_iter->second;
-  return std::any_of(list.begin(), list.end(),
-                     [packet_id, direction](const InflightEntry &ent) {
-                       return ent.packet_id == packet_id &&
-                              ent.direction == direction;
-                     });
+  return std::ranges::any_of(
+      list, [packet_id, direction](const InflightEntry &ent) {
+        return ent.packet_id == packet_id && ent.direction == direction;
+      });
 }
 
 std::size_t InflightStore::size_for(std::string_view client_id) const noexcept {
