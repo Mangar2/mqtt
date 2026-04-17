@@ -112,11 +112,11 @@ TEST_CASE("broker_module_accessors_after_startup", "[broker]") {
   Broker broker(cfg);
   broker.startup();
 
-  auto &sess_mgr  = broker.session_manager();
-  auto &msg_rtr   = broker.message_router();
-  auto &auth      = broker.authenticator();
-  auto &acl       = broker.acl_engine();
-  auto &will_pub  = broker.will_publisher();
+  auto &sess_mgr = broker.session_manager();
+  auto &msg_rtr = broker.message_router();
+  auto &auth = broker.authenticator();
+  auto &acl = broker.acl_engine();
+  auto &will_pub = broker.will_publisher();
 
   (void)sess_mgr;
   (void)msg_rtr;
@@ -189,7 +189,8 @@ TEST_CASE("broker_password_auth_when_not_anonymous", "[broker]") {
 // Signal handling — handle_signal path
 
 TEST_CASE("broker_handle_signal_sets_shutdown_requested", "[broker]") {
-  // Install handlers so the C signal handler is pointing to Broker::handle_signal.
+  // Install handlers so the C signal handler is pointing to
+  // Broker::handle_signal.
   Broker::install_signal_handlers();
   CHECK(Broker::shutdown_requested() == false);
 
@@ -226,7 +227,7 @@ TEST_CASE("broker_message_delivered_to_online_connection", "[broker]") {
   // Subscribe "sub_client" to "chat/room".
   Subscription sub;
   sub.topic_filter = Utf8String{"chat/room"};
-  sub.qos          = QoS::AtMostOnce;
+  sub.qos = QoS::AtMostOnce;
   broker.subscription_store().store("sub_client", sub);
 
   // Register sub_client as online.
@@ -237,7 +238,7 @@ TEST_CASE("broker_message_delivered_to_online_connection", "[broker]") {
   // Route a message; the allow-all anonymous ACL passes for any client.
   Message msg;
   msg.topic = Utf8String{"chat/room"};
-  msg.qos   = QoS::AtMostOnce;
+  msg.qos = QoS::AtMostOnce;
   TopicAliasTable alias_table(0U);
   broker.message_router().route(msg, "pub_client", "", alias_table);
 
@@ -258,7 +259,7 @@ TEST_CASE("broker_will_publish_fn_routes_will_message", "[broker]") {
   // Subscribe "will_sub" to "client/will".
   Subscription sub;
   sub.topic_filter = Utf8String{"client/will"};
-  sub.qos          = QoS::AtMostOnce;
+  sub.qos = QoS::AtMostOnce;
   broker.subscription_store().store("will_sub", sub);
 
   // Register will_sub as online.
@@ -270,13 +271,13 @@ TEST_CASE("broker_will_publish_fn_routes_will_message", "[broker]") {
   // connection loss (no need to call publish_due()).
   WillMessage will;
   will.message.topic = Utf8String{"client/will"};
-  will.message.qos   = QoS::AtMostOnce;
+  will.message.qos = QoS::AtMostOnce;
   will.delay_interval = 0U;
   broker.will_publisher().on_connect("will_fire_client", will);
 
   // Simulate abrupt connection loss — delay 0 → publishes immediately.
-  broker.will_publisher().on_connection_lost(
-      "will_fire_client", std::chrono::steady_clock::now());
+  broker.will_publisher().on_connection_lost("will_fire_client",
+                                             std::chrono::steady_clock::now());
 
   CHECK(will_delivered == true);
 

@@ -55,10 +55,10 @@ BrokerConfig ConfigLoader::parse(std::string_view text) {
       auto close = view.find(']');
       if (close != std::string_view::npos) {
         current_section = std::string(trim(view.substr(1U, close - 1U)));
-        std::transform(current_section.begin(), current_section.end(),
-                       current_section.begin(), [](unsigned char chr) {
-                         return static_cast<char>(std::tolower(chr));
-                       });
+        std::ranges::transform(current_section, current_section.begin(),
+                               [](unsigned char chr) {
+                                 return static_cast<char>(std::tolower(chr));
+                               });
       }
       continue;
     }
@@ -72,7 +72,7 @@ BrokerConfig ConfigLoader::parse(std::string_view text) {
     std::string key = std::string(trim(view.substr(0U, eq_pos)));
     std::string value = std::string(trim(view.substr(eq_pos + 1U)));
 
-    std::transform(key.begin(), key.end(), key.begin(), [](unsigned char chr) {
+    std::ranges::transform(key, key.begin(), [](unsigned char chr) {
       return static_cast<char>(std::tolower(chr));
     });
 
@@ -151,9 +151,9 @@ std::string_view ConfigLoader::trim(std::string_view str) noexcept {
 
 bool ConfigLoader::parse_bool(std::string_view val) {
   std::string lower{val};
-  std::transform(
-      lower.begin(), lower.end(), lower.begin(),
-      [](unsigned char chr) { return static_cast<char>(std::tolower(chr)); });
+  std::ranges::transform(lower, lower.begin(), [](unsigned char chr) {
+    return static_cast<char>(std::tolower(chr));
+  });
 
   if (lower == "true" || lower == "1" || lower == "yes") {
     return true;
