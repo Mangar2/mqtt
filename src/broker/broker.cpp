@@ -430,13 +430,11 @@ void Broker::handle_disconnect(std::string_view client_id,
     event.level = TraceLevel::Trace;
     event.module = "broker";
     event.info = "handle_disconnect";
-    event.data.push_back({"client_id", std::string(client_id)});
-    event.data.push_back(
-        {"reason_code", std::to_string(static_cast<int>(reason_code))});
-    event.data.push_back(
-        {"expiry_override",
+    event.data.emplace_back("client_id", std::string(client_id));
+    event.data.emplace_back("reason_code", std::to_string(static_cast<int>(reason_code)));
+    event.data.emplace_back("expiry_override",
          expiry_override.has_value() ? std::to_string(*expiry_override)
-                                     : "<unset>"});
+                                     : "<unset>");
     structured_tracer_->emit(event);
   }
   pending_enhanced_auth_.erase(std::string(client_id));
@@ -631,14 +629,10 @@ void Broker::emit_connect_trace(const ConnectPacket &connect_packet,
   event.level = TraceLevel::Info;
   event.module = "broker";
   event.info = "connect_handled";
-  event.data.push_back(
-      {"client_id", connect_result.client_id.empty() ? "<empty>" : connect_result.client_id});
-  event.data.push_back(
-      {"clean_start", connect_packet.clean_start ? "true" : "false"});
-  event.data.push_back(
-      {"auth_status", std::to_string(static_cast<int>(connect_result.auth_status))});
-  event.data.push_back(
-      {"reason_code", std::to_string(static_cast<int>(connect_result.reason_code))});
+  event.data.emplace_back("client_id", connect_result.client_id.empty() ? "<empty>" : connect_result.client_id);
+  event.data.emplace_back("clean_start", connect_packet.clean_start ? "true" : "false");
+  event.data.emplace_back("auth_status", std::to_string(static_cast<int>(connect_result.auth_status)));
+  event.data.emplace_back("reason_code", std::to_string(static_cast<int>(connect_result.reason_code)));
 
   structured_tracer_->emit(event);
 }
@@ -701,8 +695,8 @@ void Broker::unregister_connection_locked(
     event.level = TraceLevel::Trace;
     event.module = "broker";
     event.info = "connection_unregistered";
-    event.data.push_back({"client_id", std::string(client_id)});
-    event.data.push_back({"moved_to_offline", std::to_string(moved_to_offline)});
+    event.data.emplace_back("client_id", std::string(client_id));
+    event.data.emplace_back("moved_to_offline", std::to_string(moved_to_offline));
     structured_tracer_->emit(event);
   }
 
@@ -904,7 +898,7 @@ void Broker::flush_persistence() noexcept {
     for (const auto &sess : sessions) {
       auto client_entries = inflight_store_->entries_for(sess.client_id.value);
       for (const auto &entry : client_entries) {
-        inflight_entries.push_back({sess.client_id.value, entry});
+        inflight_entries.push_back({.client_id=sess.client_id.value, .entry=entry});
       }
     }
     inflight_persistence_->save_all(inflight_entries);

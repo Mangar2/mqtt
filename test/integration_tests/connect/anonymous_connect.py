@@ -3,11 +3,29 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
+import shutil
+
+
+def _find_mqttx() -> str | None:
+    """Find mqttx binary: first in local test folder, then in PATH."""
+    # Check local test folder
+    test_dir = Path(__file__).resolve().parents[2]
+    local_mqttx = test_dir / "mqttx.exe"
+    if local_mqttx.exists():
+        return str(local_mqttx)
+    
+    # Fall back to PATH
+    return shutil.which("mqttx")
 
 
 def run_connect_anonymous(config) -> tuple[bool, str]:
+    mqttx_path = _find_mqttx()
+    if not mqttx_path:
+        return False, "mqttx command not found (checked local test folder and PATH)"
+    
     command = [
-        "mqttx",
+        mqttx_path,
         "pub",
         "--hostname",
         config.host,
@@ -32,7 +50,7 @@ def run_connect_anonymous(config) -> tuple[bool, str]:
             timeout=config.timeout_seconds,
         )
     except FileNotFoundError:
-        return False, "mqttx command not found on PATH"
+        return False, f"mqttx executable not found at {mqttx_path}"
     except subprocess.TimeoutExpired:
         return False, f"mqttx command timed out after {config.timeout_seconds:.1f}s"
 
