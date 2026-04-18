@@ -102,6 +102,27 @@ find_two_byte_property(const std::vector<Property> &properties,
   return std::nullopt;
 }
 
+std::optional<uint8_t> find_byte_property(const std::vector<Property> &properties,
+                                          PropertyId property_id) {
+  for (const auto &property : properties) {
+    if (property.id == property_id) {
+      return std::get<uint8_t>(property.value);
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<FourByteInteger>
+find_four_byte_property(const std::vector<Property> &properties,
+                        PropertyId property_id) {
+  for (const auto &property : properties) {
+    if (property.id == property_id) {
+      return std::get<FourByteInteger>(property.value);
+    }
+  }
+  return std::nullopt;
+}
+
 BinaryData binary_from_text(std::string_view text) {
   BinaryData binary;
   binary.data.reserve(text.size());
@@ -780,6 +801,36 @@ TEST_CASE("broker_handle_connect_builds_connack_properties", "[broker]") {
       result.connack_properties, PropertyId::TopicAliasMaximum);
   REQUIRE(topic_alias_maximum.has_value());
   CHECK(*topic_alias_maximum == 77U);
+
+    const auto maximum_qos =
+      find_byte_property(result.connack_properties, PropertyId::MaximumQoS);
+    REQUIRE(maximum_qos.has_value());
+    CHECK(*maximum_qos == 2U);
+
+    const auto retain_available =
+      find_byte_property(result.connack_properties, PropertyId::RetainAvailable);
+    REQUIRE(retain_available.has_value());
+    CHECK(*retain_available == 1U);
+
+    const auto maximum_packet_size = find_four_byte_property(
+      result.connack_properties, PropertyId::MaximumPacketSize);
+    REQUIRE(maximum_packet_size.has_value());
+    CHECK(*maximum_packet_size == 0x0FFFFFFFU);
+
+    const auto wildcard_subscription_available = find_byte_property(
+      result.connack_properties, PropertyId::WildcardSubscriptionAvailable);
+    REQUIRE(wildcard_subscription_available.has_value());
+    CHECK(*wildcard_subscription_available == 1U);
+
+    const auto subscription_identifier_available = find_byte_property(
+      result.connack_properties, PropertyId::SubscriptionIdentifierAvailable);
+    REQUIRE(subscription_identifier_available.has_value());
+    CHECK(*subscription_identifier_available == 1U);
+
+    const auto shared_subscription_available = find_byte_property(
+      result.connack_properties, PropertyId::SharedSubscriptionAvailable);
+    REQUIRE(shared_subscription_available.has_value());
+    CHECK(*shared_subscription_available == 1U);
 
   broker.shutdown();
 }

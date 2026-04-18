@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+#include "broker/connack_properties.h"
 #include "broker/broker_error.h"
 #include "connection/client_handler.h"
 #include "connection/topic_alias_table.h"
@@ -47,37 +48,6 @@ map_session_error_to_reason(SessionManagerError error_code) {
   }
 
   return ReasonCode::UnspecifiedError;
-}
-
-[[nodiscard]] std::vector<Property>
-build_connack_properties(const BrokerConfig &broker_config) {
-  std::vector<Property> properties;
-  properties.push_back({PropertyId::ReceiveMaximum,
-                        TwoByteInteger{broker_config.receive_maximum}});
-  properties.push_back({PropertyId::TopicAliasMaximum,
-                        TwoByteInteger{broker_config.topic_alias_maximum}});
-  return properties;
-}
-
-[[nodiscard]] bool
-requests_response_information(const std::vector<Property> &properties) {
-  for (const Property &property : properties) {
-    if (property.id != PropertyId::RequestResponseInformation) {
-      continue;
-    }
-    const auto *request_ptr = std::get_if<uint8_t>(&property.value);
-    return request_ptr != nullptr && *request_ptr == 1U;
-  }
-  return false;
-}
-
-void append_connect_driven_connack_properties(
-    const ConnectPacket &connect_packet, std::vector<Property> &properties) {
-  if (requests_response_information(connect_packet.properties)) {
-    properties.push_back(
-        Property{.id = PropertyId::ResponseInformation,
-                 .value = Utf8String{"broker/response-information"}});
-  }
 }
 
 [[nodiscard]] std::string binary_to_string(const BinaryData &payload) {
@@ -224,7 +194,7 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
 
   ConnectResult result;
   result.client_id = effective_connect.client_id.value;
-  result.connack_properties = build_connack_properties(config_);
+  result.connack_properties = build_static_connack_properties(config_);
   append_connect_driven_connack_properties(effective_connect,
                                            result.connack_properties);
   if (assigned_client_id.has_value()) {
@@ -325,7 +295,7 @@ ConnectResult Broker::handle_auth_packet(std::string_view client_id,
 
   ConnectResult result;
   result.client_id = std::string(client_id);
-  result.connack_properties = build_connack_properties(config_);
+  result.connack_properties = build_static_connack_properties(config_);
 
   auto pending_it = pending_enhanced_auth_.find(result.client_id);
   if (pending_it == pending_enhanced_auth_.end()) {
@@ -407,7 +377,7 @@ Broker::complete_connect_success(const ConnectPacket &connect_packet,
                                  std::function<void()> close_callback) {
   ConnectResult result;
   result.client_id = connect_packet.client_id.value;
-  result.connack_properties = build_connack_properties(config_);
+  result.connack_properties = build_static_connack_properties(config_);
 
   try {
     const SessionOpenResult session_open = session_manager_->handle_connect(
