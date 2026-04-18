@@ -13,6 +13,10 @@ body: "<summary>"
 draft: false
 repo: { owner: "Mangar2", name: "mqtt" }
 
+Step 3: Do not verify PR creation.
+No follow-up check calls. No search calls. No fetch calls.
+Use the result of the create call as final.
+
 ## Close PR
 
 Execute this exact terminal call:

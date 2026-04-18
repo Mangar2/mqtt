@@ -29,6 +29,7 @@
 #include "connection/topic_alias_table.h"
 #include "data_model/message/message.h"
 #include "data_model/packet/connect_packet.h"
+#include "data_model/packet/subscribe_packets.h"
 #include "data_model/reason_code/reason_code.h"
 #include "message_router/inbound_publish_processor.h"
 #include "message_router/message_router.h"
@@ -261,6 +262,47 @@ public:
    */
   void handle_connection_lost(std::string_view client_id,
                               std::chrono::steady_clock::time_point now);
+
+  /**
+   * @brief Thread-safe SUBSCRIBE facade (Module 19.1).
+   *
+   * For each requested filter, validates the topic filter, checks subscribe
+   * ACL, stores authorised subscriptions, delivers matching retained messages,
+   * and builds one reason code in the returned SUBACK.
+   *
+   * @param client_id Client identifier.
+   * @param packet    Incoming SUBSCRIBE packet.
+   * @return SUBACK packet with one reason code per filter.
+   */
+  [[nodiscard]] SubackPacket handle_subscribe(std::string_view client_id,
+                                              const SubscribePacket &packet);
+
+  /**
+   * @brief Thread-safe UNSUBSCRIBE facade (Module 19.2).
+   *
+   * Removes each requested topic filter from the subscription store and builds
+   * one UNSUBACK reason code per filter.
+   *
+   * @param client_id Client identifier.
+   * @param packet    Incoming UNSUBSCRIBE packet.
+   * @return UNSUBACK packet with one reason code per topic filter.
+   */
+  [[nodiscard]] UnsubackPacket
+  handle_unsubscribe(std::string_view client_id,
+                     const UnsubscribePacket &packet);
+
+  /**
+   * @brief Thread-safe PUBLISH facade (Module 19.3).
+   *
+   * Increments inbound statistics and routes the message through MessageRouter.
+   *
+   * @param msg         Message to route; may be modified in-place.
+   * @param client_id   Publishing client identifier.
+   * @param username    Username of the publishing client; may be empty.
+   * @param alias_table Topic alias table for the publishing connection.
+   */
+  void handle_publish(Message &msg, std::string_view client_id,
+                      std::string_view username, TopicAliasTable &alias_table);
 
   /**
    * @brief Route an inbound PUBLISH message through the broker (16.1.2).

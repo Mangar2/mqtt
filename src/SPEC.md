@@ -19,7 +19,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `session_manager/`  | 10       | Session Manager — session lifecycle controller (create/resume/discard), session takeover handler (Client ID collision, Reason 0x8E), and session expiry scheduler. Depends on `store/`, `connection/`, `auth/`. |
 | `will_manager/`     | 11       | Will Manager — will store, will-delay timer, and will publisher. Stores Will Messages on connect, suppresses them on normal disconnect, and publishes them (with optional delay) on connection loss or session expiry. Depends on `data_model/`, `store/`, `session_manager/`. |
 | `transport/`        | 14.2     | Transport Extensions — WebSocket HTTP upgrade handshake, WebSocket frame encoder/decoder, and MQTT payload extraction from binary frames. **Module 14.1 (TLS) is not implemented** — use a reverse proxy for TLS termination. |
-| `broker/`           | 15, 17   | Broker Orchestrator + Concurrency Layer — INI configuration loader, component wiring, ordered startup/shutdown, signal handling, and broker-level locking for shared mutable state. |
+| `broker/`           | 15, 17, 18, 19 | Broker Orchestrator + Concurrency Layer — INI configuration loader, component wiring, ordered startup/shutdown, signal handling, and broker-level facades for connect/disconnect/subscribe/unsubscribe/publish under shared-state locking. |
 | `monitoring/`       | 16       | Monitoring — `StatisticsCollector` (connected clients, message throughput, active subscriptions, retained messages, uptime) and `SysTopicPublisher` (periodic `$SYS/broker/…` topic publication). |
 
 ## `data_model/` sub-modules
@@ -132,14 +132,14 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `will_manager/will_delay_timer.h/.cpp` | 11.2 | `WillDelayTimer` — per-client disconnect timestamp + will-delay interval tracking |
 | `will_manager/will_publisher.h/.cpp`   | 11.3 | `WillPublisher` — orchestrates store, timer, and publish decisions |
 
-## `broker/` (Module 15)
+## `broker/` (Modules 15, 17, 18, 19)
 
 | File | Plan ref | Contents |
 |------|----------|----------|
 | `broker/broker_error.h`     | 15   | `BrokerError` enum and `BrokerException` |
 | `broker/broker_config.h`    | 15.1 | `BrokerConfig` struct — all configuration parameters |
 | `broker/config_loader.h/.cpp` | 15.1.1 | `ConfigLoader` — INI-file parser → `BrokerConfig` |
-| `broker/broker.h/.cpp`      | 15.2–15.3, 17, 18 | `Broker` — component wiring, startup/shutdown, thread-safe facades, connect workflow result, enhanced AUTH/re-auth orchestration |
+| `broker/broker.h/.cpp`      | 15.2–15.3, 17, 18, 19 | `Broker` — component wiring, startup/shutdown, thread-safe facades, connect workflow result, enhanced AUTH/re-auth orchestration, subscribe/unsubscribe/publish wrappers |
 
 ## Entry point
 

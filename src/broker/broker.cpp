@@ -20,6 +20,8 @@
 #include "monitoring/statistics_collector.h"
 #include "monitoring/sys_topic_publisher.h"
 #include "session_manager/session_manager_error.h"
+#include "topic/topic_error.h"
+#include "topic/topic_validator.h"
 
 namespace mqtt {
 
@@ -70,6 +72,30 @@ build_connack_properties(const BrokerConfig &broker_config) {
   }
 
   return will_message;
+}
+
+[[nodiscard]] ReasonCode granted_qos_reason(QoS qos) {
+  switch (qos) {
+  case QoS::AtMostOnce:
+    return ReasonCode::Success;
+  case QoS::AtLeastOnce:
+    return ReasonCode::GrantedQoS1;
+  case QoS::ExactlyOnce:
+    return ReasonCode::GrantedQoS2;
+  }
+
+  return ReasonCode::UnspecifiedError;
+}
+
+[[nodiscard]] std::optional<uint32_t>
+find_subscription_identifier(const SubscribePacket &packet) {
+  for (const Property &property : packet.properties) {
+    if (property.id != PropertyId::SubscriptionIdentifier) {
+      continue;
+    }
+    return std::get<VariableByteInteger>(property.value).value;
+  }
+  return std::nullopt;
 }
 
 } // namespace
@@ -366,6 +392,87 @@ void Broker::handle_connection_lost(std::string_view client_id,
   session_manager_->handle_disconnect(client_id, std::nullopt, now);
 }
 
+SubackPacket Broker::handle_subscribe(std::string_view client_id,
+                                      const SubscribePacket &packet) {
+  std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+
+  SubackPacket suback;
+  suback.packet_id = packet.packet_id;
+
+  auto connection_iter = active_connections_.find(std::string(client_id));
+  const auto subscription_identifier = find_subscription_identifier(packet);
+
+  for (const SubscribeFilter &filter : packet.filters) {
+    try {
+      validate_topic_filter(filter.topic_filter.value);
+    } catch (const TopicException & /*unused*/) {
+      suback.reason_codes.push_back(ReasonCode::TopicFilterInvalid);
+      continue;
+    }
+
+    const bool allowed =
+        acl_engine_->check_subscribe(client_id, "", filter.topic_filter.value);
+    if (!allowed) {
+      suback.reason_codes.push_back(ReasonCode::NotAuthorized);
+      continue;
+    }
+
+    Subscription subscription;
+    subscription.topic_filter = filter.topic_filter;
+    subscription.qos = filter.options.max_qos;
+    subscription.options.no_local = filter.options.no_local;
+    subscription.options.retain_as_published =
+        filter.options.retain_as_published;
+    subscription.options.retain_handling =
+        static_cast<RetainHandling>(filter.options.retain_handling);
+    subscription.identifier = subscription_identifier;
+
+    subscription_store_->store(client_id, subscription);
+
+    if (connection_iter != active_connections_.end()) {
+      const std::vector<Message> retained_messages =
+          retained_store_->find(filter.topic_filter.value);
+      for (const Message &retained_message : retained_messages) {
+        connection_iter->second(retained_message);
+      }
+    }
+
+    suback.reason_codes.push_back(granted_qos_reason(filter.options.max_qos));
+  }
+
+  return suback;
+}
+
+UnsubackPacket Broker::handle_unsubscribe(std::string_view client_id,
+                                          const UnsubscribePacket &packet) {
+  std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+
+  UnsubackPacket unsuback;
+  unsuback.packet_id = packet.packet_id;
+
+  for (const Utf8String &topic_filter : packet.topic_filters) {
+    try {
+      validate_topic_filter(topic_filter.value);
+    } catch (const TopicException & /*unused*/) {
+      unsuback.reason_codes.push_back(ReasonCode::TopicFilterInvalid);
+      continue;
+    }
+
+    subscription_store_->remove(client_id, topic_filter.value);
+    unsuback.reason_codes.push_back(ReasonCode::Success);
+  }
+
+  return unsuback;
+}
+
+void Broker::handle_publish(Message &msg, std::string_view client_id,
+                            std::string_view username,
+                            TopicAliasTable &alias_table) {
+  std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+  stats_collector_->on_message_inbound();
+  message_router_->route(msg, client_id, username, alias_table);
+}
+
 //
 // Connection registration
 
@@ -385,9 +492,7 @@ void Broker::unregister_connection(std::string_view client_id) noexcept {
 void Broker::route_message(Message &msg, std::string_view client_id,
                            std::string_view username,
                            TopicAliasTable &alias_table) {
-  std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
-  stats_collector_->on_message_inbound();
-  message_router_->route(msg, client_id, username, alias_table);
+  handle_publish(msg, client_id, username, alias_table);
 }
 
 bool Broker::tick(std::chrono::steady_clock::time_point now) {

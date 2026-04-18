@@ -916,6 +916,148 @@ TEST_CASE("broker_route_message_counts_inbound", "[broker]") {
   broker.shutdown();
 }
 
+TEST_CASE("broker_handle_publish_counts_inbound", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  Message msg;
+  msg.topic = Utf8String{"sensors/pressure"};
+  msg.qos = QoS::AtMostOnce;
+  TopicAliasTable alias_table(0U);
+
+  broker.handle_publish(msg, "pub_client", "", alias_table);
+  CHECK(broker.statistics_collector().snapshot().messages_inbound == 1U);
+
+  broker.handle_publish(msg, "pub_client", "", alias_table);
+  CHECK(broker.statistics_collector().snapshot().messages_inbound == 2U);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_subscribe_returns_suback_and_delivers_retained",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  std::vector<Message> delivered;
+  broker.register_connection("sub_client", [&](const Message &message) {
+    delivered.push_back(message);
+  });
+
+  Message retained_message;
+  retained_message.topic = Utf8String{"alerts/high"};
+  retained_message.payload = BinaryData{{0x41U}};
+  retained_message.qos = QoS::AtLeastOnce;
+  retained_message.retain = true;
+
+  TopicAliasTable alias_table(0U);
+  broker.handle_publish(retained_message, "pub_client", "", alias_table);
+
+  SubscribePacket subscribe_packet;
+  subscribe_packet.packet_id = 7U;
+  subscribe_packet.filters.push_back(
+      SubscribeFilter{.topic_filter = Utf8String{"alerts/#"},
+                      .options = SubscribeOptions{.max_qos = QoS::AtLeastOnce,
+                                                  .no_local = false,
+                                                  .retain_as_published = false,
+                                                  .retain_handling = 0U}});
+
+  const SubackPacket suback =
+      broker.handle_subscribe("sub_client", subscribe_packet);
+
+  CHECK(suback.packet_id == 7U);
+  REQUIRE(suback.reason_codes.size() == 1U);
+  CHECK(suback.reason_codes[0] == ReasonCode::GrantedQoS1);
+  REQUIRE(delivered.size() == 1U);
+  CHECK(delivered[0].topic.value == "alerts/high");
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_subscribe_denied_returns_not_authorized", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.allow_anonymous = false;
+  Broker broker(cfg);
+  broker.startup();
+
+  std::vector<Message> delivered;
+  broker.register_connection("denied_sub_client", [&](const Message &message) {
+    delivered.push_back(message);
+  });
+
+  SubscribePacket subscribe_packet;
+  subscribe_packet.packet_id = 9U;
+  subscribe_packet.filters.push_back(
+      SubscribeFilter{.topic_filter = Utf8String{"private/topic"},
+                      .options = SubscribeOptions{.max_qos = QoS::AtMostOnce,
+                                                  .no_local = false,
+                                                  .retain_as_published = false,
+                                                  .retain_handling = 0U}});
+
+  const SubackPacket suback =
+      broker.handle_subscribe("denied_sub_client", subscribe_packet);
+
+  CHECK(suback.packet_id == 9U);
+  REQUIRE(suback.reason_codes.size() == 1U);
+  CHECK(suback.reason_codes[0] == ReasonCode::NotAuthorized);
+  CHECK(delivered.empty());
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_unsubscribe_removes_subscription", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  std::vector<Message> delivered;
+  broker.register_connection("sub_remove_client", [&](const Message &message) {
+    delivered.push_back(message);
+  });
+
+  SubscribePacket subscribe_packet;
+  subscribe_packet.packet_id = 11U;
+  subscribe_packet.filters.push_back(
+      SubscribeFilter{.topic_filter = Utf8String{"devices/+/status"},
+                      .options = SubscribeOptions{.max_qos = QoS::AtMostOnce,
+                                                  .no_local = false,
+                                                  .retain_as_published = false,
+                                                  .retain_handling = 0U}});
+  const SubackPacket suback =
+      broker.handle_subscribe("sub_remove_client", subscribe_packet);
+  REQUIRE(suback.reason_codes.size() == 1U);
+  CHECK(suback.reason_codes[0] == ReasonCode::Success);
+
+  Message first_message;
+  first_message.topic = Utf8String{"devices/a/status"};
+  first_message.payload = BinaryData{{0x10U}};
+  first_message.qos = QoS::AtMostOnce;
+  TopicAliasTable alias_table(0U);
+  broker.handle_publish(first_message, "pub_client", "", alias_table);
+  REQUIRE(delivered.size() == 1U);
+
+  UnsubscribePacket unsubscribe_packet;
+  unsubscribe_packet.packet_id = 12U;
+  unsubscribe_packet.topic_filters.push_back(Utf8String{"devices/+/status"});
+  const UnsubackPacket unsuback =
+      broker.handle_unsubscribe("sub_remove_client", unsubscribe_packet);
+
+  CHECK(unsuback.packet_id == 12U);
+  REQUIRE(unsuback.reason_codes.size() == 1U);
+  CHECK(unsuback.reason_codes[0] == ReasonCode::Success);
+
+  Message second_message;
+  second_message.topic = Utf8String{"devices/b/status"};
+  second_message.payload = BinaryData{{0x11U}};
+  second_message.qos = QoS::AtMostOnce;
+  broker.handle_publish(second_message, "pub_client", "", alias_table);
+  CHECK(delivered.size() == 1U);
+
+  broker.shutdown();
+}
+
 TEST_CASE("broker_unregister_unknown_client_keeps_count", "[broker]") {
   BrokerConfig cfg = make_test_config();
   Broker broker(cfg);

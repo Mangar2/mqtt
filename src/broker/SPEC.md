@@ -1,4 +1,4 @@
-# broker — Broker Orchestrator + Concurrency + Connect Facade (Modules 15, 17, 18)
+# broker — Broker Orchestrator + Concurrency + Broker Facades (Modules 15, 17, 18, 19)
 
 Wires all modules together, controls broker startup / shutdown, and provides
 thread-safe access to shared broker state.
@@ -18,6 +18,7 @@ Depends on: all previous modules (1–14), plus shared-state coordination for Mo
 - Guard all shared mutable broker state with one broker-level mutex.
 - Provide thread-safe wrappers for session connect / disconnect / connection-loss paths.
 - Provide a high-level connect facade that returns full handshake outcome data.
+- Provide thread-safe subscribe, unsubscribe, and publish facades for packet handlers.
 
 ---
 
@@ -28,7 +29,7 @@ Depends on: all previous modules (1–14), plus shared-state coordination for Mo
 | `broker_error.h`    | 15   | `BrokerError` enum and `BrokerException` |
 | `broker_config.h`   | 15.1 | `BrokerConfig` struct with all configuration parameters |
 | `config_loader.h/.cpp` | 15.1.1 | `ConfigLoader` — INI-file parser → `BrokerConfig` |
-| `broker.h/.cpp`     | 15.2–15.3, 17, 18 | `Broker` — component wiring, startup/shutdown, signal handling, broker-level locking, connect facade |
+| `broker.h/.cpp`     | 15.2–15.3, 17, 18, 19 | `Broker` — component wiring, startup/shutdown, signal handling, broker-level locking, connect/disconnect/subscribe/unsubscribe/publish facades |
 
 ---
 
@@ -164,6 +165,14 @@ void handle_disconnect(std::string_view client_id, ReasonCode reason_code,
 void handle_connection_lost(std::string_view client_id,
                             std::chrono::steady_clock::time_point now);
 
+// Thread-safe subscribe/unsubscribe/publish facades (Module 19)
+[[nodiscard]] SubackPacket handle_subscribe(std::string_view client_id,
+                                            const SubscribePacket& packet);
+[[nodiscard]] UnsubackPacket handle_unsubscribe(std::string_view client_id,
+                                                const UnsubscribePacket& packet);
+void handle_publish(Message& msg, std::string_view client_id,
+                    std::string_view username, TopicAliasTable& alias_table);
+
 // Connection registration — call from connection handler
 using SendFn = std::function<void(const Message&)>;
 void register_connection(std::string_view client_id, SendFn send_fn);
@@ -239,6 +248,19 @@ Callers should poll `Broker::shutdown_requested()` in their main loop and call
    `ReceiveMaximum` and `TopicAliasMaximum` from `BrokerConfig`.
 - When `session_present == true`, `Broker` immediately flushes buffered offline
    messages for the client via `MessageRouter::flush_offline_queue()`.
+
+#### Subscribe/Unsubscribe/Publish facades (19)
+
+- `handle_subscribe()` validates each topic filter, checks ACL subscribe permissions,
+   stores authorised subscriptions in `SubscriptionStore`, returns one SUBACK reason
+   code per filter, and immediately delivers matching retained messages to the
+   online subscriber callback.
+- `handle_unsubscribe()` validates each filter, removes it from `SubscriptionStore`,
+   and returns one UNSUBACK reason code per filter.
+- `handle_publish()` wraps inbound publish routing and statistics increments under
+   the broker mutex.
+- `route_message()` remains as a compatibility wrapper that forwards to
+   `handle_publish()`.
 
 ---
 
