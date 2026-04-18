@@ -86,7 +86,7 @@
 | `client_handler_websocket_invalid_upgrade_closes_connection` | WebSocket upgrade failure path | invalid HTTP upgrade request | handler closes connection without crash |
 | `client_handler_connect_auth_failure_returns_error_connack` | CONNECT auth failure path | CONNECT with wrong username/password against configured credential | error CONNACK is returned and connection ends |
 | `client_handler_enhanced_auth_wrong_packet_fails_handshake` | Enhanced auth loop failure on non-AUTH packet | CONNECT with auth method, then PINGREQ instead of AUTH | AUTH challenge followed by error CONNACK |
-| `client_handler_session_takeover_executes_close_callback` | Session takeover closes old connection | two CONNECTs with same client ID on two sockets | second handshake succeeds and first connection is closed |
+| `client_handler_session_takeover_executes_close_callback` | Session takeover closes old connection with MQTT reason | two CONNECTs with same client ID on two sockets | second handshake succeeds and first connection receives DISCONNECT(0x8E SessionTakenOver) |
 | `client_handler_runtime_connack_packet_hits_default_protocol_error` | Unexpected inbound CONNACK packet in dispatch loop | CONNECT then CONNACK from client | DISCONNECT(ProtocolError) |
 | `client_handler_websocket_rejects_non_connect_first_packet` | WebSocket protocol enforcement for first MQTT packet | valid HTTP upgrade, then masked PINGREQ | WS-framed error CONNACK and teardown |
 | `client_handler_auth_packet_after_connect_handles_invalid_reauth_without_abort` | Runtime AUTH protocol violation must not abort process | CONNECT via basic auth, then AUTH(ReAuthenticate) without enhanced session | DISCONNECT(ProtocolError) is emitted; handler exits cleanly |

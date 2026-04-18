@@ -5,7 +5,9 @@ This module wraps paho-mqtt with test-oriented convenience methods.
 
 from __future__ import annotations
 
+import os
 from queue import Empty, Queue
+import re
 from threading import Event, Lock
 import time
 from typing import Any
@@ -25,6 +27,52 @@ except ImportError as import_error:
 
 
 DEFAULT_TIMEOUT_SECONDS = 8.0
+_DISCONNECT_REASON_PATTERN = re.compile(r"Received DISCONNECT\s*\(([^)]*)\)")
+_PAHO_DISCONNECT_PARSER_PATCHED = False
+
+
+def _patch_paho_disconnect_parser_if_needed() -> None:
+    global _PAHO_DISCONNECT_PARSER_PATCHED
+    if _PAHO_IMPORT_ERROR is not None or _PAHO_DISCONNECT_PARSER_PATCHED:
+        return
+    if not hasattr(mqtt.Client, "_handle_disconnect"):
+        return
+
+    original_handle_disconnect = mqtt.Client._handle_disconnect
+
+    # paho versions with this behavior only parse reason codes for remaining
+    # length > 2, which drops valid MQTT v5 DISCONNECT packets with
+    # remaining length 2 (reason code + zero properties length).
+    def _patched_handle_disconnect(self) -> None:  # type: ignore[no-untyped-def]
+        packet_type = mqtt.DISCONNECT >> 4
+        reason_code_value = None
+        properties_value = None
+        remaining_length = self._in_packet["remaining_length"]
+
+        if remaining_length > 1:
+            reason_code_value = mqtt.ReasonCode(packet_type)
+            reason_code_value.unpack(self._in_packet["packet"])
+            if remaining_length > 2:
+                properties_value = mqtt.Properties(packet_type)
+                properties_value.unpack(self._in_packet["packet"][1:])
+
+        self._easy_log(
+            mqtt.MQTT_LOG_DEBUG,
+            "Received DISCONNECT %s %s",
+            reason_code_value,
+            properties_value,
+        )
+        self._sock_close()
+        self._do_on_disconnect(
+            packet_from_broker=True,
+            v1_rc=mqtt.MQTTErrorCode.MQTT_ERR_SUCCESS,
+            reason=reason_code_value,
+            properties=properties_value,
+        )
+
+    mqtt.Client._handle_disconnect = _patched_handle_disconnect
+    setattr(mqtt.Client, "_integration_original_handle_disconnect", original_handle_disconnect)
+    _PAHO_DISCONNECT_PARSER_PATCHED = True
 
 
 class ConnackResult:
@@ -86,6 +134,7 @@ class MqttClient:
         self._disconnect_event = Event()
         self._connack_result: ConnackResult | None = None
         self._disconnect_result: DisconnectEvent | None = None
+        self._disconnect_reason_from_log: int | None = None
 
         self._published_mids: dict[int, int] = {}
         self._suback_mids: dict[int, list[int]] = {}
@@ -111,6 +160,7 @@ class MqttClient:
                 "paho-mqtt is required for integration test helpers. "
                 "Install with: pip install paho-mqtt"
             ) from _PAHO_IMPORT_ERROR
+        _patch_paho_disconnect_parser_if_needed()
 
     def __enter__(self) -> MqttClient:
         return self
@@ -212,6 +262,8 @@ class MqttClient:
         if self._client is None:
             return
 
+        self._disconnect_result = None
+        self._disconnect_reason_from_log = None
         self._disconnect_event.clear()
         self._client.disconnect(reasoncode=reason_code, properties=properties)
 
@@ -331,6 +383,7 @@ class MqttClient:
         self._client.on_subscribe = self._on_subscribe
         self._client.on_unsubscribe = self._on_unsubscribe
         self._client.on_message = self._on_message
+        self._client.on_log = self._on_log
 
     def _require_client(self) -> mqtt.Client:
         if self._client is None:
@@ -392,12 +445,74 @@ class MqttClient:
         reason_code: Any = 0,
         properties: Any = None,
     ) -> None:
-        reason_code_int = int(getattr(reason_code, "value", reason_code))
-        if isinstance(disconnect_flags, int):
-            reason_code_int = int(getattr(disconnect_flags, "value", disconnect_flags))
+        def _normalize_reason(value: Any) -> int:
+            candidate = getattr(value, "value", value)
+            try:
+                return int(candidate)
+            except (TypeError, ValueError):
+                return 0
+
+        reason_from_reason_arg = _normalize_reason(reason_code)
+        reason_from_flags_arg = _normalize_reason(disconnect_flags)
+
+        if os.environ.get("MQTT_INTEGRATION_DEBUG_DISCONNECT", "") == "1":
+            print(
+                "[mqtt_client disconnect]"
+                f" flags={disconnect_flags!r}"
+                f" reason={reason_code!r}"
+                f" normalized_flags={reason_from_flags_arg}"
+                f" normalized_reason={reason_from_reason_arg}",
+                flush=True,
+            )
+
+        # Callback API v2 provides reason_code explicitly; keep it unless it is
+        # the default 0 from API v1 compatibility invocation.
+        reason_code_int = reason_from_reason_arg
+        if reason_from_reason_arg == 0 and reason_from_flags_arg != 0:
+            reason_code_int = reason_from_flags_arg
+        if reason_code_int == 0 and self._disconnect_reason_from_log is not None:
+            reason_code_int = self._disconnect_reason_from_log
+
+        # Prefer the first non-zero reason code observed for this disconnect
+        # cycle. Some clients emit a follow-up zero-value callback after a
+        # server-initiated DISCONNECT with an error reason.
+        existing_result = self._disconnect_result
+        if existing_result is not None:
+            if existing_result.reason_code != 0 and reason_code_int == 0:
+                self._disconnect_event.set()
+                return
+            if existing_result.reason_code == 0 and reason_code_int != 0:
+                self._disconnect_result = DisconnectEvent(
+                    reason_code=reason_code_int,
+                    properties=properties,
+                )
+                self._disconnect_event.set()
+                return
+            if existing_result.reason_code != 0 and reason_code_int != 0:
+                self._disconnect_event.set()
+                return
 
         self._disconnect_result = DisconnectEvent(reason_code=reason_code_int, properties=properties)
         self._disconnect_event.set()
+
+    def _on_log(self, _client: mqtt.Client, _userdata: Any, _level: int, message: str) -> None:
+        if os.environ.get("MQTT_INTEGRATION_DEBUG_DISCONNECT", "") == "1":
+            print(f"[mqtt_client log] {message}", flush=True)
+
+        log_match = _DISCONNECT_REASON_PATTERN.search(message)
+        if log_match is None:
+            return
+
+        numbers = re.findall(r"\d+", log_match.group(1))
+        if not numbers:
+            return
+
+        try:
+            parsed_reason = int(numbers[-1])
+        except ValueError:
+            return
+
+        self._disconnect_reason_from_log = parsed_reason
 
     def _on_publish(self, _client: mqtt.Client, _userdata: Any, mid: int, reason_code: Any = 0, _properties: Any = None) -> None:
         reason_code_int = int(getattr(reason_code, "value", reason_code))

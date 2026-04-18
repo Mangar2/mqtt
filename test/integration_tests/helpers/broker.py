@@ -20,6 +20,9 @@ BROKER_BINARY = RELEASE_DIR / ("mqtt-broker.exe" if os.name == "nt" else "mqtt-b
 _DEFAULT_WAIT_TIMEOUT_SECONDS = 8.0
 _DEFAULT_HOST = "127.0.0.1"
 _DEFAULT_MQTT_PORT = 1883
+_TRACE_LEVEL_ENV = "MQTT_INTEGRATION_TRACE_LEVEL"
+_TRACE_MODULES_ENV = "MQTT_INTEGRATION_TRACE_MODULES"
+_BROKER_OUTPUT_ENV = "MQTT_INTEGRATION_BROKER_OUTPUT"
 
 
 def is_reachable(host: str, port: int, timeout: float) -> bool:
@@ -34,6 +37,7 @@ def is_reachable(host: str, port: int, timeout: float) -> bool:
 def start_broker(config_overrides: dict[str, Any] | None = None) -> subprocess.Popen[str]:
     """Build and start broker process, then wait until listener is reachable."""
     normalized = _normalize_overrides(config_overrides)
+    _apply_trace_environment_overrides(normalized)
     host = str(normalized.get("__host", _DEFAULT_HOST))
     startup_timeout = float(normalized.get("__startup_timeout_seconds", _DEFAULT_WAIT_TIMEOUT_SECONDS))
 
@@ -53,11 +57,16 @@ def start_broker(config_overrides: dict[str, Any] | None = None) -> subprocess.P
     if config_path is not None:
         command.append(str(config_path))
 
+    output_mode = os.environ.get(_BROKER_OUTPUT_ENV, "discard").strip().lower()
+    inherit_output = output_mode == "inherit"
+    stdout_target = None if inherit_output else subprocess.DEVNULL
+    stderr_target = None if inherit_output else subprocess.DEVNULL
+
     process = subprocess.Popen(
         command,
         cwd=PROJECT_ROOT,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=stdout_target,
+        stderr=stderr_target,
         text=True,
     )
 
@@ -135,6 +144,16 @@ def _normalize_overrides(config_overrides: dict[str, Any] | None) -> dict[str, A
         else:
             normalized[key] = value
     return normalized
+
+
+def _apply_trace_environment_overrides(normalized_overrides: dict[str, Any]) -> None:
+    trace_level = os.environ.get(_TRACE_LEVEL_ENV, "").strip().lower()
+    if trace_level and "tracing.global_level" not in normalized_overrides:
+        normalized_overrides["tracing.global_level"] = trace_level
+
+    trace_modules = os.environ.get(_TRACE_MODULES_ENV, "").strip()
+    if trace_modules and "tracing.trace_modules" not in normalized_overrides:
+        normalized_overrides["tracing.trace_modules"] = trace_modules
 
 
 def _extract_effective_port(normalized_overrides: dict[str, Any]) -> int:

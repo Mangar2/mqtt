@@ -15,10 +15,13 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -46,6 +49,18 @@ class TestCase:
     name: str
     description: str
     execute: Callable[[RunnerConfig], tuple[bool, str]]
+
+
+@dataclass(frozen=True)
+class StartupOptions:
+    trace_level: str | None
+    trace_modules: tuple[str, ...]
+    broker_output_inherit: bool
+
+
+TRACE_LEVEL_ENV = "MQTT_INTEGRATION_TRACE_LEVEL"
+TRACE_MODULES_ENV = "MQTT_INTEGRATION_TRACE_MODULES"
+BROKER_OUTPUT_ENV = "MQTT_INTEGRATION_BROKER_OUTPUT"
 
 
 REQUIREMENT_NUMBER_PREFIX = re.compile(r"^\s*(\d+(?:\.\d+)*)\b")
@@ -82,10 +97,18 @@ def _run_or_raise(command: list[str], label: str) -> None:
     )
 
 
-def _ensure_broker_running(config: RunnerConfig) -> tuple[subprocess.Popen[str] | None, list[str]]:
+def _ensure_broker_running(
+    config: RunnerConfig,
+    startup_options: StartupOptions,
+) -> tuple[subprocess.Popen[str] | None, list[str]]:
     setup_messages: list[str] = []
 
     if _broker_reachable(config.host, config.port):
+        if startup_options.trace_level is not None or startup_options.trace_modules:
+            raise RuntimeError(
+                "Broker already reachable; trace options require managed broker startup. "
+                "Stop existing broker on target host/port or use a different --port."
+            )
         setup_messages.append(f"Broker already reachable at {config.host}:{config.port}")
         return None, setup_messages
 
@@ -102,13 +125,26 @@ def _ensure_broker_running(config: RunnerConfig) -> tuple[subprocess.Popen[str] 
     if not BROKER_BINARY.exists():
         raise RuntimeError(f"Expected broker binary not found at {BROKER_BINARY}")
 
+    generated_config_path = _create_startup_config(config, startup_options)
+    command = [str(BROKER_BINARY)]
+    if generated_config_path is not None:
+        command.append(str(generated_config_path))
+        setup_messages.append(f"Using generated broker config: {generated_config_path}")
+
     setup_messages.append(f"Starting broker process: {BROKER_BINARY}")
+    stdout_target = None if startup_options.broker_output_inherit else subprocess.DEVNULL
+    stderr_target = None if startup_options.broker_output_inherit else subprocess.DEVNULL
     broker_process = subprocess.Popen(
-        [str(BROKER_BINARY)],
+        command,
         cwd=PROJECT_ROOT,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=stdout_target,
+        stderr=stderr_target,
         text=True,
+    )
+    setattr(
+        broker_process,
+        "_integration_runner_generated_config_dir",
+        str(generated_config_path.parent) if generated_config_path is not None else "",
     )
 
     start_deadline = time.monotonic() + max(3.0, config.timeout_seconds)
@@ -134,6 +170,7 @@ def _stop_broker_if_started(broker_process: subprocess.Popen[str] | None) -> Non
     if broker_process is None:
         return
     if broker_process.poll() is not None:
+        _cleanup_generated_broker_config(broker_process)
         return
 
     broker_process.terminate()
@@ -142,6 +179,94 @@ def _stop_broker_if_started(broker_process: subprocess.Popen[str] | None) -> Non
     except subprocess.TimeoutExpired:
         broker_process.kill()
         broker_process.wait(timeout=5)
+    finally:
+        _cleanup_generated_broker_config(broker_process)
+
+
+def _format_ini_value(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _create_startup_config(config: RunnerConfig, startup_options: StartupOptions) -> Path | None:
+    sections: dict[str, dict[str, object]] = {
+        "network": {
+            "mqtt_port": config.port,
+            "ws_port": 0,
+        }
+    }
+
+    tracing_section: dict[str, object] = {}
+    if startup_options.trace_level is not None:
+        tracing_section["global_level"] = startup_options.trace_level
+    if startup_options.trace_modules:
+        tracing_section["trace_modules"] = ",".join(startup_options.trace_modules)
+
+    if tracing_section:
+        sections["tracing"] = tracing_section
+
+    if not sections:
+        return None
+
+    config_dir = Path(tempfile.mkdtemp(prefix="mqtt-integration-runner-config-"))
+    config_path = config_dir / "broker.ini"
+
+    lines: list[str] = []
+    for section_name in sorted(sections.keys()):
+        lines.append(f"[{section_name}]")
+        for key_name in sorted(sections[section_name].keys()):
+            lines.append(f"{key_name} = {_format_ini_value(sections[section_name][key_name])}")
+        lines.append("")
+
+    if lines and lines[-1] == "":
+        lines.pop()
+
+    config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return config_path
+
+
+def _cleanup_generated_broker_config(process: subprocess.Popen[str]) -> None:
+    generated_dir = getattr(process, "_integration_runner_generated_config_dir", "")
+    if not generated_dir:
+        return
+
+    try:
+        shutil.rmtree(Path(generated_dir), ignore_errors=True)
+    finally:
+        setattr(process, "_integration_runner_generated_config_dir", "")
+
+
+def _apply_integration_trace_environment(startup_options: StartupOptions) -> dict[str, str | None]:
+    previous_values: dict[str, str | None] = {
+        TRACE_LEVEL_ENV: os.environ.get(TRACE_LEVEL_ENV),
+        TRACE_MODULES_ENV: os.environ.get(TRACE_MODULES_ENV),
+        BROKER_OUTPUT_ENV: os.environ.get(BROKER_OUTPUT_ENV),
+    }
+
+    if startup_options.trace_level is None:
+        os.environ.pop(TRACE_LEVEL_ENV, None)
+    else:
+        os.environ[TRACE_LEVEL_ENV] = startup_options.trace_level
+
+    if not startup_options.trace_modules:
+        os.environ.pop(TRACE_MODULES_ENV, None)
+    else:
+        os.environ[TRACE_MODULES_ENV] = ",".join(startup_options.trace_modules)
+
+    os.environ[BROKER_OUTPUT_ENV] = (
+        "inherit" if startup_options.broker_output_inherit else "discard"
+    )
+
+    return previous_values
+
+
+def _restore_integration_trace_environment(previous_values: dict[str, str | None]) -> None:
+    for variable_name, previous_value in previous_values.items():
+        if previous_value is None:
+            os.environ.pop(variable_name, None)
+        else:
+            os.environ[variable_name] = previous_value
 
 
 def _now_utc_iso() -> str:
@@ -273,6 +398,24 @@ def _parse_args() -> argparse.Namespace:
         help="Delete persisted state before selection so all tests can be run again",
     )
     parser.add_argument("--list", action="store_true", help="List all available tests and exit")
+    parser.add_argument(
+        "--trace-level",
+        choices=["none", "error", "warning", "info", "trace"],
+        default=None,
+        help="Start managed broker with tracing.global_level override",
+    )
+    parser.add_argument(
+        "--trace-module",
+        action="append",
+        default=[],
+        help="Enable tracing.trace_modules entry (repeatable)",
+    )
+    parser.add_argument(
+        "--broker-output",
+        choices=["discard", "inherit"],
+        default="discard",
+        help="Broker stdout/stderr handling when auto-started (default: discard)",
+    )
     return parser.parse_args()
 
 
@@ -317,11 +460,19 @@ def main() -> int:
         return 1
 
     config = RunnerConfig(host=args.host, port=args.port, timeout_seconds=args.timeout)
+    startup_options = StartupOptions(
+        trace_level=args.trace_level,
+        trace_modules=tuple(args.trace_module),
+        broker_output_inherit=(args.broker_output == "inherit"),
+    )
+    previous_trace_environment = _apply_integration_trace_environment(
+        startup_options
+    )
     run_started_at = _now_utc_iso()
 
     broker_process: subprocess.Popen[str] | None = None
     try:
-        broker_process, setup_messages = _ensure_broker_running(config)
+        broker_process, setup_messages = _ensure_broker_running(config, startup_options)
         for setup_message in setup_messages:
             print(f"[SETUP] {setup_message}")
     except RuntimeError as runtime_error:
@@ -360,6 +511,7 @@ def main() -> int:
             }
     finally:
         _stop_broker_if_started(broker_process)
+        _restore_integration_trace_environment(previous_trace_environment)
 
     state["results"] = _ordered_results(existing_results, all_tests)
     state["last_run_started_at"] = run_started_at

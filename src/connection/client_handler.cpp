@@ -5,6 +5,7 @@
 
 #include "connection/client_handler.h"
 
+#include <atomic>
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -264,6 +265,7 @@ void ClientHandler::run(std::unique_ptr<TcpConnection> conn, Broker &broker,
 
   std::optional<ConnectPacket> connect_packet;
   ConnectResult connect_result;
+  std::atomic<bool> session_takeover_requested{false};
 
   while (broker.is_running() && !connect_packet.has_value()) {
     TransportReadChunk chunk = read_transport_chunk(*conn, ws_transport.get());
@@ -311,11 +313,12 @@ void ClientHandler::run(std::unique_ptr<TcpConnection> conn, Broker &broker,
       }
 
       connect_packet = std::get<ConnectPacket>(*packet_any);
-      connect_result = broker.handle_connect(*connect_packet, [raw_conn = conn.get()] {
-        if (raw_conn != nullptr) {
-          raw_conn->close();
-        }
-      });
+      connect_result = broker.handle_connect(*connect_packet,
+                                             [&session_takeover_requested]() {
+                                               session_takeover_requested.store(
+                                                   true,
+                                                   std::memory_order_release);
+                                             });
 
       while (connect_result.auth_status == AuthStatus::Continue) {
         const std::vector<Property> auth_properties = build_auth_properties(
@@ -455,6 +458,26 @@ void ClientHandler::run(std::unique_ptr<TcpConnection> conn, Broker &broker,
   std::optional<uint32_t> expiry_override;
 
   while (broker.is_running()) {
+    if (session_takeover_requested.exchange(false,
+                                            std::memory_order_acq_rel)) {
+      clean_disconnect = true;
+      disconnect_reason = ReasonCode::SessionTakenOver;
+      TRACE_GUARD((&broker.structured_tracer()), TraceLevel::Trace,
+                  "connection") {
+        TraceEvent event;
+        event.level = TraceLevel::Trace;
+        event.module = "connection";
+        event.info = "session_takeover_disconnect";
+        event.data.push_back({"client_id", connect_result.client_id});
+        event.data.push_back({"reason_code", "0x8E"});
+        broker.structured_tracer().emit(event);
+      }
+      write_frame_direct(*conn, ws_transport.get(),
+                         encode_disconnect_packet(disconnect_reason),
+                         is_websocket);
+      break;
+    }
+
     const std::vector<WriteBuffer> outbound_frames =
         client_session.drain_outbound();
     for (WriteBuffer frame : outbound_frames) {

@@ -1466,8 +1466,12 @@ TEST_CASE("client_handler_session_takeover_executes_close_callback",
   const std::vector<uint8_t> second_connack = read_some(second.client_fd, 512U);
   CHECK_FALSE(second_connack.empty());
 
-  const std::vector<uint8_t> first_after_takeover = read_some(first.client_fd, 64U);
-  CHECK(first_after_takeover.empty());
+  const std::vector<uint8_t> first_after_takeover =
+      read_nonempty_with_retries(first.client_fd, 64U, 8);
+  REQUIRE(first_after_takeover.size() >= 3U);
+  CHECK(packet_type_nibble(first_after_takeover) == 14U);
+  CHECK(first_after_takeover[2] ==
+        static_cast<uint8_t>(ReasonCode::SessionTakenOver));
 
   write_all(second.client_fd, make_disconnect_frame());
   ::close(first.client_fd);
