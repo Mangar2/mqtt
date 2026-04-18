@@ -489,14 +489,12 @@ def verify_pr_open(cfg: Config, token: str, pr_number: int, timeout_sec: float, 
 
 
 def merge_and_cleanup_via_git(cfg: Config) -> None:
-    # Keep identical close flow used previously in manual operations.
-    run_cmd(
-        f"git checkout {cfg.base_branch} ; "
-        f"git merge --ff-only {cfg.branch} ; "
-        f"git push origin {cfg.base_branch} ; "
-        f"git branch -d {cfg.branch} ; "
-        f"git push origin --delete {cfg.branch}"
-    )
+    # Execute close flow step-by-step for shell portability on Windows.
+    run_cmd(f"git checkout {cfg.base_branch}")
+    run_cmd(f"git merge --ff-only {cfg.branch}")
+    run_cmd(f"git push origin {cfg.base_branch}")
+    run_cmd(f"git branch -d {cfg.branch}")
+    run_cmd(f"git push origin --delete {cfg.branch}")
 
 
 def verify_pr_merged(cfg: Config, token: str, pr_number: int, timeout_sec: float, interval_sec: float) -> dict:
