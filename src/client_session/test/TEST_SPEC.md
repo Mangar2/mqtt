@@ -22,6 +22,9 @@
 | `drain_outbound_qos0_encodes_publish_without_packet_id` | QoS0 queued message | queue push QoS0 | one encoded PUBLISH, qos==0, packet_id absent |
 | `drain_outbound_receive_maximum_pauses_and_resumes_after_puback` | QoS1 flow control | receive_max=1, queue two QoS1 messages | first drain emits one packet; second emits none; after on_puback third emits second packet |
 | `on_pubrec_returns_pubrel_and_on_pubcomp_releases_slot` | QoS2 outbound progression | queue QoS2, then PUBREC/PUBCOMP | on_pubrec returns PUBREL; after on_pubcomp second queued QoS2 can be emitted |
+| `drain_outbound_retransmits_overdue_qos1` | QoS1 retransmission | queue QoS1, wait past retransmit timeout, drain again | second drain returns retransmitted PUBLISH with DUP=true |
+| `drain_outbound_retransmits_overdue_qos2_waiting_for_pubrec` | QoS2 retransmission phase 1 | queue QoS2, wait past retransmit timeout, drain again | second drain returns retransmitted PUBLISH with DUP=true |
+| `drain_outbound_retransmits_overdue_qos2_waiting_for_pubcomp` | QoS2 retransmission phase 2 | queue QoS2, process PUBREC, wait timeout, drain again | returns retransmitted PUBREL |
 
 ## AUTH handling
 

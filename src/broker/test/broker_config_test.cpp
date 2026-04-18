@@ -38,6 +38,8 @@ TEST_CASE("parse_minimal_valid_config", "[broker]") {
   CHECK(cfg.session_expiry_max == 0U);
   CHECK(cfg.topic_alias_maximum == 10U);
   CHECK(cfg.max_queued_messages == 100U);
+  CHECK(cfg.qos_retransmit_timeout_seconds == 20U);
+  CHECK(cfg.tick_interval_ms == 100U);
   CHECK(cfg.persistence_enabled == false);
 }
 
@@ -56,13 +58,17 @@ TEST_CASE("parse_broker_section", "[broker]") {
                                        "receive_maximum = 100\n"
                                        "session_expiry_max = 3600\n"
                                        "topic_alias_maximum = 20\n"
-                                       "max_queued_messages = 50\n");
+                                       "max_queued_messages = 50\n"
+                                       "qos_retransmit_timeout_seconds = 35\n"
+                                       "tick_interval_ms = 250\n");
   CHECK(cfg.allow_anonymous == false);
   CHECK(cfg.max_connections == 500U);
   CHECK(cfg.receive_maximum == 100U);
   CHECK(cfg.session_expiry_max == 3600U);
   CHECK(cfg.topic_alias_maximum == 20U);
   CHECK(cfg.max_queued_messages == 50U);
+  CHECK(cfg.qos_retransmit_timeout_seconds == 35U);
+  CHECK(cfg.tick_interval_ms == 250U);
 }
 
 TEST_CASE("parse_persistence_section", "[broker]") {
@@ -196,6 +202,18 @@ TEST_CASE("parse_max_queued_zero_throws", "[broker]") {
       ConfigLoader::parse(
           "[network]\nmqtt_port = 1883\n[broker]\nmax_queued_messages = 0\n"),
       BrokerException);
+}
+
+TEST_CASE("parse_qos_retransmit_timeout_zero_throws", "[broker]") {
+  CHECK_THROWS_AS(ConfigLoader::parse("[network]\nmqtt_port = 1883\n[broker]\n"
+                                      "qos_retransmit_timeout_seconds = 0\n"),
+                  BrokerException);
+}
+
+TEST_CASE("parse_tick_interval_zero_throws", "[broker]") {
+  CHECK_THROWS_AS(ConfigLoader::parse("[network]\nmqtt_port = 1883\n[broker]\n"
+                                      "tick_interval_ms = 0\n"),
+                  BrokerException);
 }
 
 //

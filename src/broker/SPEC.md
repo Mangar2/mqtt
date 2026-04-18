@@ -52,6 +52,8 @@ All parameters are optional; absent ones keep their default value.
 | `[broker]`    | `session_expiry_max`  | uint32   | `0`     | Hard cap on session expiry seconds. `0` = unlimited. |
 | `[broker]`    | `topic_alias_maximum` | uint16   | `10`    | Maximum topic alias value per connection. |
 | `[broker]`    | `max_queued_messages` | uint32   | `100`   | Per-client offline queue capacity. |
+| `[broker]`    | `qos_retransmit_timeout_seconds` | uint32 | `20` | Timeout before outbound QoS 1/2 retransmission is eligible in `ClientSession`. |
+| `[broker]`    | `tick_interval_ms`    | uint32   | `100`   | Main loop sleep interval between broker housekeeping ticks. |
 | `[auth]`      | `credential`          | string   | —       | Repeated `username:password` entries for `PasswordAuthenticator`. |
 | `[persistence]` | `enabled`           | bool     | `false` | Enable crash-safe file persistence. |
 | `[persistence]` | `dir`               | string   | `./data`| Directory for persistence snapshot files. |
@@ -95,6 +97,8 @@ struct BrokerConfig {
     uint32_t session_expiry_max    = 0;
     uint16_t topic_alias_maximum   = 10;
     uint32_t max_queued_messages   = 100;
+   uint32_t qos_retransmit_timeout_seconds = 20;
+   uint32_t tick_interval_ms      = 100;
    std::vector<PasswordCredentialConfig> password_credentials;
     bool     persistence_enabled   = false;
     std::filesystem::path persistence_dir = "./data";
@@ -172,6 +176,9 @@ void handle_connection_lost(std::string_view client_id,
                                                 const UnsubscribePacket& packet);
 void handle_publish(Message& msg, std::string_view client_id,
                     std::string_view username, TopicAliasTable& alias_table);
+
+bool tick(std::chrono::steady_clock::time_point now =
+          std::chrono::steady_clock::now());
 
 // Connection registration — call from connection handler (Module 20.2)
 void register_connection(std::string_view client_id,
@@ -259,6 +266,17 @@ Callers should poll `Broker::shutdown_requested()` in their main loop and call
    and returns one UNSUBACK reason code per filter.
 - `handle_publish()` wraps inbound publish routing and statistics increments under
    the broker mutex.
+
+#### Housekeeping tick (22)
+
+- `tick()` runs all periodic broker housekeeping under the broker mutex:
+   - `WillPublisher::publish_due(now)` to emit delayed wills whose timers elapsed.
+   - `SessionManager::cleanup_expired(now)` to remove expired sessions.
+   - For each expired client ID, `WillPublisher::on_session_expired(client_id)`.
+   - `SysTopicPublisher::tick(now)` for `$SYS` publication.
+- The return value of `tick()` is the return value from `SysTopicPublisher::tick(now)`.
+- Callers should invoke `tick()` repeatedly from the main loop and sleep for
+   `BrokerConfig::tick_interval_ms` between iterations to avoid busy spinning.
 
 ---
 

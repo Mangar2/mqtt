@@ -1,28 +1,40 @@
 GitHub PR workflow. Follow the exact steps below.
 
-## Open PR
+## Mandatory automation
 
-Step 1: Push branch
-git push origin <branch>
+The complete check-in + PR workflow **must** be executed via:
 
-Step 2: Create PR via github-pull-request_create_pull_request
-title: "feat: <module>"
-head: "<branch>"
-base: "master"
-body: "<summary>"
-draft: false
-repo: { owner: "Mangar2", name: "mqtt" }
+python test/auto_checkin_pr.py --branch <branch> --commit-message "<message>" --pr-title "<title>" --pr-body "<summary>"
 
-Step 3: Do not verify PR creation.
-No follow-up check calls. No search calls. No fetch calls.
-Use the result of the create call as final.
+Manual step-by-step execution for push / create PR / close PR is not allowed anymore.
+The script is the single source of truth for retries, waits, checks, PR verification, and close/merge flow.
 
-## Close PR
+## Required invocation
 
-Execute this exact terminal call:
-git checkout master ; git merge --ff-only <branch> ; git push origin master ; git branch -d <branch> ; git push origin --delete <branch>
+Use this exact pattern:
 
-## Unstaged changes before close
+python test/auto_checkin_pr.py --branch <branch> --commit-message "<message>" --pr-title "feat: <module>" --pr-body "<summary>"
 
-Execute this exact terminal call:
-git add -A ; git commit -m "<message>" ; git checkout master ; git merge --ff-only <branch> ; git push origin master ; git branch -d <branch> ; git push origin --delete <branch>
+Required environment variable:
+
+No mandatory environment variable.
+
+Authentication source for the script:
+
+1) `GITHUB_TOKEN` (if set)
+2) Existing git credential helper entry for `github.com` (default)
+
+`gh` CLI is not used.
+
+## Scope of the script (must be used end-to-end)
+
+- run coverage/test gate
+- commit pending changes
+- push feature branch
+- create PR
+- verify PR was created and is open
+- fast-forward merge into master
+- delete local and remote feature branch
+- verify PR is closed and merged
+
+Do not replace any part of this flow with manual git or manual PR API steps.

@@ -500,20 +500,33 @@ Module structure for a fully specification-compliant MQTT 5.0 broker. Each modul
 
 ---
 
-## 23. Accept Loop Thread Management
+## 23. Connection Manager
 
-*Replace `std::thread(...).detach()` in the accept loop with tracked threads that are properly joined on shutdown. Currently, on broker shutdown, detached client threads continue running with dangling references to the broker and its stores — undefined behaviour. Depends on: 15, 17.*
+*Extracts all thread lifecycle and listener management from `Broker` into a dedicated `ConnectionManager` class in `src/connection/`. Currently `Broker` owns listener sockets, accept-loop threads, and spawns detached client threads — adding ~70 lines of networking/threading code to an already oversized class (34 member variables, ~1200 lines). Detached client threads continue running after shutdown with dangling references — undefined behaviour. The new `ConnectionManager` owns listener sockets, accept-loop threads, and a tracked registry of client threads. `Broker` delegates to a single `ConnectionManager` member instead of managing threads directly. Depends on: 6, 15, 17.*
 
-- 23.1 Client Thread Registry
-  - 23.1.1 `Broker` maintains a `vector<jthread>` (or similar) of active client threads
-  - 23.1.2 Each accept spawns a `jthread` that is added to the registry
-  - 23.1.3 Completed threads are periodically removed (e.g. in `tick()` or on accept)
-- 23.2 Graceful Client Shutdown
-  - 23.2.1 On `Broker::shutdown()`: set running flag to false
-  - 23.2.2 Close all TCP listeners (breaks accept loops)
-  - 23.2.3 Signal all `OutboundQueue`s to stop (wakes blocked clients)
-  - 23.2.4 Join all client threads with a timeout
-  - 23.2.5 Force-close remaining connections after timeout
+- 23.1 `ConnectionManager` Class (`src/connection/connection_manager.h/.cpp`)
+  - 23.1.1 Owns: `TcpListener` instances (MQTT + optional WebSocket), accept-loop threads, client thread registry
+  - 23.1.2 Constructor takes: port configuration (MQTT port, WS port), a client-handler callback `std::function<void(std::unique_ptr<TcpConnection>, bool is_ws)>`
+  - 23.1.3 `start()` — opens listener sockets, spawns one accept-loop thread per listener
+  - 23.1.4 `stop()` — closes listeners, signals all clients, joins all threads (see 23.3)
+  - 23.1.5 Accept-loop threads are stored in a `std::vector<std::thread>` (or `jthread`), same as today but owned by `ConnectionManager` instead of `Broker`
+- 23.2 Client Thread Registry
+  - 23.2.1 Maintains a `std::vector<std::jthread>` (or `std::thread` + finished-flag) of active client threads, guarded by its own `std::mutex` (independent of `broker_mutex_`)
+  - 23.2.2 Each accepted connection spawns a tracked thread that is added to the registry
+  - 23.2.3 `cleanup_finished()` removes completed threads from the registry — called inside the accept loop after each new connection (amortised, no separate timer needed)
+- 23.3 Graceful Shutdown
+  - 23.3.1 `stop()` closes all `TcpListener` sockets (unblocks blocking `accept()` calls, breaks accept loops)
+  - 23.3.2 Caller (`Broker::shutdown()`) signals all `OutboundQueue`s to stop before calling `stop()` — this wakes client threads blocked on queue reads
+  - 23.3.3 Join all accept-loop threads
+  - 23.3.4 Join all client threads (with configurable timeout)
+  - 23.3.5 Force-close remaining `TcpConnection`s after timeout to unblock client threads stuck in socket reads
+- 23.4 Broker Integration
+  - 23.4.1 Add `ConnectionManager` as a member of `Broker` (unique_ptr, created in `create_modules()`)
+  - 23.4.2 Remove `mqtt_listener_`, `ws_listener_`, `accept_threads_` member variables from `Broker`
+  - 23.4.3 Remove `open_listeners()` and `close_listeners()` private methods from `Broker`
+  - 23.4.4 `Broker::startup()` calls `connection_manager_->start()`
+  - 23.4.5 `Broker::shutdown()` signals OutboundQueues, then calls `connection_manager_->stop()`
+  - 23.4.6 The client-handler callback passed to `ConnectionManager` creates a `ClientHandler` and calls `handler.run(conn, *this, config_, is_ws)` — same logic as today's accept-loop lambda, but `ConnectionManager` owns the thread
 
 ---
 

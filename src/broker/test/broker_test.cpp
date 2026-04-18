@@ -1100,3 +1100,67 @@ TEST_CASE("broker_tick_publishes_sys_topics_when_enabled", "[broker]") {
 
   broker.shutdown();
 }
+
+TEST_CASE("broker_tick_handles_session_expiry_and_will_publish", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.sys_topic_interval = 0U;
+  Broker broker(cfg);
+  broker.startup();
+
+  auto subscriber_queue = std::make_shared<OutboundQueue>();
+  broker.register_connection("sub_client", subscriber_queue);
+
+  SubscribePacket subscribe_packet;
+  subscribe_packet.packet_id = 40U;
+  subscribe_packet.filters.push_back(
+      SubscribeFilter{.topic_filter = Utf8String{"will/topic"},
+                      .options = SubscribeOptions{.max_qos = QoS::AtMostOnce,
+                                                  .no_local = false,
+                                                  .retain_as_published = false,
+                                                  .retain_handling = 0U}});
+  const SubackPacket suback =
+      broker.handle_subscribe("sub_client", subscribe_packet);
+  REQUIRE(suback.reason_codes.size() == 1U);
+  CHECK(suback.reason_codes[0] == ReasonCode::Success);
+
+  ConnectPacket connect_packet;
+  connect_packet.client_id = Utf8String{"expiring_client"};
+  connect_packet.properties.push_back(
+      Property{PropertyId::SessionExpiryInterval, FourByteInteger{1U}});
+
+  WillData will_data;
+  will_data.topic = Utf8String{"will/topic"};
+  will_data.payload = BinaryData{{0x33U}};
+  will_data.qos = QoS::AtMostOnce;
+  will_data.retain = false;
+  will_data.properties.push_back(
+      Property{PropertyId::WillDelayInterval, FourByteInteger{30U}});
+  connect_packet.will = will_data;
+
+  const ConnectResult connect_result =
+      broker.handle_connect(connect_packet, []() {});
+  REQUIRE(connect_result.reason_code == ReasonCode::Success);
+
+  const auto disconnect_time = std::chrono::steady_clock::now();
+  broker.handle_connection_lost("expiring_client", disconnect_time);
+  CHECK(subscriber_queue->is_empty());
+
+  CHECK_FALSE(broker.tick(disconnect_time + 2s));
+  REQUIRE(subscriber_queue->size() == 1U);
+  const auto delivered_message = subscriber_queue->try_pop();
+  REQUIRE(delivered_message.has_value());
+  CHECK(delivered_message->topic.value == "will/topic");
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_tick_with_no_housekeeping_work_is_safe", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.sys_topic_interval = 0U;
+  Broker broker(cfg);
+  broker.startup();
+
+  CHECK_FALSE(broker.tick(std::chrono::steady_clock::now()));
+
+  broker.shutdown();
+}

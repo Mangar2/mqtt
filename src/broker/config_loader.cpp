@@ -128,6 +128,10 @@ void ConfigLoader::apply_key(const std::string &section, const std::string &key,
       cfg.topic_alias_maximum = parse_uint16(value);
     } else if (key == "max_queued_messages") {
       cfg.max_queued_messages = parse_uint32(value);
+    } else if (key == "qos_retransmit_timeout_seconds") {
+      cfg.qos_retransmit_timeout_seconds = parse_uint32(value);
+    } else if (key == "tick_interval_ms") {
+      cfg.tick_interval_ms = parse_uint32(value);
     }
   } else if (section == "persistence") {
     if (key == "enabled") {
@@ -154,6 +158,14 @@ void ConfigLoader::validate(const BrokerConfig &cfg) {
   if (cfg.max_queued_messages < 1U || cfg.max_queued_messages > 100'000U) {
     throw BrokerException(BrokerError::InvalidConfig,
                           "max_queued_messages must be in [1, 100000]");
+  }
+  if (cfg.qos_retransmit_timeout_seconds < 1U) {
+    throw BrokerException(BrokerError::InvalidConfig,
+                          "qos_retransmit_timeout_seconds must be at least 1");
+  }
+  if (cfg.tick_interval_ms < 1U) {
+    throw BrokerException(BrokerError::InvalidConfig,
+                          "tick_interval_ms must be at least 1");
   }
   if (cfg.mqtt_port == 0U && cfg.ws_port == 0U) {
     throw BrokerException(

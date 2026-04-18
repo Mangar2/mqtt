@@ -67,6 +67,8 @@ All tests are tagged `[broker]`.
 | `broker_handle_unsubscribe_removes_subscription` | unsubscribe facade | subscribe then unsubscribe | publish before and after unsubscribe | first publish delivered, second suppressed; UNSUBACK Success |
 | `broker_tick_returns_false_when_sys_disabled` | monitoring | tick() with interval=0 | far-future now | returns false |
 | `broker_tick_publishes_sys_topics_when_enabled` | monitoring | tick() with interval=60 | far-future now | returns true |
+| `broker_tick_handles_session_expiry_and_will_publish` | housekeeping | tick() runs will/session housekeeping | CONNECT with will and expiry, then connection_lost and tick at expiry | session removed and delayed will emitted through router |
+| `broker_tick_with_no_housekeeping_work_is_safe` | housekeeping | tick() when no due will and no expired session | normal startup + immediate tick | no throw, no side effects |
 | `broker_handle_connect_returns_connect_result` | connect facade | wrapped connect workflow | clean_start=false CONNECT | returns ConnectResult with Success and session_present=false |
 | `broker_handle_connect_auth_failure_returns_reason` | connect facade | auth denied in password mode | allow_anonymous=false + CONNECT without creds | ConnectResult.reason_code == BadUserNameOrPassword |
 | `broker_handle_connect_password_auth_success_with_configured_credential` | connect facade | auth allowed in password mode | allow_anonymous=false + configured credential + matching CONNECT username/password | ConnectResult.reason_code == Success |

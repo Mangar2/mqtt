@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <memory>
+#include <thread>
 #include <utility>
 
 #include "auth/authenticator.h"
@@ -17,6 +19,8 @@
 #include "store/inflight_store.h"
 
 namespace mqtt {
+
+using namespace std::chrono_literals;
 
 namespace {
 
@@ -346,6 +350,100 @@ TEST_CASE("on_auth_routes_to_reauthenticate_when_reason_is_reauthenticate",
   CHECK(auth_result.status == AuthStatus::Success);
   CHECK(auth_result.reason_code == ReasonCode::Success);
   CHECK(authenticate_calls == 2U);
+}
+
+TEST_CASE("drain_outbound_retransmits_overdue_qos1", "[client_session]") {
+  InflightStore inflight_store;
+  auto authenticator =
+      std::make_shared<CallbackAuthenticator>([](const ConnectPacket &) {
+        return AuthResult{.status = AuthStatus::Success,
+                          .reason_code = ReasonCode::Success,
+                          .auth_data = std::nullopt};
+      });
+
+  auto queue = std::make_shared<OutboundQueue>();
+  ClientSession session("client-1", "user-1", authenticator, queue,
+                        inflight_store, 30U, 10U, 8U, 10ms);
+
+  REQUIRE(queue->push(make_message("out/qos1/retry", QoS::AtLeastOnce)));
+  const std::vector<WriteBuffer> first_frames = session.drain_outbound();
+  REQUIRE(first_frames.size() == 1U);
+  const PublishPacket first_publish = decode_publish_frame(first_frames[0]);
+  REQUIRE(first_publish.packet_id.has_value());
+  CHECK_FALSE(first_publish.dup);
+
+  std::this_thread::sleep_for(20ms);
+
+  const std::vector<WriteBuffer> retransmit_frames = session.drain_outbound();
+  REQUIRE(retransmit_frames.size() == 1U);
+  const PublishPacket retransmit_publish =
+      decode_publish_frame(retransmit_frames[0]);
+  CHECK(retransmit_publish.packet_id == first_publish.packet_id);
+  CHECK(retransmit_publish.dup);
+}
+
+TEST_CASE("drain_outbound_retransmits_overdue_qos2_waiting_for_pubrec",
+          "[client_session]") {
+  InflightStore inflight_store;
+  auto authenticator =
+      std::make_shared<CallbackAuthenticator>([](const ConnectPacket &) {
+        return AuthResult{.status = AuthStatus::Success,
+                          .reason_code = ReasonCode::Success,
+                          .auth_data = std::nullopt};
+      });
+
+  auto queue = std::make_shared<OutboundQueue>();
+  ClientSession session("client-1", "user-1", authenticator, queue,
+                        inflight_store, 30U, 10U, 8U, 10ms);
+
+  REQUIRE(queue->push(make_message("out/qos2/retry", QoS::ExactlyOnce)));
+  const std::vector<WriteBuffer> first_frames = session.drain_outbound();
+  REQUIRE(first_frames.size() == 1U);
+  const PublishPacket first_publish = decode_publish_frame(first_frames[0]);
+  REQUIRE(first_publish.packet_id.has_value());
+  CHECK_FALSE(first_publish.dup);
+
+  std::this_thread::sleep_for(20ms);
+
+  const std::vector<WriteBuffer> retransmit_frames = session.drain_outbound();
+  REQUIRE(retransmit_frames.size() == 1U);
+  const PublishPacket retransmit_publish =
+      decode_publish_frame(retransmit_frames[0]);
+  CHECK(retransmit_publish.packet_id == first_publish.packet_id);
+  CHECK(retransmit_publish.dup);
+  CHECK(retransmit_publish.qos == QoS::ExactlyOnce);
+}
+
+TEST_CASE("drain_outbound_retransmits_overdue_qos2_waiting_for_pubcomp",
+          "[client_session]") {
+  InflightStore inflight_store;
+  auto authenticator =
+      std::make_shared<CallbackAuthenticator>([](const ConnectPacket &) {
+        return AuthResult{.status = AuthStatus::Success,
+                          .reason_code = ReasonCode::Success,
+                          .auth_data = std::nullopt};
+      });
+
+  auto queue = std::make_shared<OutboundQueue>();
+  ClientSession session("client-1", "user-1", authenticator, queue,
+                        inflight_store, 30U, 10U, 8U, 10ms);
+
+  REQUIRE(queue->push(make_message("out/qos2/pubrel", QoS::ExactlyOnce)));
+  const std::vector<WriteBuffer> first_frames = session.drain_outbound();
+  REQUIRE(first_frames.size() == 1U);
+  const PublishPacket first_publish = decode_publish_frame(first_frames[0]);
+  REQUIRE(first_publish.packet_id.has_value());
+
+  (void)session.on_pubrec(PubrecPacket{
+      .packet_id = first_publish.packet_id.value(), .properties = {}});
+
+  std::this_thread::sleep_for(20ms);
+
+  const std::vector<WriteBuffer> retransmit_frames = session.drain_outbound();
+  REQUIRE(retransmit_frames.size() == 1U);
+  const PubrelPacket retransmit_pubrel =
+      decode_pubrel_frame(retransmit_frames[0]);
+  CHECK(retransmit_pubrel.packet_id == first_publish.packet_id.value());
 }
 
 } // namespace mqtt

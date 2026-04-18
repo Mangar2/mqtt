@@ -73,6 +73,13 @@ struct BrokerConfig {
   /// Per-client offline queue capacity (1–100 000).
   uint32_t max_queued_messages = 100U;
 
+  /// Timeout in seconds before an outbound QoS 1/2 exchange is eligible for
+  /// retransmission.
+  uint32_t qos_retransmit_timeout_seconds = 20U;
+
+  /// Sleep interval in milliseconds for the main loop housekeeping tick.
+  uint32_t tick_interval_ms = 100U;
+
   /// Username/password credentials used by `PasswordAuthenticator` when
   /// anonymous access is disabled.
   std::vector<PasswordCredentialConfig> password_credentials;

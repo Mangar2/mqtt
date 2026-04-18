@@ -6,12 +6,14 @@
  * state machines and outbound drain logic (Module 21).
  */
 
+#include <chrono>
 #include <deque>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
+
 
 #include "auth/authenticator.h"
 #include "auth/enhanced_auth_handler.h"
@@ -74,7 +76,9 @@ public:
                 std::shared_ptr<IAuthenticator> authenticator,
                 std::shared_ptr<OutboundQueue> outbound_queue,
                 InflightStore &inflight_store, uint16_t keep_alive_seconds,
-                uint16_t receive_maximum, uint16_t topic_alias_maximum);
+                uint16_t receive_maximum, uint16_t topic_alias_maximum,
+                std::chrono::steady_clock::duration retransmit_timeout =
+                    std::chrono::seconds{20});
 
   /**
    * @brief Start enhanced authentication state from CONNECT.
@@ -196,6 +200,9 @@ private:
    */
   [[nodiscard]] std::optional<Message> pop_next_message();
 
+  /// Emit retransmission frames for overdue outbound inflight entries.
+  void append_retransmission_frames(std::vector<WriteBuffer> &frames);
+
   std::string client_id_;                         ///< Owning client identifier.
   std::string username_;                          ///< Authenticated username.
   std::shared_ptr<OutboundQueue> outbound_queue_; ///< Shared outbound queue.
@@ -207,6 +214,9 @@ private:
   KeepAliveTimer keep_alive_timer_;               ///< Keep-alive deadline.
   ConnectionStateMachine connection_state_machine_; ///< Lifecycle state.
   EnhancedAuthHandler enhanced_auth_handler_;       ///< AUTH state machine.
+  InflightStore &inflight_store_;                   ///< Session inflight store.
+  std::chrono::steady_clock::duration
+      retransmit_timeout_; ///< QoS retransmit timeout.
   std::deque<Message>
       deferred_messages_; ///< QoS 1/2 messages parked while receive-max paused.
 };

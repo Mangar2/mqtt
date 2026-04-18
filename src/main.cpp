@@ -51,7 +51,8 @@ int main(int argc, char *argv[]) {
   // Accept loops run on background threads started by Broker::startup().
   while (!mqtt::Broker::shutdown_requested()) {
     broker.tick();
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::this_thread::sleep_for(
+        std::chrono::milliseconds(config.tick_interval_ms));
   }
 
   broker.shutdown();

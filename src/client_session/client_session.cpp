@@ -1,19 +1,22 @@
 #include "client_session/client_session.h"
 
+#include <chrono>
 #include <stdexcept>
 #include <utility>
 
 #include "codec/packet/publish_codec.h"
+#include "data_model/session/inflight_direction.h"
+#include "data_model/session/inflight_state.h"
 
 namespace mqtt {
 
-ClientSession::ClientSession(std::string client_id, std::string username,
-                             std::shared_ptr<IAuthenticator> authenticator,
-                             std::shared_ptr<OutboundQueue> outbound_queue,
-                             InflightStore &inflight_store,
-                             uint16_t keep_alive_seconds,
-                             uint16_t receive_maximum,
-                             uint16_t topic_alias_maximum)
+ClientSession::ClientSession(
+    std::string client_id, std::string username,
+    std::shared_ptr<IAuthenticator> authenticator,
+    std::shared_ptr<OutboundQueue> outbound_queue,
+    InflightStore &inflight_store, uint16_t keep_alive_seconds,
+    uint16_t receive_maximum, uint16_t topic_alias_maximum,
+    std::chrono::steady_clock::duration retransmit_timeout)
     : client_id_(std::move(client_id)), username_(std::move(username)),
       outbound_queue_(std::move(outbound_queue)), packet_id_manager_(),
       qos1_state_machine_(client_id_, packet_id_manager_, inflight_store),
@@ -21,7 +24,8 @@ ClientSession::ClientSession(std::string client_id, std::string username,
       receive_maximum_(receive_maximum),
       topic_alias_table_(topic_alias_maximum),
       keep_alive_timer_(keep_alive_seconds),
-      enhanced_auth_handler_(std::move(authenticator)) {
+      enhanced_auth_handler_(std::move(authenticator)),
+      inflight_store_(inflight_store), retransmit_timeout_(retransmit_timeout) {
   if (!outbound_queue_) {
     throw std::invalid_argument(
         "ClientSession: outbound_queue must not be null");
@@ -96,6 +100,8 @@ AuthResult ClientSession::on_auth(const AuthPacket &auth_packet) {
 std::vector<WriteBuffer> ClientSession::drain_outbound() {
   std::vector<WriteBuffer> frames;
 
+  append_retransmission_frames(frames);
+
   while (true) {
     std::optional<Message> next_message = pop_next_message();
     if (!next_message.has_value()) {
@@ -134,6 +140,42 @@ std::vector<WriteBuffer> ClientSession::drain_outbound() {
   }
 
   return frames;
+}
+
+void ClientSession::append_retransmission_frames(
+    std::vector<WriteBuffer> &frames) {
+  const auto now = std::chrono::steady_clock::now();
+  const std::vector<InflightEntry> entries =
+      inflight_store_.entries_for(client_id_);
+
+  for (const InflightEntry &entry : entries) {
+    if (entry.direction != InflightDirection::Outbound) {
+      continue;
+    }
+    if ((now - entry.timestamp) < retransmit_timeout_) {
+      continue;
+    }
+
+    if (entry.qos == QoS::AtLeastOnce &&
+        entry.state == InflightState::WaitingForPuback) {
+      const PublishPacket retransmitted_packet =
+          qos1_state_machine_.retransmit(entry.packet_id);
+      frames.push_back(encode_publish_packet(retransmitted_packet));
+      continue;
+    }
+
+    if (entry.qos == QoS::ExactlyOnce) {
+      const auto retransmitted_packet =
+          qos2_state_machine_.retransmit(entry.packet_id);
+      if (std::holds_alternative<PublishPacket>(retransmitted_packet)) {
+        frames.push_back(encode_publish_packet(
+            std::get<PublishPacket>(retransmitted_packet)));
+      } else {
+        frames.push_back(
+            encode_pubrel_packet(std::get<PubrelPacket>(retransmitted_packet)));
+      }
+    }
+  }
 }
 
 std::string_view ClientSession::client_id() const noexcept {

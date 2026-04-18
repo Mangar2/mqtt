@@ -438,6 +438,14 @@ void Broker::unregister_connection(std::string_view client_id) noexcept {
 
 bool Broker::tick(std::chrono::steady_clock::time_point now) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+  will_publisher_->publish_due(now);
+
+  const std::vector<std::string> expired_sessions =
+      session_manager_->cleanup_expired(now);
+  for (const std::string &client_id : expired_sessions) {
+    will_publisher_->on_session_expired(client_id);
+  }
+
   return sys_publisher_->tick(now);
 }
 
