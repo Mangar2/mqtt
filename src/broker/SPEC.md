@@ -51,6 +51,7 @@ All parameters are optional; absent ones keep their default value.
 | `[broker]`    | `session_expiry_max`  | uint32   | `0`     | Hard cap on session expiry seconds. `0` = unlimited. |
 | `[broker]`    | `topic_alias_maximum` | uint16   | `10`    | Maximum topic alias value per connection. |
 | `[broker]`    | `max_queued_messages` | uint32   | `100`   | Per-client offline queue capacity. |
+| `[auth]`      | `credential`          | string   | —       | Repeated `username:password` entries for `PasswordAuthenticator`. |
 | `[persistence]` | `enabled`           | bool     | `false` | Enable crash-safe file persistence. |
 | `[persistence]` | `dir`               | string   | `./data`| Directory for persistence snapshot files. |
 
@@ -93,6 +94,7 @@ struct BrokerConfig {
     uint32_t session_expiry_max    = 0;
     uint16_t topic_alias_maximum   = 10;
     uint32_t max_queued_messages   = 100;
+   std::vector<PasswordCredentialConfig> password_credentials;
     bool     persistence_enabled   = false;
     std::filesystem::path persistence_dir = "./data";
 };
@@ -139,8 +141,11 @@ void shutdown() noexcept;
 [[nodiscard]] WillPublisher&    will_publisher()   noexcept;
 
 struct ConnectResult {
+   AuthStatus auth_status;
    bool session_present;
    ReasonCode reason_code;
+   std::optional<BinaryData> auth_data;
+   std::string auth_method;
    std::vector<Property> connack_properties;
    std::string client_id;
 };
@@ -148,6 +153,10 @@ struct ConnectResult {
 // Thread-safe connect/disconnect facades (Modules 17.3 + 18)
 ConnectResult handle_connect(const ConnectPacket& connect_packet,
                              std::function<void()> close_callback);
+ConnectResult handle_auth_packet(std::string_view client_id,
+                                 const AuthPacket& auth_packet);
+AuthResult handle_reauthenticate(std::string_view client_id,
+                                 const AuthPacket& auth_packet);
 void handle_disconnect(std::string_view client_id, ReasonCode reason_code,
                        std::optional<uint32_t> expiry_override,
                        std::chrono::steady_clock::time_point now);
@@ -215,6 +224,13 @@ Callers should poll `Broker::shutdown_requested()` in their main loop and call
 
 - `handle_connect()` authenticates CONNECT first and returns auth failure as
    `ConnectResult.reason_code`.
+- For enhanced-auth CONNECT packets (`AuthenticationMethod` present),
+   `handle_connect()` may return `auth_status == Continue` and
+   `reason_code == ContinueAuthentication`.
+- `handle_auth_packet()` advances pending enhanced-auth exchanges after
+   `handle_connect()` returned Continue.
+- `handle_reauthenticate()` handles AUTH(0x19 ReAuthenticate) for clients that
+   previously completed enhanced authentication.
 - On authentication success, it delegates session open/resume to
    `SessionManager::handle_connect()`.
 - If CONNECT contains a Will, `Broker` extracts `WillMessage` internally and

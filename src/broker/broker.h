@@ -19,7 +19,9 @@
 #include <vector>
 
 #include "auth/anonymous_authenticator.h"
+#include "auth/auth_error.h"
 #include "auth/authenticator.h"
+#include "auth/enhanced_auth_handler.h"
 #include "auth/password_authenticator.h"
 #include "authz/acl_engine.h"
 #include "authz/acl_loader.h"
@@ -59,8 +61,12 @@ namespace mqtt {
  * failure.
  */
 struct ConnectResult {
+  AuthStatus auth_status{AuthStatus::Success}; ///< Authentication stage outcome.
   bool session_present{false}; ///< CONNACK Session Present flag.
   ReasonCode reason_code{ReasonCode::Success}; ///< Final connection outcome.
+  std::optional<BinaryData>
+      auth_data; ///< AUTH payload when `auth_status == Continue`.
+  std::string auth_method; ///< Negotiated auth method for enhanced auth.
   std::vector<Property> connack_properties; ///< CONNACK properties from broker
                                             ///< configuration.
   std::string client_id; ///< Final client identifier used for this connection.
@@ -200,6 +206,35 @@ public:
                                std::function<void()> close_callback);
 
   /**
+   * @brief Continue an in-progress enhanced CONNECT authentication exchange.
+   *
+   * The connection layer calls this for incoming AUTH packets after
+   * `handle_connect()` returned `AuthStatus::Continue`.
+   *
+   * - `Continue`: caller sends AUTH(0x18) and waits for next AUTH packet.
+   * - `Success`: broker finalises session open and returns a successful
+   *   `ConnectResult`.
+   * - `Failure`: caller terminates handshake with returned reason code.
+   *
+   * @param client_id Client identifier tied to the in-progress exchange.
+   * @param auth_packet Incoming AUTH packet.
+   * @return Updated CONNECT workflow result.
+   */
+  ConnectResult handle_auth_packet(std::string_view client_id,
+                                   const AuthPacket &auth_packet);
+
+  /**
+   * @brief Handle re-authentication for an already connected enhanced-auth
+   * session.
+   *
+   * @param client_id Active client identifier.
+   * @param auth_packet AUTH packet with `ReAuthenticate` reason code.
+   * @return Re-authentication result from the configured authenticator.
+   */
+  AuthResult handle_reauthenticate(std::string_view client_id,
+                                   const AuthPacket &auth_packet);
+
+  /**
    * @brief Thread-safe wrapper for disconnect handling (Module 17.3.2).
    *
    * Applies will handling for DISCONNECT reason codes, unregisters the
@@ -298,6 +333,22 @@ public:
   [[nodiscard]] static bool shutdown_requested() noexcept;
 
 private:
+  /**
+   * @brief Translate `AuthError` exceptions to MQTT reason codes.
+   */
+  [[nodiscard]] static ReasonCode map_auth_error_to_reason(AuthError error_code);
+
+  /**
+   * @brief Open or resume a session after successful authentication.
+   */
+  ConnectResult complete_connect_success(const ConnectPacket &connect_packet,
+                                         std::function<void()> close_callback);
+
+  /**
+   * @brief Build an `AuthResult` representing a protocol error.
+   */
+  [[nodiscard]] static AuthResult protocol_error_result();
+
   /// Register connection when broker_mutex_ is already held exclusively.
   void register_connection_locked(std::string_view client_id, SendFn send_fn);
 
@@ -347,6 +398,16 @@ private:
   std::unique_ptr<AnonymousAuthenticator> anon_auth_;
   std::unique_ptr<PasswordAuthenticator> pass_auth_;
   IAuthenticator *active_auth_; ///< Non-owning pointer.
+
+  struct PendingEnhancedAuthContext {
+    EnhancedAuthHandler handler;
+    ConnectPacket connect_packet;
+    std::function<void()> close_callback;
+  };
+
+  std::unordered_map<std::string, PendingEnhancedAuthContext>
+      pending_enhanced_auth_;
+  std::unordered_map<std::string, EnhancedAuthHandler> active_enhanced_auth_;
 
   // ── AuthZ (Module 9) ──────────────────────────────────────────────────────
 

@@ -8,8 +8,18 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <string>
+#include <vector>
 
 namespace mqtt {
+
+/**
+ * @brief One configured username/password credential entry for Module 8.2.
+ */
+struct PasswordCredentialConfig {
+  std::string username; ///< Username matched against CONNECT username.
+  std::string password; ///< Plain-text password converted to BinaryData bytes.
+};
 
 /**
  * @brief All configurable parameters for the MQTT 5.0 broker (Module 15.1).
@@ -62,6 +72,10 @@ struct BrokerConfig {
 
   /// Per-client offline queue capacity (1–100 000).
   uint32_t max_queued_messages = 100U;
+
+  /// Username/password credentials used by `PasswordAuthenticator` when
+  /// anonymous access is disabled.
+  std::vector<PasswordCredentialConfig> password_credentials;
 
   // ── Persistence ───────────────────────────────────────────────────────────
 

@@ -35,6 +35,15 @@ map_session_error_to_reason(SessionManagerError error_code) {
   return ReasonCode::UnspecifiedError;
 }
 
+[[nodiscard]] BinaryData password_to_binary(std::string_view pass_word) {
+  BinaryData binary;
+  binary.data.reserve(pass_word.size());
+  for (char chr : pass_word) {
+    binary.data.push_back(static_cast<uint8_t>(chr));
+  }
+  return binary;
+}
+
 [[nodiscard]] std::vector<Property>
 build_connack_properties(const BrokerConfig &broker_config) {
   std::vector<Property> properties;
@@ -136,17 +145,160 @@ StatisticsCollector &Broker::statistics_collector() noexcept {
 
 ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
                                      std::function<void()> close_callback) {
+  std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+
   ConnectResult result;
   result.client_id = connect_packet.client_id.value;
   result.connack_properties = build_connack_properties(config_);
 
-  std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+  pending_enhanced_auth_.erase(result.client_id);
+  active_enhanced_auth_.erase(result.client_id);
 
-  const AuthResult auth_result = active_auth_->authenticate(connect_packet);
-  if (auth_result.status != AuthStatus::Success) {
+  if (EnhancedAuthHandler::is_enhanced(connect_packet)) {
+    EnhancedAuthHandler auth_handler(std::shared_ptr<IAuthenticator>(
+        active_auth_, [](IAuthenticator * /*unused*/) {}));
+
+    AuthResult auth_result{};
+    try {
+      auth_result = auth_handler.initiate(connect_packet);
+    } catch (const AuthException &exception) {
+      result.auth_status = AuthStatus::Failure;
+      result.reason_code = map_auth_error_to_reason(exception.error());
+      return result;
+    }
+
+    result.auth_status = auth_result.status;
     result.reason_code = auth_result.reason_code;
+    result.auth_data = auth_result.auth_data;
+    result.auth_method = std::string(auth_handler.auth_method());
+
+    if (auth_result.status == AuthStatus::Continue) {
+      pending_enhanced_auth_.insert_or_assign(
+          result.client_id,
+          PendingEnhancedAuthContext{.handler = std::move(auth_handler),
+                                     .connect_packet = connect_packet,
+                                     .close_callback = std::move(close_callback)});
+      return result;
+    }
+
+    if (auth_result.status == AuthStatus::Failure) {
+      return result;
+    }
+
+    ConnectResult completed =
+        complete_connect_success(connect_packet, std::move(close_callback));
+    completed.auth_status = AuthStatus::Success;
+    completed.auth_method = std::string(auth_handler.auth_method());
+    active_enhanced_auth_.insert_or_assign(completed.client_id,
+                                           std::move(auth_handler));
+    return completed;
+  }
+
+  AuthResult auth_result{};
+  try {
+    auth_result = active_auth_->authenticate(connect_packet);
+  } catch (const AuthException &exception) {
+    result.auth_status = AuthStatus::Failure;
+    result.reason_code = map_auth_error_to_reason(exception.error());
     return result;
   }
+
+  result.auth_status = auth_result.status;
+  result.reason_code = auth_result.reason_code;
+  result.auth_data = auth_result.auth_data;
+
+  if (auth_result.status != AuthStatus::Success) {
+    return result;
+  }
+
+  ConnectResult completed =
+      complete_connect_success(connect_packet, std::move(close_callback));
+  completed.auth_status = AuthStatus::Success;
+  return completed;
+}
+
+ConnectResult Broker::handle_auth_packet(std::string_view client_id,
+                                         const AuthPacket &auth_packet) {
+  std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+
+  ConnectResult result;
+  result.client_id = std::string(client_id);
+  result.connack_properties = build_connack_properties(config_);
+
+  auto pending_it = pending_enhanced_auth_.find(result.client_id);
+  if (pending_it == pending_enhanced_auth_.end()) {
+    const AuthResult protocol_error = protocol_error_result();
+    result.auth_status = protocol_error.status;
+    result.reason_code = protocol_error.reason_code;
+    return result;
+  }
+
+  AuthResult auth_result{};
+  try {
+    auth_result = pending_it->second.handler.on_auth(auth_packet);
+  } catch (const AuthException &exception) {
+    result.auth_status = AuthStatus::Failure;
+    result.reason_code = map_auth_error_to_reason(exception.error());
+    pending_enhanced_auth_.erase(pending_it);
+    return result;
+  }
+
+  result.auth_status = auth_result.status;
+  result.reason_code = auth_result.reason_code;
+  result.auth_data = auth_result.auth_data;
+  result.auth_method = std::string(pending_it->second.handler.auth_method());
+
+  if (auth_result.status == AuthStatus::Continue) {
+    return result;
+  }
+
+  if (auth_result.status == AuthStatus::Failure) {
+    pending_enhanced_auth_.erase(pending_it);
+    return result;
+  }
+
+  ConnectResult completed = complete_connect_success(
+      pending_it->second.connect_packet,
+      std::move(pending_it->second.close_callback));
+  completed.auth_status = AuthStatus::Success;
+  completed.auth_method = std::string(pending_it->second.handler.auth_method());
+  active_enhanced_auth_.insert_or_assign(completed.client_id,
+                                         std::move(pending_it->second.handler));
+  pending_enhanced_auth_.erase(pending_it);
+  return completed;
+}
+
+AuthResult Broker::handle_reauthenticate(std::string_view client_id,
+                                         const AuthPacket &auth_packet) {
+  std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+
+  auto active_it = active_enhanced_auth_.find(std::string(client_id));
+  if (active_it == active_enhanced_auth_.end()) {
+    return protocol_error_result();
+  }
+
+  AuthResult auth_result{};
+  try {
+    auth_result = active_it->second.reauthenticate(auth_packet);
+  } catch (const AuthException &exception) {
+    return {.status = AuthStatus::Failure,
+            .reason_code = map_auth_error_to_reason(exception.error()),
+            .auth_data = {}};
+  }
+
+  if (auth_result.status == AuthStatus::Failure) {
+    active_enhanced_auth_.erase(active_it);
+  }
+
+  return auth_result;
+}
+
+ConnectResult
+Broker::complete_connect_success(const ConnectPacket &connect_packet,
+                                 std::function<void()> close_callback) {
+  ConnectResult result;
+  result.client_id = connect_packet.client_id.value;
+  result.connack_properties = build_connack_properties(config_);
 
   try {
     const SessionOpenResult session_open = session_manager_->handle_connect(
@@ -154,6 +306,7 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
     result.session_present = session_open.session_present;
   } catch (const SessionManagerException &exception) {
     result.reason_code = map_session_error_to_reason(exception.error());
+    result.auth_status = AuthStatus::Failure;
     return result;
   }
 
@@ -166,7 +319,29 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
     message_router_->flush_offline_queue(result.client_id);
   }
 
+  result.auth_status = AuthStatus::Success;
   return result;
+}
+
+ReasonCode Broker::map_auth_error_to_reason(AuthError error_code) {
+  switch (error_code) {
+  case AuthError::NotAuthorized:
+    return ReasonCode::NotAuthorized;
+  case AuthError::BadMethod:
+    return ReasonCode::BadAuthenticationMethod;
+  case AuthError::ProtocolError:
+    return ReasonCode::ProtocolError;
+  case AuthError::InvalidState:
+    return ReasonCode::ProtocolError;
+  }
+
+  return ReasonCode::UnspecifiedError;
+}
+
+AuthResult Broker::protocol_error_result() {
+  return {.status = AuthStatus::Failure,
+          .reason_code = ReasonCode::ProtocolError,
+          .auth_data = {}};
 }
 
 void Broker::handle_disconnect(std::string_view client_id,
@@ -174,6 +349,8 @@ void Broker::handle_disconnect(std::string_view client_id,
                                std::optional<uint32_t> expiry_override,
                                std::chrono::steady_clock::time_point now) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+  pending_enhanced_auth_.erase(std::string(client_id));
+  active_enhanced_auth_.erase(std::string(client_id));
   will_publisher_->on_disconnect(client_id, reason_code, now);
   unregister_connection_locked(client_id);
   session_manager_->handle_disconnect(client_id, expiry_override, now);
@@ -182,6 +359,8 @@ void Broker::handle_disconnect(std::string_view client_id,
 void Broker::handle_connection_lost(std::string_view client_id,
                                     std::chrono::steady_clock::time_point now) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+  pending_enhanced_auth_.erase(std::string(client_id));
+  active_enhanced_auth_.erase(std::string(client_id));
   will_publisher_->on_connection_lost(client_id, now);
   unregister_connection_locked(client_id);
   session_manager_->handle_disconnect(client_id, std::nullopt, now);
@@ -277,6 +456,11 @@ void Broker::create_modules() {
     active_auth_ = anon_auth_.get();
   } else {
     pass_auth_ = std::make_unique<PasswordAuthenticator>();
+    for (const PasswordCredentialConfig &credential :
+         config_.password_credentials) {
+      pass_auth_->add_credential(Utf8String{credential.username},
+                                 password_to_binary(credential.password));
+    }
     active_auth_ = pass_auth_.get();
   }
 

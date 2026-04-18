@@ -73,6 +73,18 @@ TEST_CASE("parse_persistence_section", "[broker]") {
   CHECK(cfg.persistence_dir == std::filesystem::path{"/tmp/data"});
 }
 
+TEST_CASE("parse_auth_credentials_section", "[broker]") {
+  const auto cfg = ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
+                                       "[auth]\n"
+                                       "credential = alice:s3cr3t\n"
+                                       "credential = bob:pwd\n");
+  REQUIRE(cfg.password_credentials.size() == 2U);
+  CHECK(cfg.password_credentials.at(0U).username == "alice");
+  CHECK(cfg.password_credentials.at(0U).password == "s3cr3t");
+  CHECK(cfg.password_credentials.at(1U).username == "bob");
+  CHECK(cfg.password_credentials.at(1U).password == "pwd");
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ConfigLoader::parse — bool variants
 
@@ -146,6 +158,14 @@ TEST_CASE("parse_uint_overflow_throws", "[broker]") {
 TEST_CASE("parse_uint16_overflow_throws", "[broker]") {
   CHECK_THROWS_AS(ConfigLoader::parse("[network]\nmqtt_port = 70000\n"),
                   BrokerException);
+}
+
+TEST_CASE("parse_auth_credential_invalid_format_throws", "[broker]") {
+  CHECK_THROWS_AS(
+      ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
+                          "[auth]\n"
+                          "credential = malformed_without_separator\n"),
+      BrokerException);
 }
 
 TEST_CASE("parse_both_ports_zero_throws", "[broker]") {

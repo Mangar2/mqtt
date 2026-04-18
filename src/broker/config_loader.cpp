@@ -16,6 +16,26 @@
 
 namespace mqtt {
 
+PasswordCredentialConfig
+ConfigLoader::parse_password_credential(std::string_view value) {
+  const std::size_t separator_pos = value.find(':');
+  if (separator_pos == std::string_view::npos) {
+    throw BrokerException(BrokerError::InvalidConfig,
+                          "Invalid auth credential format, expected "
+                          "username:password");
+  }
+
+  const std::string_view user_name = trim(value.substr(0U, separator_pos));
+  const std::string_view pass_word = trim(value.substr(separator_pos + 1U));
+  if (user_name.empty() || pass_word.empty()) {
+    throw BrokerException(BrokerError::InvalidConfig,
+                          "Auth credential username/password must be non-empty");
+  }
+
+  return PasswordCredentialConfig{.username = std::string(user_name),
+                                  .password = std::string(pass_word)};
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
 
@@ -113,6 +133,10 @@ void ConfigLoader::apply_key(const std::string &section, const std::string &key,
       cfg.persistence_enabled = parse_bool(value);
     } else if (key == "dir") {
       cfg.persistence_dir = value;
+    }
+  } else if (section == "auth") {
+    if (key == "credential") {
+      cfg.password_credentials.push_back(parse_password_credential(value));
     }
   }
 }

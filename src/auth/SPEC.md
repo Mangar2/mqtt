@@ -78,6 +78,13 @@ entries. `authenticate()` inspects `ConnectPacket::username` and
 - `password` in the ConnectPacket is `optional<BinaryData>`; raw bytes are
   compared directly (no hashing in this layer).
 - Missing username → `BadUserNameOrPassword`.
+- When CONNECT carries Authentication Method `PLAIN` without inline
+  username/password, `authenticate()` returns `Continue / ContinueAuthentication`
+  with server auth_data prompt.
+- `on_auth()` accepts method `PLAIN` and validates `AuthenticationData`
+  payload encoded as `username:password` bytes.
+- If AUTH payload omits `AuthenticationData`, `on_auth()` returns
+  `Continue / ContinueAuthentication` with server prompt data.
 
 ### EnhancedAuthHandler (`enhanced_auth_handler.h/.cpp`)
 
