@@ -8,6 +8,7 @@ out/
 test/coverage.profraw
 test/coverage.profdata
 test/run.log
+test/integration_test_results.json
 
 # CMake generated
 CMakeCache.txt
