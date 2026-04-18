@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 
+#include "monitoring/trace_level.h"
+
 namespace mqtt {
 
 /**
@@ -97,6 +99,15 @@ struct BrokerConfig {
   /// Interval in seconds for publishing `$SYS` statistics topics.
   /// 0 = disabled (Module 16.2.2).
   uint32_t sys_topic_interval = 0U;
+
+  //  Structured tracing (Module 26)
+
+  /// Global structured tracing level threshold.
+  TraceLevel trace_global_level = TraceLevel::Warning;
+
+  /// Modules for which trace-level events are enabled even when global level
+  /// is below `trace`.
+  std::vector<std::string> trace_modules;
 };
 
 } // namespace mqtt

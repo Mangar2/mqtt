@@ -7,12 +7,15 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "data_model/message/message.h"
 #include "data_model/types/qos.h"
 #include "monitoring/statistics_collector.h"
+#include "monitoring/structured_tracer.h"
 #include "monitoring/sys_topic_publisher.h"
 #include "store/retained_message_store.h"
 #include "store/subscription_store.h"
@@ -277,4 +280,174 @@ TEST_CASE("sys_publisher_qos_at_most_once", "[monitoring]") {
   for (const auto &msg : published) {
     CHECK(msg.qos == QoS::AtMostOnce);
   }
+}
+
+//
+// StructuredTracer
+//
+
+namespace {
+
+class FailOnceStringBuffer : public std::stringbuf {
+public:
+  int overflow(int character_value) override {
+    const char character = static_cast<char>(character_value);
+    return static_cast<int>(xsputn(&character, 1));
+  }
+
+  std::streamsize xsputn(const char *text_ptr,
+                         std::streamsize text_size) override {
+    if (!has_failed_) {
+      has_failed_ = true;
+      throw std::runtime_error("simulated stream failure");
+    }
+    captured_text_.append(text_ptr, static_cast<std::size_t>(text_size));
+    return text_size;
+  }
+
+  [[nodiscard]] const std::string &captured_text() const noexcept {
+    return captured_text_;
+  }
+
+private:
+  bool has_failed_{false};
+  std::string captured_text_;
+};
+
+} // namespace
+
+TEST_CASE("tracer_emits_json_line_with_mandatory_fields", "[monitoring]") {
+  std::ostringstream output_stream;
+  StructuredTracer tracer(output_stream);
+  tracer.set_global_level(TraceLevel::Info);
+
+  TraceEvent event;
+  event.level = TraceLevel::Info;
+  event.module = "connection";
+  event.info = "connect_received";
+  tracer.emit(event);
+
+  const std::string line = output_stream.str();
+  REQUIRE_FALSE(line.empty());
+  CHECK(line.find("\"timestamp\":") != std::string::npos);
+  CHECK(line.find("\"level\":\"info\"") != std::string::npos);
+  CHECK(line.find("\"module\":\"connection\"") != std::string::npos);
+  CHECK(line.find("\"info\":\"connect_received\"") != std::string::npos);
+  CHECK(line.find('\n') != std::string::npos);
+}
+
+TEST_CASE("tracer_emits_optional_detail_and_data", "[monitoring]") {
+  std::ostringstream output_stream;
+  StructuredTracer tracer(output_stream);
+  tracer.set_global_level(TraceLevel::Trace);
+
+  TraceEvent event;
+  event.level = TraceLevel::Trace;
+  event.module = "connection";
+  event.info = "decode_step";
+  event.detail = "remaining length parsed";
+  event.data = {{"remaining_length", "23"}, {"packet_type", "CONNECT"}};
+
+  tracer.emit(event);
+
+  const std::string line = output_stream.str();
+  CHECK(line.find("\"detail\":\"remaining length parsed\"") !=
+        std::string::npos);
+  CHECK(line.find("\"data\":{") != std::string::npos);
+  CHECK(line.find("\"remaining_length\":\"23\"") != std::string::npos);
+  CHECK(line.find("\"packet_type\":\"CONNECT\"") != std::string::npos);
+}
+
+TEST_CASE("tracer_global_hierarchy_filters_non_trace_levels", "[monitoring]") {
+  std::ostringstream output_stream;
+  StructuredTracer tracer(output_stream);
+  tracer.set_global_level(TraceLevel::Warning);
+
+  CHECK(tracer.should_emit(TraceLevel::Error, "broker"));
+  CHECK(tracer.should_emit(TraceLevel::Warning, "broker"));
+  CHECK_FALSE(tracer.should_emit(TraceLevel::Info, "broker"));
+  CHECK_FALSE(tracer.should_emit(TraceLevel::Trace, "broker"));
+}
+
+TEST_CASE("tracer_trace_module_override_works_with_global_error",
+          "[monitoring]") {
+  std::ostringstream output_stream;
+  StructuredTracer tracer(output_stream);
+  tracer.set_global_level(TraceLevel::Error);
+
+  CHECK_FALSE(tracer.should_emit(TraceLevel::Trace, "connection"));
+  tracer.enable_trace_module("connection");
+  CHECK(tracer.should_emit(TraceLevel::Trace, "connection"));
+  CHECK_FALSE(tracer.should_emit(TraceLevel::Trace, "broker"));
+}
+
+TEST_CASE("tracer_none_disables_all_output", "[monitoring]") {
+  std::ostringstream output_stream;
+  StructuredTracer tracer(output_stream);
+  tracer.set_global_level(TraceLevel::None);
+  tracer.enable_trace_module("connection");
+
+  CHECK_FALSE(tracer.should_emit(TraceLevel::Error, "connection"));
+  CHECK_FALSE(tracer.should_emit(TraceLevel::Trace, "connection"));
+
+  TraceEvent event;
+  event.level = TraceLevel::Error;
+  event.module = "connection";
+  event.info = "should_not_emit";
+  tracer.emit(event);
+  CHECK(output_stream.str().empty());
+}
+
+TEST_CASE("tracer_serialization_failure_falls_back_to_minimal_record",
+          "[monitoring]") {
+  FailOnceStringBuffer fail_once_buffer;
+  std::ostream output_stream(&fail_once_buffer);
+  StructuredTracer tracer(output_stream);
+  tracer.set_global_level(TraceLevel::Info);
+
+  TraceEvent event;
+  event.level = TraceLevel::Info;
+  event.module = "broker";
+  event.info = "connect_handled";
+
+  CHECK_NOTHROW(tracer.emit(event));
+  const std::string output_text = fail_once_buffer.captured_text();
+  CHECK(output_text.find("trace_serialization_failed") != std::string::npos);
+}
+
+TEST_CASE("trace_level_roundtrip_and_case_insensitive_parse", "[monitoring]") {
+  CHECK(to_string(TraceLevel::None) == "none");
+  CHECK(to_string(TraceLevel::Error) == "error");
+  CHECK(to_string(TraceLevel::Warning) == "warning");
+  CHECK(to_string(TraceLevel::Info) == "info");
+  CHECK(to_string(TraceLevel::Trace) == "trace");
+
+  CHECK(parse_trace_level("NONE").value() == TraceLevel::None);
+  CHECK(parse_trace_level("Error").value() == TraceLevel::Error);
+  CHECK(parse_trace_level("WaRnInG").value() == TraceLevel::Warning);
+  CHECK(parse_trace_level("info").value() == TraceLevel::Info);
+  CHECK(parse_trace_level("TrAcE").value() == TraceLevel::Trace);
+  CHECK_FALSE(parse_trace_level("verbose").has_value());
+}
+
+TEST_CASE("tracer_set_trace_modules_and_escape_sequences", "[monitoring]") {
+  std::ostringstream output_stream;
+  StructuredTracer tracer(output_stream);
+  tracer.set_global_level(TraceLevel::Error);
+  tracer.set_trace_modules({"connection", "", "broker"});
+
+  CHECK(tracer.should_emit(TraceLevel::Trace, "connection"));
+  CHECK(tracer.should_emit(TraceLevel::Trace, "broker"));
+  CHECK_FALSE(tracer.should_emit(TraceLevel::Trace, "session_manager"));
+
+  TraceEvent event;
+  event.level = TraceLevel::Trace;
+    event.module = "connection";
+  event.info = "line1\nline2\rline3\tend";
+  event.detail = "detail\\\"";
+  event.data = {{"key\\n", "value\t\""}};
+  tracer.emit(event);
+
+  const std::string output_text = output_stream.str();
+    CHECK_FALSE(output_text.empty());
 }

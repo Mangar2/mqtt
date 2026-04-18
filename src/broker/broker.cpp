@@ -7,10 +7,13 @@
 #include "broker/broker.h"
 
 #include <atomic>
+#include <cctype>
 #include <csignal>
+#include <iostream>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -19,6 +22,7 @@
 #include "connection/topic_alias_table.h"
 #include "data_model/property/property_id.h"
 #include "monitoring/statistics_collector.h"
+#include "monitoring/structured_tracer.h"
 #include "monitoring/sys_topic_publisher.h"
 #include "session_manager/session_manager_error.h"
 #include "topic/topic_error.h"
@@ -75,6 +79,45 @@ void append_connect_driven_connack_properties(
                  .value = Utf8String{"broker/response-information"}});
   }
 }
+
+[[nodiscard]] std::string binary_to_string(const BinaryData &payload) {
+  return std::string(payload.data.begin(), payload.data.end());
+}
+
+[[nodiscard]] std::string trim_copy(std::string_view text) {
+  std::size_t start_index = 0U;
+  while (start_index < text.size() &&
+         std::isspace(static_cast<unsigned char>(text[start_index])) != 0) {
+    ++start_index;
+  }
+
+  std::size_t end_index = text.size();
+  while (end_index > start_index &&
+         std::isspace(static_cast<unsigned char>(text[end_index - 1U])) != 0) {
+    --end_index;
+  }
+
+  return std::string(text.substr(start_index, end_index - start_index));
+}
+
+[[nodiscard]] bool parse_module_override_payload(std::string_view payload,
+                                                 bool &enable_trace) {
+  const std::string normalised = trim_copy(payload);
+  if (normalised == "trace" || normalised == "on") {
+    enable_trace = true;
+    return true;
+  }
+  if (normalised == "none" || normalised == "off") {
+    enable_trace = false;
+    return true;
+  }
+  return false;
+}
+
+constexpr std::string_view k_trace_global_topic =
+    "$SYS/broker/tracing/global";
+constexpr std::string_view k_trace_module_prefix =
+    "$SYS/broker/tracing/module/";
 
 } // namespace
 
@@ -164,6 +207,10 @@ StatisticsCollector &Broker::statistics_collector() noexcept {
   return *stats_collector_;
 }
 
+StructuredTracer &Broker::structured_tracer() noexcept {
+  return *structured_tracer_;
+}
+
 ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
                                      std::function<void()> close_callback) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
@@ -186,6 +233,11 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
                  .value = Utf8String{*assigned_client_id}});
   }
 
+  auto return_with_trace = [this, &effective_connect](ConnectResult traced_result) {
+    emit_connect_trace(effective_connect, traced_result);
+    return traced_result;
+  };
+
   pending_enhanced_auth_.erase(result.client_id);
   active_enhanced_auth_.erase(result.client_id);
 
@@ -199,7 +251,7 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
     } catch (const AuthException &exception) {
       result.auth_status = AuthStatus::Failure;
       result.reason_code = map_auth_error_to_reason(exception.error());
-      return result;
+      return return_with_trace(std::move(result));
     }
 
     result.auth_status = auth_result.status;
@@ -214,11 +266,11 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
                                 .connect_packet = effective_connect,
                                 .close_callback = std::move(close_callback),
                                 .assigned_client_id = assigned_client_id});
-      return result;
+      return return_with_trace(std::move(result));
     }
 
     if (auth_result.status == AuthStatus::Failure) {
-      return result;
+      return return_with_trace(std::move(result));
     }
 
     ConnectResult completed = complete_connect_success(effective_connect,
@@ -234,7 +286,7 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
     }
     active_enhanced_auth_.insert_or_assign(completed.client_id,
                                            std::move(auth_handler));
-    return completed;
+    return return_with_trace(std::move(completed));
   }
 
   AuthResult auth_result{};
@@ -243,7 +295,7 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
   } catch (const AuthException &exception) {
     result.auth_status = AuthStatus::Failure;
     result.reason_code = map_auth_error_to_reason(exception.error());
-    return result;
+    return return_with_trace(std::move(result));
   }
 
   result.auth_status = auth_result.status;
@@ -251,7 +303,7 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
   result.auth_data = auth_result.auth_data;
 
   if (auth_result.status != AuthStatus::Success) {
-    return result;
+    return return_with_trace(std::move(result));
   }
 
   ConnectResult completed =
@@ -264,7 +316,7 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
         Property{.id = PropertyId::AssignedClientIdentifier,
                  .value = Utf8String{*assigned_client_id}});
   }
-  return completed;
+  return return_with_trace(std::move(completed));
 }
 
 ConnectResult Broker::handle_auth_packet(std::string_view client_id,
@@ -528,6 +580,69 @@ bool Broker::tick(std::chrono::steady_clock::time_point now) {
   return sys_publisher_->tick(now);
 }
 
+void Broker::apply_trace_system_message(const Message &message) {
+  std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+  if (!structured_tracer_) {
+    return;
+  }
+
+  const std::string &topic_name = message.topic.value;
+  const std::string payload_text = binary_to_string(message.payload);
+
+  if (topic_name == k_trace_global_topic) {
+    const std::optional<TraceLevel> parsed_level =
+        parse_trace_level(trim_copy(payload_text));
+    if (parsed_level.has_value()) {
+      structured_tracer_->set_global_level(*parsed_level);
+    }
+    return;
+  }
+
+  if (!topic_name.starts_with(k_trace_module_prefix)) {
+    return;
+  }
+
+  const std::string module_name =
+      topic_name.substr(k_trace_module_prefix.size());
+  if (module_name.empty()) {
+    return;
+  }
+
+  bool enable_trace = false;
+  if (!parse_module_override_payload(payload_text, enable_trace)) {
+    return;
+  }
+
+  if (enable_trace) {
+    structured_tracer_->enable_trace_module(module_name);
+    return;
+  }
+
+  structured_tracer_->disable_trace_module(module_name);
+}
+
+void Broker::emit_connect_trace(const ConnectPacket &connect_packet,
+                                const ConnectResult &connect_result) noexcept {
+  if (!structured_tracer_) {
+    return;
+  }
+
+  TraceEvent event;
+  event.level = TraceLevel::Info;
+  event.module = "broker";
+  event.info = "connect_handled";
+  event.data.push_back(
+      {"client_id", connect_result.client_id.empty() ? "<empty>" : connect_result.client_id});
+  event.data.push_back(
+      {"clean_start", connect_packet.clean_start ? "true" : "false"});
+  event.data.push_back(
+      {"auth_status", std::to_string(static_cast<int>(connect_result.auth_status))});
+  event.data.push_back(
+      {"reason_code", std::to_string(static_cast<int>(connect_result.reason_code))});
+
+  structured_tracer_->emit(event);
+}
+
 void Broker::register_connection_locked(std::string_view client_id,
                                         std::shared_ptr<OutboundQueue> queue) {
   const std::string key(client_id);
@@ -710,6 +825,11 @@ void Broker::create_modules() {
   //  Monitoring (Module 16)
   stats_collector_ = std::make_unique<StatisticsCollector>(*subscription_store_,
                                                            *retained_store_);
+
+  //  Structured tracing (Module 26)
+  structured_tracer_ = std::make_unique<StructuredTracer>(std::clog);
+  structured_tracer_->set_global_level(config_.trace_global_level);
+  structured_tracer_->set_trace_modules(config_.trace_modules);
 
   // $SYS publish callback: route via MessageRouter using the reserved
   // broker-internal client ID that the ACL allows to publish everywhere.

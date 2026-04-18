@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <string_view>
+#include <vector>
 
 #include "broker/broker_config.h"
 
@@ -117,6 +118,26 @@ private:
    *         or exceeds 65 535.
    */
   [[nodiscard]] static uint16_t parse_uint16(std::string_view val);
+
+  /**
+   * @brief Parse a comma-separated module list.
+   *
+   * Empty entries are ignored after trimming.
+   *
+   * @param val Input text, e.g. `"broker,connection"`.
+   * @return Parsed module names in input order.
+   */
+  [[nodiscard]] static std::vector<std::string>
+  parse_csv_modules(std::string_view val);
+
+  /**
+   * @brief Parse a structured tracing level.
+   *
+   * @param val Textual level name.
+   * @return Parsed trace level.
+   * @throws BrokerException(InvalidConfig) when the value is unknown.
+   */
+  [[nodiscard]] static TraceLevel parse_trace_level_or_throw(std::string_view val);
 
   /**
    * @brief Apply one parsed key-value pair from @p section to @p cfg.

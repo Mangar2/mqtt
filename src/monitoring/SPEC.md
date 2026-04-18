@@ -18,6 +18,8 @@ external clients can observe the broker's operational state.
 |-----------------------------|----------|-------------|
 | `statistics_collector.h/cpp` | 16.1     | Atomic counters for client connections, message throughput, uptime; direct store queries for subscription and retained message counts. |
 | `sys_topic_publisher.h/cpp`  | 16.2     | Publishes a snapshot of statistics to `$SYS/broker/…` topics at a configurable interval. |
+| `trace_level.h/cpp`          | 26.2, 26.3 | Trace level enum and parser for global/per-module filtering configuration. |
+| `structured_tracer.h/cpp`    | 26.1, 26.3, 26.5 | JSON-lines tracer with hierarchical filtering, per-module trace override, and graceful fallback on serialisation failure. |
 
 ---
 
@@ -109,3 +111,34 @@ A value of `0` disables `$SYS` publication entirely.
 - Exposes `handle_publish()` which calls `stats_->on_message_inbound()` before
   delegating to `MessageRouter::route()`.
 - Exposes `tick()` for the main loop; delegates to `sys_publisher_->tick()`.
+
+---
+
+## Module 26 — Structured Tracing
+
+### Trace event format (26.1)
+
+- Exactly one JSON object per line.
+- Mandatory fields: `timestamp`, `level`, `module`, `info`.
+- Optional fields: `detail`, `data`.
+
+`data` is encoded as an object of string key/value pairs and is primarily used
+for trace-level diagnostics.
+
+### Trace levels and filtering (26.2, 26.3)
+
+- Supported levels: `none`, `error`, `warning`, `info`, `trace`.
+- Hierarchy: `trace` > `info` > `warning` > `error` > `none`.
+- `error`, `warning`, `info` follow one global threshold.
+- `trace` is emitted when either:
+  - global level is `trace`, or
+  - the event module is in the explicit trace-module override set.
+- `none` disables all output.
+
+### Infrastructure and resilience (26.5)
+
+`StructuredTracer` writes to a configured `std::ostream` sink. Callers provide
+typed event data (`TraceEvent`) and do not build JSON manually.
+
+If JSON serialisation throws, the tracer writes a minimal fallback error record
+and does not propagate the failure into broker runtime control flow.

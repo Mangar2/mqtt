@@ -143,6 +143,12 @@ void ConfigLoader::apply_key(const std::string &section, const std::string &key,
     if (key == "credential") {
       cfg.password_credentials.push_back(parse_password_credential(value));
     }
+  } else if (section == "tracing") {
+    if (key == "global_level") {
+      cfg.trace_global_level = parse_trace_level_or_throw(value);
+    } else if (key == "trace_modules") {
+      cfg.trace_modules = parse_csv_modules(value);
+    }
   }
 }
 
@@ -229,6 +235,38 @@ uint16_t ConfigLoader::parse_uint16(std::string_view val) {
                           "Number out of uint16 range: " + std::string(val));
   }
   return static_cast<uint16_t>(result);
+}
+
+std::vector<std::string> ConfigLoader::parse_csv_modules(std::string_view val) {
+  std::vector<std::string> modules;
+  std::size_t start_index = 0U;
+
+  while (start_index <= val.size()) {
+    const std::size_t comma_index = val.find(',', start_index);
+    const std::size_t end_index =
+        (comma_index == std::string_view::npos) ? val.size() : comma_index;
+
+    const std::string_view token = trim(val.substr(start_index, end_index - start_index));
+    if (!token.empty()) {
+      modules.emplace_back(token);
+    }
+
+    if (comma_index == std::string_view::npos) {
+      break;
+    }
+    start_index = comma_index + 1U;
+  }
+
+  return modules;
+}
+
+TraceLevel ConfigLoader::parse_trace_level_or_throw(std::string_view val) {
+  const std::optional<TraceLevel> parsed_level = parse_trace_level(val);
+  if (!parsed_level.has_value()) {
+    throw BrokerException(BrokerError::InvalidConfig,
+                          "Invalid trace level: " + std::string(val));
+  }
+  return *parsed_level;
 }
 
 } // namespace mqtt

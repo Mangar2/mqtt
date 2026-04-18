@@ -37,6 +37,7 @@
 #include "message_router/offline_queue.h"
 #include "message_router/shared_subscription_dispatcher.h"
 #include "monitoring/statistics_collector.h"
+#include "monitoring/structured_tracer.h"
 #include "monitoring/sys_topic_publisher.h"
 #include "outbound_queue/outbound_queue.h"
 #include "persistence/inflight_persistence.h"
@@ -180,6 +181,9 @@ public:
   /// @return Reference to the `StatisticsCollector` (Module 16).
   [[nodiscard]] StatisticsCollector &statistics_collector() noexcept;
 
+  /// @return Reference to the `StructuredTracer` (Module 26).
+  [[nodiscard]] StructuredTracer &structured_tracer() noexcept;
+
   /**
    * @brief High-level CONNECT facade (Module 18.2).
    *
@@ -315,6 +319,20 @@ public:
   bool tick(std::chrono::steady_clock::time_point now =
                 std::chrono::steady_clock::now());
 
+  /**
+   * @brief Apply a runtime tracing configuration system message.
+   *
+   * Supported topics:
+   * - `$SYS/broker/tracing/global` with payload `none|error|warning|info|trace`
+   * - `$SYS/broker/tracing/module/<module>` with payload `trace|none|on|off`
+   *
+   * Runtime messages have highest precedence over file and CLI settings.
+   * Unknown topics or payload values are ignored.
+   *
+   * @param message System message carrying runtime tracing configuration.
+   */
+  void apply_trace_system_message(const Message &message);
+
   //  Connection registration
 
   /**
@@ -375,6 +393,10 @@ private:
    * @brief Build an `AuthResult` representing a protocol error.
    */
   [[nodiscard]] static AuthResult protocol_error_result();
+
+  /// Emit structured CONNECT tracing for Module 26 initial scope.
+  void emit_connect_trace(const ConnectPacket &connect_packet,
+                          const ConnectResult &connect_result) noexcept;
 
   /// Register connection when broker_mutex_ is already held exclusively.
   void register_connection_locked(std::string_view client_id,
@@ -473,6 +495,10 @@ private:
 
   std::unique_ptr<StatisticsCollector> stats_collector_;
   std::unique_ptr<SysTopicPublisher> sys_publisher_;
+
+  //  Structured tracing (Module 26)
+
+  std::unique_ptr<StructuredTracer> structured_tracer_;
 
   //  Signal flag
 

@@ -4,6 +4,7 @@
 #include <csignal>
 #include <filesystem>
 #include <optional>
+#include <sstream>
 #include <thread>
 #include <vector>
 
@@ -782,6 +783,152 @@ TEST_CASE("broker_handle_connect_builds_connack_properties", "[broker]") {
 
   broker.shutdown();
 }
+
+TEST_CASE("broker_handle_connect_emits_info_trace", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.trace_global_level = TraceLevel::Info;
+
+  Broker broker(cfg);
+  broker.startup();
+
+  std::ostringstream trace_output;
+  broker.structured_tracer().set_output(trace_output);
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"trace_client"};
+  connect.clean_start = true;
+
+  const ConnectResult result = broker.handle_connect(connect, []() {});
+  CHECK(result.reason_code == ReasonCode::Success);
+
+  const std::string trace_line = trace_output.str();
+  CHECK(trace_line.find("\"module\":\"broker\"") != std::string::npos);
+  CHECK(trace_line.find("\"info\":\"connect_handled\"") !=
+        std::string::npos);
+  CHECK(trace_line.find("\"level\":\"info\"") != std::string::npos);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_runtime_trace_system_message_updates_global_level",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.trace_global_level = TraceLevel::Warning;
+
+  Broker broker(cfg);
+  broker.startup();
+
+  Message message;
+  message.topic = Utf8String{"$SYS/broker/tracing/global"};
+  message.payload = binary_from_text("trace");
+
+  broker.apply_trace_system_message(message);
+  CHECK(broker.structured_tracer().global_level() == TraceLevel::Trace);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_runtime_trace_system_message_updates_module_override",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.trace_global_level = TraceLevel::Error;
+
+  Broker broker(cfg);
+  broker.startup();
+
+  CHECK_FALSE(
+      broker.structured_tracer().should_emit(TraceLevel::Trace, "connection"));
+
+  Message enable_message;
+  enable_message.topic = Utf8String{"$SYS/broker/tracing/module/connection"};
+  enable_message.payload = binary_from_text("trace");
+  broker.apply_trace_system_message(enable_message);
+
+  CHECK(broker.structured_tracer().should_emit(TraceLevel::Trace,
+                                               "connection"));
+
+  Message disable_message;
+  disable_message.topic = Utf8String{"$SYS/broker/tracing/module/connection"};
+  disable_message.payload = binary_from_text("none");
+  broker.apply_trace_system_message(disable_message);
+
+  CHECK_FALSE(
+      broker.structured_tracer().should_emit(TraceLevel::Trace, "connection"));
+
+  broker.shutdown();
+}
+
+  TEST_CASE("broker_runtime_trace_system_message_trims_payload_values",
+        "[broker]") {
+    BrokerConfig cfg = make_test_config();
+    cfg.trace_global_level = TraceLevel::Error;
+
+    Broker broker(cfg);
+    broker.startup();
+
+    Message set_global_message;
+    set_global_message.topic = Utf8String{"$SYS/broker/tracing/global"};
+    set_global_message.payload = binary_from_text("  info  ");
+    broker.apply_trace_system_message(set_global_message);
+    CHECK(broker.structured_tracer().global_level() == TraceLevel::Info);
+
+    Message enable_module_message;
+    enable_module_message.topic =
+      Utf8String{"$SYS/broker/tracing/module/connection"};
+    enable_module_message.payload = binary_from_text("  on  ");
+    broker.apply_trace_system_message(enable_module_message);
+    CHECK(broker.structured_tracer().should_emit(TraceLevel::Trace,
+                           "connection"));
+
+    Message disable_module_message;
+    disable_module_message.topic =
+      Utf8String{"$SYS/broker/tracing/module/connection"};
+    disable_module_message.payload = binary_from_text("  off  ");
+    broker.apply_trace_system_message(disable_module_message);
+    CHECK_FALSE(broker.structured_tracer().should_emit(TraceLevel::Trace,
+                             "connection"));
+
+    broker.shutdown();
+  }
+
+  TEST_CASE("broker_runtime_trace_system_message_ignores_invalid_inputs",
+        "[broker]") {
+    BrokerConfig cfg = make_test_config();
+    cfg.trace_global_level = TraceLevel::Warning;
+
+    Broker broker(cfg);
+    broker.startup();
+
+    Message unknown_topic_message;
+    unknown_topic_message.topic = Utf8String{"$SYS/broker/tracingx/global"};
+    unknown_topic_message.payload = binary_from_text("trace");
+    broker.apply_trace_system_message(unknown_topic_message);
+    CHECK(broker.structured_tracer().global_level() == TraceLevel::Warning);
+
+    Message empty_module_message;
+    empty_module_message.topic = Utf8String{"$SYS/broker/tracing/module/"};
+    empty_module_message.payload = binary_from_text("trace");
+    broker.apply_trace_system_message(empty_module_message);
+    CHECK_FALSE(
+      broker.structured_tracer().should_emit(TraceLevel::Trace, "connection"));
+
+    Message invalid_module_payload_message;
+    invalid_module_payload_message.topic =
+      Utf8String{"$SYS/broker/tracing/module/connection"};
+    invalid_module_payload_message.payload = binary_from_text("invalid_payload");
+    broker.apply_trace_system_message(invalid_module_payload_message);
+    CHECK_FALSE(
+      broker.structured_tracer().should_emit(TraceLevel::Trace, "connection"));
+
+    Message invalid_global_payload_message;
+    invalid_global_payload_message.topic =
+      Utf8String{"$SYS/broker/tracing/global"};
+    invalid_global_payload_message.payload = binary_from_text("verbose");
+    broker.apply_trace_system_message(invalid_global_payload_message);
+    CHECK(broker.structured_tracer().global_level() == TraceLevel::Warning);
+
+    broker.shutdown();
+  }
 
 TEST_CASE("broker_handle_connect_empty_client_id_assigns_identifier",
     "[broker]") {

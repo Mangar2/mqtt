@@ -26,6 +26,8 @@ All tests are tagged `[broker]`.
 | `parse_uint_overflow_throws` | overflow | Number > UINT32_MAX | digit string exceeding 4294967295 | BrokerException(InvalidConfig) |
 | `parse_uint16_overflow_throws` | u16 overflow | Number > 65535 | `mqtt_port=70000` | BrokerException(InvalidConfig) |
 | `parse_auth_credential_invalid_format_throws` | bad auth credential | missing `:` separator | `credential=malformed_without_separator` | BrokerException(InvalidConfig) |
+| `parse_tracing_section_global_level_and_modules` | tracing section | parse global level and module override list | `[tracing]\nglobal_level=info\ntrace_modules=broker,connection` | `trace_global_level=Info`, `trace_modules=["broker","connection"]` |
+| `parse_tracing_invalid_level_throws` | tracing section | reject unknown level | `[tracing]\nglobal_level=verbose` | BrokerException(InvalidConfig) |
 | `parse_both_ports_zero_throws` | no listener | Both ports absent (0) | `[network]\nmqtt_port=0\nws_port=0` | BrokerException(NoListenerConfigured) |
 | `parse_max_connections_zero_throws` | bad max_conn | max_connections=0 | `max_connections=0` | BrokerException(InvalidConfig) |
 | `parse_receive_maximum_zero_throws` | bad recv_max | receive_maximum=0 | `receive_maximum=0` | BrokerException(InvalidConfig) |
@@ -85,6 +87,11 @@ All tests are tagged `[broker]`.
 | `broker_handle_reauthenticate_without_enhanced_session_protocol_error` | connect facade | re-auth request without active enhanced context | missing client + AUTH(ReAuthenticate) | AuthResult Failure/ProtocolError |
 | `broker_handle_reauthenticate_bad_credentials_returns_failure` | connect facade | re-auth payload has wrong credentials | CONNECT + initial auth_data valid, then re-auth auth_data invalid | AuthResult Failure/BadUserNameOrPassword |
 | `broker_handle_connect_builds_connack_properties` | connect facade | connack properties from config | receive_maximum/topic_alias_maximum set | ConnectResult contains matching ReceiveMaximum and TopicAliasMaximum properties |
+| `broker_handle_connect_emits_info_trace` | tracing | CONNECT handling emits info trace in JSON lines | global trace level=info + successful CONNECT | sink receives one JSON line with module `broker` and info `connect_handled` |
+| `broker_runtime_trace_system_message_updates_global_level` | tracing | runtime system message overrides global level | topic `$SYS/broker/tracing/global` + payload `trace` | `StructuredTracer::global_level()==Trace` |
+| `broker_runtime_trace_system_message_updates_module_override` | tracing | runtime system message enables/disables module trace override | topic `$SYS/broker/tracing/module/connection` + payload `trace` then `none` | `should_emit(trace,"connection")` toggles true then false (under global error) |
+| `broker_runtime_trace_system_message_trims_payload_values` | tracing | runtime payload values are trimmed before parsing | payloads with leading/trailing whitespace (`"  info  "`, `"  on  "`, `"  off  "`) | global level and module override are applied correctly |
+| `broker_runtime_trace_system_message_ignores_invalid_inputs` | tracing | invalid tracing system messages are ignored | unknown topic, empty module suffix, invalid payload text | tracer state remains unchanged |
 | `broker_handle_connect_invalid_client_id_returns_reason` | connect facade | session manager rejects empty client id | CONNECT with empty client_id | ConnectResult.reason_code == ClientIdentifierNotValid |
 | `broker_handle_connect_with_will_properties_succeeds` | connect facade | connect contains will delay and will properties | CONNECT with will + WillDelayInterval + ContentType | returns Success without throw |
 | `broker_handle_disconnect_unregisters_client` | concurrency facade | wrapped disconnect path | registered client + ReasonCode::Success | connected_clients decremented to 0 |

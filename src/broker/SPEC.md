@@ -57,6 +57,8 @@ All parameters are optional; absent ones keep their default value.
 | `[auth]`      | `credential`          | string   | —       | Repeated `username:password` entries for `PasswordAuthenticator`. |
 | `[persistence]` | `enabled`           | bool     | `false` | Enable crash-safe file persistence. |
 | `[persistence]` | `dir`               | string   | `./data`| Directory for persistence snapshot files. |
+| `[tracing]`   | `global_level`      | enum     | `warning` | Global structured trace level (`none|error|warning|info|trace`). |
+| `[tracing]`   | `trace_modules`     | csv      | `""` | Comma-separated modules with trace override enabled. |
 
 ### Validation rules
 
@@ -102,6 +104,8 @@ struct BrokerConfig {
    std::vector<PasswordCredentialConfig> password_credentials;
     bool     persistence_enabled   = false;
     std::filesystem::path persistence_dir = "./data";
+   TraceLevel trace_global_level  = TraceLevel::Warning;
+   std::vector<std::string> trace_modules;
 };
 ```
 
@@ -144,6 +148,7 @@ void shutdown() noexcept;
 [[nodiscard]] IAuthenticator&   authenticator()    noexcept;
 [[nodiscard]] AclEngine&        acl_engine()       noexcept;
 [[nodiscard]] WillPublisher&    will_publisher()   noexcept;
+[[nodiscard]] StructuredTracer& structured_tracer() noexcept;
 
 struct ConnectResult {
    AuthStatus auth_status;
@@ -179,6 +184,8 @@ void handle_publish(Message& msg, std::string_view client_id,
 
 bool tick(std::chrono::steady_clock::time_point now =
           std::chrono::steady_clock::now());
+
+void apply_trace_system_message(const Message& message);
 
 // Connection registration — call from connection handler (Module 20.2)
 void register_connection(std::string_view client_id,
@@ -251,6 +258,8 @@ Callers should poll `Broker::shutdown_requested()` in their main loop and call
    `SessionManager::handle_connect()`.
 - If CONNECT contains a Will, `Broker` extracts `WillMessage` internally and
    stores it via `WillPublisher::on_connect()`.
+- Initial Module-26 verification: each `handle_connect()` completion emits one
+  structured `info` trace event (`module="broker"`, `info="connect_handled"`).
 - `ConnectResult.connack_properties` always contains at least
    `ReceiveMaximum` and `TopicAliasMaximum` from `BrokerConfig`.
 - When `session_present == true`, `Broker` immediately flushes buffered offline
@@ -277,6 +286,20 @@ Callers should poll `Broker::shutdown_requested()` in their main loop and call
 - The return value of `tick()` is the return value from `SysTopicPublisher::tick(now)`.
 - Callers should invoke `tick()` repeatedly from the main loop and sleep for
    `BrokerConfig::tick_interval_ms` between iterations to avoid busy spinning.
+
+#### Structured tracing configuration precedence (26.4)
+
+Deterministic precedence is:
+
+1. Defaults in `BrokerConfig`.
+2. INI file (`ConfigLoader`).
+3. CLI overrides in `main.cpp` (`--trace-level=...`, `--trace-module=...`).
+4. Runtime system messages via `Broker::apply_trace_system_message()`.
+
+Supported runtime topics:
+
+- `$SYS/broker/tracing/global` with payload `none|error|warning|info|trace`
+- `$SYS/broker/tracing/module/<module>` with payload `trace|none|on|off`
 
 #### ConnectionManager integration (23)
 

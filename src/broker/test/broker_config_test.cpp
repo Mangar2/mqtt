@@ -91,6 +91,25 @@ TEST_CASE("parse_auth_credentials_section", "[broker]") {
   CHECK(cfg.password_credentials.at(1U).password == "pwd");
 }
 
+TEST_CASE("parse_tracing_section_global_level_and_modules", "[broker]") {
+  const auto cfg = ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
+                                       "[tracing]\n"
+                                       "global_level = info\n"
+                                       "trace_modules = broker, connection\n");
+
+  CHECK(cfg.trace_global_level == TraceLevel::Info);
+  REQUIRE(cfg.trace_modules.size() == 2U);
+  CHECK(cfg.trace_modules.at(0U) == "broker");
+  CHECK(cfg.trace_modules.at(1U) == "connection");
+}
+
+TEST_CASE("parse_tracing_invalid_level_throws", "[broker]") {
+  CHECK_THROWS_AS(ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
+                                      "[tracing]\n"
+                                      "global_level = verbose\n"),
+                  BrokerException);
+}
+
 //
 // ConfigLoader::parse — bool variants
 

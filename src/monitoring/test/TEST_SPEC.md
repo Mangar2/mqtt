@@ -31,3 +31,16 @@ Unit tests for Module 16: Monitoring.
 | `sys_publisher_payload_is_decimal` | Published payload bytes decode to the correct decimal string. |
 | `sys_publisher_retain_flag_set` | All published messages have `retain = true`. |
 | `sys_publisher_qos_at_most_once` | All published messages use `QoS::AtMostOnce`. |
+
+### StructuredTracer (Module 26)
+
+| Test case | Behaviour |
+|-----------|-----------|
+| `tracer_emits_json_line_with_mandatory_fields` | `emit()` writes exactly one JSON object line containing `timestamp`, `level`, `module`, and `info`. |
+| `tracer_emits_optional_detail_and_data` | `detail` and `data` are included only when provided. |
+| `tracer_global_hierarchy_filters_non_trace_levels` | Global threshold controls `error`, `warning`, and `info` hierarchically. |
+| `tracer_trace_module_override_works_with_global_error` | With global `error`, trace events are emitted only for explicitly enabled modules. |
+| `tracer_none_disables_all_output` | Global `none` suppresses all events, including module-level trace overrides. |
+| `tracer_serialization_failure_falls_back_to_minimal_record` | Stream serialization failures degrade to a minimal error record instead of throwing. |
+| `trace_level_roundtrip_and_case_insensitive_parse` | `to_string` and `parse_trace_level` cover all levels, including case-insensitive input. |
+| `tracer_set_trace_modules_and_escape_sequences` | Module override replacement works and JSON string escaping handles `\\`, `"`, `\n`, `\r`, and `\t`. |

@@ -592,3 +592,43 @@ Module structure for a fully specification-compliant MQTT 5.0 broker. Each modul
   - 25.6.1 **Problem:** `Broker::route_message()` is a one-line wrapper that forwards to `handle_publish()`. Module 19.3.3 states it replaces the old API, but the old method was kept.
   - 25.6.2 Remove `route_message()` from `Broker` public API.
   - 25.6.3 Update all callers (tests, SPEC.md) to use `handle_publish()` instead.
+
+---
+
+## 26. Structured Tracing
+
+*Structured runtime tracing in JSON Lines format. The tracing API stays close to `std::io` / stream-style output so modules can emit trace events without broker-specific transport dependencies. Supports hierarchical levels, global filtering, and per-module trace overrides. Depends on: 15, 16, 24.*
+
+- 26.1 Trace Event Format
+  - 26.1.1 Emit exactly one JSON object per line
+  - 26.1.2 Mandatory fields: `timestamp`, `level`, `module`, `info`
+  - 26.1.3 Optional fields: `detail`, `data`
+  - 26.1.4 `module` identifies the emitting module / trace topic
+  - 26.1.5 `data` is primarily for trace-level diagnostic payloads
+- 26.2 Trace Levels
+  - 26.2.1 Levels: `none`, `error`, `warning`, `info`, `trace`
+  - 26.2.2 Levels are hierarchical: `trace` includes all levels; `info` includes `warning` and `error`; `warning` includes `error`; `none` disables all output
+  - 26.2.3 `error` is reserved for real program faults and impossible states that indicate a bug
+  - 26.2.4 `warning` is used for states that indicate a problem or degraded behaviour
+  - 26.2.5 MQTT protocol violations caused by invalid client behaviour are logged as `warning`, not `error`, unless they expose an internal impossible state
+  - 26.2.6 `info` is used for MQTT lifecycle events such as CONNECT, SUBSCRIBE, and DISCONNECT
+  - 26.2.7 `trace` is used for the detailed information needed to debug failures
+- 26.3 Filtering Model
+  - 26.3.1 `error`, `warning`, and `info` are controlled by one global threshold
+  - 26.3.2 `trace` can be enabled per module in addition to the global threshold
+  - 26.3.3 It must be possible to run with global level `error` while enabling `trace` for one selected module
+  - 26.3.4 Module names used by filtering are stable and match broker subsystems
+- 26.4 Configuration Sources
+  - 26.4.1 Configure global and per-module levels via configuration file
+  - 26.4.2 Configure global and per-module levels via CLI parameters
+  - 26.4.3 Change global and per-module levels at runtime via system messages
+  - 26.4.4 Define deterministic precedence rules when config file, CLI parameters, and runtime system messages all provide values
+- 26.5 Tracing Infrastructure
+  - 26.5.1 Provide a small tracing interface that writes to a configured stream / output sink near `std::io`
+  - 26.5.2 Serialisation failure must degrade gracefully to a minimal error record instead of crashing normal broker operation
+  - 26.5.3 Trace emission must not require the caller to manually build JSON strings
+- 26.6 Initial Scope
+  - 26.6.1 Build the tracing system first; broad instrumentation comes later
+  - 26.6.2 As the first verification step, emit an `info` trace for CONNECT handling
+  - 26.6.3 Do not trace received application messages in this initial slice
+  - 26.6.4 Follow-up instrumentation must include connection events as well as errors and protocol violations from invalid MQTT traffic
