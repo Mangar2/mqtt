@@ -14,7 +14,6 @@
 #include <shared_mutex>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -248,7 +247,7 @@ public:
   void handle_disconnect(std::string_view client_id, ReasonCode reason_code,
                          std::optional<uint32_t> expiry_override,
                std::chrono::steady_clock::time_point now,
-               std::shared_ptr<OutboundQueue> connection_queue =
+               const std::shared_ptr<OutboundQueue>& connection_queue =
                  nullptr);
 
   /**
@@ -275,7 +274,7 @@ public:
    */
   void handle_connection_lost(std::string_view client_id,
                   std::chrono::steady_clock::time_point now,
-                  std::shared_ptr<OutboundQueue> connection_queue =
+                  const std::shared_ptr<OutboundQueue>& connection_queue =
                     nullptr);
 
   /**

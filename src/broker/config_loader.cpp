@@ -106,7 +106,7 @@ BrokerConfig ConfigLoader::parse(std::string_view text) {
 
 //
 // Private helpers
-
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void ConfigLoader::apply_key(const std::string &section, const std::string &key,
                              const std::string &value, BrokerConfig &cfg) {
   if (section == "network") {

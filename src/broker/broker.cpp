@@ -423,7 +423,7 @@ void Broker::handle_disconnect(std::string_view client_id,
                                ReasonCode reason_code,
                                std::optional<uint32_t> expiry_override,
                                std::chrono::steady_clock::time_point now,
-                               std::shared_ptr<OutboundQueue> connection_queue) {
+                               const std::shared_ptr<OutboundQueue>& connection_queue) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
   TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "broker") {
     TraceEvent event;
@@ -456,7 +456,7 @@ bool Broker::is_disconnect_expiry_override_valid(
 
 void Broker::handle_connection_lost(std::string_view client_id,
                                     std::chrono::steady_clock::time_point now,
-                                    std::shared_ptr<OutboundQueue> connection_queue) {
+                                    const std::shared_ptr<OutboundQueue>& connection_queue) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
   TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "broker") {
     TraceEvent event;
