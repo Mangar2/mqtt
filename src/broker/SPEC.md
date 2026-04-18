@@ -11,7 +11,7 @@ Depends on: all previous modules (1–14), plus shared-state coordination for Mo
 - Load and validate broker configuration from a text file (INI format).
 - Instantiate every module object and inject its dependencies.
 - Bind persistence adapters to in-memory stores on startup.
-- Open TCP listeners for MQTT and (optionally) WebSocket connections.
+- Delegate listener and connection-thread lifecycle to `ConnectionManager`.
 - Install SIGTERM / SIGINT signal handlers.
 - Perform ordered startup and ordered shutdown.
 - Track active connections so the message router can deliver to online clients.
@@ -199,13 +199,13 @@ static void install_signal_handlers() noexcept;
    routed by the system can pass publish authorisation.
 5. If `persistence_enabled`: call `load_persistence()` to populate in-memory
    stores from the snapshot files.
-6. Open `TcpListener` on `mqtt_port` (if non-zero).
+6. Start `ConnectionManager` (opens configured listener sockets and starts accept loops).
 7. Set `running_ = true`.
 
 #### Shutdown sequence (15.3.2)
 
 1. Return immediately if not running.
-2. Close TCP listeners (accept loops will receive an error and exit).
+2. Stop all active `OutboundQueue`s and stop `ConnectionManager`.
 3. If `persistence_enabled`: call `flush_persistence()` to write current
    store contents to snapshot files.
 4. Set `running_ = false`.
@@ -278,6 +278,15 @@ Callers should poll `Broker::shutdown_requested()` in their main loop and call
 - Callers should invoke `tick()` repeatedly from the main loop and sleep for
    `BrokerConfig::tick_interval_ms` between iterations to avoid busy spinning.
 
+#### ConnectionManager integration (23)
+
+- `Broker` owns one `std::unique_ptr<ConnectionManager>` created during
+   `create_modules()`.
+- The callback passed to `ConnectionManager` constructs a `ClientHandler` and
+   calls `handler.run(conn, *this, config_, is_ws)`.
+- Listener sockets and accept-loop threads are no longer direct `Broker`
+   members.
+
 ---
 
 ## Constraints
@@ -285,6 +294,6 @@ Callers should poll `Broker::shutdown_requested()` in their main loop and call
 - `startup()` / `shutdown()` should still be orchestrated from a single thread.
 - Shared mutable runtime state is protected by the broker mutex.
 - Module accessors must not be called before `startup()`.
-- `TcpListener`, `SessionPersistence`, `RetainedMessagePersistence`, and
-  `InflightPersistence` are constructed during `startup()`; the class does
-  not hold any network handles before that call.
+- `SessionPersistence`, `RetainedMessagePersistence`, and
+   `InflightPersistence` are constructed during `startup()`; listener sockets
+   are owned by `ConnectionManager` after `startup()`.

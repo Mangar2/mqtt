@@ -46,6 +46,8 @@ All tests in `network_test.cpp`.  Catch2 tag: `[network]`.
 | `tcp_connection_write_returns_false_on_closed_socket` | `write()` on closed socket returns `false` |
 | `tcp_connection_move_transfers_ownership` | Move constructor; original is closed, new one is open |
 | `tcp_connection_fd_returns_valid_descriptor` | `fd()` returns ≥ 0 for open connection |
+| `tcp_connection_shutdown_socket_invalid_handle_noop` | `shutdown_socket(k_invalid_socket)` is a no-op |
+| `tcp_connection_shutdown_socket_unblocks_peer_read` | `shutdown_socket(fd)` causes peer read to return 0 |
 
 ---
 

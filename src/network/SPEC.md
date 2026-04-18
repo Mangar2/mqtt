@@ -59,6 +59,7 @@ Error codes for socket and I/O failures:
 | `close()` | Shutdown and close the socket |
 | `is_open()` → `bool` | True while the fd is valid and not closed |
 | `fd()` → `int` | Access the underlying fd (for tests / multiplexing) |
+| `shutdown_socket(SocketHandle)` | Static helper: shutdown an externally-owned socket handle |
 
 **Constraints:**
 - Non-copyable; movable.

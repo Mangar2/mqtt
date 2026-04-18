@@ -1,4 +1,4 @@
-# connection — Connection Handler (Modules 7 + 17)
+# connection — Connection Handler + Connection Manager (Modules 7 + 17 + 23)
 
 Manages the lifecycle of a single MQTT 5.0 client connection.
 Depends on: data_model (1), codec (2), qos (5), network (6), auth (8), session_manager (9), message_router (10), will_manager (11), transport (12), broker (16).
@@ -13,6 +13,7 @@ Depends on: data_model (1), codec (2), qos (5), network (6), auth (8), session_m
 | `topic_alias_table.h/.cpp` | 7.3 | `TopicAliasTable` — inbound and outbound alias↔topic mappings with maximum enforcement |
 | `receive_maximum.h/.cpp` | 7.4 | `ReceiveMaximum` — inflight QoS 1+2 packet counter with pause/resume |
 | `client_handler.h/.cpp` | 17 | `ClientHandler` — temporary placeholder that closes accepted connections immediately |
+| `connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, accept loops, and tracked client threads |
 
 ## 7.1 ConnectionStateMachine
 
@@ -70,3 +71,35 @@ Constraints for current placeholder:
 - No authentication or session handling.
 - No broker state changes through `register_connection()` / `unregister_connection()`.
 - No QoS, subscribe, unsubscribe, ping, will, or disconnect processing.
+
+---
+
+## 23 ConnectionManager
+
+`ConnectionManager` extracts listener and thread lifecycle from `Broker`.
+
+Responsibilities:
+
+- Own MQTT and optional WebSocket `TcpListener` instances.
+- Start one accept-loop thread per enabled listener.
+- Spawn tracked client threads and clean up finished threads incrementally.
+- Stop listeners and accept loops on shutdown.
+- Wait for client threads up to a configured timeout and request socket shutdown
+	for remaining clients to unblock pending reads.
+
+Public API:
+
+```cpp
+using ClientHandlerCallback =
+		std::function<void(std::unique_ptr<TcpConnection>, bool is_ws)>;
+
+ConnectionManager(uint16_t mqtt_port,
+									uint16_t ws_port,
+									ClientHandlerCallback callback,
+									std::chrono::milliseconds client_join_timeout =
+											std::chrono::seconds(2));
+
+void start();
+void stop() noexcept;
+[[nodiscard]] bool is_running() const noexcept;
+```

@@ -70,3 +70,15 @@
 |-----------|----------|-------|----------|
 | `client_handler_run_with_connection_pointer` | Run with non-null connection pointer | `unique_ptr<TcpConnection>(k_invalid_socket)` | no throw; returns after close-path |
 | `client_handler_run_with_null_connection` | Run with null connection pointer | `nullptr` | no throw; returns immediately |
+
+## ConnectionManager (23)
+
+| Test name | Scenario | Input | Expected |
+|-----------|----------|-------|----------|
+| `connection_manager_start_stop_mqtt` | MQTT listener accepts one client and dispatches callback | mqtt_port=ephemeral, ws_port=0, one loopback connect | callback invoked once; manager stops cleanly |
+| `connection_manager_start_stop_ws` | WS listener accepts one client and marks ws path | mqtt_port=0, ws_port=ephemeral, one loopback connect | callback invoked with `is_ws=true`; manager stops cleanly |
+| `connection_manager_stop_without_start` | Idempotent shutdown before startup | manager with both ports 0 | no throw; running remains false |
+| `connection_manager_start_idempotent` | Double start call on active manager | start() called twice, then one client connect | no throw; manager remains running and handles client |
+| `connection_manager_start_failure_resets_running` | Listener bind failure path in start() | occupy port externally, then start manager on same port | start throws; `is_running()==false` |
+| `connection_manager_stop_timeout_requests_socket_shutdown` | Timeout branch in stop() with slow callback | short join timeout, callback sleeps longer than timeout | stop returns and manager is stopped |
+| `connection_manager_callback_exception_isolated` | Client callback throws | callback throws `runtime_error` | manager survives and stop() succeeds |

@@ -101,6 +101,16 @@ public:
   [[nodiscard]] SocketHandle fd() const noexcept;
 
   /**
+   * @brief Request shutdown on a socket handle without taking ownership.
+   *
+   * Used by connection/thread management code to unblock pending reads on
+   * externally-owned sockets during shutdown.
+   *
+   * @param socket_handle Socket handle to shut down.
+   */
+  static void shutdown_socket(SocketHandle socket_handle) noexcept;
+
+  /**
    * @brief Set the socket receive timeout (SO_RCVTIMEO).
    *
    * After this call, `read()` will return -1 and `last_read_timed_out()`

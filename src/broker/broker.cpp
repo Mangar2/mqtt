@@ -82,7 +82,7 @@ void Broker::startup() {
     load_persistence();
   }
 
-  open_listeners();
+  connection_manager_->start();
   running_ = true;
 }
 
@@ -91,7 +91,24 @@ void Broker::shutdown() noexcept {
     return;
   }
 
-  close_listeners();
+  std::vector<std::shared_ptr<OutboundQueue>> queues;
+  {
+    std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+    queues.reserve(active_connections_.size());
+    for (const auto &entry : active_connections_) {
+      queues.push_back(entry.second);
+    }
+  }
+
+  for (const auto &queue : queues) {
+    if (queue) {
+      queue->stop();
+    }
+  }
+
+  if (connection_manager_) {
+    connection_manager_->stop();
+  }
 
   if (config_.persistence_enabled) {
     flush_persistence();
@@ -602,6 +619,15 @@ void Broker::create_modules() {
   sys_publisher_ = std::make_unique<SysTopicPublisher>(
       *stats_collector_, std::chrono::seconds(config_.sys_topic_interval),
       std::move(sys_publish_fn));
+
+  auto client_handler_callback = [this](std::unique_ptr<TcpConnection> connection,
+                                        bool is_ws) {
+    ClientHandler handler;
+    handler.run(std::move(connection), *this, config_, is_ws);
+  };
+
+  connection_manager_ = std::make_unique<ConnectionManager>(
+      config_.mqtt_port, config_.ws_port, std::move(client_handler_callback));
 }
 
 //
@@ -649,57 +675,6 @@ void Broker::flush_persistence() noexcept {
   } catch (...) {
     // noexcept — swallow persistence errors during shutdown
   }
-}
-
-//
-// Private — listeners (15.3.1 / 15.3.2)
-
-void Broker::open_listeners() {
-  auto spawn_accept_thread = [this](TcpListener &listener, bool is_ws) {
-    accept_threads_.emplace_back([this, &listener, is_ws]() {
-      while (!shutdown_requested_.load()) {
-        try {
-          auto conn = listener.accept();
-          if (!conn) {
-            continue;
-          }
-          std::thread([this, connection = std::move(conn), is_ws]() mutable {
-            ClientHandler handler;
-            handler.run(std::move(connection), *this, config_, is_ws);
-          }).detach();
-        } catch (...) {
-          // accept() throws when the listener is closed during shutdown
-          break;
-        }
-      }
-    });
-  };
-
-  if (config_.mqtt_port != 0U) {
-    mqtt_listener_ = TcpListener::listen(config_.mqtt_port);
-    spawn_accept_thread(*mqtt_listener_, false);
-  }
-  if (config_.ws_port != 0U) {
-    ws_listener_ = TcpListener::listen(config_.ws_port);
-    spawn_accept_thread(*ws_listener_, true);
-  }
-}
-
-void Broker::close_listeners() noexcept {
-  if (mqtt_listener_.has_value()) {
-    mqtt_listener_->close();
-    mqtt_listener_.reset();
-  }
-  if (ws_listener_.has_value()) {
-    ws_listener_->close();
-    ws_listener_.reset();
-  }
-  for (auto &thr : accept_threads_) {
-    if (thr.joinable()) {
-      thr.join();
-    }
-  }
-  accept_threads_.clear();
 }
 
 } // namespace mqtt

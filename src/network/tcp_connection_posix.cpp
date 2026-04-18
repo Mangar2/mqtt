@@ -85,6 +85,13 @@ bool TcpConnection::is_open() const noexcept { return fd_ != k_invalid_socket; }
 
 SocketHandle TcpConnection::fd() const noexcept { return fd_; }
 
+void TcpConnection::shutdown_socket(SocketHandle socket_handle) noexcept {
+  if (socket_handle == k_invalid_socket) {
+    return;
+  }
+  (void)::shutdown(to_fd(socket_handle), SHUT_RDWR);
+}
+
 } // namespace mqtt
 
 #endif // !defined(_WIN32)

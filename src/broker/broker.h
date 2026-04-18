@@ -26,6 +26,7 @@
 #include "authz/acl_engine.h"
 #include "authz/acl_loader.h"
 #include "broker/broker_config.h"
+#include "connection/connection_manager.h"
 #include "connection/topic_alias_table.h"
 #include "data_model/message/message.h"
 #include "data_model/packet/connect_packet.h"
@@ -37,7 +38,6 @@
 #include "message_router/shared_subscription_dispatcher.h"
 #include "monitoring/statistics_collector.h"
 #include "monitoring/sys_topic_publisher.h"
-#include "network/tcp_listener.h"
 #include "outbound_queue/outbound_queue.h"
 #include "persistence/inflight_persistence.h"
 #include "persistence/retained_message_persistence.h"
@@ -390,12 +390,6 @@ private:
   /// Write in-memory stores to persistence snapshot files (15.3.2).
   void flush_persistence() noexcept;
 
-  /// Open TCP listener(s) based on the config (15.3.1).
-  void open_listeners();
-
-  /// Close all open TCP listeners (15.3.2).
-  void close_listeners() noexcept;
-
   /// Static C signal handler (15.3.3).
   static void handle_signal(int sig) noexcept;
 
@@ -457,10 +451,9 @@ private:
   std::unique_ptr<SharedSubscriptionDispatcher> shared_dispatcher_;
   std::unique_ptr<MessageRouter> message_router_;
 
-  //  Network (Module 6)
+  //  Connection manager (Module 23)
 
-  std::optional<TcpListener> mqtt_listener_;
-  std::optional<TcpListener> ws_listener_;
+  std::unique_ptr<ConnectionManager> connection_manager_;
 
   //  Connection tracking
 
@@ -473,10 +466,6 @@ private:
 
   std::unique_ptr<StatisticsCollector> stats_collector_;
   std::unique_ptr<SysTopicPublisher> sys_publisher_;
-
-  //  Accept threads (Module 17)
-
-  std::vector<std::thread> accept_threads_; ///< One thread per open listener.
 
   //  Signal flag
 

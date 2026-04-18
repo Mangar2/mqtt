@@ -408,6 +408,24 @@ TEST_CASE("tcp_connection_fd_returns_valid_descriptor", "[network]") {
   CHECK(side_a.fd() != k_invalid_socket);
 }
 
+TEST_CASE("tcp_connection_shutdown_socket_invalid_handle_noop", "[network]") {
+  CHECK_NOTHROW(TcpConnection::shutdown_socket(k_invalid_socket));
+}
+
+TEST_CASE("tcp_connection_shutdown_socket_unblocks_peer_read", "[network]") {
+  TcpConnection side_a{k_invalid_socket};
+  TcpConnection side_b{k_invalid_socket};
+  make_socket_pair(side_a, side_b);
+
+  TcpConnection::shutdown_socket(side_a.fd());
+
+  std::array<uint8_t, 2> read_buffer{};
+  const std::ptrdiff_t read_size = side_b.read(read_buffer);
+  CHECK(read_size == 0);
+
+  side_a.close();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TcpListener — Module 6.1.1–6.1.2
 
