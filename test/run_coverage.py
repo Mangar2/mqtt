@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 Build, test and coverage script for the mqtt-broker project.
 
@@ -20,6 +22,7 @@ Always run from the project root or from the test/ directory.
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -109,11 +112,37 @@ def _run_or_die(label: str, cmd: list[str], env: dict | None = None) -> str:
     return output
 
 
+def _ensure_configured(preset: str) -> None:
+    _run_or_die(f"cmake configure ({preset})", ["cmake", "--preset", preset])
+
+
+def _resolve_llvm_tool(tool_name: str) -> list[str]:
+    direct_path = shutil.which(tool_name)
+    if direct_path is not None:
+        return [tool_name]
+
+    xcrun_path = shutil.which("xcrun")
+    if xcrun_path is not None:
+        rc, _ = _run_captured(["xcrun", "--find", tool_name])
+        if rc == 0:
+            return ["xcrun", tool_name]
+
+    print(
+        f"\n[FAILED] missing tool: {tool_name}\n"
+        f"  Install LLVM tools or ensure '{tool_name}' is on PATH.\n"
+        f"  On macOS, Xcode Command Line Tools usually provide it via xcrun.",
+        file=sys.stderr,
+    )
+    _close_log()
+    sys.exit(1)
+
+
 # ---------------------------------------------------------------------------
 # Build / test / coverage steps
 # ---------------------------------------------------------------------------
 
 def step_build_debug() -> None:
+    _ensure_configured("debug")
     _run_or_die("cmake build (debug)", ["cmake", "--build", "--preset", "debug"])
 
 
@@ -137,22 +166,25 @@ def step_run_tests() -> str:
 
 
 def step_build_coverage() -> None:
+    _ensure_configured("test-coverage")
     _run_or_die("cmake build (test-coverage)", ["cmake", "--build", "--preset", "test-coverage"])
 
 
 def step_collect_coverage() -> None:
+    llvm_profdata_cmd = _resolve_llvm_tool("llvm-profdata")
     env = os.environ.copy()
     env["LLVM_PROFILE_FILE"] = str(PROFRAW)
     _run_or_die("run test binary (coverage)", [str(COV_BINARY)], env=env)
     _run_or_die("llvm-profdata merge", [
-        "llvm-profdata", "merge", "-sparse", str(PROFRAW), "-o", str(PROFDATA),
+        *llvm_profdata_cmd, "merge", "-sparse", str(PROFRAW), "-o", str(PROFDATA),
     ])
 
 
 def step_coverage_report(paths: list[str] | None = None) -> str:
+    llvm_cov_cmd = _resolve_llvm_tool("llvm-cov")
     targets = paths if paths else [str(SRC_DIR)]
     return _run_or_die("llvm-cov report", [
-        "llvm-cov", "report", str(COV_BINARY),
+        *llvm_cov_cmd, "report", str(COV_BINARY),
         f"-instr-profile={PROFDATA}",
         "-ignore-filename-regex=(_deps|catch2|Catch2)",
         *targets,
@@ -160,8 +192,9 @@ def step_coverage_report(paths: list[str] | None = None) -> str:
 
 
 def step_coverage_show(path: str) -> str:
+    llvm_cov_cmd = _resolve_llvm_tool("llvm-cov")
     return _run_or_die("llvm-cov show", [
-        "llvm-cov", "show", str(COV_BINARY),
+        *llvm_cov_cmd, "show", str(COV_BINARY),
         f"-instr-profile={PROFDATA}",
         path,
     ])

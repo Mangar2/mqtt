@@ -58,3 +58,6 @@ All tests in `network_test.cpp`.  Catch2 tag: `[network]`.
 | `tcp_listener_accept_returns_connection` | Client connects; `accept()` returns a non-null connection |
 | `tcp_listener_close_marks_as_closed` | After `close()`, `is_open()` is false |
 | `tcp_listener_move_transfers_ownership` | Move constructor; original is closed |
+| `tcp_listener_ipv4_bind_failure_throws` | Binding to an already occupied IPv4 port throws `NetworkException` |
+| `tcp_listener_ipv6_bind_failure_throws` | Binding to an already occupied IPv6 port throws `NetworkException` |
+| `tcp_listener_socket_create_failure_throws` | Socket creation failure path throws `NetworkException` |

@@ -1,7 +1,7 @@
 CompileFlags:
-  # Fallback flags used when a file is NOT in compile_commands.json.
-  # The real flags (including -std=c++20 and include paths) come from
-  # build/debug/compile_commands.json which is configured in .vscode/settings.json.
+  # Prefer the debug preset compilation database after configure.
+  # If it is missing (fresh clone before first configure), fallback flags below apply.
+  CompilationDatabase: build/debug
   Add:
     - "-std=c++20"
     - "-Isrc"

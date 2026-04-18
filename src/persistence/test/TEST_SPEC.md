@@ -22,3 +22,5 @@
 | P16 | `inflight_persistence_timestamp_reset`   | Loaded timestamp is ≥ timestamp captured just before `load_all()`. |
 | P17 | `inflight_persistence_empty_on_no_file`  | `load_all()` returns empty vector when no snapshot exists. |
 | P18 | `crash_safe_overwrite_sequence`          | Three successive writes; `read_latest()` always returns the latest data. |
+| P19 | `crash_safe_directory_dat_falls_back_to_bak` | `.dat` path exists as a directory; reader skips it and loads valid `.bak`. |
+| P20 | `crash_safe_remove_all_throws_on_nonempty_directory` | `remove_all()` throws `WriteFailure` when managed path cannot be deleted (non-empty directory). |

@@ -21,7 +21,9 @@ _deps/
 .ninja_log
 
 # IDE – VS Code
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/c_cpp_properties.json
 .VSCodeCounter/
 
 # IDE – JetBrains / CLion

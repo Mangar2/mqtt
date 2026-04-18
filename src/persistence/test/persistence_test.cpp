@@ -184,6 +184,37 @@ TEST_CASE("crash_safe_overwrite_sequence", "[persistence]") {
   }
 }
 
+TEST_CASE("crash_safe_directory_dat_falls_back_to_bak", "[persistence]") {
+  TempDir tmp;
+  mqtt::CrashSafeFile csf(tmp.path, "test");
+
+  std::vector<uint8_t> payload = {0x10U, 0x20U, 0x30U};
+  csf.write(payload, 1U);
+
+  std::filesystem::rename(tmp.path / "test.dat", tmp.path / "test.bak");
+  std::filesystem::create_directory(tmp.path / "test.dat");
+
+  auto result = csf.read_latest();
+  REQUIRE(result.has_value());
+  CHECK(result->first == 1U);
+  CHECK(result->second == payload);
+}
+
+TEST_CASE("crash_safe_remove_all_throws_on_nonempty_directory", "[persistence]") {
+  TempDir tmp;
+  mqtt::CrashSafeFile csf(tmp.path, "test");
+
+  auto dat_dir = tmp.path / "test.dat";
+  std::filesystem::create_directory(dat_dir);
+  {
+    std::ofstream marker(dat_dir / "keep.txt", std::ios::binary);
+    REQUIRE(marker);
+    marker << "x";
+  }
+
+  CHECK_THROWS_AS(csf.remove_all(), mqtt::PersistenceException);
+}
+
 //  SessionPersistence
 //
 

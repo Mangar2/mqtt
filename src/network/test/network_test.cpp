@@ -7,12 +7,15 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/resource.h>
+#include <unistd.h>
 #endif
 
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <span>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -94,6 +97,25 @@ std::vector<uint8_t> make_packet(uint32_t remaining_length) {
     pkt.push_back(static_cast<uint8_t>(idx & 0xFFU));
   }
   return pkt;
+}
+
+/**
+ * @brief Read exactly `buf.size()` bytes unless peer closes or read fails.
+ *
+ * @param connection Source TCP connection.
+ * @param buf Destination buffer to fill.
+ * @return `true` when buffer is fully filled; otherwise `false`.
+ */
+bool read_exact(TcpConnection &connection, std::span<uint8_t> buf) {
+  std::size_t offset = 0;
+  while (offset < buf.size()) {
+    std::ptrdiff_t nread = connection.read(buf.subspan(offset));
+    if (nread <= 0) {
+      return false;
+    }
+    offset += static_cast<std::size_t>(nread);
+  }
+  return true;
 }
 
 } // anonymous namespace
@@ -244,9 +266,7 @@ TEST_CASE("write_queue_drain_writes_to_connection", "[network]") {
   CHECK(queue.drain(side_a));
 
   std::vector<uint8_t> received(pkt.size());
-  std::ptrdiff_t nread =
-      side_b.read(std::span<uint8_t>{received.data(), received.size()});
-  CHECK(nread == static_cast<std::ptrdiff_t>(pkt.size()));
+  CHECK(read_exact(side_b, std::span<uint8_t>{received.data(), received.size()}));
   CHECK(received == pkt);
 }
 
@@ -264,9 +284,7 @@ TEST_CASE("write_queue_drain_multiple_packets", "[network]") {
 
   std::size_t total = pkt1.size() + pkt2.size();
   std::vector<uint8_t> received(total);
-  std::ptrdiff_t nread =
-      side_b.read(std::span<uint8_t>{received.data(), received.size()});
-  CHECK(nread == static_cast<std::ptrdiff_t>(total));
+  CHECK(read_exact(side_b, std::span<uint8_t>{received.data(), received.size()}));
   CHECK(queue.is_empty());
 }
 
@@ -305,9 +323,7 @@ TEST_CASE("write_queue_run_drain_writes_enqueued_packets", "[network]") {
   CHECK(queue.enqueue(pkt));
 
   std::vector<uint8_t> received(pkt.size());
-  std::ptrdiff_t nread =
-      side_b.read(std::span<uint8_t>{received.data(), received.size()});
-  CHECK(nread == static_cast<std::ptrdiff_t>(pkt.size()));
+  CHECK(read_exact(side_b, std::span<uint8_t>{received.data(), received.size()}));
   CHECK(received == pkt);
 
   queue.stop();
@@ -544,6 +560,78 @@ TEST_CASE("tcp_listener_ipv6_bind_failure_throws", "[network]") {
   CHECK_THROWS_AS(TcpListener::listen(locked_port, true), NetworkException);
   ::closesocket(blocker);
 }
+#else
+
+TEST_CASE("tcp_listener_ipv4_bind_failure_throws", "[network]") {
+  int blocker_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  REQUIRE(blocker_fd >= 0);
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = 0;
+  addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  REQUIRE(::bind(blocker_fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) ==
+          0);
+  REQUIRE(::listen(blocker_fd, 1) == 0);
+
+  socklen_t len = sizeof(addr);
+  REQUIRE(::getsockname(blocker_fd, reinterpret_cast<sockaddr *>(&addr), &len) ==
+          0);
+  uint16_t locked_port = ntohs(addr.sin_port);
+
+  CHECK_THROWS_AS(TcpListener::listen(locked_port), NetworkException);
+  ::close(blocker_fd);
+}
+
+TEST_CASE("tcp_listener_ipv6_bind_failure_throws", "[network]") {
+  int blocker_fd = ::socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+  REQUIRE(blocker_fd >= 0);
+
+  int v6only = 0;
+  REQUIRE(::setsockopt(blocker_fd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only,
+                       sizeof(v6only)) == 0);
+
+  sockaddr_in6 addr{};
+  addr.sin6_family = AF_INET6;
+  addr.sin6_port = 0;
+  addr.sin6_addr = in6addr_any;
+  REQUIRE(
+      ::bind(blocker_fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) == 0);
+  REQUIRE(::listen(blocker_fd, 1) == 0);
+
+  socklen_t len = sizeof(addr);
+  REQUIRE(::getsockname(blocker_fd, reinterpret_cast<sockaddr *>(&addr), &len) ==
+          0);
+  uint16_t locked_port = ntohs(addr.sin6_port);
+
+  CHECK_THROWS_AS(TcpListener::listen(locked_port, true), NetworkException);
+  ::close(blocker_fd);
+}
+
+TEST_CASE("tcp_listener_socket_create_failure_throws", "[network]") {
+  struct NoFileLimitGuard {
+    rlimit old_limit{};
+    bool has_old_limit{false};
+
+    NoFileLimitGuard() {
+      has_old_limit = (::getrlimit(RLIMIT_NOFILE, &old_limit) == 0);
+      if (has_old_limit) {
+        rlimit reduced = old_limit;
+        reduced.rlim_cur = 0;
+        REQUIRE(::setrlimit(RLIMIT_NOFILE, &reduced) == 0);
+      }
+    }
+
+    ~NoFileLimitGuard() {
+      if (has_old_limit) {
+        (void)::setrlimit(RLIMIT_NOFILE, &old_limit);
+      }
+    }
+  } no_file_limit_guard;
+
+  CHECK_THROWS_AS(TcpListener::listen(0), NetworkException);
+}
+
 #endif // _WIN32
 
 // ─────────────────────────────────────────────────────────────────────────────

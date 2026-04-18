@@ -4,7 +4,7 @@
 Workflow:
 1. Validate git context and parameters.
 2. Create/switch feature branch when needed.
-3. Run coverage gate (`python test/run_coverage.py`) and verify success.
+3. Run coverage gate (`test/run_coverage.py`) and verify success.
 4. Commit pending changes.
 5. Push branch and wait until remote branch is visible.
 6. Create PR via GitHub REST API and verify it is open.
@@ -22,8 +22,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
 import queue
 import re
+import shlex
 import subprocess
 import sys
 import threading
@@ -168,15 +170,74 @@ def ensure_origin_remote() -> None:
         raise WorkflowError("Missing git remote 'origin'.")
 
 
+def _python_command_candidates() -> list[list[str]]:
+    candidates: list[list[str]] = []
+
+    if sys.executable:
+        candidates.append([sys.executable])
+
+    env_python = os.environ.get("PYTHON", "").strip()
+    if env_python:
+        candidates.append([env_python])
+
+    candidates.append(["python3"])
+    candidates.append(["python"])
+
+    if os.name == "nt":
+        candidates.append(["py", "-3"])
+
+    unique: list[list[str]] = []
+    seen: set[tuple[str, ...]] = set()
+    for candidate in candidates:
+        key = tuple(candidate)
+        if key not in seen:
+            seen.add(key)
+            unique.append(candidate)
+    return unique
+
+
+def _python_meets_min_version(command_prefix: list[str]) -> bool:
+    check_cmd = command_prefix + [
+        "-c",
+        "import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)",
+    ]
+    result = subprocess.run(
+        check_cmd,
+        text=True,
+        capture_output=True,
+        env=dict(os.environ),
+        timeout=10,
+    )
+    return result.returncode == 0
+
+
+def resolve_python_command() -> list[str]:
+    for candidate in _python_command_candidates():
+        try:
+            if _python_meets_min_version(candidate):
+                return candidate
+        except (FileNotFoundError, subprocess.SubprocessError):
+            continue
+
+    raise WorkflowError(
+        "No compatible Python interpreter found. "
+        "Need Python >= 3.9 for test/run_coverage.py."
+    )
+
+
 def run_coverage_gate() -> None:
-    log("Running coverage gate: python test/run_coverage.py")
+    coverage_script = Path("test") / "run_coverage.py"
+    python_command = resolve_python_command()
+    coverage_cmd = python_command + [coverage_script.as_posix()]
+    log(
+        "Running coverage gate: " + shlex.join(coverage_cmd)
+    )
     command_env = dict(os.environ)
     command_env["GIT_TERMINAL_PROMPT"] = "0"
     command_env["GCM_INTERACTIVE"] = "Never"
 
     process = subprocess.Popen(
-        "python test/run_coverage.py",
-        shell=True,
+        coverage_cmd,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
