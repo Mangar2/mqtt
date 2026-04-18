@@ -13,7 +13,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `store/`       | 4        | In-memory runtime state: subscription store, retained message store, session store, and inflight store. Depends on `data_model/` and `topic/`. |
 | `qos/`         | 5        | QoS Engine — Packet ID allocation, QoS 1 and QoS 2 state machines with retransmission. Depends on `data_model/` and `store/`. |
 | `network/`     | 6        | Network Layer — TCP listener, connection wrapper, incoming stream buffer, and outgoing write queue. No MQTT knowledge. No external dependencies. |
-| `connection/`  | 7, 23    | Connection Handler + Connection Manager — per-connection lifecycle helpers and dedicated listener/thread lifecycle management extracted from `Broker`. |
+| `connection/`  | 7, 23, 24 | Connection Handler + Connection Manager — per-connection lifecycle helpers, dedicated listener/thread lifecycle management, and lean client I/O orchestration delegating workflow to `Broker` facades and `ClientSession`. |
 | `auth/`        | 8        | Authentication Module — pluggable authenticator interface, username/password and anonymous authenticators, and enhanced AUTH packet handler. |
 | `authz/`            | 9        | Authorization Module — ACL engine with MQTT wildcard topic matching, ACL rule structure, and configuration loader with runtime reload. |
 | `session_manager/`  | 10       | Session Manager — session lifecycle controller (create/resume/discard), session takeover handler (Client ID collision, Reason 0x8E), and session expiry scheduler. Depends on `store/`, `connection/`, `auth/`. |

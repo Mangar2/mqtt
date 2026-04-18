@@ -16,8 +16,6 @@ constexpr std::string_view k_version = "0.1.0";
 
 int main(int argc, char *argv[]) {
   std::cout << "mqtt-broker " << k_version << '\n';
-  std::cout << "Warning: ClientHandler is currently a placeholder and closes "
-               "connections immediately.\n";
 
   // Load configuration from the first argument, or use defaults.
   mqtt::BrokerConfig config;

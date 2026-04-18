@@ -48,3 +48,4 @@ Unit tests for all three sub-components:
 - `handle_disconnect` expiry_override overrides stored expiry.
 - `cleanup_expired` removes session data and returns client IDs.
 - `cleanup_expired` leaves non-expired sessions intact.
+- `inflight_store()` returns the same shared `InflightStore` reference used by the manager.

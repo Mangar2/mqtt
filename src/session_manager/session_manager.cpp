@@ -131,6 +131,10 @@ SessionManager::cleanup_expired(std::chrono::steady_clock::time_point now) {
   return expired;
 }
 
+InflightStore &SessionManager::inflight_store() noexcept {
+  return inflight_store_;
+}
+
 void SessionManager::remove_session_data(std::string_view client_id) {
   // Remove all inflight entries for the session.
   const auto entries = inflight_store_.entries_for(client_id);

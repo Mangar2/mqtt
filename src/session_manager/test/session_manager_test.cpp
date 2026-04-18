@@ -323,3 +323,9 @@ TEST_CASE("session_manager_cleanup_expired_cancels_timer",
   // After cleanup no lingering timer entry.
   CHECK(fix.expiry_scheduler.size() == 0U);
 }
+
+TEST_CASE("session_manager_inflight_store_accessor_returns_shared_store",
+          "[session_manager]") {
+  SessionManagerFixture fix;
+  CHECK(&fix.manager.inflight_store() == &fix.inflight_store);
+}

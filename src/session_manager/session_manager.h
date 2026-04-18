@@ -109,6 +109,14 @@ public:
   std::vector<std::string>
   cleanup_expired(std::chrono::steady_clock::time_point now);
 
+  /**
+   * @brief Return the shared inflight store used by this manager.
+   *
+   * This is used by the connection layer to construct per-client
+   * `ClientSession` instances that share the broker-wide inflight state.
+   */
+  [[nodiscard]] InflightStore &inflight_store() noexcept;
+
 private:
   /// Remove all data associated with a session (subscriptions + inflight +
   /// session record).

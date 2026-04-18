@@ -64,12 +64,33 @@
 | `release_restores_capacity` | ACK frees slot | ReceiveMaximum(1), acquire(), release(), acquire() | last acquire returns true |
 | `release_throws_when_inflight_zero` | Underflow guard | ReceiveMaximum(5), release() | ConnectionException(InvalidState) |
 
-## ClientHandler placeholder (17)
+## ClientHandler (24)
 
 | Test name | Scenario | Input | Expected |
 |-----------|----------|-------|----------|
 | `client_handler_run_with_connection_pointer` | Run with non-null connection pointer | `unique_ptr<TcpConnection>(k_invalid_socket)` | no throw; returns after close-path |
 | `client_handler_run_with_null_connection` | Run with null connection pointer | `nullptr` | no throw; returns immediately |
+| `client_handler_connect_ping_disconnect_roundtrip` | Successful CONNECT handshake plus control packets | CONNECT, PINGREQ, DISCONNECT over one connection | CONNACK then PINGRESP; clean teardown |
+| `client_handler_subscribe_unsubscribe_and_publish` | Broker facade dispatch for common packet types | CONNECT, SUBSCRIBE, PUBLISH(QoS0), UNSUBSCRIBE, DISCONNECT | SUBACK and UNSUBACK responses; QoS0 publish accepted without ACK |
+| `client_handler_rejects_non_connect_first_packet` | Protocol enforcement for first packet | PINGREQ as first packet | error CONNACK; handler exits |
+| `client_handler_keep_alive_timeout_emits_disconnect` | Keep-alive timeout path | CONNECT(keep_alive=1) with no further traffic | broker sends DISCONNECT(KeepAliveTimeout) |
+| `client_handler_connect_malformed_packet_returns_protocol_error_connack` | Decode error during initial CONNECT handling | malformed CONNECT bytes as first complete packet | error CONNACK; handler exits |
+| `client_handler_runtime_malformed_packet_returns_disconnect` | Decode error in dispatch loop | valid CONNECT then malformed packet | DISCONNECT(ProtocolError) emitted |
+| `client_handler_abrupt_socket_close_is_connection_lost_path` | Unclean teardown path | valid CONNECT then remote socket close without DISCONNECT | handler exits without crash via connection-lost path |
+| `client_handler_disconnect_with_expiry_override` | DISCONNECT property parsing | valid CONNECT then DISCONNECT with SessionExpiryInterval property | clean disconnect path with parsed override, no crash |
+| `client_handler_enhanced_auth_connect_flow` | Multi-step enhanced auth handshake | CONNECT with auth method then AUTH credentials | AUTH challenge then CONNACK success |
+| `client_handler_inbound_qos2_publish_rel_flow` | QoS2 inbound state machine path | CONNECT then PUBLISH(QoS2) then PUBREL | emits PUBREC then PUBCOMP |
+| `client_handler_second_connect_triggers_protocol_disconnect` | Duplicate CONNECT after established session | CONNECT then second CONNECT | DISCONNECT(ProtocolError) |
+| `client_handler_pingresp_packet_hits_default_protocol_error` | Unexpected inbound packet type in dispatch loop | CONNECT then PINGRESP | DISCONNECT(ProtocolError) |
+| `client_handler_websocket_upgrade_connect_and_disconnect` | WebSocket transport success path | valid HTTP upgrade, masked CONNECT, masked DISCONNECT | HTTP 101 response and WS-framed CONNACK |
+| `client_handler_websocket_invalid_upgrade_closes_connection` | WebSocket upgrade failure path | invalid HTTP upgrade request | handler closes connection without crash |
+| `client_handler_connect_auth_failure_returns_error_connack` | CONNECT auth failure path | CONNECT with wrong username/password against configured credential | error CONNACK is returned and connection ends |
+| `client_handler_enhanced_auth_wrong_packet_fails_handshake` | Enhanced auth loop failure on non-AUTH packet | CONNECT with auth method, then PINGREQ instead of AUTH | AUTH challenge followed by error CONNACK |
+| `client_handler_session_takeover_executes_close_callback` | Session takeover closes old connection | two CONNECTs with same client ID on two sockets | second handshake succeeds and first connection is closed |
+| `client_handler_runtime_connack_packet_hits_default_protocol_error` | Unexpected inbound CONNACK packet in dispatch loop | CONNECT then CONNACK from client | DISCONNECT(ProtocolError) |
+| `client_handler_websocket_rejects_non_connect_first_packet` | WebSocket protocol enforcement for first MQTT packet | valid HTTP upgrade, then masked PINGREQ | WS-framed error CONNACK and teardown |
+| `client_handler_auth_packet_after_connect_handles_invalid_reauth_without_abort` | Runtime AUTH protocol violation must not abort process | CONNECT via basic auth, then AUTH(ReAuthenticate) without enhanced session | DISCONNECT(ProtocolError) is emitted; handler exits cleanly |
+| `client_handler_outbound_qos2_ack_flow_exercises_pubrec_and_pubcomp` | Outbound QoS2 state machine ack handlers | CONNECT, QoS2 subscribe, QoS2 publish loopback, then PUBREC and PUBCOMP for outbound publish | inbound PUBCOMP, outbound PUBLISH, and outbound PUBREL are observed in any order; no crash |
 
 ## ConnectionManager (23)
 

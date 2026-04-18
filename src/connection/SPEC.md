@@ -1,4 +1,4 @@
-# connection — Connection Handler + Connection Manager (Modules 7 + 17 + 23)
+# connection — Connection Handler + Connection Manager (Modules 7 + 23 + 24)
 
 Manages the lifecycle of a single MQTT 5.0 client connection.
 Depends on: data_model (1), codec (2), qos (5), network (6), auth (8), session_manager (9), message_router (10), will_manager (11), transport (12), broker (16).
@@ -12,7 +12,7 @@ Depends on: data_model (1), codec (2), qos (5), network (6), auth (8), session_m
 | `keep_alive_timer.h/.cpp` | 7.2 | `KeepAliveTimer` — deadline tracking at 1.5 × Keep Alive interval |
 | `topic_alias_table.h/.cpp` | 7.3 | `TopicAliasTable` — inbound and outbound alias↔topic mappings with maximum enforcement |
 | `receive_maximum.h/.cpp` | 7.4 | `ReceiveMaximum` — inflight QoS 1+2 packet counter with pause/resume |
-| `client_handler.h/.cpp` | 17 | `ClientHandler` — temporary placeholder that closes accepted connections immediately |
+| `client_handler.h/.cpp` | 24 | `ClientHandler` — lean per-connection I/O orchestrator that delegates business logic to `Broker` facades and `ClientSession` |
 | `connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, accept loops, and tracked client threads |
 
 ## 7.1 ConnectionStateMachine
@@ -53,24 +53,25 @@ States: `Connecting` → `Connected` → `Disconnecting` → `Closed`
 
 ---
 
-## 17 ClientHandler
+## 24 Lean ClientHandler
 
-`ClientHandler::run(conn, broker, config, is_ws)` is currently a temporary stub.
+`ClientHandler::run(conn, broker, config, is_ws)` is a thin orchestration layer.
 
-Current behavior:
-- Accept ownership of one TCP connection.
-- Ignore protocol processing for now.
-- Close the connection immediately and return.
-
-Rationale:
-- The previous Module 17 implementation is intentionally removed.
-- A clean placeholder keeps the build stable while a redesigned handler is implemented later.
-
-Constraints for current placeholder:
-- No MQTT packet parsing.
-- No authentication or session handling.
-- No broker state changes through `register_connection()` / `unregister_connection()`.
-- No QoS, subscribe, unsubscribe, ping, will, or disconnect processing.
+Implemented behavior:
+- Optional WebSocket upgrade handshake when `is_ws=true`.
+- Socket timeout setup and async `WriteQueue` drain thread startup.
+- CONNECT handshake handling via `Broker::handle_connect()` plus enhanced-auth loop via `Broker::handle_auth_packet()`.
+- Construction of `ClientSession` after successful CONNACK and registration of the per-client `OutboundQueue`.
+- Per-packet dispatch loop with strict delegation:
+	- `PUBLISH` → `ClientSession::on_publish()` + `Broker::handle_publish()`
+	- `SUBSCRIBE` → `Broker::handle_subscribe()`
+	- `UNSUBSCRIBE` → `Broker::handle_unsubscribe()`
+	- QoS ACK packets → `ClientSession::on_*()`
+	- `PINGREQ` → `PINGRESP`
+	- `AUTH` → `ClientSession::on_auth()`
+	- `DISCONNECT` → records reason + optional session-expiry override
+- Keep-alive timeout handling (`ReasonCode::KeepAliveTimeout`) and broker-running check each loop iteration.
+- Teardown via `Broker::handle_disconnect()` on clean close or `Broker::handle_connection_lost()` on abrupt transport loss.
 
 ---
 
