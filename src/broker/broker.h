@@ -23,6 +23,7 @@
 #include "auth/authenticator.h"
 #include "auth/enhanced_auth_handler.h"
 #include "auth/password_authenticator.h"
+#include "outbound_queue/outbound_queue.h"
 #include "authz/acl_engine.h"
 #include "authz/acl_loader.h"
 #include "broker/broker_config.h"
@@ -97,13 +98,7 @@ struct ConnectResult {
  */
 class Broker {
 public:
-  /**
-   * @brief Callback type used by the message router to deliver a message
-   *        to an online client.
-   *
-   * @param msg  Message ready for delivery.
-   */
-  using SendFn = std::function<void(const Message &)>;
+
 
   /**
    * @brief Construct a Broker with the given configuration.
@@ -320,16 +315,17 @@ public:
   //  Connection registration
 
   /**
-   * @brief Register an active connection with the broker.
+   * @brief Register an active connection with the broker (Module 20.2.1).
    *
    * Must be called after a client successfully completes the CONNECT
-   * handshake.  The @p send_fn is invoked by the message router to deliver
-   * messages to the client.
+   * handshake.  The message router pushes outbound messages into the
+   * client's @p queue.
    *
    * @param client_id  Client identifier.
-   * @param send_fn    Callback that sends a message to this client.
+   * @param queue      Shared outbound message queue for this client.
    */
-  void register_connection(std::string_view client_id, SendFn send_fn);
+  void register_connection(std::string_view client_id,
+                           std::shared_ptr<OutboundQueue> queue);
 
   /**
    * @brief Unregister a connection (e.g. on disconnect or close).
@@ -378,7 +374,8 @@ private:
   [[nodiscard]] static AuthResult protocol_error_result();
 
   /// Register connection when broker_mutex_ is already held exclusively.
-  void register_connection_locked(std::string_view client_id, SendFn send_fn);
+  void register_connection_locked(std::string_view client_id,
+                                  std::shared_ptr<OutboundQueue> queue);
 
   /// Unregister connection when broker_mutex_ is already held exclusively.
   void unregister_connection_locked(std::string_view client_id) noexcept;
@@ -470,7 +467,8 @@ private:
 
   mutable std::shared_mutex
       broker_mutex_; ///< Guards shared mutable Broker state.
-  std::unordered_map<std::string, SendFn> active_connections_;
+  std::unordered_map<std::string, std::shared_ptr<OutboundQueue>>
+      active_connections_; ///< Online clients keyed by client ID (Module 20.2).
 
   //  Monitoring (Module 16)
 

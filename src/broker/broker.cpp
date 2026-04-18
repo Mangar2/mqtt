@@ -422,9 +422,10 @@ void Broker::handle_publish(Message &msg, std::string_view client_id,
 //
 // Connection registration
 
-void Broker::register_connection(std::string_view client_id, SendFn send_fn) {
+void Broker::register_connection(std::string_view client_id,
+                                 std::shared_ptr<OutboundQueue> queue) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
-  register_connection_locked(client_id, std::move(send_fn));
+  register_connection_locked(client_id, std::move(queue));
 }
 
 void Broker::unregister_connection(std::string_view client_id) noexcept {
@@ -441,10 +442,10 @@ bool Broker::tick(std::chrono::steady_clock::time_point now) {
 }
 
 void Broker::register_connection_locked(std::string_view client_id,
-                                        SendFn send_fn) {
+                                        std::shared_ptr<OutboundQueue> queue) {
   const std::string key(client_id);
   const bool existed = active_connections_.contains(key);
-  active_connections_[key] = std::move(send_fn);
+  active_connections_[key] = std::move(queue);
   if (!existed) {
     stats_collector_->on_client_connected();
   }
@@ -545,7 +546,7 @@ void Broker::create_modules() {
 
   shared_dispatcher_ = std::make_unique<SharedSubscriptionDispatcher>();
 
-  // Delivery callbacks: look up in the active_connections_ map.
+  // Delivery callbacks: push into client's OutboundQueue (Module 20.2).
   auto is_online_fn = [this](std::string_view cid) -> bool {
     return active_connections_.contains(std::string(cid));
   };
@@ -553,7 +554,7 @@ void Broker::create_modules() {
     auto iter = active_connections_.find(std::string(cid));
     if (iter != active_connections_.end()) {
       stats_collector_->on_message_outbound();
-      iter->second(msg);
+      (void)iter->second->push(msg);
     }
   };
 

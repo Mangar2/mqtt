@@ -173,9 +173,9 @@ void handle_connection_lost(std::string_view client_id,
 void handle_publish(Message& msg, std::string_view client_id,
                     std::string_view username, TopicAliasTable& alias_table);
 
-// Connection registration — call from connection handler
-using SendFn = std::function<void(const Message&)>;
-void register_connection(std::string_view client_id, SendFn send_fn);
+// Connection registration — call from connection handler (Module 20.2)
+void register_connection(std::string_view client_id,
+                         std::shared_ptr<OutboundQueue> queue);
 void unregister_connection(std::string_view client_id) noexcept;
 
 // 15.3.3 signal handling

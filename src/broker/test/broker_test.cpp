@@ -22,6 +22,7 @@
 #include "broker/broker_error.h"
 #include "connection/topic_alias_table.h"
 #include "data_model/message/message.h"
+#include "outbound_queue/outbound_queue.h"
 #include "data_model/packet/connect_packet.h"
 #include "data_model/property/property_id.h"
 #include "data_model/reason_code/reason_code.h"
@@ -211,15 +212,14 @@ TEST_CASE("broker_register_unregister_connection", "[broker]") {
   Broker broker(cfg);
   broker.startup();
 
-  bool delivered = false;
-  broker.register_connection("client1",
-                             [&](const Message &) { delivered = true; });
+  auto queue = std::make_shared<OutboundQueue>();
+  broker.register_connection("client1", queue);
 
   broker.unregister_connection("client1");
   broker.unregister_connection("client1"); // idempotent
 
   broker.shutdown();
-  CHECK_FALSE(delivered);
+  CHECK(queue->is_empty());
 }
 
 //
@@ -380,7 +380,8 @@ TEST_CASE("broker_handle_connection_lost_unregisters_client", "[broker]") {
   Broker broker(cfg);
   broker.startup();
 
-  broker.register_connection("lost_client", [](const Message &) {});
+  broker.register_connection("lost_client",
+                              std::make_shared<OutboundQueue>());
   CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
 
   // Store a will and then simulate abrupt connection loss.
@@ -833,7 +834,8 @@ TEST_CASE("broker_handle_disconnect_unregisters_client", "[broker]") {
   Broker broker(cfg);
   broker.startup();
 
-  broker.register_connection("disc_client", [](const Message &) {});
+  broker.register_connection("disc_client",
+                              std::make_shared<OutboundQueue>());
   CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
 
   broker.handle_disconnect("disc_client", ReasonCode::Success, std::nullopt,
@@ -865,10 +867,10 @@ TEST_CASE("broker_register_increments_connected_clients", "[broker]") {
   Broker broker(cfg);
   broker.startup();
 
-  broker.register_connection("c1", [](const Message &) {});
+  broker.register_connection("c1", std::make_shared<OutboundQueue>());
   CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
 
-  broker.register_connection("c2", [](const Message &) {});
+  broker.register_connection("c2", std::make_shared<OutboundQueue>());
   CHECK(broker.statistics_collector().snapshot().connected_clients == 2U);
 
   broker.unregister_connection("c1");
@@ -885,10 +887,12 @@ TEST_CASE("broker_register_same_client_does_not_double_count", "[broker]") {
   Broker broker(cfg);
   broker.startup();
 
-  broker.register_connection("same_client", [](const Message &) {});
+  broker.register_connection("same_client",
+                              std::make_shared<OutboundQueue>());
   CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
 
-  broker.register_connection("same_client", [](const Message &) {});
+  broker.register_connection("same_client",
+                              std::make_shared<OutboundQueue>());
   CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
 
   broker.unregister_connection("same_client");
@@ -941,10 +945,8 @@ TEST_CASE("broker_handle_subscribe_returns_suback_and_delivers_retained",
   Broker broker(cfg);
   broker.startup();
 
-  std::vector<Message> delivered;
-  broker.register_connection("sub_client", [&](const Message &message) {
-    delivered.push_back(message);
-  });
+  auto sub_queue = std::make_shared<OutboundQueue>();
+  broker.register_connection("sub_client", sub_queue);
 
   Message retained_message;
   retained_message.topic = Utf8String{"alerts/high"};
@@ -970,8 +972,10 @@ TEST_CASE("broker_handle_subscribe_returns_suback_and_delivers_retained",
   CHECK(suback.packet_id == 7U);
   REQUIRE(suback.reason_codes.size() == 1U);
   CHECK(suback.reason_codes[0] == ReasonCode::GrantedQoS1);
-  REQUIRE(delivered.size() == 1U);
-  CHECK(delivered[0].topic.value == "alerts/high");
+  REQUIRE(sub_queue->size() == 1U);
+  auto popped_msg = sub_queue->try_pop();
+  REQUIRE(popped_msg.has_value());
+  CHECK(popped_msg->topic.value == "alerts/high");
 
   broker.shutdown();
 }
@@ -982,10 +986,8 @@ TEST_CASE("broker_handle_subscribe_denied_returns_not_authorized", "[broker]") {
   Broker broker(cfg);
   broker.startup();
 
-  std::vector<Message> delivered;
-  broker.register_connection("denied_sub_client", [&](const Message &message) {
-    delivered.push_back(message);
-  });
+  auto denied_queue = std::make_shared<OutboundQueue>();
+  broker.register_connection("denied_sub_client", denied_queue);
 
   SubscribePacket subscribe_packet;
   subscribe_packet.packet_id = 9U;
@@ -1002,7 +1004,7 @@ TEST_CASE("broker_handle_subscribe_denied_returns_not_authorized", "[broker]") {
   CHECK(suback.packet_id == 9U);
   REQUIRE(suback.reason_codes.size() == 1U);
   CHECK(suback.reason_codes[0] == ReasonCode::NotAuthorized);
-  CHECK(delivered.empty());
+  CHECK(denied_queue->is_empty());
 
   broker.shutdown();
 }
@@ -1012,10 +1014,8 @@ TEST_CASE("broker_handle_unsubscribe_removes_subscription", "[broker]") {
   Broker broker(cfg);
   broker.startup();
 
-  std::vector<Message> delivered;
-  broker.register_connection("sub_remove_client", [&](const Message &message) {
-    delivered.push_back(message);
-  });
+  auto unsub_queue = std::make_shared<OutboundQueue>();
+  broker.register_connection("sub_remove_client", unsub_queue);
 
   SubscribePacket subscribe_packet;
   subscribe_packet.packet_id = 11U;
@@ -1036,7 +1036,7 @@ TEST_CASE("broker_handle_unsubscribe_removes_subscription", "[broker]") {
   first_message.qos = QoS::AtMostOnce;
   TopicAliasTable alias_table(0U);
   broker.handle_publish(first_message, "pub_client", "", alias_table);
-  REQUIRE(delivered.size() == 1U);
+  REQUIRE(unsub_queue->size() == 1U);
 
   UnsubscribePacket unsubscribe_packet;
   unsubscribe_packet.packet_id = 12U;
@@ -1053,7 +1053,7 @@ TEST_CASE("broker_handle_unsubscribe_removes_subscription", "[broker]") {
   second_message.payload = BinaryData{{0x11U}};
   second_message.qos = QoS::AtMostOnce;
   broker.handle_publish(second_message, "pub_client", "", alias_table);
-  CHECK(delivered.size() == 1U);
+  CHECK(unsub_queue->size() == 1U);
 
   broker.shutdown();
 }
@@ -1066,7 +1066,8 @@ TEST_CASE("broker_unregister_unknown_client_keeps_count", "[broker]") {
   broker.unregister_connection("missing_client");
   CHECK(broker.statistics_collector().snapshot().connected_clients == 0U);
 
-  broker.register_connection("present_client", [](const Message &) {});
+  broker.register_connection("present_client",
+                              std::make_shared<OutboundQueue>());
   CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
 
   broker.unregister_connection("present_client");

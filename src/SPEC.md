@@ -21,6 +21,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `transport/`        | 14.2     | Transport Extensions — WebSocket HTTP upgrade handshake, WebSocket frame encoder/decoder, and MQTT payload extraction from binary frames. **Module 14.1 (TLS) is not implemented** — use a reverse proxy for TLS termination. |
 | `broker/`           | 15, 17, 18, 19 | Broker Orchestrator + Concurrency Layer — INI configuration loader, component wiring, ordered startup/shutdown, signal handling, and broker-level facades for connect/disconnect/subscribe/unsubscribe/publish under shared-state locking. |
 | `monitoring/`       | 16       | Monitoring — `StatisticsCollector` (connected clients, message throughput, active subscriptions, retained messages, uptime) and `SysTopicPublisher` (periodic `$SYS/broker/…` topic publication). |
+| `outbound_queue/`   | 20       | Outbound Message Queue — thread-safe per-client FIFO of `Message` objects. Decouples publishing thread from receiving client's QoS state. Depends on `data_model/`. |
 
 ## `data_model/` sub-modules
 
