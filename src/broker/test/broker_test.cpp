@@ -782,6 +782,7 @@ TEST_CASE("broker_handle_reauthenticate_bad_credentials_returns_failure",
 TEST_CASE("broker_handle_connect_builds_connack_properties", "[broker]") {
   BrokerConfig cfg = make_test_config();
   cfg.receive_maximum = 123U;
+  cfg.server_keep_alive = 9U;
   cfg.topic_alias_maximum = 77U;
   Broker broker(cfg);
   broker.startup();
@@ -801,6 +802,11 @@ TEST_CASE("broker_handle_connect_builds_connack_properties", "[broker]") {
       result.connack_properties, PropertyId::TopicAliasMaximum);
   REQUIRE(topic_alias_maximum.has_value());
   CHECK(*topic_alias_maximum == 77U);
+
+    const auto server_keep_alive = find_two_byte_property(
+      result.connack_properties, PropertyId::ServerKeepAlive);
+    REQUIRE(server_keep_alive.has_value());
+    CHECK(*server_keep_alive == 9U);
 
     const auto maximum_qos =
       find_byte_property(result.connack_properties, PropertyId::MaximumQoS);
@@ -831,6 +837,27 @@ TEST_CASE("broker_handle_connect_builds_connack_properties", "[broker]") {
       result.connack_properties, PropertyId::SharedSubscriptionAvailable);
     REQUIRE(shared_subscription_available.has_value());
     CHECK(*shared_subscription_available == 1U);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_connect_omits_server_keep_alive_when_disabled",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.server_keep_alive = 0U;
+
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"connack_no_server_keep_alive_client"};
+
+  const ConnectResult result = broker.handle_connect(connect, []() {});
+  CHECK(result.reason_code == ReasonCode::Success);
+
+  const auto server_keep_alive = find_two_byte_property(
+      result.connack_properties, PropertyId::ServerKeepAlive);
+  CHECK_FALSE(server_keep_alive.has_value());
 
   broker.shutdown();
 }

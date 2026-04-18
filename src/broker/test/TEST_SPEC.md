@@ -25,6 +25,7 @@ All tests are tagged `[broker]`.
 | `parse_uint_negative_throws` | bad uint | Negative number text | `max_connections=-1` | BrokerException(InvalidConfig) |
 | `parse_uint_overflow_throws` | overflow | Number > UINT32_MAX | digit string exceeding 4294967295 | BrokerException(InvalidConfig) |
 | `parse_uint16_overflow_throws` | u16 overflow | Number > 65535 | `mqtt_port=70000` | BrokerException(InvalidConfig) |
+| `parse_server_keep_alive_uint16_overflow_throws` | u16 overflow | Number > 65535 | `server_keep_alive=70000` | BrokerException(InvalidConfig) |
 | `parse_auth_credential_invalid_format_throws` | bad auth credential | missing `:` separator | `credential=malformed_without_separator` | BrokerException(InvalidConfig) |
 | `parse_tracing_section_global_level_and_modules` | tracing section | parse global level and module override list | `[tracing]\nglobal_level=info\ntrace_modules=broker,connection` | `trace_global_level=Info`, `trace_modules=["broker","connection"]` |
 | `parse_tracing_invalid_level_throws` | tracing section | reject unknown level | `[tracing]\nglobal_level=verbose` | BrokerException(InvalidConfig) |
@@ -87,6 +88,7 @@ All tests are tagged `[broker]`.
 | `broker_handle_reauthenticate_without_enhanced_session_protocol_error` | connect facade | re-auth request without active enhanced context | missing client + AUTH(ReAuthenticate) | AuthResult Failure/ProtocolError |
 | `broker_handle_reauthenticate_bad_credentials_returns_failure` | connect facade | re-auth payload has wrong credentials | CONNECT + initial auth_data valid, then re-auth auth_data invalid | AuthResult Failure/BadUserNameOrPassword |
 | `broker_handle_connect_builds_connack_properties` | connect facade | connack properties from config | receive_maximum/topic_alias_maximum set | ConnectResult contains matching ReceiveMaximum and TopicAliasMaximum properties |
+| `broker_handle_connect_omits_server_keep_alive_when_disabled` | connect facade | server_keep_alive default disabled | server_keep_alive=0 | ConnectResult omits ServerKeepAlive property |
 | `broker_handle_connect_emits_info_trace` | tracing | CONNECT handling emits info trace in JSON lines | global trace level=info + successful CONNECT | sink receives one JSON line with module `broker` and info `connect_handled` |
 | `broker_runtime_trace_system_message_updates_global_level` | tracing | runtime system message overrides global level | topic `$SYS/broker/tracing/global` + payload `trace` | `StructuredTracer::global_level()==Trace` |
 | `broker_runtime_trace_system_message_updates_module_override` | tracing | runtime system message enables/disables module trace override | topic `$SYS/broker/tracing/module/connection` + payload `trace` then `none` | `should_emit(trace,"connection")` toggles true then false (under global error) |

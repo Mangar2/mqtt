@@ -106,6 +106,9 @@ Before writing any code, create or update a `SPEC.md` in the target directory.
 - When new insights contradict `SPEC.md`: update `SPEC.md` first, then continue.
 - Before a new feature: update `SPEC.md` first, then implement.
 - Never let code and documentation diverge.
+- Any change to configuration capabilities (new/removed/renamed keys, defaults,
+  value ranges, CLI flags, precedence rules, behavior) **must** update
+  `README.md` in the same change.
 
 ## No redundant regeneration
 

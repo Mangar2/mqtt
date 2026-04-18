@@ -37,6 +37,10 @@ build_static_connack_properties(const BrokerConfig &broker_config) {
   std::vector<Property> properties;
   properties.push_back({PropertyId::ReceiveMaximum,
                         TwoByteInteger{broker_config.receive_maximum}});
+  if (broker_config.server_keep_alive > 0U) {
+    properties.push_back({PropertyId::ServerKeepAlive,
+                          TwoByteInteger{broker_config.server_keep_alive}});
+  }
   properties.push_back({PropertyId::MaximumQoS, k_maximum_qos});
   properties.push_back({PropertyId::RetainAvailable, k_retain_available});
   properties.push_back({PropertyId::MaximumPacketSize, k_maximum_packet_size});

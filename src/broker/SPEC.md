@@ -50,6 +50,7 @@ All parameters are optional; absent ones keep their default value.
 | `[broker]`    | `allow_anonymous`     | bool     | `true`  | Accept connections without credentials. |
 | `[broker]`    | `max_connections`     | uint32   | `1000`  | Maximum simultaneous client connections. |
 | `[broker]`    | `receive_maximum`     | uint16   | `65535` | Per-connection inflight QoS 1/2 limit. |
+| `[broker]`    | `server_keep_alive`   | uint16   | `0`     | CONNACK Server Keep Alive override. `0` = disabled (use CONNECT keep alive). |
 | `[broker]`    | `session_expiry_max`  | uint32   | `0`     | Hard cap on session expiry seconds. `0` = unlimited. |
 | `[broker]`    | `topic_alias_maximum` | uint16   | `10`    | Maximum topic alias value per connection. |
 | `[broker]`    | `max_queued_messages` | uint32   | `100`   | Per-client offline queue capacity. |
@@ -67,6 +68,7 @@ All parameters are optional; absent ones keep their default value.
   At least one of `mqtt_port` or `ws_port` must be non-zero (enforced by `ConfigLoader`).
 - `max_connections`: `1–100 000`.
 - `receive_maximum`: `1–65535`.
+- `server_keep_alive`: `0–65535`. `0` disables the override.
 - `topic_alias_maximum`: `0–65535`. `0` disables topic aliases.
 - `max_queued_messages`: `1–100 000`.
 - `session_expiry_max`: `0–4 294 967 295` (any uint32 value; `0` = no hard cap).
@@ -97,6 +99,7 @@ struct BrokerConfig {
     bool     allow_anonymous       = true;
     uint32_t max_connections       = 1000;
     uint16_t receive_maximum       = 65535;
+   uint16_t server_keep_alive     = 0;
     uint32_t session_expiry_max    = 0;
     uint16_t topic_alias_maximum   = 10;
     uint32_t max_queued_messages   = 100;

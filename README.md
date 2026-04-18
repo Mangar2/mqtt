@@ -2,6 +2,30 @@
 
 A fully specification-compliant MQTT 5.0 broker written in C++20.
 
+## Run
+
+```sh
+# Run with defaults
+./build/release/mqtt-broker
+
+# Run with config file
+./build/release/mqtt-broker path/to/broker.ini
+
+# Run with config file and CLI trace overrides
+./build/release/mqtt-broker path/to/broker.ini \
+    --trace-level=info \
+    --trace-module=broker \
+    --trace-module=connection
+```
+
+Startup precedence is deterministic:
+
+1. Built-in defaults
+2. INI config file
+3. CLI trace overrides (`--trace-level`, `--trace-module`)
+
+Any unknown CLI flag causes startup failure.
+
 ## Prerequisites
 
 | Tool    | Minimum version | Notes                                  |
@@ -52,6 +76,91 @@ cmake --build --preset arm-release
 ```
 
 Build artefacts are placed in `build/<preset-name>/`.
+
+## CLI options
+
+The broker supports a positional config path plus tracing flags:
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `<config-path>` | positional path | none | Optional path to an INI config file. Must be the first argument when used. |
+| `--trace-level=<none\|error\|warning\|info\|trace>` | flag | from config/default | Overrides tracing global level. |
+| `--trace-module=<module>` | repeatable flag | from config/default | Overrides tracing module list. Repeat flag for multiple modules. |
+
+Notes:
+
+- If at least one `--trace-module` is present, the module list is rebuilt from CLI values.
+- If no config path is provided, the broker starts from built-in defaults.
+- Any unrecognized flag prints an error and exits with failure.
+
+## INI configuration
+
+### Format rules
+
+- INI style sections: `[section]`
+- Key-value pairs: `key = value`
+- `#` starts a comment line
+- Whitespace around keys/values is trimmed
+- Unknown sections and unknown keys are ignored
+
+### Complete option reference
+
+| Section | Key | Type | Default | Range / Values | Description |
+|---------|-----|------|---------|----------------|-------------|
+| `network` | `mqtt_port` | uint16 | `1883` | `0..65535` | MQTT TCP listener. `0` disables listener. |
+| `network` | `ws_port` | uint16 | `0` | `0..65535` | MQTT over WebSocket listener. `0` disables listener. |
+| `broker` | `allow_anonymous` | bool | `true` | `true/false`, `1/0`, `yes/no` | Allow anonymous CONNECT without credentials. |
+| `broker` | `max_connections` | uint32 | `1000` | `1..100000` | Maximum simultaneous connections. |
+| `broker` | `receive_maximum` | uint16 | `65535` | `1..65535` | Server receive maximum for inflight QoS 1/2. |
+| `broker` | `server_keep_alive` | uint16 | `0` | `0..65535` | CONNACK Server Keep Alive override. `0` means disabled (use client CONNECT keep alive). |
+| `broker` | `session_expiry_max` | uint32 | `0` | `0..4294967295` | Hard cap for Session Expiry Interval. `0` means no hard cap. |
+| `broker` | `topic_alias_maximum` | uint16 | `10` | `0..65535` | Maximum topic alias value accepted by broker. |
+| `broker` | `max_queued_messages` | uint32 | `100` | `1..100000` | Per-client offline queue capacity. |
+| `broker` | `qos_retransmit_timeout_seconds` | uint32 | `20` | `>=1` | Timeout before QoS retransmit becomes eligible. |
+| `broker` | `tick_interval_ms` | uint32 | `100` | `>=1` | Main broker tick interval in milliseconds. |
+| `auth` | `credential` | string | none | `username:password` | Repeatable credential entry for password auth mode. |
+| `persistence` | `enabled` | bool | `false` | `true/false`, `1/0`, `yes/no` | Enable persistence snapshots. |
+| `persistence` | `dir` | path string | `./data` | any path | Snapshot directory path. |
+| `tracing` | `global_level` | enum | `warning` | `none/error/warning/info/trace` | Global structured tracing threshold. |
+| `tracing` | `trace_modules` | csv string | empty | comma-separated module names | Module-level trace override list. |
+
+Validation rules:
+
+- At least one listener must be active: not both `mqtt_port` and `ws_port` equal to `0`.
+- Numeric values outside their valid ranges fail startup.
+
+### Example config
+
+```ini
+# broker.ini
+
+[network]
+mqtt_port = 1883
+ws_port = 9001
+
+[broker]
+allow_anonymous = false
+max_connections = 5000
+receive_maximum = 1000
+server_keep_alive = 30
+session_expiry_max = 86400
+topic_alias_maximum = 20
+max_queued_messages = 1000
+qos_retransmit_timeout_seconds = 20
+tick_interval_ms = 100
+
+[auth]
+credential = app:secret
+credential = admin:another-secret
+
+[persistence]
+enabled = true
+dir = ./data
+
+[tracing]
+global_level = warning
+trace_modules = broker,connection
+```
 
 ## Project layout
 

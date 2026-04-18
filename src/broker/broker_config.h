@@ -44,6 +44,7 @@ struct PasswordCredentialConfig {
  * - At least one of `mqtt_port` or `ws_port` must be non-zero.
  * - `max_connections` must be in [1, 100 000].
  * - `receive_maximum` must be in [1, 65 535].
+ * - `server_keep_alive` must be in [0, 65 535].
  * - `max_queued_messages` must be in [1, 100 000].
  */
 struct BrokerConfig {
@@ -65,6 +66,9 @@ struct BrokerConfig {
 
   /// Per-connection maximum inflight QoS 1/2 messages (1–65 535).
   uint16_t receive_maximum = 65535U;
+
+  /// Server Keep Alive override included in CONNACK (0 = disabled).
+  uint16_t server_keep_alive = 0U;
 
   /// Hard cap on Session Expiry Interval in seconds.  0 = no hard cap.
   uint32_t session_expiry_max = 0U;

@@ -62,6 +62,7 @@ Implemented behavior:
 - Socket timeout setup and async `WriteQueue` drain thread startup.
 - CONNECT handshake handling via `Broker::handle_connect()` plus enhanced-auth loop via `Broker::handle_auth_packet()`.
 - Construction of `ClientSession` after successful CONNACK and registration of the per-client `OutboundQueue`.
+	- Effective keep-alive source: `broker.server_keep_alive` override when non-zero, otherwise CONNECT keep-alive.
 - Per-packet dispatch loop with strict delegation:
 	- `PUBLISH` → `ClientSession::on_publish()` + `Broker::handle_publish()`
 	- `SUBSCRIBE` → `Broker::handle_subscribe()`

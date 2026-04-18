@@ -462,13 +462,16 @@ void ClientHandler::run(std::unique_ptr<TcpConnection> conn, Broker &broker,
 
   const std::string username =
       connect_packet->username.has_value() ? connect_packet->username->value : "";
-    const uint32_t maximum_packet_size =
+  const uint32_t maximum_packet_size =
       find_maximum_packet_size(connect_packet->properties).value_or(0U);
+  const uint16_t effective_keep_alive =
+      (config.server_keep_alive > 0U) ? config.server_keep_alive
+                                      : connect_packet->keep_alive;
 
   ClientSession client_session(
       connect_result.client_id, username, std::move(authenticator),
       outbound_queue, broker.session_manager().inflight_store(),
-      connect_packet->keep_alive, config.receive_maximum,
+      effective_keep_alive, config.receive_maximum,
       config.topic_alias_maximum,
       std::chrono::seconds(config.qos_retransmit_timeout_seconds),
       maximum_packet_size);

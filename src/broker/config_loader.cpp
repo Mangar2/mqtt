@@ -122,6 +122,8 @@ void ConfigLoader::apply_key(const std::string &section, const std::string &key,
       cfg.max_connections = parse_uint32(value);
     } else if (key == "receive_maximum") {
       cfg.receive_maximum = parse_uint16(value);
+    } else if (key == "server_keep_alive") {
+      cfg.server_keep_alive = parse_uint16(value);
     } else if (key == "session_expiry_max") {
       cfg.session_expiry_max = parse_uint32(value);
     } else if (key == "topic_alias_maximum") {

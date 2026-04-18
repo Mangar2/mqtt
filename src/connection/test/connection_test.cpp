@@ -945,6 +945,37 @@ TEST_CASE("client_handler_keep_alive_timeout_emits_disconnect", "[connection]") 
   broker.shutdown();
 }
 
+TEST_CASE("client_handler_server_keep_alive_override_emits_disconnect",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+  cfg.tick_interval_ms = 100U;
+  cfg.server_keep_alive = 1U;
+
+  Broker broker(cfg);
+  broker.startup();
+
+  SocketPair sockets = make_socket_pair();
+  set_recv_timeout(sockets.client_fd, 3000U);
+
+  ClientHandler handler;
+  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
+    auto conn = std::make_unique<TcpConnection>(
+        static_cast<SocketHandle>(server_fd));
+    handler.run(std::move(conn), broker, cfg, false);
+  });
+
+  write_all(sockets.client_fd, make_connect_frame("client-3-override", 60U));
+  (void)read_some(sockets.client_fd, 512U); // CONNACK
+
+  const std::vector<uint8_t> disconnect = read_some(sockets.client_fd, 512U);
+  CHECK_FALSE(disconnect.empty());
+  CHECK(packet_type_nibble(disconnect) == 14U);
+
+  ::close(sockets.client_fd);
+  worker.join();
+  broker.shutdown();
+}
+
 TEST_CASE("client_handler_connect_malformed_packet_returns_protocol_error_connack",
           "[connection]") {
   BrokerConfig cfg = make_handler_test_config();

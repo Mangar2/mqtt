@@ -35,6 +35,7 @@ TEST_CASE("parse_minimal_valid_config", "[broker]") {
   CHECK(cfg.allow_anonymous == true);
   CHECK(cfg.max_connections == 1000U);
   CHECK(cfg.receive_maximum == 65535U);
+  CHECK(cfg.server_keep_alive == 0U);
   CHECK(cfg.session_expiry_max == 0U);
   CHECK(cfg.topic_alias_maximum == 10U);
   CHECK(cfg.max_queued_messages == 100U);
@@ -56,6 +57,7 @@ TEST_CASE("parse_broker_section", "[broker]") {
                                        "allow_anonymous = false\n"
                                        "max_connections = 500\n"
                                        "receive_maximum = 100\n"
+                                       "server_keep_alive = 30\n"
                                        "session_expiry_max = 3600\n"
                                        "topic_alias_maximum = 20\n"
                                        "max_queued_messages = 50\n"
@@ -64,6 +66,7 @@ TEST_CASE("parse_broker_section", "[broker]") {
   CHECK(cfg.allow_anonymous == false);
   CHECK(cfg.max_connections == 500U);
   CHECK(cfg.receive_maximum == 100U);
+  CHECK(cfg.server_keep_alive == 30U);
   CHECK(cfg.session_expiry_max == 3600U);
   CHECK(cfg.topic_alias_maximum == 20U);
   CHECK(cfg.max_queued_messages == 50U);
@@ -183,6 +186,13 @@ TEST_CASE("parse_uint_overflow_throws", "[broker]") {
 TEST_CASE("parse_uint16_overflow_throws", "[broker]") {
   CHECK_THROWS_AS(ConfigLoader::parse("[network]\nmqtt_port = 70000\n"),
                   BrokerException);
+}
+
+TEST_CASE("parse_server_keep_alive_uint16_overflow_throws", "[broker]") {
+  CHECK_THROWS_AS(
+      ConfigLoader::parse("[network]\nmqtt_port = 1883\n[broker]\n"
+                          "server_keep_alive = 70000\n"),
+      BrokerException);
 }
 
 TEST_CASE("parse_auth_credential_invalid_format_throws", "[broker]") {
