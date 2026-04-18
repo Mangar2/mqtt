@@ -61,7 +61,11 @@ All tests are tagged `[broker]`.
 | `broker_route_message_without_subscribers_is_safe` | monitoring | route without subscribers | 1 publish | no throw, messages_inbound increments |
 | `broker_tick_returns_false_when_sys_disabled` | monitoring | tick() with interval=0 | far-future now | returns false |
 | `broker_tick_publishes_sys_topics_when_enabled` | monitoring | tick() with interval=60 | far-future now | returns true |
-| `broker_handle_connect_returns_session_result` | concurrency facade | wrapped session connect | clean_start=false CONNECT | returns SessionOpenResult without throw |
+| `broker_handle_connect_returns_connect_result` | connect facade | wrapped connect workflow | clean_start=false CONNECT | returns ConnectResult with Success and session_present=false |
+| `broker_handle_connect_auth_failure_returns_reason` | connect facade | auth denied in password mode | allow_anonymous=false + CONNECT without creds | ConnectResult.reason_code == BadUserNameOrPassword |
+| `broker_handle_connect_builds_connack_properties` | connect facade | connack properties from config | receive_maximum/topic_alias_maximum set | ConnectResult contains matching ReceiveMaximum and TopicAliasMaximum properties |
+| `broker_handle_connect_invalid_client_id_returns_reason` | connect facade | session manager rejects empty client id | CONNECT with empty client_id | ConnectResult.reason_code == ClientIdentifierNotValid |
+| `broker_handle_connect_with_will_properties_succeeds` | connect facade | connect contains will delay and will properties | CONNECT with will + WillDelayInterval + ContentType | returns Success without throw |
 | `broker_handle_disconnect_unregisters_client` | concurrency facade | wrapped disconnect path | registered client + ReasonCode::Success | connected_clients decremented to 0 |
 | `broker_handle_connection_lost_unregisters_client` | concurrency facade | wrapped connection-loss path | registered client + stored will | connected_clients decremented to 0 |
 | `broker_accept_loop_invokes_client_handler` | accept loop | real TCP loopback client connects | mqtt_port=18885 | accept thread runs client handler path and shutdown succeeds |

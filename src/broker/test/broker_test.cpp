@@ -3,7 +3,9 @@
 #include <chrono>
 #include <csignal>
 #include <filesystem>
+#include <optional>
 #include <thread>
+#include <vector>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -21,6 +23,7 @@
 #include "connection/topic_alias_table.h"
 #include "data_model/message/message.h"
 #include "data_model/packet/connect_packet.h"
+#include "data_model/property/property_id.h"
 #include "data_model/reason_code/reason_code.h"
 #include "data_model/session/inflight_entry.h"
 #include "data_model/session/inflight_state.h"
@@ -84,6 +87,17 @@ void connect_loopback(uint16_t port_value) {
                 sizeof(server_addr));
   CHECK(connect_result == 0);
   close_socket_handle(socket_handle);
+}
+
+std::optional<TwoByteInteger>
+find_two_byte_property(const std::vector<Property> &properties,
+                       PropertyId property_id) {
+  for (const auto &property : properties) {
+    if (property.id == property_id) {
+      return std::get<TwoByteInteger>(property.value);
+    }
+  }
+  return std::nullopt;
 }
 
 } // namespace
@@ -256,8 +270,9 @@ TEST_CASE("broker_persistence_startup_loads_seeded_records", "[broker]") {
   ConnectPacket connect;
   connect.client_id = Utf8String{"seed_client"};
   connect.clean_start = false;
-  const SessionOpenResult result = broker.handle_connect(connect, []() {});
+  const ConnectResult result = broker.handle_connect(connect, []() {});
   CHECK(result.session_present == true);
+  CHECK(result.reason_code == ReasonCode::Success);
 
   broker.shutdown();
   remove_temp_dir(tmp_dir);
@@ -364,7 +379,7 @@ TEST_CASE("broker_handle_connection_lost_unregisters_client", "[broker]") {
   broker.shutdown();
 }
 
-TEST_CASE("broker_handle_connect_returns_session_result", "[broker]") {
+TEST_CASE("broker_handle_connect_returns_connect_result", "[broker]") {
   BrokerConfig cfg = make_test_config();
   Broker broker(cfg);
   broker.startup();
@@ -373,10 +388,99 @@ TEST_CASE("broker_handle_connect_returns_session_result", "[broker]") {
   connect.client_id = Utf8String{"conn_client"};
   connect.clean_start = false;
 
-  const SessionOpenResult result = broker.handle_connect(connect, []() {});
+  const ConnectResult result = broker.handle_connect(connect, []() {});
 
   CHECK(result.session_present == false);
-  CHECK(result.takeover_occurred == false);
+  CHECK(result.reason_code == ReasonCode::Success);
+  CHECK(result.client_id == "conn_client");
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_connect_auth_failure_returns_reason", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.allow_anonymous = false;
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"auth_fail_client"};
+
+  const ConnectResult result = broker.handle_connect(connect, []() {});
+
+  CHECK(result.reason_code == ReasonCode::BadUserNameOrPassword);
+  CHECK(result.session_present == false);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_connect_builds_connack_properties", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.receive_maximum = 123U;
+  cfg.topic_alias_maximum = 77U;
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"connack_prop_client"};
+
+  const ConnectResult result = broker.handle_connect(connect, []() {});
+
+  CHECK(result.reason_code == ReasonCode::Success);
+  const auto receive_maximum = find_two_byte_property(
+      result.connack_properties, PropertyId::ReceiveMaximum);
+  REQUIRE(receive_maximum.has_value());
+  CHECK(*receive_maximum == 123U);
+
+  const auto topic_alias_maximum = find_two_byte_property(
+      result.connack_properties, PropertyId::TopicAliasMaximum);
+  REQUIRE(topic_alias_maximum.has_value());
+  CHECK(*topic_alias_maximum == 77U);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_connect_invalid_client_id_returns_reason",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{""};
+
+  const ConnectResult result = broker.handle_connect(connect, []() {});
+
+  CHECK(result.reason_code == ReasonCode::ClientIdentifierNotValid);
+  CHECK(result.session_present == false);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_connect_with_will_properties_succeeds", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"will_client"};
+  connect.clean_start = false;
+
+  WillData will;
+  will.topic = Utf8String{"device/will"};
+  will.payload = BinaryData{{0x41U, 0x42U}};
+  will.qos = QoS::AtLeastOnce;
+  will.retain = true;
+  will.properties.push_back(
+      {PropertyId::WillDelayInterval, FourByteInteger{15U}});
+  will.properties.push_back(
+      {PropertyId::ContentType, Utf8String{"application/octet-stream"}});
+  connect.will = will;
+
+  const ConnectResult result = broker.handle_connect(connect, []() {});
+
+  CHECK(result.reason_code == ReasonCode::Success);
+  CHECK(result.client_id == "will_client");
 
   broker.shutdown();
 }

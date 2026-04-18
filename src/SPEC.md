@@ -139,7 +139,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `broker/broker_error.h`     | 15   | `BrokerError` enum and `BrokerException` |
 | `broker/broker_config.h`    | 15.1 | `BrokerConfig` struct — all configuration parameters |
 | `broker/config_loader.h/.cpp` | 15.1.1 | `ConfigLoader` — INI-file parser → `BrokerConfig` |
-| `broker/broker.h/.cpp`      | 15.2–15.3 | `Broker` — component wiring, startup/shutdown, signal handling |
+| `broker/broker.h/.cpp`      | 15.2–15.3, 17, 18 | `Broker` — component wiring, startup/shutdown, thread-safe facades, connect workflow result |
 
 ## Entry point
 

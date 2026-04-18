@@ -40,7 +40,6 @@
 #include "persistence/session_persistence.h"
 #include "session_manager/session_expiry_scheduler.h"
 #include "session_manager/session_manager.h"
-#include "session_manager/session_open_result.h"
 #include "session_manager/session_takeover_handler.h"
 #include "store/inflight_store.h"
 #include "store/retained_message_store.h"
@@ -51,6 +50,21 @@
 #include "will_manager/will_store.h"
 
 namespace mqtt {
+
+/**
+ * @brief Full outcome of Broker CONNECT handling (Module 18.1).
+ *
+ * Returned by `Broker::handle_connect()` and used by the connection-handling
+ * layer to build the outbound CONNACK packet or terminate the handshake on
+ * failure.
+ */
+struct ConnectResult {
+  bool session_present{false}; ///< CONNACK Session Present flag.
+  ReasonCode reason_code{ReasonCode::Success}; ///< Final connection outcome.
+  std::vector<Property> connack_properties; ///< CONNACK properties from broker
+                                            ///< configuration.
+  std::string client_id; ///< Final client identifier used for this connection.
+};
 
 /**
  * @brief Top-level broker orchestrator for the MQTT 5.0 broker (Module 15).
@@ -165,15 +179,25 @@ public:
   [[nodiscard]] StatisticsCollector &statistics_collector() noexcept;
 
   /**
-   * @brief Thread-safe wrapper around `SessionManager::handle_connect`
-   *        (Module 17.3.1).
+   * @brief High-level CONNECT facade (Module 18.2).
+   *
+   * Sequence under one exclusive broker lock:
+   * 1. Authenticate the CONNECT packet.
+   * 2. Open or resume the session.
+   * 3. Extract and store the Will Message (if present).
+   * 4. Build CONNACK properties from broker configuration.
+   * 5. Flush the offline queue when a previous session is resumed.
+   *
+   * Any recoverable handshake failure is reported via `reason_code`; the
+   * method does not throw for expected protocol outcomes like auth failure or
+   * invalid client ID.
    *
    * @param connect_packet CONNECT packet.
    * @param close_callback Connection close callback for session takeover.
-   * @return Session open result from SessionManager.
+   * @return `ConnectResult` with complete handshake outcome.
    */
-  SessionOpenResult handle_connect(const ConnectPacket &connect_packet,
-                                   std::function<void()> close_callback);
+  ConnectResult handle_connect(const ConnectPacket &connect_packet,
+                               std::function<void()> close_callback);
 
   /**
    * @brief Thread-safe wrapper for disconnect handling (Module 17.3.2).

@@ -132,6 +132,10 @@ Coverage uses **clang source-based instrumentation** (`-fprofile-instr-generate`
 
 ### Improving coverage — one file at a time
 
+**Hard rule:** Increase coverage **only** by adding or improving test cases.
+Do **not** modify production code solely to improve coverage metrics.
+Production code may be changed only when behaviour/spec is incorrect.
+
 When the full report shows files below 90%, work through them **strictly one at a time**:
 
 1. Pick the first file below threshold.

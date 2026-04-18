@@ -1,4 +1,4 @@
-# broker — Broker Orchestrator + Concurrency Layer (Modules 15, 17)
+# broker — Broker Orchestrator + Concurrency + Connect Facade (Modules 15, 17, 18)
 
 Wires all modules together, controls broker startup / shutdown, and provides
 thread-safe access to shared broker state.
@@ -17,6 +17,7 @@ Depends on: all previous modules (1–14), plus shared-state coordination for Mo
 - Track active connections so the message router can deliver to online clients.
 - Guard all shared mutable broker state with one broker-level mutex.
 - Provide thread-safe wrappers for session connect / disconnect / connection-loss paths.
+- Provide a high-level connect facade that returns full handshake outcome data.
 
 ---
 
@@ -27,7 +28,7 @@ Depends on: all previous modules (1–14), plus shared-state coordination for Mo
 | `broker_error.h`    | 15   | `BrokerError` enum and `BrokerException` |
 | `broker_config.h`   | 15.1 | `BrokerConfig` struct with all configuration parameters |
 | `config_loader.h/.cpp` | 15.1.1 | `ConfigLoader` — INI-file parser → `BrokerConfig` |
-| `broker.h/.cpp`     | 15.2–15.3, 17 | `Broker` — component wiring, startup/shutdown, signal handling, broker-level locking |
+| `broker.h/.cpp`     | 15.2–15.3, 17, 18 | `Broker` — component wiring, startup/shutdown, signal handling, broker-level locking, connect facade |
 
 ---
 
@@ -137,12 +138,20 @@ void shutdown() noexcept;
 [[nodiscard]] AclEngine&        acl_engine()       noexcept;
 [[nodiscard]] WillPublisher&    will_publisher()   noexcept;
 
-// Thread-safe session lifecycle wrappers (Module 17.3)
-SessionOpenResult handle_connect(const ConnectPacket& connect_packet,
-                                 std::function<void()> close_callback);
+struct ConnectResult {
+   bool session_present;
+   ReasonCode reason_code;
+   std::vector<Property> connack_properties;
+   std::string client_id;
+};
+
+// Thread-safe connect/disconnect facades (Modules 17.3 + 18)
+ConnectResult handle_connect(const ConnectPacket& connect_packet,
+                             std::function<void()> close_callback);
 void handle_disconnect(std::string_view client_id, ReasonCode reason_code,
                        std::optional<uint32_t> expiry_override,
                        std::chrono::steady_clock::time_point now);
+
 void handle_connection_lost(std::string_view client_id,
                             std::chrono::steady_clock::time_point now);
 
@@ -201,6 +210,19 @@ Callers should poll `Broker::shutdown_requested()` in their main loop and call
    session teardown under one lock.
 - Direct public accessors to internal mutable stores are intentionally removed
    from `Broker` to prevent unguarded external mutation.
+
+#### Connect facade (18)
+
+- `handle_connect()` authenticates CONNECT first and returns auth failure as
+   `ConnectResult.reason_code`.
+- On authentication success, it delegates session open/resume to
+   `SessionManager::handle_connect()`.
+- If CONNECT contains a Will, `Broker` extracts `WillMessage` internally and
+   stores it via `WillPublisher::on_connect()`.
+- `ConnectResult.connack_properties` always contains at least
+   `ReceiveMaximum` and `TopicAliasMaximum` from `BrokerConfig`.
+- When `session_present == true`, `Broker` immediately flushes buffered offline
+   messages for the client via `MessageRouter::flush_offline_queue()`.
 
 ---
 

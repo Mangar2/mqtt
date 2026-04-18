@@ -11,14 +11,59 @@
 #include <shared_mutex>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "broker/broker_error.h"
 #include "connection/client_handler.h"
 #include "connection/topic_alias_table.h"
+#include "data_model/property/property_id.h"
 #include "monitoring/statistics_collector.h"
 #include "monitoring/sys_topic_publisher.h"
+#include "session_manager/session_manager_error.h"
 
 namespace mqtt {
+
+namespace {
+
+[[nodiscard]] ReasonCode
+map_session_error_to_reason(SessionManagerError error_code) {
+  switch (error_code) {
+  case SessionManagerError::InvalidClientId:
+    return ReasonCode::ClientIdentifierNotValid;
+  }
+
+  return ReasonCode::UnspecifiedError;
+}
+
+[[nodiscard]] std::vector<Property>
+build_connack_properties(const BrokerConfig &broker_config) {
+  std::vector<Property> properties;
+  properties.push_back({PropertyId::ReceiveMaximum,
+                        TwoByteInteger{broker_config.receive_maximum}});
+  properties.push_back({PropertyId::TopicAliasMaximum,
+                        TwoByteInteger{broker_config.topic_alias_maximum}});
+  return properties;
+}
+
+[[nodiscard]] WillMessage extract_will_message(const WillData &will_data) {
+  WillMessage will_message;
+  will_message.message.topic = will_data.topic;
+  will_message.message.payload = will_data.payload;
+  will_message.message.qos = will_data.qos;
+  will_message.message.retain = will_data.retain;
+
+  for (const auto &property : will_data.properties) {
+    if (property.id == PropertyId::WillDelayInterval) {
+      will_message.delay_interval = std::get<FourByteInteger>(property.value);
+      continue;
+    }
+    will_message.message.properties.push_back(property);
+  }
+
+  return will_message;
+}
+
+} // namespace
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Static member definition
@@ -89,11 +134,39 @@ StatisticsCollector &Broker::statistics_collector() noexcept {
   return *stats_collector_;
 }
 
-SessionOpenResult Broker::handle_connect(const ConnectPacket &connect_packet,
-                                         std::function<void()> close_callback) {
+ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
+                                     std::function<void()> close_callback) {
+  ConnectResult result;
+  result.client_id = connect_packet.client_id.value;
+  result.connack_properties = build_connack_properties(config_);
+
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
-  return session_manager_->handle_connect(connect_packet,
-                                          std::move(close_callback));
+
+  const AuthResult auth_result = active_auth_->authenticate(connect_packet);
+  if (auth_result.status != AuthStatus::Success) {
+    result.reason_code = auth_result.reason_code;
+    return result;
+  }
+
+  try {
+    const SessionOpenResult session_open = session_manager_->handle_connect(
+        connect_packet, std::move(close_callback));
+    result.session_present = session_open.session_present;
+  } catch (const SessionManagerException &exception) {
+    result.reason_code = map_session_error_to_reason(exception.error());
+    return result;
+  }
+
+  if (connect_packet.will.has_value()) {
+    will_publisher_->on_connect(result.client_id,
+                                extract_will_message(*connect_packet.will));
+  }
+
+  if (result.session_present) {
+    message_router_->flush_offline_queue(result.client_id);
+  }
+
+  return result;
 }
 
 void Broker::handle_disconnect(std::string_view client_id,
@@ -215,10 +288,15 @@ void Broker::create_modules() {
   // 1. Broker-internal will-message principal may publish/subscribe anywhere.
   // 2. When anonymous access is enabled, all clients may publish/subscribe.
   std::vector<AclRuleConfig> acl_rules;
-  acl_rules.push_back(
-      {"_broker_will_system_", "#", "publish_and_subscribe", "allow"});
+  acl_rules.push_back({.principal = "_broker_will_system_",
+                       .topic_pattern = "#",
+                       .action = "publish_and_subscribe",
+                       .effect = "allow"});
   if (config_.allow_anonymous) {
-    acl_rules.push_back({"*", "#", "publish_and_subscribe", "allow"});
+    acl_rules.push_back({.principal = "*",
+                         .topic_pattern = "#",
+                         .action = "publish_and_subscribe",
+                         .effect = "allow"});
   }
   acl_loader_->load(acl_rules);
 
