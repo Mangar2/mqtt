@@ -455,6 +455,20 @@ void Broker::handle_disconnect(std::string_view client_id,
                                std::chrono::steady_clock::time_point now,
                                std::shared_ptr<OutboundQueue> connection_queue) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+  TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "broker") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "broker";
+    event.info = "handle_disconnect";
+    event.data.push_back({"client_id", std::string(client_id)});
+    event.data.push_back(
+        {"reason_code", std::to_string(static_cast<int>(reason_code))});
+    event.data.push_back(
+        {"expiry_override",
+         expiry_override.has_value() ? std::to_string(*expiry_override)
+                                     : "<unset>"});
+    structured_tracer_->emit(event);
+  }
   pending_enhanced_auth_.erase(std::string(client_id));
   active_enhanced_auth_.erase(std::string(client_id));
   will_publisher_->on_disconnect(client_id, reason_code, now);
@@ -466,6 +480,14 @@ void Broker::handle_connection_lost(std::string_view client_id,
                                     std::chrono::steady_clock::time_point now,
                                     std::shared_ptr<OutboundQueue> connection_queue) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
+  TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "broker") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "broker";
+    event.info = "handle_connection_lost";
+    event.data.push_back({"client_id", std::string(client_id)});
+    structured_tracer_->emit(event);
+  }
   pending_enhanced_auth_.erase(std::string(client_id));
   active_enhanced_auth_.erase(std::string(client_id));
   will_publisher_->on_connection_lost(client_id, now);
@@ -680,6 +702,7 @@ void Broker::unregister_connection_locked(
     return;
   }
 
+  std::size_t moved_to_offline = 0U;
   if (offline_queue_ && iter->second) {
     while (true) {
       std::optional<Message> pending_message = iter->second->try_pop();
@@ -688,10 +711,21 @@ void Broker::unregister_connection_locked(
       }
       try {
         offline_queue_->enqueue(client_id, *pending_message);
+        ++moved_to_offline;
       } catch (...) {
         break;
       }
     }
+  }
+
+  TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "broker") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "broker";
+    event.info = "connection_unregistered";
+    event.data.push_back({"client_id", std::string(client_id)});
+    event.data.push_back({"moved_to_offline", std::to_string(moved_to_offline)});
+    structured_tracer_->emit(event);
   }
 
   active_connections_.erase(iter);
@@ -830,6 +864,8 @@ void Broker::create_modules() {
   structured_tracer_ = std::make_unique<StructuredTracer>(std::clog);
   structured_tracer_->set_global_level(config_.trace_global_level);
   structured_tracer_->set_trace_modules(config_.trace_modules);
+  message_router_->set_tracer(structured_tracer_.get());
+  session_manager_->set_tracer(structured_tracer_.get());
 
   // $SYS publish callback: route via MessageRouter using the reserved
   // broker-internal client ID that the ACL allows to publish everywhere.

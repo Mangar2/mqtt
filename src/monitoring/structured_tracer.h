@@ -19,6 +19,13 @@
 
 namespace mqtt {
 
+#ifndef MQTT_TRACING_DISABLED
+#define TRACE_GUARD(tracer, level, module)                                       \
+  if ((tracer) != nullptr && (tracer)->should_emit((level), (module)))
+#else
+#define TRACE_GUARD(tracer, level, module) if constexpr (false)
+#endif
+
 /**
  * @brief Structured trace payload represented as key-value pairs.
  */

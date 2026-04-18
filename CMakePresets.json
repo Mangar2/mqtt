@@ -47,7 +47,8 @@
       "displayName": "Test + Coverage (host, Debug)",
       "inherits":    "debug",
       "cacheVariables": {
-        "MQTT_COVERAGE": "ON"
+        "MQTT_COVERAGE": "ON",
+        "MQTT_TRACING_DISABLED": "ON"
       }
     },
 

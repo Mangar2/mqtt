@@ -158,6 +158,14 @@ public:
   /** @brief Return per-session connection state machine. */
   [[nodiscard]] ConnectionStateMachine &connection_state_machine() noexcept;
 
+  /**
+   * @brief Mark this connection as a resumed session.
+   *
+   * The next drain cycle replays outbound inflight QoS entries immediately,
+   * instead of waiting for retransmission timeout.
+   */
+  void mark_session_resumed() noexcept;
+
 private:
   /**
    * @brief Convert an inbound PUBLISH into the broker message model.
@@ -227,7 +235,8 @@ private:
   InflightStore &inflight_store_;                   ///< Session inflight store.
   std::chrono::steady_clock::duration
       retransmit_timeout_; ///< QoS retransmit timeout.
-    uint32_t maximum_packet_size_; ///< 0 means no maximum packet size limit.
+  uint32_t maximum_packet_size_; ///< 0 means no maximum packet size limit.
+  bool replay_pending_inflight_{false}; ///< Immediate inflight replay on resume.
   std::deque<Message>
       deferred_messages_; ///< QoS 1/2 messages parked while receive-max paused.
 };

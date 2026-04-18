@@ -20,6 +20,8 @@
 
 namespace mqtt {
 
+class StructuredTracer;
+
 /**
  * @brief Coordinates inbound PUBLISH processing and outbound delivery for all
  *        connected and offline subscribers (Module 12).
@@ -125,6 +127,13 @@ public:
                         std::chrono::steady_clock::time_point now =
                             std::chrono::steady_clock::now());
 
+  /**
+   * @brief Attach optional structured tracer for runtime diagnostics.
+   *
+   * @param tracer Tracer instance; nullptr disables trace emission.
+   */
+  void set_tracer(StructuredTracer *tracer) noexcept;
+
 private:
   /**
    * @brief Deliver one DeliveryItem: forward to online client or enqueue
@@ -142,6 +151,7 @@ private:
       &shared_dispatcher_; ///< 12.5 — shared subscription dispatch.
   IsOnlineFn is_online_;   ///< Online presence predicate.
   DeliverFn deliver_;      ///< Online delivery callback.
+  StructuredTracer *structured_tracer_{nullptr};
 };
 
 } // namespace mqtt

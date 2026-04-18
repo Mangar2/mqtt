@@ -99,6 +99,10 @@ AuthResult ClientSession::on_auth(const AuthPacket &auth_packet) {
   return enhanced_auth_handler_.on_auth(auth_packet);
 }
 
+void ClientSession::mark_session_resumed() noexcept {
+  replay_pending_inflight_ = true;
+}
+
 std::vector<WriteBuffer> ClientSession::drain_outbound() {
   std::vector<WriteBuffer> frames;
 
@@ -158,7 +162,8 @@ void ClientSession::append_retransmission_frames(
     if (entry.direction != InflightDirection::Outbound) {
       continue;
     }
-    if ((now - entry.timestamp) < retransmit_timeout_) {
+    const bool timeout_elapsed = (now - entry.timestamp) >= retransmit_timeout_;
+    if (!replay_pending_inflight_ && !timeout_elapsed) {
       continue;
     }
 
@@ -182,6 +187,8 @@ void ClientSession::append_retransmission_frames(
       }
     }
   }
+
+  replay_pending_inflight_ = false;
 }
 
 std::string_view ClientSession::client_id() const noexcept {

@@ -23,6 +23,8 @@
 
 namespace mqtt {
 
+class StructuredTracer;
+
 /**
  * @brief Coordinates session lifecycle for all MQTT 5.0 clients (Module 10.1).
  *
@@ -110,6 +112,13 @@ public:
   cleanup_expired(std::chrono::steady_clock::time_point now);
 
   /**
+   * @brief Attach optional structured tracer for runtime diagnostics.
+   *
+   * @param tracer Tracer instance; nullptr disables trace emission.
+   */
+  void set_tracer(StructuredTracer *tracer) noexcept;
+
+  /**
    * @brief Return the shared inflight store used by this manager.
    *
    * This is used by the connection layer to construct per-client
@@ -127,6 +136,7 @@ private:
   InflightStore &inflight_store_;
   SessionTakeoverHandler &takeover_handler_;
   SessionExpiryScheduler &expiry_scheduler_;
+  StructuredTracer *structured_tracer_{nullptr};
 };
 
 } // namespace mqtt

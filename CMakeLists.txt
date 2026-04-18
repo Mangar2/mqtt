@@ -14,6 +14,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 #  Options 
 option(MQTT_SANITIZE "Enable AddressSanitizer and UBSan (host builds only)" OFF)
 option(MQTT_COVERAGE "Enable clang source-based coverage instrumentation"   OFF)
+option(MQTT_TRACING_DISABLED "Compile out structured tracing guards" OFF)
 
 #  Shared compiler/linker flags 
 set(MQTT_COMPILE_OPTIONS
@@ -57,6 +58,8 @@ add_executable(mqtt-broker ${MQTT_ALL_SOURCES})
 target_compile_options(mqtt-broker PRIVATE ${MQTT_COMPILE_OPTIONS})
 target_link_options(mqtt-broker    PRIVATE ${MQTT_LINK_OPTIONS})
 target_include_directories(mqtt-broker PRIVATE src)
+target_compile_definitions(mqtt-broker PRIVATE
+    $<$<BOOL:${MQTT_TRACING_DISABLED}>:MQTT_TRACING_DISABLED>)
 if(WIN32)
     target_link_libraries(mqtt-broker PRIVATE ws2_32)
 endif()
@@ -89,6 +92,8 @@ if(BUILD_TESTING)
 
     target_compile_options(mqtt-broker-tests PRIVATE ${MQTT_COMPILE_OPTIONS})
     target_link_options(mqtt-broker-tests    PRIVATE ${MQTT_LINK_OPTIONS})
+    target_compile_definitions(mqtt-broker-tests PRIVATE
+        $<$<BOOL:${MQTT_TRACING_DISABLED}>:MQTT_TRACING_DISABLED>)
     target_link_libraries(mqtt-broker-tests  PRIVATE Catch2::Catch2WithMain)
     target_include_directories(mqtt-broker-tests PRIVATE src)
     if(WIN32)

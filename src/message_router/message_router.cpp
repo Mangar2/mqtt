@@ -4,6 +4,7 @@
 
 #include "data_model/subscription/retain_handling.h"
 #include "message_router/message_expiry_controller.h"
+#include "monitoring/structured_tracer.h"
 
 
 namespace mqtt {
@@ -15,6 +16,10 @@ MessageRouter::MessageRouter(InboundPublishProcessor &processor,
     : processor_(processor), offline_queue_(offline_queue),
       shared_dispatcher_(shared_dispatcher), is_online_(std::move(is_online)),
       deliver_(std::move(deliver)) {}
+
+void MessageRouter::set_tracer(StructuredTracer *tracer) noexcept {
+  structured_tracer_ = tracer;
+}
 
 void MessageRouter::route(Message &msg, std::string_view client_id,
                           std::string_view username,
@@ -63,22 +68,61 @@ void MessageRouter::dispatch_item(const DeliveryItem &item,
     deliver_(item.client_id, msg_copy);
   } else {
     offline_queue_.enqueue(item.client_id, msg_copy);
+    TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "message_router") {
+      TraceEvent event;
+      event.level = TraceLevel::Trace;
+      event.module = "message_router";
+      event.info = "offline_enqueued";
+      event.data.push_back({"client_id", std::string(item.client_id)});
+      event.data.push_back({"topic", msg_copy.topic.value});
+      event.data.push_back({"qos", std::to_string(static_cast<int>(msg_copy.qos))});
+      event.data.push_back(
+          {"queue_size", std::to_string(offline_queue_.size(item.client_id))});
+      structured_tracer_->emit(event);
+    }
   }
 }
 
 void MessageRouter::flush_offline_queue(
     std::string_view client_id, std::chrono::steady_clock::time_point now) {
 
+  const std::size_t queue_size_before = offline_queue_.size(client_id);
   std::vector<QueuedMessage> queued = offline_queue_.drain(client_id);
+  std::size_t delivered_count = 0U;
+  std::size_t expired_count = 0U;
+
+  TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "message_router") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "message_router";
+    event.info = "offline_flush_started";
+    event.data.push_back({"client_id", std::string(client_id)});
+    event.data.push_back({"queued_before", std::to_string(queue_size_before)});
+    event.data.push_back({"drained", std::to_string(queued.size())});
+    structured_tracer_->emit(event);
+  }
 
   for (auto &queued_msg : queued) {
     // 12.4 — Discard expired, update remaining interval for valid messages.
     if (!MessageExpiryController::update_expiry(queued_msg.message,
                                                 queued_msg.enqueue_time, now)) {
+      ++expired_count;
       continue; // Expired — skip delivery.
     }
 
     deliver_(client_id, queued_msg.message);
+    ++delivered_count;
+  }
+
+  TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "message_router") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "message_router";
+    event.info = "offline_flush_completed";
+    event.data.push_back({"client_id", std::string(client_id)});
+    event.data.push_back({"delivered", std::to_string(delivered_count)});
+    event.data.push_back({"expired", std::to_string(expired_count)});
+    structured_tracer_->emit(event);
   }
 }
 

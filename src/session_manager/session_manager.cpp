@@ -5,6 +5,7 @@
 #include "data_model/property/property.h"
 #include "data_model/property/property_id.h"
 #include "data_model/session/session_state.h"
+#include "monitoring/structured_tracer.h"
 #include "session_manager/session_manager_error.h"
 
 namespace mqtt {
@@ -33,6 +34,10 @@ SessionManager::SessionManager(SessionStore &session_store,
       inflight_store_(inflight_store), takeover_handler_(takeover_handler),
       expiry_scheduler_(expiry_scheduler) {}
 
+void SessionManager::set_tracer(StructuredTracer *tracer) noexcept {
+  structured_tracer_ = tracer;
+}
+
 SessionOpenResult
 SessionManager::handle_connect(const ConnectPacket &connect,
                                std::function<void()> close_callback) {
@@ -43,6 +48,7 @@ SessionManager::handle_connect(const ConnectPacket &connect,
   }
 
   const std::string_view cid = connect.client_id.value;
+  const auto connect_expiry = find_session_expiry(connect.properties);
 
   // 2. Session takeover (10.2).
   const bool takeover = takeover_handler_.takeover_if_exists(cid);
@@ -55,8 +61,7 @@ SessionManager::handle_connect(const ConnectPacket &connect,
     // 10.1.1: discard any existing session and start fresh.
     remove_session_data(cid);
 
-    const uint32_t expiry =
-        find_session_expiry(connect.properties).value_or(0U);
+    const uint32_t expiry = connect_expiry.value_or(0U);
     SessionState new_session;
     new_session.client_id.value = std::string(cid);
     new_session.session_expiry_interval = expiry;
@@ -69,7 +74,7 @@ SessionManager::handle_connect(const ConnectPacket &connect,
         remove_session_data(cid);
 
         const uint32_t expiry =
-            find_session_expiry(connect.properties).value_or(0U);
+          connect_expiry.value_or(0U);
         SessionState new_session;
         new_session.client_id.value = std::string(cid);
         new_session.session_expiry_interval = expiry;
@@ -93,7 +98,7 @@ SessionManager::handle_connect(const ConnectPacket &connect,
     } else {
       // No prior session — create a fresh one.
       const uint32_t expiry =
-          find_session_expiry(connect.properties).value_or(0U);
+          connect_expiry.value_or(0U);
       SessionState new_session;
       new_session.client_id.value = std::string(cid);
       new_session.session_expiry_interval = expiry;
@@ -103,6 +108,27 @@ SessionManager::handle_connect(const ConnectPacket &connect,
 
   // 5. Register the connection for future takeover.
   takeover_handler_.register_connection(cid, std::move(close_callback));
+
+  TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "session_manager") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "session_manager";
+    event.info = "handle_connect";
+    event.data.push_back({"client_id", std::string(cid)});
+    event.data.push_back({"clean_start", connect.clean_start ? "true" : "false"});
+    event.data.push_back({"session_present", result.session_present ? "true" : "false"});
+    event.data.push_back({"takeover", takeover ? "true" : "false"});
+    event.data.push_back({"connect_expiry",
+                          connect_expiry.has_value()
+                              ? std::to_string(*connect_expiry)
+                              : "<unset>"});
+    const auto stored = session_store_.load(cid);
+    event.data.push_back(
+        {"stored_expiry_after_connect",
+         stored.has_value() ? std::to_string(stored->session_expiry_interval)
+                            : "<missing>"});
+    structured_tracer_->emit(event);
+  }
 
   return result;
 }
@@ -120,15 +146,47 @@ void SessionManager::handle_disconnect(
   const uint32_t effective_expiry =
       expiry_override.has_value() ? *expiry_override : stored_expiry;
 
+  TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "session_manager") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "session_manager";
+    event.info = "handle_disconnect";
+    event.data.push_back({"client_id", std::string(client_id)});
+    event.data.push_back({"stored_expiry", std::to_string(stored_expiry)});
+    event.data.push_back(
+        {"expiry_override",
+         expiry_override.has_value() ? std::to_string(*expiry_override)
+                                     : "<unset>"});
+    event.data.push_back({"effective_expiry", std::to_string(effective_expiry)});
+    structured_tracer_->emit(event);
+  }
+
   // 3. If expiry == 0: discard session immediately (10.1.4).
   if (effective_expiry == 0U) {
     remove_session_data(client_id);
+    TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "session_manager") {
+      TraceEvent event;
+      event.level = TraceLevel::Trace;
+      event.module = "session_manager";
+      event.info = "session_removed_on_disconnect";
+      event.data.push_back({"client_id", std::string(client_id)});
+      structured_tracer_->emit(event);
+    }
     return;
   }
 
   // 4. Persist session — record disconnect time and schedule expiry (10.3.1).
   session_store_.mark_disconnected(client_id, now);
   expiry_scheduler_.schedule(client_id, now, effective_expiry);
+  TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "session_manager") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "session_manager";
+    event.info = "session_marked_disconnected";
+    event.data.push_back({"client_id", std::string(client_id)});
+    event.data.push_back({"effective_expiry", std::to_string(effective_expiry)});
+    structured_tracer_->emit(event);
+  }
 }
 
 std::vector<std::string>
