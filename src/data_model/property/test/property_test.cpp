@@ -7,8 +7,8 @@
 
 using namespace mqtt;
 
-// ── PropertyId values (1.3.1)
-// ─────────────────────────────────────────────────
+//  PropertyId values (1.3.1)
+//
 
 TEST_CASE("prop_id_payload_format", "[property]") {
   CHECK(static_cast<uint8_t>(PropertyId::PayloadFormatIndicator) == 0x01U);
@@ -22,8 +22,8 @@ TEST_CASE("prop_id_shared_sub_available", "[property]") {
   CHECK(static_cast<uint8_t>(PropertyId::SharedSubscriptionAvailable) == 0x2AU);
 }
 
-// ── Property struct
-// ───────────────────────────────────────────────────────────
+//  Property struct
+//
 
 TEST_CASE("property_equality", "[property]") {
   Property p1{PropertyId::MaximumQoS, uint8_t{2}};
@@ -37,8 +37,8 @@ TEST_CASE("property_inequality", "[property]") {
   CHECK(p1 != p2);
 }
 
-// ── property_data_type (1.3.2)
-// ────────────────────────────────────────────────
+//  property_data_type (1.3.2)
+//
 
 TEST_CASE("prop_type_byte", "[property][data_type]") {
   CHECK(property_data_type(PropertyId::PayloadFormatIndicator) ==
@@ -120,8 +120,8 @@ TEST_CASE("prop_type_binary", "[property][data_type]") {
         PropertyDataType::BinaryData);
 }
 
-// ── is_property_allowed (1.3.3)
-// ───────────────────────────────────────────────
+//  is_property_allowed (1.3.3)
+//
 
 TEST_CASE("prop_allowed_payload_format_in_publish", "[property][allowed]") {
   CHECK(is_property_allowed(PropertyId::PayloadFormatIndicator,

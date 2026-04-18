@@ -2,6 +2,8 @@ Full workflow for creating or extending code in this project. Follow every step 
 
 ## Branch and commit workflow
 
+For all Pull Request operations, use `/github-pr` and execute its steps exactly.
+
 **One branch per top-level module (e.g. `3. Topic Engine`).** All sub-modules (3.1, 3.2, …) are committed on the same branch. When the entire top-level module is complete, open a Pull Request and merge it into `master`.
 
 **Before starting a new top-level module, create its branch:**

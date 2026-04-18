@@ -20,9 +20,9 @@
 using namespace mqtt;
 using namespace std::chrono_literals;
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // StatisticsCollector
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 TEST_CASE("stats_initial_snapshot_is_zero", "[monitoring]") {
   SubscriptionStore sub_store;
@@ -133,9 +133,9 @@ TEST_CASE("stats_uptime_increases", "[monitoring]") {
   CHECK(stats.snapshot().uptime.count() >= 0);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // SysTopicPublisher
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 namespace {
 

@@ -12,8 +12,8 @@
 
 namespace mqtt {
 
-// ── PINGREQ (Section 3.12)
-// ────────────────────────────────────────────────────
+//  PINGREQ (Section 3.12)
+//
 
 /**
  * @brief Encodes a PINGREQ packet (Fixed Header only) and appends it to @p buf.
@@ -33,8 +33,8 @@ void encode_pingreq(WriteBuffer &buf);
  */
 [[nodiscard]] PingreqPacket decode_pingreq(ReadBuffer &buf);
 
-// ── PINGRESP (Section 3.13)
-// ───────────────────────────────────────────────────
+//  PINGRESP (Section 3.13)
+//
 
 /**
  * @brief Encodes a PINGRESP packet (Fixed Header only) and appends it to @p
@@ -53,8 +53,8 @@ void encode_pingresp(WriteBuffer &buf);
  */
 [[nodiscard]] PingrespPacket decode_pingresp(ReadBuffer &buf);
 
-// ── DISCONNECT (Section 3.14)
-// ─────────────────────────────────────────────────
+//  DISCONNECT (Section 3.14)
+//
 
 /**
  * @brief Encodes a DISCONNECT packet and appends the complete wire bytes to @p
@@ -82,8 +82,8 @@ void encode_disconnect(WriteBuffer &buf, const DisconnectPacket &pkt);
  */
 [[nodiscard]] DisconnectPacket decode_disconnect(ReadBuffer &buf);
 
-// ── AUTH (Section 3.15)
-// ───────────────────────────────────────────────────────
+//  AUTH (Section 3.15)
+//
 
 /**
  * @brief Encodes an AUTH packet and appends the complete wire bytes to @p buf.

@@ -26,8 +26,8 @@
 
 namespace mqtt::record_codec {
 
-// ── Write helpers
-// ─────────────────────────────────────────────────────────────
+//  Write helpers
+//
 
 /**
  * @brief Append a single byte to @p buf.
@@ -103,8 +103,8 @@ inline void write_binary(std::vector<uint8_t> &buf, const BinaryData &data) {
   buf.insert(buf.end(), data.data.begin(), data.data.end());
 }
 
-// ── Read helpers
-// ──────────────────────────────────────────────────────────────
+//  Read helpers
+//
 
 /**
  * @brief Read a single byte from @p cursor and advance it.

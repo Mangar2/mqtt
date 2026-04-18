@@ -45,7 +45,7 @@ struct PasswordCredentialConfig {
  * - `max_queued_messages` must be in [1, 100 000].
  */
 struct BrokerConfig {
-  // ── 15.1.2  Port configuration ───────────────────────────────────────────
+  //  15.1.2  Port configuration
 
   /// MQTT/TCP listener port.  0 = disabled.
   uint16_t mqtt_port = 1883U;
@@ -53,7 +53,7 @@ struct BrokerConfig {
   /// WebSocket listener port.  0 = disabled.
   uint16_t ws_port = 0U;
 
-  // ── 15.1.3  Broker parameters ─────────────────────────────────────────────
+  //  15.1.3  Broker parameters
 
   /// Allow clients to connect without credentials.
   bool allow_anonymous = true;
@@ -77,7 +77,7 @@ struct BrokerConfig {
   /// anonymous access is disabled.
   std::vector<PasswordCredentialConfig> password_credentials;
 
-  // ── Persistence ───────────────────────────────────────────────────────────
+  //  Persistence
 
   /// Enable crash-safe file persistence.
   bool persistence_enabled = false;
@@ -85,7 +85,7 @@ struct BrokerConfig {
   /// Directory for persistence snapshot files.
   std::filesystem::path persistence_dir{"./data"};
 
-  // ── Monitoring ────────────────────────────────────────────────────────────
+  //  Monitoring
 
   /// Interval in seconds for publishing `$SYS` statistics topics.
   /// 0 = disabled (Module 16.2.2).

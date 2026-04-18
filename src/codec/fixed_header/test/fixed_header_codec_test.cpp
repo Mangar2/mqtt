@@ -5,15 +5,15 @@
 
 using namespace mqtt;
 
-// ── Helpers
-// ───────────────────────────────────────────────────────────────────
+//  Helpers
+//
 
 static ReadBuffer make_reader(const std::vector<uint8_t> &bytes) {
   return ReadBuffer{std::span<const uint8_t>{bytes.data(), bytes.size()}};
 }
 
-// ── encode_fixed_header
-// ───────────────────────────────────────────────────────
+//  encode_fixed_header
+//
 
 TEST_CASE("fh_encode_connect", "[fixed_header]") {
   WriteBuffer buf;
@@ -52,8 +52,8 @@ TEST_CASE("fh_encode_max_remaining", "[fixed_header]") {
   CHECK(buf[4] == 0x7FU);
 }
 
-// ── decode_fixed_header
-// ───────────────────────────────────────────────────────
+//  decode_fixed_header
+//
 
 TEST_CASE("fh_decode_connect", "[fixed_header]") {
   std::vector<uint8_t> data{0x10U, 0x0AU};
@@ -187,8 +187,8 @@ TEST_CASE("fh_decode_vbi_overflow", "[fixed_header]") {
   }
 }
 
-// ── Round-trip
-// ────────────────────────────────────────────────────────────────
+//  Round-trip
+//
 
 TEST_CASE("fh_roundtrip", "[fixed_header]") {
   for (const auto &hdr : std::initializer_list<FixedHeader>{

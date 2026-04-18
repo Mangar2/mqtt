@@ -11,8 +11,8 @@
 
 using namespace mqtt;
 
-// ── Helpers
-// ───────────────────────────────────────────────────────────────────
+//  Helpers
+//
 
 static ReadBuffer make_reader(const std::vector<uint8_t> &bytes) {
   return ReadBuffer{std::span<const uint8_t>{bytes.data(), bytes.size()}};
@@ -44,8 +44,8 @@ static ReadBuffer empty_reader() {
   return ReadBuffer{std::span<const uint8_t>{empty.data(), empty.size()}};
 }
 
-// ── PINGREQ
-// ───────────────────────────────────────────────────────────────────
+//  PINGREQ
+//
 
 TEST_CASE("pingreq_encode", "[pingreq]") {
   WriteBuffer buf;
@@ -69,8 +69,8 @@ TEST_CASE("pingreq_decode_non_empty", "[pingreq]") {
   }
 }
 
-// ── PINGRESP
-// ──────────────────────────────────────────────────────────────────
+//  PINGRESP
+//
 
 TEST_CASE("pingresp_encode", "[pingresp]") {
   WriteBuffer buf;
@@ -84,8 +84,8 @@ TEST_CASE("pingresp_decode_empty", "[pingresp]") {
   CHECK(pkt == PingrespPacket{});
 }
 
-// ── DISCONNECT
-// ────────────────────────────────────────────────────────────────
+//  DISCONNECT
+//
 
 TEST_CASE("disconnect_encode_short_form", "[disconnect]") {
   DisconnectPacket pkt; // default: reason_code=Success, no properties
@@ -138,8 +138,8 @@ TEST_CASE("disconnect_roundtrip", "[disconnect]") {
   CHECK(decoded == pkt);
 }
 
-// ── AUTH
-// ──────────────────────────────────────────────────────────────────────
+//  AUTH
+//
 
 TEST_CASE("auth_encode_short_form", "[auth]") {
   AuthPacket pkt; // default: reason_code=Success, no properties

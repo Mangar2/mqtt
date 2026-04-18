@@ -74,12 +74,12 @@ build_connack_properties(const BrokerConfig &broker_config) {
 
 } // namespace
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Static member definition
 
 std::atomic<bool> Broker::shutdown_requested_{false};
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Broker — construction / destruction
 
 Broker::Broker(BrokerConfig config)
@@ -91,7 +91,7 @@ Broker::~Broker() {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Lifecycle
 
 void Broker::startup() {
@@ -126,7 +126,7 @@ void Broker::shutdown() noexcept {
 
 bool Broker::is_running() const noexcept { return running_; }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Module accessors
 
 SessionManager &Broker::session_manager() noexcept { return *session_manager_; }
@@ -174,10 +174,10 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
 
     if (auth_result.status == AuthStatus::Continue) {
       pending_enhanced_auth_.insert_or_assign(
-          result.client_id,
-          PendingEnhancedAuthContext{.handler = std::move(auth_handler),
-                                     .connect_packet = connect_packet,
-                                     .close_callback = std::move(close_callback)});
+          result.client_id, PendingEnhancedAuthContext{
+                                .handler = std::move(auth_handler),
+                                .connect_packet = connect_packet,
+                                .close_callback = std::move(close_callback)});
       return result;
     }
 
@@ -257,9 +257,9 @@ ConnectResult Broker::handle_auth_packet(std::string_view client_id,
     return result;
   }
 
-  ConnectResult completed = complete_connect_success(
-      pending_it->second.connect_packet,
-      std::move(pending_it->second.close_callback));
+  ConnectResult completed =
+      complete_connect_success(pending_it->second.connect_packet,
+                               std::move(pending_it->second.close_callback));
   completed.auth_status = AuthStatus::Success;
   completed.auth_method = std::string(pending_it->second.handler.auth_method());
   active_enhanced_auth_.insert_or_assign(completed.client_id,
@@ -366,7 +366,7 @@ void Broker::handle_connection_lost(std::string_view client_id,
   session_manager_->handle_disconnect(client_id, std::nullopt, now);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Connection registration
 
 void Broker::register_connection(std::string_view client_id, SendFn send_fn) {
@@ -379,7 +379,7 @@ void Broker::unregister_connection(std::string_view client_id) noexcept {
   unregister_connection_locked(client_id);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Monitoring (Module 16)
 
 void Broker::route_message(Message &msg, std::string_view client_id,
@@ -413,7 +413,7 @@ void Broker::unregister_connection_locked(std::string_view client_id) noexcept {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Signal handling (15.3.3)
 
 void Broker::install_signal_handlers() noexcept {
@@ -430,11 +430,11 @@ void Broker::handle_signal(int /*sig*/) noexcept {
   shutdown_requested_.store(true);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Private — create_modules (15.2.1)
 
 void Broker::create_modules() {
-  // ── Persistence adapters (Module 13) ─────────────────────────────────────
+  //  Persistence adapters (Module 13)
   session_persistence_ =
       std::make_unique<SessionPersistence>(config_.persistence_dir);
   retained_persistence_ =
@@ -442,13 +442,13 @@ void Broker::create_modules() {
   inflight_persistence_ =
       std::make_unique<InflightPersistence>(config_.persistence_dir);
 
-  // ── In-memory stores (Module 4) ──────────────────────────────────────────
+  //  In-memory stores (Module 4)
   session_store_ = std::make_unique<SessionStore>();
   retained_store_ = std::make_unique<RetainedMessageStore>();
   subscription_store_ = std::make_unique<SubscriptionStore>();
   inflight_store_ = std::make_unique<InflightStore>();
 
-  // ── Auth (Module 8) ──────────────────────────────────────────────────────
+  //  Auth (Module 8)
   // 15.2.3: bind auth module according to config
   if (config_.allow_anonymous) {
     anon_auth_ =
@@ -464,7 +464,7 @@ void Broker::create_modules() {
     active_auth_ = pass_auth_.get();
   }
 
-  // ── AuthZ (Module 9) ─────────────────────────────────────────────────────
+  //  AuthZ (Module 9)
   acl_engine_ = std::make_unique<AclEngine>();
   acl_loader_ = std::make_unique<AclLoader>(*acl_engine_);
 
@@ -484,14 +484,14 @@ void Broker::create_modules() {
   }
   acl_loader_->load(acl_rules);
 
-  // ── Session Manager (Module 10) ──────────────────────────────────────────
+  //  Session Manager (Module 10)
   takeover_handler_ = std::make_unique<SessionTakeoverHandler>();
   expiry_scheduler_ = std::make_unique<SessionExpiryScheduler>();
   session_manager_ = std::make_unique<SessionManager>(
       *session_store_, *subscription_store_, *inflight_store_,
       *takeover_handler_, *expiry_scheduler_);
 
-  // ── Message Router (Module 12) ───────────────────────────────────────────
+  //  Message Router (Module 12)
   publish_processor_ = std::make_unique<InboundPublishProcessor>(
       *acl_engine_, *retained_store_, *subscription_store_);
 
@@ -516,7 +516,7 @@ void Broker::create_modules() {
       *publish_processor_, *offline_queue_, *shared_dispatcher_,
       std::move(is_online_fn), std::move(deliver_fn));
 
-  // ── Will Manager (Module 11) ─────────────────────────────────────────────
+  //  Will Manager (Module 11)
   will_store_ = std::make_unique<WillStore>();
   will_delay_timer_ = std::make_unique<WillDelayTimer>();
 
@@ -534,7 +534,7 @@ void Broker::create_modules() {
   will_publisher_ = std::make_unique<WillPublisher>(
       *will_store_, *will_delay_timer_, std::move(will_publish_fn));
 
-  // ── Monitoring (Module 16) ────────────────────────────────────────────
+  //  Monitoring (Module 16)
   stats_collector_ = std::make_unique<StatisticsCollector>(*subscription_store_,
                                                            *retained_store_);
 
@@ -550,7 +550,7 @@ void Broker::create_modules() {
       std::move(sys_publish_fn));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Private — persistence (15.2.2)
 
 void Broker::load_persistence() {
@@ -597,7 +597,7 @@ void Broker::flush_persistence() noexcept {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Private — listeners (15.3.1 / 15.3.2)
 
 void Broker::open_listeners() {

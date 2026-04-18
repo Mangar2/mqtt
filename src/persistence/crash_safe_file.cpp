@@ -36,21 +36,21 @@ const std::array<uint32_t, 256> k_crc_table = make_crc_table();
 
 } // namespace
 
-// ── Construction
-// ──────────────────────────────────────────────────────────────
+//  Construction
+//
 
 CrashSafeFile::CrashSafeFile(std::filesystem::path dir, std::string stem)
     : dir_(std::move(dir)), stem_(std::move(stem)) {}
 
-// ── Helpers
-// ───────────────────────────────────────────────────────────────────
+//  Helpers
+//
 
 std::filesystem::path CrashSafeFile::path_for(std::string_view suffix) const {
   return dir_ / (stem_ + std::string(suffix));
 }
 
-// ── CRC-32
-// ────────────────────────────────────────────────────────────────────
+//  CRC-32
+//
 
 uint32_t CrashSafeFile::crc32(std::span<const uint8_t> data) noexcept {
   uint32_t crc = 0xFFFFFFFFU;
@@ -61,8 +61,8 @@ uint32_t CrashSafeFile::crc32(std::span<const uint8_t> data) noexcept {
   return crc ^ 0xFFFFFFFFU;
 }
 
-// ── Write
-// ─────────────────────────────────────────────────────────────────────
+//  Write
+//
 
 void CrashSafeFile::write(const std::vector<uint8_t> &records,
                           uint32_t record_count) {
@@ -118,8 +118,8 @@ void CrashSafeFile::write(const std::vector<uint8_t> &records,
   }
 }
 
-// ── Read
-// ──────────────────────────────────────────────────────────────────────
+//  Read
+//
 
 std::optional<std::pair<uint32_t, std::vector<uint8_t>>>
 CrashSafeFile::try_read(const std::filesystem::path &path) {
@@ -193,8 +193,8 @@ CrashSafeFile::read_latest() const {
   return std::nullopt;
 }
 
-// ── Remove
-// ────────────────────────────────────────────────────────────────────
+//  Remove
+//
 
 void CrashSafeFile::remove_all() {
   for (std::string_view suffix : {".dat", ".bak", ".tmp"}) {

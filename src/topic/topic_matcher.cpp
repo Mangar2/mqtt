@@ -29,8 +29,8 @@ std::vector<std::string_view> split_topic(std::string_view topic) {
 
 } // namespace
 
-// ── TopicMatcher
-// ──────────────────────────────────────────────────────────────
+//  TopicMatcher
+//
 
 void TopicMatcher::collect_matches(const SubscriptionTrie::Node &node,
                                    const std::vector<std::string_view> &levels,

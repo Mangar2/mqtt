@@ -7,8 +7,8 @@
 
 using namespace mqtt;
 
-// ── RetainHandling (1.6.2)
-// ────────────────────────────────────────────────────
+//  RetainHandling (1.6.2)
+//
 
 TEST_CASE("retain_handling_values", "[subscription]") {
   CHECK(static_cast<uint8_t>(RetainHandling::SendAtSubscribe) == 0U);
@@ -16,8 +16,8 @@ TEST_CASE("retain_handling_values", "[subscription]") {
   CHECK(static_cast<uint8_t>(RetainHandling::Never) == 2U);
 }
 
-// ── SubscriptionOptions (1.6.2)
-// ───────────────────────────────────────────────
+//  SubscriptionOptions (1.6.2)
+//
 
 TEST_CASE("subscription_options_defaults", "[subscription]") {
   SubscriptionOptions opts{};
@@ -50,8 +50,8 @@ TEST_CASE("subscription_options_inequality", "[subscription]") {
   CHECK(lhs != rhs);
 }
 
-// ── Subscription (1.6.1)
-// ──────────────────────────────────────────────────────
+//  Subscription (1.6.1)
+//
 
 TEST_CASE("subscription_defaults", "[subscription]") {
   Subscription sub{};
@@ -99,8 +99,8 @@ TEST_CASE("subscription_without_identifier", "[subscription]") {
   CHECK(!sub.identifier.has_value());
 }
 
-// ── SharedSubscription (1.6.3)
-// ────────────────────────────────────────────────
+//  SharedSubscription (1.6.3)
+//
 
 TEST_CASE("shared_subscription_defaults", "[subscription]") {
   SharedSubscription subs{};

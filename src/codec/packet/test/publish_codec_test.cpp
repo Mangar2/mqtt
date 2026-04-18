@@ -11,8 +11,8 @@
 
 using namespace mqtt;
 
-// ── Helpers
-// ───────────────────────────────────────────────────────────────────
+//  Helpers
+//
 
 static ReadBuffer make_reader(const std::vector<uint8_t> &bytes) {
   return ReadBuffer{std::span<const uint8_t>{bytes.data(), bytes.size()}};
@@ -30,15 +30,16 @@ struct PacketSplit {
 static PacketSplit split(WriteBuffer src) {
   PacketSplit result;
   result.buf = std::move(src);
-  auto rdr = ReadBuffer{std::span<const uint8_t>{result.buf.data(), result.buf.size()}};
+  auto rdr = ReadBuffer{
+      std::span<const uint8_t>{result.buf.data(), result.buf.size()}};
   result.fh = decode_fixed_header(rdr);
   auto span = rdr.read_bytes(result.fh.remaining_length);
   result.payload.assign(span.begin(), span.end());
   return result;
 }
 
-// ── PUBLISH encode
-// ────────────────────────────────────────────────────────────
+//  PUBLISH encode
+//
 
 TEST_CASE("publish_encode_qos0", "[publish]") {
   PublishPacket pkt;
@@ -136,8 +137,8 @@ TEST_CASE("publish_encode_roundtrip", "[publish]") {
   CHECK(decoded == pkt);
 }
 
-// ── PUBLISH decode errors
-// ─────────────────────────────────────────────────────
+//  PUBLISH decode errors
+//
 
 TEST_CASE("publish_decode_qos3", "[publish]") {
   // flags: QoS=3 → bits 2-1 = 11
@@ -180,8 +181,8 @@ TEST_CASE("publish_decode_empty_payload", "[publish]") {
   CHECK(decoded.payload.data.empty());
 }
 
-// ── PUBACK
-// ────────────────────────────────────────────────────────────────────
+//  PUBACK
+//
 
 TEST_CASE("puback_roundtrip_short", "[puback]") {
   PubackPacket pkt;

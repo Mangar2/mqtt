@@ -9,8 +9,8 @@ namespace mqtt {
 
 namespace {
 
-// ── ACK packet helper: encode with optional short form
-// ────────────────────────
+//  ACK packet helper: encode with optional short form
+//
 
 void encode_ack_packet(WriteBuffer &buf, PacketType type, uint8_t fixed_flags,
                        uint16_t packet_id, ReasonCode reason_code,
@@ -31,8 +31,8 @@ void encode_ack_packet(WriteBuffer &buf, PacketType type, uint8_t fixed_flags,
   buf.insert(buf.end(), var.begin(), var.end());
 }
 
-// ── ACK packet helper: decode with short-form support
-// ─────────────────────────
+//  ACK packet helper: decode with short-form support
+//
 
 struct AckFields {
   uint16_t packet_id;
@@ -56,8 +56,8 @@ struct AckFields {
 
 } // anonymous namespace
 
-// ── encode_publish
-// ────────────────────────────────────────────────────────────
+//  encode_publish
+//
 
 void encode_publish(WriteBuffer &buf, const PublishPacket &pkt) {
   // Validate packet_id <-> QoS consistency
@@ -98,8 +98,8 @@ void encode_publish(WriteBuffer &buf, const PublishPacket &pkt) {
   buf.insert(buf.end(), var.begin(), var.end());
 }
 
-// ── decode_publish
-// ────────────────────────────────────────────────────────────
+//  decode_publish
+//
 
 PublishPacket decode_publish(ReadBuffer &buf, uint8_t flags) {
   const bool dup = (flags & 0x08U) != 0U;
@@ -138,8 +138,8 @@ PublishPacket decode_publish(ReadBuffer &buf, uint8_t flags) {
   return result;
 }
 
-// ── PUBACK
-// ────────────────────────────────────────────────────────────────────
+//  PUBACK
+//
 
 void encode_puback(WriteBuffer &buf, const PubackPacket &pkt) {
   encode_ack_packet(buf, PacketType::Puback, 0x00U, pkt.packet_id,
@@ -155,8 +155,8 @@ PubackPacket decode_puback(ReadBuffer &buf) {
   return result;
 }
 
-// ── PUBREC
-// ────────────────────────────────────────────────────────────────────
+//  PUBREC
+//
 
 void encode_pubrec(WriteBuffer &buf, const PubrecPacket &pkt) {
   encode_ack_packet(buf, PacketType::Pubrec, 0x00U, pkt.packet_id,
@@ -172,8 +172,8 @@ PubrecPacket decode_pubrec(ReadBuffer &buf) {
   return result;
 }
 
-// ── PUBREL
-// ────────────────────────────────────────────────────────────────────
+//  PUBREL
+//
 
 void encode_pubrel(WriteBuffer &buf, const PubrelPacket &pkt) {
   encode_ack_packet(buf, PacketType::Pubrel, 0x02U, pkt.packet_id,
@@ -189,8 +189,8 @@ PubrelPacket decode_pubrel(ReadBuffer &buf) {
   return result;
 }
 
-// ── PUBCOMP
-// ───────────────────────────────────────────────────────────────────
+//  PUBCOMP
+//
 
 void encode_pubcomp(WriteBuffer &buf, const PubcompPacket &pkt) {
   encode_ack_packet(buf, PacketType::Pubcomp, 0x00U, pkt.packet_id,

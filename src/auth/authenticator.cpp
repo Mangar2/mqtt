@@ -4,8 +4,8 @@
 
 namespace mqtt {
 
-// ── IAuthenticator
-// ────────────────────────────────────────────────────────────
+//  IAuthenticator
+//
 
 AuthResult IAuthenticator::on_auth(const AuthPacket & /*auth_pkt*/) {
   return {.status = AuthStatus::Failure,
@@ -13,8 +13,8 @@ AuthResult IAuthenticator::on_auth(const AuthPacket & /*auth_pkt*/) {
           .auth_data = {}};
 }
 
-// ── CallbackAuthenticator
-// ─────────────────────────────────────────────────────
+//  CallbackAuthenticator
+//
 
 CallbackAuthenticator::CallbackAuthenticator(AuthenticateFn auth_fn,
                                              OnAuthFn on_auth_fn)

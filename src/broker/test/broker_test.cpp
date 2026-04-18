@@ -38,7 +38,7 @@
 using namespace mqtt;
 using namespace std::chrono_literals;
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Helpers
 
 namespace {
@@ -120,7 +120,7 @@ Property make_auth_data_property(std::string_view payload_text) {
 
 } // namespace
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Initial state
 
 TEST_CASE("broker_initially_not_running", "[broker]") {
@@ -129,7 +129,7 @@ TEST_CASE("broker_initially_not_running", "[broker]") {
   CHECK(broker.is_running() == false);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Lifecycle
 
 TEST_CASE("broker_running_after_startup", "[broker]") {
@@ -180,7 +180,7 @@ TEST_CASE("broker_destructor_auto_shutdown", "[broker]") {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Module accessors
 
 TEST_CASE("broker_module_accessors_after_startup", "[broker]") {
@@ -203,7 +203,7 @@ TEST_CASE("broker_module_accessors_after_startup", "[broker]") {
   broker.shutdown();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Connection registration
 
 TEST_CASE("broker_register_unregister_connection", "[broker]") {
@@ -222,7 +222,7 @@ TEST_CASE("broker_register_unregister_connection", "[broker]") {
   CHECK_FALSE(delivered);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Signal handling
 
 TEST_CASE("broker_shutdown_requested_false_initially", "[broker]") {
@@ -230,7 +230,7 @@ TEST_CASE("broker_shutdown_requested_false_initially", "[broker]") {
   CHECK(Broker::shutdown_requested() == false);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Persistence
 
 TEST_CASE("broker_with_persistence_startup", "[broker]") {
@@ -296,7 +296,7 @@ TEST_CASE("broker_persistence_startup_loads_seeded_records", "[broker]") {
   remove_temp_dir(tmp_dir);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Auth — password mode
 
 TEST_CASE("broker_password_auth_when_not_anonymous", "[broker]") {
@@ -308,7 +308,7 @@ TEST_CASE("broker_password_auth_when_not_anonymous", "[broker]") {
   broker.shutdown();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Signal handling — handle_signal path
 
 TEST_CASE("broker_handle_signal_sets_shutdown_requested", "[broker]") {
@@ -326,7 +326,7 @@ TEST_CASE("broker_handle_signal_sets_shutdown_requested", "[broker]") {
   CHECK(Broker::shutdown_requested() == false);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // WebSocket listener
 
 TEST_CASE("broker_ws_listener_startup_and_shutdown", "[broker]") {
@@ -353,7 +353,7 @@ TEST_CASE("broker_accept_loop_invokes_client_handler", "[broker]") {
   CHECK(broker.is_running() == false);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Online delivery — is_online + deliver lambdas
 
 TEST_CASE("broker_route_message_without_subscribers_is_safe", "[broker]") {
@@ -372,7 +372,7 @@ TEST_CASE("broker_route_message_without_subscribers_is_safe", "[broker]") {
   broker.shutdown();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Will publish callback — will_publish_fn lambda
 
 TEST_CASE("broker_handle_connection_lost_unregisters_client", "[broker]") {
@@ -843,7 +843,7 @@ TEST_CASE("broker_handle_disconnect_unregisters_client", "[broker]") {
   broker.shutdown();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Monitoring — Module 16 integration
 
 TEST_CASE("broker_statistics_collector_accessor", "[broker]") {

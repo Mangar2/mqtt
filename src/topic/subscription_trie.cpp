@@ -5,8 +5,8 @@
 
 namespace mqtt {
 
-// ── anonymous helpers
-// ──────────────────────────────────────────────────────────
+//  anonymous helpers
+//
 
 namespace {
 
@@ -31,8 +31,8 @@ std::vector<std::string> split_by_slash(std::string_view filter) {
 
 } // namespace
 
-// ── SubscriptionTrie
-// ───────────────────────────────────────────────────────────
+//  SubscriptionTrie
+//
 
 std::vector<std::string>
 SubscriptionTrie::split_filter(std::string_view filter) {

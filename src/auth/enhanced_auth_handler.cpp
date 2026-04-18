@@ -6,7 +6,7 @@
 
 namespace mqtt {
 
-// ── Construction ─────────────────────────────────────────────────────────────
+//  Construction
 
 EnhancedAuthHandler::EnhancedAuthHandler(
     std::shared_ptr<IAuthenticator> authenticator)
@@ -17,8 +17,8 @@ EnhancedAuthHandler::EnhancedAuthHandler(
   }
 }
 
-// ── Helpers
-// ───────────────────────────────────────────────────────────────────
+//  Helpers
+//
 
 std::string EnhancedAuthHandler::extract_auth_method(
     const std::vector<Property> &properties) {
@@ -43,8 +43,8 @@ void EnhancedAuthHandler::validate_method(
   }
 }
 
-// ── Public API
-// ────────────────────────────────────────────────────────────────
+//  Public API
+//
 
 AuthResult EnhancedAuthHandler::initiate(const ConnectPacket &connect) {
   if (state_ != EnhancedAuthState::Idle) {

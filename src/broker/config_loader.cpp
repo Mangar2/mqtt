@@ -28,15 +28,16 @@ ConfigLoader::parse_password_credential(std::string_view value) {
   const std::string_view user_name = trim(value.substr(0U, separator_pos));
   const std::string_view pass_word = trim(value.substr(separator_pos + 1U));
   if (user_name.empty() || pass_word.empty()) {
-    throw BrokerException(BrokerError::InvalidConfig,
-                          "Auth credential username/password must be non-empty");
+    throw BrokerException(
+        BrokerError::InvalidConfig,
+        "Auth credential username/password must be non-empty");
   }
 
   return PasswordCredentialConfig{.username = std::string(user_name),
                                   .password = std::string(pass_word)};
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Public API
 
 BrokerConfig ConfigLoader::load(const std::filesystem::path &path) {
@@ -103,7 +104,7 @@ BrokerConfig ConfigLoader::parse(std::string_view text) {
   return cfg;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Private helpers
 
 void ConfigLoader::apply_key(const std::string &section, const std::string &key,

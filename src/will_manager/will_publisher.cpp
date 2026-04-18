@@ -55,7 +55,7 @@ void WillPublisher::publish_due(std::chrono::steady_clock::time_point now) {
   }
 }
 
-// ─── private ─────────────────────────────────────────────────────────────────
+//  private
 
 void WillPublisher::arm_timer(std::string_view client_id,
                               std::chrono::steady_clock::time_point now) {

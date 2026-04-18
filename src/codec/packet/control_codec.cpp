@@ -9,8 +9,8 @@ namespace mqtt {
 
 namespace {
 
-// ── AUTH reason code validator
-// ────────────────────────────────────────────────
+//  AUTH reason code validator
+//
 
 void validate_auth_reason_code(ReasonCode reason) {
   if (reason != ReasonCode::Success &&
@@ -23,8 +23,8 @@ void validate_auth_reason_code(ReasonCode reason) {
   }
 }
 
-// ── Encode helper: optional reason_code + properties with short-form support
-// ──
+//  Encode helper: optional reason_code + properties with short-form support
+//
 
 void encode_optional_rc_props(WriteBuffer &buf, ReasonCode reason,
                               const std::vector<Property> &props,
@@ -37,8 +37,8 @@ void encode_optional_rc_props(WriteBuffer &buf, ReasonCode reason,
   }
 }
 
-// ── Decode helper: optional reason_code + properties with short-form support
-// ──
+//  Decode helper: optional reason_code + properties with short-form support
+//
 
 struct OptionalRcProps {
   ReasonCode reason_code{ReasonCode::Success};
@@ -59,8 +59,8 @@ struct OptionalRcProps {
 
 } // anonymous namespace
 
-// ── PINGREQ
-// ───────────────────────────────────────────────────────────────────
+//  PINGREQ
+//
 
 void encode_pingreq(WriteBuffer &buf) {
   encode_fixed_header(buf, FixedHeader{PacketType::Pingreq, 0x00U, 0U});
@@ -74,8 +74,8 @@ PingreqPacket decode_pingreq(ReadBuffer &buf) {
   return PingreqPacket{};
 }
 
-// ── PINGRESP
-// ──────────────────────────────────────────────────────────────────
+//  PINGRESP
+//
 
 void encode_pingresp(WriteBuffer &buf) {
   encode_fixed_header(buf, FixedHeader{PacketType::Pingresp, 0x00U, 0U});
@@ -89,8 +89,8 @@ PingrespPacket decode_pingresp(ReadBuffer &buf) {
   return PingrespPacket{};
 }
 
-// ── DISCONNECT
-// ────────────────────────────────────────────────────────────────
+//  DISCONNECT
+//
 
 void encode_disconnect(WriteBuffer &buf, const DisconnectPacket &pkt) {
   WriteBuffer var;
@@ -109,8 +109,8 @@ DisconnectPacket decode_disconnect(ReadBuffer &buf) {
   return result;
 }
 
-// ── AUTH
-// ──────────────────────────────────────────────────────────────────────
+//  AUTH
+//
 
 void encode_auth(WriteBuffer &buf, const AuthPacket &pkt) {
   validate_auth_reason_code(pkt.reason_code);

@@ -6,16 +6,16 @@ project(mqtt-broker
     LANGUAGES CXX
 )
 
-# ── Language standard ──────────────────────────────────────────────────────────
+#  Language standard 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# ── Options ────────────────────────────────────────────────────────────────────
+#  Options 
 option(MQTT_SANITIZE "Enable AddressSanitizer and UBSan (host builds only)" OFF)
 option(MQTT_COVERAGE "Enable clang source-based coverage instrumentation"   OFF)
 
-# ── Shared compiler/linker flags ───────────────────────────────────────────────
+#  Shared compiler/linker flags 
 set(MQTT_COMPILE_OPTIONS
     -Wall
     -Wextra
@@ -36,7 +36,7 @@ set(MQTT_LINK_OPTIONS
     $<$<BOOL:${MQTT_COVERAGE}>:-fprofile-instr-generate>
 )
 
-# ── Source discovery ───────────────────────────────────────────────────────────
+#  Source discovery 
 # Collect all production .cpp files, then exclude test directories and the
 # platform-specific files for the OS we are NOT building on.
 file(GLOB_RECURSE MQTT_ALL_SOURCES  CONFIGURE_DEPENDS "src/*.cpp")
@@ -51,7 +51,7 @@ else()
     list(FILTER MQTT_TEST_SOURCES EXCLUDE REGEX "_win32\\.cpp$")
 endif()
 
-# ── Main executable ────────────────────────────────────────────────────────────
+#  Main executable 
 add_executable(mqtt-broker ${MQTT_ALL_SOURCES})
 
 target_compile_options(mqtt-broker PRIVATE ${MQTT_COMPILE_OPTIONS})
@@ -61,7 +61,7 @@ if(WIN32)
     target_link_libraries(mqtt-broker PRIVATE ws2_32)
 endif()
 
-# ── Unit tests ─────────────────────────────────────────────────────────────────
+#  Unit tests 
 include(CTest)
 
 if(BUILD_TESTING)
@@ -99,7 +99,7 @@ if(BUILD_TESTING)
     catch_discover_tests(mqtt-broker-tests)
 endif()
 
-# ── Install ────────────────────────────────────────────────────────────────────
+#  Install 
 include(GNUInstallDirs)
 install(TARGETS mqtt-broker
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

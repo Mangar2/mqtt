@@ -12,8 +12,8 @@
 
 namespace mqtt {
 
-// ── SUBSCRIBE (Section 3.8)
-// ───────────────────────────────────────────────────
+//  SUBSCRIBE (Section 3.8)
+//
 
 /**
  * @brief Encodes a SUBSCRIBE packet and appends the complete wire bytes to @p
@@ -45,8 +45,8 @@ void encode_subscribe(WriteBuffer &buf, const SubscribePacket &pkt);
  */
 [[nodiscard]] SubscribePacket decode_subscribe(ReadBuffer &buf);
 
-// ── SUBACK (Section 3.9)
-// ──────────────────────────────────────────────────────
+//  SUBACK (Section 3.9)
+//
 
 /**
  * @brief Encodes a SUBACK packet and appends the complete wire bytes to @p buf.
@@ -62,8 +62,8 @@ void encode_suback(WriteBuffer &buf, const SubackPacket &pkt);
  */
 [[nodiscard]] SubackPacket decode_suback(ReadBuffer &buf);
 
-// ── UNSUBSCRIBE (Section 3.10)
-// ────────────────────────────────────────────────
+//  UNSUBSCRIBE (Section 3.10)
+//
 
 /**
  * @brief Encodes an UNSUBSCRIBE packet and appends the complete wire bytes to
@@ -84,8 +84,8 @@ void encode_unsubscribe(WriteBuffer &buf, const UnsubscribePacket &pkt);
  */
 [[nodiscard]] UnsubscribePacket decode_unsubscribe(ReadBuffer &buf);
 
-// ── UNSUBACK (Section 3.11)
-// ───────────────────────────────────────────────────
+//  UNSUBACK (Section 3.11)
+//
 
 /**
  * @brief Encodes an UNSUBACK packet and appends the complete wire bytes to @p

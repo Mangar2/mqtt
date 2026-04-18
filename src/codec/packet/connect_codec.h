@@ -12,8 +12,8 @@
 
 namespace mqtt {
 
-// ── CONNECT (Section 3.1)
-// ─────────────────────────────────────────────────────
+//  CONNECT (Section 3.1)
+//
 
 /**
  * @brief Encodes a CONNECT packet and appends the complete wire bytes to @p
@@ -59,8 +59,8 @@ void encode_connect(WriteBuffer &buf, const ConnectPacket &pkt);
  */
 [[nodiscard]] ConnectPacket decode_connect(ReadBuffer &buf);
 
-// ── CONNACK (Section 3.2)
-// ─────────────────────────────────────────────────────
+//  CONNACK (Section 3.2)
+//
 
 /**
  * @brief Encodes a CONNACK packet and appends the complete wire bytes to @p

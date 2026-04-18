@@ -18,7 +18,7 @@
 
 using namespace mqtt;
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Helpers
 
 namespace {
@@ -71,7 +71,7 @@ PubcompPacket make_pubcomp(uint16_t pid) {
 
 } // anonymous namespace
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // PacketIdManager — 5.1
 
 TEST_CASE("allocate_returns_nonzero_ids", "[packet_id_manager]") {
@@ -166,7 +166,7 @@ TEST_CASE("counts_reflect_allocations", "[packet_id_manager]") {
   CHECK(mgr.inbound_count() == 1);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Qos1StateMachine — 5.2
 
 TEST_CASE("on_publish_received_returns_puback", "[qos1]") {
@@ -340,7 +340,7 @@ TEST_CASE("retransmit_unknown_id_throws", "[qos1]") {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Qos2StateMachine — 5.3
 
 TEST_CASE("inbound_publish_creates_entry_and_returns_pubrec", "[qos2]") {

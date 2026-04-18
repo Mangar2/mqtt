@@ -10,7 +10,7 @@
 
 using namespace mqtt;
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Helpers
 
 namespace {
@@ -25,7 +25,7 @@ std::filesystem::path write_temp_file(const std::string &content) {
 
 } // namespace
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // ConfigLoader::parse — defaults
 
 TEST_CASE("parse_minimal_valid_config", "[broker]") {
@@ -85,7 +85,7 @@ TEST_CASE("parse_auth_credentials_section", "[broker]") {
   CHECK(cfg.password_credentials.at(1U).password == "pwd");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // ConfigLoader::parse — bool variants
 
 TEST_CASE("parse_bool_true_variants", "[broker]") {
@@ -110,7 +110,7 @@ TEST_CASE("parse_bool_false_variants", "[broker]") {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // ConfigLoader::parse — ignored elements
 
 TEST_CASE("parse_ignores_comments", "[broker]") {
@@ -130,7 +130,7 @@ TEST_CASE("parse_trims_whitespace", "[broker]") {
   CHECK(cfg.mqtt_port == 1884U);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // ConfigLoader::parse — error cases
 
 TEST_CASE("parse_bool_invalid_throws", "[broker]") {
@@ -198,7 +198,7 @@ TEST_CASE("parse_max_queued_zero_throws", "[broker]") {
       BrokerException);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // ConfigLoader::load — file I/O
 
 TEST_CASE("load_from_file", "[broker]") {

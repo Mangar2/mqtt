@@ -14,8 +14,8 @@
 
 namespace mqtt {
 
-// ── ConnectionStateMachine
-// ────────────────────────────────────────────────────
+//  ConnectionStateMachine
+//
 
 TEST_CASE("state_initial_is_connecting", "[connection]") {
   ConnectionStateMachine fsm;
@@ -138,8 +138,8 @@ TEST_CASE("enforce_not_connecting_throws_in_disconnecting", "[connection]") {
   }
 }
 
-// ── KeepAliveTimer
-// ────────────────────────────────────────────────────────────
+//  KeepAliveTimer
+//
 
 TEST_CASE("disabled_when_keep_alive_is_zero", "[connection]") {
   KeepAliveTimer timer(0U);
@@ -169,8 +169,8 @@ TEST_CASE("enabled_when_keep_alive_nonzero", "[connection]") {
   CHECK(timer.is_enabled());
 }
 
-// ── TopicAliasTable
-// ───────────────────────────────────────────────────────────
+//  TopicAliasTable
+//
 
 TEST_CASE("max_aliases_returns_configured_value", "[connection]") {
   TopicAliasTable tab(10U);
@@ -290,8 +290,8 @@ TEST_CASE("max_alias_zero_disables_inbound", "[connection]") {
   }
 }
 
-// ── ReceiveMaximum
-// ────────────────────────────────────────────────────────────
+//  ReceiveMaximum
+//
 
 TEST_CASE("max_returns_configured_value", "[connection]") {
   ReceiveMaximum recv(10U);
@@ -358,8 +358,8 @@ TEST_CASE("release_throws_when_inflight_zero", "[connection]") {
   }
 }
 
-// ── ClientHandler placeholder (Module 17)
-// ────────────────────────────────────────────────────────────────────────────
+//  ClientHandler placeholder (Module 17)
+//
 
 TEST_CASE("client_handler_run_with_connection_pointer", "[connection]") {
   BrokerConfig cfg;

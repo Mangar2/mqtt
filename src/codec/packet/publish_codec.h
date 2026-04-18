@@ -14,8 +14,8 @@
 
 namespace mqtt {
 
-// ── PUBLISH (Section 3.3)
-// ─────────────────────────────────────────────────────
+//  PUBLISH (Section 3.3)
+//
 
 /**
  * @brief Encodes a PUBLISH packet and appends the complete wire bytes to @p
@@ -57,8 +57,8 @@ void encode_publish(WriteBuffer &buf, const PublishPacket &pkt);
  */
 [[nodiscard]] PublishPacket decode_publish(ReadBuffer &buf, uint8_t flags);
 
-// ── PUBACK (Section 3.4)
-// ──────────────────────────────────────────────────────
+//  PUBACK (Section 3.4)
+//
 
 /**
  * @brief Encodes a PUBACK packet and appends the complete wire bytes to @p buf.
@@ -82,8 +82,8 @@ void encode_puback(WriteBuffer &buf, const PubackPacket &pkt);
  */
 [[nodiscard]] PubackPacket decode_puback(ReadBuffer &buf);
 
-// ── PUBREC (Section 3.5)
-// ──────────────────────────────────────────────────────
+//  PUBREC (Section 3.5)
+//
 
 /**
  * @brief Encodes a PUBREC packet and appends the complete wire bytes to @p buf.
@@ -99,8 +99,8 @@ void encode_pubrec(WriteBuffer &buf, const PubrecPacket &pkt);
  */
 [[nodiscard]] PubrecPacket decode_pubrec(ReadBuffer &buf);
 
-// ── PUBREL (Section 3.6)
-// ──────────────────────────────────────────────────────
+//  PUBREL (Section 3.6)
+//
 
 /**
  * @brief Encodes a PUBREL packet and appends the complete wire bytes to @p buf.
@@ -119,8 +119,8 @@ void encode_pubrel(WriteBuffer &buf, const PubrelPacket &pkt);
  */
 [[nodiscard]] PubrelPacket decode_pubrel(ReadBuffer &buf);
 
-// ── PUBCOMP (Section 3.7)
-// ─────────────────────────────────────────────────────
+//  PUBCOMP (Section 3.7)
+//
 
 /**
  * @brief Encodes a PUBCOMP packet and appends the complete wire bytes to @p

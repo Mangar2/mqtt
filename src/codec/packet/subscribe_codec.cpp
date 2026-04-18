@@ -7,8 +7,8 @@
 
 namespace mqtt {
 
-// ── encode_subscribe
-// ──────────────────────────────────────────────────────────
+//  encode_subscribe
+//
 
 void encode_subscribe(WriteBuffer &buf, const SubscribePacket &pkt) {
   if (pkt.filters.empty()) {
@@ -40,8 +40,8 @@ void encode_subscribe(WriteBuffer &buf, const SubscribePacket &pkt) {
   buf.insert(buf.end(), var.begin(), var.end());
 }
 
-// ── decode_subscribe
-// ──────────────────────────────────────────────────────────
+//  decode_subscribe
+//
 
 SubscribePacket decode_subscribe(ReadBuffer &buf) {
   SubscribePacket result;
@@ -88,8 +88,8 @@ SubscribePacket decode_subscribe(ReadBuffer &buf) {
   return result;
 }
 
-// ── encode_suback
-// ─────────────────────────────────────────────────────────────
+//  encode_suback
+//
 
 void encode_suback(WriteBuffer &buf, const SubackPacket &pkt) {
   WriteBuffer var;
@@ -103,8 +103,8 @@ void encode_suback(WriteBuffer &buf, const SubackPacket &pkt) {
   buf.insert(buf.end(), var.begin(), var.end());
 }
 
-// ── decode_suback
-// ─────────────────────────────────────────────────────────────
+//  decode_suback
+//
 
 SubackPacket decode_suback(ReadBuffer &buf) {
   SubackPacket result;
@@ -116,8 +116,8 @@ SubackPacket decode_suback(ReadBuffer &buf) {
   return result;
 }
 
-// ── encode_unsubscribe
-// ────────────────────────────────────────────────────────
+//  encode_unsubscribe
+//
 
 void encode_unsubscribe(WriteBuffer &buf, const UnsubscribePacket &pkt) {
   if (pkt.topic_filters.empty()) {
@@ -137,8 +137,8 @@ void encode_unsubscribe(WriteBuffer &buf, const UnsubscribePacket &pkt) {
   buf.insert(buf.end(), var.begin(), var.end());
 }
 
-// ── decode_unsubscribe
-// ────────────────────────────────────────────────────────
+//  decode_unsubscribe
+//
 
 UnsubscribePacket decode_unsubscribe(ReadBuffer &buf) {
   UnsubscribePacket result;
@@ -154,8 +154,8 @@ UnsubscribePacket decode_unsubscribe(ReadBuffer &buf) {
   return result;
 }
 
-// ── encode_unsuback
-// ───────────────────────────────────────────────────────────
+//  encode_unsuback
+//
 
 void encode_unsuback(WriteBuffer &buf, const UnsubackPacket &pkt) {
   WriteBuffer var;
@@ -169,8 +169,8 @@ void encode_unsuback(WriteBuffer &buf, const UnsubackPacket &pkt) {
   buf.insert(buf.end(), var.begin(), var.end());
 }
 
-// ── decode_unsuback
-// ───────────────────────────────────────────────────────────
+//  decode_unsuback
+//
 
 UnsubackPacket decode_unsuback(ReadBuffer &buf) {
   UnsubackPacket result;

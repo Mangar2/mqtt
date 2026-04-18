@@ -28,9 +28,9 @@
 using namespace mqtt;
 using namespace std::chrono_literals;
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 namespace {
 
@@ -95,9 +95,9 @@ std::optional<uint32_t> get_expiry(const Message &msg) {
 
 } // namespace
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // InboundPublishProcessor (12.1)
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 TEST_CASE("inbound_processor_auth_denied_throws", "[message_router]") {
   AclEngine acl({deny_all()});
@@ -255,9 +255,9 @@ TEST_CASE("inbound_processor_alias_out_of_range_throws", "[message_router]") {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // SubscriberFanout (12.2)
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 TEST_CASE("fanout_no_local_filters_publisher", "[message_router]") {
   const Message msg = make_msg("t");
@@ -359,9 +359,9 @@ TEST_CASE("fanout_multiple_subscribers", "[message_router]") {
   CHECK(items.size() == 2U);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // OfflineQueue (12.3)
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 TEST_CASE("offline_queue_enqueue_and_drain", "[message_router]") {
   OfflineQueue queue;
@@ -423,9 +423,9 @@ TEST_CASE("offline_queue_size_per_client", "[message_router]") {
   CHECK(queue.size("c2") == 1U);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // MessageExpiryController (12.4)
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 namespace {
 
@@ -480,9 +480,9 @@ TEST_CASE("expiry_zero_elapsed_unchanged", "[message_router]") {
   CHECK(*remaining == 30U);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // SharedSubscriptionDispatcher (12.5)
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 TEST_CASE("shared_single_member_always_selected", "[message_router]") {
   SharedSubscriptionDispatcher dispatcher;
@@ -589,9 +589,9 @@ TEST_CASE("shared_replace_existing_member", "[message_router]") {
   CHECK(result[0].subscription.qos == QoS::ExactlyOnce);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // MessageRouter — integration (12)
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 TEST_CASE("router_deliver_to_online_subscriber", "[message_router]") {
   AclEngine acl({allow_all()});
@@ -763,11 +763,9 @@ TEST_CASE("router_discards_immediately_expired_message", "[message_router]") {
   SharedSubscriptionDispatcher shared;
 
   int delivered_count = 0;
-  MessageRouter router(proc, offline_queue, shared,
-                       [](std::string_view) { return true; },
-                       [&](std::string_view, const Message &) {
-                         ++delivered_count;
-                       });
+  MessageRouter router(
+      proc, offline_queue, shared, [](std::string_view) { return true; },
+      [&](std::string_view, const Message &) { ++delivered_count; });
 
   TopicAliasTable alias_table(0U);
   // MessageExpiryInterval = 0: message expires at the moment of dispatch.
@@ -805,26 +803,26 @@ TEST_CASE("router_flush_discards_expired_in_queue", "[message_router]") {
   CHECK(offline_queue.size("sub1") == 1U);
 
   // Flush 10 seconds into the future — message has expired.
-  router.flush_offline_queue("sub1",
-                              std::chrono::steady_clock::now() + 10s);
+  router.flush_offline_queue("sub1", std::chrono::steady_clock::now() + 10s);
   CHECK(delivered.empty());
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // SubscriberFanout — duplicate SubscriptionIdentifier replacement (12.2.4)
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 TEST_CASE("fanout_duplicate_sub_id_replaced", "[message_router]") {
   // Inbound message already carries a SubscriptionIdentifier.
   Message msg = make_msg("t");
   msg.properties.push_back(Property{
-      .id    = PropertyId::SubscriptionIdentifier,
+      .id = PropertyId::SubscriptionIdentifier,
       .value = VariableByteInteger{5U},
   });
 
   const std::vector<MatchResult> matches{
-      MatchResult{.client_id    = "s1",
-                  .subscription = make_sub("t", QoS::AtMostOnce, false, false, 42U)},
+      MatchResult{.client_id = "s1",
+                  .subscription =
+                      make_sub("t", QoS::AtMostOnce, false, false, 42U)},
   };
   const auto items = SubscriberFanout::prepare(msg, matches, "p");
   REQUIRE(items.size() == 1U);
@@ -835,9 +833,9 @@ TEST_CASE("fanout_duplicate_sub_id_replaced", "[message_router]") {
   CHECK(*sub_id == 42U);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // SharedSubscriptionDispatcher — cursor and edge-case coverage
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 TEST_CASE("shared_topic_deeper_than_filter_no_match", "[message_router]") {
   SharedSubscriptionDispatcher dispatcher;

@@ -19,8 +19,8 @@ namespace mqtt {
 
 namespace {
 
-// ── Property serialization
-// ────────────────────────────────────────────────────
+//  Property serialization
+//
 
 void encode_property_value(std::vector<uint8_t> &buf,
                            const PropertyValue &val) {
@@ -102,8 +102,8 @@ std::vector<Property> decode_properties(std::span<const uint8_t> &cursor) {
   return props;
 }
 
-// ── Message serialization
-// ─────────────────────────────────────────────────────
+//  Message serialization
+//
 
 void encode_message(std::vector<uint8_t> &buf, const Message &msg) {
   record_codec::write_utf8(buf, msg.topic);
@@ -125,15 +125,15 @@ Message decode_message(std::span<const uint8_t> &cursor) {
 
 } // namespace
 
-// ── Construction
-// ──────────────────────────────────────────────────────────────
+//  Construction
+//
 
 RetainedMessagePersistence::RetainedMessagePersistence(
     std::filesystem::path dir)
     : dir_(std::move(dir)) {}
 
-// ── Save
-// ──────────────────────────────────────────────────────────────────────
+//  Save
+//
 
 void RetainedMessagePersistence::save_all(
     const std::vector<Message> &messages) {
@@ -148,8 +148,8 @@ void RetainedMessagePersistence::save_all(
   file.write(records, static_cast<uint32_t>(messages.size()));
 }
 
-// ── Load
-// ──────────────────────────────────────────────────────────────────────
+//  Load
+//
 
 std::vector<Message> RetainedMessagePersistence::load_all() const {
   CrashSafeFile file(dir_, "retained");

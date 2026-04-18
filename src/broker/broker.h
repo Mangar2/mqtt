@@ -61,11 +61,12 @@ namespace mqtt {
  * failure.
  */
 struct ConnectResult {
-  AuthStatus auth_status{AuthStatus::Success}; ///< Authentication stage outcome.
+  AuthStatus auth_status{
+      AuthStatus::Success};    ///< Authentication stage outcome.
   bool session_present{false}; ///< CONNACK Session Present flag.
   ReasonCode reason_code{ReasonCode::Success}; ///< Final connection outcome.
   std::optional<BinaryData>
-      auth_data; ///< AUTH payload when `auth_status == Continue`.
+      auth_data;           ///< AUTH payload when `auth_status == Continue`.
   std::string auth_method; ///< Negotiated auth method for enhanced auth.
   std::vector<Property> connack_properties; ///< CONNACK properties from broker
                                             ///< configuration.
@@ -123,7 +124,7 @@ public:
   Broker(const Broker &) = delete;
   Broker &operator=(const Broker &) = delete;
 
-  // ── Lifecycle ─────────────────────────────────────────────────────────────
+  //  Lifecycle
 
   /**
    * @brief Start the broker (15.3.1).
@@ -164,7 +165,7 @@ public:
    */
   [[nodiscard]] bool is_running() const noexcept;
 
-  // ── Module accessors (valid after startup()) ──────────────────────────────
+  //  Module accessors (valid after startup())
 
   /// @return Reference to the `SessionManager` (Module 10).
   [[nodiscard]] SessionManager &session_manager() noexcept;
@@ -290,7 +291,7 @@ public:
   bool tick(std::chrono::steady_clock::time_point now =
                 std::chrono::steady_clock::now());
 
-  // ── Connection registration ────────────────────────────────────────────────
+  //  Connection registration
 
   /**
    * @brief Register an active connection with the broker.
@@ -313,7 +314,7 @@ public:
    */
   void unregister_connection(std::string_view client_id) noexcept;
 
-  // ── Signal handling (15.3.3) ──────────────────────────────────────────────
+  //  Signal handling (15.3.3)
 
   /**
    * @brief Install C signal handlers for SIGTERM and SIGINT (15.3.3).
@@ -336,7 +337,8 @@ private:
   /**
    * @brief Translate `AuthError` exceptions to MQTT reason codes.
    */
-  [[nodiscard]] static ReasonCode map_auth_error_to_reason(AuthError error_code);
+  [[nodiscard]] static ReasonCode
+  map_auth_error_to_reason(AuthError error_code);
 
   /**
    * @brief Open or resume a session after successful authentication.
@@ -355,7 +357,7 @@ private:
   /// Unregister connection when broker_mutex_ is already held exclusively.
   void unregister_connection_locked(std::string_view client_id) noexcept;
 
-  // ── Internal helpers ──────────────────────────────────────────────────────
+  //  Internal helpers
 
   /// Instantiate all module objects (15.2.1).
   void create_modules();
@@ -375,25 +377,25 @@ private:
   /// Static C signal handler (15.3.3).
   static void handle_signal(int sig) noexcept;
 
-  // ── State ─────────────────────────────────────────────────────────────────
+  //  State
 
   BrokerConfig config_; ///< Broker configuration (copy from constructor).
   bool running_;        ///< True between startup() and shutdown().
 
-  // ── Persistence (Module 13) ───────────────────────────────────────────────
+  //  Persistence (Module 13)
 
   std::unique_ptr<SessionPersistence> session_persistence_;
   std::unique_ptr<RetainedMessagePersistence> retained_persistence_;
   std::unique_ptr<InflightPersistence> inflight_persistence_;
 
-  // ── In-memory stores (Module 4) ───────────────────────────────────────────
+  //  In-memory stores (Module 4)
 
   std::unique_ptr<SessionStore> session_store_;
   std::unique_ptr<RetainedMessageStore> retained_store_;
   std::unique_ptr<SubscriptionStore> subscription_store_;
   std::unique_ptr<InflightStore> inflight_store_;
 
-  // ── Auth (Module 8) ───────────────────────────────────────────────────────
+  //  Auth (Module 8)
 
   std::unique_ptr<AnonymousAuthenticator> anon_auth_;
   std::unique_ptr<PasswordAuthenticator> pass_auth_;
@@ -409,51 +411,51 @@ private:
       pending_enhanced_auth_;
   std::unordered_map<std::string, EnhancedAuthHandler> active_enhanced_auth_;
 
-  // ── AuthZ (Module 9) ──────────────────────────────────────────────────────
+  //  AuthZ (Module 9)
 
   std::unique_ptr<AclEngine> acl_engine_;
   std::unique_ptr<AclLoader> acl_loader_;
 
-  // ── Session Manager (Module 10) ───────────────────────────────────────────
+  //  Session Manager (Module 10)
 
   std::unique_ptr<SessionTakeoverHandler> takeover_handler_;
   std::unique_ptr<SessionExpiryScheduler> expiry_scheduler_;
   std::unique_ptr<SessionManager> session_manager_;
 
-  // ── Will Manager (Module 11) ──────────────────────────────────────────────
+  //  Will Manager (Module 11)
 
   std::unique_ptr<WillStore> will_store_;
   std::unique_ptr<WillDelayTimer> will_delay_timer_;
   std::unique_ptr<WillPublisher> will_publisher_;
 
-  // ── Message Router (Module 12) ────────────────────────────────────────────
+  //  Message Router (Module 12)
 
   std::unique_ptr<InboundPublishProcessor> publish_processor_;
   std::unique_ptr<OfflineQueue> offline_queue_;
   std::unique_ptr<SharedSubscriptionDispatcher> shared_dispatcher_;
   std::unique_ptr<MessageRouter> message_router_;
 
-  // ── Network (Module 6) ────────────────────────────────────────────────────
+  //  Network (Module 6)
 
   std::optional<TcpListener> mqtt_listener_;
   std::optional<TcpListener> ws_listener_;
 
-  // ── Connection tracking ───────────────────────────────────────────────────
+  //  Connection tracking
 
   mutable std::shared_mutex
       broker_mutex_; ///< Guards shared mutable Broker state.
   std::unordered_map<std::string, SendFn> active_connections_;
 
-  // ── Monitoring (Module 16) ─────────────────────────────────────────────────
+  //  Monitoring (Module 16)
 
   std::unique_ptr<StatisticsCollector> stats_collector_;
   std::unique_ptr<SysTopicPublisher> sys_publisher_;
 
-  // ── Accept threads (Module 17) ────────────────────────────────────────────
+  //  Accept threads (Module 17)
 
   std::vector<std::thread> accept_threads_; ///< One thread per open listener.
 
-  // ── Signal flag ───────────────────────────────────────────────────────────
+  //  Signal flag
 
   /// Set to `true` by the C signal handler on SIGTERM / SIGINT.
   static std::atomic<bool> shutdown_requested_;

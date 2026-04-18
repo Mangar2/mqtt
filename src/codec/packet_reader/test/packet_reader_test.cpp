@@ -16,15 +16,15 @@
 
 using namespace mqtt;
 
-// ── Helpers
-// ───────────────────────────────────────────────────────────────────
+//  Helpers
+//
 
 static ReadBuffer make_reader(const std::vector<uint8_t> &bytes) {
   return ReadBuffer{std::span<const uint8_t>{bytes.data(), bytes.size()}};
 }
 
-// ── CONNECT / CONNACK
-// ─────────────────────────────────────────────────────────
+//  CONNECT / CONNACK
+//
 
 TEST_CASE("read_packet_connect", "[packet_reader]") {
   ConnectPacket pkt;
@@ -57,8 +57,8 @@ TEST_CASE("read_packet_connack", "[packet_reader]") {
   CHECK(std::get<ConnackPacket>(any) == pkt);
 }
 
-// ── PUBLISH
-// ───────────────────────────────────────────────────────────────────
+//  PUBLISH
+//
 
 TEST_CASE("read_packet_publish_qos0", "[packet_reader]") {
   PublishPacket pkt;
@@ -98,8 +98,8 @@ TEST_CASE("read_packet_publish_qos2", "[packet_reader]") {
   CHECK(*decoded.packet_id == 42);
 }
 
-// ── QoS ACK packets
-// ───────────────────────────────────────────────────────────
+//  QoS ACK packets
+//
 
 TEST_CASE("read_packet_puback", "[packet_reader]") {
   PubackPacket pkt;
@@ -158,8 +158,8 @@ TEST_CASE("read_packet_pubcomp", "[packet_reader]") {
   CHECK(std::get<PubcompPacket>(any).packet_id == 10);
 }
 
-// ── SUBSCRIBE / SUBACK / UNSUBSCRIBE / UNSUBACK
-// ───────────────────────────────────────────────
+//  SUBSCRIBE / SUBACK / UNSUBSCRIBE / UNSUBACK
+//
 
 TEST_CASE("read_packet_subscribe", "[packet_reader]") {
   SubscribePacket pkt;
@@ -221,8 +221,8 @@ TEST_CASE("read_packet_unsuback", "[packet_reader]") {
   CHECK(std::get<UnsubackPacket>(any) == pkt);
 }
 
-// ── PINGREQ / PINGRESP
-// ────────────────────────────────────────────────────────
+//  PINGREQ / PINGRESP
+//
 
 TEST_CASE("read_packet_pingreq", "[packet_reader]") {
   WriteBuffer buf;
@@ -244,8 +244,8 @@ TEST_CASE("read_packet_pingresp", "[packet_reader]") {
   CHECK(std::holds_alternative<PingrespPacket>(any));
 }
 
-// ── DISCONNECT / AUTH
-// ─────────────────────────────────────────────────────────
+//  DISCONNECT / AUTH
+//
 
 TEST_CASE("read_packet_disconnect", "[packet_reader]") {
   DisconnectPacket pkt;
@@ -275,8 +275,8 @@ TEST_CASE("read_packet_auth", "[packet_reader]") {
   CHECK(std::get<AuthPacket>(any).reason_code == ReasonCode::Success);
 }
 
-// ── Buffer advancement
-// ────────────────────────────────────────────────────────
+//  Buffer advancement
+//
 
 TEST_CASE("read_packet_advances_cursor", "[packet_reader]") {
   WriteBuffer buf;
@@ -294,8 +294,8 @@ TEST_CASE("read_packet_advances_cursor", "[packet_reader]") {
   CHECK(rdr.remaining() == 0);
 }
 
-// ── Error cases
-// ───────────────────────────────────────────────────────────────────
+//  Error cases
+//
 
 TEST_CASE("read_packet_empty_buffer", "[packet_reader]") {
   std::vector<uint8_t> empty{};

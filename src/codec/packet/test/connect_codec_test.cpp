@@ -11,8 +11,8 @@
 
 using namespace mqtt;
 
-// ── Helpers
-// ───────────────────────────────────────────────────────────────────
+//  Helpers
+//
 
 static ReadBuffer make_reader(const std::vector<uint8_t> &bytes) {
   return ReadBuffer{std::span<const uint8_t>{bytes.data(), bytes.size()}};
@@ -35,8 +35,8 @@ static PayloadOwner extract_payload(const WriteBuffer &full_packet) {
   return owner;
 }
 
-// ── CONNECT encode
-// ────────────────────────────────────────────────────────────
+//  CONNECT encode
+//
 
 TEST_CASE("connect_encode_minimal_fixed_header", "[connect]") {
   ConnectPacket pkt;
@@ -208,8 +208,8 @@ TEST_CASE("connect_encode_roundtrip", "[connect]") {
   CHECK(decoded == pkt);
 }
 
-// ── CONNECT decode errors
-// ─────────────────────────────────────────────────────
+//  CONNECT decode errors
+//
 
 TEST_CASE("connect_decode_bad_protocol_name", "[connect]") {
   ConnectPacket pkt;
@@ -314,8 +314,8 @@ TEST_CASE("connect_decode_truncated", "[connect]") {
   CHECK_THROWS_AS(decode_connect(buf), CodecException);
 }
 
-// ── CONNACK encode
-// ────────────────────────────────────────────────────────────
+//  CONNACK encode
+//
 
 TEST_CASE("connack_encode_success_no_session", "[connack]") {
   ConnackPacket pkt;
@@ -356,8 +356,8 @@ TEST_CASE("connack_encode_roundtrip", "[connack]") {
   CHECK(decoded == pkt);
 }
 
-// ── CONNACK decode errors
-// ─────────────────────────────────────────────────────
+//  CONNACK decode errors
+//
 
 TEST_CASE("connack_decode_reserved_bits", "[connack]") {
   // Build a valid connack then corrupt ack flags

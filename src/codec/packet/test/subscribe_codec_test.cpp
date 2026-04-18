@@ -10,8 +10,8 @@
 
 using namespace mqtt;
 
-// ── Helpers
-// ───────────────────────────────────────────────────────────────────
+//  Helpers
+//
 
 // The PacketData struct owns both the raw bytes and provides a factory
 // method to create a ReadBuffer over the payload section.
@@ -36,8 +36,8 @@ static PacketData split(WriteBuffer src) {
   return result;
 }
 
-// ── SUBSCRIBE encode
-// ──────────────────────────────────────────────────────────
+//  SUBSCRIBE encode
+//
 
 TEST_CASE("subscribe_encode_single_filter", "[subscribe]") {
   SubscribePacket pkt;
@@ -126,8 +126,8 @@ TEST_CASE("subscribe_roundtrip", "[subscribe]") {
   CHECK(decoded == pkt);
 }
 
-// ── SUBSCRIBE decode errors
-// ───────────────────────────────────────────────────
+//  SUBSCRIBE decode errors
+//
 
 TEST_CASE("subscribe_decode_qos3", "[subscribe]") {
   // Craft a SUBSCRIBE payload with options byte = 0x03 (QoS=3)
@@ -196,8 +196,8 @@ TEST_CASE("subscribe_decode_invalid_retain_handling", "[subscribe]") {
   }
 }
 
-// ── SUBACK
-// ────────────────────────────────────────────────────────────────────
+//  SUBACK
+//
 
 TEST_CASE("suback_encode_decode", "[suback]") {
   SubackPacket pkt;
@@ -226,8 +226,8 @@ TEST_CASE("suback_roundtrip", "[suback]") {
   CHECK(decode_suback(reader) == pkt);
 }
 
-// ── UNSUBSCRIBE
-// ───────────────────────────────────────────────────────────────
+//  UNSUBSCRIBE
+//
 
 TEST_CASE("unsubscribe_encode_single", "[unsubscribe]") {
   UnsubscribePacket pkt;
@@ -277,8 +277,8 @@ TEST_CASE("unsubscribe_roundtrip", "[unsubscribe]") {
   CHECK(decoded == pkt);
 }
 
-// ── UNSUBACK
-// ──────────────────────────────────────────────────────────────────
+//  UNSUBACK
+//
 
 TEST_CASE("unsuback_roundtrip", "[unsuback]") {
   UnsubackPacket pkt;

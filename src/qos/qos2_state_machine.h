@@ -39,18 +39,18 @@ struct Qos2InboundPublishResult {
  * ### Inbound four-step handshake (5.3.1)
  * ```
  * Client       Broker
- *   ──PUBLISH──▶         on_publish_received  → PUBREC
- *   ◀──PUBREC──          (inflight entry: WaitingForPubrel)
- *   ──PUBREL──▶          on_pubrel_received   → PUBCOMP
- *   ◀──PUBCOMP──         (entry removed)
+ *   PUBLISH▶         on_publish_received  → PUBREC
+ *   ◀PUBREC          (inflight entry: WaitingForPubrel)
+ *   PUBREL▶          on_pubrel_received   → PUBCOMP
+ *   ◀PUBCOMP         (entry removed)
  * ```
  *
  * ### Outbound four-step handshake (5.3.2)
  * ```
  * Broker       Client
- *   ──PUBLISH──▶         initiate_publish     (entry: WaitingForPubrec)
- *   ◀──PUBREC──          on_pubrec_received   → PUBREL (entry:
- * WaitingForPubcomp) ──PUBREL──▶ ◀──PUBCOMP──         on_pubcomp_received
+ *   PUBLISH▶         initiate_publish     (entry: WaitingForPubrec)
+ *   ◀PUBREC          on_pubrec_received   → PUBREL (entry:
+ * WaitingForPubcomp) PUBREL▶ ◀PUBCOMP         on_pubcomp_received
  * (entry removed)
  * ```
  *

@@ -27,7 +27,7 @@
 
 using namespace mqtt;
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Helpers
 
 namespace {
@@ -118,7 +118,7 @@ std::vector<uint8_t> read_once(TcpConnection &conn) {
 
 } // namespace
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // WebSocketHandshake tests
 
 TEST_CASE("handshake_incomplete_on_partial_request", "[transport]") {
@@ -227,7 +227,7 @@ TEST_CASE("handshake_second_append_noop_after_complete", "[transport]") {
   CHECK(resp1 == resp2);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // WebSocketFrameCodec — decode tests
 
 TEST_CASE("frame_no_frame_on_empty", "[transport]") {
@@ -369,7 +369,7 @@ TEST_CASE("frame_rejects_unknown_opcode", "[transport]") {
   CHECK_THROWS_AS(codec.append(bad_frame), TransportException);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // WebSocketFrameCodec — encode tests
 
 TEST_CASE("frame_encode_binary_small", "[transport]") {

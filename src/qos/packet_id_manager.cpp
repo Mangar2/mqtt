@@ -14,7 +14,7 @@ constexpr uint16_t k_max_packet_id = std::numeric_limits<uint16_t>::max();
 
 } // anonymous namespace
 
-// ──────────────────────────────────────────────────────────────────────────────
+//
 // PacketIdManager — public API
 
 uint16_t PacketIdManager::allocate() {

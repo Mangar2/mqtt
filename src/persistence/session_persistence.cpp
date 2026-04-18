@@ -65,14 +65,14 @@ SessionState decode_session(std::span<const uint8_t> &cursor) {
 
 } // namespace
 
-// ── Construction
-// ──────────────────────────────────────────────────────────────
+//  Construction
+//
 
 SessionPersistence::SessionPersistence(std::filesystem::path dir)
     : dir_(std::move(dir)) {}
 
-// ── Save
-// ──────────────────────────────────────────────────────────────────────
+//  Save
+//
 
 void SessionPersistence::save_all(const std::vector<SessionState> &sessions) {
   std::filesystem::create_directories(dir_);
@@ -86,8 +86,8 @@ void SessionPersistence::save_all(const std::vector<SessionState> &sessions) {
   file.write(records, static_cast<uint32_t>(sessions.size()));
 }
 
-// ── Load
-// ──────────────────────────────────────────────────────────────────────
+//  Load
+//
 
 std::vector<SessionState> SessionPersistence::load_all() const {
   CrashSafeFile file(dir_, "sessions");

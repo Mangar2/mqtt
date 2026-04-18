@@ -14,9 +14,9 @@
 using namespace mqtt;
 using namespace std::chrono_literals;
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 namespace {
 
@@ -32,9 +32,9 @@ WillMessage make_will(const std::string &topic, uint32_t delay = 0U) {
 
 } // namespace
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // WillStore tests
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 TEST_CASE("will_store_store_and_load", "[will_manager]") {
   WillStore will_store;
@@ -81,9 +81,9 @@ TEST_CASE("will_store_size", "[will_manager]") {
   CHECK(will_store.size() == 1U);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // WillDelayTimer tests
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 TEST_CASE("will_delay_timer_schedule_and_collect", "[will_manager]") {
   WillDelayTimer timer;
@@ -144,9 +144,9 @@ TEST_CASE("will_delay_timer_collect_does_not_remove", "[will_manager]") {
   CHECK(timer.collect_due(k_epoch).size() == 1U);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // WillPublisher tests
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 TEST_CASE("will_publisher_on_connect_stores_will", "[will_manager]") {
   WillStore will_store;

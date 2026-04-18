@@ -1,11 +1,11 @@
-GitHub PR workflow. No gh CLI. Use git + VS Code PR tool only.
+GitHub PR workflow. Follow the exact steps below.
 
 ## Open PR
 
-Push branch:
+Step 1: Push branch
 git push origin <branch>
 
-Create PR via github-pull-request_create_pull_request:
+Step 2: Create PR via github-pull-request_create_pull_request
 title: "feat: <module>"
 head: "<branch>"
 base: "master"
@@ -15,14 +15,10 @@ repo: { owner: "Mangar2", name: "mqtt" }
 
 ## Close PR
 
-One terminal call:
+Execute this exact terminal call:
 git checkout master ; git merge --ff-only <branch> ; git push origin master ; git branch -d <branch> ; git push origin --delete <branch>
-
-Rules:
-ff-only always. No squash no rebase.
-Delete local and remote same call.
-Never push direct to master.
 
 ## Unstaged changes before close
 
+Execute this exact terminal call:
 git add -A ; git commit -m "<message>" ; git checkout master ; git merge --ff-only <branch> ; git push origin master ; git branch -d <branch> ; git push origin --delete <branch>

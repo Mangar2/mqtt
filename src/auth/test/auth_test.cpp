@@ -14,8 +14,8 @@
 
 namespace mqtt {
 
-// ── Helpers
-// ───────────────────────────────────────────────────────────────────
+//  Helpers
+//
 
 namespace {
 
@@ -72,8 +72,8 @@ public:
 
 } // anonymous namespace
 
-// ── AuthException
-// ─────────────────────────────────────────────────────────────
+//  AuthException
+//
 
 TEST_CASE("auth_exception_stores_error_code", "[auth]") {
   AuthException exc(AuthError::NotAuthorized, "not authorized");
@@ -85,8 +85,8 @@ TEST_CASE("auth_exception_message_accessible", "[auth]") {
   CHECK(std::string(exc.what()) == "bad");
 }
 
-// ── IAuthenticator default on_auth
-// ────────────────────────────────────────────
+//  IAuthenticator default on_auth
+//
 
 TEST_CASE("iauth_default_on_auth_returns_failure", "[auth]") {
   MinimalAuthenticator auth;
@@ -96,8 +96,8 @@ TEST_CASE("iauth_default_on_auth_returns_failure", "[auth]") {
   CHECK(result.reason_code == ReasonCode::NotAuthorized);
 }
 
-// ── CallbackAuthenticator
-// ─────────────────────────────────────────────────────
+//  CallbackAuthenticator
+//
 
 TEST_CASE("callback_auth_null_callback_throws", "[auth]") {
   try {
@@ -143,8 +143,8 @@ TEST_CASE("callback_auth_default_on_auth_failure", "[auth]") {
   CHECK(result.reason_code == ReasonCode::NotAuthorized);
 }
 
-// ── AnonymousAuthenticator
-// ────────────────────────────────────────────────────
+//  AnonymousAuthenticator
+//
 
 TEST_CASE("anon_allow_returns_success", "[auth]") {
   AnonymousAuthenticator auth(AnonymousPolicy::Allow);
@@ -177,8 +177,8 @@ TEST_CASE("anon_allow_ignores_credentials", "[auth]") {
   CHECK(result.status == AuthStatus::Success);
 }
 
-// ── PasswordAuthenticator
-// ─────────────────────────────────────────────────────
+//  PasswordAuthenticator
+//
 
 TEST_CASE("pw_auth_no_credentials_rejects", "[auth]") {
   PasswordAuthenticator auth;
@@ -318,8 +318,8 @@ TEST_CASE("pw_auth_on_auth_plain_bad_payload", "[auth]") {
   CHECK(malformed.reason_code == ReasonCode::BadUserNameOrPassword);
 }
 
-// ── EnhancedAuthHandler
-// ───────────────────────────────────────────────────────
+//  EnhancedAuthHandler
+//
 
 TEST_CASE("enhanced_null_authenticator_throws", "[auth]") {
   try {

@@ -5,7 +5,6 @@
 #include "topic/subscription_trie.h"
 #include "topic/topic_matcher.h"
 
-
 namespace {
 
 mqtt::Subscription make_sub(const std::string &filter,
@@ -18,8 +17,8 @@ mqtt::Subscription make_sub(const std::string &filter,
 
 } // namespace
 
-// ── Exact matching (3.3.1)
-// ──────────────────────────────────────────────────────
+//  Exact matching (3.3.1)
+//
 
 TEST_CASE("match_exact_match", "[topic_matcher]") {
   mqtt::SubscriptionTrie trie;
@@ -63,8 +62,8 @@ TEST_CASE("match_returns_correct_subscription", "[topic_matcher]") {
   CHECK(results[0].subscription.topic_filter.value == "sport");
 }
 
-// ── Single-level wildcard '+' (3.3.2)
-// ──────────────────────────────────────────
+//  Single-level wildcard '+' (3.3.2)
+//
 
 TEST_CASE("match_plus_single_level", "[topic_matcher]") {
   mqtt::SubscriptionTrie trie;
@@ -100,8 +99,8 @@ TEST_CASE("match_plus_no_multi_level", "[topic_matcher]") {
   CHECK(results.empty());
 }
 
-// ── Multi-level wildcard '#' (3.3.3)
-// ───────────────────────────────────────
+//  Multi-level wildcard '#' (3.3.3)
+//
 
 TEST_CASE("match_hash_only", "[topic_matcher]") {
   mqtt::SubscriptionTrie trie;
@@ -138,8 +137,8 @@ TEST_CASE("match_hash_and_exact", "[topic_matcher]") {
   CHECK(results.size() == 2);
 }
 
-// ── System topic exclusion (3.3.4)
-// ─────────────────────────────────────────
+//  System topic exclusion (3.3.4)
+//
 
 TEST_CASE("match_system_topic_excluded_from_hash", "[topic_matcher]") {
   mqtt::SubscriptionTrie trie;
@@ -184,8 +183,8 @@ TEST_CASE("match_system_topic_plus_after_prefix", "[topic_matcher]") {
   REQUIRE(results.size() == 1);
 }
 
-// ── Multi-client scenarios
-// ─────────────────────────────────────────────────────
+//  Multi-client scenarios
+//
 
 TEST_CASE("match_multiple_clients_same_filter", "[topic_matcher]") {
   mqtt::SubscriptionTrie trie;

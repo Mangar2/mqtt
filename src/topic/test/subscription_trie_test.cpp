@@ -16,8 +16,8 @@ mqtt::Subscription make_sub(const std::string &filter,
 
 } // namespace
 
-// ── insert
-// ────────────────────────────────────────────────────────────────────
+//  insert
+//
 
 TEST_CASE("insert_single", "[subscription_trie]") {
   mqtt::SubscriptionTrie trie;
@@ -64,8 +64,8 @@ TEST_CASE("insert_hash_only", "[subscription_trie]") {
   REQUIRE(trie.size() == 1);
 }
 
-// ── remove
-// ────────────────────────────────────────────────────────────────────
+//  remove
+//
 
 TEST_CASE("remove_existing", "[subscription_trie]") {
   mqtt::SubscriptionTrie trie;
@@ -122,8 +122,8 @@ TEST_CASE("remove_empty_trie", "[subscription_trie]") {
   REQUIRE(trie.size() == 0);
 }
 
-// ── remove_all
-// ────────────────────────────────────────────────────────────────
+//  remove_all
+//
 
 TEST_CASE("remove_all_single_client", "[subscription_trie]") {
   mqtt::SubscriptionTrie trie;

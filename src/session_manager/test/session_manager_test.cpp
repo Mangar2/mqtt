@@ -21,9 +21,9 @@
 using namespace mqtt;
 using namespace std::chrono_literals;
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 namespace {
 
@@ -52,9 +52,9 @@ SessionState make_session(const std::string &cid, uint32_t expiry = 0U) {
 
 } // namespace
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // SessionTakeoverHandler tests
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 TEST_CASE("takeover_handler_register_and_is_active", "[session_manager]") {
   SessionTakeoverHandler handler;
@@ -106,9 +106,9 @@ TEST_CASE("takeover_handler_size_tracks_active_connections",
   CHECK(handler.size() == 1U);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // SessionExpiryScheduler tests
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 TEST_CASE("expiry_scheduler_empty_returns_nothing", "[session_manager]") {
   SessionExpiryScheduler scheduler;
@@ -169,9 +169,9 @@ TEST_CASE("expiry_scheduler_size_tracks_timers", "[session_manager]") {
   CHECK(scheduler.size() == 1U);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+//
 // SessionManager tests
-// ─────────────────────────────────────────────────────────────────────────────
+//
 
 namespace {
 

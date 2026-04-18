@@ -77,8 +77,8 @@ mqtt::SessionState make_session(std::string client_id,
 
 } // namespace
 
-// ── CRC-32
-// ────────────────────────────────────────────────────────────────────
+//  CRC-32
+//
 
 TEST_CASE("crc32_empty_input", "[persistence]") {
   std::vector<uint8_t> empty;
@@ -92,8 +92,8 @@ TEST_CASE("crc32_known_value", "[persistence]") {
   CHECK(mqtt::CrashSafeFile::crc32(data) == 0xCBF43926U);
 }
 
-// ── CrashSafeFile
-// ─────────────────────────────────────────────────────────────
+//  CrashSafeFile
+//
 
 TEST_CASE("crash_safe_write_then_read", "[persistence]") {
   TempDir tmp;
@@ -184,8 +184,8 @@ TEST_CASE("crash_safe_overwrite_sequence", "[persistence]") {
   }
 }
 
-// ── SessionPersistence
-// ────────────────────────────────────────────────────────
+//  SessionPersistence
+//
 
 TEST_CASE("session_persistence_empty_on_no_file", "[persistence]") {
   TempDir tmp;
@@ -250,8 +250,8 @@ TEST_CASE("session_subscription_with_identifier", "[persistence]") {
   CHECK(loaded[0].subscriptions[0].identifier == 42U);
 }
 
-// ── RetainedMessagePersistence
-// ────────────────────────────────────────────────
+//  RetainedMessagePersistence
+//
 
 TEST_CASE("retained_persistence_empty_on_no_file", "[persistence]") {
   TempDir tmp;
@@ -326,8 +326,8 @@ TEST_CASE("retained_persistence_all_property_types", "[persistence]") {
   CHECK(loaded[0] == msg);
 }
 
-// ── InflightPersistence
-// ───────────────────────────────────────────────────────
+//  InflightPersistence
+//
 
 TEST_CASE("inflight_persistence_empty_on_no_file", "[persistence]") {
   TempDir tmp;
@@ -435,8 +435,8 @@ TEST_CASE("inflight_persistence_all_property_types", "[persistence]") {
   CHECK(loaded[0].entry.message == msg);
 }
 
-// ── CrashSafeFile edge cases
-// ──────────────────────────────────────────────────
+//  CrashSafeFile edge cases
+//
 
 namespace {
 
@@ -515,8 +515,8 @@ TEST_CASE("crash_safe_directory_as_dat_falls_back_to_bak", "[persistence]") {
   CHECK(result->second == payload);
 }
 
-// ── PersistenceException
-// ──────────────────────────────────────────────────────
+//  PersistenceException
+//
 
 TEST_CASE("persistence_exception_carries_error_code", "[persistence]") {
   try {
@@ -528,8 +528,8 @@ TEST_CASE("persistence_exception_carries_error_code", "[persistence]") {
   }
 }
 
-// ── record_codec throw paths
-// ──────────────────────────────────────────────────
+//  record_codec throw paths
+//
 
 TEST_CASE("record_codec_read_u8_throws_on_empty", "[persistence]") {
   std::span<const uint8_t> empty;

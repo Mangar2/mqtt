@@ -28,14 +28,14 @@ Defines modules sub-components dependency order
 ## Project Structure
 
 mqtt/
-├── src/          # All production source code (C++ .h / .cpp files)
-├── tests/        # Top-level test entry point (test_placeholder.cpp)
-├── spec/         # Project-level specification files (implementation-plan.md)
-├── build/        # CMake build output — never read or modify manually
-├── .claude/      # Skill files and settings
-├── CMakeLists.txt
-├── CMakePresets.json
-└── CLAUDE.md
+├ src/          # All production source code (C++ .h / .cpp files)
+├ tests/        # Top-level test entry point (test_placeholder.cpp)
+├ spec/         # Project-level specification files (implementation-plan.md)
+├ build/        # CMake build output — never read or modify manually
+├ .claude/      # Skill files and settings
+├ CMakeLists.txt
+├ CMakePresets.json
+└ CLAUDE.md
 
 src/ modules organised as subdirectories mirroring implementation plan
 Each directory has SPEC.md description — navigate via those files

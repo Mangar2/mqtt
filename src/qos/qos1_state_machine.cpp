@@ -12,7 +12,7 @@
 
 namespace mqtt {
 
-// ──────────────────────────────────────────────────────────────────────────────
+//
 // Construction
 
 Qos1StateMachine::Qos1StateMachine(std::string_view client_id,
@@ -20,7 +20,7 @@ Qos1StateMachine::Qos1StateMachine(std::string_view client_id,
                                    InflightStore &store)
     : client_id_(client_id), id_mgr_(id_mgr), store_(store) {}
 
-// ──────────────────────────────────────────────────────────────────────────────
+//
 // Inbound (5.2.1)
 
 PubackPacket Qos1StateMachine::on_publish_received(const PublishPacket &pkt) {
@@ -35,7 +35,7 @@ PubackPacket Qos1StateMachine::on_publish_received(const PublishPacket &pkt) {
   return PubackPacket{.packet_id = pkt.packet_id.value(), .properties = {}};
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
+//
 // Outbound (5.2.2)
 
 PublishPacket Qos1StateMachine::initiate_publish(const Message &msg) {
@@ -77,7 +77,7 @@ void Qos1StateMachine::on_puback_received(const PubackPacket &pkt) {
   id_mgr_.release(pkt.packet_id, InflightDirection::Outbound);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
+//
 // Retransmission (5.2.3)
 
 PublishPacket Qos1StateMachine::retransmit(uint16_t packet_id) {

@@ -5,15 +5,15 @@
 
 using namespace mqtt;
 
-// ── Helpers
-// ───────────────────────────────────────────────────────────────────
+//  Helpers
+//
 
 static ReadBuffer make_reader(const std::vector<uint8_t> &bytes) {
   return ReadBuffer{std::span<const uint8_t>{bytes.data(), bytes.size()}};
 }
 
-// ── ReadBuffer
-// ────────────────────────────────────────────────────────────────
+//  ReadBuffer
+//
 
 TEST_CASE("read_buffer_position", "[primitive]") {
   std::vector<uint8_t> data{0x01U, 0x02U, 0x03U};
@@ -36,8 +36,8 @@ TEST_CASE("read_buffer_has_remaining", "[primitive]") {
   CHECK_FALSE(reader.has_remaining(2));
 }
 
-// ── encode_byte / decode_byte
-// ─────────────────────────────────────────────────
+//  encode_byte / decode_byte
+//
 
 TEST_CASE("byte_encode", "[primitive]") {
   WriteBuffer buf;
@@ -63,8 +63,8 @@ TEST_CASE("byte_decode_empty", "[primitive]") {
   }
 }
 
-// ── Variable Byte Integer
-// ─────────────────────────────────────────────────────
+//  Variable Byte Integer
+//
 
 TEST_CASE("vbi_encode_1byte", "[primitive][vbi]") {
   WriteBuffer buf;
@@ -188,8 +188,8 @@ TEST_CASE("vbi_roundtrip", "[primitive][vbi]") {
   }
 }
 
-// ── Two Byte Integer
-// ──────────────────────────────────────────────────────────
+//  Two Byte Integer
+//
 
 TEST_CASE("two_byte_encode", "[primitive][integers]") {
   WriteBuffer buf;
@@ -221,8 +221,8 @@ TEST_CASE("two_byte_roundtrip", "[primitive][integers]") {
   CHECK(decode_two_byte_integer(reader) == 0xDEADU);
 }
 
-// ── Four Byte Integer
-// ─────────────────────────────────────────────────────────
+//  Four Byte Integer
+//
 
 TEST_CASE("four_byte_encode", "[primitive][integers]") {
   WriteBuffer buf;
@@ -254,8 +254,8 @@ TEST_CASE("four_byte_roundtrip", "[primitive][integers]") {
   CHECK(decode_four_byte_integer(reader) == 0xCAFEBABEU);
 }
 
-// ── UTF-8 String
-// ──────────────────────────────────────────────────────────────
+//  UTF-8 String
+//
 
 TEST_CASE("utf8_encode_empty", "[primitive][utf8]") {
   WriteBuffer buf;
@@ -300,8 +300,8 @@ TEST_CASE("utf8_roundtrip", "[primitive][utf8]") {
   CHECK(decode_utf8_string(reader).value == "test");
 }
 
-// ── UTF-8 String Pair
-// ─────────────────────────────────────────────────────────
+//  UTF-8 String Pair
+//
 
 TEST_CASE("utf8_pair_roundtrip", "[primitive][utf8]") {
   WriteBuffer buf;
@@ -311,8 +311,8 @@ TEST_CASE("utf8_pair_roundtrip", "[primitive][utf8]") {
   CHECK(decode_utf8_string_pair(reader) == original);
 }
 
-// ── Binary Data
-// ───────────────────────────────────────────────────────────────
+//  Binary Data
+//
 
 TEST_CASE("binary_encode_empty", "[primitive][binary]") {
   WriteBuffer buf;

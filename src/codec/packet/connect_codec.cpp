@@ -9,8 +9,8 @@ namespace mqtt {
 
 namespace {
 
-// ── CONNECT helpers
-// ───────────────────────────────────────────────────────────
+//  CONNECT helpers
+//
 
 void encode_connect_flags(WriteBuffer &buf, const ConnectPacket &pkt) {
   uint8_t flags = 0;
@@ -36,8 +36,8 @@ void encode_connect_flags(WriteBuffer &buf, const ConnectPacket &pkt) {
 
 } // anonymous namespace
 
-// ── encode_connect
-// ────────────────────────────────────────────────────────────
+//  encode_connect
+//
 
 void encode_connect(WriteBuffer &buf, const ConnectPacket &pkt) {
   WriteBuffer var;
@@ -79,8 +79,8 @@ void encode_connect(WriteBuffer &buf, const ConnectPacket &pkt) {
   buf.insert(buf.end(), var.begin(), var.end());
 }
 
-// ── decode_connect
-// ────────────────────────────────────────────────────────────
+//  decode_connect
+//
 
 ConnectPacket decode_connect(ReadBuffer &buf) {
   // Protocol Name
@@ -164,8 +164,8 @@ ConnectPacket decode_connect(ReadBuffer &buf) {
   return result;
 }
 
-// ── encode_connack
-// ────────────────────────────────────────────────────────────
+//  encode_connack
+//
 
 void encode_connack(WriteBuffer &buf, const ConnackPacket &pkt) {
   WriteBuffer var;
@@ -177,8 +177,8 @@ void encode_connack(WriteBuffer &buf, const ConnackPacket &pkt) {
   buf.insert(buf.end(), var.begin(), var.end());
 }
 
-// ── decode_connack
-// ────────────────────────────────────────────────────────────
+//  decode_connack
+//
 
 ConnackPacket decode_connack(ReadBuffer &buf) {
   uint8_t ack_flags = decode_byte(buf);

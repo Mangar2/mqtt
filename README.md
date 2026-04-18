@@ -57,16 +57,16 @@ Build artefacts are placed in `build/<preset-name>/`.
 
 ```
 mqtt/
-├── cmake/
-│   └── toolchains/
-│       └── arm-linux-gnueabihf.cmake   # ARM cross-compilation toolchain
-├── src/
-│   └── main.cpp
-├── spec/
-│   ├── implementierungsplan.md         # Module implementation plan
-│   └── anforderungskatalog.md          # Full MQTT 5.0 requirements catalogue
-├── CMakeLists.txt
-└── CMakePresets.json
+├ cmake/
+│   └ toolchains/
+│       └ arm-linux-gnueabihf.cmake   # ARM cross-compilation toolchain
+├ src/
+│   └ main.cpp
+├ spec/
+│   ├ implementierungsplan.md         # Module implementation plan
+│   └ anforderungskatalog.md          # Full MQTT 5.0 requirements catalogue
+├ CMakeLists.txt
+└ CMakePresets.json
 ```
 
 ## Limitations

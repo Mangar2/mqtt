@@ -23,8 +23,8 @@ namespace mqtt {
 
 namespace {
 
-// ── Property serialization (shared with retained_message_persistence)
-// ─────────
+//  Property serialization (shared with retained_message_persistence)
+//
 
 void encode_property_value_inf(std::vector<uint8_t> &buf,
                                const PropertyValue &val) {
@@ -106,8 +106,8 @@ std::vector<Property> decode_properties_inf(std::span<const uint8_t> &cursor) {
   return props;
 }
 
-// ── Message serialization
-// ─────────────────────────────────────────────────────
+//  Message serialization
+//
 
 void encode_message_inf(std::vector<uint8_t> &buf, const Message &msg) {
   record_codec::write_utf8(buf, msg.topic);
@@ -127,8 +127,8 @@ Message decode_message_inf(std::span<const uint8_t> &cursor) {
   return msg;
 }
 
-// ── ClientEntry serialization
-// ─────────────────────────────────────────────────
+//  ClientEntry serialization
+//
 
 void encode_client_entry(std::vector<uint8_t> &buf,
                          const InflightPersistence::ClientEntry &rec) {
@@ -164,14 +164,14 @@ decode_client_entry(std::span<const uint8_t> &cursor) {
 
 } // namespace
 
-// ── Construction
-// ──────────────────────────────────────────────────────────────
+//  Construction
+//
 
 InflightPersistence::InflightPersistence(std::filesystem::path dir)
     : dir_(std::move(dir)) {}
 
-// ── Save
-// ──────────────────────────────────────────────────────────────────────
+//  Save
+//
 
 void InflightPersistence::save_all(
     const std::vector<InflightPersistence::ClientEntry> &entries) {
@@ -186,8 +186,8 @@ void InflightPersistence::save_all(
   file.write(records, static_cast<uint32_t>(entries.size()));
 }
 
-// ── Load
-// ──────────────────────────────────────────────────────────────────────
+//  Load
+//
 
 std::vector<InflightPersistence::ClientEntry>
 InflightPersistence::load_all() const {

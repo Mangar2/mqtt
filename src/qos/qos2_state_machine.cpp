@@ -12,7 +12,7 @@
 
 namespace mqtt {
 
-// ──────────────────────────────────────────────────────────────────────────────
+//
 // Construction
 
 Qos2StateMachine::Qos2StateMachine(std::string_view client_id,
@@ -20,7 +20,7 @@ Qos2StateMachine::Qos2StateMachine(std::string_view client_id,
                                    InflightStore &store)
     : client_id_(client_id), id_mgr_(id_mgr), store_(store) {}
 
-// ──────────────────────────────────────────────────────────────────────────────
+//
 // Inbound (5.3.1)
 
 Qos2InboundPublishResult
@@ -73,7 +73,7 @@ PubcompPacket Qos2StateMachine::on_pubrel_received(const PubrelPacket &pkt) {
   return PubcompPacket{.packet_id = pkt.packet_id, .properties = {}};
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
+//
 // Outbound (5.3.2)
 
 PublishPacket Qos2StateMachine::initiate_publish(const Message &msg) {
@@ -128,7 +128,7 @@ void Qos2StateMachine::on_pubcomp_received(const PubcompPacket &pkt) {
   id_mgr_.release(pkt.packet_id, InflightDirection::Outbound);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
+//
 // Retransmission (5.3.4)
 
 std::variant<PublishPacket, PubrelPacket>

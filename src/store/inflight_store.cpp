@@ -7,7 +7,7 @@
 
 namespace mqtt {
 
-// ──────────────────────────────────────────────────────────────────────────────
+//
 // Private helper
 
 /*static*/
@@ -20,7 +20,7 @@ InflightStore::find_entry(std::vector<InflightEntry> &list, uint16_t packet_id,
       });
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
+//
 // Public API
 
 void InflightStore::create(std::string_view client_id,
