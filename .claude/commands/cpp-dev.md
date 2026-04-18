@@ -7,6 +7,7 @@ C++20 coding rules for this project.
   coroutines, consteval, constinit, designated initializeers.
 - Use designated initialisers for aggregates.
 - Use range algorithms
+- NEVER use non ASCII characters in code files
 
 ## Compiler warnings
 

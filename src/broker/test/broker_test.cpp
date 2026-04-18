@@ -100,6 +100,24 @@ find_two_byte_property(const std::vector<Property> &properties,
   return std::nullopt;
 }
 
+BinaryData binary_from_text(std::string_view text) {
+  BinaryData binary;
+  binary.data.reserve(text.size());
+  for (char chr : text) {
+    binary.data.push_back(static_cast<uint8_t>(chr));
+  }
+  return binary;
+}
+
+Property make_auth_method_property(std::string_view method_name) {
+  return {PropertyId::AuthenticationMethod,
+          Utf8String{std::string(method_name)}};
+}
+
+Property make_auth_data_property(std::string_view payload_text) {
+  return {PropertyId::AuthenticationData, binary_from_text(payload_text)};
+}
+
 } // namespace
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -410,6 +428,331 @@ TEST_CASE("broker_handle_connect_auth_failure_returns_reason", "[broker]") {
 
   CHECK(result.reason_code == ReasonCode::BadUserNameOrPassword);
   CHECK(result.session_present == false);
+
+  broker.shutdown();
+}
+
+TEST_CASE(
+    "broker_handle_connect_password_auth_success_with_configured_credential",
+    "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.allow_anonymous = false;
+  cfg.password_credentials.push_back(
+      {.username = "alice", .password = "s3cr3t"});
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"auth_ok_client"};
+  connect.username = Utf8String{"alice"};
+  connect.password = binary_from_text("s3cr3t");
+
+  const ConnectResult result = broker.handle_connect(connect, []() {});
+
+  CHECK(result.reason_code == ReasonCode::Success);
+  CHECK(result.auth_status == AuthStatus::Success);
+  CHECK(result.session_present == false);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_connect_enhanced_sets_auth_method", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"enhanced_client"};
+  connect.properties.push_back(make_auth_method_property("PLAIN"));
+
+  const ConnectResult result = broker.handle_connect(connect, []() {});
+
+  CHECK(result.reason_code == ReasonCode::Success);
+  CHECK(result.auth_status == AuthStatus::Success);
+  CHECK(result.auth_method == "PLAIN");
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_connect_enhanced_continue_in_password_mode",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.allow_anonymous = false;
+  cfg.password_credentials.push_back(
+      {.username = "alice", .password = "s3cr3t"});
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"enhanced_continue_client"};
+  connect.properties.push_back(make_auth_method_property("PLAIN"));
+
+  const ConnectResult result = broker.handle_connect(connect, []() {});
+
+  CHECK(result.auth_status == AuthStatus::Continue);
+  CHECK(result.reason_code == ReasonCode::ContinueAuthentication);
+  CHECK(result.auth_method == "PLAIN");
+  REQUIRE(result.auth_data.has_value());
+  CHECK_FALSE(result.auth_data->data.empty());
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_connect_enhanced_bad_method_fails", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.allow_anonymous = false;
+  cfg.password_credentials.push_back(
+      {.username = "alice", .password = "s3cr3t"});
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"enhanced_bad_method_client"};
+  connect.properties.push_back(make_auth_method_property("SCRAM"));
+
+  const ConnectResult result = broker.handle_connect(connect, []() {});
+
+  CHECK(result.auth_status == AuthStatus::Failure);
+  CHECK(result.reason_code == ReasonCode::BadAuthenticationMethod);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_auth_packet_completes_pending_exchange_success",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.allow_anonymous = false;
+  cfg.password_credentials.push_back(
+      {.username = "alice", .password = "s3cr3t"});
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"enhanced_pending_client"};
+  connect.properties.push_back(make_auth_method_property("PLAIN"));
+  const ConnectResult connect_result = broker.handle_connect(connect, []() {});
+  REQUIRE(connect_result.auth_status == AuthStatus::Continue);
+
+  AuthPacket auth_packet;
+  auth_packet.reason_code = ReasonCode::ContinueAuthentication;
+  auth_packet.properties.push_back(make_auth_method_property("PLAIN"));
+  auth_packet.properties.push_back(make_auth_data_property("alice:s3cr3t"));
+
+  const ConnectResult result =
+      broker.handle_auth_packet("enhanced_pending_client", auth_packet);
+
+  CHECK(result.auth_status == AuthStatus::Success);
+  CHECK(result.reason_code == ReasonCode::Success);
+  CHECK(result.client_id == "enhanced_pending_client");
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_auth_packet_failure_ends_pending_exchange",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.allow_anonymous = false;
+  cfg.password_credentials.push_back(
+      {.username = "alice", .password = "s3cr3t"});
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"enhanced_pending_fail_client"};
+  connect.properties.push_back(make_auth_method_property("PLAIN"));
+  const ConnectResult connect_result = broker.handle_connect(connect, []() {});
+  REQUIRE(connect_result.auth_status == AuthStatus::Continue);
+
+  AuthPacket bad_packet;
+  bad_packet.reason_code = ReasonCode::ContinueAuthentication;
+  bad_packet.properties.push_back(make_auth_method_property("SCRAM"));
+  bad_packet.properties.push_back(make_auth_data_property("alice:s3cr3t"));
+
+  const ConnectResult failed =
+      broker.handle_auth_packet("enhanced_pending_fail_client", bad_packet);
+  CHECK(failed.auth_status == AuthStatus::Failure);
+  CHECK(failed.reason_code == ReasonCode::BadAuthenticationMethod);
+
+  const ConnectResult missing_after_failure =
+      broker.handle_auth_packet("enhanced_pending_fail_client", bad_packet);
+  CHECK(missing_after_failure.auth_status == AuthStatus::Failure);
+  CHECK(missing_after_failure.reason_code == ReasonCode::ProtocolError);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_auth_packet_missing_data_returns_continue",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.allow_anonymous = false;
+  cfg.password_credentials.push_back(
+      {.username = "alice", .password = "s3cr3t"});
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"enhanced_pending_continue_client"};
+  connect.properties.push_back(make_auth_method_property("PLAIN"));
+  const ConnectResult connect_result = broker.handle_connect(connect, []() {});
+  REQUIRE(connect_result.auth_status == AuthStatus::Continue);
+
+  AuthPacket auth_packet;
+  auth_packet.reason_code = ReasonCode::ContinueAuthentication;
+  auth_packet.properties.push_back(make_auth_method_property("PLAIN"));
+
+  const ConnectResult result = broker.handle_auth_packet(
+      "enhanced_pending_continue_client", auth_packet);
+  CHECK(result.auth_status == AuthStatus::Continue);
+  CHECK(result.reason_code == ReasonCode::ContinueAuthentication);
+  REQUIRE(result.auth_data.has_value());
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_auth_packet_malformed_data_returns_failure",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.allow_anonymous = false;
+  cfg.password_credentials.push_back(
+      {.username = "alice", .password = "s3cr3t"});
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"enhanced_pending_malformed_client"};
+  connect.properties.push_back(make_auth_method_property("PLAIN"));
+  const ConnectResult connect_result = broker.handle_connect(connect, []() {});
+  REQUIRE(connect_result.auth_status == AuthStatus::Continue);
+
+  AuthPacket auth_packet;
+  auth_packet.reason_code = ReasonCode::ContinueAuthentication;
+  auth_packet.properties.push_back(make_auth_method_property("PLAIN"));
+  auth_packet.properties.push_back(
+      make_auth_data_property("malformed_payload"));
+
+  const ConnectResult result = broker.handle_auth_packet(
+      "enhanced_pending_malformed_client", auth_packet);
+  CHECK(result.auth_status == AuthStatus::Failure);
+  CHECK(result.reason_code == ReasonCode::BadUserNameOrPassword);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_auth_packet_without_pending_exchange_protocol_error",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  AuthPacket auth_packet;
+  auth_packet.reason_code = ReasonCode::ContinueAuthentication;
+  auth_packet.properties.push_back(make_auth_method_property("PLAIN"));
+
+  const ConnectResult result =
+      broker.handle_auth_packet("missing_client", auth_packet);
+
+  CHECK(result.auth_status == AuthStatus::Failure);
+  CHECK(result.reason_code == ReasonCode::ProtocolError);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_reauthenticate_success_for_enhanced_session",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"reauth_client"};
+  connect.properties.push_back(make_auth_method_property("PLAIN"));
+  const ConnectResult connect_result = broker.handle_connect(connect, []() {});
+  REQUIRE(connect_result.reason_code == ReasonCode::Success);
+
+  AuthPacket reauth_packet;
+  reauth_packet.reason_code = ReasonCode::ReAuthenticate;
+  reauth_packet.properties.push_back(make_auth_method_property("PLAIN"));
+
+  const AuthResult reauth_result =
+      broker.handle_reauthenticate("reauth_client", reauth_packet);
+
+  CHECK(reauth_result.status == AuthStatus::Success);
+  CHECK(reauth_result.reason_code == ReasonCode::Success);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_reauthenticate_bad_method_returns_reason",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"reauth_bad_method_client"};
+  connect.properties.push_back(make_auth_method_property("PLAIN"));
+  const ConnectResult connect_result = broker.handle_connect(connect, []() {});
+  REQUIRE(connect_result.reason_code == ReasonCode::Success);
+
+  AuthPacket reauth_packet;
+  reauth_packet.reason_code = ReasonCode::ReAuthenticate;
+  reauth_packet.properties.push_back(make_auth_method_property("SCRAM"));
+
+  const AuthResult reauth_result =
+      broker.handle_reauthenticate("reauth_bad_method_client", reauth_packet);
+
+  CHECK(reauth_result.status == AuthStatus::Failure);
+  CHECK(reauth_result.reason_code == ReasonCode::BadAuthenticationMethod);
+
+  broker.shutdown();
+}
+
+TEST_CASE(
+    "broker_handle_reauthenticate_without_enhanced_session_protocol_error",
+    "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  AuthPacket reauth_packet;
+  reauth_packet.reason_code = ReasonCode::ReAuthenticate;
+  reauth_packet.properties.push_back(make_auth_method_property("PLAIN"));
+
+  const AuthResult reauth_result =
+      broker.handle_reauthenticate("missing_enhanced_client", reauth_packet);
+
+  CHECK(reauth_result.status == AuthStatus::Failure);
+  CHECK(reauth_result.reason_code == ReasonCode::ProtocolError);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_reauthenticate_bad_credentials_returns_failure",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.allow_anonymous = false;
+  cfg.password_credentials.push_back(
+      {.username = "alice", .password = "s3cr3t"});
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"reauth_failure_client"};
+  connect.properties.push_back(make_auth_method_property("PLAIN"));
+  connect.properties.push_back(make_auth_data_property("alice:s3cr3t"));
+  const ConnectResult connect_result = broker.handle_connect(connect, []() {});
+  REQUIRE(connect_result.reason_code == ReasonCode::Success);
+
+  AuthPacket reauth_packet;
+  reauth_packet.reason_code = ReasonCode::ReAuthenticate;
+  reauth_packet.properties.push_back(make_auth_method_property("PLAIN"));
+  reauth_packet.properties.push_back(make_auth_data_property("alice:wrong"));
+
+  const AuthResult reauth_result =
+      broker.handle_reauthenticate("reauth_failure_client", reauth_packet);
+
+  CHECK(reauth_result.status == AuthStatus::Failure);
+  CHECK(reauth_result.reason_code == ReasonCode::BadUserNameOrPassword);
 
   broker.shutdown();
 }

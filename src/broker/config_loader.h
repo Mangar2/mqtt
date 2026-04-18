@@ -60,6 +60,19 @@ public:
 
 private:
   /**
+   * @brief Parse one `username:password` credential entry.
+   *
+   * The first `:` separates username and password. Both parts must be
+   * non-empty.
+   *
+   * @param value Raw value from INI key `credential`.
+   * @return Parsed credential entry.
+   * @throws BrokerException(InvalidConfig) on malformed input.
+   */
+  [[nodiscard]] static PasswordCredentialConfig
+  parse_password_credential(std::string_view value);
+
+  /**
    * @brief Validate all fields of @p cfg.
    *
    * @throws BrokerException(InvalidConfig) when any field violates its range.

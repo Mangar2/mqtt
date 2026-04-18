@@ -60,6 +60,11 @@ Each entry: **test name | scenario | inputs | expected result**
 | `pw_auth_remove_credential_rejects` | Remove credential, then authenticate | removed entry | `Failure / BadUserNameOrPassword` |
 | `pw_auth_remove_unknown_noop` | Remove non-existent credential | no entry to remove | no exception |
 | `pw_auth_multiple_users` | Multiple stored users, each authenticates | two distinct user/pw pairs | both return `Success` |
+| `pw_auth_enhanced_plain_missing_connect_creds_returns_continue` | Enhanced method with missing CONNECT username/password | method=PLAIN, no creds | `Continue / ContinueAuthentication` with auth_data |
+| `pw_auth_enhanced_unknown_method_returns_bad_method` | Enhanced method unsupported | method=SCRAM | `Failure / BadAuthenticationMethod` |
+| `pw_auth_on_auth_plain_success` | AUTH credentials match stored pair | method=PLAIN + auth_data=`user:pass` | `Success / Success` |
+| `pw_auth_on_auth_plain_bad_method` | AUTH method mismatch | method=SCRAM | `Failure / BadAuthenticationMethod` |
+| `pw_auth_on_auth_plain_bad_payload` | AUTH payload incomplete or malformed | method=PLAIN + missing auth_data OR malformed payload | missing data -> `Continue / ContinueAuthentication`; malformed payload -> `Failure / BadUserNameOrPassword` |
 
 ---
 

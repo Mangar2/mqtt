@@ -44,6 +44,17 @@ make_auth_pkt(const std::string &method,
   return pkt;
 }
 
+AuthPacket make_auth_pkt_with_data(
+    const std::string &method, const std::string &payload,
+    ReasonCode reason = ReasonCode::ContinueAuthentication) {
+  AuthPacket pkt = make_auth_pkt(method, reason);
+  BinaryData payload_binary;
+  payload_binary.data.assign(payload.begin(), payload.end());
+  pkt.properties.push_back(
+      {PropertyId::AuthenticationData, std::move(payload_binary)});
+  return pkt;
+}
+
 BinaryData make_binary(const std::string &str) {
   BinaryData bin;
   bin.data.assign(str.begin(), str.end());
@@ -249,6 +260,62 @@ TEST_CASE("pw_auth_multiple_users", "[auth]") {
             .status == AuthStatus::Success);
   CHECK(auth.authenticate(make_connect(Utf8String{"bob"}, make_binary("bbb")))
             .status == AuthStatus::Success);
+}
+
+TEST_CASE("pw_auth_enhanced_plain_missing_connect_creds_returns_continue",
+          "[auth]") {
+  PasswordAuthenticator auth;
+  auth.add_credential(Utf8String{"user"}, make_binary("pass"));
+  ConnectPacket connect = make_connect_with_method("PLAIN");
+
+  const AuthResult result = auth.authenticate(connect);
+  CHECK(result.status == AuthStatus::Continue);
+  CHECK(result.reason_code == ReasonCode::ContinueAuthentication);
+  REQUIRE(result.auth_data.has_value());
+  CHECK_FALSE(result.auth_data->data.empty());
+}
+
+TEST_CASE("pw_auth_enhanced_unknown_method_returns_bad_method", "[auth]") {
+  PasswordAuthenticator auth;
+  ConnectPacket connect = make_connect_with_method("SCRAM");
+
+  const AuthResult result = auth.authenticate(connect);
+  CHECK(result.status == AuthStatus::Failure);
+  CHECK(result.reason_code == ReasonCode::BadAuthenticationMethod);
+}
+
+TEST_CASE("pw_auth_on_auth_plain_success", "[auth]") {
+  PasswordAuthenticator auth;
+  auth.add_credential(Utf8String{"alice"}, make_binary("s3cr3t"));
+  AuthPacket pkt = make_auth_pkt_with_data("PLAIN", "alice:s3cr3t");
+
+  const AuthResult result = auth.on_auth(pkt);
+  CHECK(result.status == AuthStatus::Success);
+  CHECK(result.reason_code == ReasonCode::Success);
+}
+
+TEST_CASE("pw_auth_on_auth_plain_bad_method", "[auth]") {
+  PasswordAuthenticator auth;
+  AuthPacket pkt = make_auth_pkt_with_data("SCRAM", "alice:s3cr3t");
+
+  const AuthResult result = auth.on_auth(pkt);
+  CHECK(result.status == AuthStatus::Failure);
+  CHECK(result.reason_code == ReasonCode::BadAuthenticationMethod);
+}
+
+TEST_CASE("pw_auth_on_auth_plain_bad_payload", "[auth]") {
+  PasswordAuthenticator auth;
+  auth.add_credential(Utf8String{"alice"}, make_binary("s3cr3t"));
+
+  const AuthResult missing_data = auth.on_auth(make_auth_pkt("PLAIN"));
+  CHECK(missing_data.status == AuthStatus::Continue);
+  CHECK(missing_data.reason_code == ReasonCode::ContinueAuthentication);
+  REQUIRE(missing_data.auth_data.has_value());
+
+  const AuthResult malformed =
+      auth.on_auth(make_auth_pkt_with_data("PLAIN", "alice-only"));
+  CHECK(malformed.status == AuthStatus::Failure);
+  CHECK(malformed.reason_code == ReasonCode::BadUserNameOrPassword);
 }
 
 // ── EnhancedAuthHandler

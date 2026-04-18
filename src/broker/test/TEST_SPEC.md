@@ -15,6 +15,7 @@ All tests are tagged `[broker]`.
 | `parse_all_network_keys` | network section | Both ports set | `[network]\nmqtt_port=1884\nws_port=9001` | mqtt_port=1884, ws_port=9001 |
 | `parse_broker_section` | broker section | All broker keys | max_connections, receive_maximum, etc. | fields match supplied values |
 | `parse_persistence_section` | persistence | enabled and dir | `enabled=true`, `dir=/tmp/data` | persistence_enabled=true, persistence_dir="/tmp/data" |
+| `parse_auth_credentials_section` | auth section | repeated credential keys | `credential = alice:s3cr3t`, `credential = bob:pwd` | two credential entries parsed in order |
 | `parse_bool_true_variants` | bool true | "true", "1", "yes" | allow_anonymous=true/1/yes | allow_anonymous=true |
 | `parse_bool_false_variants` | bool false | "false", "0", "no" | allow_anonymous=false/0/no | allow_anonymous=false |
 | `parse_ignores_comments` | comments | Lines starting with # | `# comment\nmqtt_port=1883` | comment ignored, port parsed |
@@ -24,6 +25,7 @@ All tests are tagged `[broker]`.
 | `parse_uint_negative_throws` | bad uint | Negative number text | `max_connections=-1` | BrokerException(InvalidConfig) |
 | `parse_uint_overflow_throws` | overflow | Number > UINT32_MAX | digit string exceeding 4294967295 | BrokerException(InvalidConfig) |
 | `parse_uint16_overflow_throws` | u16 overflow | Number > 65535 | `mqtt_port=70000` | BrokerException(InvalidConfig) |
+| `parse_auth_credential_invalid_format_throws` | bad auth credential | missing `:` separator | `credential=malformed_without_separator` | BrokerException(InvalidConfig) |
 | `parse_both_ports_zero_throws` | no listener | Both ports absent (0) | `[network]\nmqtt_port=0\nws_port=0` | BrokerException(NoListenerConfigured) |
 | `parse_max_connections_zero_throws` | bad max_conn | max_connections=0 | `max_connections=0` | BrokerException(InvalidConfig) |
 | `parse_receive_maximum_zero_throws` | bad recv_max | receive_maximum=0 | `receive_maximum=0` | BrokerException(InvalidConfig) |
@@ -63,6 +65,19 @@ All tests are tagged `[broker]`.
 | `broker_tick_publishes_sys_topics_when_enabled` | monitoring | tick() with interval=60 | far-future now | returns true |
 | `broker_handle_connect_returns_connect_result` | connect facade | wrapped connect workflow | clean_start=false CONNECT | returns ConnectResult with Success and session_present=false |
 | `broker_handle_connect_auth_failure_returns_reason` | connect facade | auth denied in password mode | allow_anonymous=false + CONNECT without creds | ConnectResult.reason_code == BadUserNameOrPassword |
+| `broker_handle_connect_password_auth_success_with_configured_credential` | connect facade | auth allowed in password mode | allow_anonymous=false + configured credential + matching CONNECT username/password | ConnectResult.reason_code == Success |
+| `broker_handle_connect_enhanced_sets_auth_method` | connect facade | enhanced method present in CONNECT | AuthenticationMethod=PLAIN | auth_status=Success, auth_method="PLAIN" |
+| `broker_handle_connect_enhanced_continue_in_password_mode` | connect facade | enhanced auth challenge flow starts | password mode + method=PLAIN + missing inline creds | auth_status=Continue, reason=ContinueAuthentication |
+| `broker_handle_connect_enhanced_bad_method_fails` | connect facade | enhanced CONNECT method unsupported | password mode + method=SCRAM | auth_status=Failure, reason=BadAuthenticationMethod |
+| `broker_handle_auth_packet_completes_pending_exchange_success` | connect facade | pending enhanced exchange completed by AUTH | prior CONNECT Continue + AUTH method=PLAIN + auth_data user:pass | auth_status=Success, reason=Success |
+| `broker_handle_auth_packet_failure_ends_pending_exchange` | connect facade | pending exchange fails and context cleared | prior CONNECT Continue + AUTH bad method | first call BadAuthenticationMethod, next call ProtocolError |
+| `broker_handle_auth_packet_missing_data_returns_continue` | connect facade | pending exchange requests more AUTH data | prior CONNECT Continue + AUTH method=PLAIN without auth_data | auth_status=Continue, reason=ContinueAuthentication |
+| `broker_handle_auth_packet_malformed_data_returns_failure` | connect facade | pending exchange receives malformed AUTH payload | prior CONNECT Continue + AUTH method=PLAIN + malformed auth_data | auth_status=Failure, reason=BadUserNameOrPassword |
+| `broker_handle_auth_packet_without_pending_exchange_protocol_error` | connect facade | AUTH arrives without pending enhanced exchange | client without pending context | auth_status=Failure, reason_code=ProtocolError |
+| `broker_handle_reauthenticate_success_for_enhanced_session` | connect facade | re-auth with matching method on enhanced session | CONNECT method PLAIN, AUTH(ReAuthenticate, method=PLAIN) | AuthResult Success |
+| `broker_handle_reauthenticate_bad_method_returns_reason` | connect facade | re-auth with wrong method | CONNECT method PLAIN, AUTH(ReAuthenticate, method=SCRAM) | AuthResult Failure/BadAuthenticationMethod |
+| `broker_handle_reauthenticate_without_enhanced_session_protocol_error` | connect facade | re-auth request without active enhanced context | missing client + AUTH(ReAuthenticate) | AuthResult Failure/ProtocolError |
+| `broker_handle_reauthenticate_bad_credentials_returns_failure` | connect facade | re-auth payload has wrong credentials | CONNECT + initial auth_data valid, then re-auth auth_data invalid | AuthResult Failure/BadUserNameOrPassword |
 | `broker_handle_connect_builds_connack_properties` | connect facade | connack properties from config | receive_maximum/topic_alias_maximum set | ConnectResult contains matching ReceiveMaximum and TopicAliasMaximum properties |
 | `broker_handle_connect_invalid_client_id_returns_reason` | connect facade | session manager rejects empty client id | CONNECT with empty client_id | ConnectResult.reason_code == ClientIdentifierNotValid |
 | `broker_handle_connect_with_will_properties_succeeds` | connect facade | connect contains will delay and will properties | CONNECT with will + WillDelayInterval + ContentType | returns Success without throw |

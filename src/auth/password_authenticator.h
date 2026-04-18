@@ -11,7 +11,6 @@
 #include "data_model/types/utf8_string.h"
 #include <unordered_map>
 
-
 namespace mqtt {
 
 /**
@@ -61,6 +60,19 @@ public:
    *         BadUserNameOrPassword` otherwise.
    */
   AuthResult authenticate(const ConnectPacket &connect) override;
+
+  /**
+   * @brief Validate enhanced-auth credentials from an AUTH packet
+   * (8.3.3/8.3.4).
+   *
+   * Expects method `PLAIN` and an `AuthenticationData` payload encoded as
+   * `username:password` in raw bytes.
+   *
+   * @param auth_pkt AUTH packet.
+   * @return `Success` on valid credentials, otherwise `Failure` with an
+   *         appropriate reason code.
+   */
+  AuthResult on_auth(const AuthPacket &auth_pkt) override;
 
 private:
   /** @brief Maps username string value → expected password. */
