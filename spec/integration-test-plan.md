@@ -1,8 +1,65 @@
 # MQTT 5.0 Broker – Integration Test Plan
 
-Hierarchische Liste aller Integrationstests für vollständige Abdeckung des Brokers gemäß MQTT 5.0 Spezifikation (OASIS Standard). Grundlage: Anforderungskatalog und Implementierungsplan — nicht bestehender Code.
+Hierarchical list of all integration tests for complete broker coverage according to the MQTT 5.0 specification (OASIS Standard). Basis: requirements catalog and implementation plan, not existing code.
 
-Jeder Test startet den Broker als Black-Box und kommuniziert ausschließlich über das MQTT-Protokoll (TCP/WebSocket).
+Each test starts the broker as a black box and communicates exclusively over the MQTT protocol (TCP/WebSocket).
+
+---
+
+## 0. Prerequisites — Test Toolbox
+
+All helper modules live in `test/integration_tests/helpers/`. They must be built and verified before any test category is started.
+
+### 0.1 MQTT Client Helper (`mqtt_client.py`)
+Wrapper around `paho-mqtt` providing high-level, blocking convenience methods for integration tests.
+- 0.1.1 `connect(host, port, client_id, clean_start, keepalive, properties, username, password)` → returns CONNACK result (reason code, session present, all properties)
+- 0.1.2 `disconnect(reason_code, properties)` → sends DISCONNECT, waits for clean close
+- 0.1.3 `publish(topic, payload, qos, retain, properties)` → sends PUBLISH, waits for ACK (QoS 1/2), returns reason code
+- 0.1.4 `subscribe(topic_filter, qos, options, subscription_id)` → sends SUBSCRIBE, returns SUBACK reason codes
+- 0.1.5 `unsubscribe(topic_filter)` → sends UNSUBSCRIBE, returns UNSUBACK reason codes
+- 0.1.6 `collect_messages(count, timeout)` → waits for N inbound PUBLISH, returns list of messages with all properties
+- 0.1.7 `wait_for_disconnect(timeout)` → waits for server-initiated DISCONNECT, returns reason code and properties
+- 0.1.8 Will Message configuration (topic, payload, qos, retain, delay, properties) — set before connect
+- 0.1.9 Topic Alias support (outbound alias table, auto-resolve)
+- 0.1.10 Context manager (`with MqttClient(...) as client:`) — auto-disconnect on exit
+
+### 0.2 Raw TCP Helper (`raw_tcp.py`)
+Low-level socket operations for malformed packet and robustness tests.
+- 0.2.1 `send_bytes(host, port, data)` → open TCP, send raw bytes, return response bytes
+- 0.2.2 `send_partial_connect(host, port)` → send truncated CONNECT packet, observe broker behavior
+- 0.2.3 `open_idle_connection(host, port, duration)` → TCP connect, send nothing, measure timeout
+- 0.2.4 `send_and_expect_close(host, port, data, timeout)` → send data, verify broker closes connection
+- 0.2.5 `flood_connections(host, port, count)` → open N TCP connections simultaneously, return success/failure per connection
+- 0.2.6 CONNECT packet builder — assemble valid/invalid CONNECT packets byte-by-byte (protocol name, version, flags, properties)
+- 0.2.7 PUBLISH packet builder — assemble PUBLISH packets with configurable QoS, flags, topic, properties
+- 0.2.8 Generic packet builder — assemble any MQTT fixed header + variable header + payload from parts
+
+### 0.3 Assertions Helper (`assertions.py`)
+Reusable assertion functions for test validation.
+- 0.3.1 `assert_connack(result, reason_code, session_present)` — verify CONNACK fields
+- 0.3.2 `assert_connack_property(result, property_id, expected_value)` — verify single CONNACK property
+- 0.3.3 `assert_message(message, topic, payload, qos, retain)` — verify received PUBLISH content
+- 0.3.4 `assert_message_property(message, property_id, expected_value)` — verify single message property
+- 0.3.5 `assert_reason_code(actual, expected)` — compare reason codes with readable error output
+- 0.3.6 `assert_disconnected(client, reason_code, timeout)` — verify broker-initiated DISCONNECT
+- 0.3.7 `assert_no_message(client, timeout)` — verify NO message arrives within timeout
+- 0.3.8 `assert_connection_closed(host, port, data, timeout)` — send data, verify TCP close
+
+### 0.4 Broker Lifecycle Helper (`broker.py`)
+Broker process management for tests that need restart/reconfigure.
+- 0.4.1 `start_broker(config_overrides)` → build, start broker process, wait for reachable
+- 0.4.2 `stop_broker(process)` → graceful SIGTERM, wait for exit
+- 0.4.3 `restart_broker(process, config_overrides)` → stop + start, for persistence/recovery tests
+- 0.4.4 `is_reachable(host, port, timeout)` → TCP health check
+
+### 0.5 Verification and Smoke Test
+- 0.5.1 paho-mqtt library available (import check)
+- 0.5.2 MqttClient connects and disconnects successfully
+- 0.5.3 MqttClient pub/sub QoS 0 roundtrip works
+- 0.5.4 MqttClient pub/sub QoS 1 roundtrip works
+- 0.5.5 MqttClient pub/sub QoS 2 roundtrip works
+- 0.5.6 Raw TCP helper can send bytes and receive response
+- 0.5.7 Assertions produce clear error messages on failure
 
 ---
 

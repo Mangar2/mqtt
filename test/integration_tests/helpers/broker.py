@@ -1,0 +1,203 @@
+"""Broker process lifecycle helper for integration tests."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import shutil
+import socket
+import subprocess
+import tempfile
+import time
+from typing import Any
+
+
+HELPER_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = HELPER_DIR.parents[2]
+RELEASE_DIR = PROJECT_ROOT / "build" / "release"
+BROKER_BINARY = RELEASE_DIR / ("mqtt-broker.exe" if os.name == "nt" else "mqtt-broker")
+
+_DEFAULT_WAIT_TIMEOUT_SECONDS = 8.0
+_DEFAULT_HOST = "127.0.0.1"
+_DEFAULT_MQTT_PORT = 1883
+
+
+def is_reachable(host: str, port: int, timeout: float) -> bool:
+    """Return true if a TCP connect to host:port succeeds within timeout."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def start_broker(config_overrides: dict[str, Any] | None = None) -> subprocess.Popen[str]:
+    """Build and start broker process, then wait until listener is reachable."""
+    normalized = _normalize_overrides(config_overrides)
+    host = str(normalized.get("__host", _DEFAULT_HOST))
+    startup_timeout = float(normalized.get("__startup_timeout_seconds", _DEFAULT_WAIT_TIMEOUT_SECONDS))
+
+    mqtt_port = _extract_effective_port(normalized)
+    config_path = _write_config_if_needed(normalized)
+
+    _run_or_raise(["cmake", "--preset", "release"], "cmake configure (release)")
+    _run_or_raise(
+        ["cmake", "--build", "--preset", "release", "--target", "mqtt-broker"],
+        "cmake build (mqtt-broker)",
+    )
+
+    if not BROKER_BINARY.exists():
+        raise RuntimeError(f"broker binary not found at {BROKER_BINARY}")
+
+    command = [str(BROKER_BINARY)]
+    if config_path is not None:
+        command.append(str(config_path))
+
+    process = subprocess.Popen(
+        command,
+        cwd=PROJECT_ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+
+    setattr(process, "_integration_config_path", str(config_path) if config_path is not None else "")
+    wait_deadline = time.monotonic() + max(0.2, startup_timeout)
+
+    while time.monotonic() < wait_deadline:
+        if process.poll() is not None:
+            _cleanup_process_config(process)
+            raise RuntimeError("broker exited before becoming reachable")
+        if is_reachable(host, mqtt_port, timeout=0.3):
+            return process
+        time.sleep(0.1)
+
+    stop_broker(process)
+    raise RuntimeError(f"broker did not become reachable on {host}:{mqtt_port} within {startup_timeout:.1f}s")
+
+
+def stop_broker(process: subprocess.Popen[str] | None) -> None:
+    """Stop broker process using SIGTERM and fallback SIGKILL if needed."""
+    if process is None:
+        return
+    if process.poll() is not None:
+        _cleanup_process_config(process)
+        return
+
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+    finally:
+        _cleanup_process_config(process)
+
+
+def restart_broker(
+    process: subprocess.Popen[str] | None,
+    config_overrides: dict[str, Any] | None = None,
+) -> subprocess.Popen[str]:
+    """Restart broker process with optional new configuration overrides."""
+    stop_broker(process)
+    return start_broker(config_overrides)
+
+
+def _run_or_raise(command: list[str], label: str) -> None:
+    completed = subprocess.run(
+        command,
+        cwd=PROJECT_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode == 0:
+        return
+
+    output = "\n".join(
+        part.strip() for part in [completed.stdout, completed.stderr] if part and part.strip()
+    ).strip()
+    raise RuntimeError(
+        f"{label} failed with exit code {completed.returncode}"
+        + (f": {output}" if output else "")
+    )
+
+
+def _normalize_overrides(config_overrides: dict[str, Any] | None) -> dict[str, Any]:
+    if config_overrides is None:
+        return {}
+
+    normalized: dict[str, Any] = {}
+    for key, value in config_overrides.items():
+        if isinstance(value, dict):
+            for nested_key, nested_value in value.items():
+                normalized[f"{key}.{nested_key}"] = nested_value
+        else:
+            normalized[key] = value
+    return normalized
+
+
+def _extract_effective_port(normalized_overrides: dict[str, Any]) -> int:
+    mqtt_override = normalized_overrides.get("network.mqtt_port")
+    if mqtt_override is None:
+        return _DEFAULT_MQTT_PORT
+
+    effective = int(mqtt_override)
+    if effective == 0:
+        raise ValueError("network.mqtt_port must be non-zero for reachability checks")
+    return effective
+
+
+def _write_config_if_needed(normalized_overrides: dict[str, Any]) -> Path | None:
+    ini_lines = _render_ini_lines(normalized_overrides)
+    if not ini_lines:
+        return None
+
+    config_dir = Path(tempfile.mkdtemp(prefix="mqtt-integration-config-"))
+    config_path = config_dir / "broker.ini"
+    config_path.write_text("\n".join(ini_lines) + "\n", encoding="utf-8")
+    return config_path
+
+
+def _render_ini_lines(normalized_overrides: dict[str, Any]) -> list[str]:
+    sections: dict[str, dict[str, Any]] = {}
+    for full_key, raw_value in normalized_overrides.items():
+        if full_key.startswith("__"):
+            continue
+        if "." not in full_key:
+            raise ValueError(
+                f"invalid override key {full_key!r}; expected section.key format or nested dict"
+            )
+        section_name, key_name = full_key.split(".", 1)
+        section_map = sections.setdefault(section_name, {})
+        section_map[key_name] = raw_value
+
+    lines: list[str] = []
+    for section_name in sorted(sections.keys()):
+        lines.append(f"[{section_name}]")
+        section_map = sections[section_name]
+        for key_name in sorted(section_map.keys()):
+            lines.append(f"{key_name} = {_format_ini_value(section_map[key_name])}")
+        lines.append("")
+
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def _format_ini_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _cleanup_process_config(process: subprocess.Popen[str]) -> None:
+    config_path_text = getattr(process, "_integration_config_path", "")
+    if not config_path_text:
+        return
+
+    config_path = Path(config_path_text)
+    config_dir = config_path.parent
+    if config_dir.exists():
+        shutil.rmtree(config_dir, ignore_errors=True)
+    setattr(process, "_integration_config_path", "")

@@ -6,6 +6,21 @@ Python test modules discovered by `test/run_integration_tests.py`
 Broker treated as black-box — communicate only via MQTT protocol
 Test plan spec/integration-test-plan.md — always consult before creating tests
 
+## Toolbox (helpers/)
+
+All tests use shared helpers in `test/integration_tests/helpers/`:
+- `mqtt_client.py` — paho-mqtt wrapper: connect, disconnect, publish, subscribe, unsubscribe, collect_messages, wait_for_disconnect, will config, topic alias, context manager
+- `raw_tcp.py` — raw socket ops: send_bytes, send_partial_connect, open_idle_connection, send_and_expect_close, flood_connections, CONNECT/PUBLISH/generic packet builders
+- `assertions.py` — assert_connack, assert_message, assert_reason_code, assert_disconnected, assert_no_message, assert_connection_closed
+- `broker.py` — start_broker, stop_broker, restart_broker, is_reachable
+
+Import helpers:
+```python
+from helpers.mqtt_client import MqttClient
+from helpers.raw_tcp import send_bytes, send_and_expect_close
+from helpers.assertions import assert_connack, assert_message, assert_no_message
+```
+
 ## File location
 
 ```
@@ -37,12 +52,53 @@ def my_test(config) -> tuple[bool, str]:
 `config` has: `config.host` (str), `config.port` (int), `config.timeout_seconds` (float)
 Return `(True, "details")` on success, `(False, "reason")` on failure
 
-## MQTT client tools
+## When to use which tool
 
-Prefer `mqttx` CLI for simple pub/sub tests
-Use `paho-mqtt` Python library for complex flows (QoS 2 handshake, will messages, session resume, properties)
-Use raw TCP sockets only for malformed packet / robustness tests
-Always set `--reconnect-period 0` with mqttx to avoid auto-reconnect
+Use `MqttClient` (paho-mqtt wrapper) for:
+- All QoS 1/2 flows, will messages, session resume, properties, subscription options, topic alias, retained messages, shared subscriptions, enhanced auth, flow control
+
+Use `raw_tcp` for:
+- Malformed packets, garbage bytes, truncated data, invalid headers, half-open connections, protocol version errors, flood/stress connections
+
+Use `mqttx` CLI only for:
+- Simplest smoke tests (anonymous connect, basic QoS 0 pub). Avoid for anything requiring property inspection or multi-step flows
+
+## Example: paho-mqtt based test
+
+```python
+from helpers.mqtt_client import MqttClient
+from helpers.assertions import assert_connack, assert_message
+
+def run_qos1_roundtrip(config) -> tuple[bool, str]:
+    try:
+        with MqttClient(config.host, config.port, "sub-client") as sub:
+            assert_connack(sub.connack, reason_code=0x00)
+            sub.subscribe("test/topic", qos=1)
+
+            with MqttClient(config.host, config.port, "pub-client") as pub:
+                pub.publish("test/topic", b"hello", qos=1)
+
+            msgs = sub.collect_messages(count=1, timeout=config.timeout_seconds)
+            assert_message(msgs[0], topic="test/topic", payload=b"hello", qos=1)
+        return True, "QoS 1 roundtrip OK"
+    except Exception as e:
+        return False, str(e)
+```
+
+## Example: raw TCP test
+
+```python
+from helpers.raw_tcp import send_and_expect_close
+
+def run_garbage_bytes(config) -> tuple[bool, str]:
+    try:
+        closed = send_and_expect_close(config.host, config.port, b"\xff\x00\xde\xad", timeout=5.0)
+        if not closed:
+            return False, "broker did not close connection on garbage input"
+        return True, "broker closed connection on garbage bytes"
+    except Exception as e:
+        return False, str(e)
+```
 
 ## Running tests
 
@@ -63,7 +119,7 @@ Runner auto-builds and starts broker if not running
 One `.py` file per logical group — multiple TEST_CASES entries per file allowed
 Test names must match test plan hierarchy (e.g. `connect/clean_start_new_session`)
 No test depends on another test — each test self-contained
-Clean up subscriptions and connections within each test
-Handle `FileNotFoundError` for missing CLI tools
-Handle `subprocess.TimeoutExpired`
-Never hardcode port — use `config.port`
+Clean up subscriptions and connections within each test — use `with MqttClient(...) as c:` for auto-cleanup
+Never hardcode host or port — use `config.host` and `config.port`
+Timeouts always from `config.timeout_seconds`
+Exception in test function → return `(False, str(e))` — never let exceptions propagate
