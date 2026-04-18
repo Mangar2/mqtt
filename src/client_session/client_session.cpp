@@ -16,7 +16,8 @@ ClientSession::ClientSession(
     std::shared_ptr<OutboundQueue> outbound_queue,
     InflightStore &inflight_store, uint16_t keep_alive_seconds,
     uint16_t receive_maximum, uint16_t topic_alias_maximum,
-    std::chrono::steady_clock::duration retransmit_timeout)
+    std::chrono::steady_clock::duration retransmit_timeout,
+    uint32_t maximum_packet_size)
     : client_id_(std::move(client_id)), username_(std::move(username)),
       outbound_queue_(std::move(outbound_queue)), packet_id_manager_(),
       qos1_state_machine_(client_id_, packet_id_manager_, inflight_store),
@@ -25,7 +26,8 @@ ClientSession::ClientSession(
       topic_alias_table_(topic_alias_maximum),
       keep_alive_timer_(keep_alive_seconds),
       enhanced_auth_handler_(std::move(authenticator)),
-      inflight_store_(inflight_store), retransmit_timeout_(retransmit_timeout) {
+      inflight_store_(inflight_store), retransmit_timeout_(retransmit_timeout),
+      maximum_packet_size_(maximum_packet_size) {
   if (!outbound_queue_) {
     throw std::invalid_argument(
         "ClientSession: outbound_queue must not be null");
@@ -109,6 +111,10 @@ std::vector<WriteBuffer> ClientSession::drain_outbound() {
     }
 
     Message queued_message = std::move(next_message.value());
+
+    if (!is_outbound_publish_within_maximum_packet_size(queued_message)) {
+      continue;
+    }
 
     if (queued_message.qos == QoS::AtMostOnce) {
       frames.push_back(
@@ -261,6 +267,32 @@ std::optional<Message> ClientSession::pop_next_message() {
   }
 
   return outbound_queue_->try_pop();
+}
+
+bool ClientSession::is_outbound_publish_within_maximum_packet_size(
+    const Message &message) const {
+  if (maximum_packet_size_ == 0U) {
+    return true;
+  }
+
+  WriteBuffer encoded_frame;
+  encode_publish(encoded_frame, publish_from_message_for_size_check(message));
+  return encoded_frame.size() <= maximum_packet_size_;
+}
+
+PublishPacket
+ClientSession::publish_from_message_for_size_check(const Message &message) {
+  PublishPacket packet;
+  packet.dup = false;
+  packet.qos = message.qos;
+  packet.retain = message.retain;
+  packet.topic = message.topic;
+  if (message.qos != QoS::AtMostOnce) {
+    packet.packet_id = 1U;
+  }
+  packet.payload = message.payload;
+  packet.properties = message.properties;
+  return packet;
 }
 
 } // namespace mqtt

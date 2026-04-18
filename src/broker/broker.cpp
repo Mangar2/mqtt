@@ -6,6 +6,7 @@
 
 #include "broker/broker.h"
 
+#include <atomic>
 #include <csignal>
 #include <mutex>
 #include <shared_mutex>
@@ -28,6 +29,12 @@ namespace mqtt {
 
 namespace {
 
+[[nodiscard]] std::string make_assigned_client_id() {
+  static std::atomic<uint64_t> next_id{1U};
+  const uint64_t sequence = next_id.fetch_add(1U, std::memory_order_relaxed);
+  return std::format("auto-{}", sequence);
+}
+
 [[nodiscard]] ReasonCode
 map_session_error_to_reason(SessionManagerError error_code) {
   switch (error_code) {
@@ -46,6 +53,27 @@ build_connack_properties(const BrokerConfig &broker_config) {
   properties.push_back({PropertyId::TopicAliasMaximum,
                         TwoByteInteger{broker_config.topic_alias_maximum}});
   return properties;
+}
+
+[[nodiscard]] bool
+requests_response_information(const std::vector<Property> &properties) {
+  for (const Property &property : properties) {
+    if (property.id != PropertyId::RequestResponseInformation) {
+      continue;
+    }
+    const auto *request_ptr = std::get_if<uint8_t>(&property.value);
+    return request_ptr != nullptr && *request_ptr == 1U;
+  }
+  return false;
+}
+
+void append_connect_driven_connack_properties(
+    const ConnectPacket &connect_packet, std::vector<Property> &properties) {
+  if (requests_response_information(connect_packet.properties)) {
+    properties.push_back(
+        Property{.id = PropertyId::ResponseInformation,
+                 .value = Utf8String{"broker/response-information"}});
+  }
 }
 
 } // namespace
@@ -140,20 +168,34 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
                                      std::function<void()> close_callback) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
 
+  ConnectPacket effective_connect = connect_packet;
+  std::optional<std::string> assigned_client_id;
+  if (effective_connect.client_id.value.empty()) {
+    assigned_client_id = make_assigned_client_id();
+    effective_connect.client_id.value = *assigned_client_id;
+  }
+
   ConnectResult result;
-  result.client_id = connect_packet.client_id.value;
+  result.client_id = effective_connect.client_id.value;
   result.connack_properties = build_connack_properties(config_);
+  append_connect_driven_connack_properties(effective_connect,
+                                           result.connack_properties);
+  if (assigned_client_id.has_value()) {
+    result.connack_properties.push_back(
+        Property{.id = PropertyId::AssignedClientIdentifier,
+                 .value = Utf8String{*assigned_client_id}});
+  }
 
   pending_enhanced_auth_.erase(result.client_id);
   active_enhanced_auth_.erase(result.client_id);
 
-  if (EnhancedAuthHandler::is_enhanced(connect_packet)) {
+  if (EnhancedAuthHandler::is_enhanced(effective_connect)) {
     EnhancedAuthHandler auth_handler(std::shared_ptr<IAuthenticator>(
         active_auth_, [](IAuthenticator * /*unused*/) {}));
 
     AuthResult auth_result{};
     try {
-      auth_result = auth_handler.initiate(connect_packet);
+      auth_result = auth_handler.initiate(effective_connect);
     } catch (const AuthException &exception) {
       result.auth_status = AuthStatus::Failure;
       result.reason_code = map_auth_error_to_reason(exception.error());
@@ -169,8 +211,9 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
       pending_enhanced_auth_.insert_or_assign(
           result.client_id, PendingEnhancedAuthContext{
                                 .handler = std::move(auth_handler),
-                                .connect_packet = connect_packet,
-                                .close_callback = std::move(close_callback)});
+                                .connect_packet = effective_connect,
+                                .close_callback = std::move(close_callback),
+                                .assigned_client_id = assigned_client_id});
       return result;
     }
 
@@ -178,10 +221,17 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
       return result;
     }
 
-    ConnectResult completed =
-        complete_connect_success(connect_packet, std::move(close_callback));
+    ConnectResult completed = complete_connect_success(effective_connect,
+                                                       std::move(close_callback));
     completed.auth_status = AuthStatus::Success;
     completed.auth_method = std::string(auth_handler.auth_method());
+    append_connect_driven_connack_properties(effective_connect,
+                                             completed.connack_properties);
+    if (assigned_client_id.has_value()) {
+      completed.connack_properties.push_back(
+          Property{.id = PropertyId::AssignedClientIdentifier,
+                   .value = Utf8String{*assigned_client_id}});
+    }
     active_enhanced_auth_.insert_or_assign(completed.client_id,
                                            std::move(auth_handler));
     return completed;
@@ -189,7 +239,7 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
 
   AuthResult auth_result{};
   try {
-    auth_result = active_auth_->authenticate(connect_packet);
+    auth_result = active_auth_->authenticate(effective_connect);
   } catch (const AuthException &exception) {
     result.auth_status = AuthStatus::Failure;
     result.reason_code = map_auth_error_to_reason(exception.error());
@@ -205,8 +255,15 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
   }
 
   ConnectResult completed =
-      complete_connect_success(connect_packet, std::move(close_callback));
+      complete_connect_success(effective_connect, std::move(close_callback));
   completed.auth_status = AuthStatus::Success;
+  append_connect_driven_connack_properties(effective_connect,
+                                           completed.connack_properties);
+  if (assigned_client_id.has_value()) {
+    completed.connack_properties.push_back(
+        Property{.id = PropertyId::AssignedClientIdentifier,
+                 .value = Utf8String{*assigned_client_id}});
+  }
   return completed;
 }
 
@@ -255,6 +312,13 @@ ConnectResult Broker::handle_auth_packet(std::string_view client_id,
                                std::move(pending_it->second.close_callback));
   completed.auth_status = AuthStatus::Success;
   completed.auth_method = std::string(pending_it->second.handler.auth_method());
+  append_connect_driven_connack_properties(pending_it->second.connect_packet,
+                                           completed.connack_properties);
+  if (pending_it->second.assigned_client_id.has_value()) {
+    completed.connack_properties.push_back(
+        Property{.id = PropertyId::AssignedClientIdentifier,
+                 .value = Utf8String{*pending_it->second.assigned_client_id}});
+  }
   active_enhanced_auth_.insert_or_assign(completed.client_id,
                                          std::move(pending_it->second.handler));
   pending_enhanced_auth_.erase(pending_it);
@@ -308,10 +372,6 @@ Broker::complete_connect_success(const ConnectPacket &connect_packet,
         result.client_id, will_data_to_will_message(*connect_packet.will));
   }
 
-  if (result.session_present) {
-    message_router_->flush_offline_queue(result.client_id);
-  }
-
   result.auth_status = AuthStatus::Success;
   return result;
 }
@@ -340,22 +400,24 @@ AuthResult Broker::protocol_error_result() {
 void Broker::handle_disconnect(std::string_view client_id,
                                ReasonCode reason_code,
                                std::optional<uint32_t> expiry_override,
-                               std::chrono::steady_clock::time_point now) {
+                               std::chrono::steady_clock::time_point now,
+                               std::shared_ptr<OutboundQueue> connection_queue) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
   pending_enhanced_auth_.erase(std::string(client_id));
   active_enhanced_auth_.erase(std::string(client_id));
   will_publisher_->on_disconnect(client_id, reason_code, now);
-  unregister_connection_locked(client_id);
+  unregister_connection_locked(client_id, connection_queue);
   session_manager_->handle_disconnect(client_id, expiry_override, now);
 }
 
 void Broker::handle_connection_lost(std::string_view client_id,
-                                    std::chrono::steady_clock::time_point now) {
+                                    std::chrono::steady_clock::time_point now,
+                                    std::shared_ptr<OutboundQueue> connection_queue) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
   pending_enhanced_auth_.erase(std::string(client_id));
   active_enhanced_auth_.erase(std::string(client_id));
   will_publisher_->on_connection_lost(client_id, now);
-  unregister_connection_locked(client_id);
+  unregister_connection_locked(client_id, connection_queue);
   session_manager_->handle_disconnect(client_id, std::nullopt, now);
 }
 
@@ -447,7 +509,7 @@ void Broker::register_connection(std::string_view client_id,
 
 void Broker::unregister_connection(std::string_view client_id) noexcept {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
-  unregister_connection_locked(client_id);
+  unregister_connection_locked(client_id, nullptr);
 }
 
 //
@@ -469,16 +531,56 @@ bool Broker::tick(std::chrono::steady_clock::time_point now) {
 void Broker::register_connection_locked(std::string_view client_id,
                                         std::shared_ptr<OutboundQueue> queue) {
   const std::string key(client_id);
-  const bool existed = active_connections_.contains(key);
+  const auto existing_it = active_connections_.find(key);
+  const bool existed = existing_it != active_connections_.end();
+
+  if (existed && existing_it->second && queue && existing_it->second != queue) {
+    while (true) {
+      std::optional<Message> pending_message = existing_it->second->try_pop();
+      if (!pending_message.has_value()) {
+        break;
+      }
+      if (!queue->push(std::move(*pending_message))) {
+        break;
+      }
+    }
+  }
+
   active_connections_[key] = std::move(queue);
   if (!existed) {
     stats_collector_->on_client_connected();
   }
 }
 
-void Broker::unregister_connection_locked(std::string_view client_id) noexcept {
-  const std::size_t erase_count =
-      active_connections_.erase(std::string(client_id));
+void Broker::unregister_connection_locked(
+    std::string_view client_id,
+    const std::shared_ptr<OutboundQueue> &expected_queue) noexcept {
+  const std::string key(client_id);
+  auto iter = active_connections_.find(key);
+  if (iter == active_connections_.end()) {
+    return;
+  }
+
+  if (expected_queue && iter->second != expected_queue) {
+    return;
+  }
+
+  if (offline_queue_ && iter->second) {
+    while (true) {
+      std::optional<Message> pending_message = iter->second->try_pop();
+      if (!pending_message.has_value()) {
+        break;
+      }
+      try {
+        offline_queue_->enqueue(client_id, *pending_message);
+      } catch (...) {
+        break;
+      }
+    }
+  }
+
+  active_connections_.erase(iter);
+  const std::size_t erase_count = 1U;
   if (erase_count > 0U) {
     stats_collector_->on_client_disconnected();
   }

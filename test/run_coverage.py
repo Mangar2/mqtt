@@ -82,6 +82,8 @@ def _run_captured(cmd: list[str], env: dict | None = None) -> tuple[int, str]:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     _log(result.stdout)
     return result.returncode, result.stdout

@@ -243,6 +243,32 @@ TEST_CASE("session_manager_resume_existing_session", "[session_manager]") {
   CHECK_FALSE(result.takeover_occurred);
 }
 
+TEST_CASE("session_manager_resume_existing_zero_expiry_discards_and_recreates",
+          "[session_manager]") {
+  SessionManagerFixture fix;
+  fix.session_store.create(make_session("c1", 0U));
+
+  const auto result =
+      fix.manager.handle_connect(make_connect("c1", false), []() {});
+
+  CHECK_FALSE(result.session_present);
+  REQUIRE(fix.session_store.contains("c1"));
+  CHECK(fix.session_store.load("c1")->session_expiry_interval == 0U);
+}
+
+TEST_CASE("session_manager_resume_existing_applies_connect_expiry_override",
+          "[session_manager]") {
+  SessionManagerFixture fix;
+  fix.session_store.create(make_session("c1", 30U));
+
+  const auto result =
+      fix.manager.handle_connect(make_connect("c1", false, 120U), []() {});
+
+  CHECK(result.session_present);
+  REQUIRE(fix.session_store.contains("c1"));
+  CHECK(fix.session_store.load("c1")->session_expiry_interval == 120U);
+}
+
 TEST_CASE("session_manager_resume_cancels_expiry_timer", "[session_manager]") {
   SessionManagerFixture fix;
   fix.session_store.create(make_session("c1", 300U));

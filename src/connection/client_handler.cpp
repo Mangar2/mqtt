@@ -131,6 +131,19 @@ find_session_expiry_override(const std::vector<Property> &properties) {
   return std::nullopt;
 }
 
+[[nodiscard]] std::optional<uint32_t>
+find_maximum_packet_size(const std::vector<Property> &properties) {
+  for (const Property &property : properties) {
+    if (property.id != PropertyId::MaximumPacketSize) {
+      continue;
+    }
+    if (const auto *size_ptr = std::get_if<FourByteInteger>(&property.value)) {
+      return *size_ptr;
+    }
+  }
+  return std::nullopt;
+}
+
 void enqueue_frame(WriteQueue &write_queue, WriteBuffer frame,
                    bool is_websocket) {
   if (is_websocket) {
@@ -391,19 +404,25 @@ void ClientHandler::run(std::unique_ptr<TcpConnection> conn, Broker &broker,
       std::make_shared<OutboundQueue>(
           static_cast<std::size_t>(config.max_queued_messages));
   broker.register_connection(connect_result.client_id, outbound_queue);
+  if (connect_result.session_present) {
+    broker.message_router().flush_offline_queue(connect_result.client_id);
+  }
 
   std::shared_ptr<IAuthenticator> authenticator(
       &broker.authenticator(), [](IAuthenticator * /*unused*/) {});
 
   const std::string username =
       connect_packet->username.has_value() ? connect_packet->username->value : "";
+    const uint32_t maximum_packet_size =
+      find_maximum_packet_size(connect_packet->properties).value_or(0U);
 
   ClientSession client_session(
       connect_result.client_id, username, std::move(authenticator),
       outbound_queue, broker.session_manager().inflight_store(),
       connect_packet->keep_alive, config.receive_maximum,
       config.topic_alias_maximum,
-      std::chrono::seconds(config.qos_retransmit_timeout_seconds));
+      std::chrono::seconds(config.qos_retransmit_timeout_seconds),
+      maximum_packet_size);
 
   client_session.keep_alive_timer().reset();
 
@@ -582,15 +601,16 @@ void ClientHandler::run(std::unique_ptr<TcpConnection> conn, Broker &broker,
     }
   }
 
-  stop_transport();
-
   const auto now = std::chrono::steady_clock::now();
   if (clean_disconnect) {
     broker.handle_disconnect(connect_result.client_id, disconnect_reason,
-                             expiry_override, now);
+                             expiry_override, now, outbound_queue);
   } else {
-    broker.handle_connection_lost(connect_result.client_id, now);
+    broker.handle_connection_lost(connect_result.client_id, now,
+                                  outbound_queue);
   }
+
+  stop_transport();
 }
 
 } // namespace mqtt

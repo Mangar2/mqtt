@@ -243,7 +243,9 @@ public:
    */
   void handle_disconnect(std::string_view client_id, ReasonCode reason_code,
                          std::optional<uint32_t> expiry_override,
-                         std::chrono::steady_clock::time_point now);
+               std::chrono::steady_clock::time_point now,
+               std::shared_ptr<OutboundQueue> connection_queue =
+                 nullptr);
 
   /**
    * @brief Thread-safe wrapper for abrupt connection loss (Module 17.3.3).
@@ -255,7 +257,9 @@ public:
    * @param now       Current timestamp.
    */
   void handle_connection_lost(std::string_view client_id,
-                              std::chrono::steady_clock::time_point now);
+                  std::chrono::steady_clock::time_point now,
+                  std::shared_ptr<OutboundQueue> connection_queue =
+                    nullptr);
 
   /**
    * @brief Thread-safe SUBSCRIBE facade (Module 19.1).
@@ -377,7 +381,9 @@ private:
                                   std::shared_ptr<OutboundQueue> queue);
 
   /// Unregister connection when broker_mutex_ is already held exclusively.
-  void unregister_connection_locked(std::string_view client_id) noexcept;
+  void unregister_connection_locked(
+      std::string_view client_id,
+      const std::shared_ptr<OutboundQueue> &expected_queue = nullptr) noexcept;
 
   //  Internal helpers
 
@@ -421,6 +427,7 @@ private:
     EnhancedAuthHandler handler;
     ConnectPacket connect_packet;
     std::function<void()> close_callback;
+    std::optional<std::string> assigned_client_id;
   };
 
   std::unordered_map<std::string, PendingEnhancedAuthContext>

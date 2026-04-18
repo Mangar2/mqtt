@@ -783,8 +783,8 @@ TEST_CASE("broker_handle_connect_builds_connack_properties", "[broker]") {
   broker.shutdown();
 }
 
-TEST_CASE("broker_handle_connect_invalid_client_id_returns_reason",
-          "[broker]") {
+TEST_CASE("broker_handle_connect_empty_client_id_assigns_identifier",
+    "[broker]") {
   BrokerConfig cfg = make_test_config();
   Broker broker(cfg);
   broker.startup();
@@ -794,8 +794,84 @@ TEST_CASE("broker_handle_connect_invalid_client_id_returns_reason",
 
   const ConnectResult result = broker.handle_connect(connect, []() {});
 
-  CHECK(result.reason_code == ReasonCode::ClientIdentifierNotValid);
+  CHECK(result.reason_code == ReasonCode::Success);
   CHECK(result.session_present == false);
+  CHECK_FALSE(result.client_id.empty());
+
+  bool found_assigned_identifier = false;
+  for (const Property &property : result.connack_properties) {
+    if (property.id != PropertyId::AssignedClientIdentifier) {
+      continue;
+    }
+    const Utf8String assigned = std::get<Utf8String>(property.value);
+    CHECK_FALSE(assigned.value.empty());
+    CHECK(assigned.value == result.client_id);
+    found_assigned_identifier = true;
+    break;
+  }
+  CHECK(found_assigned_identifier);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_connect_request_response_information_adds_property",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{"response-info-client"};
+  connect.properties.push_back(
+      Property{PropertyId::RequestResponseInformation, uint8_t{1U}});
+
+  const ConnectResult result = broker.handle_connect(connect, []() {});
+
+  CHECK(result.reason_code == ReasonCode::Success);
+  bool found_response_information = false;
+  for (const Property &property : result.connack_properties) {
+    if (property.id != PropertyId::ResponseInformation) {
+      continue;
+    }
+    const Utf8String value = std::get<Utf8String>(property.value);
+    CHECK_FALSE(value.value.empty());
+    found_response_information = true;
+  }
+  CHECK(found_response_information);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_connect_empty_client_id_enhanced_auth_success",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.allow_anonymous = false;
+  cfg.password_credentials = {
+      PasswordCredentialConfig{.username = "user", .password = "secret"}};
+
+  Broker broker(cfg);
+  broker.startup();
+
+  ConnectPacket connect;
+  connect.client_id = Utf8String{""};
+  connect.properties.push_back(make_auth_method_property("PLAIN"));
+  connect.properties.push_back(make_auth_data_property("user:secret"));
+
+  const ConnectResult result = broker.handle_connect(connect, []() {});
+
+  CHECK(result.reason_code == ReasonCode::Success);
+  CHECK_FALSE(result.client_id.empty());
+  bool found_assigned_identifier = false;
+  for (const Property &property : result.connack_properties) {
+    if (property.id != PropertyId::AssignedClientIdentifier) {
+      continue;
+    }
+    const Utf8String assigned = std::get<Utf8String>(property.value);
+    CHECK_FALSE(assigned.value.empty());
+    CHECK(assigned.value == result.client_id);
+    found_assigned_identifier = true;
+  }
+  CHECK(found_assigned_identifier);
 
   broker.shutdown();
 }
@@ -894,6 +970,54 @@ TEST_CASE("broker_register_same_client_does_not_double_count", "[broker]") {
   broker.unregister_connection("same_client");
   CHECK(broker.statistics_collector().snapshot().connected_clients == 0U);
 
+  broker.shutdown();
+}
+
+TEST_CASE("broker_register_same_client_transfers_pending_messages",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  auto first_queue = std::make_shared<OutboundQueue>();
+  broker.register_connection("same_client", first_queue);
+
+  Message pending_message;
+  pending_message.topic = Utf8String{"xfer/topic"};
+  pending_message.payload = BinaryData{{0x42U}};
+  pending_message.qos = QoS::AtMostOnce;
+  REQUIRE(first_queue->push(pending_message));
+
+  auto replacement_queue = std::make_shared<OutboundQueue>();
+  broker.register_connection("same_client", replacement_queue);
+
+  REQUIRE(replacement_queue->size() == 1U);
+  const auto moved_message = replacement_queue->try_pop();
+  REQUIRE(moved_message.has_value());
+  CHECK(moved_message->topic.value == "xfer/topic");
+
+  broker.unregister_connection("same_client");
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_disconnect_with_mismatched_queue_keeps_connection",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  auto active_queue = std::make_shared<OutboundQueue>();
+  broker.register_connection("disc_mismatch", active_queue);
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
+
+  auto stale_queue = std::make_shared<OutboundQueue>();
+  broker.handle_disconnect("disc_mismatch", ReasonCode::Success, std::nullopt,
+                           std::chrono::steady_clock::now(), stale_queue);
+
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
+
+  broker.unregister_connection("disc_mismatch");
+  CHECK(broker.statistics_collector().snapshot().connected_clients == 0U);
   broker.shutdown();
 }
 

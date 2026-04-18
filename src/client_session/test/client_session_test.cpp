@@ -446,4 +446,80 @@ TEST_CASE("drain_outbound_retransmits_overdue_qos2_waiting_for_pubcomp",
   CHECK(retransmit_pubrel.packet_id == first_publish.packet_id.value());
 }
 
+TEST_CASE("drain_outbound_skips_publish_above_maximum_packet_size",
+          "[client_session]") {
+  InflightStore inflight_store;
+  auto authenticator =
+      std::make_shared<CallbackAuthenticator>([](const ConnectPacket &) {
+        return AuthResult{.status = AuthStatus::Success,
+                          .reason_code = ReasonCode::Success,
+                          .auth_data = std::nullopt};
+      });
+
+  auto queue = std::make_shared<OutboundQueue>();
+  ClientSession session("client-1", "user-1", authenticator, queue,
+                        inflight_store, 30U, 10U, 8U, 20s, 32U);
+
+  Message oversized = make_message("out/max", QoS::AtMostOnce);
+  oversized.payload.data.assign(128U, 0x42U);
+  REQUIRE(queue->push(oversized));
+
+  const std::vector<WriteBuffer> frames = session.drain_outbound();
+  CHECK(frames.empty());
+}
+
+TEST_CASE("client_session_ctor_rejects_null_queue", "[client_session]") {
+  InflightStore inflight_store;
+  auto authenticator =
+      std::make_shared<CallbackAuthenticator>([](const ConnectPacket &) {
+        return AuthResult{.status = AuthStatus::Success,
+                          .reason_code = ReasonCode::Success,
+                          .auth_data = std::nullopt};
+      });
+
+  CHECK_THROWS_AS(
+      ClientSession("client-1", "user-1", authenticator, nullptr,
+                    inflight_store, 30U, 10U, 8U),
+      std::invalid_argument);
+}
+
+TEST_CASE("on_auth_routes_to_handler_when_not_reauthenticate",
+          "[client_session]") {
+  InflightStore inflight_store;
+
+  auto authenticator = std::make_shared<CallbackAuthenticator>(
+      [](const ConnectPacket &) {
+        BinaryData challenge;
+        challenge.data = {0x01U};
+        return AuthResult{.status = AuthStatus::Continue,
+                          .reason_code = ReasonCode::ContinueAuthentication,
+                          .auth_data = challenge};
+      },
+      [](const AuthPacket &) {
+        return AuthResult{.status = AuthStatus::Failure,
+                          .reason_code = ReasonCode::BadAuthenticationMethod,
+                          .auth_data = std::nullopt};
+      });
+
+  ClientSession session = make_session(authenticator, inflight_store);
+
+  ConnectPacket connect_packet;
+  connect_packet.properties.push_back(Property{
+      .id = PropertyId::AuthenticationMethod,
+      .value = Utf8String{"token-auth"},
+  });
+  REQUIRE(session.initiate_auth(connect_packet).status == AuthStatus::Continue);
+
+  AuthPacket auth_packet;
+  auth_packet.reason_code = ReasonCode::ContinueAuthentication;
+  auth_packet.properties.push_back(Property{
+      .id = PropertyId::AuthenticationMethod,
+      .value = Utf8String{"token-auth"},
+  });
+
+  const AuthResult auth_result = session.on_auth(auth_packet);
+  CHECK(auth_result.status == AuthStatus::Failure);
+  CHECK(auth_result.reason_code == ReasonCode::BadAuthenticationMethod);
+}
+
 } // namespace mqtt

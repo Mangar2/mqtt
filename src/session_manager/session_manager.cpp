@@ -65,6 +65,18 @@ SessionManager::handle_connect(const ConnectPacket &connect,
     // 10.1.2: try to resume an existing session.
     const auto existing = session_store_.load(cid);
     if (existing.has_value()) {
+      if (existing->session_expiry_interval == 0U) {
+        remove_session_data(cid);
+
+        const uint32_t expiry =
+            find_session_expiry(connect.properties).value_or(0U);
+        SessionState new_session;
+        new_session.client_id.value = std::string(cid);
+        new_session.session_expiry_interval = expiry;
+        session_store_.create(new_session);
+
+        expiry_scheduler_.cancel(cid);
+      } else {
       // Resume — cancel any pending expiry timer (10.3.2).
       expiry_scheduler_.cancel(cid);
       result.session_present = true; // 10.1.3
@@ -76,6 +88,7 @@ SessionManager::handle_connect(const ConnectPacket &connect,
         updated.session_expiry_interval = *override_expiry;
         session_store_.remove(cid);
         session_store_.create(updated);
+      }
       }
     } else {
       // No prior session — create a fresh one.

@@ -77,8 +77,9 @@ public:
                 std::shared_ptr<OutboundQueue> outbound_queue,
                 InflightStore &inflight_store, uint16_t keep_alive_seconds,
                 uint16_t receive_maximum, uint16_t topic_alias_maximum,
-                std::chrono::steady_clock::duration retransmit_timeout =
-                    std::chrono::seconds{20});
+          std::chrono::steady_clock::duration retransmit_timeout =
+            std::chrono::seconds{20},
+          uint32_t maximum_packet_size = 0U);
 
   /**
    * @brief Start enhanced authentication state from CONNECT.
@@ -194,6 +195,15 @@ private:
   [[nodiscard]] static WriteBuffer
   encode_publish_packet(const PublishPacket &pkt);
 
+  /// Return true when a message can be encoded into a PUBLISH frame that
+  /// respects the negotiated Maximum Packet Size limit.
+  [[nodiscard]] bool
+  is_outbound_publish_within_maximum_packet_size(const Message &message) const;
+
+  /// Build a representative outbound PUBLISH packet for frame-size checks.
+  [[nodiscard]] static PublishPacket
+  publish_from_message_for_size_check(const Message &message);
+
   /**
    * @brief Pop one outbound message from deferred or shared queue.
    * @return Next outbound message, if any.
@@ -217,6 +227,7 @@ private:
   InflightStore &inflight_store_;                   ///< Session inflight store.
   std::chrono::steady_clock::duration
       retransmit_timeout_; ///< QoS retransmit timeout.
+    uint32_t maximum_packet_size_; ///< 0 means no maximum packet size limit.
   std::deque<Message>
       deferred_messages_; ///< QoS 1/2 messages parked while receive-max paused.
 };
