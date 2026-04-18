@@ -17,6 +17,7 @@ Skills only here:
 /build`: build project
 /cpp-dev: C++20 rules
 /unit-test: unit testing
+/integration-test: integration testing
 /code-create: workflow coding
 /github-pr: GitHub branches and Pull Requests 
 

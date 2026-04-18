@@ -12,6 +12,8 @@ Features:
 """
 
 import argparse
+import hashlib
+import importlib.util
 import json
 import socket
 import subprocess
@@ -28,6 +30,7 @@ PROJECT_ROOT = TEST_DIR.parent
 RELEASE_DIR = PROJECT_ROOT / "build" / "release"
 BROKER_BINARY = RELEASE_DIR / ("mqtt-broker.exe" if sys.platform == "win32" else "mqtt-broker")
 DEFAULT_RESULTS_FILE = TEST_DIR / "integration_test_results.json"
+INTEGRATION_TESTS_DIR = TEST_DIR / "integration_tests"
 
 
 @dataclass(frozen=True)
@@ -173,53 +176,47 @@ def _select_by_filters(tests: list[TestCase], filters: list[str]) -> list[TestCa
     ]
 
 
-def _run_connect_anonymous(config: RunnerConfig) -> tuple[bool, str]:
-    command = [
-        "mqttx",
-        "pub",
-        "--hostname",
-        config.host,
-        "--port",
-        str(config.port),
-        "--topic",
-        "integration/connect/anonymous",
-        "--message",
-        "connect-test",
-        "--qos",
-        "0",
-        "--reconnect-period",
-        "0",
-    ]
-
-    try:
-        completed = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=config.timeout_seconds,
-        )
-    except FileNotFoundError:
-        return False, "mqttx command not found on PATH"
-    except subprocess.TimeoutExpired:
-        return False, f"mqttx command timed out after {config.timeout_seconds:.1f}s"
-
-    output = "\n".join(part for part in [completed.stdout.strip(), completed.stderr.strip()] if part).strip()
-    if completed.returncode == 0:
-        return True, output or "mqttx connected and publish completed"
-
-    failure_reason = output or "mqttx returned non-zero without output"
-    return False, f"exit={completed.returncode} {failure_reason}"
+def _load_test_module(module_path: Path):
+    digest = hashlib.sha1(str(module_path).encode("utf-8")).hexdigest()[:12]
+    module_name = f"integration_test_{digest}"
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to create import spec for {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def _available_tests() -> list[TestCase]:
-    return [
-        TestCase(
-            name="connect/anonymous",
-            description="Connect to broker without credentials using mqttx",
-            execute=_run_connect_anonymous,
-        ),
-    ]
+def _discover_tests() -> list[TestCase]:
+    if not INTEGRATION_TESTS_DIR.exists():
+        return []
+
+    discovered: list[TestCase] = []
+    for module_path in sorted(INTEGRATION_TESTS_DIR.rglob("*.py")):
+        if module_path.name == "__init__.py":
+            continue
+
+        module = _load_test_module(module_path)
+        module_cases = getattr(module, "TEST_CASES", None)
+        if module_cases is None:
+            continue
+        if not isinstance(module_cases, list):
+            raise RuntimeError(f"TEST_CASES must be a list in {module_path}")
+
+        for case in module_cases:
+            if not isinstance(case, dict):
+                raise RuntimeError(f"Each test case must be a dict in {module_path}")
+            name = case.get("name")
+            description = case.get("description")
+            execute = case.get("run")
+            if not isinstance(name, str) or not isinstance(description, str) or not callable(execute):
+                raise RuntimeError(
+                    f"Invalid test case format in {module_path}; expected keys name(str), description(str), run(callable)"
+                )
+            discovered.append(TestCase(name=name, description=description, execute=execute))
+
+    discovered.sort(key=lambda test: test.name)
+    return discovered
 
 
 def _parse_args() -> argparse.Namespace:
@@ -254,7 +251,11 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = _parse_args()
-    all_tests = _available_tests()
+    all_tests = _discover_tests()
+
+    if not all_tests:
+        print(f"No test files found in {INTEGRATION_TESTS_DIR}")
+        return 1
 
     if args.list:
         print("Available tests:")
