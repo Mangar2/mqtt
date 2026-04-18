@@ -22,7 +22,6 @@
 #include "broker/broker_error.h"
 #include "connection/topic_alias_table.h"
 #include "data_model/message/message.h"
-#include "outbound_queue/outbound_queue.h"
 #include "data_model/packet/connect_packet.h"
 #include "data_model/property/property_id.h"
 #include "data_model/reason_code/reason_code.h"
@@ -32,6 +31,7 @@
 #include "data_model/types/qos.h"
 #include "data_model/types/utf8_string.h"
 #include "network/tcp_connection.h"
+#include "outbound_queue/outbound_queue.h"
 #include "persistence/inflight_persistence.h"
 #include "persistence/retained_message_persistence.h"
 #include "persistence/session_persistence.h"
@@ -380,8 +380,7 @@ TEST_CASE("broker_handle_connection_lost_unregisters_client", "[broker]") {
   Broker broker(cfg);
   broker.startup();
 
-  broker.register_connection("lost_client",
-                              std::make_shared<OutboundQueue>());
+  broker.register_connection("lost_client", std::make_shared<OutboundQueue>());
   CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
 
   // Store a will and then simulate abrupt connection loss.
@@ -834,8 +833,7 @@ TEST_CASE("broker_handle_disconnect_unregisters_client", "[broker]") {
   Broker broker(cfg);
   broker.startup();
 
-  broker.register_connection("disc_client",
-                              std::make_shared<OutboundQueue>());
+  broker.register_connection("disc_client", std::make_shared<OutboundQueue>());
   CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
 
   broker.handle_disconnect("disc_client", ReasonCode::Success, std::nullopt,
@@ -887,12 +885,10 @@ TEST_CASE("broker_register_same_client_does_not_double_count", "[broker]") {
   Broker broker(cfg);
   broker.startup();
 
-  broker.register_connection("same_client",
-                              std::make_shared<OutboundQueue>());
+  broker.register_connection("same_client", std::make_shared<OutboundQueue>());
   CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
 
-  broker.register_connection("same_client",
-                              std::make_shared<OutboundQueue>());
+  broker.register_connection("same_client", std::make_shared<OutboundQueue>());
   CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
 
   broker.unregister_connection("same_client");
@@ -1067,7 +1063,7 @@ TEST_CASE("broker_unregister_unknown_client_keeps_count", "[broker]") {
   CHECK(broker.statistics_collector().snapshot().connected_clients == 0U);
 
   broker.register_connection("present_client",
-                              std::make_shared<OutboundQueue>());
+                             std::make_shared<OutboundQueue>());
   CHECK(broker.statistics_collector().snapshot().connected_clients == 1U);
 
   broker.unregister_connection("present_client");

@@ -9,8 +9,7 @@
 
 namespace mqtt {
 
-OutboundQueue::OutboundQueue(std::size_t max_depth)
-    : max_depth_{max_depth} {}
+OutboundQueue::OutboundQueue(std::size_t max_depth) : max_depth_{max_depth} {}
 
 bool OutboundQueue::push(Message msg) {
   if (stopped_.load(std::memory_order_acquire)) {

@@ -23,7 +23,6 @@
 #include "auth/authenticator.h"
 #include "auth/enhanced_auth_handler.h"
 #include "auth/password_authenticator.h"
-#include "outbound_queue/outbound_queue.h"
 #include "authz/acl_engine.h"
 #include "authz/acl_loader.h"
 #include "broker/broker_config.h"
@@ -39,6 +38,7 @@
 #include "monitoring/statistics_collector.h"
 #include "monitoring/sys_topic_publisher.h"
 #include "network/tcp_listener.h"
+#include "outbound_queue/outbound_queue.h"
 #include "persistence/inflight_persistence.h"
 #include "persistence/retained_message_persistence.h"
 #include "persistence/session_persistence.h"
@@ -52,6 +52,7 @@
 #include "will_manager/will_delay_timer.h"
 #include "will_manager/will_publisher.h"
 #include "will_manager/will_store.h"
+
 
 namespace mqtt {
 
@@ -98,8 +99,6 @@ struct ConnectResult {
  */
 class Broker {
 public:
-
-
   /**
    * @brief Construct a Broker with the given configuration.
    *

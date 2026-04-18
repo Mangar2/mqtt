@@ -92,10 +92,10 @@ public:
   [[nodiscard]] std::size_t size() const noexcept;
 
 private:
-  const std::size_t max_depth_;       ///< Upper bound on queue_.size().
-  mutable std::mutex mutex_;          ///< Guards queue_.
-  std::queue<Message> queue_;         ///< Pending outbound messages.
-  std::atomic<bool> stopped_{false};  ///< True after stop() is called.
+  const std::size_t max_depth_;      ///< Upper bound on queue_.size().
+  mutable std::mutex mutex_;         ///< Guards queue_.
+  std::queue<Message> queue_;        ///< Pending outbound messages.
+  std::atomic<bool> stopped_{false}; ///< True after stop() is called.
 };
 
 } // namespace mqtt

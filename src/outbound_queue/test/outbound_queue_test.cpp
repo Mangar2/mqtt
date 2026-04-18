@@ -11,8 +11,7 @@ using namespace mqtt;
 
 namespace {
 
-Message make_message(const std::string &topic_name,
-                     QoS qos = QoS::AtMostOnce) {
+Message make_message(const std::string &topic_name, QoS qos = QoS::AtMostOnce) {
   Message msg;
   msg.topic = Utf8String{topic_name};
   msg.qos = qos;
