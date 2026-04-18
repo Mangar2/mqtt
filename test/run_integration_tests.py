@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import re
 import socket
 import subprocess
 import sys
@@ -45,6 +46,9 @@ class TestCase:
     name: str
     description: str
     execute: Callable[[RunnerConfig], tuple[bool, str]]
+
+
+REQUIREMENT_NUMBER_PREFIX = re.compile(r"^\s*(\d+(?:\.\d+)*)\b")
 
 
 def _is_local_host(hostname: str) -> bool:
@@ -156,7 +160,7 @@ def _load_state(path: Path) -> dict:
 
 def _save_state(path: Path, state: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
 
 
 def _matches_filter(test_name: str, raw_filter: str) -> bool:
@@ -187,6 +191,29 @@ def _load_test_module(module_path: Path):
     return module
 
 
+def _test_sort_key(test: TestCase) -> tuple:
+    number_match = REQUIREMENT_NUMBER_PREFIX.match(test.description)
+    if number_match:
+        number_parts = tuple(int(part) for part in number_match.group(1).split("."))
+        return (0, number_parts, test.name)
+
+    return (1, test.name)
+
+
+def _ordered_results(results: dict, tests: list[TestCase]) -> dict:
+    known_test_names = {test.name for test in tests}
+    ordered_known_test_names = [test.name for test in tests if test.name in results]
+    ordered_unknown_test_names = sorted(name for name in results if name not in known_test_names)
+
+    ordered: dict = {}
+    for test_name in ordered_known_test_names:
+        ordered[test_name] = results[test_name]
+    for test_name in ordered_unknown_test_names:
+        ordered[test_name] = results[test_name]
+
+    return ordered
+
+
 def _discover_tests() -> list[TestCase]:
     if not INTEGRATION_TESTS_DIR.exists():
         return []
@@ -215,7 +242,7 @@ def _discover_tests() -> list[TestCase]:
                 )
             discovered.append(TestCase(name=name, description=description, execute=execute))
 
-    discovered.sort(key=lambda test: test.name)
+    discovered.sort(key=_test_sort_key)
     return discovered
 
 
@@ -305,7 +332,7 @@ def main() -> int:
                 "updated_at": _now_utc_iso(),
                 "details": f"broker setup failed: {runtime_error}",
             }
-        state["results"] = existing_results
+        state["results"] = _ordered_results(existing_results, all_tests)
         state["last_run_started_at"] = run_started_at
         state["last_run_finished_at"] = _now_utc_iso()
         state["last_run_selection"] = [test.name for test in selected_tests]
@@ -334,7 +361,7 @@ def main() -> int:
     finally:
         _stop_broker_if_started(broker_process)
 
-    state["results"] = existing_results
+    state["results"] = _ordered_results(existing_results, all_tests)
     state["last_run_started_at"] = run_started_at
     state["last_run_finished_at"] = _now_utc_iso()
     state["last_run_selection"] = [test.name for test in selected_tests]

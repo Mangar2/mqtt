@@ -64,7 +64,7 @@ def run_paho_available(_config) -> tuple[bool, str]:
         import paho.mqtt.client as mqtt  # pylint: disable=import-outside-toplevel
 
         version_text = getattr(mqtt, "__version__", "unknown")
-        return True, f"paho-mqtt import succeeded (version={version_text})"
+        return True, f"0.5.1 paho-mqtt import succeeded (version={version_text})"
     except Exception as error:  # pragma: no cover - failure path only
         return False, f"paho-mqtt import failed: {error}"
 
@@ -76,7 +76,7 @@ def run_mqtt_client_connect_disconnect(config) -> tuple[bool, str]:
         with MqttClient(timeout_seconds=config.timeout_seconds) as client:
             result = client.connect(host, port, client_id=_unique_client_id("pre-connect"), clean_start=True)
             assert_reason_code(result.reason_code, 0x00)
-        return True, f"MqttClient connect/disconnect successful ({target_label})"
+        return True, f"0.5.2 MqttClient connect/disconnect successful ({target_label})"
     except Exception as error:
         return False, f"MqttClient connect/disconnect failed: {error}"
     finally:
@@ -103,7 +103,7 @@ def run_pub_sub_qos0_roundtrip(config) -> tuple[bool, str]:
 
             messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
             assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
-        return True, f"QoS0 roundtrip successful ({target_label})"
+        return True, f"0.5.3 QoS0 roundtrip successful ({target_label})"
     except Exception as error:
         return False, f"QoS0 roundtrip failed: {error}"
     finally:
@@ -130,7 +130,7 @@ def run_pub_sub_qos1_roundtrip(config) -> tuple[bool, str]:
 
             messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
             assert_message(messages[0], topic=topic, payload=payload, qos=1, retain=False)
-        return True, f"QoS1 roundtrip successful ({target_label})"
+        return True, f"0.5.4 QoS1 roundtrip successful ({target_label})"
     except Exception as error:
         return False, f"QoS1 roundtrip failed: {error}"
     finally:
@@ -157,7 +157,7 @@ def run_pub_sub_qos2_roundtrip(config) -> tuple[bool, str]:
 
             messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
             assert_message(messages[0], topic=topic, payload=payload, qos=2, retain=False)
-        return True, f"QoS2 roundtrip successful ({target_label})"
+        return True, f"0.5.5 QoS2 roundtrip successful ({target_label})"
     except Exception as error:
         return False, f"QoS2 roundtrip failed: {error}"
     finally:
@@ -174,7 +174,7 @@ def run_raw_tcp_send_receive(config) -> tuple[bool, str]:
             return False, "raw_tcp.send_bytes returned no response"
         if response[0] != 0x20:
             return False, f"expected CONNACK first byte 0x20, got 0x{response[0]:02X}"
-        return True, f"raw_tcp.send_bytes received {len(response)} byte(s)"
+        return True, f"0.5.6 raw_tcp.send_bytes received {len(response)} byte(s)"
     except Exception as error:
         return False, f"raw_tcp send/receive failed: {error}"
 
@@ -187,43 +187,43 @@ def run_assertions_error_message(_config) -> tuple[bool, str]:
         message = str(error)
         if "expected 0x00" not in message or "got 0x01" not in message:
             return False, f"unexpected assertion message: {message}"
-        return True, f"assertion message is readable: {message}"
+        return True, f"0.5.7 assertion message is readable: {message}"
 
 
 TEST_CASES = [
     {
         "name": "prerequisites/paho_import_available",
-        "description": "paho-mqtt library import works",
+        "description": "0.5.1 paho-mqtt library import works",
         "run": run_paho_available,
     },
     {
         "name": "prerequisites/mqtt_client_connect_disconnect",
-        "description": "MqttClient can connect and disconnect cleanly",
+        "description": "0.5.2 MqttClient can connect and disconnect cleanly",
         "run": run_mqtt_client_connect_disconnect,
     },
     {
         "name": "prerequisites/pub_sub_qos0_roundtrip",
-        "description": "MqttClient QoS0 pub/sub roundtrip works",
+        "description": "0.5.3 MqttClient QoS0 pub/sub roundtrip works",
         "run": run_pub_sub_qos0_roundtrip,
     },
     {
         "name": "prerequisites/pub_sub_qos1_roundtrip",
-        "description": "MqttClient QoS1 pub/sub roundtrip works",
+        "description": "0.5.4 MqttClient QoS1 pub/sub roundtrip works",
         "run": run_pub_sub_qos1_roundtrip,
     },
     {
         "name": "prerequisites/pub_sub_qos2_roundtrip",
-        "description": "MqttClient QoS2 pub/sub roundtrip works",
+        "description": "0.5.5 MqttClient QoS2 pub/sub roundtrip works",
         "run": run_pub_sub_qos2_roundtrip,
     },
     {
         "name": "prerequisites/raw_tcp_send_receive",
-        "description": "raw_tcp helper can send bytes and receive broker response",
+        "description": "0.5.6 raw_tcp helper can send bytes and receive broker response",
         "run": run_raw_tcp_send_receive,
     },
     {
         "name": "prerequisites/assertions_readable_error",
-        "description": "assertions helper emits readable error messages",
+        "description": "0.5.7 assertions helper emits readable error messages",
         "run": run_assertions_error_message,
     },
 ]

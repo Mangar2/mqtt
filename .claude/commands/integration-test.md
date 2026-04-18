@@ -51,6 +51,12 @@ TEST_CASES = [
 ]
 ```
 
+Order rule for `TEST_CASES`:
+- If descriptions start with requirement numbers (for example `1.2.3`), entries must be ordered by numeric requirement order (1.2.9 before 1.2.10)
+- Never append a new numbered case at the end when its number belongs in the middle — insert at the correct numeric position
+- Unnumbered cases come after numbered cases and are ordered by `name`
+- Keep this order stable for all edits to avoid noisy diffs and list output jumps
+
 ## Test function signature
 
 ```python
