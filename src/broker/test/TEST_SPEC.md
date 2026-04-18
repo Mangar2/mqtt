@@ -59,9 +59,9 @@ All tests are tagged `[broker]`.
 | `broker_register_increments_connected_clients` | monitoring | register/unregister | 2 clients | connected_clients tracks correctly |
 | `broker_register_same_client_does_not_double_count` | monitoring | re-register existing client ID | same client registered twice | connected_clients remains 1 |
 | `broker_unregister_unknown_client_keeps_count` | monitoring | unregister idempotence | missing + existing client IDs | connected_clients never underflows |
-| `broker_route_message_counts_inbound` | monitoring | route_message() | 2 publishes | messages_inbound==2 |
+| `broker_handle_publish_counts_inbound_via_facade` | monitoring | handle_publish() facade | 2 publishes | messages_inbound==2 |
 | `broker_handle_publish_counts_inbound` | publish facade | handle_publish() wrapper increments inbound stats | 2 publishes | messages_inbound==2 |
-| `broker_route_message_without_subscribers_is_safe` | monitoring | route without subscribers | 1 publish | no throw, messages_inbound increments |
+| `broker_handle_publish_without_subscribers_is_safe` | monitoring | publish without subscribers | 1 publish | no throw, messages_inbound increments |
 | `broker_handle_subscribe_returns_suback_and_delivers_retained` | subscribe facade | subscribe to filter with retained message present | retained on matching topic + SUBSCRIBE QoS1 | SUBACK GrantedQoS1 and retained message delivered |
 | `broker_handle_subscribe_denied_returns_not_authorized` | subscribe facade | ACL denies subscription | allow_anonymous=false + SUBSCRIBE | SUBACK reason NotAuthorized |
 | `broker_handle_unsubscribe_removes_subscription` | unsubscribe facade | subscribe then unsubscribe | publish before and after unsubscribe | first publish delivered, second suppressed; UNSUBACK Success |

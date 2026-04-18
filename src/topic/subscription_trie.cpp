@@ -39,7 +39,7 @@ SubscriptionTrie::split_filter(std::string_view filter) {
   return split_by_slash(filter);
 }
 
-void SubscriptionTrie::insert(std::string_view client_id,
+bool SubscriptionTrie::insert(std::string_view client_id,
                               const Subscription &sub) {
   const auto levels = split_filter(sub.topic_filter.value);
   Node *cur = root_.get();
@@ -50,7 +50,11 @@ void SubscriptionTrie::insert(std::string_view client_id,
     }
     cur = child.get();
   }
-  cur->subscriptions[std::string{client_id}] = sub;
+
+  const std::string key(client_id);
+  const bool is_new_subscription = !cur->subscriptions.contains(key);
+  cur->subscriptions[key] = sub;
+  return is_new_subscription;
 }
 
 bool SubscriptionTrie::remove_recursive(Node &node,

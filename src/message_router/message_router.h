@@ -10,11 +10,10 @@
 #include <functional>
 #include <string_view>
 
-#include "authz/acl_engine.h"
 #include "connection/topic_alias_table.h"
 #include "data_model/message/message.h"
+#include "data_model/subscription/subscription.h"
 #include "message_router/inbound_publish_processor.h"
-#include "message_router/message_expiry_controller.h"
 #include "message_router/offline_queue.h"
 #include "message_router/shared_subscription_dispatcher.h"
 #include "message_router/subscriber_fanout.h"
@@ -106,6 +105,25 @@ public:
   void flush_offline_queue(std::string_view client_id,
                            std::chrono::steady_clock::time_point now =
                                std::chrono::steady_clock::now());
+
+  /**
+   * @brief Deliver retained messages for one subscription (25.1.2).
+   *
+   * Applies Retain Handling rules, per-subscription message adjustments,
+   * and expiry checks before forwarding via DeliverFn.
+   *
+   * @param client_id Identifier of the subscribing client.
+   * @param topic_filter Topic filter of the subscription.
+   * @param subscription Stored subscription entry.
+   * @param is_new_subscription True when the subscription was newly created.
+   * @param now Reference instant for expiry calculation.
+   */
+  void deliver_retained(std::string_view client_id,
+                        std::string_view topic_filter,
+                        const Subscription &subscription,
+                        bool is_new_subscription,
+                        std::chrono::steady_clock::time_point now =
+                            std::chrono::steady_clock::now());
 
 private:
   /**

@@ -43,8 +43,10 @@ public:
    *
    * @param client_id Identifier of the subscribing client.
    * @param sub       Subscription to store; must carry a valid topic filter.
+   * @return `true` when a new `(client_id, topic_filter)` entry was created;
+   *         `false` when an existing entry was replaced.
    */
-  void insert(std::string_view client_id, const Subscription &sub);
+  bool insert(std::string_view client_id, const Subscription &sub);
 
   /**
    * @brief Removes a specific subscription for a client.

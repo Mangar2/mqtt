@@ -68,6 +68,15 @@ public:
                                                  std::string_view username,
                                                  TopicAliasTable &alias_table);
 
+  /**
+   * @brief Retrieve retained messages matching a subscription topic filter.
+   *
+   * @param topic_filter Topic filter expression.
+   * @return Matching retained messages.
+   */
+  [[nodiscard]] std::vector<Message>
+  retained_for_filter(std::string_view topic_filter) const;
+
 private:
   /**
    * @brief Resolve the TopicAlias property in msg in-place (12.1.1).

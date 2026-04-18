@@ -4,9 +4,9 @@
 
 namespace mqtt {
 
-void SubscriptionStore::store(std::string_view client_id,
+bool SubscriptionStore::store(std::string_view client_id,
                               const Subscription &sub) {
-  trie_.insert(client_id, sub);
+  return trie_.insert(client_id, sub);
 }
 
 void SubscriptionStore::remove(std::string_view client_id,

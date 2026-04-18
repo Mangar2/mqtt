@@ -22,6 +22,7 @@
 #include "session_manager/session_manager_error.h"
 #include "topic/topic_error.h"
 #include "topic/topic_validator.h"
+#include "will_manager/will_message_util.h"
 
 namespace mqtt {
 
@@ -37,15 +38,6 @@ map_session_error_to_reason(SessionManagerError error_code) {
   return ReasonCode::UnspecifiedError;
 }
 
-[[nodiscard]] BinaryData password_to_binary(std::string_view pass_word) {
-  BinaryData binary;
-  binary.data.reserve(pass_word.size());
-  for (char chr : pass_word) {
-    binary.data.push_back(static_cast<uint8_t>(chr));
-  }
-  return binary;
-}
-
 [[nodiscard]] std::vector<Property>
 build_connack_properties(const BrokerConfig &broker_config) {
   std::vector<Property> properties;
@@ -54,48 +46,6 @@ build_connack_properties(const BrokerConfig &broker_config) {
   properties.push_back({PropertyId::TopicAliasMaximum,
                         TwoByteInteger{broker_config.topic_alias_maximum}});
   return properties;
-}
-
-[[nodiscard]] WillMessage extract_will_message(const WillData &will_data) {
-  WillMessage will_message;
-  will_message.message.topic = will_data.topic;
-  will_message.message.payload = will_data.payload;
-  will_message.message.qos = will_data.qos;
-  will_message.message.retain = will_data.retain;
-
-  for (const auto &property : will_data.properties) {
-    if (property.id == PropertyId::WillDelayInterval) {
-      will_message.delay_interval = std::get<FourByteInteger>(property.value);
-      continue;
-    }
-    will_message.message.properties.push_back(property);
-  }
-
-  return will_message;
-}
-
-[[nodiscard]] ReasonCode granted_qos_reason(QoS qos) {
-  switch (qos) {
-  case QoS::AtMostOnce:
-    return ReasonCode::Success;
-  case QoS::AtLeastOnce:
-    return ReasonCode::GrantedQoS1;
-  case QoS::ExactlyOnce:
-    return ReasonCode::GrantedQoS2;
-  }
-
-  return ReasonCode::UnspecifiedError;
-}
-
-[[nodiscard]] std::optional<uint32_t>
-find_subscription_identifier(const SubscribePacket &packet) {
-  for (const Property &property : packet.properties) {
-    if (property.id != PropertyId::SubscriptionIdentifier) {
-      continue;
-    }
-    return std::get<VariableByteInteger>(property.value).value;
-  }
-  return std::nullopt;
 }
 
 } // namespace
@@ -337,8 +287,8 @@ Broker::complete_connect_success(const ConnectPacket &connect_packet,
   }
 
   if (connect_packet.will.has_value()) {
-    will_publisher_->on_connect(result.client_id,
-                                extract_will_message(*connect_packet.will));
+    will_publisher_->on_connect(
+        result.client_id, will_data_to_will_message(*connect_packet.will));
   }
 
   if (result.session_present) {
@@ -399,8 +349,7 @@ SubackPacket Broker::handle_subscribe(std::string_view client_id,
   SubackPacket suback;
   suback.packet_id = packet.packet_id;
 
-  auto connection_iter = active_connections_.find(std::string(client_id));
-  const auto subscription_identifier = find_subscription_identifier(packet);
+  const auto subscription_identifier = subscription_identifier_from(packet);
 
   for (const SubscribeFilter &filter : packet.filters) {
     try {
@@ -427,17 +376,14 @@ SubackPacket Broker::handle_subscribe(std::string_view client_id,
         static_cast<RetainHandling>(filter.options.retain_handling);
     subscription.identifier = subscription_identifier;
 
-    subscription_store_->store(client_id, subscription);
+    const bool is_new_subscription =
+        subscription_store_->store(client_id, subscription);
 
-    if (connection_iter != active_connections_.end()) {
-      const std::vector<Message> retained_messages =
-          retained_store_->find(filter.topic_filter.value);
-      for (const Message &retained_message : retained_messages) {
-        connection_iter->second(retained_message);
-      }
-    }
+    message_router_->deliver_retained(client_id, filter.topic_filter.value,
+                                      subscription, is_new_subscription);
 
-    suback.reason_codes.push_back(granted_qos_reason(filter.options.max_qos));
+    suback.reason_codes.push_back(
+        qos_to_granted_reason(filter.options.max_qos));
   }
 
   return suback;
@@ -488,12 +434,6 @@ void Broker::unregister_connection(std::string_view client_id) noexcept {
 
 //
 // Monitoring (Module 16)
-
-void Broker::route_message(Message &msg, std::string_view client_id,
-                           std::string_view username,
-                           TopicAliasTable &alias_table) {
-  handle_publish(msg, client_id, username, alias_table);
-}
 
 bool Broker::tick(std::chrono::steady_clock::time_point now) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
@@ -564,7 +504,7 @@ void Broker::create_modules() {
     for (const PasswordCredentialConfig &credential :
          config_.password_credentials) {
       pass_auth_->add_credential(Utf8String{credential.username},
-                                 password_to_binary(credential.password));
+                                 binary_data_from_string(credential.password));
     }
     active_auth_ = pass_auth_.get();
   }

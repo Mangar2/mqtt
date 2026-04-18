@@ -2,6 +2,10 @@
 
 #include <chrono>
 
+#include "data_model/subscription/retain_handling.h"
+#include "message_router/message_expiry_controller.h"
+
+
 namespace mqtt {
 
 MessageRouter::MessageRouter(InboundPublishProcessor &processor,
@@ -75,6 +79,37 @@ void MessageRouter::flush_offline_queue(
     }
 
     deliver_(client_id, queued_msg.message);
+  }
+}
+
+void MessageRouter::deliver_retained(
+    std::string_view client_id, std::string_view topic_filter,
+    const Subscription &subscription, bool is_new_subscription,
+    std::chrono::steady_clock::time_point now) {
+  if (!is_online_(client_id)) {
+    return;
+  }
+
+  if (subscription.options.retain_handling == RetainHandling::Never) {
+    return;
+  }
+
+  if (subscription.options.retain_handling == RetainHandling::SendIfNew &&
+      !is_new_subscription) {
+    return;
+  }
+
+  std::vector<Message> retained_messages =
+      processor_.retained_for_filter(topic_filter);
+  for (const Message &retained_message : retained_messages) {
+    Message outbound = SubscriberFanout::apply_subscription_rules(
+        retained_message, subscription);
+
+    if (!MessageExpiryController::update_expiry(outbound, now, now)) {
+      continue;
+    }
+
+    deliver_(client_id, outbound);
   }
 }
 

@@ -22,3 +22,11 @@ All types live in the `mqtt` namespace.
 - `constexpr` / `[[nodiscard]]` used wherever appropriate.
 - No raw owning pointers; heap types use `std::vector` / `std::optional`.
 - `operator==` provided on every struct via `= default`.
+
+## Utility helpers
+
+- `reason_code/reason_code.h` provides `qos_to_granted_reason(QoS)` for
+	SUBACK granted QoS mapping.
+- `packet/subscribe_packets.h` provides
+	`subscription_identifier_from(const SubscribePacket&)` to parse the optional
+	Subscription Identifier property.

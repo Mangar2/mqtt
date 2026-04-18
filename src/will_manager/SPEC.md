@@ -22,6 +22,7 @@ Depends on: `data_model/` (1), `store/` (4), `session_manager/` (10).
 | `will_store.h/.cpp`       | 11.1 | `WillStore` — in-memory map of `WillMessage` records keyed by Client ID |
 | `will_delay_timer.h/.cpp` | 11.2 | `WillDelayTimer` — tracks per-client disconnect timestamps and will-delay intervals |
 | `will_publisher.h/.cpp`   | 11.3 | `WillPublisher` — orchestrates store, timer, and publish decisions |
+| `will_message_util.h`     | 11.1 | Conversion helper from CONNECT `WillData` to internal `WillMessage` |
 
 ---
 

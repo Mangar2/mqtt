@@ -485,14 +485,15 @@ Module structure for a fully specification-compliant MQTT 5.0 broker. Each modul
   - 22.1.1 Call `WillPublisher::publish_due(now)` inside `Broker::tick()`
   - 22.1.2 Publishes will messages whose delay timer has expired
 - 22.2 Session Expiry Cleanup
-  - 22.2.1 Call `SessionManager::cleanup_expired(now)` inside `Broker::tick()`
-  - 22.2.2 For each expired session: clean up subscriptions, inflight state, will data
-  - 22.2.3 Call `WillPublisher::on_session_expired(client_id)` for each expired session
+  - 22.2.1 Call `SessionManager::cleanup_expired(now)` inside `Broker::tick()` — returns list of expired Client IDs
+  - 22.2.2 `SessionManager::cleanup_expired()` handles all internal cleanup (subscriptions, inflight state, session record) — Broker does **not** touch stores directly
+  - 22.2.3 Broker iterates the returned Client ID list and calls `WillPublisher::on_session_expired(client_id)` for each — this is the only Broker-level action
 - 22.3 QoS Retransmission Timer
-  - 22.3.1 Track outstanding outbound QoS 1/2 packets with timestamps per session
-  - 22.3.2 On timeout (configurable, e.g. 20 s): call `retransmit()` on QoS state machines
+  - 22.3.1 Retransmission is owned by `ClientSession` (Module 21), **not** by `Broker::tick()` — QoS state machines live in `ClientSession` and must only be accessed from the client's own thread (see 21.3.2)
+  - 22.3.2 `ClientSession::drain_outbound()` checks retransmission deadlines alongside the normal OutboundQueue drain: for each outstanding QoS 1/2 entry whose timestamp exceeds the retransmit timeout, call `retransmit()` on the owning state machine
   - 22.3.3 Set DUP flag on retransmitted PUBLISH (already implemented in state machines)
-  - 22.3.4 Push retransmitted packets into the client's `OutboundQueue`
+  - 22.3.4 Return retransmitted packets together with newly queued packets from `drain_outbound()`
+  - 22.3.5 Retransmit timeout is a configurable `BrokerConfig` value (e.g. 20 s) passed to `ClientSession` at construction
 - 22.4 Main Loop Throttle
   - 22.4.1 Add configurable tick interval (e.g. 100 ms) in main loop
   - 22.4.2 Use `std::this_thread::sleep_for()` or condition variable to avoid busy spin
@@ -538,7 +539,7 @@ Module structure for a fully specification-compliant MQTT 5.0 broker. Each modul
   - 24.3.4 Drain `OutboundQueue` via `ClientSession::drain_outbound()`, enqueue results to `WriteQueue`
   - 24.3.5 Decode complete packets and dispatch:
     - PUBLISH → `ClientSession::on_publish()` + `Broker::handle_publish()`; send QoS response
-    - SUBSCRIBE → `Broker::handle_subscribe()` (Module 19); send SUBACK; deliver retained
+    - SUBSCRIBE → `Broker::handle_subscribe()` (Module 19); send SUBACK (retained messages are delivered inside `handle_subscribe` via `MessageRouter::deliver_retained` → `OutboundQueue`; no extra action in ClientHandler)
     - UNSUBSCRIBE → `Broker::handle_unsubscribe()` (Module 19); send UNSUBACK
     - PUBACK / PUBREC / PUBREL / PUBCOMP → `ClientSession::on_*()` methods; send response
     - PINGREQ → encode and send PINGRESP
@@ -549,3 +550,32 @@ Module structure for a fully specification-compliant MQTT 5.0 broker. Each modul
   - 24.4.1 Stop `WriteQueue`; drain thread joins via `jthread` destructor
   - 24.4.2 On clean disconnect: call `Broker::handle_disconnect()` (Module 18)
   - 24.4.3 On connection loss: call `Broker::handle_connection_lost()` (Module 18)
+
+---
+
+## 25. Broker.cpp Refactoring — Extract Misplaced Logic
+
+*`broker.cpp` currently contains helper functions and inline logic that violate module boundaries. This module extracts each piece into its owning module and fixes functional gaps caused by the shortcuts. Depends on: 1, 8, 11, 12, 19.*
+
+- 25.1 Retained Message Delivery via MessageRouter
+  - 25.1.1 **Problem:** `Broker::handle_subscribe()` directly queries `retained_store_->find()` and invokes `SendFn` via the `active_connections_` map, bypassing `MessageRouter` entirely. Consequences: `RetainHandling` subscription option is ignored (messages are always sent, even when the option says "don't send on subscribe" or "send only if subscription is new"); QoS downgrade per subscription is not applied; `MessageExpiryController` is not consulted (expired retained messages are delivered); `SubscriptionIdentifier` property is not attached; `RetainAsPublished` flag is not applied.
+  - 25.1.2 Add a method `MessageRouter::deliver_retained(client_id, topic_filter, subscription)` that: retrieves matching retained messages from `RetainedMessageStore`; respects `RetainHandling` (0 = always, 1 = only if new, 2 = never); passes each message through `SubscriberFanout::apply_subscription_rules()` (QoS downgrade, Retain As Published, Subscription Identifier); passes each message through `MessageExpiryController` (discard expired); delivers via the existing `DeliverFn` callback.
+  - 25.1.3 `Broker::handle_subscribe()` calls `message_router_->deliver_retained()` instead of accessing `retained_store_` and `active_connections_` directly. The `SubscriptionStore::store()` return value (new vs. updated) must be available so `RetainHandling::SendIfNew` can be evaluated.
+  - 25.1.4 Remove `retained_store_` direct access from `handle_subscribe()`.
+- 25.2 Move `extract_will_message()` to will_manager
+  - 25.2.1 **Problem:** The free function `extract_will_message(WillData) → WillMessage` in the anonymous namespace of `broker.cpp` is a data-model transformation that belongs in the `will_manager` module.
+  - 25.2.2 Move to `will_manager/will_message_util.h` (or integrate into `WillPublisher::on_connect()` so it accepts `WillData` directly instead of `WillMessage`).
+  - 25.2.3 Update `Broker::complete_connect_success()` to call the moved function or pass `WillData` to `WillPublisher::on_connect()`.
+- 25.3 Move `granted_qos_reason()` to data_model
+  - 25.3.1 **Problem:** Maps `QoS → ReasonCode`. Both types live in `data_model`. The function is in the anonymous namespace of `broker.cpp`.
+  - 25.3.2 Move to `data_model/reason_code/reason_code.h` as a free function `qos_to_granted_reason(QoS) → ReasonCode`.
+- 25.4 Move `find_subscription_identifier()` to data_model
+  - 25.4.1 **Problem:** Extracts the `SubscriptionIdentifier` property from a `SubscribePacket`. This is packet property parsing that belongs in the data model or codec layer.
+  - 25.4.2 Move to `data_model/packet/subscribe_packets.h` as a free function (or member of `SubscribePacket`).
+- 25.5 Move `password_to_binary()` to auth module
+  - 25.5.1 **Problem:** Converts `std::string_view` to `BinaryData` for password handling. This is an auth utility sitting in `broker.cpp`.
+  - 25.5.2 Move to `auth/authenticator.h` or `data_model/primitive/binary_data.h` as `BinaryData::from_string(std::string_view)`.
+- 25.6 Remove `route_message()` compatibility wrapper
+  - 25.6.1 **Problem:** `Broker::route_message()` is a one-line wrapper that forwards to `handle_publish()`. Module 19.3.3 states it replaces the old API, but the old method was kept.
+  - 25.6.2 Remove `route_message()` from `Broker` public API.
+  - 25.6.3 Update all callers (tests, SPEC.md) to use `handle_publish()` instead.

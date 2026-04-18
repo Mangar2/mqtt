@@ -220,7 +220,7 @@ Callers should poll `Broker::shutdown_requested()` in their main loop and call
 #### Concurrency layer (17)
 
 - `Broker` owns a `std::shared_mutex` and acquires an exclusive lock around
-   `register_connection()`, `unregister_connection()`, `route_message()`, and `tick()`.
+   `register_connection()`, `unregister_connection()`, `handle_publish()`, and `tick()`.
 - `handle_connect()` wraps `SessionManager::handle_connect()` under the same lock.
 - `handle_disconnect()` wraps will handling, connection unregister, and
    `SessionManager::handle_disconnect()` under one lock.
@@ -253,14 +253,12 @@ Callers should poll `Broker::shutdown_requested()` in their main loop and call
 
 - `handle_subscribe()` validates each topic filter, checks ACL subscribe permissions,
    stores authorised subscriptions in `SubscriptionStore`, returns one SUBACK reason
-   code per filter, and immediately delivers matching retained messages to the
-   online subscriber callback.
+   code per filter, and delegates retained delivery to
+   `MessageRouter::deliver_retained()`.
 - `handle_unsubscribe()` validates each filter, removes it from `SubscriptionStore`,
    and returns one UNSUBACK reason code per filter.
 - `handle_publish()` wraps inbound publish routing and statistics increments under
    the broker mutex.
-- `route_message()` remains as a compatibility wrapper that forwards to
-   `handle_publish()`.
 
 ---
 

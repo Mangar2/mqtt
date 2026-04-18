@@ -305,22 +305,6 @@ public:
                       std::string_view username, TopicAliasTable &alias_table);
 
   /**
-   * @brief Route an inbound PUBLISH message through the broker (16.1.2).
-   *
-   * Increments the inbound message counter in the statistics collector and
-   * delegates to `MessageRouter::route()`.  Connection handlers should call
-   * this wrapper instead of `message_router().route()` directly so that
-   * throughput statistics are maintained.
-   *
-   * @param msg         Message to route; may be modified in-place.
-   * @param client_id   Publishing client identifier.
-   * @param username    Username of the publishing client; may be empty.
-   * @param alias_table Topic alias table for the publishing connection.
-   */
-  void route_message(Message &msg, std::string_view client_id,
-                     std::string_view username, TopicAliasTable &alias_table);
-
-  /**
    * @brief Advance the monitoring timer and publish `$SYS` stats if due
    *        (Module 16.2).
    *

@@ -73,3 +73,14 @@ TEST_CASE("rc_boundary_0x80", "[reason_code]") {
   CHECK(is_error(code));
   CHECK(!is_success(code));
 }
+
+TEST_CASE("rc_qos_to_granted_reason", "[reason_code]") {
+  CHECK(qos_to_granted_reason(QoS::AtMostOnce) == ReasonCode::Success);
+  CHECK(qos_to_granted_reason(QoS::AtLeastOnce) == ReasonCode::GrantedQoS1);
+  CHECK(qos_to_granted_reason(QoS::ExactlyOnce) == ReasonCode::GrantedQoS2);
+}
+
+TEST_CASE("rc_qos_to_granted_reason_invalid", "[reason_code]") {
+  const auto invalid_qos = static_cast<QoS>(0xFFU);
+  CHECK(qos_to_granted_reason(invalid_qos) == ReasonCode::UnspecifiedError);
+}

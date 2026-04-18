@@ -46,6 +46,8 @@
 |-----------|----------|-------|----------|
 | `subscribe_defaults` | Default-constructed | none | `packet_id == 0, filters empty` |
 | `subscribe_options_defaults` | Default SubscribeOptions | none | `max_qos == AtMostOnce, no_local == false, retain_as_published == false, retain_handling == 0` |
+| `subscribe_identifier_present` | Helper extracts Subscription Identifier | SUBSCRIBE with identifier property | `subscription_identifier_from(...) == value` |
+| `subscribe_identifier_absent` | Helper handles missing property | SUBSCRIBE without identifier property | `subscription_identifier_from(...) == nullopt` |
 | `suback_defaults` | Default-constructed | none | `packet_id == 0, reason_codes empty` |
 
 ## UnsubscribePacket + UnsubackPacket (1.4.10–1.4.11)

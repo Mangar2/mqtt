@@ -7,10 +7,12 @@
  */
 
 #include "data_model/property/property.h"
+#include "data_model/property/property_id.h"
 #include "data_model/reason_code/reason_code.h"
 #include "data_model/types/qos.h"
 #include "data_model/types/utf8_string.h"
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace mqtt {
@@ -90,5 +92,24 @@ struct UnsubackPacket {
 
   bool operator==(const UnsubackPacket &) const noexcept = default;
 };
+
+/**
+ * @brief Extracts the Subscription Identifier from a SUBSCRIBE packet.
+ *
+ * Returns the first `SubscriptionIdentifier` property if present.
+ *
+ * @param packet SUBSCRIBE packet to inspect.
+ * @return Identifier value when present, otherwise `std::nullopt`.
+ */
+[[nodiscard]] inline std::optional<uint32_t>
+subscription_identifier_from(const SubscribePacket &packet) {
+  for (const Property &property : packet.properties) {
+    if (property.id != PropertyId::SubscriptionIdentifier) {
+      continue;
+    }
+    return std::get<VariableByteInteger>(property.value).value;
+  }
+  return std::nullopt;
+}
 
 } // namespace mqtt

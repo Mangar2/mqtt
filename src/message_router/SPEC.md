@@ -54,6 +54,9 @@ InboundPublishProcessor(AclEngine&, RetainedMessageStore&, SubscriptionStore&);
 [[nodiscard]] std::vector<MatchResult> process(
     Message& msg, std::string_view client_id,
     std::string_view username, TopicAliasTable& alias_table);
+
+[[nodiscard]] std::vector<Message> retained_for_filter(
+    std::string_view topic_filter) const;
 ```
 
 **`process`**: resolves optional Topic Alias in-place, checks publish ACL
@@ -73,6 +76,9 @@ InboundPublishProcessor(AclEngine&, RetainedMessageStore&, SubscriptionStore&);
 
 Stateless.  For each subscriber: applies No Local filter, QoS downgrade,
 Retain As Published, and Subscription Identifier injection.
+
+Also exposes `apply_subscription_rules(msg, sub)` for single-subscription
+delivery paths such as retained delivery on subscribe.
 
 ---
 
@@ -144,6 +150,12 @@ void route(Message& msg, std::string_view client_id,
 
 void flush_offline_queue(std::string_view client_id,
                           std::chrono::steady_clock::time_point now = ...);
+
+void deliver_retained(std::string_view client_id,
+                      std::string_view topic_filter,
+                      const Subscription& subscription,
+                      bool is_new_subscription,
+                      std::chrono::steady_clock::time_point now = ...);
 ```
 
 `route` runs the full pipeline: pre-process → shared dispatch → fanout →
@@ -151,3 +163,7 @@ expiry check → online deliver / offline enqueue.
 
 `flush_offline_queue` drains buffered messages for a reconnecting client,
 discards any that have expired, and delivers the rest via `DeliverFn`.
+
+`deliver_retained` delivers retained messages for a newly stored subscription,
+respecting Retain Handling and applying the same subscription-level message
+adjustments used in normal fanout.

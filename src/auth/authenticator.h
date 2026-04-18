@@ -13,7 +13,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
-
+#include <string_view>
 
 namespace mqtt {
 
@@ -41,6 +41,22 @@ struct AuthResult {
   std::optional<BinaryData>
       auth_data; ///< Server-side auth payload (Continue only).
 };
+
+/**
+ * @brief Convert UTF-8 password text to binary MQTT payload bytes.
+ *
+ * @param pass_word Password text.
+ * @return BinaryData with one byte per input character.
+ */
+[[nodiscard]] inline BinaryData
+binary_data_from_string(std::string_view pass_word) {
+  BinaryData binary;
+  binary.data.reserve(pass_word.size());
+  for (char character : pass_word) {
+    binary.data.push_back(static_cast<uint8_t>(character));
+  }
+  return binary;
+}
 
 /**
  * @brief Abstract base class for all MQTT 5.0 authenticators (Module 8.1.1).

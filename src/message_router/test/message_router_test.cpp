@@ -729,6 +729,93 @@ TEST_CASE("router_auth_denied_throws", "[message_router]") {
                   MessageRouterException);
 }
 
+TEST_CASE("router_deliver_retained_send_if_new", "[message_router]") {
+  AclEngine acl({allow_all()});
+  RetainedMessageStore retained;
+  SubscriptionStore subs;
+  InboundPublishProcessor proc(acl, retained, subs);
+  OfflineQueue offline_queue;
+  SharedSubscriptionDispatcher shared;
+
+  Message retained_message = make_msg("sensor/temp", QoS::ExactlyOnce, true);
+  retained_message.payload.data = {0xAAU};
+  retained.store(retained_message);
+
+  std::vector<Message> delivered;
+  MessageRouter router(
+      proc, offline_queue, shared, [](std::string_view) { return true; },
+      [&](std::string_view, const Message &msg) { delivered.push_back(msg); });
+
+  Subscription subscription =
+      make_sub("sensor/#", QoS::AtLeastOnce, false, false, 55U);
+  subscription.options.retain_handling = RetainHandling::SendIfNew;
+
+  router.deliver_retained("sub1", "sensor/#", subscription,
+                          false); // updated subscription
+  CHECK(delivered.empty());
+
+  router.deliver_retained("sub1", "sensor/#", subscription,
+                          true); // new subscription
+  REQUIRE(delivered.size() == 1U);
+  CHECK(delivered[0].qos == QoS::AtLeastOnce);
+  CHECK_FALSE(delivered[0].retain);
+  const auto identifier = get_sub_id(delivered[0]);
+  REQUIRE(identifier.has_value());
+  CHECK(*identifier == 55U);
+}
+
+TEST_CASE("router_deliver_retained_never", "[message_router]") {
+  AclEngine acl({allow_all()});
+  RetainedMessageStore retained;
+  SubscriptionStore subs;
+  InboundPublishProcessor proc(acl, retained, subs);
+  OfflineQueue offline_queue;
+  SharedSubscriptionDispatcher shared;
+
+  Message retained_message = make_msg("sensor/temp", QoS::AtLeastOnce, true);
+  retained_message.payload.data = {0x10U};
+  retained.store(retained_message);
+
+  int delivered_count = 0;
+  MessageRouter router(
+      proc, offline_queue, shared, [](std::string_view) { return true; },
+      [&](std::string_view, const Message &) { ++delivered_count; });
+
+  Subscription subscription = make_sub("sensor/#");
+  subscription.options.retain_handling = RetainHandling::Never;
+
+  router.deliver_retained("sub1", "sensor/#", subscription, true);
+  CHECK(delivered_count == 0);
+}
+
+TEST_CASE("router_deliver_retained_discards_zero_expiry", "[message_router]") {
+  AclEngine acl({allow_all()});
+  RetainedMessageStore retained;
+  SubscriptionStore subs;
+  InboundPublishProcessor proc(acl, retained, subs);
+  OfflineQueue offline_queue;
+  SharedSubscriptionDispatcher shared;
+
+  Message retained_message = make_msg("sensor/temp", QoS::AtLeastOnce, true);
+  retained_message.payload.data = {0x11U};
+  retained_message.properties.push_back(Property{
+      .id = PropertyId::MessageExpiryInterval,
+      .value = uint32_t{0U},
+  });
+  retained.store(retained_message);
+
+  int delivered_count = 0;
+  MessageRouter router(
+      proc, offline_queue, shared, [](std::string_view) { return true; },
+      [&](std::string_view, const Message &) { ++delivered_count; });
+
+  Subscription subscription = make_sub("sensor/#");
+  subscription.options.retain_handling = RetainHandling::SendAtSubscribe;
+
+  router.deliver_retained("sub1", "sensor/#", subscription, true);
+  CHECK(delivered_count == 0);
+}
+
 TEST_CASE("router_route_shared_subscription_online", "[message_router]") {
   AclEngine acl({allow_all()});
   RetainedMessageStore retained;

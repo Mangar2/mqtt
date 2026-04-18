@@ -40,6 +40,9 @@ struct AuthResult {
     ReasonCode                reason_code;   // Success, ContinueAuthentication, or error
     std::optional<BinaryData> auth_data;     // Payload for AUTH Continue responses
 };
+
+`authenticator.h` also provides `binary_data_from_string(std::string_view)`
+to convert configured credential passwords into MQTT `BinaryData`.
 ```
 
 ### IAuthenticator (`authenticator.h`)

@@ -59,7 +59,6 @@ public:
   prepare(const Message &msg, const std::vector<MatchResult> &subscribers,
           std::string_view publisher_client_id);
 
-private:
   /**
    * @brief Produce one outbound Message from a published message and a
    *        matching Subscription.
@@ -70,6 +69,8 @@ private:
    */
   [[nodiscard]] static Message
   apply_subscription_rules(const Message &msg, const Subscription &sub);
+
+private:
 };
 
 } // namespace mqtt

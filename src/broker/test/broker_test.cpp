@@ -356,7 +356,7 @@ TEST_CASE("broker_accept_loop_invokes_client_handler", "[broker]") {
 //
 // Online delivery — is_online + deliver lambdas
 
-TEST_CASE("broker_route_message_without_subscribers_is_safe", "[broker]") {
+TEST_CASE("broker_handle_publish_without_subscribers_is_safe", "[broker]") {
   BrokerConfig cfg = make_test_config();
   Broker broker(cfg);
   broker.startup();
@@ -366,7 +366,7 @@ TEST_CASE("broker_route_message_without_subscribers_is_safe", "[broker]") {
   msg.topic = Utf8String{"chat/room"};
   msg.qos = QoS::AtMostOnce;
   TopicAliasTable alias_table(0U);
-  CHECK_NOTHROW(broker.route_message(msg, "pub_client", "", alias_table));
+  CHECK_NOTHROW(broker.handle_publish(msg, "pub_client", "", alias_table));
   CHECK(broker.statistics_collector().snapshot().messages_inbound == 1U);
 
   broker.shutdown();
@@ -897,7 +897,7 @@ TEST_CASE("broker_register_same_client_does_not_double_count", "[broker]") {
   broker.shutdown();
 }
 
-TEST_CASE("broker_route_message_counts_inbound", "[broker]") {
+TEST_CASE("broker_handle_publish_counts_inbound_via_facade", "[broker]") {
   BrokerConfig cfg = make_test_config();
   Broker broker(cfg);
   broker.startup();
@@ -907,10 +907,10 @@ TEST_CASE("broker_route_message_counts_inbound", "[broker]") {
   msg.qos = QoS::AtMostOnce;
   TopicAliasTable alias_table(0U);
 
-  broker.route_message(msg, "pub_client", "", alias_table);
+  broker.handle_publish(msg, "pub_client", "", alias_table);
   CHECK(broker.statistics_collector().snapshot().messages_inbound == 1U);
 
-  broker.route_message(msg, "pub_client", "", alias_table);
+  broker.handle_publish(msg, "pub_client", "", alias_table);
   CHECK(broker.statistics_collector().snapshot().messages_inbound == 2U);
 
   broker.shutdown();

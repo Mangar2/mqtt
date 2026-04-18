@@ -149,6 +149,29 @@ TEST_CASE("subscribe_options_defaults", "[packet][subscribe]") {
   CHECK(opts.retain_handling == 0U);
 }
 
+TEST_CASE("subscribe_identifier_present", "[packet][subscribe]") {
+  SubscribePacket pkt{};
+  pkt.properties.push_back(Property{.id = PropertyId::ContentType,
+                                    .value = Utf8String{"text/plain"}});
+  pkt.properties.push_back(Property{
+      .id = PropertyId::SubscriptionIdentifier,
+      .value = VariableByteInteger{77U},
+  });
+
+  const auto identifier = subscription_identifier_from(pkt);
+  REQUIRE(identifier.has_value());
+  CHECK(*identifier == 77U);
+}
+
+TEST_CASE("subscribe_identifier_absent", "[packet][subscribe]") {
+  SubscribePacket pkt{};
+  pkt.properties.push_back(Property{.id = PropertyId::ContentType,
+                                    .value = Utf8String{"text/plain"}});
+
+  const auto identifier = subscription_identifier_from(pkt);
+  CHECK_FALSE(identifier.has_value());
+}
+
 // ── SubackPacket (1.4.9)
 // ──────────────────────────────────────────────────────
 

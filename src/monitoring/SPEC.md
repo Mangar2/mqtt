@@ -106,6 +106,6 @@ A value of `0` disables `$SYS` publication entirely.
 - Calls `stats_->on_client_connected()` in `register_connection()`.
 - Calls `stats_->on_client_disconnected()` in `unregister_connection()`.
 - Wraps the `DeliverFn` callback to call `stats_->on_message_outbound()`.
-- Exposes `route_message()` which calls `stats_->on_message_inbound()` before
+- Exposes `handle_publish()` which calls `stats_->on_message_inbound()` before
   delegating to `MessageRouter::route()`.
 - Exposes `tick()` for the main loop; delegates to `sys_publisher_->tick()`.

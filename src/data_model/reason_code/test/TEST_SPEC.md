@@ -22,3 +22,5 @@
 | `rc_is_error_false` | Success code | `Success` | `is_error == false` |
 | `rc_boundary_0x7F` | Hypothetical boundary | raw cast to `0x7F` | `is_success == true` |
 | `rc_boundary_0x80` | First error code | raw cast to `0x80` | `is_error == true` |
+| `rc_qos_to_granted_reason` | QoS mapping helper | QoS 0/1/2 | Success / GrantedQoS1 / GrantedQoS2 |
+| `rc_qos_to_granted_reason_invalid` | QoS mapping fallback | invalid enum value cast | `UnspecifiedError` |
