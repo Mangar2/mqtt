@@ -1,5 +1,13 @@
 # Integration Test Skill
 
+## ABSOLUTE RULE — NO SOURCE CODE
+
+NEVER read, open, grep, search, or reference any file under src/
+NEVER base test expectations on C++ implementation details
+Tests verify MQTT 5.0 SPECIFICATION behavior not implementation behavior
+Only sources allowed: spec/integration-test-plan.md, spec/anforderungskatalog.md, spec/MQTT Version 5.0.html
+Violation produces tests that pass on broken brokers and fail on correct ones
+
 ## Framework
 
 Python test modules discovered by `test/run_integration_tests.py`
@@ -123,3 +131,29 @@ Clean up subscriptions and connections within each test — use `with MqttClient
 Never hardcode host or port — use `config.host` and `config.port`
 Timeouts always from `config.timeout_seconds`
 Exception in test function → return `(False, str(e))` — never let exceptions propagate
+
+## Failed tests → create TODO file
+
+When an integration test fails and the failure indicates a broker defect or missing feature:
+Create a file in `spec/todo/` named after the test (slashes replaced by underscores), e.g.:
+
+```
+spec/todo/connect_clean_start_resume_session.md
+```
+
+Content:
+
+```markdown
+# TODO: connect/clean_start_resume_session
+
+Integration test reference: connect/clean_start_resume_session (spec/integration-test-plan.md §1.4.3)
+Test file: test/integration_tests/connect/clean_start.py
+
+## Problem
+<Short description of failure: what was expected vs what happened>
+
+## Action
+<implement | fix> <affected module/component>
+```
+
+One file per failed test. Delete the TODO file after the fix is verified.
