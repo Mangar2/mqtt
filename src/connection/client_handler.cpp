@@ -145,6 +145,32 @@ find_maximum_packet_size(const std::vector<Property> &properties) {
   return std::nullopt;
 }
 
+[[nodiscard]] bool
+requests_problem_information(const std::vector<Property> &properties) {
+  for (const Property &property : properties) {
+    if (property.id != PropertyId::RequestProblemInformation) {
+      continue;
+    }
+    if (const auto *request_ptr = std::get_if<uint8_t>(&property.value)) {
+      return *request_ptr != 0U;
+    }
+    return true;
+  }
+  // MQTT 5 default is 1 when Request Problem Information is absent.
+  return true;
+}
+
+[[nodiscard]] std::vector<Property>
+build_protocol_error_disconnect_properties(const ConnectPacket &connect_packet,
+                                          std::string_view reason_text) {
+  if (!requests_problem_information(connect_packet.properties)) {
+    return {};
+  }
+
+  return {Property{.id = PropertyId::ReasonString,
+                   .value = Utf8String{std::string(reason_text)}}};
+}
+
 void enqueue_frame(WriteQueue &write_queue, WriteBuffer frame,
                    bool is_websocket) {
   if (is_websocket) {
@@ -456,6 +482,18 @@ void ClientHandler::run(std::unique_ptr<TcpConnection> conn, Broker &broker,
   bool clean_disconnect = false;
   ReasonCode disconnect_reason = ReasonCode::Success;
   std::optional<uint32_t> expiry_override;
+  const auto write_protocol_error_disconnect = [&]() {
+    clean_disconnect = true;
+    disconnect_reason = ReasonCode::ProtocolError;
+    write_frame_direct(
+        *conn, ws_transport.get(),
+        encode_disconnect_packet(
+            ReasonCode::ProtocolError,
+            build_protocol_error_disconnect_properties(
+                *connect_packet,
+                "Protocol error: malformed or invalid packet sequence")),
+        is_websocket);
+  };
 
   while (broker.is_running()) {
     if (session_takeover_requested.exchange(false,
@@ -515,12 +553,7 @@ void ClientHandler::run(std::unique_ptr<TcpConnection> conn, Broker &broker,
       try {
         packet_any = try_decode_packet(stream_buffer);
       } catch (...) {
-        disconnect_reason = ReasonCode::ProtocolError;
-        clean_disconnect = true;
-        write_frame_direct(*conn, ws_transport.get(),
-                           encode_disconnect_packet(
-                               ReasonCode::ProtocolError),
-                           is_websocket);
+        write_protocol_error_disconnect();
         should_break = true;
         break;
       }
@@ -580,10 +613,20 @@ void ClientHandler::run(std::unique_ptr<TcpConnection> conn, Broker &broker,
                                 is_websocket);
                 },
                 [&](const DisconnectPacket &packet) {
+                  const auto candidate_override =
+                      find_session_expiry_override(packet.properties);
+                  const bool override_valid =
+                      broker.is_disconnect_expiry_override_valid(
+                          connect_result.client_id, candidate_override);
+                  if (!override_valid) {
+                    write_protocol_error_disconnect();
+                    should_break = true;
+                    return;
+                  }
+
                   clean_disconnect = true;
                   disconnect_reason = packet.reason_code;
-                  expiry_override =
-                      find_session_expiry_override(packet.properties);
+                  expiry_override = candidate_override;
                   should_break = true;
                 },
                 [&](const AuthPacket &packet) {
@@ -601,12 +644,7 @@ void ClientHandler::run(std::unique_ptr<TcpConnection> conn, Broker &broker,
                   }
                 },
                 [&](const ConnectPacket & /*unused*/) {
-                  clean_disconnect = true;
-                  disconnect_reason = ReasonCode::ProtocolError;
-                  write_frame_direct(*conn, ws_transport.get(),
-                                     encode_disconnect_packet(
-                                         ReasonCode::ProtocolError),
-                                     is_websocket);
+                  write_protocol_error_disconnect();
                   should_break = true;
                 },
                 [&](const auto &packet) {
@@ -622,23 +660,13 @@ void ClientHandler::run(std::unique_ptr<TcpConnection> conn, Broker &broker,
                                 !std::is_same_v<PacketType, DisconnectPacket> &&
                                 !std::is_same_v<PacketType, AuthPacket> &&
                                 !std::is_same_v<PacketType, ConnectPacket>) {
-                    clean_disconnect = true;
-                    disconnect_reason = ReasonCode::ProtocolError;
-                    write_frame_direct(*conn, ws_transport.get(),
-                                       encode_disconnect_packet(
-                                           ReasonCode::ProtocolError),
-                                       is_websocket);
+                    write_protocol_error_disconnect();
                     should_break = true;
                   }
                 }},
             *packet_any);
       } catch (...) {
-        clean_disconnect = true;
-        disconnect_reason = ReasonCode::ProtocolError;
-        write_frame_direct(*conn, ws_transport.get(),
-                           encode_disconnect_packet(
-                               ReasonCode::ProtocolError),
-                           is_websocket);
+        write_protocol_error_disconnect();
         should_break = true;
       }
     }

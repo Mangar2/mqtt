@@ -69,10 +69,18 @@ std::vector<std::string> cleanup_expired(std::chrono::steady_clock::time_point n
 - Unregisters the connection from `SessionTakeoverHandler`.
 - Computes the effective expiry interval (override takes precedence over the
   stored `session_expiry_interval`).
+- Validates DISCONNECT expiry override semantics: a non-zero override is
+  rejected when the stored session expiry is 0.
 - If effective expiry == 0: immediately removes the session and all associated
   data.
 - Otherwise: calls `SessionStore::mark_disconnected` and schedules the expiry
   in `SessionExpiryScheduler`.
+
+**`is_disconnect_expiry_override_valid`**:
+- Returns `false` when DISCONNECT tries to increase Session Expiry from 0 to
+  non-zero.
+- Returns `true` for absent override, override 0, and all non-conflicting
+  overrides.
 
 **`cleanup_expired`** (10.3.3):
 - Queries `SessionStore::expired_sessions(now)`.

@@ -189,6 +189,24 @@ void SessionManager::handle_disconnect(
   }
 }
 
+bool SessionManager::is_disconnect_expiry_override_valid(
+    std::string_view client_id,
+    std::optional<uint32_t> expiry_override) const {
+  if (!expiry_override.has_value()) {
+    return true;
+  }
+
+  const uint32_t override_expiry = *expiry_override;
+  if (override_expiry == 0U) {
+    return true;
+  }
+
+  const auto stored = session_store_.load(client_id);
+  const uint32_t stored_expiry =
+      stored.has_value() ? stored->session_expiry_interval : 0U;
+  return stored_expiry != 0U;
+}
+
 std::vector<std::string>
 SessionManager::cleanup_expired(std::chrono::steady_clock::time_point now) {
   const std::vector<std::string> expired =

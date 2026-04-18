@@ -98,6 +98,21 @@ public:
                          std::chrono::steady_clock::time_point now);
 
   /**
+   * @brief Validate whether a DISCONNECT Session Expiry override is allowed.
+   *
+   * MQTT 5.0 requires that a DISCONNECT Session Expiry Interval must not
+   * increase a current interval of 0 to a non-zero value. This helper checks
+   * the stored session state for @p client_id against @p expiry_override.
+   *
+   * @param client_id       Client identifier.
+   * @param expiry_override Optional Session Expiry Interval from DISCONNECT.
+   * @return `true` when the override is valid and may be applied.
+   */
+  [[nodiscard]] bool
+  is_disconnect_expiry_override_valid(std::string_view client_id,
+                                      std::optional<uint32_t> expiry_override) const;
+
+  /**
    * @brief Remove all sessions that have exceeded their expiry deadline
    * (10.3.3).
    *

@@ -73,6 +73,14 @@ Implemented behavior:
 - Keep-alive timeout handling (`ReasonCode::KeepAliveTimeout`) and broker-running check each loop iteration.
 - Teardown via `Broker::handle_disconnect()` on clean close or `Broker::handle_connection_lost()` on abrupt transport loss.
 
+Runtime protocol error handling:
+- On protocol violations after CONNECT, `ClientHandler` sends DISCONNECT with
+	reason code `ProtocolError` (0x82).
+- When CONNECT requested Problem Information, protocol-error DISCONNECT frames
+	include a non-empty `ReasonString` property.
+- DISCONNECT packets that attempt to increase Session Expiry from 0 to
+	non-zero are rejected with protocol-error DISCONNECT.
+
 ---
 
 ## 23 ConnectionManager

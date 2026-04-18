@@ -446,6 +446,14 @@ void Broker::handle_disconnect(std::string_view client_id,
   session_manager_->handle_disconnect(client_id, expiry_override, now);
 }
 
+bool Broker::is_disconnect_expiry_override_valid(
+    std::string_view client_id,
+    std::optional<uint32_t> expiry_override) {
+  std::shared_lock<std::shared_mutex> lock_guard(broker_mutex_);
+  return session_manager_->is_disconnect_expiry_override_valid(client_id,
+                                                               expiry_override);
+}
+
 void Broker::handle_connection_lost(std::string_view client_id,
                                     std::chrono::steady_clock::time_point now,
                                     std::shared_ptr<OutboundQueue> connection_queue) {

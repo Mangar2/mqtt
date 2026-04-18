@@ -265,7 +265,8 @@ class MqttClient:
         self._disconnect_result = None
         self._disconnect_reason_from_log = None
         self._disconnect_event.clear()
-        self._client.disconnect(reasoncode=reason_code, properties=properties)
+        disconnect_reason = mqtt.ReasonCode(mqtt.DISCONNECT >> 4, identifier=int(reason_code))
+        self._client.disconnect(reasoncode=disconnect_reason, properties=properties)
 
         if not self._disconnect_event.wait(timeout=self._timeout_seconds):
             raise TimeoutError("Timed out while waiting for disconnect")

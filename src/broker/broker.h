@@ -252,6 +252,19 @@ public:
                  nullptr);
 
   /**
+   * @brief Validate whether a DISCONNECT Session Expiry override is allowed.
+   *
+   * This check is thread-safe and uses the current stored session state.
+   *
+   * @param client_id       Client identifier.
+   * @param expiry_override Optional Session Expiry Interval from DISCONNECT.
+   * @return `true` when the override is valid for the current session state.
+   */
+  [[nodiscard]] bool
+  is_disconnect_expiry_override_valid(std::string_view client_id,
+                                      std::optional<uint32_t> expiry_override);
+
+  /**
    * @brief Thread-safe wrapper for abrupt connection loss (Module 17.3.3).
    *
    * Triggers will logic for connection loss, unregisters the connection,

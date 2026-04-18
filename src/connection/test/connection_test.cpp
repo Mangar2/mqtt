@@ -18,6 +18,7 @@
 #include "broker/broker_config.h"
 #include "codec/packet/connect_codec.h"
 #include "codec/packet/control_codec.h"
+#include "codec/packet_reader/packet_reader.h"
 #include "codec/packet/publish_codec.h"
 #include "codec/packet/subscribe_codec.h"
 #include "connection/client_handler.h"
@@ -122,6 +123,32 @@ WriteBuffer make_connect_frame(std::string client_id, uint16_t keep_alive) {
   return frame;
 }
 
+WriteBuffer make_connect_with_flags_frame(std::string client_id,
+                                          uint16_t keep_alive,
+                                          std::optional<uint8_t> request_problem_information,
+                                          std::optional<uint32_t> session_expiry_interval) {
+  ConnectPacket packet;
+  packet.client_id.value = std::move(client_id);
+  packet.keep_alive = keep_alive;
+  packet.clean_start = true;
+
+  if (request_problem_information.has_value()) {
+    packet.properties.push_back(
+        Property{.id = PropertyId::RequestProblemInformation,
+                 .value = *request_problem_information});
+  }
+
+  if (session_expiry_interval.has_value()) {
+    packet.properties.push_back(
+        Property{.id = PropertyId::SessionExpiryInterval,
+                 .value = *session_expiry_interval});
+  }
+
+  WriteBuffer frame;
+  encode_connect(frame, packet);
+  return frame;
+}
+
 WriteBuffer make_connect_with_credentials_frame(std::string client_id,
                                                 std::string username,
                                                 std::string password,
@@ -190,6 +217,23 @@ WriteBuffer make_disconnect_with_expiry_frame(uint32_t expiry_value) {
                          Property{.id = PropertyId::SessionExpiryInterval,
                                   .value = FourByteInteger{expiry_value}}}});
   return frame;
+}
+
+DisconnectPacket decode_disconnect_packet_or_fail(const std::vector<uint8_t> &frame) {
+  REQUIRE_FALSE(frame.empty());
+  ReadBuffer read_buffer(frame);
+  const AnyPacket packet = read_packet(read_buffer);
+  REQUIRE(std::holds_alternative<DisconnectPacket>(packet));
+  return std::get<DisconnectPacket>(packet);
+}
+
+bool has_reason_string_property(const DisconnectPacket &packet) {
+  for (const Property &property : packet.properties) {
+    if (property.id == PropertyId::ReasonString) {
+      return true;
+    }
+  }
+  return false;
 }
 
 WriteBuffer make_auth_frame(std::string auth_method, std::string auth_payload,
@@ -1029,6 +1073,108 @@ TEST_CASE("client_handler_second_connect_triggers_protocol_disconnect",
   const std::vector<uint8_t> disconnect = read_some(sockets.client_fd, 512U);
   CHECK_FALSE(disconnect.empty());
   CHECK(packet_type_nibble(disconnect) == 14U);
+
+  ::close(sockets.client_fd);
+  worker.join();
+  broker.shutdown();
+}
+
+TEST_CASE("client_handler_second_connect_with_problem_information_includes_reason_string",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  SocketPair sockets = make_socket_pair();
+  set_recv_timeout(sockets.client_fd, 1500U);
+
+  ClientHandler handler;
+  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
+    auto conn = std::make_unique<TcpConnection>(
+        static_cast<SocketHandle>(server_fd));
+    handler.run(std::move(conn), broker, cfg, false);
+  });
+
+  write_all(sockets.client_fd,
+            make_connect_with_flags_frame("client-8b", 10U, 1U, std::nullopt));
+  (void)read_some(sockets.client_fd, 512U); // CONNACK
+
+  write_all(sockets.client_fd, make_connect_frame("client-8b", 10U));
+  const std::vector<uint8_t> disconnect = read_some(sockets.client_fd, 512U);
+  CHECK_FALSE(disconnect.empty());
+  CHECK(packet_type_nibble(disconnect) == 14U);
+
+  const DisconnectPacket disconnect_packet = decode_disconnect_packet_or_fail(disconnect);
+  CHECK(disconnect_packet.reason_code == ReasonCode::ProtocolError);
+  CHECK(has_reason_string_property(disconnect_packet));
+
+  ::close(sockets.client_fd);
+  worker.join();
+  broker.shutdown();
+}
+
+TEST_CASE("client_handler_second_connect_with_problem_information_off_omits_reason_string",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  SocketPair sockets = make_socket_pair();
+  set_recv_timeout(sockets.client_fd, 1500U);
+
+  ClientHandler handler;
+  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
+    auto conn = std::make_unique<TcpConnection>(
+        static_cast<SocketHandle>(server_fd));
+    handler.run(std::move(conn), broker, cfg, false);
+  });
+
+  write_all(sockets.client_fd,
+            make_connect_with_flags_frame("client-8c", 10U, 0U, std::nullopt));
+  (void)read_some(sockets.client_fd, 512U); // CONNACK
+
+  write_all(sockets.client_fd, make_connect_frame("client-8c", 10U));
+  const std::vector<uint8_t> disconnect = read_some(sockets.client_fd, 512U);
+  CHECK_FALSE(disconnect.empty());
+  CHECK(packet_type_nibble(disconnect) == 14U);
+
+  const DisconnectPacket disconnect_packet = decode_disconnect_packet_or_fail(disconnect);
+  CHECK(disconnect_packet.reason_code == ReasonCode::ProtocolError);
+  CHECK_FALSE(has_reason_string_property(disconnect_packet));
+
+  ::close(sockets.client_fd);
+  worker.join();
+  broker.shutdown();
+}
+
+TEST_CASE("client_handler_disconnect_expiry_increase_from_zero_returns_protocol_error",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  SocketPair sockets = make_socket_pair();
+  set_recv_timeout(sockets.client_fd, 1500U);
+
+  ClientHandler handler;
+  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
+    auto conn = std::make_unique<TcpConnection>(
+        static_cast<SocketHandle>(server_fd));
+    handler.run(std::move(conn), broker, cfg, false);
+  });
+
+  write_all(
+      sockets.client_fd,
+      make_connect_with_flags_frame("client-6b", 10U, 1U, 0U));
+  (void)read_some(sockets.client_fd, 512U); // CONNACK
+
+  write_all(sockets.client_fd, make_disconnect_with_expiry_frame(42U));
+  const std::vector<uint8_t> disconnect = read_some(sockets.client_fd, 512U);
+  CHECK_FALSE(disconnect.empty());
+  CHECK(packet_type_nibble(disconnect) == 14U);
+
+  const DisconnectPacket disconnect_packet = decode_disconnect_packet_or_fail(disconnect);
+  CHECK(disconnect_packet.reason_code == ReasonCode::ProtocolError);
 
   ::close(sockets.client_fd);
   worker.join();
