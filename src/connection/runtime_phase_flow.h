@@ -26,6 +26,7 @@ void run_connected_session_loop(
     const ConnectResult &connect_result,
     std::atomic<bool> &session_takeover_requested, StreamBuffer &stream_buffer,
     ClientSession &client_session, Broker &broker, WriteQueue &write_queue,
-    RuntimeDisconnectState &disconnect_state);
+    RuntimeDisconnectState &disconnect_state,
+    uint16_t inbound_receive_maximum);
 
 } // namespace mqtt

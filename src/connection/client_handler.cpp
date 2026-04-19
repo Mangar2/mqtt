@@ -29,6 +29,8 @@ namespace mqtt {
 
 namespace {
 
+constexpr uint16_t k_default_receive_maximum = 65535U;
+
 void trace_connection_registration(Broker &broker,
                                    const ConnectResult &connect_result) {
   TRACE_GUARD((&broker.structured_tracer()), TraceLevel::Trace,
@@ -128,6 +130,9 @@ void run_client_handler_flow(std::unique_ptr<TcpConnection> conn, Broker &broker
       connect_packet->username.has_value() ? connect_packet->username->value : "";
   const uint32_t maximum_packet_size =
       find_maximum_packet_size(connect_packet->properties).value_or(0U);
+  const uint16_t outbound_receive_maximum =
+      find_receive_maximum(connect_packet->properties)
+          .value_or(k_default_receive_maximum);
   const uint16_t effective_keep_alive =
       (config.server_keep_alive > 0U) ? config.server_keep_alive
                                       : connect_packet->keep_alive;
@@ -135,7 +140,8 @@ void run_client_handler_flow(std::unique_ptr<TcpConnection> conn, Broker &broker
   ClientSession client_session(
       connect_result.client_id, username, std::move(authenticator),
       outbound_queue, broker.session_manager().inflight_store(),
-      effective_keep_alive, config.receive_maximum, config.topic_alias_maximum,
+      effective_keep_alive, outbound_receive_maximum,
+      config.topic_alias_maximum,
       std::chrono::seconds(config.qos_retransmit_timeout_seconds),
       maximum_packet_size, connect_result.auth_method);
 
@@ -148,7 +154,8 @@ void run_client_handler_flow(std::unique_ptr<TcpConnection> conn, Broker &broker
   run_connected_session_loop(
       *conn, ws_transport.get(), is_websocket, *connect_packet,
       connect_result, session_takeover_requested, stream_buffer,
-      client_session, broker, write_queue, disconnect_state);
+      client_session, broker, write_queue, disconnect_state,
+      config.receive_maximum);
 
   const auto now = std::chrono::steady_clock::now();
   if (disconnect_state.clean_disconnect) {

@@ -121,6 +121,20 @@ std::optional<uint32_t> find_maximum_packet_size(
   return std::nullopt;
 }
 
+std::optional<uint16_t> find_receive_maximum(
+    const std::vector<Property> &properties) {
+  for (const Property &property : properties) {
+    if (property.id != PropertyId::ReceiveMaximum) {
+      continue;
+    }
+    if (const auto *receive_maximum_ptr =
+            std::get_if<TwoByteInteger>(&property.value)) {
+      return *receive_maximum_ptr;
+    }
+  }
+  return std::nullopt;
+}
+
 std::vector<Property> build_protocol_error_disconnect_properties(
     const ConnectPacket &connect_packet, std::string_view reason_text) {
   if (!requests_problem_information(connect_packet.properties)) {

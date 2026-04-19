@@ -43,6 +43,7 @@
 #include "codec/packet/publish_codec.h"
 #include "codec/packet/subscribe_codec.h"
 #include "connection/client_handler.h"
+#include "connection/connection_flow_support.h"
 #include "data_model/packet/connect_packet.h"
 #include "data_model/packet/control_packets.h"
 #include "data_model/packet/publish_packets.h"
@@ -223,6 +224,22 @@ WriteBuffer make_connect_with_flags_frame(std::string client_id,
   return frame;
 }
 
+WriteBuffer make_connect_with_receive_maximum_frame(std::string client_id,
+                                                     uint16_t keep_alive,
+                                                     uint16_t receive_maximum) {
+  ConnectPacket packet;
+  packet.client_id.value = std::move(client_id);
+  packet.keep_alive = keep_alive;
+  packet.clean_start = true;
+  packet.properties.push_back(
+      Property{.id = PropertyId::ReceiveMaximum,
+               .value = TwoByteInteger{receive_maximum}});
+
+  WriteBuffer frame;
+  encode_connect(frame, packet);
+  return frame;
+}
+
 WriteBuffer make_connect_with_credentials_frame(std::string client_id,
                                                 std::string username,
                                                 const std::string &password,
@@ -385,6 +402,20 @@ WriteBuffer make_subscribe_qos2_frame(std::string topic_name) {
   return frame;
 }
 
+WriteBuffer make_subscribe_qos1_frame(std::string topic_name) {
+  SubscribePacket packet;
+  packet.packet_id = 4U;
+  packet.filters.push_back(
+      {.topic_filter = Utf8String{std::move(topic_name)},
+       .options = SubscribeOptions{.max_qos = QoS::AtLeastOnce,
+                                   .no_local = false,
+                                   .retain_as_published = false,
+                                   .retain_handling = 0U}});
+  WriteBuffer frame;
+  encode_subscribe(frame, packet);
+  return frame;
+}
+
 WriteBuffer make_unsubscribe_frame() {
   UnsubscribePacket packet;
   packet.packet_id = 2U;
@@ -415,6 +446,19 @@ WriteBuffer make_publish_qos2_frame(uint16_t packet_id) {
   return frame;
 }
 
+WriteBuffer make_publish_qos1_frame(uint16_t packet_id,
+                                    std::string topic_name,
+                                    std::vector<uint8_t> payload) {
+  PublishPacket packet;
+  packet.qos = QoS::AtLeastOnce;
+  packet.topic.value = std::move(topic_name);
+  packet.packet_id = packet_id;
+  packet.payload.data = std::move(payload);
+  WriteBuffer frame;
+  encode_publish(frame, packet);
+  return frame;
+}
+
 WriteBuffer make_pubrel_frame(uint16_t packet_id) {
   WriteBuffer frame;
   encode_pubrel(frame, PubrelPacket{.packet_id = packet_id,
@@ -427,6 +471,15 @@ WriteBuffer make_pubrec_frame(uint16_t packet_id) {
   WriteBuffer frame;
   encode_pubrec(frame,
                 PubrecPacket{.packet_id = packet_id,
+                             .reason_code = ReasonCode::Success,
+                             .properties = {}});
+  return frame;
+}
+
+WriteBuffer make_puback_frame(uint16_t packet_id) {
+  WriteBuffer frame;
+  encode_puback(frame,
+                PubackPacket{.packet_id = packet_id,
                              .reason_code = ReasonCode::Success,
                              .properties = {}});
   return frame;
@@ -947,6 +1000,28 @@ TEST_CASE("release_throws_when_inflight_zero", "[connection]") {
   }
 }
 
+TEST_CASE("find_receive_maximum_returns_value_when_property_present",
+          "[connection]") {
+  const std::vector<Property> properties{
+      Property{.id = PropertyId::ReceiveMaximum,
+               .value = TwoByteInteger{7U}},
+  };
+
+  const std::optional<uint16_t> parsed = find_receive_maximum(properties);
+  REQUIRE(parsed.has_value());
+  CHECK(*parsed == 7U);
+}
+
+TEST_CASE("find_receive_maximum_returns_nullopt_when_property_missing",
+          "[connection]") {
+  const std::vector<Property> properties{
+      Property{.id = PropertyId::SessionExpiryInterval,
+               .value = FourByteInteger{60U}},
+  };
+
+  CHECK_FALSE(find_receive_maximum(properties).has_value());
+}
+
 TEST_CASE("drain_pending_outbound_messages_returns_fifo_and_empties_source",
           "[connection]") {
   OutboundQueue source_queue;
@@ -1225,6 +1300,152 @@ TEST_CASE("client_handler_server_keep_alive_override_emits_disconnect",
   const std::vector<uint8_t> disconnect = read_some(sockets.client_fd, 512U);
   CHECK_FALSE(disconnect.empty());
   CHECK(packet_type_nibble(disconnect) == 14U);
+
+  close_socket_handle(sockets.client_fd);
+  worker.join();
+  broker.shutdown();
+}
+
+TEST_CASE("client_handler_connect_receive_maximum_limits_outbound_inflight_qos1",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+
+  Broker broker(cfg);
+  broker.startup();
+
+  SocketPair sockets = make_socket_pair();
+  set_recv_timeout(sockets.client_fd, 1500U);
+
+  ClientHandler handler;
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
+  });
+
+  write_all(sockets.client_fd,
+            make_connect_with_receive_maximum_frame("client-rxmax-out", 10U,
+                                                    1U));
+  (void)read_some(sockets.client_fd, 512U); // CONNACK
+
+  const std::string topic_name = "sensors/rxmax/out";
+  write_all(sockets.client_fd, make_subscribe_qos1_frame(topic_name));
+  const std::vector<uint8_t> suback = read_some(sockets.client_fd, 512U);
+  REQUIRE_FALSE(suback.empty());
+  REQUIRE(packet_type_nibble(suback) == 9U);
+
+  StreamBuffer first_phase_stream;
+  write_all(sockets.client_fd,
+            make_publish_qos1_frame(41U, topic_name, {0x31U}));
+
+  bool seen_first_inbound_puback = false;
+  std::optional<uint16_t> first_outbound_packet_id;
+  int first_phase_attempts = 0;
+  while (first_phase_attempts < 20 &&
+         (!seen_first_inbound_puback || !first_outbound_packet_id.has_value())) {
+    const std::vector<uint8_t> chunk = read_some(sockets.client_fd, 1024U);
+    if (chunk.empty()) {
+      ++first_phase_attempts;
+      continue;
+    }
+
+    first_phase_stream.append(chunk);
+    while (first_phase_stream.has_complete_packet()) {
+      const std::vector<uint8_t> frame = first_phase_stream.consume_packet();
+      const uint8_t packet_type = packet_type_nibble(frame);
+      if (packet_type == 4U) {
+        seen_first_inbound_puback = true;
+      }
+      if (packet_type == 3U) {
+        first_outbound_packet_id = decode_publish_packet_id(frame);
+      }
+    }
+  }
+
+  REQUIRE(seen_first_inbound_puback);
+  REQUIRE(first_outbound_packet_id.has_value());
+
+  write_all(sockets.client_fd,
+            make_publish_qos1_frame(42U, topic_name, {0x32U}));
+
+  StreamBuffer holdback_stream;
+  bool unexpected_second_outbound_publish = false;
+  for (int holdback_attempt = 0; holdback_attempt < 8; ++holdback_attempt) {
+    const std::vector<uint8_t> chunk = read_some(sockets.client_fd, 1024U);
+    if (chunk.empty()) {
+      continue;
+    }
+
+    holdback_stream.append(chunk);
+    while (holdback_stream.has_complete_packet()) {
+      const std::vector<uint8_t> frame = holdback_stream.consume_packet();
+      if (packet_type_nibble(frame) == 3U) {
+        unexpected_second_outbound_publish = true;
+      }
+    }
+  }
+  CHECK_FALSE(unexpected_second_outbound_publish);
+
+  write_all(sockets.client_fd, make_puback_frame(*first_outbound_packet_id));
+
+  StreamBuffer resume_stream;
+  bool seen_second_outbound_publish = false;
+  for (int resume_attempt = 0; resume_attempt < 20 &&
+                              !seen_second_outbound_publish;
+       ++resume_attempt) {
+    const std::vector<uint8_t> chunk = read_some(sockets.client_fd, 1024U);
+    if (chunk.empty()) {
+      continue;
+    }
+
+    resume_stream.append(chunk);
+    while (resume_stream.has_complete_packet()) {
+      const std::vector<uint8_t> frame = resume_stream.consume_packet();
+      if (packet_type_nibble(frame) == 3U) {
+        seen_second_outbound_publish = true;
+      }
+    }
+  }
+  CHECK(seen_second_outbound_publish);
+
+  write_all(sockets.client_fd, make_disconnect_frame());
+  close_socket_handle(sockets.client_fd);
+  worker.join();
+  broker.shutdown();
+}
+
+TEST_CASE("client_handler_runtime_qos2_receive_maximum_exceeded_disconnects",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+  cfg.receive_maximum = 1U;
+
+  Broker broker(cfg);
+  broker.startup();
+
+  SocketPair sockets = make_socket_pair();
+  set_recv_timeout(sockets.client_fd, 1500U);
+
+  ClientHandler handler;
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
+  });
+
+  write_all(sockets.client_fd, make_connect_frame("client-rxmax-in", 10U));
+  (void)read_some(sockets.client_fd, 512U); // CONNACK
+
+  write_all(sockets.client_fd, make_publish_qos2_frame(51U));
+  const std::vector<uint8_t> first_pubrec =
+      read_nonempty_with_retries(sockets.client_fd, 512U, 10);
+  REQUIRE_FALSE(first_pubrec.empty());
+  REQUIRE(packet_type_nibble(first_pubrec) == 5U);
+
+  write_all(sockets.client_fd, make_publish_qos2_frame(52U));
+  const std::vector<uint8_t> disconnect =
+      read_nonempty_with_retries(sockets.client_fd, 512U, 10);
+  REQUIRE_FALSE(disconnect.empty());
+  REQUIRE(packet_type_nibble(disconnect) == 14U);
+
+  const DisconnectPacket disconnect_packet =
+      decode_disconnect_packet_or_fail(disconnect);
+  CHECK(disconnect_packet.reason_code == ReasonCode::ReceiveMaximumExceeded);
 
   close_socket_handle(sockets.client_fd);
   worker.join();
