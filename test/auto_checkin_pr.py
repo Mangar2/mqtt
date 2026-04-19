@@ -358,13 +358,13 @@ def checkout_or_create_branch(base_branch: str, branch: str) -> None:
     if current == branch:
         return
 
-    if current == base_branch:
-        run_cmd(f"git checkout -b {branch}")
-        return
-
     existing_local = run_cmd("git branch --list").stdout
     if any(line.strip().lstrip("* ").strip() == branch for line in existing_local.splitlines()):
         run_cmd(f"git checkout {branch}")
+        return
+
+    if current == base_branch:
+        run_cmd(f"git checkout -b {branch}")
         return
 
     run_cmd(f"git checkout -b {branch}")
@@ -554,7 +554,9 @@ def verify_pr_open(cfg: Config, token: str, pr_number: int, timeout_sec: float, 
 
 def merge_and_cleanup_via_git(cfg: Config) -> None:
     # Execute close flow step-by-step for shell portability on Windows.
+    run_cmd("git fetch origin")
     run_cmd(f"git checkout {cfg.base_branch}")
+    run_cmd(f"git pull --ff-only origin {cfg.base_branch}")
     run_cmd(f"git merge --ff-only {cfg.branch}")
     run_cmd(f"git push origin {cfg.base_branch}")
     run_cmd(f"git branch -d {cfg.branch}")
