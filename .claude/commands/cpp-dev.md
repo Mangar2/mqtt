@@ -34,8 +34,8 @@ Never suppress warnings globally or disable `-Werror`.
 
 ## Project-wide conventions
 
-These rules apply to every file in the codebase and must **not** be repeated in
-module-level `SPEC.md` files.
+These conventions apply project-wide, where applicable, and must **not** be
+repeated in module-level `SPEC.md` files.
 
 - `#pragma once` on every header file (no `#ifndef` include guards).
 - All production types live in the `mqtt` namespace.
