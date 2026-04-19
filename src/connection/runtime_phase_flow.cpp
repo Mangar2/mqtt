@@ -13,6 +13,7 @@
 #include "codec/packet/publish_codec.h"
 #include "connection/connection_error.h"
 #include "connection/connection_flow_support.h"
+#include "connection/receive_maximum.h"
 #include "monitoring/structured_tracer.h"
 #include "network/stream_buffer.h"
 #include "network/tcp_connection.h"
@@ -32,6 +33,7 @@ struct RuntimePacketDispatchContext {
   bool is_websocket;
   const ConnectResult &connect_result;
   RuntimeDisconnectState &disconnect_state;
+  ReceiveMaximum &inbound_receive_maximum;
   const std::function<void()> &write_protocol_error_disconnect;
 };
 
@@ -62,8 +64,25 @@ public:
       return frame;
     };
 
+    const bool tracks_inbound_inflight = packet.qos == QoS::ExactlyOnce;
+    if (tracks_inbound_inflight &&
+      !context_.inbound_receive_maximum.acquire()) {
+      mark_clean_disconnect(context_.disconnect_state,
+                ReasonCode::ReceiveMaximumExceeded);
+      write_frame_direct(
+        context_.connection, context_.ws_transport,
+        encode_disconnect_packet(ReasonCode::ReceiveMaximumExceeded),
+        context_.is_websocket);
+      should_break_ = true;
+      return;
+    }
+
     InboundPublishResult publish_result =
         context_.client_session.on_publish(packet);
+
+    if (tracks_inbound_inflight && !publish_result.routable_message.has_value()) {
+      context_.inbound_receive_maximum.release();
+    }
 
     ReasonCode publish_reason = ReasonCode::Success;
     if (publish_result.routable_message.has_value()) {
@@ -76,6 +95,9 @@ public:
       if (packet.qos == QoS::ExactlyOnce && is_error(publish_reason) &&
           packet.packet_id.has_value()) {
         context_.client_session.abort_inbound_qos2(packet.packet_id.value());
+        if (tracks_inbound_inflight) {
+          context_.inbound_receive_maximum.release();
+        }
       }
     }
 
@@ -132,9 +154,12 @@ public:
   }
 
   void operator()(const PubrelPacket &packet) const {
-    enqueue_frame(context_.write_queue,
-                  context_.client_session.on_pubrel(packet),
-                  context_.is_websocket);
+    const WriteBuffer pubcomp_frame = context_.client_session.on_pubrel(packet);
+    try {
+      context_.inbound_receive_maximum.release();
+    } catch (const ConnectionException & /*unused*/) {
+    }
+    enqueue_frame(context_.write_queue, pubcomp_frame, context_.is_websocket);
   }
 
   void operator()(const PubcompPacket &packet) const {
@@ -230,7 +255,8 @@ void dispatch_runtime_packet(
     bool is_websocket, const ConnectPacket &connect_packet,
     const ConnectResult &connect_result, StreamBuffer &stream_buffer,
     ClientSession &client_session, Broker &broker, WriteQueue &write_queue,
-    RuntimeDisconnectState &disconnect_state) {
+  RuntimeDisconnectState &disconnect_state,
+  ReceiveMaximum &inbound_receive_maximum) {
   const auto write_protocol_error_disconnect = [&]() {
     write_error_disconnect(connection, ws_transport, is_websocket,
                            connect_packet, disconnect_state,
@@ -276,6 +302,7 @@ void dispatch_runtime_packet(
         .is_websocket = is_websocket,
         .connect_result = connect_result,
         .disconnect_state = disconnect_state,
+        .inbound_receive_maximum = inbound_receive_maximum,
         .write_protocol_error_disconnect = write_protocol_error_disconnect,
     };
 
@@ -298,7 +325,10 @@ void run_connected_session_loop(
     const ConnectResult &connect_result,
     std::atomic<bool> &session_takeover_requested, StreamBuffer &stream_buffer,
     ClientSession &client_session, Broker &broker, WriteQueue &write_queue,
-    RuntimeDisconnectState &disconnect_state) {
+    RuntimeDisconnectState &disconnect_state,
+    uint16_t inbound_receive_maximum) {
+  ReceiveMaximum inbound_receive_window(inbound_receive_maximum);
+
   while (broker.is_running()) {
     if (session_takeover_requested.exchange(false,
                                             std::memory_order_acq_rel)) {
@@ -342,7 +372,8 @@ void run_connected_session_loop(
     if (process_runtime_packets(connection, ws_transport, is_websocket,
                                 connect_packet, connect_result, stream_buffer,
                                 client_session, broker, write_queue,
-                                disconnect_state)) {
+                                disconnect_state,
+                                inbound_receive_window)) {
       break;
     }
   }

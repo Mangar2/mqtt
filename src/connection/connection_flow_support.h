@@ -56,6 +56,8 @@ struct RuntimeDisconnectState {
     const std::vector<Property> &properties);
 [[nodiscard]] std::optional<uint32_t> find_maximum_packet_size(
     const std::vector<Property> &properties);
+[[nodiscard]] std::optional<uint16_t> find_receive_maximum(
+    const std::vector<Property> &properties);
 [[nodiscard]] std::vector<Property> build_protocol_error_disconnect_properties(
     const ConnectPacket &connect_packet, std::string_view reason_text);
 

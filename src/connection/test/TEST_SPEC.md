@@ -63,6 +63,8 @@
 | `available_increases_after_release` | Resume after ACK | ReceiveMaximum(2), acquire() x2, release() | available() == 1 |
 | `release_restores_capacity` | ACK frees slot | ReceiveMaximum(1), acquire(), release(), acquire() | last acquire returns true |
 | `release_throws_when_inflight_zero` | Underflow guard | ReceiveMaximum(5), release() | ConnectionException(InvalidState) |
+| `find_receive_maximum_returns_value_when_property_present` | Parse CONNECT Receive Maximum property | property list with ReceiveMaximum=7 | returns 7 |
+| `find_receive_maximum_returns_nullopt_when_property_missing` | Parse CONNECT properties without Receive Maximum | property list without ReceiveMaximum | returns nullopt |
 | `map_codec_error_to_connect_reason_handles_all_key_paths` | CONNECT decode reason mapping coverage | representative codec errors + unknown enum value | UnsupportedProtocolVersion, MalformedPacket, and ProtocolError mappings are correct |
 | `map_codec_error_to_runtime_reason_handles_all_key_paths` | Runtime decode reason mapping coverage | representative codec errors + unknown enum value | MalformedPacket and ProtocolError mappings are correct |
 
@@ -109,6 +111,8 @@
 | `client_handler_runtime_auth_failure_disconnects_cleanly` | Runtime AUTH failure branch | successful enhanced auth session, then AUTH(ReAuthenticate) starts reauth and AUTH(ContinueAuthentication) with invalid credentials fails | AUTH challenge is emitted, then DISCONNECT(BadUserNameOrPassword) and clean loop exit |
 | `client_handler_runtime_reauthenticate_failure_disconnects_cleanly` | Runtime AUTH re-authenticate invalid method | successful enhanced auth session, then AUTH(ReAuthenticate) with mismatched Authentication Method | DISCONNECT(ProtocolError) is emitted and loop exits cleanly |
 | `client_handler_persistent_reconnect_sets_session_present` | Persistent reconnect resumes existing session | two sequential CONNECTs with same client ID and SessionExpiryInterval > 0 | second CONNACK has `session_present=true` |
+| `client_handler_connect_receive_maximum_limits_outbound_inflight_qos1` | Outbound inflight gating uses CONNECT Receive Maximum | CONNECT with ReceiveMaximum=1, self-subscribe QoS1, publish two QoS1 messages without PUBACK for first outbound delivery | second outbound PUBLISH blocked until first outbound PUBACK arrives |
+| `client_handler_runtime_qos2_receive_maximum_exceeded_disconnects` | Inbound inflight gating enforces broker receive_maximum | broker config receive_maximum=1, send two QoS2 PUBLISH without PUBREL for first | second QoS2 triggers DISCONNECT(ReceiveMaximumExceeded 0x93) |
 
 ## ConnectionManager (23)
 
