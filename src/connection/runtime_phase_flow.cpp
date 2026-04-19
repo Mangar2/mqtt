@@ -80,6 +80,18 @@ public:
     InboundPublishResult publish_result =
         context_.client_session.on_publish(packet);
 
+    const bool is_new_inbound_inflight =
+        tracks_inbound_inflight && publish_result.routable_message.has_value();
+    if (is_new_inbound_inflight &&
+        !context_.inbound_receive_maximum.acquire()) {
+      mark_clean_disconnect(context_.disconnect_state,
+                            ReasonCode::ReceiveMaximumExceeded);
+      write_frame_direct(
+          context_.connection, context_.ws_transport,
+          encode_disconnect_packet(ReasonCode::ReceiveMaximumExceeded),
+          context_.is_websocket);
+      should_break_ = true;
+      return;
     if (tracks_inbound_inflight && !publish_result.routable_message.has_value()) {
       context_.inbound_receive_maximum.release();
     }
