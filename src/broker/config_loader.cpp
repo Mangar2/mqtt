@@ -199,6 +199,10 @@ void ConfigLoader::apply_key(const std::string &section, const std::string &key,
     } else if (key == "trace_modules") {
       cfg.trace_modules = parse_csv_modules(value);
     }
+  } else if (section == "monitoring") {
+    if (key == "sys_topic_interval") {
+      cfg.sys_topic_interval = parse_uint32(value);
+    }
   }
 }
 

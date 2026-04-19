@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <cstdint>
 
+#include "authz/broker_acl_policy.h"
 #include "data_model/property/property.h"
 #include "data_model/property/property_id.h"
 #include "message_router/message_router_error.h"
+#include "topic/topic_validator.h"
 
 namespace mqtt {
 
@@ -54,6 +56,11 @@ InboundPublishProcessor::process(Message &msg, std::string_view client_id,
                                  std::string_view username,
                                  TopicAliasTable &alias_table) {
   resolve_topic_alias(msg, alias_table);
+
+  if (client_id != k_broker_internal_principal && is_system_topic(msg.topic.value)) {
+    throw MessageRouterException(MessageRouterError::PublishNotAuthorized,
+                                 "clients cannot publish to $SYS topics");
+  }
 
   if (!acl_.check_publish(client_id, username, msg.topic.value)) {
     throw MessageRouterException(MessageRouterError::PublishNotAuthorized,
