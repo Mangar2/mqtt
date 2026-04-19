@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include <cstdint>
+#include <cerrno>
 #include <span>
 
 namespace mqtt {
