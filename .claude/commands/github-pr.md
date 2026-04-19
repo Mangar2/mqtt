@@ -38,3 +38,10 @@ Authentication source for the script:
 - verify PR is closed and merged
 
 Do not replace any part of this flow with manual git or manual PR API steps.
+
+## ABSOLUTE RULES — never violate
+
+- NEVER run `git commit`, `git push`, `git checkout`, `git branch`, or `git merge` manually before or instead of the script
+- NEVER commit directly to `master` — the script creates the feature branch and commits
+- If the script fails, read the error, fix the root cause, then call the script again — never work around it with manual git commands
+- If blocked, ask the user — do not attempt alternative git sequences
