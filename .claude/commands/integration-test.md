@@ -22,6 +22,8 @@ All tests use shared helpers in `test/integration_tests/helpers/`:
 - `assertions.py` — assert_connack, assert_message, assert_reason_code, assert_disconnected, assert_no_message, assert_connection_closed
 - `broker.py` — start_broker, stop_broker, restart_broker, is_reachable
 
+RULE: Before writing any test, read `test/integration_tests/helpers/assertions.py` to verify exact function signatures. All parameters are positional and required — no defaults exist.
+
 Import helpers:
 ```python
 from helpers.mqtt_client import MqttClient
@@ -86,14 +88,14 @@ from helpers.assertions import assert_connack, assert_message
 def run_qos1_roundtrip(config) -> tuple[bool, str]:
     try:
         with MqttClient(config.host, config.port, "sub-client") as sub:
-            assert_connack(sub.connack, reason_code=0x00)
+            assert_connack(sub.connack, reason_code=0x00, session_present=False)
             sub.subscribe("test/topic", qos=1)
 
             with MqttClient(config.host, config.port, "pub-client") as pub:
                 pub.publish("test/topic", b"hello", qos=1)
 
             msgs = sub.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(msgs[0], topic="test/topic", payload=b"hello", qos=1)
+            assert_message(msgs[0], topic="test/topic", payload=b"hello", qos=1, retain=False)
         return True, "QoS 1 roundtrip OK"
     except Exception as e:
         return False, str(e)
