@@ -33,6 +33,7 @@ Keyed by topic name (`std::string`). Only messages with a non-empty payload are 
 |--------|-------------|
 | `store(msg)` | Store or overwrite a retained message. If `msg.payload` is empty, the entry is deleted (4.2.1 + 4.2.2). |
 | `find(topic_filter)` | Return all stored messages whose topic names match the filter (4.2.3). Wildcard matching uses `TopicMatcher`. System topics (`$`-prefix) are excluded from wildcard results per §4.7.2. |
+| `find_records(topic_filter)` | Return retained records (`message` + `stored_at`) for matching topics. Used by Module 12.4 to enforce Message Expiry Interval against retained delivery time. |
 | `all()` | Return copies of all stored messages including system topics.  Use this for persistence snapshots. |
 | `size()` | Number of currently stored retained messages. |
 
@@ -42,6 +43,10 @@ Keyed by topic name (`std::string`). Only messages with a non-empty payload are 
 the given filter as a single dummy subscription and then calling
 `TopicMatcher::match(temp_trie, stored_topic)` for each stored topic name.  The
 `TopicMatcher` system-topic exclusion rules (§4.7.2) are automatically respected.
+
+Each retained entry also stores the broker-side `stored_at` timestamp.
+`find()` strips metadata and returns only `Message` copies, while
+`find_records()` keeps metadata for expiry-aware delivery paths.
 
 ## SessionStore (4.3)
 

@@ -72,9 +72,9 @@ public:
    * @brief Retrieve retained messages matching a subscription topic filter.
    *
    * @param topic_filter Topic filter expression.
-   * @return Matching retained messages.
+    * @return Matching retained records (message + store timestamp).
    */
-  [[nodiscard]] std::vector<Message>
+  [[nodiscard]] std::vector<RetainedMessageRecord>
   retained_for_filter(std::string_view topic_filter) const;
 
 private:

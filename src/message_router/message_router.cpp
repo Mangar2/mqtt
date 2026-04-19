@@ -173,13 +173,14 @@ void MessageRouter::deliver_retained(
     return;
   }
 
-  std::vector<Message> retained_messages =
+  std::vector<RetainedMessageRecord> retained_messages =
       processor_.retained_for_filter(topic_filter);
-  for (const Message &retained_message : retained_messages) {
+  for (const RetainedMessageRecord &retained_record : retained_messages) {
     Message outbound = SubscriberFanout::apply_subscription_rules(
-        retained_message, subscription);
+        retained_record.message, subscription);
 
-    if (!MessageExpiryController::update_expiry(outbound, now, now)) {
+    if (!MessageExpiryController::update_expiry(
+            outbound, retained_record.stored_at, now)) {
       continue;
     }
 

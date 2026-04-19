@@ -55,13 +55,17 @@ InboundPublishProcessor(AclEngine&, RetainedMessageStore&, SubscriptionStore&);
     Message& msg, std::string_view client_id,
     std::string_view username, TopicAliasTable& alias_table);
 
-[[nodiscard]] std::vector<Message> retained_for_filter(
+[[nodiscard]] std::vector<RetainedMessageRecord> retained_for_filter(
     std::string_view topic_filter) const;
 ```
 
 **`process`**: resolves optional Topic Alias in-place, checks publish ACL
 (throws `PublishNotAuthorized` on denial), stores retained message if
 `msg.retain` is set, returns matching subscriber list.
+
+`retained_for_filter` returns retained records including the original
+`stored_at` timestamp so `MessageExpiryController` can evaluate retained
+message expiry against publish/store time.
 
 ---
 

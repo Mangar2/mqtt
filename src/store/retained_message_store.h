@@ -6,6 +6,7 @@
  */
 
 #include <cstddef>
+#include <chrono>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -14,6 +15,14 @@
 #include "data_model/message/message.h"
 
 namespace mqtt {
+
+/**
+ * @brief Retained message plus the time it was stored by the broker.
+ */
+struct RetainedMessageRecord {
+  Message message;                                   ///< Stored retained message.
+  std::chrono::steady_clock::time_point stored_at;  ///< Broker-side store time.
+};
 
 /**
  * @brief In-memory store for MQTT 5.0 retained messages (Module 4.2).
@@ -35,8 +44,13 @@ public:
    * @param msg The message to store.  `msg.topic` must be a valid topic name
    *            (no wildcards).  `msg.retain` is informational and not checked
    * here.
+  * @param stored_at Timestamp captured when the broker stores the retained
+  *                  message.
    */
-  void store(const Message &msg);
+  void store(
+      const Message &msg,
+      std::chrono::steady_clock::time_point stored_at =
+          std::chrono::steady_clock::now());
 
   /**
    * @brief Return all retained messages matching a topic filter (4.2.3).
@@ -61,14 +75,24 @@ public:
   [[nodiscard]] std::vector<Message> all() const;
 
   /**
+   * @brief Return retained records matching a topic filter including
+   *        per-record store timestamps.
+   *
+   * @param topic_filter The subscriber's topic filter; may contain `+` or `#`.
+   * @return Vector of matching retained records; order is unspecified.
+   */
+  [[nodiscard]] std::vector<RetainedMessageRecord>
+  find_records(std::string_view topic_filter) const;
+
+  /**
    * @brief Return the number of currently stored retained messages.
    * @return Count of entries in the store.
    */
   [[nodiscard]] std::size_t size() const noexcept;
 
 private:
-  std::unordered_map<std::string, Message>
-      messages_; ///< Topic-name → retained message.
+  std::unordered_map<std::string, RetainedMessageRecord>
+      messages_; ///< Topic-name → retained message with store timestamp.
 };
 
 } // namespace mqtt

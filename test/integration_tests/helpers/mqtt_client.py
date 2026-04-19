@@ -322,8 +322,15 @@ class MqttClient:
             subscribe_properties = Properties(PacketTypes.SUBSCRIBE)
             setattr(subscribe_properties, "SubscriptionIdentifier", int(subscription_id))
 
-        request = options if options is not None else qos
-        result, mid = client.subscribe(topic_filter, qos=request, properties=subscribe_properties)
+        if options is not None:
+            result, mid = client.subscribe(
+                topic_filter,
+                qos=qos,
+                options=options,
+                properties=subscribe_properties,
+            )
+        else:
+            result, mid = client.subscribe(topic_filter, qos=qos, properties=subscribe_properties)
         if result != mqtt.MQTT_ERR_SUCCESS:
             raise RuntimeError(f"subscribe failed with rc={result}")
 

@@ -74,9 +74,9 @@ InboundPublishProcessor::process(Message &msg, std::string_view client_id,
   return subscriptions_.subscribers_for(msg.topic.value);
 }
 
-std::vector<Message> InboundPublishProcessor::retained_for_filter(
+std::vector<RetainedMessageRecord> InboundPublishProcessor::retained_for_filter(
     std::string_view topic_filter) const {
-  return retained_.find(topic_filter);
+  return retained_.find_records(topic_filter);
 }
 
 } // namespace mqtt

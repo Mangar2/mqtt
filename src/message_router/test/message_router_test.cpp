@@ -816,6 +816,35 @@ TEST_CASE("router_deliver_retained_discards_zero_expiry", "[message_router]") {
   CHECK(delivered_count == 0);
 }
 
+TEST_CASE("router_deliver_retained_discards_elapsed_expiry", "[message_router]") {
+  AclEngine acl({allow_all()});
+  RetainedMessageStore retained;
+  SubscriptionStore subs;
+  InboundPublishProcessor proc(acl, retained, subs);
+  OfflineQueue offline_queue;
+  SharedSubscriptionDispatcher shared;
+
+  Message retained_message = make_msg("sensor/temp", QoS::AtLeastOnce, true);
+  retained_message.payload.data = {0x12U};
+  retained_message.properties.push_back(Property{
+      .id = PropertyId::MessageExpiryInterval,
+      .value = uint32_t{5U},
+  });
+  retained.store(retained_message);
+
+  int delivered_count = 0;
+  MessageRouter router(
+      proc, offline_queue, shared, [](std::string_view) { return true; },
+      [&](std::string_view, const Message &) { ++delivered_count; });
+
+  Subscription subscription = make_sub("sensor/#");
+  subscription.options.retain_handling = RetainHandling::SendAtSubscribe;
+
+  router.deliver_retained("sub1", "sensor/#", subscription, true,
+                          std::chrono::steady_clock::now() + 10s);
+  CHECK(delivered_count == 0);
+}
+
 TEST_CASE("router_route_shared_subscription_online", "[message_router]") {
   AclEngine acl({allow_all()});
   RetainedMessageStore retained;
