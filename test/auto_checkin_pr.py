@@ -360,7 +360,17 @@ def checkout_or_create_branch(base_branch: str, branch: str) -> None:
 
     existing_local = run_cmd("git branch --list").stdout
     if any(line.strip().lstrip("* ").strip() == branch for line in existing_local.splitlines()):
+        stashed = False
+        if git_is_dirty():
+            stash_result = run_cmd(
+                'git stash push -u -m "auto-checkin-branch-switch"',
+                check=False,
+            )
+            if "No local changes to save" not in stash_result.stdout:
+                stashed = True
         run_cmd(f"git checkout {branch}")
+        if stashed:
+            run_cmd("git stash pop")
         return
 
     if current == base_branch:
@@ -556,7 +566,12 @@ def merge_and_cleanup_via_git(cfg: Config) -> None:
     # Execute close flow step-by-step for shell portability on Windows.
     run_cmd("git fetch origin")
     run_cmd(f"git checkout {cfg.base_branch}")
-    run_cmd(f"git pull --ff-only origin {cfg.base_branch}")
+    pull_ff_only = run_cmd(
+        f"git pull --ff-only origin {cfg.base_branch}",
+        check=False,
+    )
+    if pull_ff_only.returncode != 0:
+        run_cmd(f"git pull --rebase origin {cfg.base_branch}")
     run_cmd(f"git merge --ff-only {cfg.branch}")
     run_cmd(f"git push origin {cfg.base_branch}")
     run_cmd(f"git branch -d {cfg.branch}")
