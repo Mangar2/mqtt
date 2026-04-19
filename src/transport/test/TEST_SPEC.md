@@ -16,6 +16,8 @@ All tests in `websocket_test.cpp`.  Catch2 tag: `[transport]`.
 | `handshake_rejects_wrong_version` | `Sec-WebSocket-Version: 8` → throws `TransportException(InvalidHandshake)` |
 | `handshake_rejects_missing_key` | No `Sec-WebSocket-Key` header → throws |
 | `handshake_rejects_missing_connection_header` | No `Connection: Upgrade` header → throws |
+| `handshake_rejects_missing_subprotocol_header` | No `Sec-WebSocket-Protocol: mqtt` header → throws `TransportException(InvalidHandshake)` |
+| `handshake_accepts_mqtt_subprotocol_header` | Explicit `Sec-WebSocket-Protocol: mqtt` header is accepted |
 | `handshake_build_response_before_complete_throws` | `build_response()` on incomplete state → throws `std::logic_error` |
 | `handshake_second_append_noop_after_complete` | Appending more bytes after completion does not change state |
 
@@ -72,6 +74,8 @@ All tests in `websocket_test.cpp`.  Catch2 tag: `[transport]`.
 | `ws_transport_write_frame_to_client` | After handshake, `write_frame()` sends WS Binary frame bytes visible on the peer |
 | `ws_transport_ping_gets_pong` | `read_chunk()` auto-responds to Ping with Pong carrying the same payload |
 | `ws_transport_close_sets_eof` | Close frame is reported as `eof = true` by `read_chunk()` |
+| `ws_transport_reassembles_fragmented_binary_message` | Binary frame with FIN=0 followed by Continuation FIN=1 is reassembled into one MQTT byte stream |
+| `ws_transport_text_frame_sets_eof` | Text frame is rejected by reporting `eof = true` |
 | `ws_transport_constructor_throws_on_closed_socket` | Constructor throws `TransportException` when peer closes before completing handshake |
 | `ws_transport_read_chunk_timeout_sets_timed_out` | `read_chunk()` reports `timed_out = true`, `eof = false` on receive timeout |
 | `ws_transport_read_chunk_eof_on_tcp_close` | `read_chunk()` reports `eof = true` when TCP peer closes after handshake |

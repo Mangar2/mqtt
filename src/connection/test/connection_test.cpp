@@ -549,6 +549,7 @@ std::vector<uint8_t> make_valid_upgrade_request() {
       "Connection: Upgrade\r\n"
       "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
       "Sec-WebSocket-Version: 13\r\n"
+      "Sec-WebSocket-Protocol: mqtt\r\n"
       "\r\n";
   return {request.begin(), request.end()};
 }

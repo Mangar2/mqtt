@@ -240,6 +240,7 @@ void WebSocketHandshake::parse_() {
   bool found_upgrade = false;
   bool found_connection = false;
   bool found_version = false;
+  bool found_subprotocol = false;
 
   // Parse header lines (skip the request line).
   std::size_t line_start = headers.find("\r\n");
@@ -283,6 +284,8 @@ void WebSocketHandshake::parse_() {
             "Unsupported Sec-WebSocket-Version (expected 13)"};
       }
       found_version = true;
+    } else if (iequals(name, "Sec-WebSocket-Protocol")) {
+      found_subprotocol = header_value_contains(value, "mqtt");
     }
   }
 
@@ -301,6 +304,10 @@ void WebSocketHandshake::parse_() {
   if (!found_version) {
     throw TransportException{TransportError::InvalidHandshake,
                              "Missing Sec-WebSocket-Version header"};
+  }
+  if (!found_subprotocol) {
+    throw TransportException{TransportError::InvalidHandshake,
+                             "Missing Sec-WebSocket-Protocol: mqtt header"};
   }
 
   complete_ = true;

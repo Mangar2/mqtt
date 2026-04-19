@@ -121,6 +121,8 @@ private:
 
   TcpConnection &conn_;
   WebSocketFrameCodec codec_;
+  bool fragmented_message_active_{false};
+  std::vector<uint8_t> fragmented_payload_;
 };
 
 } // namespace mqtt

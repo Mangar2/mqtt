@@ -53,8 +53,38 @@ WsReadChunk WebSocketTransport::read_chunk() {
   while (codec_.has_frame()) {
     WsFrame frame = codec_.consume_frame();
     if (frame.opcode == WsOpcode::Binary) {
-      chunk.data.insert(chunk.data.end(), frame.payload.begin(),
-                        frame.payload.end());
+      if (!fragmented_message_active_) {
+        if (frame.fin) {
+          chunk.data.insert(chunk.data.end(), frame.payload.begin(),
+                            frame.payload.end());
+        } else {
+          fragmented_message_active_ = true;
+          fragmented_payload_ = std::move(frame.payload);
+        }
+      } else {
+        // New data frame while a fragmented message is in progress.
+        chunk.eof = true;
+        return chunk;
+      }
+    } else if (frame.opcode == WsOpcode::Continuation) {
+      if (!fragmented_message_active_) {
+        // Continuation without a preceding fragmented data frame.
+        chunk.eof = true;
+        return chunk;
+      }
+
+      fragmented_payload_.insert(fragmented_payload_.end(), frame.payload.begin(),
+                                 frame.payload.end());
+      if (frame.fin) {
+        chunk.data.insert(chunk.data.end(), fragmented_payload_.begin(),
+                          fragmented_payload_.end());
+        fragmented_payload_.clear();
+        fragmented_message_active_ = false;
+      }
+    } else if (frame.opcode == WsOpcode::Text) {
+      // MQTT over WebSocket must be transported in binary frames.
+      chunk.eof = true;
+      return chunk;
     } else if (frame.opcode == WsOpcode::Close) {
       chunk.eof = true;
       return chunk;
@@ -63,7 +93,7 @@ WsReadChunk WebSocketTransport::read_chunk() {
           WsOpcode::Pong, std::span<const uint8_t>{frame.payload});
       (void)conn_.write(pong);
     }
-    // Pong, Continuation, Text: silently ignored.
+    // Pong is intentionally ignored.
   }
 
   return chunk;

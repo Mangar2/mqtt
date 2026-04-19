@@ -43,6 +43,7 @@ make_valid_upgrade(std::string_view key = "dGhlIHNhbXBsZSBub25jZQ==") {
                           std::string(key) +
                           "\r\n"
                           "Sec-WebSocket-Version: 13\r\n"
+                          "Sec-WebSocket-Protocol: mqtt\r\n"
                           "\r\n";
   return {req.begin(), req.end()};
 }
@@ -207,6 +208,36 @@ TEST_CASE("handshake_rejects_missing_connection_header", "[transport]") {
   const std::span<const uint8_t> span{
       reinterpret_cast<const uint8_t *>(req.data()), req.size()};
   CHECK_THROWS_AS(hsk.append(span), TransportException);
+}
+
+TEST_CASE("handshake_rejects_missing_subprotocol_header", "[transport]") {
+  WebSocketHandshake hsk;
+  const std::string req = "GET / HTTP/1.1\r\n"
+                          "Host: localhost\r\n"
+                          "Upgrade: websocket\r\n"
+                          "Connection: Upgrade\r\n"
+                          "Sec-WebSocket-Key: abc123==\r\n"
+                          "Sec-WebSocket-Version: 13\r\n"
+                          "\r\n";
+  const std::span<const uint8_t> span{
+      reinterpret_cast<const uint8_t *>(req.data()), req.size()};
+  CHECK_THROWS_AS(hsk.append(span), TransportException);
+}
+
+TEST_CASE("handshake_accepts_mqtt_subprotocol_header", "[transport]") {
+  WebSocketHandshake hsk;
+  const std::string req = "GET / HTTP/1.1\r\n"
+                          "Host: localhost\r\n"
+                          "Upgrade: websocket\r\n"
+                          "Connection: Upgrade\r\n"
+                          "Sec-WebSocket-Key: abc123==\r\n"
+                          "Sec-WebSocket-Version: 13\r\n"
+                          "Sec-WebSocket-Protocol: mqtt\r\n"
+                          "\r\n";
+  const std::span<const uint8_t> span{
+      reinterpret_cast<const uint8_t *>(req.data()), req.size()};
+  hsk.append(span);
+  CHECK(hsk.is_complete());
 }
 
 TEST_CASE("handshake_build_response_before_complete_throws", "[transport]") {
@@ -558,6 +589,77 @@ TEST_CASE("ws_transport_ping_gets_pong", "[transport]") {
   const WsFrame pong = codec.consume_frame();
   CHECK(pong.opcode == WsOpcode::Pong);
   CHECK(pong.payload == ping_payload);
+}
+
+TEST_CASE("ws_transport_reassembles_fragmented_binary_message", "[transport]") {
+  TcpConnection client_conn{k_invalid_socket};
+  TcpConnection server_conn{k_invalid_socket};
+  make_socket_pair(client_conn, server_conn);
+
+  std::vector<uint8_t> decoded_payload;
+
+  std::thread server_thread([&] {
+    WebSocketTransport transport(server_conn);
+    transport.set_receive_timeout(1000U);
+    for (std::size_t iteration = 0U; iteration < 3U; ++iteration) {
+      WsReadChunk chunk = transport.read_chunk();
+      if (!chunk.data.empty()) {
+        decoded_payload = std::move(chunk.data);
+        return;
+      }
+      if (chunk.eof) {
+        return;
+      }
+    }
+  });
+
+  const auto request = make_valid_upgrade();
+  REQUIRE(client_conn.write(request));
+  (void)read_once(client_conn); // handshake response
+
+  const std::vector<uint8_t> part_one = {0x10U, 0x11U, 0x12U};
+  const std::vector<uint8_t> part_two = {0x13U, 0x14U, 0x15U};
+  const auto frame_one =
+      make_masked_frame(WsOpcode::Binary, false, part_one, {1U, 2U, 3U, 4U});
+  const auto frame_two = make_masked_frame(WsOpcode::Continuation, true,
+                                           part_two, {4U, 3U, 2U, 1U});
+
+  REQUIRE(client_conn.write(frame_one));
+  REQUIRE(client_conn.write(frame_two));
+
+  server_thread.join();
+
+  const std::vector<uint8_t> expected = {0x10U, 0x11U, 0x12U,
+                                         0x13U, 0x14U, 0x15U};
+  CHECK(decoded_payload == expected);
+}
+
+TEST_CASE("ws_transport_text_frame_sets_eof", "[transport]") {
+  TcpConnection client_conn{k_invalid_socket};
+  TcpConnection server_conn{k_invalid_socket};
+  make_socket_pair(client_conn, server_conn);
+
+  bool eof_seen = false;
+
+  std::thread server_thread([&] {
+    WebSocketTransport transport(server_conn);
+    transport.set_receive_timeout(1000U);
+    WsReadChunk chunk = transport.read_chunk();
+    eof_seen = chunk.eof;
+  });
+
+  const auto request = make_valid_upgrade();
+  REQUIRE(client_conn.write(request));
+  (void)read_once(client_conn); // handshake response
+
+  const std::vector<uint8_t> text_payload = {'M', 'Q', 'T', 'T'};
+  const auto text_frame =
+      make_masked_frame(WsOpcode::Text, true, text_payload, {0U, 1U, 2U, 3U});
+  REQUIRE(client_conn.write(text_frame));
+
+  server_thread.join();
+
+  CHECK(eof_seen == true);
 }
 
 TEST_CASE("ws_transport_close_sets_eof", "[transport]") {
