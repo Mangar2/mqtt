@@ -78,7 +78,19 @@ void MessageRouter::dispatch_item(const DeliveryItem &item,
   if (is_online_(item.client_id)) {
     deliver_(item.client_id, msg_copy);
   } else {
-    offline_queue_.enqueue(item.client_id, msg_copy);
+    if (msg_copy.qos == QoS::AtMostOnce) {
+      return;
+    }
+
+    try {
+      offline_queue_.enqueue(item.client_id, msg_copy);
+    } catch (const MessageRouterException &exception) {
+      if (exception.error() != MessageRouterError::QueueFull) {
+        throw;
+      }
+      offline_queue_.enqueue_drop_oldest(item.client_id, msg_copy);
+    }
+
     TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "message_router") {
       TraceEvent event;
       event.level = TraceLevel::Trace;

@@ -21,6 +21,19 @@ void OfflineQueue::enqueue(std::string_view client_id, const Message &msg) {
   });
 }
 
+void OfflineQueue::enqueue_drop_oldest(std::string_view client_id,
+                                       const Message &msg) {
+  auto &queue = queues_[std::string(client_id)];
+  if (queue.size() >= max_size_ && !queue.empty()) {
+    queue.pop_front();
+  }
+
+  queue.push_back(QueuedMessage{
+      .message = msg,
+      .enqueue_time = std::chrono::steady_clock::now(),
+  });
+}
+
 std::vector<QueuedMessage> OfflineQueue::drain(std::string_view client_id) {
   auto iter = queues_.find(std::string(client_id));
   if (iter == queues_.end()) {

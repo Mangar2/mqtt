@@ -68,6 +68,17 @@ public:
   void enqueue(std::string_view client_id, const Message &msg);
 
   /**
+   * @brief Enqueue a message and drop the current oldest when queue is full.
+   *
+   * Used for policies where the newest message should be kept even when the
+   * per-client queue reached @ref max_size_.
+   *
+   * @param client_id Identifier of the target client session.
+   * @param msg       Outbound message (subscription rules already applied).
+   */
+  void enqueue_drop_oldest(std::string_view client_id, const Message &msg);
+
+  /**
    * @brief Drain and return all queued messages for a client (12.3.2).
    *
    * The client's queue is cleared on return.  Returns an empty vector when

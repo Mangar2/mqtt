@@ -423,6 +423,35 @@ TEST_CASE("offline_queue_size_per_client", "[message_router]") {
   CHECK(queue.size("c2") == 1U);
 }
 
+TEST_CASE("offline_queue_enqueue_drop_oldest_replaces_head_when_full",
+          "[message_router]") {
+  OfflineQueue queue(2U);
+  queue.enqueue("cli", make_msg("t/1"));
+  queue.enqueue("cli", make_msg("t/2"));
+
+  queue.enqueue_drop_oldest("cli", make_msg("t/3"));
+
+  const auto drained = queue.drain("cli");
+  REQUIRE(drained.size() == 2U);
+  CHECK(drained[0].message.topic.value == "t/2");
+  CHECK(drained[1].message.topic.value == "t/3");
+}
+
+TEST_CASE("offline_queue_enqueue_drop_oldest_handles_zero_capacity",
+          "[message_router]") {
+  OfflineQueue queue(0U);
+
+  queue.enqueue_drop_oldest("cli", make_msg("t/1"));
+  CHECK(queue.size("cli") == 1U);
+
+  queue.enqueue_drop_oldest("cli", make_msg("t/2"));
+  CHECK(queue.size("cli") == 1U);
+
+  const auto drained = queue.drain("cli");
+  REQUIRE(drained.size() == 1U);
+  CHECK(drained[0].message.topic.value == "t/2");
+}
+
 //
 // MessageExpiryController (12.4)
 //
@@ -637,7 +666,7 @@ TEST_CASE("router_enqueue_for_offline_subscriber", "[message_router]") {
       [](std::string_view, const Message &) {});
 
   TopicAliasTable alias_table(0U);
-  Message msg = make_msg("t");
+  Message msg = make_msg("t", QoS::AtLeastOnce);
   router.route(msg, "pub", "", alias_table);
 
   CHECK(offline_queue.size("sub1") == 1U);
@@ -665,7 +694,7 @@ TEST_CASE("router_flush_delivers_queued_messages", "[message_router]") {
   TopicAliasTable alias_table(0U);
 
   // Route while offline — enqueues.
-  Message msg = make_msg("t");
+  Message msg = make_msg("t", QoS::AtLeastOnce);
   router.route(msg, "pub", "", alias_table);
   CHECK(offline_queue.size("sub1") == 1U);
 
@@ -912,7 +941,7 @@ TEST_CASE("router_flush_discards_expired_in_queue", "[message_router]") {
   TopicAliasTable alias_table(0U);
 
   // Route a message with 5-second expiry while client is offline.
-  Message msg = make_msg("t");
+  Message msg = make_msg("t", QoS::AtLeastOnce);
   msg.properties.push_back(
       Property{.id = PropertyId::MessageExpiryInterval, .value = uint32_t{5U}});
   router.route(msg, "pub", "", alias_table);

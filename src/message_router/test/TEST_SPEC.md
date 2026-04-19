@@ -26,6 +26,8 @@
 | `offline_queue_drain_preserves_fifo_order`     | 12.3.2 | Messages delivered in FIFO order |
 | `offline_queue_purge_removes_messages`         | 12.3   | Purge clears all messages without delivering |
 | `offline_queue_size_per_client`                | 12.3   | Independent per-client size tracking |
+| `offline_queue_enqueue_drop_oldest_replaces_head_when_full` | 12.3.3 | Drop-oldest enqueue keeps newest messages when queue is full |
+| `offline_queue_enqueue_drop_oldest_handles_zero_capacity` | 12.3.3 | Drop-oldest enqueue remains stable for zero configured capacity |
 | `expiry_no_property_always_valid`              | 12.4   | No MessageExpiryInterval → always valid |
 | `expiry_not_expired_updates_remaining`         | 12.4.3 | Remaining interval reduced correctly after elapsed time |
 | `expiry_exactly_at_boundary_expired`           | 12.4.2 | Expired when elapsed == interval |
@@ -43,9 +45,9 @@
 | `shared_member_count_correct`                  | 12.5   | member_count reflects additions and removals |
 | `shared_replace_existing_member`               | 12.5   | Re-adding a known client replaces subscription |
 | `router_deliver_to_online_subscriber`          | 12     | Message delivered via callback for online subscriber |
-| `router_enqueue_for_offline_subscriber`        | 12.3   | Message buffered in OfflineQueue for offline subscriber |
-| `router_flush_delivers_queued_messages`        | 12.3.2 | flush_offline_queue drains and delivers buffered messages |
-| `router_flush_discards_expired_messages`       | 12.4.2 | Expired messages not delivered during flush |
+| `router_enqueue_for_offline_subscriber`        | 12.3   | QoS1 message buffered in OfflineQueue for offline subscriber |
+| `router_flush_delivers_queued_messages`        | 12.3.2 | flush_offline_queue drains and delivers buffered QoS1 messages |
+| `router_flush_discards_expired_messages`       | 12.4.2 | Expired queued QoS1 messages not delivered during flush |
 | `router_auth_denied_throws`                    | 12.1.2 | route() propagates PublishNotAuthorized exception |
 | `router_route_internal_uses_alias_maximum_zero` | 12 | route_internal routes server-originated messages without caller alias table plumbing |
 | `router_buffer_offline_messages_enqueues_until_queue_full` | 12.3 | buffer_offline_messages enqueues in order and stops at QueueFull boundary |
