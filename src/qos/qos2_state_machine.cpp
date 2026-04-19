@@ -38,6 +38,7 @@ Qos2StateMachine::on_publish_received(const PublishPacket &pkt) {
   const bool is_new = id_mgr_.try_register_inbound(pid);
 
   if (is_new) {
+    recently_completed_inbound_.erase(pid);
     const Message msg{
         .topic = pkt.topic,
         .payload = pkt.payload,
@@ -63,6 +64,10 @@ Qos2StateMachine::on_publish_received(const PublishPacket &pkt) {
 }
 
 PubcompPacket Qos2StateMachine::on_pubrel_received(const PubrelPacket &pkt) {
+  if (recently_completed_inbound_.contains(pkt.packet_id)) {
+    return PubcompPacket{.packet_id = pkt.packet_id, .properties = {}};
+  }
+
   if (!id_mgr_.is_in_use(pkt.packet_id, InflightDirection::Inbound)) {
     throw QosException(
         QosError::UnexpectedPacketId,
@@ -70,7 +75,16 @@ PubcompPacket Qos2StateMachine::on_pubrel_received(const PubrelPacket &pkt) {
   }
   store_.remove(client_id_, pkt.packet_id, InflightDirection::Inbound);
   id_mgr_.release(pkt.packet_id, InflightDirection::Inbound);
+  recently_completed_inbound_.insert(pkt.packet_id);
   return PubcompPacket{.packet_id = pkt.packet_id, .properties = {}};
+}
+
+void Qos2StateMachine::abort_inbound(uint16_t packet_id) noexcept {
+  if (!id_mgr_.is_in_use(packet_id, InflightDirection::Inbound)) {
+    return;
+  }
+  store_.remove(client_id_, packet_id, InflightDirection::Inbound);
+  id_mgr_.release(packet_id, InflightDirection::Inbound);
 }
 
 //

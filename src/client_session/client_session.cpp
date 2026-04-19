@@ -89,6 +89,10 @@ WriteBuffer ClientSession::on_pubrel(const PubrelPacket &pubrel_packet) {
   return encode_pubcomp_packet(pubcomp_packet);
 }
 
+void ClientSession::abort_inbound_qos2(uint16_t packet_id) noexcept {
+  qos2_state_machine_.abort_inbound(packet_id);
+}
+
 void ClientSession::on_pubcomp(const PubcompPacket &pubcomp_packet) {
   qos2_state_machine_.on_pubcomp_received(pubcomp_packet);
   receive_maximum_.release();

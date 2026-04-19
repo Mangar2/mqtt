@@ -7,6 +7,7 @@
 #include "broker/config_loader.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <fstream>
 #include <sstream>
@@ -35,6 +36,49 @@ ConfigLoader::parse_password_credential(std::string_view value) {
 
   return PasswordCredentialConfig{.username = std::string(user_name),
                                   .password = std::string(pass_word)};
+}
+
+AclRuleConfig ConfigLoader::parse_acl_rule(std::string_view value) {
+  std::array<std::string_view, 4> fields{};
+  std::size_t field_index = 0U;
+  std::size_t start_index = 0U;
+
+  while (start_index <= value.size() && field_index < fields.size()) {
+    const std::size_t separator_index = value.find(',', start_index);
+    if (separator_index == std::string_view::npos) {
+      fields[field_index++] = trim(value.substr(start_index));
+      start_index = value.size() + 1U;
+      break;
+    }
+
+    fields[field_index++] =
+        trim(value.substr(start_index, separator_index - start_index));
+    start_index = separator_index + 1U;
+  }
+
+  if (field_index != fields.size() ||
+      value.find(',', start_index) != std::string_view::npos) {
+    throw BrokerException(
+        BrokerError::InvalidConfig,
+        "Invalid ACL rule format, expected effect,principal,action,topic");
+  }
+
+  const std::string effect(fields[0]);
+  const std::string principal(fields[1]);
+  const std::string action(fields[2]);
+  const std::string topic_pattern(fields[3]);
+
+  if (effect.empty() || principal.empty() || action.empty() ||
+      topic_pattern.empty()) {
+    throw BrokerException(
+        BrokerError::InvalidConfig,
+        "ACL rule fields must be non-empty: effect,principal,action,topic");
+  }
+
+  return AclRuleConfig{.principal = principal,
+                       .topic_pattern = topic_pattern,
+                       .action = action,
+                       .effect = effect};
 }
 
 //
@@ -144,6 +188,10 @@ void ConfigLoader::apply_key(const std::string &section, const std::string &key,
   } else if (section == "auth") {
     if (key == "credential") {
       cfg.password_credentials.push_back(parse_password_credential(value));
+    }
+  } else if (section == "acl") {
+    if (key == "rule") {
+      cfg.acl_rules.push_back(parse_acl_rule(value));
     }
   } else if (section == "tracing") {
     if (key == "global_level") {

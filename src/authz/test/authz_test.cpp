@@ -2,6 +2,7 @@
 
 #include "authz/acl_engine.h"
 #include "authz/acl_loader.h"
+#include "authz/broker_acl_policy.h"
 #include "authz/acl_rule.h"
 #include "authz/authz_error.h"
 
@@ -113,6 +114,13 @@ TEST_CASE("wildcard_principal_matches_any_client", "[authz]") {
       {make_rule("*", "a/b", AclAction::Publish, AclEffect::Allow)});
   CHECK(engine.check_publish("anyone", "", "a/b"));
   CHECK(engine.check_publish("other", "whoever", "a/b"));
+}
+
+TEST_CASE("principal_anonymous_matches_empty_username", "[authz]") {
+  AclEngine engine(
+      {make_rule("anonymous", "a/b", AclAction::Publish, AclEffect::Allow)});
+  CHECK(engine.check_publish("dev1", "", "a/b"));
+  CHECK_FALSE(engine.check_publish("dev1", "alice", "a/b"));
 }
 
 TEST_CASE("principal_matches_client_id", "[authz]") {
@@ -311,4 +319,58 @@ TEST_CASE("loader_all_effect_strings", "[authz]") {
   REQUIRE(rules.size() == 2U);
   CHECK(rules[0].effect == AclEffect::Allow);
   CHECK(rules[1].effect == AclEffect::Deny);
+}
+
+TEST_CASE("broker_acl_policy_includes_internal_rule_and_configured_rules",
+          "[authz]") {
+  const std::vector<AclRuleConfig> configured_rules{
+      {.principal = "dev1",
+       .topic_pattern = "sensor/#",
+       .action = "publish",
+       .effect = "allow"},
+      {.principal = "dev2",
+       .topic_pattern = "private/#",
+       .action = "subscribe",
+       .effect = "deny"},
+  };
+
+  const std::vector<AclRuleConfig> startup_rules =
+      make_startup_acl_rules(configured_rules, false);
+
+  REQUIRE(startup_rules.size() == 3U);
+  CHECK(startup_rules[0].principal == std::string(k_broker_internal_principal));
+  CHECK(startup_rules[0].topic_pattern == "#");
+  CHECK(startup_rules[0].action == "publish_and_subscribe");
+  CHECK(startup_rules[0].effect == "allow");
+  CHECK(startup_rules[1].principal == configured_rules[0].principal);
+  CHECK(startup_rules[2].principal == configured_rules[1].principal);
+}
+
+TEST_CASE("broker_acl_policy_appends_anonymous_fallback_when_enabled",
+          "[authz]") {
+  const std::vector<AclRuleConfig> configured_rules{
+      {.principal = "dev1",
+       .topic_pattern = "sensor/#",
+       .action = "publish",
+       .effect = "allow"},
+  };
+
+  const std::vector<AclRuleConfig> startup_rules =
+      make_startup_acl_rules(configured_rules, true);
+
+  REQUIRE(startup_rules.size() == 3U);
+  const AclRuleConfig &fallback_rule = startup_rules.back();
+  CHECK(fallback_rule.principal == "*");
+  CHECK(fallback_rule.topic_pattern == "#");
+  CHECK(fallback_rule.action == "publish_and_subscribe");
+  CHECK(fallback_rule.effect == "allow");
+}
+
+TEST_CASE("broker_acl_policy_omits_anonymous_fallback_when_disabled",
+          "[authz]") {
+  const std::vector<AclRuleConfig> startup_rules =
+      make_startup_acl_rules({}, false);
+
+  REQUIRE(startup_rules.size() == 1U);
+  CHECK(startup_rules[0].principal == std::string(k_broker_internal_principal));
 }

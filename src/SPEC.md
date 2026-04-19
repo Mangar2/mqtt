@@ -13,14 +13,14 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `store/`       | 4        | In-memory runtime state: subscription store, retained message store, session store, and inflight store. Depends on `data_model/` and `topic/`. |
 | `qos/`         | 5        | QoS Engine — Packet ID allocation, QoS 1 and QoS 2 state machines with retransmission. Depends on `data_model/` and `store/`. |
 | `network/`     | 6        | Network Layer — TCP listener, connection wrapper, incoming stream buffer, and outgoing write queue. No MQTT knowledge. No external dependencies. |
-| `connection/`  | 7, 23, 24 | Connection Handler + Connection Manager — per-connection lifecycle helpers, dedicated listener/thread lifecycle management, and lean client I/O orchestration delegating workflow to `Broker` facades and `ClientSession`. |
+| `connection/`  | 7, 23, 24 | Connection Handler + Connection Manager — per-connection lifecycle helpers, outbound-queue bridging utilities, dedicated listener/thread lifecycle management, and lean client I/O orchestration delegating workflow to `Broker` facades and `ClientSession`. |
 | `auth/`        | 8        | Authentication Module — pluggable authenticator interface, username/password and anonymous authenticators, and enhanced AUTH packet handler. |
-| `authz/`            | 9        | Authorization Module — ACL engine with MQTT wildcard topic matching, ACL rule structure, and configuration loader with runtime reload. |
+| `authz/`            | 9        | Authorization Module — ACL engine with MQTT wildcard topic matching, ACL rule structure, configuration loader with runtime reload, and broker startup ACL policy helpers. |
 | `session_manager/`  | 10       | Session Manager — session lifecycle controller (create/resume/discard), session takeover handler (Client ID collision, Reason 0x8E), and session expiry scheduler. Depends on `store/`, `connection/`, `auth/`. |
 | `will_manager/`     | 11       | Will Manager — will store, will-delay timer, and will publisher. Stores Will Messages on connect, suppresses them on normal disconnect, and publishes them (with optional delay) on connection loss or session expiry. Depends on `data_model/`, `store/`, `session_manager/`. |
 | `transport/`        | 14.2     | Transport Extensions — WebSocket HTTP upgrade handshake, WebSocket frame encoder/decoder, and MQTT payload extraction from binary frames. **Module 14.1 (TLS) is not implemented** — use a reverse proxy for TLS termination. |
 | `broker/`           | 15, 17, 18, 19 | Broker Orchestrator + Concurrency Layer — INI configuration loader, component wiring, ordered startup/shutdown, signal handling, and broker-level facades for connect/disconnect/subscribe/unsubscribe/publish under shared-state locking. |
-| `monitoring/`       | 16, 26   | Monitoring + Structured Tracing — `StatisticsCollector` (connected clients, message throughput, active subscriptions, retained messages, uptime), `SysTopicPublisher` (periodic `$SYS/broker/…` topic publication), and `StructuredTracer` (JSON-lines runtime tracing with global threshold and per-module trace overrides). |
+| `monitoring/`       | 16, 26   | Monitoring + Structured Tracing — `StatisticsCollector` (connected clients, message throughput, active subscriptions, retained messages, uptime), `SysTopicPublisher` (periodic `$SYS/broker/…` topic publication), `StructuredTracer` (JSON-lines runtime tracing with global threshold and per-module trace overrides), and runtime trace command parsing for `$SYS` control messages. |
 | `outbound_queue/`   | 20       | Outbound Message Queue — thread-safe per-client FIFO of `Message` objects. Decouples publishing thread from receiving client's QoS state. Depends on `data_model/`. |
 | `client_session/`   | 21       | Client Session Context — per-client packet handlers and local state bundle (`PacketIdManager`, QoS 1/2 state machines, keep-alive, receive-maximum, aliases, enhanced auth, outbound drain). Depends on `codec/`, `qos/`, `connection/`, `outbound_queue/`. |
 
@@ -95,6 +95,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `connection/keep_alive_timer.h/.cpp` | 7.2 | `KeepAliveTimer` — 1.5 × Keep Alive deadline with reset-on-packet |
 | `connection/topic_alias_table.h/.cpp` | 7.3 | `TopicAliasTable` — inbound and outbound alias↔topic mappings with maximum enforcement |
 | `connection/receive_maximum.h/.cpp` | 7.4 | `ReceiveMaximum` — inflight QoS 1/2 packet counter with pause/resume flow control |
+| `connection/outbound_queue_bridge.h/.cpp` | 24 | Outbound queue bridge helpers for draining and transferring pending messages |
 | `connection/connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, accept-loop threads, and tracked client-thread lifecycle |
 
 ## `auth/` sub-modules
@@ -115,6 +116,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `authz/acl_rule.h`         | 9.1.1 | `AclAction`, `AclEffect`, `AclRule` aggregate |
 | `authz/acl_engine.h/.cpp`  | 9.1   | `AclEngine` — ordered rule evaluation with MQTT wildcard topic matching |
 | `authz/acl_loader.h/.cpp`  | 9.2   | `AclLoader` — parse `AclRuleConfig` strings into rules; initial load and runtime reload |
+| `authz/broker_acl_policy.h/.cpp` | 9 | Startup ACL policy helpers for broker-internal and anonymous fallback rules |
 
 ## `session_manager/` sub-modules
 

@@ -4,6 +4,7 @@
 
 #include "data_model/subscription/retain_handling.h"
 #include "message_router/message_expiry_controller.h"
+#include "message_router/message_router_error.h"
 #include "monitoring/structured_tracer.h"
 
 
@@ -21,7 +22,7 @@ void MessageRouter::set_tracer(StructuredTracer *tracer) noexcept {
   structured_tracer_ = tracer;
 }
 
-void MessageRouter::route(Message &msg, std::string_view client_id,
+bool MessageRouter::route(Message &msg, std::string_view client_id,
                           std::string_view username,
                           TopicAliasTable &alias_table) {
   const auto now = std::chrono::steady_clock::now();
@@ -33,6 +34,8 @@ void MessageRouter::route(Message &msg, std::string_view client_id,
   // 12.5 — Select one target per matching shared subscription group.
   std::vector<MatchResult> shared_targets =
       shared_dispatcher_.select_next_for_topic(msg.topic.value);
+    const bool has_matching_subscribers =
+      !regular_subscribers.empty() || !shared_targets.empty();
 
   // 12.2 — Apply per-subscription rules for regular subscribers.
   auto regular_items =
@@ -50,6 +53,14 @@ void MessageRouter::route(Message &msg, std::string_view client_id,
   for (const auto &item : shared_items) {
     dispatch_item(item, now);
   }
+
+  return has_matching_subscribers;
+}
+
+void MessageRouter::route_internal(Message msg, std::string_view client_id,
+                                   std::string_view username) {
+  TopicAliasTable alias_table(0U);
+  (void)route(msg, client_id, username, alias_table);
 }
 
 void MessageRouter::dispatch_item(const DeliveryItem &item,
@@ -124,6 +135,25 @@ void MessageRouter::flush_offline_queue(
     event.data.push_back({"expired", std::to_string(expired_count)});
     structured_tracer_->emit(event);
   }
+}
+
+std::size_t MessageRouter::buffer_offline_messages(
+    std::string_view client_id, std::vector<Message> messages) {
+  std::size_t enqueued_count = 0U;
+
+  for (Message &message : messages) {
+    try {
+      offline_queue_.enqueue(client_id, message);
+      ++enqueued_count;
+    } catch (const MessageRouterException &exception) {
+      if (exception.error() == MessageRouterError::QueueFull) {
+        break;
+      }
+      throw;
+    }
+  }
+
+  return enqueued_count;
 }
 
 void MessageRouter::deliver_retained(

@@ -390,7 +390,12 @@ def run_1_6_3_disconnect_session_expiry_override_is_applied(config) -> tuple[boo
             )
             assert_connack(pub_connack, reason_code=0x00, session_present=False)
             publish_reason = publisher.publish(topic, b"should-not-be-queued", qos=1)
-            assert_reason_code(publish_reason, 0x00)
+            if int(publish_reason) not in (0x00, 0x10):
+                return (
+                    False,
+                    "expected PUBACK reason 0x00 or 0x10 for setup publish, "
+                    f"got 0x{int(publish_reason):02X}",
+                )
 
         with MqttClient(timeout_seconds=config.timeout_seconds) as resume_client:
             resume_connack = resume_client.connect(

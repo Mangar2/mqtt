@@ -57,6 +57,7 @@ All parameters are optional; absent ones keep their default value.
 | `[broker]`    | `qos_retransmit_timeout_seconds` | uint32 | `20` | Timeout before outbound QoS 1/2 retransmission is eligible in `ClientSession`. |
 | `[broker]`    | `tick_interval_ms`    | uint32   | `100`   | Main loop sleep interval between broker housekeeping ticks. |
 | `[auth]`      | `credential`          | string   | —       | Repeated `username:password` entries for `PasswordAuthenticator`. |
+| `[acl]`       | `rule`                | csv      | —       | Repeated `effect,principal,action,topic` ACL entries. |
 | `[persistence]` | `enabled`           | bool     | `false` | Enable crash-safe file persistence. |
 | `[persistence]` | `dir`               | string   | `./data`| Directory for persistence snapshot files. |
 | `[tracing]`   | `global_level`      | enum     | `warning` | Global structured trace level (`none|error|warning|info|trace`). |
@@ -106,6 +107,7 @@ struct BrokerConfig {
    uint32_t qos_retransmit_timeout_seconds = 20;
    uint32_t tick_interval_ms      = 100;
    std::vector<PasswordCredentialConfig> password_credentials;
+   std::vector<AclRuleConfig> acl_rules;
     bool     persistence_enabled   = false;
     std::filesystem::path persistence_dir = "./data";
    TraceLevel trace_global_level  = TraceLevel::Warning;
@@ -183,8 +185,8 @@ void handle_connection_lost(std::string_view client_id,
                                             const SubscribePacket& packet);
 [[nodiscard]] UnsubackPacket handle_unsubscribe(std::string_view client_id,
                                                 const UnsubscribePacket& packet);
-void handle_publish(Message& msg, std::string_view client_id,
-                    std::string_view username, TopicAliasTable& alias_table);
+ReasonCode handle_publish(Message& msg, std::string_view client_id,
+                          std::string_view username, TopicAliasTable& alias_table);
 
 bool tick(std::chrono::steady_clock::time_point now =
           std::chrono::steady_clock::now());
@@ -206,8 +208,8 @@ static void install_signal_handlers() noexcept;
 1. Throw `BrokerException(AlreadyRunning)` if already running.
 2. Instantiate all module objects in dependency order.
 3. Configure authenticator according to `allow_anonymous`.
-4. Load ACL: add a broker-internal "allow all" rule so that will messages
-   routed by the system can pass publish authorisation.
+4. Load ACL via `authz/broker_acl_policy` helper: internal principal allow
+   rule, configured `[acl] rule` entries, and optional anonymous fallback.
 5. If `persistence_enabled`: call `load_persistence()` to populate in-memory
    stores from the snapshot files.
 6. Start `ConnectionManager` (opens configured listener sockets and starts accept loops).
@@ -223,10 +225,10 @@ static void install_signal_handlers() noexcept;
 
 #### Will publish callback
 
-Will messages published by `WillPublisher` are routed via `MessageRouter::route()`
-using a reserved client identifier `"_broker_will_system_"`.  An unconditional
-ACL allow-all rule is registered for this principal during startup so that
-will messages always pass publish authorisation.
+Will messages published by `WillPublisher` are routed via
+`MessageRouter::route_internal()` using the reserved internal principal.
+An unconditional ACL allow-all rule is registered for this principal during
+startup so that server-originated publishes pass authorisation.
 
 #### Signal handling (15.3.3)
 
@@ -278,7 +280,8 @@ Callers should poll `Broker::shutdown_requested()` in their main loop and call
 - `handle_unsubscribe()` validates each filter, removes it from `SubscriptionStore`,
    and returns one UNSUBACK reason code per filter.
 - `handle_publish()` wraps inbound publish routing and statistics increments under
-   the broker mutex.
+   the broker mutex and returns MQTT reason codes for inbound QoS acknowledgements:
+   `Success`, `NoMatchingSubscribers`, or `NotAuthorized`.
 
 #### Housekeeping tick (22)
 
@@ -298,7 +301,8 @@ Deterministic precedence is:
 1. Defaults in `BrokerConfig`.
 2. INI file (`ConfigLoader`).
 3. CLI overrides in `main.cpp` (`--trace-level=...`, `--trace-module=...`).
-4. Runtime system messages via `Broker::apply_trace_system_message()`.
+4. Runtime system messages via `Broker::apply_trace_system_message()` delegated
+   to monitoring command parsing.
 
 Supported runtime topics:
 

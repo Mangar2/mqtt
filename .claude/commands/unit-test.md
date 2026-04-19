@@ -153,6 +153,8 @@ When the full report shows files below 90%, work through them **strictly one at 
    ```
 6. Only after that file reaches ≥ 90 %: move to the next file below threshold.
 
+Mandatory rule: if you did not improve coverage by adding a test to reach the 90% refactor the source code to improve its unit-testability instead of just add new test cases.
+
 **Never run `--show` for multiple files at once.** The output volume makes it
 impossible to reason about each file correctly.
 

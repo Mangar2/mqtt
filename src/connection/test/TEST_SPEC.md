@@ -66,6 +66,14 @@
 | `map_codec_error_to_connect_reason_handles_all_key_paths` | CONNECT decode reason mapping coverage | representative codec errors + unknown enum value | UnsupportedProtocolVersion, MalformedPacket, and ProtocolError mappings are correct |
 | `map_codec_error_to_runtime_reason_handles_all_key_paths` | Runtime decode reason mapping coverage | representative codec errors + unknown enum value | MalformedPacket and ProtocolError mappings are correct |
 
+## Outbound queue bridge helpers (24)
+
+| Test name | Scenario | Input | Expected |
+|-----------|----------|-------|----------|
+| `drain_pending_outbound_messages_returns_fifo_and_empties_source` | Drain helper preserves FIFO order and empties source queue | source queue with three messages | returned vector contains messages in enqueue order and source becomes empty |
+| `transfer_pending_outbound_messages_moves_until_source_empty` | Transfer helper moves all messages when target accepts all | source with N messages, empty target with capacity | moved_count == N and target can pop all N messages in order |
+| `transfer_pending_outbound_messages_stops_when_target_rejects` | Transfer helper stops when target push fails | source with three messages, target capacity one | moved_count == 1 and remaining source messages are preserved |
+
 ## ClientHandler (24)
 
 | Test name | Scenario | Input | Expected |

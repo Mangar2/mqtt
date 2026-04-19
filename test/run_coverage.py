@@ -22,9 +22,11 @@ Always run from the project root or from the test/ directory.
 import argparse
 import os
 import re
+import selectors
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -35,12 +37,29 @@ DEBUG_DIR    = PROJECT_ROOT / "build" / "debug"
 COV_DIR      = PROJECT_ROOT / "build" / "test-coverage"   # cmake preset output (fixed)
 DEBUG_BINARY = DEBUG_DIR / ("mqtt-broker-tests.exe" if sys.platform == "win32" else "mqtt-broker-tests")
 COV_BINARY   = COV_DIR  / ("mqtt-broker-tests.exe" if sys.platform == "win32" else "mqtt-broker-tests")
-PROFRAW      = TEST_DIR / "coverage.profraw"
 PROFDATA     = TEST_DIR / "coverage.profdata"
+PROFRAW_GLOB = "coverage-*.profraw"
 SRC_DIR      = PROJECT_ROOT / "src"
 LOG_FILE     = TEST_DIR / "run.log"
 
 THRESHOLD = 90.0  # minimum coverage percent
+
+# Unit-test execution safety guards to avoid indefinite waits in step 2.
+CTEST_PER_TEST_TIMEOUT_SECONDS = int(os.environ.get("MQTT_CTEST_TIMEOUT", "120"))
+CTEST_TOTAL_TIMEOUT_SECONDS = int(os.environ.get("MQTT_CTEST_TOTAL_TIMEOUT", "1800"))
+CTEST_NO_OUTPUT_TIMEOUT_SECONDS = int(
+    os.environ.get("MQTT_CTEST_NO_OUTPUT_TIMEOUT", "300")
+)
+CTEST_STOP_ON_FAILURE = os.environ.get("MQTT_CTEST_STOP_ON_FAILURE", "1") not in {
+    "0", "false", "False"
+}
+
+# Coverage-binary execution guard for step 4.
+# This intentionally protects the Python script from waiting forever when
+# the coverage binary makes no forward progress.
+COVERAGE_TEST_TIMEOUT_SECONDS = int(
+    os.environ.get("MQTT_COVERAGE_TEST_TIMEOUT", "600")
+)
 
 
 # ---------------------------------------------------------------------------
@@ -72,30 +91,53 @@ def _close_log() -> None:
 # Command execution
 # ---------------------------------------------------------------------------
 
-def _run_captured(cmd: list[str], env: dict | None = None) -> tuple[int, str]:
+def _run_captured(
+    cmd: list[str], env: dict | None = None, timeout_seconds: int | None = None
+) -> tuple[int, str]:
     """Run a command, capture combined stdout+stderr, write everything to log."""
     _log(f">>> {' '.join(str(c) for c in cmd)}")
-    result = subprocess.run(
-        cmd,
-        cwd=PROJECT_ROOT,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    _log(result.stdout)
-    return result.returncode, result.stdout
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=PROJECT_ROOT,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+        )
+        _log(result.stdout)
+        return result.returncode, result.stdout
+    except subprocess.TimeoutExpired as exc:
+        captured = (exc.stdout or "")
+        _log(captured)
+        _log(
+            f"[TIMEOUT] command exceeded {timeout_seconds}s: "
+            f"{' '.join(str(c) for c in cmd)}"
+        )
+        return 124, captured
 
 
-def _run_or_die(label: str, cmd: list[str], env: dict | None = None) -> str:
+def _run_or_die(
+    label: str,
+    cmd: list[str],
+    env: dict | None = None,
+    timeout_seconds: int | None = None,
+) -> str:
     """Run a command; on failure print a concise error summary and exit."""
-    rc, output = _run_captured(cmd, env)
+    rc, output = _run_captured(cmd, env, timeout_seconds=timeout_seconds)
     if rc != 0:
         print(f"\n[FAILED] {label}")
         print(f"  command : {' '.join(str(c) for c in cmd)}")
         print(f"  exit    : {rc}")
+        if rc == 124 and timeout_seconds is not None:
+            print(f"  timeout : {timeout_seconds}s")
+            print(
+                "  hint    : process made no usable progress; "
+                "investigate run.log around step [4/4]"
+            )
         error_lines = [
             line for line in output.splitlines()
             if re.search(r"\berror\b|\bfatal\b|FAILED|could not|undefined", line, re.IGNORECASE)
@@ -112,6 +154,108 @@ def _run_or_die(label: str, cmd: list[str], env: dict | None = None) -> str:
         _close_log()
         sys.exit(rc)
     return output
+
+
+def _run_captured_live(
+    cmd: list[str],
+    env: dict | None = None,
+    total_timeout_seconds: int | None = None,
+    no_output_timeout_seconds: int | None = None,
+) -> tuple[int, str]:
+    """Run a command with live capture and watchdogs for hangs."""
+    _log(f">>> {' '.join(str(c) for c in cmd)}")
+    process = subprocess.Popen(
+        cmd,
+        cwd=PROJECT_ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+    )
+    assert process.stdout is not None
+
+    selector = selectors.DefaultSelector()
+    selector.register(process.stdout, selectors.EVENT_READ)
+
+    started_at = time.monotonic()
+    last_output_at = started_at
+    last_heartbeat_at = started_at
+    output_chunks: list[str] = []
+    timeout_triggered = False
+
+    try:
+        while True:
+            now = time.monotonic()
+
+            if (
+                total_timeout_seconds is not None
+                and now - started_at > total_timeout_seconds
+            ):
+                process.kill()
+                timeout_triggered = True
+                timeout_note = (
+                    f"\n[TIMEOUT] total timeout exceeded: {total_timeout_seconds}s\n"
+                )
+                output_chunks.append(timeout_note)
+                _log(timeout_note.rstrip("\n"))
+                break
+
+            if (
+                no_output_timeout_seconds is not None
+                and now - last_output_at > no_output_timeout_seconds
+            ):
+                process.kill()
+                timeout_triggered = True
+                timeout_note = (
+                    "\n[TIMEOUT] no ctest output for "
+                    f"{no_output_timeout_seconds}s; process terminated\n"
+                )
+                output_chunks.append(timeout_note)
+                _log(timeout_note.rstrip("\n"))
+                break
+
+            events = selector.select(timeout=1.0)
+            if events:
+                for _key, _mask in events:
+                    line = process.stdout.readline()
+                    if line:
+                        output_chunks.append(line)
+                        _log(line.rstrip("\n"))
+                        last_output_at = time.monotonic()
+                    elif process.poll() is not None:
+                        break
+            elif now - last_heartbeat_at >= 30.0:
+                heartbeat = (
+                    "[ctest] still running "
+                    f"({int(now - started_at)}s elapsed, last output "
+                    f"{int(now - last_output_at)}s ago)"
+                )
+                print(heartbeat)
+                _log(heartbeat)
+                last_heartbeat_at = now
+
+            if process.poll() is not None:
+                break
+    finally:
+        try:
+            remainder = process.stdout.read()
+            if remainder:
+                output_chunks.append(remainder)
+                _log(remainder.rstrip("\n"))
+        except Exception:
+            pass
+        selector.close()
+
+    rc = process.poll()
+    if timeout_triggered:
+        rc = 124
+    elif rc is None:
+        rc = 124
+    output = "".join(output_chunks)
+    return rc, output
 
 
 def _ensure_configured(preset: str) -> None:
@@ -150,10 +294,30 @@ def step_build_debug() -> None:
 
 def step_run_tests() -> str:
     """Run ctest in debug mode. Returns raw output for summary parsing."""
-    rc, output = _run_captured(["ctest", "--preset", "debug", "--output-on-failure"])
+    command = [
+        "ctest",
+        "--preset",
+        "debug",
+        "--output-on-failure",
+        "--timeout",
+        str(CTEST_PER_TEST_TIMEOUT_SECONDS),
+    ]
+    if CTEST_STOP_ON_FAILURE:
+        command.append("--stop-on-failure")
+
+    rc, output = _run_captured_live(
+        command,
+        total_timeout_seconds=CTEST_TOTAL_TIMEOUT_SECONDS,
+        no_output_timeout_seconds=CTEST_NO_OUTPUT_TIMEOUT_SECONDS,
+    )
     _log(f"ctest exit code: {rc}")
     if rc != 0:
         print("\n[FAILED] Unit tests")
+        if rc == 124:
+            print(
+                f"\n  --- timeout ---\n"
+                f"  ctest exceeded total timeout of {CTEST_TOTAL_TIMEOUT_SECONDS}s"
+            )
         failed = [
             line.strip() for line in output.splitlines()
             if re.search(r"FAILED|Failed", line)
@@ -174,12 +338,74 @@ def step_build_coverage() -> None:
 
 def step_collect_coverage() -> None:
     llvm_profdata_cmd = _resolve_llvm_tool("llvm-profdata")
+
+    # Remove stale coverage raw files from previous runs.
+    for raw_path in TEST_DIR.glob(PROFRAW_GLOB):
+        raw_path.unlink(missing_ok=True)
+
     env = os.environ.copy()
-    env["LLVM_PROFILE_FILE"] = str(PROFRAW)
-    _run_or_die("run test binary (coverage)", [str(COV_BINARY)], env=env)
-    _run_or_die("llvm-profdata merge", [
-        *llvm_profdata_cmd, "merge", "-sparse", str(PROFRAW), "-o", str(PROFDATA),
-    ])
+    env["LLVM_PROFILE_FILE"] = str(TEST_DIR / "coverage-%p.profraw")
+
+    # Run coverage tests through ctest so each discovered test keeps explicit
+    # timeout boundaries and failures identify the concrete test case.
+    coverage_ctest_cmd = [
+        "ctest",
+        "--preset",
+        "test-coverage",
+        "--output-on-failure",
+        "--timeout",
+        str(CTEST_PER_TEST_TIMEOUT_SECONDS),
+    ]
+    if CTEST_STOP_ON_FAILURE:
+        coverage_ctest_cmd.append("--stop-on-failure")
+
+    rc, output = _run_captured_live(
+        coverage_ctest_cmd,
+        env=env,
+        total_timeout_seconds=min(
+            CTEST_TOTAL_TIMEOUT_SECONDS, COVERAGE_TEST_TIMEOUT_SECONDS
+        ),
+        no_output_timeout_seconds=CTEST_NO_OUTPUT_TIMEOUT_SECONDS,
+    )
+    _log(f"coverage ctest exit code: {rc}")
+    if rc != 0:
+        print("\n[FAILED] Coverage test execution")
+        if rc == 124:
+            print(
+                "\n  --- timeout ---\n"
+                "  Coverage ctest exceeded configured timeout guard"
+            )
+        failed = [
+            line.strip() for line in output.splitlines()
+            if re.search(r"FAILED|Failed|Timeout", line)
+        ]
+        print("\n  --- failed tests ---")
+        for line in failed[:40]:
+            print(f"  {line}")
+        print(f"\n  Full log: {LOG_FILE}")
+        _close_log()
+        sys.exit(rc)
+
+    profraw_files = sorted(TEST_DIR.glob(PROFRAW_GLOB))
+    if not profraw_files:
+        print(
+            "\n[FAILED] coverage profile collection\n"
+            "  No .profraw files were generated by coverage test run.\n"
+            f"  Expected pattern: {TEST_DIR / PROFRAW_GLOB}",
+            file=sys.stderr,
+        )
+        _close_log()
+        sys.exit(1)
+
+    merge_cmd = [
+        *llvm_profdata_cmd,
+        "merge",
+        "-sparse",
+        *(str(path) for path in profraw_files),
+        "-o",
+        str(PROFDATA),
+    ]
+    _run_or_die("llvm-profdata merge", merge_cmd)
 
 
 def step_coverage_report(paths: list[str] | None = None) -> str:

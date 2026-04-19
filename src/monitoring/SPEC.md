@@ -20,6 +20,7 @@ external clients can observe the broker's operational state.
 | `sys_topic_publisher.h/cpp`  | 16.2     | Publishes a snapshot of statistics to `$SYS/broker/…` topics at a configurable interval. |
 | `trace_level.h/cpp`          | 26.2, 26.3 | Trace level enum and parser for global/per-module filtering configuration. |
 | `structured_tracer.h/cpp`    | 26.1, 26.3, 26.5 | JSON-lines tracer with hierarchical filtering, per-module trace override, and graceful fallback on serialisation failure. |
+| `trace_runtime_command.h/cpp` | 26.4 | Runtime `$SYS` tracing command parser that applies global and per-module overrides to `StructuredTracer`. |
 
 ---
 

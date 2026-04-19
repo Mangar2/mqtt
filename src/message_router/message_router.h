@@ -8,7 +8,9 @@
 
 #include <chrono>
 #include <functional>
+#include <cstddef>
 #include <string_view>
+#include <vector>
 
 #include "connection/topic_alias_table.h"
 #include "data_model/message/message.h"
@@ -90,8 +92,20 @@ public:
    *         lacks publish permission.
    * @throws MessageRouterException(TopicAliasInvalid) on alias error.
    */
-  void route(Message &msg, std::string_view client_id,
+  bool route(Message &msg, std::string_view client_id,
              std::string_view username, TopicAliasTable &alias_table);
+
+  /**
+   * @brief Route a broker-internal message without caller-managed aliases.
+   *
+   * Uses an internal alias table with maximum 0 (aliases disabled).
+   *
+   * @param msg Message to route.
+   * @param client_id Internal principal used for ACL checks.
+   * @param username Optional username context; may be empty.
+   */
+  void route_internal(Message msg, std::string_view client_id,
+                      std::string_view username = "");
 
   /**
    * @brief Deliver buffered messages to a client that has reconnected (12.3.2).
@@ -107,6 +121,19 @@ public:
   void flush_offline_queue(std::string_view client_id,
                            std::chrono::steady_clock::time_point now =
                                std::chrono::steady_clock::now());
+
+    /**
+     * @brief Buffer already prepared outbound messages for an offline client.
+     *
+     * This helper is used by connection lifecycle code after draining pending
+     * per-connection outbound queues.
+     *
+     * @param client_id Target client identifier.
+     * @param messages Messages to enqueue in order.
+     * @return Number of messages successfully enqueued.
+     */
+    [[nodiscard]] std::size_t buffer_offline_messages(
+      std::string_view client_id, std::vector<Message> messages);
 
   /**
    * @brief Deliver retained messages for one subscription (25.1.2).

@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "authz/acl_loader.h"
 #include "monitoring/trace_level.h"
 
 namespace mqtt {
@@ -89,6 +90,9 @@ struct BrokerConfig {
   /// Username/password credentials used by `PasswordAuthenticator` when
   /// anonymous access is disabled.
   std::vector<PasswordCredentialConfig> password_credentials;
+
+  /// ACL rules loaded from INI section `[acl]` key `rule`.
+  std::vector<AclRuleConfig> acl_rules;
 
   //  Persistence
 

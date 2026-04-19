@@ -40,6 +40,9 @@ Owned state:
   - Forwards to `Qos2StateMachine`, returns encoded PUBREL.
 - `on_pubrel(PubrelPacket) -> WriteBuffer`
   - Forwards to `Qos2StateMachine`, returns encoded PUBCOMP.
+- `abort_inbound_qos2(uint16_t)`
+  - Aborts a pending inbound QoS 2 state entry for the Packet ID.
+  - Used when inbound QoS 2 must return an error PUBREC and stop the flow.
 - `on_pubcomp(PubcompPacket)`
   - Forwards to `Qos2StateMachine` and releases one `ReceiveMaximum` slot.
 - `on_auth(AuthPacket) -> AuthResult`

@@ -94,6 +94,29 @@ TEST_CASE("parse_auth_credentials_section", "[broker]") {
   CHECK(cfg.password_credentials.at(1U).password == "pwd");
 }
 
+TEST_CASE("parse_acl_rules_section", "[broker]") {
+  const auto cfg = ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
+                                       "[acl]\n"
+                                       "rule = deny,anonymous,publish,a/#\n"
+                                       "rule = allow,dev1,subscribe,b/+\n");
+  REQUIRE(cfg.acl_rules.size() == 2U);
+  CHECK(cfg.acl_rules.at(0U).effect == "deny");
+  CHECK(cfg.acl_rules.at(0U).principal == "anonymous");
+  CHECK(cfg.acl_rules.at(0U).action == "publish");
+  CHECK(cfg.acl_rules.at(0U).topic_pattern == "a/#");
+  CHECK(cfg.acl_rules.at(1U).effect == "allow");
+  CHECK(cfg.acl_rules.at(1U).principal == "dev1");
+  CHECK(cfg.acl_rules.at(1U).action == "subscribe");
+  CHECK(cfg.acl_rules.at(1U).topic_pattern == "b/+");
+}
+
+TEST_CASE("parse_acl_rule_invalid_format_throws", "[broker]") {
+  CHECK_THROWS_AS(ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
+                                      "[acl]\n"
+                                      "rule = deny,anonymous,publish\n"),
+                  BrokerException);
+}
+
 TEST_CASE("parse_tracing_section_global_level_and_modules", "[broker]") {
   const auto cfg = ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
                                        "[tracing]\n"

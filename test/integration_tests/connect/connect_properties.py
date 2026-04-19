@@ -168,7 +168,12 @@ def run_1_2_1_session_expiry_zero_discards_session(config) -> tuple[bool, str]:
             )
             assert_connack(pub_connack, reason_code=0x00, session_present=False)
             publish_reason = publisher.publish(topic, b"should-not-queue", qos=1)
-            assert_reason_code(publish_reason, 0x00)
+            if int(publish_reason) not in (0x00, 0x10):
+                return (
+                    False,
+                    "expected PUBACK reason 0x00 or 0x10 for setup publish, "
+                    f"got 0x{int(publish_reason):02X}",
+                )
 
         with MqttClient(timeout_seconds=config.timeout_seconds) as subscriber_resume:
             second_connack = subscriber_resume.connect(

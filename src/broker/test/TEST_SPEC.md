@@ -16,6 +16,7 @@ All tests are tagged `[broker]`.
 | `parse_broker_section` | broker section | All broker keys | max_connections, receive_maximum, etc. | fields match supplied values |
 | `parse_persistence_section` | persistence | enabled and dir | `enabled=true`, `dir=/tmp/data` | persistence_enabled=true, persistence_dir="/tmp/data" |
 | `parse_auth_credentials_section` | auth section | repeated credential keys | `credential = alice:s3cr3t`, `credential = bob:pwd` | two credential entries parsed in order |
+| `parse_acl_rules_section` | acl section | repeated ACL rule keys | `rule = deny,anonymous,publish,a/#` + `rule = allow,dev1,subscribe,b/+` | two ACL rules parsed in order |
 | `parse_bool_true_variants` | bool true | "true", "1", "yes" | allow_anonymous=true/1/yes | allow_anonymous=true |
 | `parse_bool_false_variants` | bool false | "false", "0", "no" | allow_anonymous=false/0/no | allow_anonymous=false |
 | `parse_ignores_comments` | comments | Lines starting with # | `# comment\nmqtt_port=1883` | comment ignored, port parsed |
@@ -27,6 +28,7 @@ All tests are tagged `[broker]`.
 | `parse_uint16_overflow_throws` | u16 overflow | Number > 65535 | `mqtt_port=70000` | BrokerException(InvalidConfig) |
 | `parse_server_keep_alive_uint16_overflow_throws` | u16 overflow | Number > 65535 | `server_keep_alive=70000` | BrokerException(InvalidConfig) |
 | `parse_auth_credential_invalid_format_throws` | bad auth credential | missing `:` separator | `credential=malformed_without_separator` | BrokerException(InvalidConfig) |
+| `parse_acl_rule_invalid_format_throws` | bad acl rule | missing one CSV field | `rule=deny,anonymous,publish` | BrokerException(InvalidConfig) |
 | `parse_tracing_section_global_level_and_modules` | tracing section | parse global level and module override list | `[tracing]\nglobal_level=info\ntrace_modules=broker,connection` | `trace_global_level=Info`, `trace_modules=["broker","connection"]` |
 | `parse_tracing_invalid_level_throws` | tracing section | reject unknown level | `[tracing]\nglobal_level=verbose` | BrokerException(InvalidConfig) |
 | `parse_both_ports_zero_throws` | no listener | Both ports absent (0) | `[network]\nmqtt_port=0\nws_port=0` | BrokerException(NoListenerConfigured) |

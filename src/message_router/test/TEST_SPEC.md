@@ -47,6 +47,8 @@
 | `router_flush_delivers_queued_messages`        | 12.3.2 | flush_offline_queue drains and delivers buffered messages |
 | `router_flush_discards_expired_messages`       | 12.4.2 | Expired messages not delivered during flush |
 | `router_auth_denied_throws`                    | 12.1.2 | route() propagates PublishNotAuthorized exception |
+| `router_route_internal_uses_alias_maximum_zero` | 12 | route_internal routes server-originated messages without caller alias table plumbing |
+| `router_buffer_offline_messages_enqueues_until_queue_full` | 12.3 | buffer_offline_messages enqueues in order and stops at QueueFull boundary |
 | `router_deliver_retained_send_if_new`          | 25.1.2 | RetainHandling::SendIfNew suppresses updates and delivers on new subscription |
 | `router_deliver_retained_never`                | 25.1.2 | RetainHandling::Never suppresses retained delivery |
 | `router_deliver_retained_discards_zero_expiry` | 25.1.2 | deliver_retained drops retained messages with zero expiry interval |

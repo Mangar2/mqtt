@@ -118,6 +118,12 @@ public:
   [[nodiscard]] WriteBuffer on_pubrel(const PubrelPacket &pubrel_packet);
 
   /**
+   * @brief Abort a pending inbound QoS 2 exchange for one Packet ID.
+   * @param packet_id Inbound QoS 2 Packet Identifier.
+   */
+  void abort_inbound_qos2(uint16_t packet_id) noexcept;
+
+  /**
    * @brief Handle inbound PUBCOMP and free one outbound inflight slot.
    * @param pubcomp_packet Incoming PUBCOMP packet.
    */

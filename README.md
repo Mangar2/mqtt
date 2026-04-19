@@ -119,6 +119,7 @@ Notes:
 | `broker` | `qos_retransmit_timeout_seconds` | uint32 | `20` | `>=1` | Timeout before QoS retransmit becomes eligible. |
 | `broker` | `tick_interval_ms` | uint32 | `100` | `>=1` | Main broker tick interval in milliseconds. |
 | `auth` | `credential` | string | none | `username:password` | Repeatable credential entry for password auth mode. |
+| `acl` | `rule` | csv string | none | `effect,principal,action,topic` | Repeatable ACL rule entry, e.g. `deny,anonymous,publish,private/#`. |
 | `persistence` | `enabled` | bool | `false` | `true/false`, `1/0`, `yes/no` | Enable persistence snapshots. |
 | `persistence` | `dir` | path string | `./data` | any path | Snapshot directory path. |
 | `tracing` | `global_level` | enum | `warning` | `none/error/warning/info/trace` | Global structured tracing threshold. |
@@ -152,6 +153,10 @@ tick_interval_ms = 100
 [auth]
 credential = app:secret
 credential = admin:another-secret
+
+[acl]
+rule = deny,anonymous,publish,private/#
+rule = allow,admin,publish_and_subscribe,#
 
 [persistence]
 enabled = true

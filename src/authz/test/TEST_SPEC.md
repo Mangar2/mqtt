@@ -41,6 +41,7 @@ Unit tests for `AclEngine` and `AclLoader`.
 | Test name | Scenario | Input | Expected |
 |-----------|----------|-------|----------|
 | `wildcard_principal_matches_any_client` | `"*"` principal | rule principal `"*"`; any client_id | `true` |
+| `principal_anonymous_matches_empty_username` | Anonymous pseudo-principal | rule principal `"anonymous"`; empty username | `true` |
 | `principal_matches_client_id` | Exact client_id match | rule principal `"dev1"`; client_id `"dev1"` | `true` |
 | `principal_matches_username` | Exact username match | rule principal `"alice"`; username `"alice"` | `true` |
 | `principal_no_match` | Wrong principal | rule principal `"dev1"`; client_id `"dev2"` | `false` |
@@ -81,3 +82,13 @@ Unit tests for `AclEngine` and `AclLoader`.
 | `loader_invalid_effect_throws` | Bad effect string | config with effect `"maybe"` | throws `AuthzException(AuthzError::InvalidEffect)` |
 | `loader_all_action_strings` | All three action strings parse | `"publish"`, `"subscribe"`, `"publish_and_subscribe"` | no throw; correct `AclAction` |
 | `loader_all_effect_strings` | Both effect strings parse | `"allow"`, `"deny"` | no throw; correct `AclEffect` |
+
+---
+
+## Broker ACL startup policy helper
+
+| Test name | Scenario | Input | Expected |
+|-----------|----------|-------|----------|
+| `broker_acl_policy_includes_internal_rule_and_configured_rules` | Startup policy prepends internal broker principal and preserves configured order | two configured rules, allow_anonymous=false | first rule is internal allow-all, followed by configured rules unchanged |
+| `broker_acl_policy_appends_anonymous_fallback_when_enabled` | Anonymous fallback is added only when enabled | configured rules + allow_anonymous=true | result contains trailing `*` publish_and_subscribe allow rule |
+| `broker_acl_policy_omits_anonymous_fallback_when_disabled` | No anonymous fallback in strict mode | configured rules + allow_anonymous=false | no `*` fallback rule present |

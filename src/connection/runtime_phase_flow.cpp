@@ -10,6 +10,7 @@
 #include "broker/broker.h"
 #include "client_session/client_session.h"
 #include "codec/codec_error.h"
+#include "codec/packet/publish_codec.h"
 #include "connection/connection_error.h"
 #include "connection/connection_flow_support.h"
 #include "monitoring/structured_tracer.h"
@@ -50,15 +51,54 @@ public:
       : context_(context), should_break_(should_break) {}
 
   void operator()(const PublishPacket &packet) const {
+    const auto encode_puback_frame = [](const PubackPacket &puback_packet) {
+      WriteBuffer frame;
+      encode_puback(frame, puback_packet);
+      return frame;
+    };
+    const auto encode_pubrec_frame = [](const PubrecPacket &pubrec_packet) {
+      WriteBuffer frame;
+      encode_pubrec(frame, pubrec_packet);
+      return frame;
+    };
+
     InboundPublishResult publish_result =
         context_.client_session.on_publish(packet);
+
+    ReasonCode publish_reason = ReasonCode::Success;
     if (publish_result.routable_message.has_value()) {
       Message routable_message = std::move(*publish_result.routable_message);
-      context_.broker.handle_publish(
+      publish_reason = context_.broker.handle_publish(
           routable_message, context_.client_session.client_id(),
           context_.client_session.username(),
           context_.client_session.topic_alias_table());
+
+      if (packet.qos == QoS::ExactlyOnce && is_error(publish_reason) &&
+          packet.packet_id.has_value()) {
+        context_.client_session.abort_inbound_qos2(packet.packet_id.value());
+      }
     }
+
+    if (packet.qos == QoS::AtLeastOnce && packet.packet_id.has_value() &&
+        !publish_result.response_frames.empty()) {
+      const PubackPacket puback_packet{.packet_id = packet.packet_id.value(),
+                                       .reason_code = publish_reason,
+                                       .properties = {}};
+      publish_result.response_frames[0] = encode_puback_frame(puback_packet);
+    }
+
+    if (packet.qos == QoS::ExactlyOnce && packet.packet_id.has_value() &&
+        !publish_result.response_frames.empty()) {
+      ReasonCode pubrec_reason = publish_reason;
+      if (pubrec_reason == ReasonCode::NoMatchingSubscribers) {
+        pubrec_reason = ReasonCode::Success;
+      }
+      const PubrecPacket pubrec_packet{.packet_id = packet.packet_id.value(),
+                                       .reason_code = pubrec_reason,
+                                       .properties = {}};
+      publish_result.response_frames[0] = encode_pubrec_frame(pubrec_packet);
+    }
+
     for (WriteBuffer frame : publish_result.response_frames) {
       enqueue_frame(context_.write_queue, std::move(frame),
                     context_.is_websocket);

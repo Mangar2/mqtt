@@ -315,8 +315,9 @@ public:
    * @param username    Username of the publishing client; may be empty.
    * @param alias_table Topic alias table for the publishing connection.
    */
-  void handle_publish(Message &msg, std::string_view client_id,
-                      std::string_view username, TopicAliasTable &alias_table);
+  ReasonCode handle_publish(Message &msg, std::string_view client_id,
+                            std::string_view username,
+                            TopicAliasTable &alias_table);
 
   /**
    * @brief Advance the monitoring timer and publish `$SYS` stats if due

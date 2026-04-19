@@ -417,6 +417,20 @@ TEST_CASE("on_pubrel_returns_pubcomp", "[qos2]") {
   CHECK_FALSE(mgr.is_in_use(5, InflightDirection::Inbound));
 }
 
+TEST_CASE("on_pubrel_duplicate_after_completion_returns_pubcomp", "[qos2]") {
+  PacketIdManager mgr;
+  InflightStore store;
+  Qos2StateMachine machine("client1", mgr, store);
+
+  (void)machine.on_publish_received(make_publish(QoS::ExactlyOnce, 5));
+  const PubcompPacket first = machine.on_pubrel_received(make_pubrel(5));
+  const PubcompPacket second = machine.on_pubrel_received(make_pubrel(5));
+
+  CHECK(first.packet_id == 5);
+  CHECK(second.packet_id == 5);
+  CHECK(store.entries_for("client1").empty());
+}
+
 TEST_CASE("on_pubrel_unknown_id_throws", "[qos2]") {
   PacketIdManager mgr;
   InflightStore store;

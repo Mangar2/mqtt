@@ -42,6 +42,9 @@ bool AclEngine::matches_principal(const AclRule &rule,
   if (rule.principal == "*") {
     return true;
   }
+  if (rule.principal == "anonymous" && username.empty()) {
+    return true;
+  }
   return rule.principal == client_id || rule.principal == username;
 }
 

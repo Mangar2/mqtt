@@ -55,7 +55,8 @@ Per-session QoS 2 handler. Holds references to a `PacketIdManager` and an
 | Method | Description |
 |--------|-------------|
 | `on_publish_received(pkt)` | Validates PUBLISH, performs duplicate detection via `PacketIdManager::try_register_inbound`. Returns `Qos2InboundPublishResult{pubrec, is_duplicate}`. When `is_duplicate == true` the caller must not re-deliver the message. |
-| `on_pubrel_received(pkt)` | Validates PUBREL, removes inflight entry, releases inbound ID. Returns the `PubcompPacket` to send. Throws `QosException(UnexpectedPacketId)` if no matching entry exists. |
+| `on_pubrel_received(pkt)` | Validates PUBREL, removes inflight entry, releases inbound ID, returns the `PubcompPacket`. If PUBREL is retransmitted after completion, returns PUBCOMP again (idempotent). Throws `QosException(UnexpectedPacketId)` only when the packet ID is unknown and not recently completed. |
+| `abort_inbound(packet_id)` | Clears inbound QoS2 state without sending PUBCOMP. Used when the initial PUBREC carries an error reason code and the flow must not continue. |
 
 ### Outbound (5.3.2) — broker sends PUBLISH to subscribing client
 

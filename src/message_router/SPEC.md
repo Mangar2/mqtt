@@ -145,11 +145,18 @@ using IsOnlineFn = std::function<bool(std::string_view)>;
 MessageRouter(InboundPublishProcessor&, OfflineQueue&,
               SharedSubscriptionDispatcher&, IsOnlineFn, DeliverFn);
 
-void route(Message& msg, std::string_view client_id,
+bool route(Message& msg, std::string_view client_id,
            std::string_view username, TopicAliasTable& alias_table);
+
+void route_internal(Message msg, std::string_view client_id,
+                    std::string_view username = "");
 
 void flush_offline_queue(std::string_view client_id,
                           std::chrono::steady_clock::time_point now = ...);
+
+[[nodiscard]] std::size_t
+buffer_offline_messages(std::string_view client_id,
+                        std::vector<Message> messages);
 
 void deliver_retained(std::string_view client_id,
                       std::string_view topic_filter,
@@ -160,9 +167,19 @@ void deliver_retained(std::string_view client_id,
 
 `route` runs the full pipeline: pre-process → shared dispatch → fanout →
 expiry check → online deliver / offline enqueue.
+Return value is `true` when at least one subscription matched before fanout,
+`false` when no subscribers matched.
+
+`route_internal` is the broker-internal publish path for system-originated
+messages. It creates an alias table with maximum `0` and delegates to
+`route`, so callers do not need connection-level alias plumbing.
 
 `flush_offline_queue` drains buffered messages for a reconnecting client,
 discards any that have expired, and delivers the rest via `DeliverFn`.
+
+`buffer_offline_messages` enqueues a pre-drained list of per-connection
+messages into the module-owned `OfflineQueue` and returns the number of
+messages accepted before capacity limits stop further enqueues.
 
 `deliver_retained` delivers retained messages for a newly stored subscription,
 respecting Retain Handling and applying the same subscription-level message

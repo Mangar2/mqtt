@@ -6,6 +6,7 @@
  */
 
 #include <cstdint>
+#include <unordered_set>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -105,6 +106,16 @@ public:
   [[nodiscard]] PubcompPacket on_pubrel_received(const PubrelPacket &pkt);
 
   /**
+   * @brief Abort an inbound QoS 2 exchange without sending PUBCOMP.
+   *
+   * Used when the broker responds to the initial PUBLISH with an error PUBREC
+   * (for example Not Authorized) and must not continue the handshake.
+   *
+   * @param packet_id Inbound packet identifier to clear.
+   */
+  void abort_inbound(uint16_t packet_id) noexcept;
+
+  /**
    * @brief Outbound: initiate delivery of a QoS 2 message (5.3.2).
    *
    * Allocates a Packet ID, stores an `InflightEntry(WaitingForPubrec)`, and
@@ -164,6 +175,8 @@ private:
   PacketIdManager
       &id_mgr_; ///< Packet ID allocator (shared with QoS 1 for same session).
   InflightStore &store_; ///< Inflight message store.
+  std::unordered_set<uint16_t>
+      recently_completed_inbound_; ///< Packet IDs completed via PUBCOMP.
 };
 
 } // namespace mqtt

@@ -43,6 +43,7 @@
 | `inbound_publish_invalid_qos_throws` | `[qos2]` | Non-QoS-2 PUBLISH throws `InvalidPacket`. |
 | `inbound_publish_missing_packet_id_throws` | `[qos2]` | PUBLISH without packet_id throws `InvalidPacket`. |
 | `on_pubrel_returns_pubcomp` | `[qos2]` | PUBREL triggers removal of inbound entry and returns PUBCOMP with same packet_id. |
+| `on_pubrel_duplicate_after_completion_returns_pubcomp` | `[qos2]` | Duplicate PUBREL after completed inbound flow returns PUBCOMP again. |
 | `on_pubrel_unknown_id_throws` | `[qos2]` | PUBREL for unknown inbound packet_id throws `UnexpectedPacketId`. |
 | `outbound_initiate_publish_creates_entry` | `[qos2]` | `initiate_publish` allocates ID, creates `InflightEntry(WaitingForPubrec)`, returns correct PUBLISH. |
 | `outbound_initiate_publish_invalid_qos_throws` | `[qos2]` | Message with QoS != ExactlyOnce throws `InvalidPacket`. |

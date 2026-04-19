@@ -22,6 +22,7 @@ matches, the default decision is **deny**.
 | `acl_rule.h`       | 9.1.1 | `AclAction`, `AclEffect`, `AclRule` aggregate |
 | `acl_engine.h/.cpp`| 9.1   | `AclEngine` — rule evaluation with wildcard support |
 | `acl_loader.h/.cpp`| 9.2   | `AclLoader` — parse config strings into rules and reload at runtime |
+| `broker_acl_policy.h/.cpp` | 9 | Broker startup ACL policy helpers (internal principal allow-all + optional anonymous fallback) |
 
 ---
 
@@ -59,6 +60,7 @@ AclEngine engine(std::vector<AclRule>);  // initialise with a rule set
 ### Principal matching (9.1.1)
 
 - `principal == "*"` matches every client.
+- `principal == "anonymous"` matches clients without username.
 - Otherwise the principal is compared by exact equality against both
   `client_id` and `username`; a match on either is sufficient.
 

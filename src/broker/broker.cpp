@@ -7,7 +7,6 @@
 #include "broker/broker.h"
 
 #include <atomic>
-#include <cctype>
 #include <csignal>
 #include <iostream>
 #include <mutex>
@@ -19,12 +18,15 @@
 
 #include "broker/connack_properties.h"
 #include "broker/broker_error.h"
+#include "authz/broker_acl_policy.h"
 #include "connection/client_handler.h"
-#include "connection/topic_alias_table.h"
+#include "connection/outbound_queue_bridge.h"
 #include "data_model/property/property_id.h"
 #include "monitoring/statistics_collector.h"
 #include "monitoring/structured_tracer.h"
 #include "monitoring/sys_topic_publisher.h"
+#include "monitoring/trace_runtime_command.h"
+#include "message_router/message_router_error.h"
 #include "session_manager/session_manager_error.h"
 #include "topic/topic_error.h"
 #include "topic/topic_validator.h"
@@ -49,45 +51,6 @@ map_session_error_to_reason(SessionManagerError error_code) {
 
   return ReasonCode::UnspecifiedError;
 }
-
-[[nodiscard]] std::string binary_to_string(const BinaryData &payload) {
-  return std::string(payload.data.begin(), payload.data.end());
-}
-
-[[nodiscard]] std::string trim_copy(std::string_view text) {
-  std::size_t start_index = 0U;
-  while (start_index < text.size() &&
-         std::isspace(static_cast<unsigned char>(text[start_index])) != 0) {
-    ++start_index;
-  }
-
-  std::size_t end_index = text.size();
-  while (end_index > start_index &&
-         std::isspace(static_cast<unsigned char>(text[end_index - 1U])) != 0) {
-    --end_index;
-  }
-
-  return std::string(text.substr(start_index, end_index - start_index));
-}
-
-[[nodiscard]] bool parse_module_override_payload(std::string_view payload,
-                                                 bool &enable_trace) {
-  const std::string normalised = trim_copy(payload);
-  if (normalised == "trace" || normalised == "on") {
-    enable_trace = true;
-    return true;
-  }
-  if (normalised == "none" || normalised == "off") {
-    enable_trace = false;
-    return true;
-  }
-  return false;
-}
-
-constexpr std::string_view k_trace_global_topic =
-    "$SYS/broker/tracing/global";
-constexpr std::string_view k_trace_module_prefix =
-    "$SYS/broker/tracing/module/";
 
 } // namespace
 
@@ -540,12 +503,24 @@ UnsubackPacket Broker::handle_unsubscribe(std::string_view client_id,
   return unsuback;
 }
 
-void Broker::handle_publish(Message &msg, std::string_view client_id,
-                            std::string_view username,
-                            TopicAliasTable &alias_table) {
+ReasonCode Broker::handle_publish(Message &msg, std::string_view client_id,
+                                  std::string_view username,
+                                  TopicAliasTable &alias_table) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
   stats_collector_->on_message_inbound();
-  message_router_->route(msg, client_id, username, alias_table);
+  try {
+    const bool has_matching_subscribers =
+        message_router_->route(msg, client_id, username, alias_table);
+    if (!has_matching_subscribers) {
+      return ReasonCode::NoMatchingSubscribers;
+    }
+    return ReasonCode::Success;
+  } catch (const MessageRouterException &exception) {
+    if (exception.error() == MessageRouterError::PublishNotAuthorized) {
+      return ReasonCode::NotAuthorized;
+    }
+    throw;
+  }
 }
 
 //
@@ -584,39 +559,7 @@ void Broker::apply_trace_system_message(const Message &message) {
     return;
   }
 
-  const std::string &topic_name = message.topic.value;
-  const std::string payload_text = binary_to_string(message.payload);
-
-  if (topic_name == k_trace_global_topic) {
-    const std::optional<TraceLevel> parsed_level =
-        parse_trace_level(trim_copy(payload_text));
-    if (parsed_level.has_value()) {
-      structured_tracer_->set_global_level(*parsed_level);
-    }
-    return;
-  }
-
-  if (!topic_name.starts_with(k_trace_module_prefix)) {
-    return;
-  }
-
-  const std::string module_name =
-      topic_name.substr(k_trace_module_prefix.size());
-  if (module_name.empty()) {
-    return;
-  }
-
-  bool enable_trace = false;
-  if (!parse_module_override_payload(payload_text, enable_trace)) {
-    return;
-  }
-
-  if (enable_trace) {
-    structured_tracer_->enable_trace_module(module_name);
-    return;
-  }
-
-  structured_tracer_->disable_trace_module(module_name);
+  apply_trace_runtime_command(*structured_tracer_, message);
 }
 
 void Broker::emit_connect_trace(const ConnectPacket &connect_packet,
@@ -644,15 +587,7 @@ void Broker::register_connection_locked(std::string_view client_id,
   const bool existed = existing_it != active_connections_.end();
 
   if (existed && existing_it->second && queue && existing_it->second != queue) {
-    while (true) {
-      std::optional<Message> pending_message = existing_it->second->try_pop();
-      if (!pending_message.has_value()) {
-        break;
-      }
-      if (!queue->push(std::move(*pending_message))) {
-        break;
-      }
-    }
+    (void)transfer_pending_outbound_messages(*existing_it->second, *queue);
   }
 
   active_connections_[key] = std::move(queue);
@@ -675,19 +610,12 @@ void Broker::unregister_connection_locked(
   }
 
   std::size_t moved_to_offline = 0U;
-  if (offline_queue_ && iter->second) {
-    while (true) {
-      std::optional<Message> pending_message = iter->second->try_pop();
-      if (!pending_message.has_value()) {
-        break;
-      }
-      try {
-        offline_queue_->enqueue(client_id, *pending_message);
-        ++moved_to_offline;
-      } catch (...) {
-        break;
-      }
-    }
+  if (message_router_ && iter->second) {
+    std::vector<Message> pending_messages =
+        drain_pending_outbound_messages(*iter->second);
+    moved_to_offline =
+        message_router_->buffer_offline_messages(client_id,
+                                                 std::move(pending_messages));
   }
 
   TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "broker") {
@@ -763,19 +691,11 @@ void Broker::create_modules() {
   acl_loader_ = std::make_unique<AclLoader>(*acl_engine_);
 
   // Base ACL rules:
-  // 1. Broker-internal will-message principal may publish/subscribe anywhere.
-  // 2. When anonymous access is enabled, all clients may publish/subscribe.
-  std::vector<AclRuleConfig> acl_rules;
-  acl_rules.push_back({.principal = "_broker_will_system_",
-                       .topic_pattern = "#",
-                       .action = "publish_and_subscribe",
-                       .effect = "allow"});
-  if (config_.allow_anonymous) {
-    acl_rules.push_back({.principal = "*",
-                         .topic_pattern = "#",
-                         .action = "publish_and_subscribe",
-                         .effect = "allow"});
-  }
+  // 1. Broker-internal publish principal allow-all.
+  // 2. Configured ACL rules in configured order.
+  // 3. Optional anonymous fallback allow-all.
+  std::vector<AclRuleConfig> acl_rules =
+      make_startup_acl_rules(config_.acl_rules, config_.allow_anonymous);
   acl_loader_->load(acl_rules);
 
   //  Session Manager (Module 10)
@@ -819,10 +739,7 @@ void Broker::create_modules() {
   auto will_publish_fn = [this](const WillMessage &will) {
     // Build a mutable copy for route() which may modify topic in-place
     Message msg = will.message;
-    // A will publish is server-initiated — no topic aliases apply.
-    // Use a local empty alias table.
-    TopicAliasTable alias_table(0U);
-    message_router_->route(msg, "_broker_will_system_", "", alias_table);
+    message_router_->route_internal(msg, k_broker_internal_principal);
   };
 
   will_publisher_ = std::make_unique<WillPublisher>(
@@ -842,8 +759,7 @@ void Broker::create_modules() {
   // $SYS publish callback: route via MessageRouter using the reserved
   // broker-internal client ID that the ACL allows to publish everywhere.
   auto sys_publish_fn = [this](Message msg) {
-    TopicAliasTable alias_table(0U);
-    message_router_->route(msg, "_broker_will_system_", "", alias_table);
+    message_router_->route_internal(std::move(msg), k_broker_internal_principal);
   };
 
   sys_publisher_ = std::make_unique<SysTopicPublisher>(

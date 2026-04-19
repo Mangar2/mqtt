@@ -23,11 +23,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <thread>
 #include <utility>
 #include <vector>
 
 #include "connection/connection_error.h"
+#include "connection/outbound_queue_bridge.h"
 #include "connection/connection_state.h"
 #include "connection/keep_alive_timer.h"
 #include "connection/receive_maximum.h"
@@ -53,6 +55,7 @@
 #include "network/stream_buffer.h"
 #include "network/tcp_connection.h"
 #include "network/tcp_listener.h"
+#include "outbound_queue/outbound_queue.h"
 #include "transport/websocket_frame_codec.h"
 
 namespace mqtt {
@@ -100,7 +103,7 @@ void close_socket_handle(SocketHandle socket_handle) {
 #ifdef _WIN32
   ::closesocket(static_cast<SOCKET>(socket_handle));
 #else
-  close_socket_handle(static_cast<int>(socket_handle));
+  ::close(static_cast<int>(socket_handle));
 #endif
 }
 
@@ -942,6 +945,88 @@ TEST_CASE("release_throws_when_inflight_zero", "[connection]") {
   } catch (const ConnectionException &exc) {
     CHECK(exc.error() == ConnectionError::InvalidState);
   }
+}
+
+TEST_CASE("drain_pending_outbound_messages_returns_fifo_and_empties_source",
+          "[connection]") {
+  OutboundQueue source_queue;
+
+  Message first_message;
+  first_message.topic.value = "topic/one";
+  Message second_message;
+  second_message.topic.value = "topic/two";
+  Message third_message;
+  third_message.topic.value = "topic/three";
+
+  REQUIRE(source_queue.push(first_message));
+  REQUIRE(source_queue.push(second_message));
+  REQUIRE(source_queue.push(third_message));
+
+  std::vector<Message> drained_messages =
+      drain_pending_outbound_messages(source_queue);
+
+  REQUIRE(drained_messages.size() == 3U);
+  CHECK(drained_messages[0].topic.value == "topic/one");
+  CHECK(drained_messages[1].topic.value == "topic/two");
+  CHECK(drained_messages[2].topic.value == "topic/three");
+  CHECK_FALSE(source_queue.try_pop().has_value());
+}
+
+TEST_CASE("transfer_pending_outbound_messages_moves_until_source_empty",
+          "[connection]") {
+  OutboundQueue source_queue;
+  OutboundQueue target_queue;
+
+  Message first_message;
+  first_message.topic.value = "topic/one";
+  Message second_message;
+  second_message.topic.value = "topic/two";
+
+  REQUIRE(source_queue.push(first_message));
+  REQUIRE(source_queue.push(second_message));
+
+  const std::size_t moved_count =
+      transfer_pending_outbound_messages(source_queue, target_queue);
+
+  CHECK(moved_count == 2U);
+  CHECK_FALSE(source_queue.try_pop().has_value());
+
+  const std::optional<Message> target_first = target_queue.try_pop();
+  REQUIRE(target_first.has_value());
+  CHECK(target_first->topic.value == "topic/one");
+  const std::optional<Message> target_second = target_queue.try_pop();
+  REQUIRE(target_second.has_value());
+  CHECK(target_second->topic.value == "topic/two");
+}
+
+TEST_CASE("transfer_pending_outbound_messages_stops_when_target_rejects",
+          "[connection]") {
+  OutboundQueue source_queue;
+  OutboundQueue target_queue(1U);
+
+  Message first_message;
+  first_message.topic.value = "topic/one";
+  Message second_message;
+  second_message.topic.value = "topic/two";
+  Message third_message;
+  third_message.topic.value = "topic/three";
+
+  REQUIRE(source_queue.push(first_message));
+  REQUIRE(source_queue.push(second_message));
+  REQUIRE(source_queue.push(third_message));
+
+  const std::size_t moved_count =
+      transfer_pending_outbound_messages(source_queue, target_queue);
+
+  CHECK(moved_count == 1U);
+
+  const std::optional<Message> target_first = target_queue.try_pop();
+  REQUIRE(target_first.has_value());
+  CHECK(target_first->topic.value == "topic/one");
+
+  const std::optional<Message> source_first_remaining = source_queue.try_pop();
+  REQUIRE(source_first_remaining.has_value());
+  CHECK(source_first_remaining->topic.value == "topic/three");
 }
 
 //  ClientHandler (Module 24)

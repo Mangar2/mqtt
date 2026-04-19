@@ -74,6 +74,15 @@ private:
   parse_password_credential(std::string_view value);
 
   /**
+   * @brief Parse one ACL rule entry from `effect,principal,action,topic`.
+   *
+   * @param value Raw value from INI key `rule` in section `[acl]`.
+   * @return Parsed ACL rule config.
+   * @throws BrokerException(InvalidConfig) on malformed input.
+   */
+  [[nodiscard]] static AclRuleConfig parse_acl_rule(std::string_view value);
+
+  /**
    * @brief Validate all fields of @p cfg.
    *
    * @throws BrokerException(InvalidConfig) when any field violates its range.

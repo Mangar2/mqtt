@@ -16,6 +16,7 @@ Depends on: data_model (1), codec (2), qos (5), network (6), auth (8), session_m
 | `connect_phase_flow.h/.cpp` | 24 | CONNECT + AUTH handshake phase (`Broker::handle_connect`, `Broker::handle_auth_packet`) |
 | `runtime_phase_flow.h/.cpp` | 24 | post-CONNECT runtime packet loop and dispatch |
 | `connection_flow_support.h/.cpp` | 24 | shared transport/codec helpers for connect/runtime phases |
+| `outbound_queue_bridge.h/.cpp` | 24 | outbound queue bridging helpers (drain pending messages, transfer pending messages between queue instances) |
 | `connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, accept loops, and tracked client threads |
 
 ## 7.1 ConnectionStateMachine
