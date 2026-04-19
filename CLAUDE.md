@@ -53,5 +53,6 @@ It defines all conventions (SPEC.md, TEST_SPEC.md, file count limits, test place
 
 All **code design rules that are not specific to a single module** must be written in
 `.claude/commands/cpp-dev.md` only (see the `## Project-wide conventions` section there).
-Do **not** repeat general rules in `SPEC.md` files — only module-specific behaviour,
-interfaces, and constraints belong in a module's `SPEC.md`.
+Do **not** duplicate general design rules in a module `SPEC.md`'s `## Design rules`
+section. Brief overview-level restatements are allowed when they provide local context,
+but the detailed project-wide rules must stay centralized in `.claude/commands/cpp-dev.md`.
