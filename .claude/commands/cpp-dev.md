@@ -40,7 +40,7 @@ module-level `SPEC.md` files.
 - `#pragma once` on every header file (no `#ifndef` include guards).
 - All production types live in the `mqtt` namespace.
 - All exception types derive from `std::runtime_error`.
-- `operator==` provided via `= default` on every plain-data (`struct`) type.
+- For `struct` types where equality is intended to be memberwise, provide `operator==` via `= default`; if a type has custom comparison semantics, define `operator==` explicitly instead.
 
 ## Documentation
 
