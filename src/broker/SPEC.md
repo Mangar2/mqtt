@@ -215,6 +215,16 @@ static void install_signal_handlers() noexcept;
 6. Start `ConnectionManager` (opens configured listener sockets and starts accept loops).
 7. Set `running_ = true`.
 
+`load_persistence()` restores three persistence snapshots:
+- sessions into `SessionStore`
+- retained messages into `RetainedMessageStore`
+- inflight entries into `InflightStore`
+
+For persisted sessions, all non-shared subscriptions stored in each
+`SessionState.subscriptions` entry are also re-registered in
+`SubscriptionStore` so topic routing after restart is consistent with the
+persisted session state.
+
 #### Shutdown sequence (15.3.2)
 
 1. Return immediately if not running.
@@ -278,6 +288,8 @@ Callers should poll `Broker::shutdown_requested()` in their main loop and call
    parsing (`$share/<group>/<filter>`), per-filter validation, ACL checks,
    store/dispatcher updates, retained delivery, and protocol-error validation
    for invalid Subscription Identifier values.
+- `SubscriptionOrchestrator` owns durable subscription snapshot
+   synchronization for non-shared SUBSCRIBE/UNSUBSCRIBE outcomes.
 - `handle_subscribe()` and `handle_unsubscribe()` in `Broker` delegate to
    `SubscriptionOrchestrator` under the broker mutex.
 - `handle_publish()` wraps inbound publish routing and statistics increments under

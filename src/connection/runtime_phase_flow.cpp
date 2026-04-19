@@ -93,6 +93,20 @@ public:
           context_.client_session.username(),
           context_.client_session.topic_alias_table());
 
+      if (publish_reason == ReasonCode::ProtocolError) {
+        if (tracks_inbound_inflight) {
+          context_.inbound_receive_maximum.release();
+        }
+        mark_clean_disconnect(context_.disconnect_state,
+                              ReasonCode::ProtocolError);
+        write_frame_direct(
+            context_.connection, context_.ws_transport,
+            encode_disconnect_packet(ReasonCode::ProtocolError),
+            context_.is_websocket);
+        should_break_ = true;
+        return;
+      }
+
       if (packet.qos == QoS::ExactlyOnce && is_error(publish_reason) &&
           packet.packet_id.has_value()) {
         context_.client_session.abort_inbound_qos2(packet.packet_id.value());

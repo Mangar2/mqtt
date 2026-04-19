@@ -20,6 +20,7 @@
 #include "message_router/offline_queue.h"
 #include "message_router/shared_subscription_dispatcher.h"
 #include "store/retained_message_store.h"
+#include "store/session_store.h"
 #include "store/subscription_store.h"
 #include "subscription_manager/subscription_orchestrator.h"
 
@@ -60,10 +61,18 @@ Message make_retained_message(std::string topic_name, std::vector<uint8_t> paylo
   return message;
 }
 
+SessionState make_session_state(std::string client_id,
+                                uint32_t expiry_interval = 120U) {
+  SessionState state;
+  state.client_id = Utf8String{std::move(client_id)};
+  state.session_expiry_interval = expiry_interval;
+  return state;
+}
+
 struct Harness {
   explicit Harness(std::vector<AclRule> rules)
       : acl(std::move(rules)), retained(), subscriptions(), inbound(acl, retained, subscriptions),
-        offline_queue(), shared_dispatcher(), online_clients(), delivered_messages(),
+        offline_queue(), shared_dispatcher(), session_store(), online_clients(), delivered_messages(),
         router(inbound,
                offline_queue,
                shared_dispatcher,
@@ -73,7 +82,7 @@ struct Harness {
                [this](std::string_view client_id, const Message &message) {
                  delivered_messages.emplace_back(std::string(client_id), message);
                }),
-        orchestrator(acl, subscriptions, shared_dispatcher, router) {}
+        orchestrator(acl, session_store, subscriptions, shared_dispatcher, router) {}
 
   AclEngine acl;
   RetainedMessageStore retained;
@@ -81,6 +90,7 @@ struct Harness {
   InboundPublishProcessor inbound;
   OfflineQueue offline_queue;
   SharedSubscriptionDispatcher shared_dispatcher;
+  SessionStore session_store;
   std::unordered_set<std::string> online_clients;
   std::vector<std::pair<std::string, Message>> delivered_messages;
   MessageRouter router;
@@ -218,6 +228,24 @@ TEST_CASE("subscribe_retain_handling_send_if_new_delivers_only_once", "[subscrip
   CHECK(harness.delivered_messages.empty());
 }
 
+TEST_CASE("subscribe_regular_filter_updates_session_snapshot", "[subscription_manager]") {
+  Harness harness({allow_all_subscribe_rule()});
+  harness.session_store.create(make_session_state("client-a"));
+
+  const SubscribePacket packet =
+      make_subscribe_packet(14U, "snapshot/topic", make_options(QoS::AtLeastOnce));
+
+  const SubackPacket suback = harness.orchestrator.handle_subscribe("client-a", packet);
+  REQUIRE(suback.reason_codes.size() == 1U);
+  CHECK(suback.reason_codes[0] == ReasonCode::GrantedQoS1);
+
+  const auto stored_session = harness.session_store.load("client-a");
+  REQUIRE(stored_session.has_value());
+  REQUIRE(stored_session->subscriptions.size() == 1U);
+  CHECK(stored_session->subscriptions[0].topic_filter.value == "snapshot/topic");
+  CHECK(stored_session->subscriptions[0].qos == QoS::AtLeastOnce);
+}
+
 TEST_CASE("unsubscribe_regular_filter_returns_success_then_no_subscription_found", "[subscription_manager]") {
   Harness harness({allow_all_subscribe_rule()});
 
@@ -269,4 +297,31 @@ TEST_CASE("unsubscribe_invalid_shared_syntax_returns_topic_filter_invalid", "[su
 
   REQUIRE(unsuback.reason_codes.size() == 1U);
   CHECK(unsuback.reason_codes[0] == ReasonCode::TopicFilterInvalid);
+}
+
+TEST_CASE("unsubscribe_regular_filter_removes_session_snapshot_subscription", "[subscription_manager]") {
+  Harness harness({allow_all_subscribe_rule()});
+  SessionState session_state = make_session_state("client-a");
+  session_state.subscriptions.push_back(
+      Subscription{.topic_filter = Utf8String{"devices/+/status"},
+                   .qos = QoS::AtMostOnce,
+                   .options = SubscriptionOptions{},
+                   .identifier = std::nullopt});
+  harness.session_store.create(session_state);
+
+  const SubscribePacket subscribe_packet =
+      make_subscribe_packet(15U, "devices/+/status", make_options(QoS::AtMostOnce));
+  (void)harness.orchestrator.handle_subscribe("client-a", subscribe_packet);
+
+  const UnsubscribePacket unsubscribe_packet =
+      make_unsubscribe_packet(16U, "devices/+/status");
+  const UnsubackPacket unsuback =
+      harness.orchestrator.handle_unsubscribe("client-a", unsubscribe_packet);
+
+  REQUIRE(unsuback.reason_codes.size() == 1U);
+  CHECK(unsuback.reason_codes[0] == ReasonCode::Success);
+
+  const auto stored_session = harness.session_store.load("client-a");
+  REQUIRE(stored_session.has_value());
+  CHECK(stored_session->subscriptions.empty());
 }

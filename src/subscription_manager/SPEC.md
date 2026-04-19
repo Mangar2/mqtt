@@ -12,6 +12,9 @@ Depends on: `authz/`, `store/`, `message_router/`, `topic/`, `data_model/`.
 - Validate topic filters and apply ACL subscribe checks.
 - Store normal subscriptions in `SubscriptionStore`.
 - Register and remove shared subscription members in `SharedSubscriptionDispatcher`.
+- Synchronize successful non-shared subscribe/unsubscribe changes into
+  `SessionStore` snapshot state (`SessionState.subscriptions`) so persistence
+  reflects the durable subscription set.
 - Trigger retained delivery for newly accepted non-shared subscriptions.
 - Build SUBACK/UNSUBACK reason code vectors with one result per filter.
 

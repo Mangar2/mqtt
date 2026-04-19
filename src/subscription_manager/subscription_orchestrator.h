@@ -11,6 +11,7 @@
 #include "data_model/packet/subscribe_packets.h"
 #include "message_router/message_router.h"
 #include "message_router/shared_subscription_dispatcher.h"
+#include "store/session_store.h"
 #include "store/subscription_store.h"
 
 namespace mqtt {
@@ -28,11 +29,13 @@ public:
    * @brief Create an orchestrator bound to broker-owned collaborators.
    *
    * @param acl_engine ACL engine used for subscribe authorization checks.
+  * @param session_store Store for session-state snapshots used by persistence.
    * @param subscription_store Store for regular (non-shared) subscriptions.
    * @param shared_dispatcher Dispatcher for shared subscription membership.
    * @param message_router Message router for retained-message delivery.
    */
   SubscriptionOrchestrator(AclEngine &acl_engine,
+                  SessionStore &session_store,
                            SubscriptionStore &subscription_store,
                            SharedSubscriptionDispatcher &shared_dispatcher,
                            MessageRouter &message_router) noexcept;
@@ -60,6 +63,7 @@ public:
 
 private:
   AclEngine &acl_engine_;
+  SessionStore &session_store_;
   SubscriptionStore &subscription_store_;
   SharedSubscriptionDispatcher &shared_dispatcher_;
   MessageRouter &message_router_;

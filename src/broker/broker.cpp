@@ -62,6 +62,20 @@ void append_authentication_method_property(std::vector<Property> &properties,
                                 .value = Utf8String{std::string(auth_method)}});
 }
 
+[[nodiscard]] bool has_zero_topic_alias_property(const Message &message) {
+  for (const Property &property : message.properties) {
+    if (property.id != PropertyId::TopicAlias) {
+      continue;
+    }
+
+    const auto *alias_value = std::get_if<uint16_t>(&property.value);
+    if (alias_value != nullptr && *alias_value == 0U) {
+      return true;
+    }
+  }
+  return false;
+}
+
 } // namespace
 
 //
@@ -469,6 +483,11 @@ ReasonCode Broker::handle_publish(Message &msg, std::string_view client_id,
                                   TopicAliasTable &alias_table) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
   stats_collector_->on_message_inbound();
+
+  if (has_zero_topic_alias_property(msg)) {
+    return ReasonCode::ImplementationSpecificError;
+  }
+
   try {
     const bool has_matching_subscribers =
         message_router_->route(msg, client_id, username, alias_table);
@@ -481,7 +500,7 @@ ReasonCode Broker::handle_publish(Message &msg, std::string_view client_id,
       return ReasonCode::NotAuthorized;
     }
     if (exception.error() == MessageRouterError::TopicAliasInvalid) {
-      return ReasonCode::ImplementationSpecificError;
+      return ReasonCode::ProtocolError;
     }
     throw;
   }
@@ -697,9 +716,9 @@ void Broker::create_modules() {
       *publish_processor_, *offline_queue_, *shared_dispatcher_,
       std::move(is_online_fn), std::move(deliver_fn));
 
-    subscription_orchestrator_ = std::make_unique<SubscriptionOrchestrator>(
-      *acl_engine_, *subscription_store_, *shared_dispatcher_,
-      *message_router_);
+  subscription_orchestrator_ = std::make_unique<SubscriptionOrchestrator>(
+      *acl_engine_, *session_store_, *subscription_store_,
+      *shared_dispatcher_, *message_router_);
 
   //  Will Manager (Module 11)
   will_store_ = std::make_unique<WillStore>();
@@ -755,6 +774,9 @@ void Broker::load_persistence() {
   auto sessions = session_persistence_->load_all();
   for (const auto &sess : sessions) {
     session_store_->create(sess);
+    for (const auto &subscription : sess.subscriptions) {
+      subscription_store_->store(sess.client_id.value, subscription);
+    }
   }
 
   // Load retained messages

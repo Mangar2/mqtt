@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "data_model/subscription/retain_handling.h"
 #include "topic/topic_error.h"
@@ -42,13 +43,119 @@ parse_shared_subscription_filter(std::string_view topic_filter) {
   return shared_filter;
 }
 
+[[nodiscard]] bool is_subscribe_granted(ReasonCode reason_code) {
+  return reason_code == ReasonCode::Success ||
+         reason_code == ReasonCode::GrantedQoS1 ||
+         reason_code == ReasonCode::GrantedQoS2;
+}
+
+void apply_subscribe_to_session_snapshot(
+    SessionStore &session_store,
+    std::string_view client_id,
+    const SubscribePacket &packet,
+    const SubackPacket &suback) {
+  const auto existing_session = session_store.load(client_id);
+  if (!existing_session.has_value()) {
+    return;
+  }
+
+  SessionState updated_session = *existing_session;
+  const std::optional<uint32_t> subscription_identifier =
+      subscription_identifier_from(packet);
+
+  const std::size_t filter_count = packet.filters.size();
+  const std::size_t reason_count = suback.reason_codes.size();
+  const std::size_t common_count =
+      (filter_count < reason_count) ? filter_count : reason_count;
+
+  for (std::size_t idx = 0U; idx < common_count; ++idx) {
+    const SubscribeFilter &filter = packet.filters[idx];
+    const ReasonCode granted_reason = suback.reason_codes[idx];
+    if (!is_subscribe_granted(granted_reason)) {
+      continue;
+    }
+
+    if (filter.topic_filter.value.starts_with("$share/")) {
+      continue;
+    }
+
+    Subscription subscription;
+    subscription.topic_filter = Utf8String{filter.topic_filter.value};
+    subscription.qos = filter.options.max_qos;
+    subscription.options.no_local = filter.options.no_local;
+    subscription.options.retain_as_published =
+        filter.options.retain_as_published;
+    subscription.options.retain_handling =
+        static_cast<RetainHandling>(filter.options.retain_handling);
+    subscription.identifier = subscription_identifier;
+
+    bool replaced_existing = false;
+    for (Subscription &existing_subscription : updated_session.subscriptions) {
+      if (existing_subscription.topic_filter.value ==
+          filter.topic_filter.value) {
+        existing_subscription = subscription;
+        replaced_existing = true;
+        break;
+      }
+    }
+    if (!replaced_existing) {
+      updated_session.subscriptions.push_back(std::move(subscription));
+    }
+  }
+
+  session_store.remove(client_id);
+  session_store.create(updated_session);
+}
+
+void apply_unsubscribe_to_session_snapshot(
+    SessionStore &session_store,
+    std::string_view client_id,
+    const UnsubscribePacket &packet,
+    const UnsubackPacket &unsuback) {
+  const auto existing_session = session_store.load(client_id);
+  if (!existing_session.has_value()) {
+    return;
+  }
+
+  SessionState updated_session = *existing_session;
+
+  const std::size_t filter_count = packet.topic_filters.size();
+  const std::size_t reason_count = unsuback.reason_codes.size();
+  const std::size_t common_count =
+      (filter_count < reason_count) ? filter_count : reason_count;
+
+  for (std::size_t idx = 0U; idx < common_count; ++idx) {
+    if (unsuback.reason_codes[idx] != ReasonCode::Success) {
+      continue;
+    }
+
+    const Utf8String &topic_filter = packet.topic_filters[idx];
+    if (topic_filter.value.starts_with("$share/")) {
+      continue;
+    }
+
+    for (auto iter = updated_session.subscriptions.begin();
+         iter != updated_session.subscriptions.end(); ++iter) {
+      if (iter->topic_filter.value == topic_filter.value) {
+        updated_session.subscriptions.erase(iter);
+        break;
+      }
+    }
+  }
+
+  session_store.remove(client_id);
+  session_store.create(updated_session);
+}
+
 } // namespace
 
 SubscriptionOrchestrator::SubscriptionOrchestrator(
-    AclEngine &acl_engine, SubscriptionStore &subscription_store,
+    AclEngine &acl_engine, SessionStore &session_store,
+    SubscriptionStore &subscription_store,
     SharedSubscriptionDispatcher &shared_dispatcher,
     MessageRouter &message_router) noexcept
-    : acl_engine_(acl_engine), subscription_store_(subscription_store),
+    : acl_engine_(acl_engine), session_store_(session_store),
+      subscription_store_(subscription_store),
       shared_dispatcher_(shared_dispatcher), message_router_(message_router) {}
 
 SubackPacket SubscriptionOrchestrator::handle_subscribe(
@@ -121,6 +228,8 @@ SubackPacket SubscriptionOrchestrator::handle_subscribe(
     suback.reason_codes.push_back(qos_to_granted_reason(filter.options.max_qos));
   }
 
+  apply_subscribe_to_session_snapshot(session_store_, client_id, packet,
+                                      suback);
   return suback;
 }
 
@@ -168,6 +277,8 @@ UnsubackPacket SubscriptionOrchestrator::handle_unsubscribe(
         found ? ReasonCode::Success : ReasonCode::NoSubscriptionFound);
   }
 
+  apply_unsubscribe_to_session_snapshot(session_store_, client_id, packet,
+                                        unsuback);
   return unsuback;
 }
 
