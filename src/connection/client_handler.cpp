@@ -130,9 +130,14 @@ void run_client_handler_flow(std::unique_ptr<TcpConnection> conn, Broker &broker
       connect_packet->username.has_value() ? connect_packet->username->value : "";
   const uint32_t maximum_packet_size =
       find_maximum_packet_size(connect_packet->properties).value_or(0U);
+  const auto receive_maximum =
+      find_receive_maximum(connect_packet->properties);
+  if (receive_maximum.has_value() && receive_maximum.value() == 0U) {
+    stop_transport();
+    return;
+  }
   const uint16_t outbound_receive_maximum =
-      find_receive_maximum(connect_packet->properties)
-          .value_or(k_default_receive_maximum);
+      receive_maximum.value_or(k_default_receive_maximum);
   const uint16_t effective_keep_alive =
       (config.server_keep_alive > 0U) ? config.server_keep_alive
                                       : connect_packet->keep_alive;
