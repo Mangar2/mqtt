@@ -30,11 +30,20 @@ Any unknown CLI flag causes startup failure.
 
 | Tool    | Minimum version | Notes                                  |
 |---------|-----------------|----------------------------------------|
-| CMake   | 3.25            |                                        |
+| CMake   | 3.16            | Native build without presets           |
 | Ninja   | 1.11            | `winget install Ninja-build.Ninja`     |
 | Clang   | 16              | `clang++` must be on `PATH`            |
 
-### ARM cross-compilation (Raspberry Pi Zero 2)
+Preset-based workflows (`cmake --preset ...`) require CMake 3.25+.
+On older systems (for example Raspberry Pi OS Buster with CMake 3.16), use
+explicit `-S/-B` configure commands instead of presets.
+
+### ARM cross-compilation (Raspberry Pi)
+
+Cross-compilation presets exist for:
+
+- Raspberry Pi Zero / Pi 1 (ARMv6): `armv6-debug`, `armv6-release`
+- Raspberry Pi Zero 2 (ARMv7 32-bit userspace): `arm-debug`, `arm-release`
 
 Cross-compilation is performed on a **Linux host** using Clang's built-in
 `--target` support. No separate clang binary is needed, but the ARM sysroot
@@ -52,8 +61,12 @@ configuring:
 
 ```sh
 export ARM_SYSROOT=/path/to/your/sysroot
-cmake --preset arm-release
+cmake --preset armv6-release
 ```
+
+On macOS, native cross-linking for GNU/Linux ARM is usually not available out
+of the box. Recommended approach: run the cross-build inside a Linux container
+(Docker/Podman) and use the same presets there.
 
 ## Build
 
@@ -63,6 +76,8 @@ cmake --preset arm-release
 cmake --preset debug          # Debug build for the host platform
 cmake --preset release        # Release build for the host platform
 cmake --preset debug-sanitize # Debug + AddressSanitizer + UBSan
+cmake --preset armv6-debug    # Debug cross-compile for Raspberry Pi Zero / Pi 1
+cmake --preset armv6-release  # Release cross-compile for Raspberry Pi Zero / Pi 1
 cmake --preset arm-debug      # Debug cross-compile for Raspberry Pi Zero 2
 cmake --preset arm-release    # Release cross-compile for Raspberry Pi Zero 2
 ```
@@ -72,6 +87,7 @@ cmake --preset arm-release    # Release cross-compile for Raspberry Pi Zero 2
 ```sh
 cmake --build --preset debug
 cmake --build --preset release
+cmake --build --preset armv6-release
 cmake --build --preset arm-release
 ```
 

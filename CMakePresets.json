@@ -63,6 +63,16 @@
     },
 
     {
+      "name":          "armv6-base",
+      "hidden":        true,
+      "inherits":      "base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/armv6-linux-gnueabihf.cmake",
+      "cacheVariables": {
+        "BUILD_TESTING": "OFF"
+      }
+    },
+
+    {
       "name":        "arm-debug",
       "displayName": "Debug (Raspberry Pi Zero 2 – ARM 32-bit)",
       "inherits":    "arm-base",
@@ -78,6 +88,24 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+
+    {
+      "name":        "armv6-debug",
+      "displayName": "Debug (Raspberry Pi Zero/1 – ARMv6 32-bit)",
+      "inherits":    "armv6-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+
+    {
+      "name":        "armv6-release",
+      "displayName": "Release (Raspberry Pi Zero/1 – ARMv6 32-bit)",
+      "inherits":    "armv6-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
 
@@ -87,7 +115,9 @@
     { "name": "debug-sanitize", "displayName": "Build Debug + Sanitizers (host)",     "configurePreset": "debug-sanitize" },
     { "name": "test-coverage",  "displayName": "Build Tests + Coverage (host)",       "configurePreset": "test-coverage"  },
     { "name": "arm-debug",      "displayName": "Build Debug (ARM 32-bit)",            "configurePreset": "arm-debug"      },
-    { "name": "arm-release",    "displayName": "Build Release (ARM 32-bit)",          "configurePreset": "arm-release"    }
+    { "name": "arm-release",    "displayName": "Build Release (ARM 32-bit)",          "configurePreset": "arm-release"    },
+    { "name": "armv6-debug",    "displayName": "Build Debug (ARMv6 32-bit)",          "configurePreset": "armv6-debug"    },
+    { "name": "armv6-release",  "displayName": "Build Release (ARMv6 32-bit)",        "configurePreset": "armv6-release"  }
   ],
 
   "testPresets": [
