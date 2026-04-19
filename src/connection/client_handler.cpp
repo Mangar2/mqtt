@@ -138,9 +138,6 @@ void run_client_handler_flow(std::unique_ptr<TcpConnection> conn, Broker &broker
   }
   const uint16_t outbound_receive_maximum =
       receive_maximum.value_or(k_default_receive_maximum);
-  const uint16_t outbound_receive_maximum =
-      find_receive_maximum(connect_packet->properties)
-          .value_or(k_default_receive_maximum);
   const uint16_t effective_keep_alive =
       (config.server_keep_alive > 0U) ? config.server_keep_alive
                                       : connect_packet->keep_alive;
