@@ -95,14 +95,16 @@ map_codec_error_to_connect_reason(CodecError codec_error) noexcept {
 [[nodiscard]] constexpr ReasonCode
 map_codec_error_to_runtime_reason(CodecError codec_error) noexcept {
   switch (codec_error) {
+  case CodecError::DuplicateProperty:
+  case CodecError::InvalidPacketType:
+    return ReasonCode::ProtocolError;
+
   case CodecError::BufferTooShort:
   case CodecError::StringTooLong:
   case CodecError::VariableByteIntegerOverflow:
   case CodecError::InvalidPropertyId:
   case CodecError::PropertyTypeMismatch:
-  case CodecError::DuplicateProperty:
   case CodecError::PropertyNotAllowed:
-  case CodecError::InvalidPacketType:
   case CodecError::InvalidFlags:
   case CodecError::InvalidProtocolName:
   case CodecError::InvalidProtocolVersion:

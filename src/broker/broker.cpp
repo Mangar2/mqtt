@@ -7,12 +7,14 @@
 #include "broker/broker.h"
 
 #include <atomic>
+#include <chrono>
 #include <csignal>
 #include <iostream>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -103,6 +105,12 @@ void Broker::shutdown() noexcept {
     return;
   }
 
+  running_ = false;
+
+  // Allow active client loops to observe shutdown and send DISCONNECT 0x8B
+  // before transport teardown closes sockets.
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+
   std::vector<std::shared_ptr<OutboundQueue>> queues;
   {
     std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
@@ -125,8 +133,6 @@ void Broker::shutdown() noexcept {
   if (config_.persistence_enabled) {
     flush_persistence();
   }
-
-  running_ = false;
 }
 
 bool Broker::is_running() const noexcept { return running_; }
@@ -473,6 +479,9 @@ ReasonCode Broker::handle_publish(Message &msg, std::string_view client_id,
   } catch (const MessageRouterException &exception) {
     if (exception.error() == MessageRouterError::PublishNotAuthorized) {
       return ReasonCode::NotAuthorized;
+    }
+    if (exception.error() == MessageRouterError::TopicAliasInvalid) {
+      return ReasonCode::ImplementationSpecificError;
     }
     throw;
   }

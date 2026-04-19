@@ -8,10 +8,12 @@
 #include <array>
 #include <cstddef>
 
+#include "codec/codec_error.h"
 #include "codec/packet/connect_codec.h"
 #include "codec/packet/control_codec.h"
 #include "codec/packet/subscribe_codec.h"
 #include "codec/packet_reader/packet_reader.h"
+#include "data_model/packet/packet_type.h"
 #include "network/stream_buffer.h"
 #include "network/tcp_connection.h"
 #include "network/write_queue.h"
@@ -214,8 +216,18 @@ std::optional<AnyPacket> try_decode_packet(StreamBuffer &stream_buffer) {
   }
 
   const std::vector<uint8_t> packet_bytes = stream_buffer.consume_packet();
+  const uint8_t packet_type_nibble =
+      packet_bytes.empty() ? 0U : static_cast<uint8_t>(packet_bytes.front() >> 4U);
   ReadBuffer read_buffer(packet_bytes);
-  return read_packet(read_buffer);
+  try {
+    return read_packet(read_buffer);
+  } catch (const CodecException &exception) {
+    if (packet_type_nibble == static_cast<uint8_t>(PacketType::Connack)) {
+      throw CodecException{CodecError::InvalidPacketType,
+                           "CONNACK is not valid from client during runtime"};
+    }
+    throw;
+  }
 }
 
 bool send_connack_and_stop(

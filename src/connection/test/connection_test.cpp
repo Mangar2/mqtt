@@ -645,7 +645,9 @@ TEST_CASE("map_codec_error_to_runtime_reason_handles_all_key_paths",
   CHECK(map_codec_error_to_runtime_reason(CodecError::PropertyTypeMismatch) ==
     ReasonCode::MalformedPacket);
   CHECK(map_codec_error_to_runtime_reason(CodecError::DuplicateProperty) ==
-    ReasonCode::MalformedPacket);
+    ReasonCode::ProtocolError);
+  CHECK(map_codec_error_to_runtime_reason(CodecError::InvalidPacketType) ==
+    ReasonCode::ProtocolError);
   CHECK(map_codec_error_to_runtime_reason(CodecError::PropertyNotAllowed) ==
     ReasonCode::MalformedPacket);
   CHECK(map_codec_error_to_runtime_reason(CodecError::InvalidProtocolVersion) ==
@@ -1503,7 +1505,7 @@ TEST_CASE("client_handler_runtime_malformed_packet_returns_disconnect",
   CHECK(packet_type_nibble(disconnect) == 14U);
 
   const DisconnectPacket disconnect_packet = decode_disconnect_packet_or_fail(disconnect);
-  CHECK(disconnect_packet.reason_code == ReasonCode::MalformedPacket);
+  CHECK(disconnect_packet.reason_code == ReasonCode::ProtocolError);
 
   close_socket_handle(sockets.client_fd);
   worker.join();

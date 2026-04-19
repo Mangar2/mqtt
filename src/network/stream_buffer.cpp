@@ -37,6 +37,18 @@ std::optional<std::size_t> StreamBuffer::front_packet_size() const noexcept {
     if ((byte & k_continuation_bit) == 0) {
       break; // last RL byte
     }
+
+    if (idx + 1U == k_max_rl_bytes) {
+      // MQTT Remaining Length must fit into max 4 bytes.
+      // If the 4th byte still has the continuation bit set, the wire encoding
+      // is malformed. Treat it as a complete malformed frame once one
+      // additional byte is present so upper layers can decode and reject it.
+      const std::size_t malformed_frame_size = 1U + k_max_rl_bytes + 1U;
+      if (buffer_.size() >= malformed_frame_size) {
+        return malformed_frame_size;
+      }
+      return std::nullopt;
+    }
   }
 
   // 1 (type byte) + rl_bytes + rl_value = total packet size

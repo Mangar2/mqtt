@@ -81,7 +81,7 @@ SubscribePacket decode_subscribe(ReadBuffer &buf) {
   }
 
   if (result.filters.empty()) {
-    throw CodecException{CodecError::MalformedPacket,
+    throw CodecException{CodecError::InvalidPacketType,
                          "SUBSCRIBE: at least one topic filter is required"};
   }
 

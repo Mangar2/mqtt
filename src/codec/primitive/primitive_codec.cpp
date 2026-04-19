@@ -1,5 +1,47 @@
 #include "codec/primitive/primitive_codec.h"
 
+namespace {
+
+bool is_valid_mqtt_utf8(const std::string_view text) {
+  uint8_t expected_continuations = 0U;
+
+  for (unsigned char ch : text) {
+    const uint8_t byte = static_cast<uint8_t>(ch);
+
+    if (byte == 0x00U) {
+      return false;
+    }
+
+    if (expected_continuations == 0U) {
+      if ((byte & 0x80U) == 0U) {
+        continue;
+      }
+      if ((byte & 0xE0U) == 0xC0U) {
+        expected_continuations = 1U;
+        continue;
+      }
+      if ((byte & 0xF0U) == 0xE0U) {
+        expected_continuations = 2U;
+        continue;
+      }
+      if ((byte & 0xF8U) == 0xF0U) {
+        expected_continuations = 3U;
+        continue;
+      }
+      return false;
+    }
+
+    if ((byte & 0xC0U) != 0x80U) {
+      return false;
+    }
+    --expected_continuations;
+  }
+
+  return expected_continuations == 0U;
+}
+
+} // namespace
+
 namespace mqtt {
 
 //  Encoding
@@ -100,7 +142,12 @@ FourByteInteger decode_four_byte_integer(ReadBuffer &buf) {
 Utf8String decode_utf8_string(ReadBuffer &buf) {
   TwoByteInteger len = decode_two_byte_integer(buf);
   auto bytes = buf.read_bytes(len);
-  return Utf8String{std::string(bytes.begin(), bytes.end())};
+  std::string text(bytes.begin(), bytes.end());
+  if (!is_valid_mqtt_utf8(text)) {
+    throw CodecException{CodecError::MalformedPacket,
+                         "UTF-8 string contains invalid or forbidden code points"};
+  }
+  return Utf8String{std::move(text)};
 }
 
 Utf8StringPair decode_utf8_string_pair(ReadBuffer &buf) {

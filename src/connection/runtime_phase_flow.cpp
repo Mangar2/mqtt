@@ -18,6 +18,7 @@
 #include "network/stream_buffer.h"
 #include "network/tcp_connection.h"
 #include "network/write_queue.h"
+#include "qos/qos_error.h"
 #include "transport/websocket_transport.h"
 
 namespace mqtt {
@@ -110,7 +111,8 @@ public:
     }
 
     if (packet.qos == QoS::ExactlyOnce && packet.packet_id.has_value() &&
-        !publish_result.response_frames.empty()) {
+        !publish_result.response_frames.empty() &&
+        publish_result.routable_message.has_value()) {
       ReasonCode pubrec_reason = publish_reason;
       if (pubrec_reason == ReasonCode::NoMatchingSubscribers) {
         pubrec_reason = ReasonCode::Success;
@@ -154,7 +156,22 @@ public:
   }
 
   void operator()(const PubrelPacket &packet) const {
-    const WriteBuffer pubcomp_frame = context_.client_session.on_pubrel(packet);
+    WriteBuffer pubcomp_frame;
+    try {
+      pubcomp_frame = context_.client_session.on_pubrel(packet);
+    } catch (const QosException &exception) {
+      if (exception.error() != QosError::UnexpectedPacketId) {
+        throw;
+      }
+      WriteBuffer frame;
+      encode_pubcomp(
+          frame,
+          PubcompPacket{.packet_id = packet.packet_id,
+                        .reason_code = ReasonCode::PacketIdentifierNotFound,
+                        .properties = {}});
+      pubcomp_frame = std::move(frame);
+    }
+
     try {
       context_.inbound_receive_maximum.release();
     } catch (const ConnectionException & /*unused*/) {
@@ -348,6 +365,15 @@ void run_connected_session_loop(
 
     TransportReadChunk chunk = read_transport_chunk(connection, ws_transport);
     if (chunk.error || chunk.eof) {
+      if (!disconnect_state.clean_disconnect &&
+          (Broker::shutdown_requested() || !broker.is_running())) {
+        disconnect_state.clean_disconnect = true;
+        disconnect_state.reason_code = ReasonCode::ServerShuttingDown;
+        write_frame_direct(
+            connection, ws_transport,
+            encode_disconnect_packet(ReasonCode::ServerShuttingDown),
+            is_websocket);
+      }
       break;
     }
 
@@ -377,6 +403,14 @@ void run_connected_session_loop(
                                 inbound_receive_window)) {
       break;
     }
+  }
+
+  if (!disconnect_state.clean_disconnect && !broker.is_running()) {
+    disconnect_state.clean_disconnect = true;
+    disconnect_state.reason_code = ReasonCode::ServerShuttingDown;
+    write_frame_direct(connection, ws_transport,
+                       encode_disconnect_packet(ReasonCode::ServerShuttingDown),
+                       is_websocket);
   }
 }
 

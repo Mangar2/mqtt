@@ -51,7 +51,12 @@
 | `utf8_encode`             | Non-empty string includes length prefix       | `"hello"`       | `[0x00,0x05,'h','e','l','l','o']` |
 | `utf8_decode_empty`       | Decodes zero-length string                    | `[0x00,0x00]`   | `""` |
 | `utf8_decode`             | Decodes non-empty string                      | `[0x00,0x03,'f','o','o']` | `"foo"` |
+| `utf8_decode_multibyte_valid` | Decodes valid multi-byte UTF-8 sequences | bytes for `"\u20AC\U0001F642"` | exact decoded string |
 | `utf8_decode_truncated`   | Length prefix says N but fewer bytes remain → throws | partial buffer | `CodecError::BufferTooShort` |
+| `utf8_decode_forbidden_null` | U+0000 in content is rejected             | `[0x00,0x01,0x00]` | `CodecError::MalformedPacket` |
+| `utf8_decode_invalid_leading_byte` | Invalid leading byte is rejected     | `[0x00,0x01,0x80]` | `CodecError::MalformedPacket` |
+| `utf8_decode_invalid_continuation` | Missing/invalid continuation byte is rejected | malformed 2-byte sequence | `CodecError::MalformedPacket` |
+| `utf8_decode_truncated_multibyte` | Multi-byte sequence truncated at end is rejected | incomplete 3-byte sequence | `CodecError::MalformedPacket` |
 | `utf8_roundtrip`          | Encode then decode gives same value           | `"test"`        | `"test"` |
 
 ## encode/decode UTF-8 String Pair

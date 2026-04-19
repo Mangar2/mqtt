@@ -37,6 +37,15 @@ Qos2StateMachine::on_publish_received(const PublishPacket &pkt) {
   const uint16_t pid = pkt.packet_id.value();
   const bool is_new = id_mgr_.try_register_inbound(pid);
 
+  if (!is_new && !pkt.dup) {
+    return Qos2InboundPublishResult{
+        .pubrec = PubrecPacket{.packet_id = pid,
+                               .reason_code = ReasonCode::PacketIdentifierInUse,
+                               .properties = {}},
+        .is_duplicate = true,
+    };
+  }
+
   if (is_new) {
     recently_completed_inbound_.erase(pid);
     const Message msg{

@@ -281,6 +281,14 @@ TEST_CASE("utf8_decode", "[primitive][utf8]") {
   CHECK(decode_utf8_string(reader).value == "foo");
 }
 
+TEST_CASE("utf8_decode_multibyte_valid", "[primitive][utf8]") {
+  // U+20AC (3 bytes) + U+1F642 (4 bytes)
+  std::vector<uint8_t> data{0x00U, 0x07U, 0xE2U, 0x82U, 0xACU,
+                            0xF0U, 0x9FU, 0x99U, 0x82U};
+  auto reader = make_reader(data);
+  CHECK(decode_utf8_string(reader).value == "\u20AC\U0001F642");
+}
+
 TEST_CASE("utf8_decode_truncated", "[primitive][utf8]") {
   // length = 5 but only 2 bytes follow
   std::vector<uint8_t> data{0x00U, 0x05U, 'a', 'b'};
@@ -290,6 +298,52 @@ TEST_CASE("utf8_decode_truncated", "[primitive][utf8]") {
     FAIL("Expected CodecException");
   } catch (const CodecException &e) {
     CHECK(e.error() == CodecError::BufferTooShort);
+  }
+}
+
+TEST_CASE("utf8_decode_forbidden_null", "[primitive][utf8]") {
+  std::vector<uint8_t> data{0x00U, 0x01U, 0x00U};
+  auto reader = make_reader(data);
+  try {
+    (void)decode_utf8_string(reader);
+    FAIL("Expected CodecException");
+  } catch (const CodecException &e) {
+    CHECK(e.error() == CodecError::MalformedPacket);
+  }
+}
+
+TEST_CASE("utf8_decode_invalid_leading_byte", "[primitive][utf8]") {
+  std::vector<uint8_t> data{0x00U, 0x01U, 0x80U};
+  auto reader = make_reader(data);
+  try {
+    (void)decode_utf8_string(reader);
+    FAIL("Expected CodecException");
+  } catch (const CodecException &e) {
+    CHECK(e.error() == CodecError::MalformedPacket);
+  }
+}
+
+TEST_CASE("utf8_decode_invalid_continuation", "[primitive][utf8]") {
+  // 0xC2 starts a 2-byte sequence; next byte must be 10xxxxxx.
+  std::vector<uint8_t> data{0x00U, 0x02U, 0xC2U, 0x41U};
+  auto reader = make_reader(data);
+  try {
+    (void)decode_utf8_string(reader);
+    FAIL("Expected CodecException");
+  } catch (const CodecException &e) {
+    CHECK(e.error() == CodecError::MalformedPacket);
+  }
+}
+
+TEST_CASE("utf8_decode_truncated_multibyte", "[primitive][utf8]") {
+  // 0xE2 starts a 3-byte sequence but only one continuation is present.
+  std::vector<uint8_t> data{0x00U, 0x02U, 0xE2U, 0x82U};
+  auto reader = make_reader(data);
+  try {
+    (void)decode_utf8_string(reader);
+    FAIL("Expected CodecException");
+  } catch (const CodecException &e) {
+    CHECK(e.error() == CodecError::MalformedPacket);
   }
 }
 
