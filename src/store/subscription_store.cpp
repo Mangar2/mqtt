@@ -9,9 +9,9 @@ bool SubscriptionStore::store(std::string_view client_id,
   return trie_.insert(client_id, sub);
 }
 
-void SubscriptionStore::remove(std::string_view client_id,
+bool SubscriptionStore::remove(std::string_view client_id,
                                std::string_view topic_filter) {
-  trie_.remove(client_id, topic_filter);
+  return trie_.remove(client_id, topic_filter);
 }
 
 std::vector<MatchResult>

@@ -55,12 +55,12 @@ public:
    * @p client_id entry at the terminal node.  Any nodes that become empty
    * (no subscriptions and no children) after the removal are pruned.
    *
-   * Does nothing when no matching subscription exists.
-   *
    * @param client_id    Identifier of the subscribing client.
    * @param topic_filter Topic filter identifying the subscription to remove.
+   * @return `true` when a subscription was found and removed; `false` when no
+   *         matching entry existed.
    */
-  void remove(std::string_view client_id, std::string_view topic_filter);
+  bool remove(std::string_view client_id, std::string_view topic_filter);
 
   /**
    * @brief Removes all subscriptions for a client.
@@ -118,12 +118,14 @@ private:
 
   /**
    * @brief Recursive helper for remove().
+   * @param found Set to true when a subscription entry is erased.
    * @return true when @p node is empty after the operation (caller should prune
    * it).
    */
   static bool remove_recursive(Node &node,
                                const std::vector<std::string> &levels,
-                               std::size_t depth, std::string_view client_id);
+                               std::size_t depth, std::string_view client_id,
+                               bool &found);
 
   /**
    * @brief Recursive helper for remove_all().

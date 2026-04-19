@@ -496,8 +496,9 @@ UnsubackPacket Broker::handle_unsubscribe(std::string_view client_id,
       continue;
     }
 
-    subscription_store_->remove(client_id, topic_filter.value);
-    unsuback.reason_codes.push_back(ReasonCode::Success);
+    const bool found = subscription_store_->remove(client_id, topic_filter.value);
+    unsuback.reason_codes.push_back(
+        found ? ReasonCode::Success : ReasonCode::NoSubscriptionFound);
   }
 
   return unsuback;

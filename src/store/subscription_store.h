@@ -40,12 +40,12 @@ public:
   /**
    * @brief Remove the named subscription for a client (4.1.2).
    *
-   * Does nothing when no matching record exists.
-   *
    * @param client_id    Identifier of the subscribing client.
    * @param topic_filter Exact filter string of the subscription to remove.
+   * @return `true` when a subscription was found and removed; `false` when no
+   *         matching entry existed.
    */
-  void remove(std::string_view client_id, std::string_view topic_filter);
+  bool remove(std::string_view client_id, std::string_view topic_filter);
 
   /**
    * @brief Return all subscribers whose filter matches a publish topic (4.1.3).

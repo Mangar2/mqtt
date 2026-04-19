@@ -115,6 +115,49 @@ def build_publish_packet(
     )
 
 
+def build_subscribe_packet(
+    topic_filters: list[tuple[str, int]],
+    packet_identifier: int = 1,
+    properties: bytes = b"",
+) -> bytes:
+    """Build an MQTT 5.0 SUBSCRIBE packet for one or more topic filters."""
+    if packet_identifier < 1 or packet_identifier > 65535:
+        raise ValueError("packet_identifier must be in range 1..65535")
+
+    variable_header = bytearray()
+    variable_header.extend(packet_identifier.to_bytes(2, byteorder="big"))
+    variable_header.extend(encode_variable_byte_integer(len(properties)))
+    variable_header.extend(properties)
+
+    payload = bytearray()
+    for topic_filter, qos in topic_filters:
+        payload.extend(encode_utf8_string(topic_filter))
+        payload.append(qos & 0x03)
+
+    return build_packet(packet_type=8, flags=2, variable_header=bytes(variable_header), payload=bytes(payload))
+
+
+def build_unsubscribe_packet(
+    topic_filters: list[str],
+    packet_identifier: int = 1,
+    properties: bytes = b"",
+) -> bytes:
+    """Build an MQTT 5.0 UNSUBSCRIBE packet for one or more topic filters."""
+    if packet_identifier < 1 or packet_identifier > 65535:
+        raise ValueError("packet_identifier must be in range 1..65535")
+
+    variable_header = bytearray()
+    variable_header.extend(packet_identifier.to_bytes(2, byteorder="big"))
+    variable_header.extend(encode_variable_byte_integer(len(properties)))
+    variable_header.extend(properties)
+
+    payload = bytearray()
+    for topic_filter in topic_filters:
+        payload.extend(encode_utf8_string(topic_filter))
+
+    return build_packet(packet_type=10, flags=2, variable_header=bytes(variable_header), payload=bytes(payload))
+
+
 def send_bytes(host: str, port: int, data: bytes, timeout_seconds: float = 1.0) -> bytes:
     """Open a TCP connection, send bytes and return all immediate response bytes."""
     with socket.create_connection((host, port), timeout=timeout_seconds) as tcp_socket:

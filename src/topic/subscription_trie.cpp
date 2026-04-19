@@ -60,9 +60,12 @@ bool SubscriptionTrie::insert(std::string_view client_id,
 bool SubscriptionTrie::remove_recursive(Node &node,
                                         const std::vector<std::string> &levels,
                                         std::size_t depth,
-                                        std::string_view client_id) {
+                                        std::string_view client_id,
+                                        bool &found) {
   if (depth == levels.size()) {
-    node.subscriptions.erase(std::string{client_id});
+    const std::string key{client_id};
+    found = node.subscriptions.contains(key);
+    node.subscriptions.erase(key);
     return node.empty();
   }
 
@@ -73,17 +76,19 @@ bool SubscriptionTrie::remove_recursive(Node &node,
   }
 
   const bool child_empty =
-      remove_recursive(*itr->second, levels, depth + 1, client_id);
+      remove_recursive(*itr->second, levels, depth + 1, client_id, found);
   if (child_empty) {
     node.children.erase(itr);
   }
   return node.empty();
 }
 
-void SubscriptionTrie::remove(std::string_view client_id,
+bool SubscriptionTrie::remove(std::string_view client_id,
                               std::string_view topic_filter) {
   const auto levels = split_filter(topic_filter);
-  remove_recursive(*root_, levels, 0, client_id);
+  bool found = false;
+  remove_recursive(*root_, levels, 0, client_id, found);
+  return found;
 }
 
 void SubscriptionTrie::remove_all_recursive(Node &node,

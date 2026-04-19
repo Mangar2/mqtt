@@ -62,3 +62,6 @@ build/
 *.dll
 *.a
 *.lib
+
+# Claude Code local settings
+.claude/settings.local.json
