@@ -34,6 +34,8 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
+COVERAGE_THRESHOLD_PERCENT = 80.0
+
 
 class WorkflowError(RuntimeError):
     """Raised when a workflow step fails."""
@@ -345,7 +347,8 @@ def run_coverage_gate() -> None:
 
     if "Threshold  : MET" not in output:
         raise WorkflowError(
-            "Coverage threshold is not MET.\n"
+            "Coverage threshold is not MET "
+            f"(required >= {COVERAGE_THRESHOLD_PERCENT:.0f}%).\n"
             f"Output:\n{output}"
         )
 

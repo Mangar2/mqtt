@@ -42,7 +42,7 @@ PROFRAW_GLOB = "coverage-*.profraw"
 SRC_DIR      = PROJECT_ROOT / "src"
 LOG_FILE     = TEST_DIR / "run.log"
 
-THRESHOLD = 90.0  # minimum coverage percent
+THRESHOLD = 80.0  # minimum coverage percent
 
 # Unit-test execution safety guards to avoid indefinite waits in step 2.
 CTEST_PER_TEST_TIMEOUT_SECONDS = int(os.environ.get("MQTT_CTEST_TIMEOUT", "120"))

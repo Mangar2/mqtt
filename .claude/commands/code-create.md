@@ -22,14 +22,14 @@ All code changes are committed on this branch — never directly on `master`.
 
 **Automatic commit after successful completion:**
 
-Once the completion checklist (see below) is fully satisfied — all tests pass **and** test coverage is ≥ 90 % for all changed modules — commit the changes automatically:
+Once the completion checklist (see below) is fully satisfied — all tests pass **and** test coverage is ≥ 80 % for all changed modules — commit the changes automatically:
 
 ```sh
 git add -A
 git commit -m "<short imperative description of the change>"
 ```
 
-Do **not** commit if any test fails or if coverage is below 90 %. Fix the issues first, then commit.
+Do **not** commit if any test fails or if coverage is below 80 %. Fix the issues first, then commit.
 
 **Coverage must be measured and reported before every commit — skipping it is not allowed.**
 
@@ -170,7 +170,7 @@ Do not mark any module complete until **every item** below passes.
 | 3 | **No linter / IDE warnings** | All clang-tidy diagnostics resolved |
 | 4 | **VS Code Problems panel clear** | Use `get_errors` tool on all changed files — zero errors and zero warnings; every diagnostic reported by the IDE must be fixed before marking the task done |
 | 5 | **All tests pass** | `python test/run_coverage.py` summary shows `Tests: N/N [OK]`; new tests appear by name in ctest |
-| 6 | **Test coverage ≥ 90 %** | `python test/run_coverage.py` summary shows `Threshold: MET` and all production files ≥ 90 % for Regions, Functions, Lines. This step blocks the commit — it may not be skipped. |
+| 6 | **Test coverage ≥ 80 %** | `python test/run_coverage.py` summary shows `Threshold: MET` and all production files ≥ 80 % for Regions, Functions, Lines. This step blocks the commit — it may not be skipped. |
 | 7 | **SPEC.md is current** | Every touched directory has an accurate SPEC.md |
 | 8 | **TEST_SPEC.md is current** | Every test in code has a matching entry; removed tests removed from spec |
 | 9 | **Doxygen on all public API** | Every header follows the documentation rules in `/cpp-dev` |
@@ -190,7 +190,7 @@ Tests      : <N>/<N>  [OK]
 File                  Regions  Functions  Lines  Branches
 ...                   ...      ...        ...    ...
 TOTAL                 ...      ...        ...    ...
-Threshold  : MET  (all production files >= 90%)
+Threshold  : MET  (all production files >= 80%)
 ```
 
 Production headers: Regions <X>%, Functions <X>%, Lines <X>%

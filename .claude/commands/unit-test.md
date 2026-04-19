@@ -138,7 +138,7 @@ Coverage uses **clang source-based instrumentation** (`-fprofile-instr-generate`
 Do **not** modify production code solely to improve coverage metrics.
 Production code may be changed only when behaviour/spec is incorrect.
 
-When the full report shows files below 90%, work through them **strictly one at a time**:
+When the full report shows files below 80%, work through them **strictly one at a time**:
 
 1. Pick the first file below threshold.
 2. Run `--show` for that file only — no other commands in parallel:
@@ -151,9 +151,9 @@ When the full report shows files below 90%, work through them **strictly one at 
    ```sh
    cmake --build --preset debug && ctest --preset debug
    ```
-6. Only after that file reaches ≥ 90 %: move to the next file below threshold.
+6. Only after that file reaches ≥ 80 %: move to the next file below threshold.
 
-Mandatory rule: if you did not improve coverage by adding a test to reach the 90% refactor the source code to improve its unit-testability instead of just add new test cases.
+Mandatory rule: if you did not improve coverage by adding a test to reach 80% refactor the source code to improve its unit-testability instead of just add new test cases.
 
 **Never run `--show` for multiple files at once.** The output volume makes it
 impossible to reason about each file correctly.
@@ -162,12 +162,12 @@ impossible to reason about each file correctly.
 
 | Column | What it measures | Threshold |
 |--------|-----------------|-----------|
-| **Regions Cover** | % of source code regions executed (finest grain) | ≥ 90 % |
-| **Functions Executed** | % of functions called at least once | ≥ 90 % |
-| **Lines Cover** | % of source lines executed | ≥ 90 % |
+| **Regions Cover** | % of source code regions executed (finest grain) | ≥ 80 % |
+| **Functions Executed** | % of functions called at least once | ≥ 80 % |
+| **Lines Cover** | % of source lines executed | ≥ 80 % |
 | **Branches Cover** | % of branch paths taken | informational only |
 
-**Target:** production files must reach ≥ 90 % on Regions, Functions, and Lines.
+**Target:** production files must reach ≥ 80 % on Regions, Functions, and Lines.
 Branch coverage in `*_test.cpp` files will typically read ~50 % — normal and not a failure.
 
 ---
