@@ -11,6 +11,9 @@
 #include <string>
 #include <string_view>
 
+#include "codec/codec_error.h"
+#include "data_model/reason_code/reason_code.h"
+
 namespace mqtt {
 
 /**
@@ -55,5 +58,60 @@ public:
 private:
   ConnectionError error_; ///< Error code stored for programmatic inspection.
 };
+
+/**
+ * @brief Map a codec decode error during CONNECT handling to MQTT reason code.
+ * @param codec_error Codec error emitted by packet decode.
+ * @return MQTT reason code suitable for CONNACK failure.
+ */
+[[nodiscard]] constexpr ReasonCode
+map_codec_error_to_connect_reason(CodecError codec_error) noexcept {
+  switch (codec_error) {
+  case CodecError::InvalidProtocolVersion:
+    return ReasonCode::UnsupportedProtocolVersion;
+  case CodecError::BufferTooShort:
+  case CodecError::StringTooLong:
+  case CodecError::VariableByteIntegerOverflow:
+  case CodecError::InvalidPropertyId:
+  case CodecError::PropertyTypeMismatch:
+  case CodecError::DuplicateProperty:
+  case CodecError::PropertyNotAllowed:
+  case CodecError::InvalidPacketType:
+  case CodecError::InvalidFlags:
+  case CodecError::InvalidProtocolName:
+  case CodecError::InvalidQoS:
+  case CodecError::MalformedPacket:
+    return ReasonCode::MalformedPacket;
+  }
+
+  return ReasonCode::ProtocolError;
+}
+
+/**
+ * @brief Map a codec decode error after CONNECT handling to MQTT reason code.
+ * @param codec_error Codec error emitted by packet decode.
+ * @return MQTT reason code suitable for DISCONNECT from runtime loop.
+ */
+[[nodiscard]] constexpr ReasonCode
+map_codec_error_to_runtime_reason(CodecError codec_error) noexcept {
+  switch (codec_error) {
+  case CodecError::BufferTooShort:
+  case CodecError::StringTooLong:
+  case CodecError::VariableByteIntegerOverflow:
+  case CodecError::InvalidPropertyId:
+  case CodecError::PropertyTypeMismatch:
+  case CodecError::DuplicateProperty:
+  case CodecError::PropertyNotAllowed:
+  case CodecError::InvalidPacketType:
+  case CodecError::InvalidFlags:
+  case CodecError::InvalidProtocolName:
+  case CodecError::InvalidProtocolVersion:
+  case CodecError::InvalidQoS:
+  case CodecError::MalformedPacket:
+    return ReasonCode::MalformedPacket;
+  }
+
+  return ReasonCode::ProtocolError;
+}
 
 } // namespace mqtt

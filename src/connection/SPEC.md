@@ -12,7 +12,10 @@ Depends on: data_model (1), codec (2), qos (5), network (6), auth (8), session_m
 | `keep_alive_timer.h/.cpp` | 7.2 | `KeepAliveTimer` — deadline tracking at 1.5 × Keep Alive interval |
 | `topic_alias_table.h/.cpp` | 7.3 | `TopicAliasTable` — inbound and outbound alias↔topic mappings with maximum enforcement |
 | `receive_maximum.h/.cpp` | 7.4 | `ReceiveMaximum` — inflight QoS 1+2 packet counter with pause/resume |
-| `client_handler.h/.cpp` | 24 | `ClientHandler` — lean per-connection I/O orchestrator that delegates business logic to `Broker` facades and `ClientSession` |
+| `client_handler.h/.cpp` | 24 | `ClientHandler` — thin adapter that forwards accepted sockets into connection-flow orchestration |
+| `connect_phase_flow.h/.cpp` | 24 | CONNECT + AUTH handshake phase (`Broker::handle_connect`, `Broker::handle_auth_packet`) |
+| `runtime_phase_flow.h/.cpp` | 24 | post-CONNECT runtime packet loop and dispatch |
+| `connection_flow_support.h/.cpp` | 24 | shared transport/codec helpers for connect/runtime phases |
 | `connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, accept loops, and tracked client threads |
 
 ## 7.1 ConnectionStateMachine
@@ -55,7 +58,13 @@ States: `Connecting` → `Connected` → `Disconnecting` → `Closed`
 
 ## 24 Lean ClientHandler
 
-`ClientHandler::run(conn, broker, config, is_ws)` is a thin orchestration layer.
+`ClientHandler::run(conn, broker, config, is_ws)` is the top-level orchestrator.
+
+Module-24 flow is split into focused components:
+- `client_handler` owns full lifecycle orchestration for one socket.
+- `connect_phase_flow` owns CONNECT + AUTH progression.
+- `runtime_phase_flow` owns post-CONNECT packet processing.
+- `connection_flow_support` provides transport + packet utility helpers.
 
 Implemented behavior:
 - Optional WebSocket upgrade handshake when `is_ws=true`.
@@ -63,7 +72,7 @@ Implemented behavior:
 - CONNECT handshake handling via `Broker::handle_connect()` plus enhanced-auth loop via `Broker::handle_auth_packet()`.
 - Construction of `ClientSession` after successful CONNACK and registration of the per-client `OutboundQueue`.
 	- Effective keep-alive source: `broker.server_keep_alive` override when non-zero, otherwise CONNECT keep-alive.
-- Per-packet dispatch loop with strict delegation:
+- Runtime per-packet dispatch loop with strict delegation:
 	- `PUBLISH` → `ClientSession::on_publish()` + `Broker::handle_publish()`
 	- `SUBSCRIBE` → `Broker::handle_subscribe()`
 	- `UNSUBSCRIBE` → `Broker::handle_unsubscribe()`

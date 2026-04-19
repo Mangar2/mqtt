@@ -8,6 +8,10 @@ C++20 coding rules for this project.
 - Use designated initialisers for aggregates.
 - Use range algorithms
 - NEVER use non ASCII characters in code files
+- NEVER violate module structure
+- NEVER build large classes with logic beloging to other modules, good size for a class is 300 loc larger is bad, more than 500 loc requires immediate refactoring
+- NEVER add NOLINT comments outside test Files
+- use auto
 
 ## Compiler warnings
 

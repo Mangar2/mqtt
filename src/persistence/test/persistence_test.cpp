@@ -496,7 +496,6 @@ std::vector<uint8_t> make_raw_file(uint8_t magic0, uint8_t version) {
 void write_raw(const std::filesystem::path &path,
                const std::vector<uint8_t> &bytes) {
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   out.write(reinterpret_cast<const char *>(bytes.data()),
             static_cast<std::streamsize>(bytes.size()));
 }

@@ -137,4 +137,18 @@ std::string_view EnhancedAuthHandler::auth_method() const noexcept {
 
 EnhancedAuthState EnhancedAuthHandler::state() const noexcept { return state_; }
 
+void EnhancedAuthHandler::bootstrap_connected_session(std::string auth_method) {
+  if (auth_method.empty()) {
+    return;
+  }
+  if (state_ != EnhancedAuthState::Idle) {
+    throw AuthException(
+        AuthError::InvalidState,
+        "EnhancedAuthHandler::bootstrap_connected_session called in non-Idle state");
+  }
+
+  auth_method_ = std::move(auth_method);
+  state_ = EnhancedAuthState::Complete;
+}
+
 } // namespace mqtt

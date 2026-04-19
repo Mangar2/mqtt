@@ -79,7 +79,8 @@ public:
                 uint16_t receive_maximum, uint16_t topic_alias_maximum,
           std::chrono::steady_clock::duration retransmit_timeout =
             std::chrono::seconds{20},
-          uint32_t maximum_packet_size = 0U);
+          uint32_t maximum_packet_size = 0U,
+          std::string negotiated_auth_method = "");
 
   /**
    * @brief Start enhanced authentication state from CONNECT.

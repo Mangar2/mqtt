@@ -1,18 +1,37 @@
-#include <catch2/catch_test_macros.hpp>
+﻿#include <catch2/catch_test_macros.hpp>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#ifdef max
+#undef max
+#endif
+#ifdef min
+#undef min
+#endif
+#else
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <unistd.h>
+#endif
 
 #include <array>
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <thread>
+#include <utility>
 #include <vector>
 
-#if !defined(_WIN32)
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <unistd.h>
-#endif
+#include "connection/connection_error.h"
+#include "connection/connection_state.h"
+#include "connection/keep_alive_timer.h"
+#include "connection/receive_maximum.h"
+#include "connection/topic_alias_table.h"
 
 #include "broker/broker.h"
 #include "broker/broker_config.h"
@@ -22,11 +41,6 @@
 #include "codec/packet/publish_codec.h"
 #include "codec/packet/subscribe_codec.h"
 #include "connection/client_handler.h"
-#include "connection/connection_error.h"
-#include "connection/connection_state.h"
-#include "connection/keep_alive_timer.h"
-#include "connection/receive_maximum.h"
-#include "connection/topic_alias_table.h"
 #include "data_model/packet/connect_packet.h"
 #include "data_model/packet/control_packets.h"
 #include "data_model/packet/publish_packets.h"
@@ -38,51 +52,107 @@
 #include "data_model/types/utf8_string.h"
 #include "network/stream_buffer.h"
 #include "network/tcp_connection.h"
+#include "network/tcp_listener.h"
 #include "transport/websocket_frame_codec.h"
 
 namespace mqtt {
 
-#if !defined(_WIN32)
-
 namespace {
 
 struct SocketPair {
-  int client_fd{-1};
-  int server_fd{-1};
+  SocketHandle client_fd{k_invalid_socket};
+  std::unique_ptr<TcpConnection> server_connection;
 };
 
 SocketPair make_socket_pair() {
-  int fds[2] = {-1, -1};
-  const int result = ::socketpair(AF_UNIX, SOCK_STREAM, 0, fds);
-  REQUIRE(result == 0);
-  return {.client_fd = fds[0], .server_fd = fds[1]};
+  auto listener = TcpListener::listen(0U, false);
+  const uint16_t bound_port = listener.port();
+
+  std::unique_ptr<TcpConnection> accepted_connection;
+  std::thread accept_thread([
+      &listener, &accepted_connection] {
+    accepted_connection = listener.accept();
+  });
+
+  const SocketHandle client_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  REQUIRE(client_socket != k_invalid_socket);
+
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_port = htons(bound_port);
+  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  const int connect_result =
+      ::connect(client_socket, reinterpret_cast<const sockaddr *>(&address),
+                static_cast<int>(sizeof(address)));
+  REQUIRE(connect_result == 0);
+
+  accept_thread.join();
+  REQUIRE(accepted_connection != nullptr);
+
+  return {.client_fd = client_socket,
+          .server_connection = std::move(accepted_connection)};
 }
 
-void set_recv_timeout(int socket_fd, uint32_t timeout_millis) {
+void close_socket_handle(SocketHandle socket_handle) {
+  if (socket_handle == k_invalid_socket) {
+    return;
+  }
+#ifdef _WIN32
+  ::closesocket(static_cast<SOCKET>(socket_handle));
+#else
+  close_socket_handle(static_cast<int>(socket_handle));
+#endif
+}
+
+void set_recv_timeout(SocketHandle socket_handle, uint32_t timeout_millis) {
+#ifdef _WIN32
+  DWORD timeout_value = static_cast<DWORD>(timeout_millis);
+  const int result = ::setsockopt(
+      static_cast<SOCKET>(socket_handle), SOL_SOCKET, SO_RCVTIMEO,
+      reinterpret_cast<const char *>(&timeout_value),
+      static_cast<int>(sizeof(timeout_value)));
+#else
   struct timeval timeout_value {};
   timeout_value.tv_sec = static_cast<time_t>(timeout_millis / 1000U);
   timeout_value.tv_usec =
       static_cast<suseconds_t>((timeout_millis % 1000U) * 1000U);
-  const int result =
-      ::setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout_value,
-                   static_cast<socklen_t>(sizeof(timeout_value)));
+  const int result = ::setsockopt(
+      static_cast<int>(socket_handle), SOL_SOCKET, SO_RCVTIMEO,
+      &timeout_value, static_cast<socklen_t>(sizeof(timeout_value)));
+#endif
   REQUIRE(result == 0);
 }
 
-void write_all(int socket_fd, const std::vector<uint8_t> &bytes) {
+void write_all(SocketHandle socket_handle, const std::vector<uint8_t> &bytes) {
   std::size_t sent_total = 0U;
   while (sent_total < bytes.size()) {
+#ifdef _WIN32
+    const int sent_now =
+        ::send(static_cast<SOCKET>(socket_handle),
+               reinterpret_cast<const char *>(bytes.data() + sent_total),
+               static_cast<int>(bytes.size() - sent_total), 0);
+#else
     const ssize_t sent_now =
-        ::send(socket_fd, bytes.data() + sent_total, bytes.size() - sent_total,
-               0);
+        ::send(static_cast<int>(socket_handle), bytes.data() + sent_total,
+               bytes.size() - sent_total, 0);
+#endif
     REQUIRE(sent_now > 0);
     sent_total += static_cast<std::size_t>(sent_now);
   }
 }
 
-std::vector<uint8_t> read_some(int socket_fd, std::size_t max_bytes) {
+std::vector<uint8_t> read_some(SocketHandle socket_handle,
+                               std::size_t max_bytes) {
   std::vector<uint8_t> buffer(max_bytes, 0U);
-  const ssize_t received = ::recv(socket_fd, buffer.data(), buffer.size(), 0);
+#ifdef _WIN32
+  const int received =
+      ::recv(static_cast<SOCKET>(socket_handle),
+             reinterpret_cast<char *>(buffer.data()),
+             static_cast<int>(buffer.size()), 0);
+#else
+  const ssize_t received =
+      ::recv(static_cast<int>(socket_handle), buffer.data(), buffer.size(), 0);
+#endif
   if (received <= 0) {
     return {};
   }
@@ -90,11 +160,11 @@ std::vector<uint8_t> read_some(int socket_fd, std::size_t max_bytes) {
   return buffer;
 }
 
-std::vector<uint8_t> read_nonempty_with_retries(int socket_fd,
+std::vector<uint8_t> read_nonempty_with_retries(SocketHandle socket_handle,
                                                 std::size_t max_bytes,
                                                 int attempts) {
   for (int attempt_idx = 0; attempt_idx < attempts; ++attempt_idx) {
-    std::vector<uint8_t> data = read_some(socket_fd, max_bytes);
+    std::vector<uint8_t> data = read_some(socket_handle, max_bytes);
     if (!data.empty()) {
       return data;
     }
@@ -126,11 +196,12 @@ WriteBuffer make_connect_frame(std::string client_id, uint16_t keep_alive) {
 WriteBuffer make_connect_with_flags_frame(std::string client_id,
                                           uint16_t keep_alive,
                                           std::optional<uint8_t> request_problem_information,
-                                          std::optional<uint32_t> session_expiry_interval) {
+                                          std::optional<uint32_t> session_expiry_interval,
+                                          bool clean_start = true) {
   ConnectPacket packet;
   packet.client_id.value = std::move(client_id);
   packet.keep_alive = keep_alive;
-  packet.clean_start = true;
+  packet.clean_start = clean_start;
 
   if (request_problem_information.has_value()) {
     packet.properties.push_back(
@@ -151,7 +222,7 @@ WriteBuffer make_connect_with_flags_frame(std::string client_id,
 
 WriteBuffer make_connect_with_credentials_frame(std::string client_id,
                                                 std::string username,
-                                                std::string password,
+                                                const std::string &password,
                                                 uint16_t keep_alive = 10U) {
   ConnectPacket packet;
   packet.client_id.value = std::move(client_id);
@@ -205,6 +276,23 @@ WriteBuffer make_connack_frame(ReasonCode reason_code = ReasonCode::Success) {
   return frame;
 }
 
+WriteBuffer make_suback_frame(uint16_t packet_id = 1U) {
+  WriteBuffer frame;
+  encode_suback(frame, SubackPacket{.packet_id = packet_id,
+                                    .properties = {},
+                                    .reason_codes = {ReasonCode::Success}});
+  return frame;
+}
+
+WriteBuffer make_unsuback_frame(uint16_t packet_id = 1U) {
+  WriteBuffer frame;
+  encode_unsuback(frame,
+                  UnsubackPacket{.packet_id = packet_id,
+                                 .properties = {},
+                                 .reason_codes = {ReasonCode::Success}});
+  return frame;
+}
+
 WriteBuffer make_disconnect_with_expiry_frame(uint32_t expiry_value) {
   WriteBuffer frame;
   encode_disconnect(
@@ -227,16 +315,24 @@ DisconnectPacket decode_disconnect_packet_or_fail(const std::vector<uint8_t> &fr
   return std::get<DisconnectPacket>(packet);
 }
 
-bool has_reason_string_property(const DisconnectPacket &packet) {
-  for (const Property &property : packet.properties) {
-    if (property.id == PropertyId::ReasonString) {
-      return true;
-    }
-  }
-  return false;
+ConnackPacket decode_connack_packet_or_fail(const std::vector<uint8_t> &frame) {
+  REQUIRE_FALSE(frame.empty());
+  ReadBuffer read_buffer(frame);
+  const AnyPacket packet = read_packet(read_buffer);
+  REQUIRE(std::holds_alternative<ConnackPacket>(packet));
+  return std::get<ConnackPacket>(packet);
 }
 
-WriteBuffer make_auth_frame(std::string auth_method, std::string auth_payload,
+bool has_reason_string_property(const DisconnectPacket &packet) {
+  return std::ranges::any_of(packet.properties,
+                             [](const Property &property) {
+                               return property.id ==
+                                      PropertyId::ReasonString;
+                             });
+}
+
+WriteBuffer make_auth_frame(std::string auth_method,
+                            const std::string &auth_payload,
                             ReasonCode reason_code =
                                 ReasonCode::ContinueAuthentication) {
   AuthPacket packet;
@@ -372,7 +468,7 @@ decode_publish_packet_id(const std::vector<uint8_t> &frame) {
   }
 
   index += topic_size;
-  const uint16_t packet_id =
+  const auto packet_id =
       static_cast<uint16_t>((static_cast<uint16_t>(frame[index]) << 8U) |
                             static_cast<uint16_t>(frame[index + 1U]));
   if (packet_id == 0U) {
@@ -451,7 +547,58 @@ uint8_t packet_type_nibble(const std::vector<uint8_t> &frame) {
 
 } // namespace
 
-#endif
+//  ConnectionError codec mapping
+//
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("map_codec_error_to_connect_reason_handles_all_key_paths",
+      "[connection]") {
+  CHECK(map_codec_error_to_connect_reason(CodecError::InvalidProtocolVersion) ==
+    ReasonCode::UnsupportedProtocolVersion);
+  CHECK(map_codec_error_to_connect_reason(CodecError::BufferTooShort) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_connect_reason(CodecError::PropertyTypeMismatch) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_connect_reason(CodecError::DuplicateProperty) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_connect_reason(CodecError::PropertyNotAllowed) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_connect_reason(CodecError::InvalidPacketType) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_connect_reason(CodecError::InvalidFlags) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_connect_reason(CodecError::InvalidProtocolName) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_connect_reason(CodecError::InvalidQoS) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_connect_reason(
+    static_cast<CodecError>(0xFFU)) == ReasonCode::ProtocolError);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("map_codec_error_to_runtime_reason_handles_all_key_paths",
+      "[connection]") {
+  CHECK(map_codec_error_to_runtime_reason(CodecError::BufferTooShort) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_runtime_reason(CodecError::StringTooLong) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_runtime_reason(
+    CodecError::VariableByteIntegerOverflow) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_runtime_reason(CodecError::InvalidPropertyId) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_runtime_reason(CodecError::PropertyTypeMismatch) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_runtime_reason(CodecError::DuplicateProperty) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_runtime_reason(CodecError::PropertyNotAllowed) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_runtime_reason(CodecError::InvalidProtocolVersion) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_runtime_reason(CodecError::InvalidQoS) ==
+    ReasonCode::MalformedPacket);
+  CHECK(map_codec_error_to_runtime_reason(
+    static_cast<CodecError>(0xFFU)) == ReasonCode::ProtocolError);
+}
 
 //  ConnectionStateMachine
 //
@@ -733,64 +880,64 @@ TEST_CASE("max_alias_zero_disables_inbound", "[connection]") {
 //
 
 TEST_CASE("max_returns_configured_value", "[connection]") {
-  ReceiveMaximum recv(10U);
-  CHECK(recv.max() == 10U);
+  ReceiveMaximum receive_maximum(10U);
+  CHECK(receive_maximum.max() == 10U);
 }
 
 TEST_CASE("zero_max_defaults_to_65535", "[connection]") {
-  ReceiveMaximum recv(0U);
-  CHECK(recv.max() == 65535U);
+  ReceiveMaximum receive_maximum(0U);
+  CHECK(receive_maximum.max() == 65535U);
 }
 
 TEST_CASE("acquire_succeeds_within_limit", "[connection]") {
-  ReceiveMaximum recv(5U);
-  CHECK(recv.acquire());
+  ReceiveMaximum receive_maximum(5U);
+  CHECK(receive_maximum.acquire());
 }
 
 TEST_CASE("acquire_returns_false_at_limit", "[connection]") {
-  ReceiveMaximum recv(2U);
-  CHECK(recv.acquire());
-  CHECK(recv.acquire());
-  CHECK_FALSE(recv.acquire());
+  ReceiveMaximum receive_maximum(2U);
+  CHECK(receive_maximum.acquire());
+  CHECK(receive_maximum.acquire());
+  CHECK_FALSE(receive_maximum.acquire());
 }
 
 TEST_CASE("is_paused_true_when_limit_reached", "[connection]") {
-  ReceiveMaximum recv(1U);
-  (void)recv.acquire();
-  CHECK(recv.is_paused());
+  ReceiveMaximum receive_maximum(1U);
+  (void)receive_maximum.acquire();
+  CHECK(receive_maximum.is_paused());
 }
 
 TEST_CASE("is_paused_false_initially", "[connection]") {
-  ReceiveMaximum recv(10U);
-  CHECK_FALSE(recv.is_paused());
+  ReceiveMaximum receive_maximum(10U);
+  CHECK_FALSE(receive_maximum.is_paused());
 }
 
 TEST_CASE("available_decreases_after_acquire", "[connection]") {
-  ReceiveMaximum recv(5U);
-  (void)recv.acquire();
-  (void)recv.acquire();
-  CHECK(recv.available() == 3U);
+  ReceiveMaximum receive_maximum(5U);
+  (void)receive_maximum.acquire();
+  (void)receive_maximum.acquire();
+  CHECK(receive_maximum.available() == 3U);
 }
 
 TEST_CASE("available_increases_after_release", "[connection]") {
-  ReceiveMaximum recv(2U);
-  (void)recv.acquire();
-  (void)recv.acquire();
-  recv.release();
-  CHECK(recv.available() == 1U);
+  ReceiveMaximum receive_maximum(2U);
+  (void)receive_maximum.acquire();
+  (void)receive_maximum.acquire();
+  receive_maximum.release();
+  CHECK(receive_maximum.available() == 1U);
 }
 
 TEST_CASE("release_restores_capacity", "[connection]") {
-  ReceiveMaximum recv(1U);
-  (void)recv.acquire();
-  recv.release();
-  CHECK(recv.acquire());
+  ReceiveMaximum receive_maximum(1U);
+  (void)receive_maximum.acquire();
+  receive_maximum.release();
+  CHECK(receive_maximum.acquire());
 }
 
 TEST_CASE("release_throws_when_inflight_zero", "[connection]") {
-  ReceiveMaximum recv(5U);
+  ReceiveMaximum receive_maximum(5U);
   try {
-    recv.release();
+    receive_maximum.release();
     FAIL("Expected ConnectionException");
   } catch (const ConnectionException &exc) {
     CHECK(exc.error() == ConnectionError::InvalidState);
@@ -799,8 +946,6 @@ TEST_CASE("release_throws_when_inflight_zero", "[connection]") {
 
 //  ClientHandler (Module 24)
 //
-
-#if !defined(_WIN32)
 
 TEST_CASE("client_handler_run_with_connection_pointer", "[connection]") {
   BrokerConfig cfg = make_handler_test_config();
@@ -826,13 +971,11 @@ TEST_CASE("client_handler_connect_ping_disconnect_roundtrip", "[connection]") {
   broker.startup();
 
   SocketPair sockets = make_socket_pair();
-  set_recv_timeout(sockets.client_fd, 1500U);
+  set_recv_timeout(sockets.client_fd, 3000U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, make_connect_frame("client-1", 10U));
@@ -846,7 +989,42 @@ TEST_CASE("client_handler_connect_ping_disconnect_roundtrip", "[connection]") {
   CHECK(packet_type_nibble(pingresp) == 13U);
 
   write_all(sockets.client_fd, make_disconnect_frame());
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
+
+  worker.join();
+  broker.shutdown();
+}
+
+TEST_CASE("client_handler_connect_timeout_then_partial_connect_succeeds",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  SocketPair sockets = make_socket_pair();
+  set_recv_timeout(sockets.client_fd, 3000U);
+
+  ClientHandler handler;
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(180));
+
+  const WriteBuffer connect_frame = make_connect_frame("client-partial", 10U);
+  REQUIRE(connect_frame.size() > 2U);
+  std::vector<uint8_t> first_part(connect_frame.begin(), connect_frame.begin() + 2);
+  std::vector<uint8_t> second_part(connect_frame.begin() + 2, connect_frame.end());
+  write_all(sockets.client_fd, first_part);
+  std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  write_all(sockets.client_fd, second_part);
+
+  const std::vector<uint8_t> connack = read_some(sockets.client_fd, 512U);
+  CHECK_FALSE(connack.empty());
+  CHECK(packet_type_nibble(connack) == 2U);
+
+  write_all(sockets.client_fd, make_disconnect_frame());
+  close_socket_handle(sockets.client_fd);
 
   worker.join();
   broker.shutdown();
@@ -861,10 +1039,8 @@ TEST_CASE("client_handler_subscribe_unsubscribe_and_publish", "[connection]") {
   set_recv_timeout(sockets.client_fd, 1500U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, make_connect_frame("client-2", 10U));
@@ -885,7 +1061,7 @@ TEST_CASE("client_handler_subscribe_unsubscribe_and_publish", "[connection]") {
   CHECK(packet_type_nibble(unsuback) == 11U);
 
   write_all(sockets.client_fd, make_disconnect_frame());
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
 
   worker.join();
   broker.shutdown();
@@ -900,10 +1076,8 @@ TEST_CASE("client_handler_rejects_non_connect_first_packet", "[connection]") {
   set_recv_timeout(sockets.client_fd, 1500U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, make_pingreq_frame());
@@ -911,7 +1085,7 @@ TEST_CASE("client_handler_rejects_non_connect_first_packet", "[connection]") {
   CHECK_FALSE(connack.empty());
   CHECK(packet_type_nibble(connack) == 2U);
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
@@ -927,10 +1101,8 @@ TEST_CASE("client_handler_keep_alive_timeout_emits_disconnect", "[connection]") 
   set_recv_timeout(sockets.client_fd, 3000U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, make_connect_frame("client-3", 1U));
@@ -940,7 +1112,7 @@ TEST_CASE("client_handler_keep_alive_timeout_emits_disconnect", "[connection]") 
   CHECK_FALSE(disconnect.empty());
   CHECK(packet_type_nibble(disconnect) == 14U);
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
@@ -958,10 +1130,8 @@ TEST_CASE("client_handler_server_keep_alive_override_emits_disconnect",
   set_recv_timeout(sockets.client_fd, 3000U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, make_connect_frame("client-3-override", 60U));
@@ -971,12 +1141,12 @@ TEST_CASE("client_handler_server_keep_alive_override_emits_disconnect",
   CHECK_FALSE(disconnect.empty());
   CHECK(packet_type_nibble(disconnect) == 14U);
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
 
-TEST_CASE("client_handler_connect_malformed_packet_returns_protocol_error_connack",
+TEST_CASE("client_handler_connect_malformed_packet_returns_malformed_packet_connack",
           "[connection]") {
   BrokerConfig cfg = make_handler_test_config();
   Broker broker(cfg);
@@ -986,10 +1156,8 @@ TEST_CASE("client_handler_connect_malformed_packet_returns_protocol_error_connac
   set_recv_timeout(sockets.client_fd, 1500U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, malformed_connect_frame());
@@ -997,7 +1165,10 @@ TEST_CASE("client_handler_connect_malformed_packet_returns_protocol_error_connac
   CHECK_FALSE(connack.empty());
   CHECK(packet_type_nibble(connack) == 2U);
 
-  ::close(sockets.client_fd);
+  const ConnackPacket connack_packet = decode_connack_packet_or_fail(connack);
+  CHECK(connack_packet.reason_code == ReasonCode::MalformedPacket);
+
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
@@ -1012,10 +1183,8 @@ TEST_CASE("client_handler_runtime_malformed_packet_returns_disconnect",
   set_recv_timeout(sockets.client_fd, 1500U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, make_connect_frame("client-4", 10U));
@@ -1027,7 +1196,10 @@ TEST_CASE("client_handler_runtime_malformed_packet_returns_disconnect",
   CHECK_FALSE(disconnect.empty());
   CHECK(packet_type_nibble(disconnect) == 14U);
 
-  ::close(sockets.client_fd);
+  const DisconnectPacket disconnect_packet = decode_disconnect_packet_or_fail(disconnect);
+  CHECK(disconnect_packet.reason_code == ReasonCode::MalformedPacket);
+
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
@@ -1042,16 +1214,14 @@ TEST_CASE("client_handler_abrupt_socket_close_is_connection_lost_path",
   set_recv_timeout(sockets.client_fd, 1500U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, make_connect_frame("client-5", 10U));
   (void)read_some(sockets.client_fd, 512U); // CONNACK
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
@@ -1065,17 +1235,15 @@ TEST_CASE("client_handler_disconnect_with_expiry_override", "[connection]") {
   set_recv_timeout(sockets.client_fd, 1500U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, make_connect_frame("client-6", 10U));
   (void)read_some(sockets.client_fd, 512U); // CONNACK
 
   write_all(sockets.client_fd, make_disconnect_with_expiry_frame(42U));
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
 
   worker.join();
   broker.shutdown();
@@ -1091,10 +1259,8 @@ TEST_CASE("client_handler_second_connect_triggers_protocol_disconnect",
   set_recv_timeout(sockets.client_fd, 1500U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, make_connect_frame("client-8", 10U));
@@ -1105,7 +1271,7 @@ TEST_CASE("client_handler_second_connect_triggers_protocol_disconnect",
   CHECK_FALSE(disconnect.empty());
   CHECK(packet_type_nibble(disconnect) == 14U);
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
@@ -1120,10 +1286,8 @@ TEST_CASE("client_handler_second_connect_with_problem_information_includes_reaso
   set_recv_timeout(sockets.client_fd, 1500U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd,
@@ -1139,7 +1303,7 @@ TEST_CASE("client_handler_second_connect_with_problem_information_includes_reaso
   CHECK(disconnect_packet.reason_code == ReasonCode::ProtocolError);
   CHECK(has_reason_string_property(disconnect_packet));
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
@@ -1154,10 +1318,8 @@ TEST_CASE("client_handler_second_connect_with_problem_information_off_omits_reas
   set_recv_timeout(sockets.client_fd, 1500U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd,
@@ -1173,7 +1335,7 @@ TEST_CASE("client_handler_second_connect_with_problem_information_off_omits_reas
   CHECK(disconnect_packet.reason_code == ReasonCode::ProtocolError);
   CHECK_FALSE(has_reason_string_property(disconnect_packet));
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
@@ -1188,10 +1350,8 @@ TEST_CASE("client_handler_disconnect_expiry_increase_from_zero_returns_protocol_
   set_recv_timeout(sockets.client_fd, 1500U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(
@@ -1207,7 +1367,7 @@ TEST_CASE("client_handler_disconnect_expiry_increase_from_zero_returns_protocol_
   const DisconnectPacket disconnect_packet = decode_disconnect_packet_or_fail(disconnect);
   CHECK(disconnect_packet.reason_code == ReasonCode::ProtocolError);
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
@@ -1222,10 +1382,8 @@ TEST_CASE("client_handler_pingresp_packet_hits_default_protocol_error",
   set_recv_timeout(sockets.client_fd, 1500U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, make_connect_frame("client-9", 10U));
@@ -1239,7 +1397,7 @@ TEST_CASE("client_handler_pingresp_packet_hits_default_protocol_error",
   CHECK_FALSE(disconnect.empty());
   CHECK(packet_type_nibble(disconnect) == 14U);
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
@@ -1254,10 +1412,8 @@ TEST_CASE("client_handler_runtime_connack_packet_hits_default_protocol_error",
   set_recv_timeout(sockets.client_fd, 1500U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, make_connect_frame("client-10", 10U));
@@ -1268,7 +1424,61 @@ TEST_CASE("client_handler_runtime_connack_packet_hits_default_protocol_error",
   CHECK_FALSE(disconnect.empty());
   CHECK(packet_type_nibble(disconnect) == 14U);
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
+  worker.join();
+  broker.shutdown();
+}
+
+TEST_CASE("client_handler_runtime_suback_packet_hits_default_protocol_error",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  SocketPair sockets = make_socket_pair();
+  set_recv_timeout(sockets.client_fd, 1500U);
+
+  ClientHandler handler;
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
+  });
+
+  write_all(sockets.client_fd, make_connect_frame("client-10-suback", 10U));
+  (void)read_some(sockets.client_fd, 512U); // CONNACK
+
+  write_all(sockets.client_fd, make_suback_frame(55U));
+  const std::vector<uint8_t> disconnect = read_some(sockets.client_fd, 512U);
+  CHECK_FALSE(disconnect.empty());
+  CHECK(packet_type_nibble(disconnect) == 14U);
+
+  close_socket_handle(sockets.client_fd);
+  worker.join();
+  broker.shutdown();
+}
+
+TEST_CASE("client_handler_runtime_unsuback_packet_hits_default_protocol_error",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  SocketPair sockets = make_socket_pair();
+  set_recv_timeout(sockets.client_fd, 1500U);
+
+  ClientHandler handler;
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
+  });
+
+  write_all(sockets.client_fd, make_connect_frame("client-10-unsuback", 10U));
+  (void)read_some(sockets.client_fd, 512U); // CONNACK
+
+  write_all(sockets.client_fd, make_unsuback_frame(56U));
+  const std::vector<uint8_t> disconnect = read_some(sockets.client_fd, 512U);
+  CHECK_FALSE(disconnect.empty());
+  CHECK(packet_type_nibble(disconnect) == 14U);
+
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
@@ -1283,10 +1493,8 @@ TEST_CASE("client_handler_websocket_upgrade_connect_and_disconnect",
   set_recv_timeout(sockets.client_fd, 2000U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, true);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, true);
   });
 
   write_all(sockets.client_fd, make_valid_upgrade_request());
@@ -1305,7 +1513,7 @@ TEST_CASE("client_handler_websocket_upgrade_connect_and_disconnect",
   const WriteBuffer disconnect_frame = make_disconnect_frame();
   write_all(sockets.client_fd, make_masked_ws_binary_frame(disconnect_frame));
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
@@ -1320,17 +1528,15 @@ TEST_CASE("client_handler_websocket_invalid_upgrade_closes_connection",
   set_recv_timeout(sockets.client_fd, 1000U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, true);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, true);
   });
 
   write_all(sockets.client_fd, make_invalid_upgrade_request());
   const std::vector<uint8_t> response = read_some(sockets.client_fd, 1024U);
   CHECK(response.empty());
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
@@ -1345,10 +1551,8 @@ TEST_CASE("client_handler_websocket_rejects_non_connect_first_packet",
   set_recv_timeout(sockets.client_fd, 2000U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, true);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, true);
   });
 
   write_all(sockets.client_fd, make_valid_upgrade_request());
@@ -1365,7 +1569,7 @@ TEST_CASE("client_handler_websocket_rejects_non_connect_first_packet",
   CHECK_FALSE(connack_payload.empty());
   CHECK(packet_type_nibble(connack_payload) == 2U);
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
@@ -1383,10 +1587,8 @@ TEST_CASE("client_handler_enhanced_auth_connect_flow", "[connection]") {
   set_recv_timeout(sockets.client_fd, 2000U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, make_enhanced_connect_frame("auth-client", "PLAIN"));
@@ -1402,7 +1604,37 @@ TEST_CASE("client_handler_enhanced_auth_connect_flow", "[connection]") {
   CHECK(packet_type_nibble(connack) == 2U);
 
   write_all(sockets.client_fd, make_disconnect_frame());
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
+
+  worker.join();
+  broker.shutdown();
+}
+
+TEST_CASE("client_handler_enhanced_auth_timeout_then_close_aborts_handshake",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+  cfg.allow_anonymous = false;
+  cfg.password_credentials = {
+      {.username = "auth-user", .password = "auth-pass"}};
+
+  Broker broker(cfg);
+  broker.startup();
+
+  SocketPair sockets = make_socket_pair();
+  set_recv_timeout(sockets.client_fd, 2000U);
+
+  ClientHandler handler;
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
+  });
+
+  write_all(sockets.client_fd, make_enhanced_connect_frame("auth-timeout", "PLAIN"));
+  const std::vector<uint8_t> auth_challenge = read_some(sockets.client_fd, 512U);
+  CHECK_FALSE(auth_challenge.empty());
+  CHECK(packet_type_nibble(auth_challenge) == 15U);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(180));
+  close_socket_handle(sockets.client_fd);
 
   worker.join();
   broker.shutdown();
@@ -1417,10 +1649,8 @@ TEST_CASE("client_handler_inbound_qos2_publish_rel_flow", "[connection]") {
   set_recv_timeout(sockets.client_fd, 2000U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, make_connect_frame("client-7", 10U));
@@ -1437,7 +1667,7 @@ TEST_CASE("client_handler_inbound_qos2_publish_rel_flow", "[connection]") {
   CHECK(packet_type_nibble(pubcomp) == 7U);
 
   write_all(sockets.client_fd, make_disconnect_frame());
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
 
   worker.join();
   broker.shutdown();
@@ -1456,10 +1686,8 @@ TEST_CASE("client_handler_connect_auth_failure_returns_error_connack",
   set_recv_timeout(sockets.client_fd, 2000U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd,
@@ -1468,7 +1696,7 @@ TEST_CASE("client_handler_connect_auth_failure_returns_error_connack",
   CHECK_FALSE(connack.empty());
   CHECK(packet_type_nibble(connack) == 2U);
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
@@ -1486,10 +1714,8 @@ TEST_CASE("client_handler_enhanced_auth_wrong_packet_fails_handshake",
   set_recv_timeout(sockets.client_fd, 2000U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, make_enhanced_connect_frame("auth-wrong", "PLAIN"));
@@ -1502,8 +1728,100 @@ TEST_CASE("client_handler_enhanced_auth_wrong_packet_fails_handshake",
   CHECK_FALSE(connack.empty());
   CHECK(packet_type_nibble(connack) == 2U);
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
   worker.join();
+  broker.shutdown();
+}
+
+TEST_CASE("client_handler_enhanced_auth_malformed_packet_fails_handshake",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+  cfg.allow_anonymous = false;
+  cfg.password_credentials = {{.username = "u2", .password = "p2"}};
+
+  Broker broker(cfg);
+  broker.startup();
+
+  SocketPair sockets = make_socket_pair();
+  set_recv_timeout(sockets.client_fd, 2000U);
+
+  ClientHandler handler;
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
+  });
+
+  write_all(sockets.client_fd, make_enhanced_connect_frame("auth-malformed", "PLAIN"));
+  const std::vector<uint8_t> auth_packet = read_some(sockets.client_fd, 512U);
+  CHECK_FALSE(auth_packet.empty());
+  CHECK(packet_type_nibble(auth_packet) == 15U);
+
+  write_all(sockets.client_fd, malformed_runtime_frame());
+  const std::vector<uint8_t> connack = read_nonempty_with_retries(sockets.client_fd, 512U, 8);
+  CHECK_FALSE(connack.empty());
+  CHECK(packet_type_nibble(connack) == 2U);
+
+  const ConnackPacket connack_packet = decode_connack_packet_or_fail(connack);
+  CHECK(connack_packet.reason_code == ReasonCode::MalformedPacket);
+
+  close_socket_handle(sockets.client_fd);
+  worker.join();
+  broker.shutdown();
+}
+
+TEST_CASE("client_handler_persistent_reconnect_sets_session_present",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  {
+    SocketPair first_connection = make_socket_pair();
+    set_recv_timeout(first_connection.client_fd, 1500U);
+
+    ClientHandler first_handler;
+    std::thread first_worker([&first_handler, &broker, &cfg, server_connection = std::move(first_connection.server_connection)]() mutable {
+      first_handler.run(std::move(server_connection), broker, cfg, false);
+    });
+
+    write_all(first_connection.client_fd,
+              make_connect_with_flags_frame("persistent-client", 10U,
+                                            std::nullopt, 120U, false));
+    const std::vector<uint8_t> first_connack =
+        read_some(first_connection.client_fd, 512U);
+    CHECK_FALSE(first_connack.empty());
+    CHECK(packet_type_nibble(first_connack) == 2U);
+
+    write_all(first_connection.client_fd,
+              make_disconnect_with_expiry_frame(120U));
+    close_socket_handle(first_connection.client_fd);
+    first_worker.join();
+  }
+
+  {
+    SocketPair second_connection = make_socket_pair();
+    set_recv_timeout(second_connection.client_fd, 1500U);
+
+    ClientHandler second_handler;
+    std::thread second_worker([&second_handler, &broker, &cfg, server_connection = std::move(second_connection.server_connection)]() mutable {
+      second_handler.run(std::move(server_connection), broker, cfg, false);
+    });
+
+    write_all(second_connection.client_fd,
+              make_connect_with_flags_frame("persistent-client", 10U,
+                                            std::nullopt, 120U, false));
+    const std::vector<uint8_t> second_connack =
+        read_some(second_connection.client_fd, 512U);
+    CHECK_FALSE(second_connack.empty());
+    CHECK(packet_type_nibble(second_connack) == 2U);
+
+    const ConnackPacket connack_packet = decode_connack_packet_or_fail(second_connack);
+    CHECK(connack_packet.session_present);
+
+    write_all(second_connection.client_fd, make_disconnect_frame());
+    close_socket_handle(second_connection.client_fd);
+    second_worker.join();
+  }
+
   broker.shutdown();
 }
 
@@ -1520,10 +1838,8 @@ TEST_CASE("client_handler_auth_packet_after_connect_handles_invalid_reauth_witho
   set_recv_timeout(sockets.client_fd, 2000U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, make_connect_with_credentials_frame("auth-runtime",
@@ -1539,11 +1855,116 @@ TEST_CASE("client_handler_auth_packet_after_connect_handles_invalid_reauth_witho
   CHECK_FALSE(disconnect.empty());
   CHECK(packet_type_nibble(disconnect) == 14U);
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
 
+TEST_CASE("client_handler_runtime_auth_failure_disconnects_cleanly",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+  cfg.allow_anonymous = false;
+  cfg.password_credentials = {{.username = "u4", .password = "p4"}};
+
+  Broker broker(cfg);
+  broker.startup();
+
+  SocketPair sockets = make_socket_pair();
+  set_recv_timeout(sockets.client_fd, 2000U);
+
+  ClientHandler handler;
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
+  });
+
+  write_all(sockets.client_fd, make_enhanced_connect_frame("auth-runtime-failure", "PLAIN"));
+  (void)read_some(sockets.client_fd, 512U); // AUTH challenge
+
+  write_all(sockets.client_fd,
+            make_auth_frame("PLAIN", "u4:p4",
+                            ReasonCode::ContinueAuthentication));
+  const std::vector<uint8_t> connack = read_some(sockets.client_fd, 512U);
+  CHECK_FALSE(connack.empty());
+  CHECK(packet_type_nibble(connack) == 2U);
+
+  write_all(sockets.client_fd,
+            [&]() {
+              AuthPacket reauth_start;
+              reauth_start.reason_code = ReasonCode::ReAuthenticate;
+              reauth_start.properties.push_back(
+                  Property{.id = PropertyId::AuthenticationMethod,
+                           .value = Utf8String{"PLAIN"}});
+              WriteBuffer frame;
+              encode_auth(frame, reauth_start);
+              return frame;
+            }());
+  const std::vector<uint8_t> reauth_challenge =
+      read_nonempty_with_retries(sockets.client_fd, 512U, 8);
+  CHECK_FALSE(reauth_challenge.empty());
+  CHECK(packet_type_nibble(reauth_challenge) == 15U);
+
+  write_all(sockets.client_fd,
+            make_auth_frame("PLAIN", "wrong:credentials",
+                            ReasonCode::ContinueAuthentication));
+  const std::vector<uint8_t> disconnect =
+      read_nonempty_with_retries(sockets.client_fd, 512U, 8);
+
+  close_socket_handle(sockets.client_fd);
+  worker.join();
+  broker.shutdown();
+
+  CHECK_FALSE(disconnect.empty());
+  CHECK(packet_type_nibble(disconnect) == 14U);
+  const DisconnectPacket disconnect_packet =
+      decode_disconnect_packet_or_fail(disconnect);
+  CHECK(disconnect_packet.reason_code == ReasonCode::BadUserNameOrPassword);
+}
+
+TEST_CASE("client_handler_runtime_reauthenticate_failure_disconnects_cleanly",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+  cfg.allow_anonymous = false;
+  cfg.password_credentials = {{.username = "u5", .password = "p5"}};
+
+  Broker broker(cfg);
+  broker.startup();
+
+  SocketPair sockets = make_socket_pair();
+  set_recv_timeout(sockets.client_fd, 2000U);
+
+  ClientHandler handler;
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
+  });
+
+  write_all(sockets.client_fd,
+            make_enhanced_connect_frame("auth-runtime-reauth", "PLAIN"));
+  (void)read_some(sockets.client_fd, 512U); // AUTH challenge
+
+  write_all(sockets.client_fd,
+            make_auth_frame("PLAIN", "u5:p5",
+                            ReasonCode::ContinueAuthentication));
+  const std::vector<uint8_t> connack = read_some(sockets.client_fd, 512U);
+  CHECK_FALSE(connack.empty());
+  CHECK(packet_type_nibble(connack) == 2U);
+
+  write_all(sockets.client_fd,
+        make_auth_frame("SCRAM", "wrong:credentials",
+                            ReasonCode::ReAuthenticate));
+  const std::vector<uint8_t> disconnect =
+      read_nonempty_with_retries(sockets.client_fd, 512U, 8);
+  CHECK_FALSE(disconnect.empty());
+  CHECK(packet_type_nibble(disconnect) == 14U);
+  const DisconnectPacket disconnect_packet =
+      decode_disconnect_packet_or_fail(disconnect);
+  CHECK(disconnect_packet.reason_code == ReasonCode::ProtocolError);
+
+  close_socket_handle(sockets.client_fd);
+  worker.join();
+  broker.shutdown();
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("client_handler_outbound_qos2_ack_flow_exercises_pubrec_and_pubcomp",
           "[connection]") {
   BrokerConfig cfg = make_handler_test_config();
@@ -1554,10 +1975,8 @@ TEST_CASE("client_handler_outbound_qos2_ack_flow_exercises_pubrec_and_pubcomp",
   set_recv_timeout(sockets.client_fd, 1500U);
 
   ClientHandler handler;
-  std::thread worker([&handler, &broker, &cfg, server_fd = sockets.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(sockets.client_fd, make_connect_frame("client-qos2-out", 10U));
@@ -1567,18 +1986,31 @@ TEST_CASE("client_handler_outbound_qos2_ack_flow_exercises_pubrec_and_pubcomp",
   const std::vector<uint8_t> suback = read_some(sockets.client_fd, 512U);
   CHECK_FALSE(suback.empty());
   CHECK(packet_type_nibble(suback) == 9U);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
+  StreamBuffer response_stream;
   write_all(sockets.client_fd, make_publish_qos2_frame(21U));
   const std::vector<uint8_t> inbound_pubrec = read_some(sockets.client_fd, 512U);
   CHECK_FALSE(inbound_pubrec.empty());
-  CHECK(packet_type_nibble(inbound_pubrec) == 5U);
+  response_stream.append(inbound_pubrec);
+  bool seen_initial_pubrec = false;
+  std::optional<uint16_t> outbound_packet_id;
+  while (response_stream.has_complete_packet()) {
+    const std::vector<uint8_t> frame = response_stream.consume_packet();
+    const uint8_t packet_type = packet_type_nibble(frame);
+    if (packet_type == 5U) {
+      seen_initial_pubrec = true;
+    }
+    if (packet_type == 3U) {
+      outbound_packet_id = decode_publish_packet_id(frame);
+    }
+  }
+  CHECK(seen_initial_pubrec);
 
   write_all(sockets.client_fd, make_pubrel_frame(21U));
   bool seen_inbound_pubcomp = false;
-  std::optional<uint16_t> outbound_packet_id;
-  StreamBuffer response_stream;
   int empty_reads = 0;
-  while (empty_reads < 8 &&
+  while (empty_reads < 20 &&
          (!seen_inbound_pubcomp || !outbound_packet_id.has_value())) {
     const std::vector<uint8_t> chunk = read_some(sockets.client_fd, 1024U);
     if (chunk.empty()) {
@@ -1607,7 +2039,7 @@ TEST_CASE("client_handler_outbound_qos2_ack_flow_exercises_pubrec_and_pubcomp",
   CHECK_FALSE(outbound_pubrel.empty());
   CHECK(packet_type_nibble(outbound_pubrel) == 6U);
 
-  ::close(sockets.client_fd);
+  close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
 }
@@ -1624,15 +2056,11 @@ TEST_CASE("client_handler_session_takeover_executes_close_callback",
   set_recv_timeout(second.client_fd, 2000U);
 
   ClientHandler handler;
-  std::thread worker_one([&handler, &broker, &cfg, server_fd = first.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker_one([&handler, &broker, &cfg, server_connection = std::move(first.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
-  std::thread worker_two([&handler, &broker, &cfg, server_fd = second.server_fd] {
-    auto conn = std::make_unique<TcpConnection>(
-        static_cast<SocketHandle>(server_fd));
-    handler.run(std::move(conn), broker, cfg, false);
+  std::thread worker_two([&handler, &broker, &cfg, server_connection = std::move(second.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
   });
 
   write_all(first.client_fd, make_connect_frame("same-client", 10U));
@@ -1651,14 +2079,13 @@ TEST_CASE("client_handler_session_takeover_executes_close_callback",
         static_cast<uint8_t>(ReasonCode::SessionTakenOver));
 
   write_all(second.client_fd, make_disconnect_frame());
-  ::close(first.client_fd);
-  ::close(second.client_fd);
+  close_socket_handle(first.client_fd);
+  close_socket_handle(second.client_fd);
 
   worker_one.join();
   worker_two.join();
   broker.shutdown();
 }
 
-#endif
-
 } // namespace mqtt
+

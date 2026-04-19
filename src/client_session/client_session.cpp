@@ -17,7 +17,7 @@ ClientSession::ClientSession(
     InflightStore &inflight_store, uint16_t keep_alive_seconds,
     uint16_t receive_maximum, uint16_t topic_alias_maximum,
     std::chrono::steady_clock::duration retransmit_timeout,
-    uint32_t maximum_packet_size)
+  uint32_t maximum_packet_size, std::string negotiated_auth_method)
     : client_id_(std::move(client_id)), username_(std::move(username)),
       outbound_queue_(std::move(outbound_queue)), packet_id_manager_(),
       qos1_state_machine_(client_id_, packet_id_manager_, inflight_store),
@@ -33,6 +33,8 @@ ClientSession::ClientSession(
         "ClientSession: outbound_queue must not be null");
   }
   connection_state_machine_.on_connect();
+  enhanced_auth_handler_.bootstrap_connected_session(
+      std::move(negotiated_auth_method));
 }
 
 AuthResult ClientSession::initiate_auth(const ConnectPacket &connect_packet) {

@@ -145,6 +145,19 @@ public:
    */
   [[nodiscard]] EnhancedAuthState state() const noexcept;
 
+  /**
+   * @brief Mark handler as connected with an already negotiated auth method.
+   *
+   * Used by runtime session code after CONNECT/Auth handshake already finished
+   * in the broker phase. This enables valid AUTH(ReAuthenticate) handling in
+   * connected-session flow.
+   *
+   * @param auth_method Negotiated enhanced auth method. Empty value leaves
+   *        handler unchanged.
+   * @throws AuthException(InvalidState) if called after state has advanced.
+   */
+  void bootstrap_connected_session(std::string auth_method);
+
 private:
   /**
    * @brief Extract the UTF-8 Authentication Method from a property list.

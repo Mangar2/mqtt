@@ -86,7 +86,6 @@ void CrashSafeFile::write(const std::vector<uint8_t> &records,
                                "Cannot open temp file for writing: " +
                                    tmp_path.string());
   }
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   out.write(reinterpret_cast<const char *>(buf.data()),
             static_cast<std::streamsize>(buf.size()));
   if (!out) {
@@ -139,7 +138,6 @@ CrashSafeFile::try_read(const std::filesystem::path &path) {
   inp.seekg(0, std::ios::beg);
 
   std::vector<uint8_t> raw(file_size);
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   inp.read(reinterpret_cast<char *>(raw.data()),
            static_cast<std::streamsize>(file_size));
   if (!inp) {

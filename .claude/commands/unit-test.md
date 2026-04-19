@@ -71,6 +71,8 @@ python test/run_coverage.py --scope src/<module>/
 - Use `CHECK` by default — including for `constexpr` functions. `STATIC_CHECK` is only for cases where compile-time evaluability is itself the property under test (rare). `STATIC_CHECK` generates zero runtime coverage.
 - Do not test implementation details — test observable behaviour.
 - Never mark a test `[!shouldfail]`, skip it, or comment it out to make the build green.
+- Ensure full test coverage vor all platforms (windows, linux, mac-os, ...), always. 
+- Dont create giant test files 500 lines ok, more than 700 lines forbidden. Immediately refactor test files that are this large to several test files.
 
 ## Exception testing with `[[nodiscard]]` functions
 

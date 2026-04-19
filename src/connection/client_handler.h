@@ -6,6 +6,7 @@
  */
 
 #include <memory>
+#include <chrono>
 
 namespace mqtt {
 
@@ -32,6 +33,9 @@ public:
    */
   void run(std::unique_ptr<TcpConnection> conn, Broker &broker,
            const BrokerConfig &config, bool is_ws);
+
+private:
+  std::chrono::steady_clock::time_point last_run_started_;
 };
 
 } // namespace mqtt

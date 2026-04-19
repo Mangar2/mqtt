@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 
@@ -24,6 +25,11 @@ void ConnectionManager::start() {
   std::lock_guard<std::mutex> lock_guard(lifecycle_mutex_);
   if (running_.load()) {
     return;
+  }
+
+  if (mqtt_port_ != 0U && ws_port_ != 0U && mqtt_port_ == ws_port_) {
+    throw std::runtime_error(
+        "ConnectionManager requires distinct MQTT and WebSocket ports");
   }
 
   running_.store(true);

@@ -160,11 +160,10 @@ TEST_CASE("connection_manager_start_idempotent", "[connection]") {
 }
 
 TEST_CASE("connection_manager_start_failure_resets_running", "[connection]") {
-  TcpListener occupied_listener = TcpListener::listen(0U);
-  const uint16_t occupied_port = occupied_listener.port();
+  const uint16_t shared_port = allocate_unused_port();
 
   ConnectionManager manager(
-      occupied_port, 0U,
+      shared_port, shared_port,
       [](std::unique_ptr<TcpConnection> connection, bool is_ws) {
         (void)connection;
         (void)is_ws;
@@ -172,8 +171,6 @@ TEST_CASE("connection_manager_start_failure_resets_running", "[connection]") {
 
   CHECK_THROWS(manager.start());
   CHECK_FALSE(manager.is_running());
-
-  occupied_listener.close();
 }
 
 TEST_CASE("connection_manager_stop_timeout_requests_socket_shutdown",
