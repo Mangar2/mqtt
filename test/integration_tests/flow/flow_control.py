@@ -83,22 +83,6 @@ def _start_isolated_broker(overrides: dict[str, object] | None = None):
     return "127.0.0.1", int(effective_overrides["network.mqtt_port"]), process
 
 
-def _encode_variable_byte_integer(value: int) -> bytes:
-    if value < 0:
-        raise ValueError("value must be non-negative")
-    encoded = bytearray()
-    remaining = value
-    while True:
-        current = remaining % 128
-        remaining //= 128
-        if remaining > 0:
-            current |= 0x80
-        encoded.append(current)
-        if remaining == 0:
-            break
-    return bytes(encoded)
-
-
 def _encode_connect_properties(*, receive_maximum: int | None = None, maximum_packet_size: int | None = None) -> bytes:
     encoded = bytearray()
     if receive_maximum is not None:
