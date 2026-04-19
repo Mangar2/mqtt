@@ -201,7 +201,8 @@ public:
     }
 
     const std::vector<Property> auth_properties =
-        build_auth_properties({}, auth_result.auth_data, false);
+      build_auth_properties(context_.client_session.negotiated_auth_method(),
+                  auth_result.auth_data, true);
     enqueue_frame(context_.write_queue,
                   encode_auth_packet(auth_result.reason_code,
                                      auth_properties),

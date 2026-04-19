@@ -203,6 +203,10 @@ std::string_view ClientSession::client_id() const noexcept {
 
 std::string_view ClientSession::username() const noexcept { return username_; }
 
+std::string_view ClientSession::negotiated_auth_method() const noexcept {
+  return enhanced_auth_handler_.auth_method();
+}
+
 ReceiveMaximum &ClientSession::receive_maximum() noexcept {
   return receive_maximum_;
 }

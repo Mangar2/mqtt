@@ -153,6 +153,9 @@ public:
   /** @brief Return authenticated username. */
   [[nodiscard]] std::string_view username() const noexcept;
 
+  /** @brief Return negotiated enhanced Authentication Method token. */
+  [[nodiscard]] std::string_view negotiated_auth_method() const noexcept;
+
   /** @brief Return per-session receive-maximum controller. */
   [[nodiscard]] ReceiveMaximum &receive_maximum() noexcept;
 

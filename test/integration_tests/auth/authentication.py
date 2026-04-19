@@ -36,6 +36,11 @@ encode_variable_byte_integer = _raw_tcp_module.encode_variable_byte_integer
 
 _AUTH_METHOD_PROPERTY_ID = 0x15
 _AUTH_DATA_PROPERTY_ID = 0x16
+_USER_PROPERTY_ID = 0x26
+_REASON_STRING_PROPERTY_ID = 0x1F
+
+_AUTH_USERNAME = "enhanced-user"
+_AUTH_PASSWORD = "enhanced-pass"
 
 
 def _unique_client_id(prefix: str) -> str:
@@ -171,30 +176,63 @@ def _parse_properties(buffer_bytes: bytes) -> dict[int, object]:
     properties: dict[int, object] = {}
     index = 0
 
+    def _read_utf8(start_index: int) -> tuple[str, int]:
+        if start_index + 2 > len(buffer_bytes):
+            raise RuntimeError("truncated UTF-8 property length")
+        string_length = int.from_bytes(buffer_bytes[start_index:start_index + 2], byteorder="big")
+        value_start = start_index + 2
+        value_end = value_start + string_length
+        if value_end > len(buffer_bytes):
+            raise RuntimeError("truncated UTF-8 property value")
+        return buffer_bytes[value_start:value_end].decode("utf-8"), value_end
+
+    def _read_binary(start_index: int) -> tuple[bytes, int]:
+        if start_index + 2 > len(buffer_bytes):
+            raise RuntimeError("truncated binary property length")
+        binary_length = int.from_bytes(buffer_bytes[start_index:start_index + 2], byteorder="big")
+        value_start = start_index + 2
+        value_end = value_start + binary_length
+        if value_end > len(buffer_bytes):
+            raise RuntimeError("truncated binary property value")
+        return bytes(buffer_bytes[value_start:value_end]), value_end
+
+    def _skip_fixed_length(start_index: int, length: int) -> int:
+        value_end = start_index + length
+        if value_end > len(buffer_bytes):
+            raise RuntimeError("truncated fixed-length property value")
+        return value_end
+
     while index < len(buffer_bytes):
         property_id = int(buffer_bytes[index])
         index += 1
 
         if property_id == _AUTH_METHOD_PROPERTY_ID:
-            if index + 2 > len(buffer_bytes):
-                raise RuntimeError("truncated Authentication Method property")
-            string_length = int.from_bytes(buffer_bytes[index:index + 2], byteorder="big")
-            index += 2
-            if index + string_length > len(buffer_bytes):
-                raise RuntimeError("truncated Authentication Method value")
-            properties[property_id] = buffer_bytes[index:index + string_length].decode("utf-8")
-            index += string_length
+            properties[property_id], index = _read_utf8(index)
             continue
 
         if property_id == _AUTH_DATA_PROPERTY_ID:
-            if index + 2 > len(buffer_bytes):
-                raise RuntimeError("truncated Authentication Data property")
-            data_length = int.from_bytes(buffer_bytes[index:index + 2], byteorder="big")
-            index += 2
-            if index + data_length > len(buffer_bytes):
-                raise RuntimeError("truncated Authentication Data value")
-            properties[property_id] = bytes(buffer_bytes[index:index + data_length])
-            index += data_length
+            properties[property_id], index = _read_binary(index)
+            continue
+
+        if property_id in (_REASON_STRING_PROPERTY_ID, 0x12, 0x13, 0x1A, 0x1C):
+            _, index = _read_utf8(index)
+            continue
+
+        if property_id == _USER_PROPERTY_ID:
+            _, index = _read_utf8(index)
+            _, index = _read_utf8(index)
+            continue
+
+        if property_id in (0x11, 0x27):
+            index = _skip_fixed_length(index, 4)
+            continue
+
+        if property_id in (0x21, 0x22, 0x13):
+            index = _skip_fixed_length(index, 2)
+            continue
+
+        if property_id in (0x18, 0x19, 0x24, 0x25, 0x28, 0x29, 0x2A):
+            index = _skip_fixed_length(index, 1)
             continue
 
         raise RuntimeError(f"unsupported property in auth parser: 0x{property_id:02X}")
@@ -338,12 +376,13 @@ def run_10_1_3_missing_required_credentials_connack_0x86(config) -> tuple[bool, 
 
 def run_10_2_1_connect_with_auth_method_uses_auth_packets(config) -> tuple[bool, str]:
     process = None
-    auth_method = "integration-auth"
+    auth_method = "PLAIN"
 
     try:
         host, port, process = _start_isolated_broker(
             {
                 "broker.allow_anonymous": False,
+                "auth.credential": f"{_AUTH_USERNAME}:{_AUTH_PASSWORD}",
             }
         )
 
@@ -352,7 +391,7 @@ def run_10_2_1_connect_with_auth_method_uses_auth_packets(config) -> tuple[bool,
             connect_packet = _build_connect_packet_with_auth(
                 client_id=_unique_client_id("10-2-1"),
                 auth_method=auth_method,
-                auth_data=b"client-initial",
+                auth_data=None,
             )
             tcp_socket.sendall(connect_packet)
 
@@ -375,7 +414,7 @@ def run_10_2_1_connect_with_auth_method_uses_auth_packets(config) -> tuple[bool,
             client_auth = _build_auth_packet(
                 reason_code=0x18,
                 auth_method=auth_method,
-                auth_data=b"client-response",
+                auth_data=f"{_AUTH_USERNAME}:{_AUTH_PASSWORD}".encode("utf-8"),
             )
             tcp_socket.sendall(client_auth)
 
@@ -383,13 +422,16 @@ def run_10_2_1_connect_with_auth_method_uses_auth_packets(config) -> tuple[bool,
                 tcp_socket,
                 config.timeout_seconds,
             )
-            if follow_up_type not in (2, 15):
-                return False, (
-                    "expected CONNACK or AUTH after client AUTH response, "
-                    f"got packet type {follow_up_type}"
-                )
+            if follow_up_type != 2:
+                return False, f"expected CONNACK after AUTH response, got packet type {follow_up_type}"
 
-            return True, "10.2.1 AUTH challenge-response flow observed"
+            connack_reason, connack_properties = _parse_connack(_follow_up_payload)
+            if connack_reason != 0x00:
+                return False, f"expected CONNACK success after AUTH response, got 0x{connack_reason:02X}"
+            if connack_properties.get(_AUTH_METHOD_PROPERTY_ID) != auth_method:
+                return False, "successful CONNACK is missing matching Authentication Method"
+
+            return True, "10.2.1 AUTH challenge-response flow observed and completed"
         finally:
             try:
                 tcp_socket.close()
@@ -403,12 +445,13 @@ def run_10_2_1_connect_with_auth_method_uses_auth_packets(config) -> tuple[bool,
 
 def run_10_2_2_successful_multistep_handshake_connack_success(config) -> tuple[bool, str]:
     process = None
-    auth_method = "integration-auth"
+    auth_method = "PLAIN"
 
     try:
         host, port, process = _start_isolated_broker(
             {
                 "broker.allow_anonymous": False,
+                "auth.credential": f"{_AUTH_USERNAME}:{_AUTH_PASSWORD}",
             }
         )
 
@@ -417,7 +460,7 @@ def run_10_2_2_successful_multistep_handshake_connack_success(config) -> tuple[b
             connect_packet = _build_connect_packet_with_auth(
                 client_id=_unique_client_id("10-2-2"),
                 auth_method=auth_method,
-                auth_data=b"step-0",
+                auth_data=None,
             )
             tcp_socket.sendall(connect_packet)
 
@@ -440,7 +483,7 @@ def run_10_2_2_successful_multistep_handshake_connack_success(config) -> tuple[b
                     client_auth = _build_auth_packet(
                         reason_code=0x18,
                         auth_method=auth_method,
-                        auth_data=f"step-{step_index}".encode("utf-8"),
+                        auth_data=f"{_AUTH_USERNAME}:{_AUTH_PASSWORD}".encode("utf-8"),
                     )
                     tcp_socket.sendall(client_auth)
                     continue
@@ -483,12 +526,13 @@ def run_10_2_2_successful_multistep_handshake_connack_success(config) -> tuple[b
 
 def run_10_2_3_failed_handshake_connack_0x86(config) -> tuple[bool, str]:
     process = None
-    auth_method = "integration-auth"
+    auth_method = "PLAIN"
 
     try:
         host, port, process = _start_isolated_broker(
             {
                 "broker.allow_anonymous": False,
+                "auth.credential": f"{_AUTH_USERNAME}:{_AUTH_PASSWORD}",
             }
         )
 
@@ -497,7 +541,7 @@ def run_10_2_3_failed_handshake_connack_0x86(config) -> tuple[bool, str]:
             connect_packet = _build_connect_packet_with_auth(
                 client_id=_unique_client_id("10-2-3"),
                 auth_method=auth_method,
-                auth_data=b"intentionally-invalid-initial-data",
+                auth_data=None,
             )
             tcp_socket.sendall(connect_packet)
 
@@ -518,7 +562,7 @@ def run_10_2_3_failed_handshake_connack_0x86(config) -> tuple[bool, str]:
                     client_auth = _build_auth_packet(
                         reason_code=0x18,
                         auth_method=auth_method,
-                        auth_data=f"invalid-step-{step_index}".encode("utf-8"),
+                        auth_data=b"invalid-credentials",
                     )
                     tcp_socket.sendall(client_auth)
                     continue
@@ -551,6 +595,7 @@ def run_10_2_4_unknown_authentication_method_connack_0x8c(config) -> tuple[bool,
         host, port, process = _start_isolated_broker(
             {
                 "broker.allow_anonymous": False,
+                "auth.credential": f"{_AUTH_USERNAME}:{_AUTH_PASSWORD}",
             }
         )
 
@@ -595,7 +640,7 @@ def _establish_successful_enhanced_auth_connection(
     connect_packet = _build_connect_packet_with_auth(
         client_id=client_id,
         auth_method=auth_method,
-        auth_data=b"step-0",
+        auth_data=None,
     )
     tcp_socket.sendall(connect_packet)
 
@@ -615,7 +660,7 @@ def _establish_successful_enhanced_auth_connection(
                 _build_auth_packet(
                     reason_code=0x18,
                     auth_method=auth_method,
-                    auth_data=f"step-{step_index}".encode("utf-8"),
+                    auth_data=f"{_AUTH_USERNAME}:{_AUTH_PASSWORD}".encode("utf-8"),
                 )
             )
             continue
@@ -633,12 +678,13 @@ def _establish_successful_enhanced_auth_connection(
 
 def run_10_2_5_reauthentication_during_active_session_success(config) -> tuple[bool, str]:
     process = None
-    auth_method = "integration-auth"
+    auth_method = "PLAIN"
 
     try:
         host, port, process = _start_isolated_broker(
             {
                 "broker.allow_anonymous": False,
+                "auth.credential": f"{_AUTH_USERNAME}:{_AUTH_PASSWORD}",
             }
         )
 
@@ -654,7 +700,7 @@ def run_10_2_5_reauthentication_during_active_session_success(config) -> tuple[b
             reauth_packet = _build_auth_packet(
                 reason_code=0x19,
                 auth_method=auth_method,
-                auth_data=b"reauth-request",
+                auth_data=None,
             )
             tcp_socket.sendall(reauth_packet)
 
@@ -674,6 +720,26 @@ def run_10_2_5_reauthentication_during_active_session_success(config) -> tuple[b
                     f"expected {auth_method!r}, got {server_method!r}",
                 )
 
+            if reason_code == 0x18:
+                tcp_socket.sendall(
+                    _build_auth_packet(
+                        reason_code=0x18,
+                        auth_method=auth_method,
+                        auth_data=f"{_AUTH_USERNAME}:{_AUTH_PASSWORD}".encode("utf-8"),
+                    )
+                )
+                second_packet_type, _second_flags, second_payload = _recv_packet(
+                    tcp_socket,
+                    config.timeout_seconds,
+                )
+                if second_packet_type != 15:
+                    return False, f"expected final AUTH success after re-auth, got packet type {second_packet_type}"
+                final_reason_code, final_properties = _parse_auth(second_payload)
+                if final_reason_code != 0x00:
+                    return False, f"expected final AUTH success 0x00, got 0x{final_reason_code:02X}"
+                if final_properties.get(_AUTH_METHOD_PROPERTY_ID) != auth_method:
+                    return False, "final re-auth AUTH packet has mismatched Authentication Method"
+
             return True, "10.2.5 re-authentication during active session succeeded"
         finally:
             if tcp_socket is not None:
@@ -689,12 +755,13 @@ def run_10_2_5_reauthentication_during_active_session_success(config) -> tuple[b
 
 def run_10_2_6_reauthentication_failure_disconnect(config) -> tuple[bool, str]:
     process = None
-    auth_method = "integration-auth"
+    auth_method = "PLAIN"
 
     try:
         host, port, process = _start_isolated_broker(
             {
                 "broker.allow_anonymous": False,
+                "auth.credential": f"{_AUTH_USERNAME}:{_AUTH_PASSWORD}",
             }
         )
 
@@ -707,18 +774,36 @@ def run_10_2_6_reauthentication_failure_disconnect(config) -> tuple[bool, str]:
                 auth_method,
             )
 
-            failing_reauth_packet = _build_auth_packet(
+            reauth_packet = _build_auth_packet(
                 reason_code=0x19,
-                auth_method=f"{auth_method}-wrong",
-                auth_data=b"reauth-invalid",
+                auth_method=auth_method,
+                auth_data=None,
             )
-            tcp_socket.sendall(failing_reauth_packet)
+            tcp_socket.sendall(reauth_packet)
 
-            packet_type, _packet_flags, payload = _recv_packet(tcp_socket, config.timeout_seconds)
-            if packet_type != 14:
-                return False, f"expected DISCONNECT packet (type 14), got packet type {packet_type}"
+            first_packet_type, _first_flags, first_payload = _recv_packet(tcp_socket, config.timeout_seconds)
+            if first_packet_type != 15:
+                return False, f"expected AUTH challenge after re-auth request, got packet type {first_packet_type}"
 
-            disconnect_reason = _parse_disconnect_reason(payload)
+            first_reason_code, _first_properties = _parse_auth(first_payload)
+            if first_reason_code != 0x18:
+                return False, f"expected AUTH continue 0x18 during failing re-auth, got 0x{first_reason_code:02X}"
+
+            failing_response_packet = _build_auth_packet(
+                reason_code=0x18,
+                auth_method=auth_method,
+                auth_data=b"invalid-reauth-data",
+            )
+            tcp_socket.sendall(failing_response_packet)
+
+            second_packet_type, _second_flags, second_payload = _recv_packet(
+                tcp_socket,
+                config.timeout_seconds,
+            )
+            if second_packet_type != 14:
+                return False, f"expected DISCONNECT packet (type 14), got packet type {second_packet_type}"
+
+            disconnect_reason = _parse_disconnect_reason(second_payload)
             return True, f"10.2.6 re-authentication failure caused DISCONNECT 0x{disconnect_reason:02X}"
         finally:
             if tcp_socket is not None:

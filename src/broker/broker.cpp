@@ -50,6 +50,16 @@ map_session_error_to_reason(SessionManagerError error_code) {
   return ReasonCode::UnspecifiedError;
 }
 
+void append_authentication_method_property(std::vector<Property> &properties,
+                                           std::string_view auth_method) {
+  if (auth_method.empty()) {
+    return;
+  }
+
+  properties.push_back(Property{.id = PropertyId::AuthenticationMethod,
+                                .value = Utf8String{std::string(auth_method)}});
+}
+
 } // namespace
 
 //
@@ -210,6 +220,8 @@ ConnectResult Broker::handle_connect(const ConnectPacket &connect_packet,
     completed.auth_method = std::string(auth_handler.auth_method());
     append_connect_driven_connack_properties(effective_connect,
                                              completed.connack_properties);
+    append_authentication_method_property(completed.connack_properties,
+                                          completed.auth_method);
     if (assigned_client_id.has_value()) {
       completed.connack_properties.push_back(
           Property{.id = PropertyId::AssignedClientIdentifier,
@@ -297,6 +309,8 @@ ConnectResult Broker::handle_auth_packet(std::string_view client_id,
   completed.auth_method = std::string(pending_it->second.handler.auth_method());
   append_connect_driven_connack_properties(pending_it->second.connect_packet,
                                            completed.connack_properties);
+  append_authentication_method_property(completed.connack_properties,
+                                        completed.auth_method);
   if (pending_it->second.assigned_client_id.has_value()) {
     completed.connack_properties.push_back(
         Property{.id = PropertyId::AssignedClientIdentifier,
