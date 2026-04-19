@@ -273,12 +273,13 @@ Callers should poll `Broker::shutdown_requested()` in their main loop and call
 
 #### Subscribe/Unsubscribe/Publish facades (19)
 
-- `handle_subscribe()` validates each topic filter, checks ACL subscribe permissions,
-   stores authorised subscriptions in `SubscriptionStore`, returns one SUBACK reason
-   code per filter, and delegates retained delivery to
-   `MessageRouter::deliver_retained()`.
-- `handle_unsubscribe()` validates each filter, removes it from `SubscriptionStore`,
-   and returns one UNSUBACK reason code per filter.
+- `SubscriptionOrchestrator` (module `subscription_manager/`) encapsulates
+   subscribe/unsubscribe protocol orchestration, including shared subscription
+   parsing (`$share/<group>/<filter>`), per-filter validation, ACL checks,
+   store/dispatcher updates, retained delivery, and protocol-error validation
+   for invalid Subscription Identifier values.
+- `handle_subscribe()` and `handle_unsubscribe()` in `Broker` delegate to
+   `SubscriptionOrchestrator` under the broker mutex.
 - `handle_publish()` wraps inbound publish routing and statistics increments under
    the broker mutex and returns MQTT reason codes for inbound QoS acknowledgements:
    `Success`, `NoMatchingSubscribers`, or `NotAuthorized`.

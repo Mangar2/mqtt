@@ -19,8 +19,9 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `session_manager/`  | 10       | Session Manager — session lifecycle controller (create/resume/discard), session takeover handler (Client ID collision, Reason 0x8E), and session expiry scheduler. Depends on `store/`, `connection/`, `auth/`. |
 | `will_manager/`     | 11       | Will Manager — will store, will-delay timer, and will publisher. Stores Will Messages on connect, suppresses them on normal disconnect, and publishes them (with optional delay) on connection loss or session expiry. Depends on `data_model/`, `store/`, `session_manager/`. |
 | `transport/`        | 14.2     | Transport Extensions — WebSocket HTTP upgrade handshake, WebSocket frame encoder/decoder, and MQTT payload extraction from binary frames. **Module 14.1 (TLS) is not implemented** — use a reverse proxy for TLS termination. |
-| `broker/`           | 15, 17, 18, 19 | Broker Orchestrator + Concurrency Layer — INI configuration loader, component wiring, ordered startup/shutdown, signal handling, and broker-level facades for connect/disconnect/subscribe/unsubscribe/publish under shared-state locking. |
+| `broker/`           | 15, 17, 18, 19 | Broker Orchestrator + Concurrency Layer — INI configuration loader, component wiring, ordered startup/shutdown, signal handling, broker-level facades, and a dedicated subscription orchestrator helper for SUBSCRIBE/UNSUBSCRIBE flow under shared-state locking. |
 | `monitoring/`       | 16, 26   | Monitoring + Structured Tracing — `StatisticsCollector` (connected clients, message throughput, active subscriptions, retained messages, uptime), `SysTopicPublisher` (periodic `$SYS/broker/…` topic publication), `StructuredTracer` (JSON-lines runtime tracing with global threshold and per-module trace overrides), and runtime trace command parsing for `$SYS` control messages. |
+| `subscription_manager/` | 19 | Subscription orchestration module — validates SUBSCRIBE/UNSUBSCRIBE options, parses shared filters, coordinates ACL checks, updates subscription store/shared dispatcher, and builds SUBACK/UNSUBACK reason results. |
 | `outbound_queue/`   | 20       | Outbound Message Queue — thread-safe per-client FIFO of `Message` objects. Decouples publishing thread from receiving client's QoS state. Depends on `data_model/`. |
 | `client_session/`   | 21       | Client Session Context — per-client packet handlers and local state bundle (`PacketIdManager`, QoS 1/2 state machines, keep-alive, receive-maximum, aliases, enhanced auth, outbound drain). Depends on `codec/`, `qos/`, `connection/`, `outbound_queue/`. |
 
@@ -144,7 +145,13 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `broker/broker_error.h`     | 15   | `BrokerError` enum and `BrokerException` |
 | `broker/broker_config.h`    | 15.1 | `BrokerConfig` struct — all configuration parameters |
 | `broker/config_loader.h/.cpp` | 15.1.1 | `ConfigLoader` — INI-file parser → `BrokerConfig` |
-| `broker/broker.h/.cpp`      | 15.2–15.3, 17, 18, 19 | `Broker` — component wiring, startup/shutdown, thread-safe facades, connect workflow result, enhanced AUTH/re-auth orchestration, subscribe/unsubscribe/publish wrappers |
+| `broker/broker.h/.cpp`      | 15.2–15.3, 17, 18, 19 | `Broker` — component wiring, startup/shutdown, thread-safe facades, connect workflow result, enhanced AUTH/re-auth orchestration, and delegation to the subscription orchestrator |
+
+## `subscription_manager/` (Module 19)
+
+| File | Plan ref | Contents |
+|------|----------|----------|
+| `subscription_manager/subscription_orchestrator.h/.cpp` | 19 | `SubscriptionOrchestrator` — SUBSCRIBE/UNSUBSCRIBE orchestration, shared filter parsing, ACL checks, store/dispatcher coordination, retained delivery |
 
 ## Entry point
 

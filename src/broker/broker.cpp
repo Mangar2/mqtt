@@ -28,8 +28,6 @@
 #include "monitoring/trace_runtime_command.h"
 #include "message_router/message_router_error.h"
 #include "session_manager/session_manager_error.h"
-#include "topic/topic_error.h"
-#include "topic/topic_validator.h"
 #include "will_manager/will_message_util.h"
 
 namespace mqtt {
@@ -437,71 +435,13 @@ void Broker::handle_connection_lost(std::string_view client_id,
 SubackPacket Broker::handle_subscribe(std::string_view client_id,
                                       const SubscribePacket &packet) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
-
-  SubackPacket suback;
-  suback.packet_id = packet.packet_id;
-
-  const auto subscription_identifier = subscription_identifier_from(packet);
-
-  for (const SubscribeFilter &filter : packet.filters) {
-    try {
-      validate_topic_filter(filter.topic_filter.value);
-    } catch (const TopicException & /*unused*/) {
-      suback.reason_codes.push_back(ReasonCode::TopicFilterInvalid);
-      continue;
-    }
-
-    const bool allowed =
-        acl_engine_->check_subscribe(client_id, "", filter.topic_filter.value);
-    if (!allowed) {
-      suback.reason_codes.push_back(ReasonCode::NotAuthorized);
-      continue;
-    }
-
-    Subscription subscription;
-    subscription.topic_filter = filter.topic_filter;
-    subscription.qos = filter.options.max_qos;
-    subscription.options.no_local = filter.options.no_local;
-    subscription.options.retain_as_published =
-        filter.options.retain_as_published;
-    subscription.options.retain_handling =
-        static_cast<RetainHandling>(filter.options.retain_handling);
-    subscription.identifier = subscription_identifier;
-
-    const bool is_new_subscription =
-        subscription_store_->store(client_id, subscription);
-
-    message_router_->deliver_retained(client_id, filter.topic_filter.value,
-                                      subscription, is_new_subscription);
-
-    suback.reason_codes.push_back(
-        qos_to_granted_reason(filter.options.max_qos));
-  }
-
-  return suback;
+  return subscription_orchestrator_->handle_subscribe(client_id, packet);
 }
 
 UnsubackPacket Broker::handle_unsubscribe(std::string_view client_id,
                                           const UnsubscribePacket &packet) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
-
-  UnsubackPacket unsuback;
-  unsuback.packet_id = packet.packet_id;
-
-  for (const Utf8String &topic_filter : packet.topic_filters) {
-    try {
-      validate_topic_filter(topic_filter.value);
-    } catch (const TopicException & /*unused*/) {
-      unsuback.reason_codes.push_back(ReasonCode::TopicFilterInvalid);
-      continue;
-    }
-
-    const bool found = subscription_store_->remove(client_id, topic_filter.value);
-    unsuback.reason_codes.push_back(
-        found ? ReasonCode::Success : ReasonCode::NoSubscriptionFound);
-  }
-
-  return unsuback;
+  return subscription_orchestrator_->handle_unsubscribe(client_id, packet);
 }
 
 ReasonCode Broker::handle_publish(Message &msg, std::string_view client_id,
@@ -630,6 +570,9 @@ void Broker::unregister_connection_locked(
   }
 
   active_connections_.erase(iter);
+  if (shared_dispatcher_) {
+    shared_dispatcher_->remove_client(client_id);
+  }
   const std::size_t erase_count = 1U;
   if (erase_count > 0U) {
     stats_collector_->on_client_disconnected();
@@ -730,6 +673,10 @@ void Broker::create_modules() {
   message_router_ = std::make_unique<MessageRouter>(
       *publish_processor_, *offline_queue_, *shared_dispatcher_,
       std::move(is_online_fn), std::move(deliver_fn));
+
+    subscription_orchestrator_ = std::make_unique<SubscriptionOrchestrator>(
+      *acl_engine_, *subscription_store_, *shared_dispatcher_,
+      *message_router_);
 
   //  Will Manager (Module 11)
   will_store_ = std::make_unique<WillStore>();

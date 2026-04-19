@@ -49,6 +49,7 @@
 #include "store/retained_message_store.h"
 #include "store/session_store.h"
 #include "store/subscription_store.h"
+#include "subscription_manager/subscription_orchestrator.h"
 #include "will_manager/will_delay_timer.h"
 #include "will_manager/will_publisher.h"
 #include "will_manager/will_store.h"
@@ -491,6 +492,7 @@ private:
   std::unique_ptr<InboundPublishProcessor> publish_processor_;
   std::unique_ptr<OfflineQueue> offline_queue_;
   std::unique_ptr<SharedSubscriptionDispatcher> shared_dispatcher_;
+  std::unique_ptr<SubscriptionOrchestrator> subscription_orchestrator_;
   std::unique_ptr<MessageRouter> message_router_;
 
   //  Connection manager (Module 23)
