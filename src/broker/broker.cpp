@@ -143,14 +143,8 @@ void Broker::shutdown() noexcept {
   // before transport teardown closes sockets.
   std::this_thread::sleep_for(std::chrono::milliseconds(150));
 
-  std::vector<std::shared_ptr<OutboundQueue>> queues;
-  {
-    std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
-    queues.reserve(active_connections_.size());
-    for (const auto &entry : active_connections_) {
-      queues.push_back(entry.second);
-    }
-  }
+  std::vector<std::shared_ptr<OutboundQueue>> queues =
+      connection_registry_->snapshot_queues();
 
   for (const auto &queue : queues) {
     if (queue) {
@@ -438,11 +432,11 @@ void Broker::handle_disconnect(std::string_view client_id,
                                std::chrono::steady_clock::time_point now,
                                const std::shared_ptr<OutboundQueue>& connection_queue) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
-  TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "broker") {
+  TRACE_GUARD(structured_tracer_, TraceLevel::Info, "broker") {
     TraceEvent event;
-    event.level = TraceLevel::Trace;
+    event.level = TraceLevel::Info;
     event.module = "broker";
-    event.info = "handle_disconnect";
+    event.info = "disconnect_handled";
     event.data.emplace_back("client_id", std::string(client_id));
     event.data.emplace_back("reason_code", std::to_string(static_cast<int>(reason_code)));
     event.data.emplace_back("expiry_override",
@@ -469,11 +463,11 @@ void Broker::handle_connection_lost(std::string_view client_id,
                                     std::chrono::steady_clock::time_point now,
                                     const std::shared_ptr<OutboundQueue>& connection_queue) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
-  TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "broker") {
+  TRACE_GUARD(structured_tracer_, TraceLevel::Info, "broker") {
     TraceEvent event;
-    event.level = TraceLevel::Trace;
+    event.level = TraceLevel::Info;
     event.module = "broker";
-    event.info = "handle_connection_lost";
+    event.info = "connection_lost_handled";
     event.data.push_back({"client_id", std::string(client_id)});
     structured_tracer_->emit(event);
   }
@@ -487,13 +481,61 @@ void Broker::handle_connection_lost(std::string_view client_id,
 SubackPacket Broker::handle_subscribe(std::string_view client_id,
                                       const SubscribePacket &packet) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
-  return subscription_orchestrator_->handle_subscribe(client_id, packet);
+  SubackPacket suback =
+      subscription_orchestrator_->handle_subscribe(client_id, packet);
+
+  std::size_t failure_count = 0U;
+  for (const ReasonCode reason_code : suback.reason_codes) {
+    if (is_error(reason_code)) {
+      ++failure_count;
+    }
+  }
+
+  TRACE_GUARD(structured_tracer_, TraceLevel::Info, "broker") {
+    TraceEvent event;
+    event.level = TraceLevel::Info;
+    event.module = "broker";
+    event.info = "subscribe_handled";
+    event.data.emplace_back("client_id", std::string(client_id));
+    event.data.emplace_back("requested_filters",
+                            std::to_string(packet.filters.size()));
+    event.data.emplace_back("granted_filters",
+                            std::to_string(suback.reason_codes.size() - failure_count));
+    event.data.emplace_back("failed_filters", std::to_string(failure_count));
+    structured_tracer_->emit(event);
+  }
+
+  return suback;
 }
 
 UnsubackPacket Broker::handle_unsubscribe(std::string_view client_id,
                                           const UnsubscribePacket &packet) {
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
-  return subscription_orchestrator_->handle_unsubscribe(client_id, packet);
+  UnsubackPacket unsuback =
+      subscription_orchestrator_->handle_unsubscribe(client_id, packet);
+
+  std::size_t failure_count = 0U;
+  for (const ReasonCode reason_code : unsuback.reason_codes) {
+    if (is_error(reason_code)) {
+      ++failure_count;
+    }
+  }
+
+  TRACE_GUARD(structured_tracer_, TraceLevel::Info, "broker") {
+    TraceEvent event;
+    event.level = TraceLevel::Info;
+    event.module = "broker";
+    event.info = "unsubscribe_handled";
+    event.data.emplace_back("client_id", std::string(client_id));
+    event.data.emplace_back("requested_filters",
+                            std::to_string(packet.topic_filters.size()));
+    event.data.emplace_back("successful_filters",
+                            std::to_string(unsuback.reason_codes.size() - failure_count));
+    event.data.emplace_back("failed_filters", std::to_string(failure_count));
+    structured_tracer_->emit(event);
+  }
+
+  return unsuback;
 }
 
 ReasonCode Broker::handle_publish(Message &msg, std::string_view client_id,
@@ -619,71 +661,85 @@ void Broker::apply_trace_system_message(const Message &message) {
 
 void Broker::emit_connect_trace(const ConnectPacket &connect_packet,
                                 const ConnectResult &connect_result) noexcept {
-  if (!structured_tracer_) {
-    return;
+  TRACE_GUARD(structured_tracer_, TraceLevel::Info, "broker") {
+    TraceEvent event;
+    event.level = TraceLevel::Info;
+    event.module = "broker";
+    event.info = "connect_handled";
+    event.data.emplace_back(
+        "client_id",
+        connect_result.client_id.empty() ? "<empty>" : connect_result.client_id);
+    event.data.emplace_back("clean_start",
+                            connect_packet.clean_start ? "true" : "false");
+    event.data.emplace_back(
+        "auth_status",
+        std::to_string(static_cast<int>(connect_result.auth_status)));
+    event.data.emplace_back(
+        "reason_code",
+        std::to_string(static_cast<int>(connect_result.reason_code)));
+
+    structured_tracer_->emit(event);
   }
-
-  TraceEvent event;
-  event.level = TraceLevel::Info;
-  event.module = "broker";
-  event.info = "connect_handled";
-  event.data.emplace_back("client_id", connect_result.client_id.empty() ? "<empty>" : connect_result.client_id);
-  event.data.emplace_back("clean_start", connect_packet.clean_start ? "true" : "false");
-  event.data.emplace_back("auth_status", std::to_string(static_cast<int>(connect_result.auth_status)));
-  event.data.emplace_back("reason_code", std::to_string(static_cast<int>(connect_result.reason_code)));
-
-  structured_tracer_->emit(event);
 }
 
 void Broker::register_connection_locked(std::string_view client_id,
                                         std::shared_ptr<OutboundQueue> queue) {
-  const std::string key(client_id);
-  const auto existing_it = active_connections_.find(key);
-  const bool existed = existing_it != active_connections_.end();
-
-  if (existed && existing_it->second && queue && existing_it->second != queue) {
-    (void)transfer_pending_outbound_messages(*existing_it->second, *queue);
+  const ConnectionUpsertResult upsert_result =
+      connection_registry_->upsert(client_id, queue);
+  if (upsert_result.replaced_existing && upsert_result.previous_queue && queue &&
+      upsert_result.previous_queue != queue) {
+    (void)transfer_pending_outbound_messages(*upsert_result.previous_queue,
+                                             *queue);
   }
 
-  active_connections_[key] = std::move(queue);
-  if (!existed) {
+  if (!upsert_result.replaced_existing) {
     stats_collector_->on_client_connected();
+  }
+
+  TRACE_GUARD(structured_tracer_, TraceLevel::Info, "broker") {
+    TraceEvent event;
+    event.level = TraceLevel::Info;
+    event.module = "broker";
+    event.info = "connection_registered";
+    event.data.emplace_back("client_id", std::string(client_id));
+    event.data.emplace_back("replaced_existing",
+                            upsert_result.replaced_existing ? "true" : "false");
+    event.data.emplace_back("active_connections",
+                            std::to_string(upsert_result.active_connections));
+    structured_tracer_->emit(event);
   }
 }
 
 void Broker::unregister_connection_locked(
     std::string_view client_id,
     const std::shared_ptr<OutboundQueue> &expected_queue) noexcept {
-  const std::string key(client_id);
-  auto iter = active_connections_.find(key);
-  if (iter == active_connections_.end()) {
-    return;
-  }
-
-  if (expected_queue && iter->second != expected_queue) {
+  const ConnectionRemoveResult remove_result =
+      connection_registry_->remove_if_matches(client_id, expected_queue);
+  if (!remove_result.removed) {
     return;
   }
 
   std::size_t moved_to_offline = 0U;
-  if (message_router_ && iter->second) {
+  if (message_router_ && remove_result.removed_queue) {
     std::vector<Message> pending_messages =
-        drain_pending_outbound_messages(*iter->second);
+        drain_pending_outbound_messages(*remove_result.removed_queue);
     moved_to_offline =
         message_router_->buffer_offline_messages(client_id,
                                                  std::move(pending_messages));
   }
 
-  TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "broker") {
+  TRACE_GUARD(structured_tracer_, TraceLevel::Info, "broker") {
     TraceEvent event;
-    event.level = TraceLevel::Trace;
+    event.level = TraceLevel::Info;
     event.module = "broker";
     event.info = "connection_unregistered";
     event.data.emplace_back("client_id", std::string(client_id));
     event.data.emplace_back("moved_to_offline", std::to_string(moved_to_offline));
+    event.data.emplace_back("active_connections_before",
+                            std::to_string(remove_result.active_connections_before));
     structured_tracer_->emit(event);
   }
 
-  active_connections_.erase(iter);
   if (shared_dispatcher_) {
     shared_dispatcher_->remove_client(client_id);
   }
@@ -769,16 +825,17 @@ void Broker::create_modules() {
 
   offline_queue_ = std::make_unique<OfflineQueue>(
       static_cast<std::size_t>(config_.max_queued_messages));
+  connection_registry_ = std::make_unique<ActiveConnectionRegistry>();
 
   shared_dispatcher_ = std::make_unique<SharedSubscriptionDispatcher>();
 
   // Delivery callbacks: push into client's OutboundQueue (Module 20.2).
   auto is_online_fn = [this](std::string_view cid) -> bool {
-    return active_connections_.contains(std::string(cid));
+    return connection_registry_->contains(cid);
   };
   auto deliver_fn = [this](std::string_view cid, const Message &msg) {
-    auto iter = active_connections_.find(std::string(cid));
-    if (iter != active_connections_.end()) {
+    std::shared_ptr<OutboundQueue> queue = connection_registry_->find(cid);
+    if (queue) {
       const std::size_t frame_bytes = estimated_publish_frame_bytes(msg);
       if (frame_bytes > config_.write_queue_max_bytes) {
         TRACE_GUARD(structured_tracer_, TraceLevel::Warning, "broker") {
@@ -802,8 +859,8 @@ void Broker::create_modules() {
       }
 
       stats_collector_->on_message_outbound();
-      const bool pushed = iter->second->push(msg);
-      const std::size_t queue_size = iter->second->size();
+      const bool pushed = queue->push(msg);
+      const std::size_t queue_size = queue->size();
       TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "broker") {
         TraceEvent event;
         event.level = pushed ? TraceLevel::Trace : TraceLevel::Warning;
@@ -818,7 +875,7 @@ void Broker::create_modules() {
         event.data.emplace_back("max_queued_messages",
                                 std::to_string(config_.max_queued_messages));
         event.data.emplace_back("active_connections",
-                                std::to_string(active_connections_.size()));
+                                std::to_string(connection_registry_->size()));
         structured_tracer_->emit(event);
       }
 

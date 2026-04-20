@@ -30,6 +30,7 @@ Depends on: all previous modules (1–14), plus shared-state coordination for Mo
 | `broker_config.h`   | 15.1 | `BrokerConfig` struct with all configuration parameters |
 | `config_loader.h/.cpp` | 15.1.1 | `ConfigLoader` — INI-file parser → `BrokerConfig` |
 | `connack_properties.h/.cpp` | 18.2 | Build static and CONNECT-driven CONNACK properties (server capabilities and optional response information) |
+| `active_connection_registry.h/.cpp` | 20.2 | `ActiveConnectionRegistry` — thread-safe online connection map with dedicated lock |
 | `broker.h/.cpp`     | 15.2–15.3, 17, 18, 19 | `Broker` — component wiring, startup/shutdown, signal handling, broker-level locking, connect/disconnect/subscribe/unsubscribe/publish facades |
 
 ---

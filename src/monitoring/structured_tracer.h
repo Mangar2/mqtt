@@ -6,6 +6,7 @@
  */
 
 #include <chrono>
+#include <atomic>
 #include <mutex>
 #include <optional>
 #include <ostream>
@@ -119,8 +120,8 @@ public:
   void emit(const TraceEvent &event);
 
 private:
-  [[nodiscard]] bool should_emit_locked(TraceLevel level,
-                                        std::string_view module_name) const noexcept;
+  [[nodiscard]] bool should_emit_unlocked(TraceLevel level,
+                                          std::string_view module_name) const noexcept;
 
   static void write_json_string(std::ostream &output_stream,
                                 std::string_view value_text);
@@ -128,7 +129,7 @@ private:
   static void write_fallback_serialization_error(std::ostream &output_stream) noexcept;
 
   std::ostream *output_stream_;
-  TraceLevel global_level_{TraceLevel::Warning};
+  std::atomic<TraceLevel> global_level_{TraceLevel::Warning};
   std::unordered_set<std::string> trace_modules_;
   mutable std::mutex mutex_;
 };

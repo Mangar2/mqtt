@@ -24,6 +24,7 @@
 #include "auth/password_authenticator.h"
 #include "authz/acl_engine.h"
 #include "authz/acl_loader.h"
+#include "broker/active_connection_registry.h"
 #include "broker/broker_config.h"
 #include "connection/connection_manager.h"
 #include "connection/topic_alias_table.h"
@@ -412,11 +413,11 @@ private:
   void emit_connect_trace(const ConnectPacket &connect_packet,
                           const ConnectResult &connect_result) noexcept;
 
-  /// Register connection when broker_mutex_ is already held exclusively.
+  /// Register connection in online registry and emit broker-level side-effects.
   void register_connection_locked(std::string_view client_id,
                                   std::shared_ptr<OutboundQueue> queue);
 
-  /// Unregister connection when broker_mutex_ is already held exclusively.
+  /// Remove connection from online registry and emit broker-level side-effects.
   void unregister_connection_locked(
       std::string_view client_id,
       const std::shared_ptr<OutboundQueue> &expected_queue = nullptr) noexcept;
@@ -499,12 +500,12 @@ private:
 
   std::unique_ptr<ConnectionManager> connection_manager_;
 
-  //  Connection tracking
+    //  Connection tracking
+
+    std::unique_ptr<ActiveConnectionRegistry> connection_registry_;
 
   mutable std::shared_mutex
       broker_mutex_; ///< Guards shared mutable Broker state.
-  std::unordered_map<std::string, std::shared_ptr<OutboundQueue>>
-      active_connections_; ///< Online clients keyed by client ID (Module 20.2).
 
   //  Monitoring (Module 16)
 

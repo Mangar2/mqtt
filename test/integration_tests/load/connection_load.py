@@ -11,6 +11,10 @@ import uuid
 from contextlib import ExitStack
 
 
+def _progress(message: str) -> None:
+    print(f"[18.1.2] {message}", flush=True)
+
+
 def _load_helper(module_name: str):
     helper_path = Path(__file__).resolve().parents[1] / "helpers" / f"{module_name}.py"
     spec = importlib.util.spec_from_file_location(f"integration_helper_{module_name}", helper_path)
@@ -50,6 +54,10 @@ def _start_isolated_broker(overrides: dict[str, object] | None = None):
         "network.mqtt_port": _find_free_port(),
         "network.ws_port": 0,
         "broker.allow_anonymous": True,
+        # Load stages publish bursts to one subscriber; raise queue limits so
+        # the test measures broker routing progress rather than tiny defaults.
+        "broker.max_queued_messages": 5000,
+        "broker.write_queue_max_bytes": 524288,
     }
     if overrides is not None:
         effective_overrides.update(overrides)
@@ -167,6 +175,7 @@ def _execute_connection_load(
     graceful_close_count = 0
     local_resource_errors = 0
     other_errors: list[str] = []
+    progress_interval = max(25, total_connections // 10)
 
     try:
         for index in range(total_connections):
@@ -218,6 +227,17 @@ def _execute_connection_load(
                         tcp_socket.close()
                     except OSError:
                         pass
+
+            if ((index + 1) % progress_interval) == 0 or (index + 1) == total_connections:
+                _progress(
+                    "connection-progress "
+                    f"{index + 1}/{total_connections} "
+                    f"success={success_count} "
+                    f"rejections={len(rejection_codes)} "
+                    f"graceful_closes={graceful_close_count} "
+                    f"local_resource_errors={local_resource_errors} "
+                    f"other_errors={len(other_errors)}"
+                )
 
             if (
                 connect_batch_size > 0
@@ -309,6 +329,7 @@ def _execute_message_load_stage(
     stage_label: str,
 ) -> tuple[bool, str]:
     topic = _unique_topic(f"throughput-{stage_label}")
+    publish_progress_interval = max(50, message_count // 10)
     with _connect_client(host, port, timeout_seconds, f"sub-{stage_label}") as subscriber:
         suback_codes = subscriber.subscribe(topic, qos=1)
         if not suback_codes:
@@ -322,11 +343,20 @@ def _execute_message_load_stage(
                 payload = f"{stage_label}-msg-{message_index}".encode("utf-8")
                 publish_reason = publisher.publish(topic, payload, qos=1)
                 assert_reason_code(publish_reason, 0x00)
+                if ((message_index + 1) % publish_progress_interval) == 0 or (message_index + 1) == message_count:
+                    _progress(
+                        f"message-publish-progress {stage_label} "
+                        f"{message_index + 1}/{message_count}"
+                    )
 
             collect_timeout_seconds = _remaining_timeout(
                 deadline_monotonic,
                 minimum_seconds=0.5,
                 cap_seconds=max(timeout_seconds * 2.0, message_count / 150.0, 6.0),
+            )
+            _progress(
+                f"message-collect-start {stage_label} "
+                f"expect={message_count} timeout={collect_timeout_seconds:.2f}s"
             )
             received_messages = subscriber.collect_messages(count=message_count, timeout=collect_timeout_seconds)
 
@@ -347,6 +377,8 @@ def _execute_subscription_load_stage(
 ) -> tuple[bool, str]:
     topic_root = _unique_topic(f"subscription-{stage_label}")
     topics = [f"{topic_root}/{index}" for index in range(subscription_count)]
+    subscribe_progress_interval = max(50, subscription_count // 10)
+    publish_progress_interval = max(50, subscription_count // 10)
 
     with ExitStack() as stack:
         subscriber = stack.enter_context(_connect_client(host, port, timeout_seconds, f"sub-load-{stage_label}"))
@@ -362,6 +394,11 @@ def _execute_subscription_load_stage(
             if not suback_codes:
                 return False, f"{stage_label} empty SUBACK for topic index {topic_index}"
             assert_reason_code(suback_codes[0], 0x00)
+            if ((topic_index + 1) % subscribe_progress_interval) == 0 or (topic_index + 1) == subscription_count:
+                _progress(
+                    f"subscription-subscribe-progress {stage_label} "
+                    f"{topic_index + 1}/{subscription_count}"
+                )
 
         for topic_index, topic_name in enumerate(topics):
             if time.monotonic() >= deadline_monotonic:
@@ -372,11 +409,20 @@ def _execute_subscription_load_stage(
             payload = f"{stage_label}-topic-{topic_index}".encode("utf-8")
             publish_reason = publisher.publish(topic_name, payload, qos=0)
             assert_reason_code(publish_reason, 0x00)
+            if ((topic_index + 1) % publish_progress_interval) == 0 or (topic_index + 1) == subscription_count:
+                _progress(
+                    f"subscription-publish-progress {stage_label} "
+                    f"{topic_index + 1}/{subscription_count}"
+                )
 
         collect_timeout_seconds = _remaining_timeout(
             deadline_monotonic,
             minimum_seconds=0.5,
             cap_seconds=max(timeout_seconds * 2.0, subscription_count / 120.0, 8.0),
+        )
+        _progress(
+            f"subscription-collect-start {stage_label} "
+            f"expect={subscription_count} timeout={collect_timeout_seconds:.2f}s"
         )
         received_messages = subscriber.collect_messages(count=subscription_count, timeout=collect_timeout_seconds)
         received_topics = {message.topic for message in received_messages}
@@ -430,6 +476,7 @@ def run_18_1_2_progressive_combined_load_relative_steps_with_threshold(config) -
 
         for stage_size in stage_sizes:
             stage_label = f"18.1.2/stage-{stage_size}"
+            _progress(f"stage-start {stage_label}")
 
             connection_start = time.monotonic()
             try:
@@ -452,6 +499,7 @@ def run_18_1_2_progressive_combined_load_relative_steps_with_threshold(config) -
                     f"at {stage_size}: {stage_error}; highest_successful_stage={highest_successful_stage}; "
                     f"stage_reports={stage_reports}",
                 )
+            _progress(f"stage-connection-finished {stage_label}: {connection_details}")
             if not connection_ok:
                 if highest_successful_stage >= success_threshold_stage:
                     return (
@@ -484,6 +532,7 @@ def run_18_1_2_progressive_combined_load_relative_steps_with_threshold(config) -
                     f"at {stage_size}: {stage_error}; highest_successful_stage={highest_successful_stage}; "
                     f"stage_reports={stage_reports}",
                 )
+            _progress(f"stage-message-finished {stage_label}: {message_details}")
             if not message_ok:
                 if highest_successful_stage >= success_threshold_stage:
                     return (
@@ -516,6 +565,9 @@ def run_18_1_2_progressive_combined_load_relative_steps_with_threshold(config) -
                     f"at {stage_size}: {stage_error}; highest_successful_stage={highest_successful_stage}; "
                     f"stage_reports={stage_reports}",
                 )
+            _progress(
+                f"stage-subscription-finished {stage_label}: {subscription_details}"
+            )
             if not subscription_ok:
                 if highest_successful_stage >= success_threshold_stage:
                     return (

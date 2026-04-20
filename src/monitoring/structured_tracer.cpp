@@ -52,13 +52,11 @@ void StructuredTracer::set_output(std::ostream &output_stream) {
 }
 
 void StructuredTracer::set_global_level(TraceLevel level) noexcept {
-  std::lock_guard<std::mutex> lock_guard(mutex_);
-  global_level_ = level;
+  global_level_.store(level, std::memory_order_relaxed);
 }
 
 TraceLevel StructuredTracer::global_level() const noexcept {
-  std::lock_guard<std::mutex> lock_guard(mutex_);
-  return global_level_;
+  return global_level_.load(std::memory_order_relaxed);
 }
 
 void StructuredTracer::enable_trace_module(std::string module_name) {
@@ -85,16 +83,15 @@ void StructuredTracer::set_trace_modules(const std::vector<std::string> &module_
 
 bool StructuredTracer::should_emit(TraceLevel level,
                                    std::string_view module_name) const noexcept {
-  std::lock_guard<std::mutex> lock_guard(mutex_);
-  return should_emit_locked(level, module_name);
+  return should_emit_unlocked(level, module_name);
 }
 
 void StructuredTracer::emit(const TraceEvent &event) {
-  std::lock_guard<std::mutex> lock_guard(mutex_);
-  if (!should_emit_locked(event.level, event.module)) {
+  if (!should_emit_unlocked(event.level, event.module)) {
     return;
   }
 
+  std::lock_guard<std::mutex> lock_guard(mutex_);
   if (output_stream_ == nullptr) {
     return;
   }
@@ -147,20 +144,24 @@ void StructuredTracer::emit(const TraceEvent &event) {
   }
 }
 
-bool StructuredTracer::should_emit_locked(TraceLevel level,
-                                          std::string_view module_name) const noexcept {
-  if (global_level_ == TraceLevel::None || level == TraceLevel::None) {
+bool StructuredTracer::should_emit_unlocked(TraceLevel level,
+                                            std::string_view module_name) const noexcept {
+  const TraceLevel global_level = global_level_.load(std::memory_order_relaxed);
+
+  if (global_level == TraceLevel::None || level == TraceLevel::None) {
     return false;
   }
 
   if (level == TraceLevel::Trace) {
-    if (global_level_ == TraceLevel::Trace) {
+    if (global_level == TraceLevel::Trace) {
       return true;
     }
+
+    std::lock_guard<std::mutex> lock_guard(mutex_);
     return trace_modules_.contains(std::string(module_name));
   }
 
-  return to_severity_rank(level) <= to_severity_rank(global_level_);
+  return to_severity_rank(level) <= to_severity_rank(global_level);
 }
 
 void StructuredTracer::write_json_string(std::ostream &output_stream,
