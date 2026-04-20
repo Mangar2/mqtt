@@ -803,6 +803,7 @@ void Broker::create_modules() {
 
       stats_collector_->on_message_outbound();
       const bool pushed = iter->second->push(msg);
+      const std::size_t queue_size = iter->second->size();
       TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "broker") {
         TraceEvent event;
         event.level = pushed ? TraceLevel::Trace : TraceLevel::Warning;
@@ -813,9 +814,29 @@ void Broker::create_modules() {
         event.data.emplace_back("qos", std::to_string(static_cast<int>(msg.qos)));
         event.data.emplace_back("payload_bytes",
                                 std::to_string(msg.payload.data.size()));
-        event.data.emplace_back("queue_size", std::to_string(iter->second->size()));
+        event.data.emplace_back("queue_size", std::to_string(queue_size));
+        event.data.emplace_back("max_queued_messages",
+                                std::to_string(config_.max_queued_messages));
+        event.data.emplace_back("active_connections",
+                                std::to_string(active_connections_.size()));
         structured_tracer_->emit(event);
       }
+
+      if (pushed && queue_size >= static_cast<std::size_t>(config_.max_queued_messages)) {
+        TRACE_GUARD(structured_tracer_, TraceLevel::Warning, "broker") {
+          TraceEvent event;
+          event.level = TraceLevel::Warning;
+          event.module = "broker";
+          event.info = "outbound_queue_at_capacity";
+          event.data.emplace_back("client_id", std::string(cid));
+          event.data.emplace_back("topic", msg.topic.value);
+          event.data.emplace_back("queue_size", std::to_string(queue_size));
+          event.data.emplace_back("max_queued_messages",
+                                  std::to_string(config_.max_queued_messages));
+          structured_tracer_->emit(event);
+        }
+      }
+
       if (!pushed) {
         throw MessageRouterException(
             MessageRouterError::QueueFull,

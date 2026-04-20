@@ -154,6 +154,9 @@ def _execute_connection_load(
     total_connections: int,
     timeout_seconds: float,
     spacing_seconds: float,
+    connect_batch_size: int = 0,
+    batch_pause_seconds: float = 0.0,
+    hold_after_connect_seconds: float = 0.0,
     allow_rejection: bool,
     deadline_monotonic: float,
 ) -> tuple[bool, str]:
@@ -216,6 +219,24 @@ def _execute_connection_load(
                     except OSError:
                         pass
 
+            if (
+                connect_batch_size > 0
+                and batch_pause_seconds > 0.0
+                and (index + 1) < total_connections
+                and ((index + 1) % connect_batch_size) == 0
+            ):
+                if time.monotonic() >= deadline_monotonic:
+                    return (
+                        False,
+                        f"hard timeout reached during batch pause after {index + 1}/{total_connections} attempts",
+                    )
+                time.sleep(
+                    min(
+                        batch_pause_seconds,
+                        max(0.0, deadline_monotonic - time.monotonic()),
+                    )
+                )
+
             if spacing_seconds > 0.0:
                 if time.monotonic() >= deadline_monotonic:
                     return (
@@ -224,26 +245,42 @@ def _execute_connection_load(
                     )
                 time.sleep(min(spacing_seconds, max(0.0, deadline_monotonic - time.monotonic())))
 
+        if hold_after_connect_seconds > 0.0 and success_count > 0:
+            if time.monotonic() >= deadline_monotonic:
+                return (
+                    False,
+                    f"hard timeout reached before hold phase after {success_count}/{total_connections} successful connects",
+                )
+            time.sleep(
+                min(
+                    hold_after_connect_seconds,
+                    max(0.0, deadline_monotonic - time.monotonic()),
+                )
+            )
+
         non_success_total = rejection_codes.__len__() + graceful_close_count + local_resource_errors + other_errors.__len__()
 
         if not allow_rejection:
             if success_count != total_connections:
+                error_samples = " | ".join(other_errors[:3]) if other_errors else "none"
                 return (
                     False,
                     "expected all connections to succeed, "
                     f"success={success_count}/{total_connections}, "
                     f"connack_rejections={len(rejection_codes)}, graceful_closes={graceful_close_count}, "
-                    f"local_resource_errors={local_resource_errors}, other_errors={len(other_errors)}",
+                    f"local_resource_errors={local_resource_errors}, other_errors={len(other_errors)}, "
+                    f"other_error_samples={error_samples}",
                 )
             return True, f"all {total_connections} connections returned CONNACK success"
 
         if success_count + len(rejection_codes) + graceful_close_count != total_connections:
+            error_samples = " | ".join(other_errors[:3]) if other_errors else "none"
             return (
                 False,
                 "encountered non-graceful connection failures under load, "
                 f"success={success_count}, connack_rejections={len(rejection_codes)}, "
                 f"graceful_closes={graceful_close_count}, local_resource_errors={local_resource_errors}, "
-                f"other_errors={len(other_errors)}",
+                f"other_errors={len(other_errors)}, other_error_samples={error_samples}",
             )
 
         if non_success_total == 0:
@@ -401,7 +438,10 @@ def run_18_1_2_progressive_combined_load_relative_steps_with_threshold(config) -
                     port,
                     total_connections=stage_size,
                     timeout_seconds=max(0.6, min(config.timeout_seconds, 1.5)),
-                    spacing_seconds=0.0 if stage_size <= 100 else 0.0005,
+                    spacing_seconds=0.0,
+                    connect_batch_size=5,
+                    batch_pause_seconds=0.04,
+                    hold_after_connect_seconds=0.25,
                     allow_rejection=True,
                     deadline_monotonic=deadline_monotonic,
                 )

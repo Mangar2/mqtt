@@ -42,6 +42,7 @@ INTEGRATION_TESTS_DIR = TEST_DIR / "integration_tests"
 class RunnerConfig:
     host: str
     port: int
+    ws_port: int | None
     timeout_seconds: float
 
 
@@ -64,7 +65,10 @@ TRACE_MODULES_ENV = "MQTT_INTEGRATION_TRACE_MODULES"
 BROKER_OUTPUT_ENV = "MQTT_INTEGRATION_BROKER_OUTPUT"
 TARGET_HOST_ENV = "MQTT_INTEGRATION_TARGET_HOST"
 TARGET_PORT_ENV = "MQTT_INTEGRATION_TARGET_PORT"
+TARGET_WS_PORT_ENV = "MQTT_INTEGRATION_TARGET_WS_PORT"
 BROKER_MANAGED_ENV = "MQTT_INTEGRATION_BROKER_MANAGED"
+
+DEFAULT_REMOTE_WS_PORT = 8083
 
 
 REQUIREMENT_NUMBER_PREFIX = re.compile(r"^\s*(\d+(?:\.\d+)*)\b")
@@ -300,6 +304,7 @@ def _apply_integration_trace_environment(
         BROKER_OUTPUT_ENV: os.environ.get(BROKER_OUTPUT_ENV),
         TARGET_HOST_ENV: os.environ.get(TARGET_HOST_ENV),
         TARGET_PORT_ENV: os.environ.get(TARGET_PORT_ENV),
+        TARGET_WS_PORT_ENV: os.environ.get(TARGET_WS_PORT_ENV),
         BROKER_MANAGED_ENV: os.environ.get(BROKER_MANAGED_ENV),
     }
 
@@ -318,6 +323,10 @@ def _apply_integration_trace_environment(
     )
     os.environ[TARGET_HOST_ENV] = config.host
     os.environ[TARGET_PORT_ENV] = str(config.port)
+    if config.ws_port is None:
+        os.environ.pop(TARGET_WS_PORT_ENV, None)
+    else:
+        os.environ[TARGET_WS_PORT_ENV] = str(config.ws_port)
 
     return previous_values
 
@@ -443,6 +452,15 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run mqtt-broker integration tests via mqttx")
     parser.add_argument("--host", default="127.0.0.1", help="Broker hostname (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=1883, help="Broker TCP port (default: 1883)")
+    parser.add_argument(
+        "--ws-port",
+        type=int,
+        default=None,
+        help=(
+            "Broker WebSocket port for external target. "
+            "When omitted with non-local --host, defaults to 8083"
+        ),
+    )
     parser.add_argument("--timeout", type=float, default=8.0, help="mqttx command timeout in seconds")
     parser.add_argument(
         "--results-file",
@@ -528,7 +546,16 @@ def main() -> int:
         return 1
 
     resolved_host, resolution_message = _resolve_runner_target_host(args.host, args.port)
-    config = RunnerConfig(host=resolved_host, port=args.port, timeout_seconds=args.timeout)
+    resolved_ws_port: int | None = args.ws_port
+    if resolved_ws_port is None and not _is_local_host(args.host):
+        resolved_ws_port = DEFAULT_REMOTE_WS_PORT
+
+    config = RunnerConfig(
+        host=resolved_host,
+        port=args.port,
+        ws_port=resolved_ws_port,
+        timeout_seconds=args.timeout,
+    )
     startup_options = StartupOptions(
         trace_level=args.trace_level,
         trace_modules=tuple(args.trace_module),
