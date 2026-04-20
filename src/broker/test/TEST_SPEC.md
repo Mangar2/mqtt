@@ -69,6 +69,12 @@ All tests are tagged `[broker]`.
 | `broker_handle_publish_counts_inbound_via_facade` | monitoring | handle_publish() facade | 2 publishes | messages_inbound==2 |
 | `broker_handle_publish_counts_inbound` | publish facade | handle_publish() wrapper increments inbound stats | 2 publishes | messages_inbound==2 |
 | `broker_handle_publish_without_subscribers_is_safe` | monitoring | publish without subscribers | 1 publish | no throw, messages_inbound increments |
+| `broker_handle_publish_rejects_zero_topic_alias` | publish facade | reject Topic Alias value 0 before routing | PUBLISH with TopicAlias=0 property | returns `ImplementationSpecificError` |
+| `broker_handle_publish_maps_acl_rejection_to_not_authorized` | publish facade | map ACL publish denial | allow_anonymous=false without publish ACL + PUBLISH | returns `NotAuthorized` |
+| `broker_handle_publish_maps_invalid_topic_alias_to_protocol_error` | publish facade | map invalid alias usage | inbound PUBLISH with empty topic + alias property | returns `ProtocolError` |
+| `broker_handle_publish_maps_online_queue_full_to_quota_exceeded` | publish facade | map outbound queue capacity failure | subscribed online client queue already full | returns `QuotaExceeded` |
+| `broker_handle_publish_maps_frame_too_large_to_quota_exceeded` | publish facade | map write-queue byte-cap overflow | small `write_queue_max_bytes` + large routed publish | returns `QuotaExceeded` |
+| `broker_handle_publish_with_null_registered_queue_is_safe` | publish facade | tolerate null registered queue | register client with null queue and publish routed message | returns `Success` without crash |
 | `broker_handle_subscribe_returns_suback_and_delivers_retained` | subscribe facade | subscribe to filter with retained message present | retained on matching topic + SUBSCRIBE QoS1 | SUBACK GrantedQoS1 and retained message delivered |
 | `broker_handle_subscribe_denied_returns_not_authorized` | subscribe facade | ACL denies subscription | allow_anonymous=false + SUBSCRIBE | SUBACK reason NotAuthorized |
 | `broker_handle_unsubscribe_removes_subscription` | unsubscribe facade | subscribe then unsubscribe | publish before and after unsubscribe | first publish delivered, second suppressed; UNSUBACK Success |
@@ -103,3 +109,13 @@ All tests are tagged `[broker]`.
 | `broker_handle_disconnect_unregisters_client` | concurrency facade | wrapped disconnect path | registered client + ReasonCode::Success | connected_clients decremented to 0 |
 | `broker_handle_connection_lost_unregisters_client` | concurrency facade | wrapped connection-loss path | registered client + stored will | connected_clients decremented to 0 |
 | `broker_accept_loop_invokes_client_handler` | accept loop | real TCP loopback client connects | mqtt_port=18885 | accept thread runs client handler path and shutdown succeeds |
+
+---
+
+## enhanced_auth_registry_test.cpp — EnhancedAuthRegistry (threading step 03)
+
+| Test case | Section | Scenario | Input | Expected |
+|-----------|---------|----------|-------|----------|
+| `enhanced_auth_registry_upsert_pending_then_erase_pending` | pending map | pending context lifecycle | insert pending for client, erase pending | pending entry removed, active entry untouched |
+| `enhanced_auth_registry_upsert_active_then_erase_active` | active map | active context lifecycle | insert active for client, erase active | active entry removed, pending entry untouched |
+| `enhanced_auth_registry_erase_client_clears_pending_and_active` | clear both | full client cleanup | insert pending + active then erase_client | both maps no longer contain client |

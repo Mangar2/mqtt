@@ -11,21 +11,19 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <shared_mutex>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 #include "auth/anonymous_authenticator.h"
 #include "auth/auth_error.h"
 #include "auth/authenticator.h"
-#include "auth/enhanced_auth_handler.h"
 #include "auth/password_authenticator.h"
 #include "authz/acl_engine.h"
 #include "authz/acl_loader.h"
 #include "broker/active_connection_registry.h"
 #include "broker/broker_config.h"
+#include "broker/connect_result.h"
 #include "connection/connection_manager.h"
 #include "connection/topic_alias_table.h"
 #include "data_model/message/message.h"
@@ -58,25 +56,12 @@
 
 namespace mqtt {
 
-/**
- * @brief Full outcome of Broker CONNECT handling (Module 18.1).
- *
- * Returned by `Broker::handle_connect()` and used by the connection-handling
- * layer to build the outbound CONNACK packet or terminate the handshake on
- * failure.
- */
-struct ConnectResult {
-  AuthStatus auth_status{
-      AuthStatus::Success};    ///< Authentication stage outcome.
-  bool session_present{false}; ///< CONNACK Session Present flag.
-  ReasonCode reason_code{ReasonCode::Success}; ///< Final connection outcome.
-  std::optional<BinaryData>
-      auth_data;           ///< AUTH payload when `auth_status == Continue`.
-  std::string auth_method; ///< Negotiated auth method for enhanced auth.
-  std::vector<Property> connack_properties; ///< CONNACK properties from broker
-                                            ///< configuration.
-  std::string client_id; ///< Final client identifier used for this connection.
-};
+class EnhancedAuthRegistry;
+class ConnectFacade;
+class DisconnectFacade;
+class PublishFacade;
+class SubscribeFacade;
+class TickHandler;
 
 /**
  * @brief Top-level broker orchestrator for the MQTT 5.0 broker (Module 15).
@@ -392,46 +377,8 @@ public:
   [[nodiscard]] static bool shutdown_requested() noexcept;
 
 private:
-  /**
-   * @brief Translate `AuthError` exceptions to MQTT reason codes.
-   */
-  [[nodiscard]] static ReasonCode
-  map_auth_error_to_reason(AuthError error_code);
-
-  /**
-   * @brief Open or resume a session after successful authentication.
-   */
-  ConnectResult complete_connect_success(const ConnectPacket &connect_packet,
-                                         std::function<void()> close_callback);
-
-  /**
-   * @brief Build an `AuthResult` representing a protocol error.
-   */
-  [[nodiscard]] static AuthResult protocol_error_result();
-
-  /// Emit structured CONNECT tracing for Module 26 initial scope.
-  void emit_connect_trace(const ConnectPacket &connect_packet,
-                          const ConnectResult &connect_result) noexcept;
-
-  /// Register connection in online registry and emit broker-level side-effects.
-  void register_connection_locked(std::string_view client_id,
-                                  std::shared_ptr<OutboundQueue> queue);
-
-  /// Remove connection from online registry and emit broker-level side-effects.
-  void unregister_connection_locked(
-      std::string_view client_id,
-      const std::shared_ptr<OutboundQueue> &expected_queue = nullptr) noexcept;
-
-  //  Internal helpers
-
-  /// Instantiate all module objects (15.2.1).
+  /// Instantiate all module objects (15.2.1 + threading step 03).
   void create_modules();
-
-  /// Load persistence snapshots into in-memory stores (15.2.2).
-  void load_persistence();
-
-  /// Write in-memory stores to persistence snapshot files (15.3.2).
-  void flush_persistence() noexcept;
 
   /// Static C signal handler (15.3.3).
   static void handle_signal(int sig) noexcept;
@@ -460,16 +407,7 @@ private:
   std::unique_ptr<PasswordAuthenticator> pass_auth_;
   IAuthenticator *active_auth_; ///< Non-owning pointer.
 
-  struct PendingEnhancedAuthContext {
-    EnhancedAuthHandler handler;
-    ConnectPacket connect_packet;
-    std::function<void()> close_callback;
-    std::optional<std::string> assigned_client_id;
-  };
-
-  std::unordered_map<std::string, PendingEnhancedAuthContext>
-      pending_enhanced_auth_;
-  std::unordered_map<std::string, EnhancedAuthHandler> active_enhanced_auth_;
+  std::unique_ptr<EnhancedAuthRegistry> enhanced_auth_registry_;
 
   //  AuthZ (Module 9)
 
@@ -500,12 +438,8 @@ private:
 
   std::unique_ptr<ConnectionManager> connection_manager_;
 
-    //  Connection tracking
-
-    std::unique_ptr<ActiveConnectionRegistry> connection_registry_;
-
-  mutable std::shared_mutex
-      broker_mutex_; ///< Guards shared mutable Broker state.
+  //  Connection tracking
+  std::unique_ptr<ActiveConnectionRegistry> connection_registry_;
 
   //  Monitoring (Module 16)
 
@@ -515,6 +449,13 @@ private:
   //  Structured tracing (Module 26)
 
   std::unique_ptr<StructuredTracer> structured_tracer_;
+
+  // Facades (threading step 03)
+  std::unique_ptr<ConnectFacade> connect_facade_;
+  std::unique_ptr<DisconnectFacade> disconnect_facade_;
+  std::unique_ptr<PublishFacade> publish_facade_;
+  std::unique_ptr<SubscribeFacade> subscribe_facade_;
+  std::unique_ptr<TickHandler> tick_handler_;
 
   //  Signal flag
 

@@ -20,7 +20,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `session_manager/`  | 10       | Session Manager — session lifecycle controller (create/resume/discard), session takeover handler (Client ID collision, Reason 0x8E), and session expiry scheduler. Depends on `store/`, `connection/`, `auth/`. |
 | `will_manager/`     | 11       | Will Manager — will store, will-delay timer, and will publisher. Stores Will Messages on connect, suppresses them on normal disconnect, and publishes them (with optional delay) on connection loss or session expiry. Depends on `data_model/`, `store/`, `session_manager/`. |
 | `transport/`        | 14.2     | Transport Extensions — WebSocket HTTP upgrade handshake, WebSocket frame encoder/decoder, and MQTT payload extraction from binary frames. **Module 14.1 (TLS) is not implemented** — use a reverse proxy for TLS termination. |
-| `broker/`           | 15, 17, 18, 19 | Broker Orchestrator + Concurrency Layer — INI configuration loader, component wiring, ordered startup/shutdown, signal handling, broker-level facades, and a dedicated subscription orchestrator helper for SUBSCRIBE/UNSUBSCRIBE flow under shared-state locking. |
+| `broker/`           | 15, 17, 18, 19, threading step 03 | Broker Orchestrator + Facades — INI configuration loader, component wiring, ordered startup/shutdown, signal handling, and extracted connect/disconnect/publish/subscribe/tick facades with per-facade locking (no broker-wide mutex). |
 | `monitoring/`       | 16, 26   | Monitoring + Structured Tracing — `StatisticsCollector` (connected clients, message throughput, active subscriptions, retained messages, uptime), `SysTopicPublisher` (periodic `$SYS/broker/…` topic publication), `StructuredTracer` (JSON-lines runtime tracing with global threshold and per-module trace overrides), and runtime trace command parsing for `$SYS` control messages. |
 | `subscription_manager/` | 19 | Subscription orchestration module — validates SUBSCRIBE/UNSUBSCRIBE options, parses shared filters, coordinates ACL checks, updates subscription store/shared dispatcher, and builds SUBACK/UNSUBACK reason results. |
 | `outbound_queue/`   | 20       | Outbound Message Queue — thread-safe per-client FIFO of `Message` objects. Decouples publishing thread from receiving client's QoS state. Depends on `data_model/`. |
@@ -159,7 +159,16 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `broker/broker_error.h`     | 15   | `BrokerError` enum and `BrokerException` |
 | `broker/broker_config.h`    | 15.1 | `BrokerConfig` struct — all configuration parameters |
 | `broker/config_loader.h/.cpp` | 15.1.1 | `ConfigLoader` — INI-file parser → `BrokerConfig` |
-| `broker/broker.h/.cpp`      | 15.2–15.3, 17, 18, 19 | `Broker` — component wiring, startup/shutdown, thread-safe facades, connect workflow result, enhanced AUTH/re-auth orchestration, and delegation to the subscription orchestrator |
+| `broker/broker.h/.cpp`      | 15.2–15.3, 17, 18, 19, threading step 03 | `Broker` — thin orchestrator/delegator for startup, shutdown, module wiring, and facade dispatch |
+| `broker/connect_result.h` | 18.1 | `ConnectResult` handshake outcome value type used by broker/connect facade |
+| `broker/enhanced_auth_registry.h/.cpp` | threading step 03 | `EnhancedAuthRegistry` — thread-safe pending/active enhanced AUTH state |
+| `broker/connect_facade.h/.cpp` | threading step 03 | `ConnectFacade` — CONNECT, AUTH continuation, and re-authentication workflow |
+| `broker/disconnect_facade.h/.cpp` | threading step 03 | `DisconnectFacade` — disconnect/connection-lost handling and expiry-override validation |
+| `broker/publish_facade.h/.cpp` | threading step 03 | `PublishFacade` — inbound publish routing + reason mapping + tracing |
+| `broker/subscribe_facade.h/.cpp` | threading step 03 | `SubscribeFacade` — subscribe/unsubscribe orchestration + tracing |
+| `broker/tick_handler.h/.cpp` | threading step 03 | `TickHandler` — periodic housekeeping tick and runtime trace command application |
+| `broker/broker_module_factory.h/.cpp` | threading step 03 | `BrokerModuleFactory` — module creation/wiring extracted from broker |
+| `broker/persistence_coordinator.h/.cpp` | threading step 03 | `PersistenceCoordinator` — load/flush persistence snapshots |
 
 ## `subscription_manager/` (Module 19)
 

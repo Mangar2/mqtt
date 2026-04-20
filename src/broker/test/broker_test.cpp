@@ -1248,6 +1248,7 @@ TEST_CASE("broker_handle_disconnect_with_mismatched_queue_keeps_connection",
 
 TEST_CASE("broker_handle_publish_counts_inbound_via_facade", "[broker]") {
   BrokerConfig cfg = make_test_config();
+  cfg.trace_global_level = TraceLevel::Trace;
   Broker broker(cfg);
   broker.startup();
 
@@ -1280,6 +1281,175 @@ TEST_CASE("broker_handle_publish_counts_inbound", "[broker]") {
 
   broker.handle_publish(msg, "pub_client", "", alias_table);
   CHECK(broker.statistics_collector().snapshot().messages_inbound == 2U);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_publish_rejects_zero_topic_alias", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.trace_global_level = TraceLevel::Trace;
+  Broker broker(cfg);
+  broker.startup();
+
+  Message message;
+  message.topic = Utf8String{"sensors/alias"};
+  message.qos = QoS::AtMostOnce;
+  message.properties.push_back(
+      Property{PropertyId::PayloadFormatIndicator, uint8_t{1U}});
+  message.properties.push_back(Property{PropertyId::TopicAlias, uint16_t{0U}});
+  TopicAliasTable alias_table(10U);
+
+  const ReasonCode reason_code =
+      broker.handle_publish(message, "pub_client", "", alias_table);
+  CHECK(reason_code == ReasonCode::ImplementationSpecificError);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_publish_maps_acl_rejection_to_not_authorized",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.allow_anonymous = false;
+  Broker broker(cfg);
+  broker.startup();
+
+  Message message;
+  message.topic = Utf8String{"restricted/topic"};
+  message.qos = QoS::AtMostOnce;
+  TopicAliasTable alias_table(10U);
+
+  const ReasonCode reason_code =
+      broker.handle_publish(message, "pub_client", "", alias_table);
+  CHECK(reason_code == ReasonCode::NotAuthorized);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_publish_maps_invalid_topic_alias_to_protocol_error",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  Message message;
+  message.topic = Utf8String{""};
+  message.qos = QoS::AtMostOnce;
+  message.properties.push_back(Property{PropertyId::TopicAlias, uint16_t{1U}});
+  TopicAliasTable alias_table(10U);
+
+  const ReasonCode reason_code =
+      broker.handle_publish(message, "pub_client", "", alias_table);
+  CHECK(reason_code == ReasonCode::ProtocolError);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_publish_maps_online_queue_full_to_quota_exceeded",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  auto subscriber_queue = std::make_shared<OutboundQueue>(1U);
+  broker.register_connection("queue_full_sub", subscriber_queue);
+
+  SubscribePacket subscribe_packet;
+  subscribe_packet.packet_id = 21U;
+  subscribe_packet.filters.push_back(
+      SubscribeFilter{.topic_filter = Utf8String{"queue/full"},
+                      .options = SubscribeOptions{.max_qos = QoS::AtMostOnce,
+                                                  .no_local = false,
+                                                  .retain_as_published = false,
+                                                  .retain_handling = 0U}});
+  const SubackPacket suback =
+      broker.handle_subscribe("queue_full_sub", subscribe_packet);
+  REQUIRE(suback.reason_codes.size() == 1U);
+  REQUIRE(suback.reason_codes[0] == ReasonCode::Success);
+
+  Message blocker_message;
+  blocker_message.topic = Utf8String{"blocker"};
+  blocker_message.qos = QoS::AtMostOnce;
+  REQUIRE(subscriber_queue->push(blocker_message));
+
+  Message message;
+  message.topic = Utf8String{"queue/full"};
+  message.payload = BinaryData{{0xABU}};
+  message.qos = QoS::AtMostOnce;
+  TopicAliasTable alias_table(10U);
+
+  const ReasonCode reason_code =
+      broker.handle_publish(message, "pub_client", "", alias_table);
+  CHECK(reason_code == ReasonCode::QuotaExceeded);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_publish_maps_frame_too_large_to_quota_exceeded",
+          "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  cfg.write_queue_max_bytes = 8U;
+  Broker broker(cfg);
+  broker.startup();
+
+  auto subscriber_queue = std::make_shared<OutboundQueue>(10U);
+  broker.register_connection("frame_limit_sub", subscriber_queue);
+
+  SubscribePacket subscribe_packet;
+  subscribe_packet.packet_id = 22U;
+  subscribe_packet.filters.push_back(
+      SubscribeFilter{.topic_filter = Utf8String{"queue/large"},
+                      .options = SubscribeOptions{.max_qos = QoS::AtMostOnce,
+                                                  .no_local = false,
+                                                  .retain_as_published = false,
+                                                  .retain_handling = 0U}});
+  const SubackPacket suback =
+      broker.handle_subscribe("frame_limit_sub", subscribe_packet);
+  REQUIRE(suback.reason_codes.size() == 1U);
+  REQUIRE(suback.reason_codes[0] == ReasonCode::Success);
+
+  Message message;
+  message.topic = Utf8String{"queue/large"};
+  message.payload = BinaryData{{0x31U, 0x32U, 0x33U, 0x34U, 0x35U,
+                                0x36U, 0x37U, 0x38U, 0x39U, 0x30U}};
+  message.qos = QoS::AtMostOnce;
+  TopicAliasTable alias_table(10U);
+
+  const ReasonCode reason_code =
+      broker.handle_publish(message, "pub_client", "", alias_table);
+  CHECK(reason_code == ReasonCode::QuotaExceeded);
+
+  broker.shutdown();
+}
+
+TEST_CASE("broker_handle_publish_with_null_registered_queue_is_safe", "[broker]") {
+  BrokerConfig cfg = make_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  std::shared_ptr<OutboundQueue> null_queue;
+  broker.register_connection("null_queue_sub", null_queue);
+
+  SubscribePacket subscribe_packet;
+  subscribe_packet.packet_id = 23U;
+  subscribe_packet.filters.push_back(
+      SubscribeFilter{.topic_filter = Utf8String{"null/queue"},
+                      .options = SubscribeOptions{.max_qos = QoS::AtMostOnce,
+                                                  .no_local = false,
+                                                  .retain_as_published = false,
+                                                  .retain_handling = 0U}});
+  const SubackPacket suback =
+      broker.handle_subscribe("null_queue_sub", subscribe_packet);
+  REQUIRE(suback.reason_codes.size() == 1U);
+  REQUIRE(suback.reason_codes[0] == ReasonCode::Success);
+
+  Message message;
+  message.topic = Utf8String{"null/queue"};
+  message.qos = QoS::AtMostOnce;
+  TopicAliasTable alias_table(10U);
+
+  const ReasonCode reason_code =
+      broker.handle_publish(message, "pub_client", "", alias_table);
+  CHECK(reason_code == ReasonCode::Success);
 
   broker.shutdown();
 }

@@ -1,4 +1,4 @@
-# broker — Broker Orchestrator + Concurrency + Broker Facades (Modules 15, 17, 18, 19)
+# broker — Broker Orchestrator + Extracted Facades (Modules 15, 17, 18, 19 + Threading Step 03)
 
 Wires all modules together, controls broker startup / shutdown, and provides
 thread-safe access to shared broker state.
@@ -15,10 +15,10 @@ Depends on: all previous modules (1–14), plus shared-state coordination for Mo
 - Install SIGTERM / SIGINT signal handlers.
 - Perform ordered startup and ordered shutdown.
 - Track active connections so the message router can deliver to online clients.
-- Guard all shared mutable broker state with one broker-level mutex.
-- Provide thread-safe wrappers for session connect / disconnect / connection-loss paths.
+- Delegate connect/disconnect/publish/subscribe/tick workflows to dedicated facade classes.
+- Keep thread safety through per-component locks (registry + each facade), not a broker-wide mutex.
 - Provide a high-level connect facade that returns full handshake outcome data.
-- Provide thread-safe subscribe, unsubscribe, and publish facades for packet handlers.
+- Keep broker as thin startup/shutdown + delegation layer.
 
 ---
 
@@ -30,8 +30,17 @@ Depends on: all previous modules (1–14), plus shared-state coordination for Mo
 | `broker_config.h`   | 15.1 | `BrokerConfig` struct with all configuration parameters |
 | `config_loader.h/.cpp` | 15.1.1 | `ConfigLoader` — INI-file parser → `BrokerConfig` |
 | `connack_properties.h/.cpp` | 18.2 | Build static and CONNECT-driven CONNACK properties (server capabilities and optional response information) |
+| `connect_result.h` | 18.1 | `ConnectResult` value type for connect/auth handshake outcomes |
 | `active_connection_registry.h/.cpp` | 20.2 | `ActiveConnectionRegistry` — thread-safe online connection map with dedicated lock |
-| `broker.h/.cpp`     | 15.2–15.3, 17, 18, 19 | `Broker` — component wiring, startup/shutdown, signal handling, broker-level locking, connect/disconnect/subscribe/unsubscribe/publish facades |
+| `enhanced_auth_registry.h/.cpp` | threading step 03 | `EnhancedAuthRegistry` — thread-safe pending and active enhanced-auth state |
+| `connect_facade.h/.cpp` | threading step 03 | `ConnectFacade` — CONNECT + AUTH + re-authentication logic |
+| `disconnect_facade.h/.cpp` | threading step 03 | `DisconnectFacade` — disconnect and connection-loss handling |
+| `publish_facade.h/.cpp` | threading step 03 | `PublishFacade` — inbound publish handling and reason-code mapping |
+| `subscribe_facade.h/.cpp` | threading step 03 | `SubscribeFacade` — subscribe/unsubscribe orchestration + tracing |
+| `tick_handler.h/.cpp` | threading step 03 | `TickHandler` — housekeeping tick + trace runtime command handling |
+| `broker_module_factory.h/.cpp` | threading step 03 | `BrokerModuleFactory` — module construction/wiring extracted from broker |
+| `persistence_coordinator.h/.cpp` | threading step 03 | `PersistenceCoordinator` — persistence load/flush orchestration |
+| `broker.h/.cpp`     | 15.2–15.3, 17, 18, 19, threading step 03 | `Broker` — thin orchestrator/delegator for startup/shutdown, signal handling, and facade dispatch |
 
 ---
 
@@ -252,17 +261,16 @@ and `SIGINT` that sets the internal `shutdown_requested_` atomic flag to `true`.
 Callers should poll `Broker::shutdown_requested()` in their main loop and call
 `shutdown()` when it returns `true`.
 
-#### Concurrency layer (17)
+#### Concurrency layer (17 + threading step 03)
 
-- `Broker` owns a `std::shared_mutex` and acquires an exclusive lock around
-   `register_connection()`, `unregister_connection()`, `handle_publish()`, and `tick()`.
-- `handle_connect()` wraps `SessionManager::handle_connect()` under the same lock.
-- `handle_disconnect()` wraps will handling, connection unregister, and
-   `SessionManager::handle_disconnect()` under one lock.
-- `handle_connection_lost()` wraps will handling, connection unregister, and
-   session teardown under one lock.
-- Direct public accessors to internal mutable stores are intentionally removed
-   from `Broker` to prevent unguarded external mutation.
+- `Broker` does not own a global broker mutex anymore.
+- Thread safety is partitioned:
+  - `ActiveConnectionRegistry` owns map synchronization.
+  - `EnhancedAuthRegistry` owns enhanced-auth state synchronization.
+  - `ConnectFacade`, `DisconnectFacade`, `PublishFacade`, `SubscribeFacade`,
+    and `TickHandler` each own a dedicated mutex for their workflow-critical
+    sequences.
+- Public `Broker` methods delegate to the respective facade.
 
 #### Connect facade (18)
 
@@ -341,7 +349,7 @@ Supported runtime topics:
 ## Constraints
 
 - `startup()` / `shutdown()` should still be orchestrated from a single thread.
-- Shared mutable runtime state is protected by the broker mutex.
+- Shared mutable runtime state is protected by component-local mutexes.
 - Module accessors must not be called before `startup()`.
 - `SessionPersistence`, `RetainedMessagePersistence`, and
    `InflightPersistence` are constructed during `startup()`; listener sockets
