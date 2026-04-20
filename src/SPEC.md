@@ -86,6 +86,9 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `network/tcp_listener.h/.cpp`                  | 6.1.1–2  | `TcpListener` — opens server socket, blocks on accept, hands off connections |
 | `network/stream_buffer.h/.cpp`                 | 6.2      | `StreamBuffer` — accumulates TCP bytes, extracts complete MQTT packets via VBI framing |
 | `network/write_queue.h/.cpp`                   | 6.3      | `WriteQueue` — thread-safe outgoing packet queue; async drain with backpressure |
+| `network/socket_ops.h/.cpp`                    | step 01  | Non-blocking socket helper functions (`set_nonblocking`, `nb_read`, `nb_write`, `nb_accept`) |
+| `network/connection_slot.h/.cpp`               | step 01  | Per-connection fd + read/write ring-buffer state and connection phase tracking |
+| `network/connection_table.h/.cpp`              | step 01  | `ConnectionTable` — thread-safe ownership table of `ConnectionSlot` instances by fd |
 
 ## `connection/` sub-modules
 

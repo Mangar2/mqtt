@@ -23,6 +23,9 @@ all I/O.
 | `tcp_listener.h/.cpp`  | 6.1.1–2  | `TcpListener` — opens server socket, runs accept loop |
 | `stream_buffer.h`      | 6.2      | `StreamBuffer` — buffers incoming bytes, extracts complete MQTT packets |
 | `write_queue.h/.cpp`   | 6.3      | `WriteQueue` — thread-safe outgoing packet queue with async drain |
+| `socket_ops.h/.cpp`    | step 01  | Non-blocking socket helpers (`set_nonblocking`, `nb_read`, `nb_write`, `nb_accept`) |
+| `connection_slot.h/.cpp` | step 01 | Per-connection fd + read/write ring buffers + phase (`Connecting`, `Connected`, `Closing`) |
+| `connection_table.h/.cpp`| step 01 | Thread-safe fd-indexed ownership table for `ConnectionSlot` instances |
 
 ---
 
@@ -133,6 +136,60 @@ A background drain loop writes them to the `TcpConnection`.
 - `enqueue` and `run_drain` are safe to call from different threads.
 - `run_drain` blocks the calling thread; intended to run in a `std::jthread`.
 - Backpressure: `enqueue` returns `false` (does not throw) when at capacity.
+
+---
+
+### `SocketOps` (threading-refactoring step 01)
+
+**Purpose:** Provide non-blocking one-shot helpers around socket syscalls.
+
+**Public API:**
+
+| Function | Description |
+|----------|-------------|
+| `set_nonblocking(fd)` | Sets socket into non-blocking mode |
+| `nb_read(fd, span, out_bytes)` | One non-blocking `recv`; returns `IoResult` |
+| `nb_write(fd, span, out_bytes)` | One non-blocking `send`; returns `IoResult` |
+| `nb_accept(listen_fd, out_fd)` | One non-blocking `accept`; returns `IoResult` |
+
+`IoResult` values:
+- `Ok`: operation completed; out parameter contains produced count/handle.
+- `WouldBlock`: `EAGAIN`/`EWOULDBLOCK`.
+- `Closed`: peer closed connection (read/write path).
+- `Error`: non-recoverable socket failure.
+
+---
+
+### `ConnectionSlot` (threading-refactoring step 01)
+
+**Purpose:** Hold per-connection I/O state without thread ownership.
+
+Contains:
+- socket handle (`fd`)
+- read ring buffer
+- write ring buffer
+- phase enum: `Connecting` → `Connected` → `Closing`
+
+Constraints:
+- no internal locks
+- copy disabled, move enabled
+- buffer push rejects data when capacity would be exceeded
+
+---
+
+### `ConnectionTable` (threading-refactoring step 01)
+
+**Purpose:** Own all `ConnectionSlot` objects and provide fd-indexed access.
+
+Public API:
+- `add(slot)` inserts a slot by fd and returns `false` if fd already exists.
+- `remove(fd)` removes an entry and returns whether removal happened.
+- `find(fd)` returns slot pointer or `nullptr`.
+
+Locking:
+- one internal `std::shared_mutex`
+- shared-lock lookup (`find`)
+- unique-lock mutation (`add`, `remove`)
 
 ---
 

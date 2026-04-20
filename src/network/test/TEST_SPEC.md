@@ -1,6 +1,13 @@
 # network/test — Unit Test Plan (Module 6)
 
-All tests in `network_test.cpp`.  Catch2 tag: `[network]`.
+Tests are split across:
+- `network_test.cpp` (legacy coverage for `StreamBuffer`, `WriteQueue`,
+  `TcpConnection`, `TcpListener`)
+- `socket_ops_test.cpp`
+- `connection_slot_test.cpp`
+- `connection_table_test.cpp`
+
+Catch2 tag: `[network]`.
 
 ---
 
@@ -63,3 +70,43 @@ All tests in `network_test.cpp`.  Catch2 tag: `[network]`.
 | `tcp_listener_ipv4_bind_failure_throws` | Binding to an already occupied IPv4 port throws `NetworkException` |
 | `tcp_listener_ipv6_bind_failure_throws` | Binding to an already occupied IPv6 port throws `NetworkException` |
 | `tcp_listener_socket_create_failure_throws` | Socket creation failure path throws `NetworkException` |
+
+---
+
+## SocketOps (Threading Refactor Step 01)
+
+| Test case | Behaviour |
+|-----------|-----------|
+| `set_nonblocking_returns_ok_on_valid_fd` | `set_nonblocking()` succeeds and sets `O_NONBLOCK` |
+| `nb_read_returns_would_block_on_empty_socket` | Non-blocking read on empty socket returns `WouldBlock` |
+| `nb_read_returns_ok_with_bytes_when_data_present` | Read returns `Ok` and exact byte count when peer wrote data |
+| `nb_read_returns_closed_on_peer_shutdown` | Read returns `Closed` after peer closes |
+| `nb_write_returns_would_block_when_buffer_full` | Repeated writes on non-blocking socket eventually return `WouldBlock` |
+| `nb_accept_returns_would_block_when_no_pending` | Non-blocking accept with no waiting client returns `WouldBlock` |
+| `nb_accept_returns_ok_when_client_pending` | Non-blocking accept returns `Ok` and a valid accepted socket for pending client |
+
+---
+
+## ConnectionSlot (Threading Refactor Step 01)
+
+| Test case | Behaviour |
+|-----------|-----------|
+| `slot_constructed_with_fd_starts_in_connecting_phase` | Slot starts in `Connecting` with stored fd |
+| `read_buffer_push_pop_preserves_bytes` | Read ring-buffer preserves byte order across push/pop |
+| `read_buffer_full_rejects_push_returns_false` | Push fails when read buffer capacity would be exceeded |
+| `write_buffer_drains_in_fifo_order` | Write ring-buffer drains in FIFO order including wrap-around |
+| `phase_transitions_connecting_connected_closing_are_legal` | Forward phase transitions are accepted |
+| `phase_transition_back_to_connecting_is_rejected` | Backwards transition to `Connecting` is rejected |
+| `move_constructor_transfers_fd_and_buffers` | Move construction transfers fd and buffered bytes |
+
+---
+
+## ConnectionTable (Threading Refactor Step 01)
+
+| Test case | Behaviour |
+|-----------|-----------|
+| `add_then_find_returns_slot_pointer` | Added slot can be retrieved by fd |
+| `find_unknown_fd_returns_nullptr` | Lookup of missing fd returns null |
+| `remove_unregisters_and_destroys_slot` | Removed slot is no longer retrievable |
+| `concurrent_find_from_many_threads_is_safe` | Multi-threaded lookups are safe and consistent |
+| `concurrent_add_remove_is_safe` | Concurrent add/remove keeps table consistent |
