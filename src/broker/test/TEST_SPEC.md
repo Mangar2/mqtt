@@ -108,7 +108,7 @@ All tests are tagged `[broker]`.
 | `broker_handle_connect_with_will_properties_succeeds` | connect facade | connect contains will delay and will properties | CONNECT with will + WillDelayInterval + ContentType | returns Success without throw |
 | `broker_handle_disconnect_unregisters_client` | concurrency facade | wrapped disconnect path | registered client + ReasonCode::Success | connected_clients decremented to 0 |
 | `broker_handle_connection_lost_unregisters_client` | concurrency facade | wrapped connection-loss path | registered client + stored will | connected_clients decremented to 0 |
-| `broker_accept_loop_invokes_client_handler` | accept loop | real TCP loopback client connects | mqtt_port=18885 | accept thread runs client handler path and shutdown succeeds |
+| `broker_reactor_accept_invokes_client_handler` | reactor accept | real TCP loopback client connects | mqtt_port=18885 | reactor accept callback runs client handler path and shutdown succeeds |
 
 ---
 

@@ -52,6 +52,19 @@ else()
     list(FILTER MQTT_TEST_SOURCES EXCLUDE REGEX "_win32\\.cpp$")
 endif()
 
+if(APPLE OR CMAKE_SYSTEM_NAME MATCHES ".*BSD")
+    list(FILTER MQTT_ALL_SOURCES  EXCLUDE REGEX "_epoll\\.cpp$")
+    list(FILTER MQTT_TEST_SOURCES EXCLUDE REGEX "_epoll\\.cpp$")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    list(FILTER MQTT_ALL_SOURCES  EXCLUDE REGEX "_kqueue\\.cpp$")
+    list(FILTER MQTT_TEST_SOURCES EXCLUDE REGEX "_kqueue\\.cpp$")
+else()
+    list(FILTER MQTT_ALL_SOURCES  EXCLUDE REGEX "_kqueue\\.cpp$")
+    list(FILTER MQTT_TEST_SOURCES EXCLUDE REGEX "_kqueue\\.cpp$")
+    list(FILTER MQTT_ALL_SOURCES  EXCLUDE REGEX "_epoll\\.cpp$")
+    list(FILTER MQTT_TEST_SOURCES EXCLUDE REGEX "_epoll\\.cpp$")
+endif()
+
 #  Main executable 
 add_executable(mqtt-broker ${MQTT_ALL_SOURCES})
 

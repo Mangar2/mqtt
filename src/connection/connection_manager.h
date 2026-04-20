@@ -15,17 +15,19 @@
 #include <thread>
 #include <vector>
 
+#include "network/connection_table.h"
+#include "network/io_reactor.h"
 #include "network/tcp_connection.h"
 #include "network/tcp_listener.h"
 
 namespace mqtt {
 
 /**
- * @brief Manages listener sockets, accept loops, and tracked client threads.
+ * @brief Manages listener sockets, reactor lifecycle, and tracked client threads.
  *
- * This class owns the networking thread lifecycle that was previously embedded
- * in `Broker`. It starts one accept loop per enabled listener and spawns one
- * tracked thread per accepted client connection.
+ * This class owns the networking lifecycle that was previously embedded in
+ * `Broker`. It starts one IoReactor and registers enabled listeners. Accepted
+ * connections are still dispatched to tracked per-client threads (bridge mode).
  */
 class ConnectionManager {
 public:
@@ -57,14 +59,14 @@ public:
   ConnectionManager &operator=(const ConnectionManager &) = delete;
 
   /**
-   * @brief Start all configured listeners and accept loops.
+   * @brief Start all configured listeners and the IoReactor.
    *
    * Throws on socket/listener failures and leaves the manager stopped.
    */
   void start();
 
   /**
-   * @brief Stop listeners, join accept loops, and terminate client threads.
+   * @brief Stop reactor/listeners and terminate client threads.
    *
    * This method is idempotent and never throws.
    */
@@ -86,25 +88,11 @@ private:
     SocketHandle socket_handle{0U};
   };
 
-  /**
-   * @brief Spawn one accept-loop thread for a listener.
-   * @param listener Listener instance.
-   * @param is_ws `true` for WebSocket listener, `false` for MQTT listener.
-   */
-  void spawn_accept_loop(TcpListener &listener, bool is_ws);
-
-  /**
-   * @brief Accept loop body for one listener.
-   * @param listener Listener used for blocking accept.
-   * @param is_ws `true` for WebSocket listener, `false` for MQTT listener.
-   */
-  void accept_loop(TcpListener &listener, bool is_ws);
+  /** @brief Handle one listener-ready event and drain pending accepts. */
+  void handle_accept_ready(SocketHandle listener_socket_handle, bool is_ws);
 
   /** @brief Join and remove finished client threads from the registry. */
   void cleanup_finished();
-
-  /** @brief Best-effort join of all accept-loop threads. */
-  void join_accept_threads() noexcept;
 
   /** @brief Best-effort join of all client threads. */
   void join_all_clients() noexcept;
@@ -118,9 +106,11 @@ private:
   mutable std::mutex lifecycle_mutex_;
   std::atomic<bool> running_{false};
 
+  std::unique_ptr<IoReactor> io_reactor_;
+  ConnectionTable connection_table_;
+
   std::optional<TcpListener> mqtt_listener_;
   std::optional<TcpListener> ws_listener_;
-  std::vector<std::thread> accept_threads_;
 
   std::mutex client_threads_mutex_;
   std::vector<ClientThreadEntry> client_threads_;

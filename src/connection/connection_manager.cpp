@@ -11,7 +11,42 @@
 #include <thread>
 #include <utility>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
+#include "network/socket_ops.h"
+
 namespace mqtt {
+
+namespace {
+
+void close_socket_handle(SocketHandle socket_handle) noexcept {
+#ifdef _WIN32
+  ::closesocket(static_cast<SOCKET>(socket_handle));
+#else
+  ::close(static_cast<int>(socket_handle));
+#endif
+}
+
+bool set_socket_blocking(SocketHandle socket_handle) noexcept {
+#ifdef _WIN32
+  u_long mode = 0;
+  return ::ioctlsocket(static_cast<SOCKET>(socket_handle), FIONBIO, &mode) == 0;
+#else
+  const int current_flags = ::fcntl(static_cast<int>(socket_handle), F_GETFL, 0);
+  if (current_flags < 0) {
+    return false;
+  }
+  return ::fcntl(static_cast<int>(socket_handle), F_SETFL,
+                 current_flags & ~O_NONBLOCK) == 0;
+#endif
+}
+
+} // namespace
 
 ConnectionManager::ConnectionManager(
     uint16_t mqtt_port, uint16_t ws_port, ClientHandlerCallback callback,
@@ -35,16 +70,44 @@ void ConnectionManager::start() {
   running_.store(true);
 
   try {
+    io_reactor_ = std::make_unique<IoReactor>();
+    io_reactor_->start();
+
     if (mqtt_port_ != 0U) {
       mqtt_listener_ = TcpListener::listen(mqtt_port_);
-      spawn_accept_loop(*mqtt_listener_, false);
+      if (set_nonblocking(mqtt_listener_->fd()) != IoResult::Ok) {
+        throw std::runtime_error(
+            "ConnectionManager failed to set MQTT listener non-blocking");
+      }
+      io_reactor_->register_listener(
+          static_cast<int>(mqtt_listener_->fd()),
+          [this](int listener_socket_fd) {
+            handle_accept_ready(static_cast<SocketHandle>(listener_socket_fd),
+                                false);
+          });
     }
+
     if (ws_port_ != 0U) {
       ws_listener_ = TcpListener::listen(ws_port_);
-      spawn_accept_loop(*ws_listener_, true);
+      if (set_nonblocking(ws_listener_->fd()) != IoResult::Ok) {
+        throw std::runtime_error(
+            "ConnectionManager failed to set WebSocket listener non-blocking");
+      }
+      io_reactor_->register_listener(
+          static_cast<int>(ws_listener_->fd()),
+          [this](int listener_socket_fd) {
+            handle_accept_ready(static_cast<SocketHandle>(listener_socket_fd),
+                                true);
+          });
     }
   } catch (...) {
     running_.store(false);
+
+    if (io_reactor_) {
+      io_reactor_->stop();
+      io_reactor_.reset();
+    }
+
     if (mqtt_listener_.has_value()) {
       mqtt_listener_->close();
       mqtt_listener_.reset();
@@ -53,7 +116,6 @@ void ConnectionManager::start() {
       ws_listener_->close();
       ws_listener_.reset();
     }
-    join_accept_threads();
     throw;
   }
 }
@@ -66,6 +128,11 @@ void ConnectionManager::stop() noexcept {
 
   running_.store(false);
 
+  if (io_reactor_) {
+    io_reactor_->stop();
+    io_reactor_.reset();
+  }
+
   if (mqtt_listener_.has_value()) {
     mqtt_listener_->close();
     mqtt_listener_.reset();
@@ -74,8 +141,6 @@ void ConnectionManager::stop() noexcept {
     ws_listener_->close();
     ws_listener_.reset();
   }
-
-  join_accept_threads();
 
   const auto deadline = std::chrono::steady_clock::now() + client_join_timeout_;
   while (std::chrono::steady_clock::now() < deadline) {
@@ -104,42 +169,61 @@ void ConnectionManager::stop() noexcept {
 
 bool ConnectionManager::is_running() const noexcept { return running_.load(); }
 
-void ConnectionManager::spawn_accept_loop(TcpListener &listener, bool is_ws) {
-  accept_threads_.emplace_back(
-      [this, &listener, is_ws]() { accept_loop(listener, is_ws); });
-}
-
-void ConnectionManager::accept_loop(TcpListener &listener, bool is_ws) {
+void ConnectionManager::handle_accept_ready(SocketHandle listener_socket_handle,
+                                            bool is_ws) {
   while (running_.load()) {
-    try {
-      std::unique_ptr<TcpConnection> connection = listener.accept();
-      if (!connection) {
-        continue;
-      }
+    SocketHandle accepted_socket_handle = k_invalid_socket;
+    const IoResult accept_result =
+        nb_accept(listener_socket_handle, &accepted_socket_handle);
 
-      cleanup_finished();
-
-      auto finished = std::make_shared<std::atomic<bool>>(false);
-      SocketHandle socket_handle = connection->fd();
-
-      std::thread client_thread([this, finished, is_ws,
-                                 connection = std::move(connection)]() mutable {
-        try {
-          callback_(std::move(connection), is_ws);
-        } catch (...) {
-          // Individual client failures must not terminate the accept loop.
-        }
-        finished->store(true);
-      });
-
-      std::lock_guard<std::mutex> client_lock_guard(client_threads_mutex_);
-      client_threads_.push_back(
-          ClientThreadEntry{.thread = std::move(client_thread),
-                            .finished = std::move(finished),
-                            .socket_handle = socket_handle});
-    } catch (...) {
+    if (accept_result == IoResult::WouldBlock) {
       break;
     }
+    if (accept_result != IoResult::Ok ||
+        accepted_socket_handle == k_invalid_socket) {
+      break;
+    }
+
+    if (!set_socket_blocking(accepted_socket_handle)) {
+      close_socket_handle(accepted_socket_handle);
+      continue;
+    }
+
+    const int socket_fd = static_cast<int>(accepted_socket_handle);
+    if (!connection_table_.add(ConnectionSlot(accepted_socket_handle))) {
+      close_socket_handle(accepted_socket_handle);
+      continue;
+    }
+
+    cleanup_finished();
+
+    auto finished = std::make_shared<std::atomic<bool>>(false);
+    std::thread client_thread;
+    try {
+      client_thread = std::thread(
+          [this, finished, is_ws, socket_fd,
+           connection =
+               std::make_unique<TcpConnection>(accepted_socket_handle)]() mutable {
+            try {
+              callback_(std::move(connection), is_ws);
+            } catch (...) {
+              // Individual client failures must not terminate acceptance.
+            }
+            [[maybe_unused]] const bool removed =
+                connection_table_.remove(socket_fd);
+            finished->store(true);
+          });
+    } catch (...) {
+      [[maybe_unused]] const bool removed = connection_table_.remove(socket_fd);
+      close_socket_handle(accepted_socket_handle);
+      continue;
+    }
+
+    std::lock_guard<std::mutex> client_lock_guard(client_threads_mutex_);
+    client_threads_.push_back(
+        ClientThreadEntry{.thread = std::move(client_thread),
+                          .finished = std::move(finished),
+                          .socket_handle = accepted_socket_handle});
   }
 }
 
@@ -157,15 +241,6 @@ void ConnectionManager::cleanup_finished() {
                                       return true;
                                     });
   client_threads_.erase(erase_begin, client_threads_.end());
-}
-
-void ConnectionManager::join_accept_threads() noexcept {
-  for (std::thread &thread : accept_threads_) {
-    if (thread.joinable()) {
-      thread.join();
-    }
-  }
-  accept_threads_.clear();
 }
 
 void ConnectionManager::join_all_clients() noexcept {

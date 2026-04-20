@@ -361,7 +361,7 @@ TEST_CASE("broker_ws_listener_startup_and_shutdown", "[broker]") {
   CHECK(broker.is_running() == false);
 }
 
-TEST_CASE("broker_accept_loop_invokes_client_handler", "[broker]") {
+TEST_CASE("broker_reactor_accept_invokes_client_handler", "[broker]") {
   BrokerConfig cfg = make_test_config();
   cfg.mqtt_port = 18885U;
 

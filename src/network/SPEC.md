@@ -26,6 +26,9 @@ all I/O.
 | `socket_ops.h/.cpp`    | step 01  | Non-blocking socket helpers (`set_nonblocking`, `nb_read`, `nb_write`, `nb_accept`) |
 | `connection_slot.h/.cpp` | step 01 | Per-connection fd + read/write ring buffers + phase (`Connecting`, `Connected`, `Closing`) |
 | `connection_table.h/.cpp`| step 01 | Thread-safe fd-indexed ownership table for `ConnectionSlot` instances |
+| `io_reactor.h`         | step 04  | Platform-neutral reactor interface and callback API |
+| `io_reactor_kqueue.cpp`| step 04  | kqueue backend (`EVFILT_READ`, `EVFILT_WRITE`) for macOS/BSD |
+| `io_reactor_epoll.cpp` | step 04  | epoll backend (`EPOLLIN`, `EPOLLOUT`, `EPOLLRDHUP`) for Linux |
 
 ---
 
@@ -190,6 +193,28 @@ Locking:
 - one internal `std::shared_mutex`
 - shared-lock lookup (`find`)
 - unique-lock mutation (`add`, `remove`)
+
+---
+
+### `IoReactor` (threading-refactoring step 04)
+
+**Purpose:** Central event loop for non-blocking listener and connection events.
+
+Public API:
+- `start()` / `stop()` control the reactor thread.
+- `register_listener(fd, accept_callback)` registers listener accept readiness.
+- `register_connection(fd, read_callback, write_callback)` registers socket
+  read/write readiness callbacks.
+- `arm_write(fd)` / `disarm_write(fd)` toggle write-interest.
+- `unregister(fd)` removes all events for one socket.
+
+Platform mapping:
+- macOS/BSD: `io_reactor_kqueue.cpp`
+- Linux: `io_reactor_epoll.cpp`
+
+Locking:
+- one internal `std::mutex` for registration mutations
+- callback dispatch runs on the reactor thread
 
 ---
 

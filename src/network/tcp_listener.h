@@ -72,6 +72,12 @@ public:
   [[nodiscard]] bool is_open() const noexcept;
 
   /**
+   * @brief Return the underlying listener socket handle.
+   * @return Socket handle, or `k_invalid_socket` when closed.
+   */
+  [[nodiscard]] SocketHandle fd() const noexcept { return fd_; }
+
+  /**
    * @brief Return the port this listener is bound to.
    *
    * Useful when the socket was bound to port 0 (OS-assigned port).

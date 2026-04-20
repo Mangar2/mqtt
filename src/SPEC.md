@@ -90,6 +90,9 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `network/socket_ops.h/.cpp`                    | step 01  | Non-blocking socket helper functions (`set_nonblocking`, `nb_read`, `nb_write`, `nb_accept`) |
 | `network/connection_slot.h/.cpp`               | step 01  | Per-connection fd + read/write ring-buffer state and connection phase tracking |
 | `network/connection_table.h/.cpp`              | step 01  | `ConnectionTable` — thread-safe ownership table of `ConnectionSlot` instances by fd |
+| `network/io_reactor.h`                         | step 04  | Platform-neutral `IoReactor` interface for listener/connection readiness callbacks |
+| `network/io_reactor_kqueue.cpp`                | step 04  | kqueue backend for macOS/BSD |
+| `network/io_reactor_epoll.cpp`                 | step 04  | epoll backend for Linux |
 
 ## `connection/` sub-modules
 
@@ -101,7 +104,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `connection/topic_alias_table.h/.cpp` | 7.3 | `TopicAliasTable` — inbound and outbound alias↔topic mappings with maximum enforcement |
 | `connection/receive_maximum.h/.cpp` | 7.4 | `ReceiveMaximum` — inflight QoS 1/2 packet counter with pause/resume flow control |
 | `connection/outbound_queue_bridge.h/.cpp` | 24 | Outbound queue bridge helpers for draining and transferring pending messages |
-| `connection/connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, accept-loop threads, and tracked client-thread lifecycle |
+| `connection/connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, IoReactor listener registration, and tracked client-thread lifecycle |
 
 ## `executor/` sub-modules
 

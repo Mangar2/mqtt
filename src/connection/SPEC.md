@@ -17,7 +17,7 @@ Depends on: data_model (1), codec (2), qos (5), network (6), auth (8), session_m
 | `runtime_phase_flow.h/.cpp` | 24 | post-CONNECT runtime packet loop and dispatch |
 | `connection_flow_support.h/.cpp` | 24 | shared transport/codec helpers for connect/runtime phases |
 | `outbound_queue_bridge.h/.cpp` | 24 | outbound queue bridging helpers (drain pending messages, transfer pending messages between queue instances) |
-| `connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, accept loops, and tracked client threads |
+| `connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, IoReactor registration, and tracked client threads |
 
 ## 7.1 ConnectionStateMachine
 
@@ -103,9 +103,10 @@ Runtime protocol error handling:
 Responsibilities:
 
 - Own MQTT and optional WebSocket `TcpListener` instances.
-- Start one accept-loop thread per enabled listener.
-- Spawn tracked client threads and clean up finished threads incrementally.
-- Stop listeners and accept loops on shutdown.
+- Own one `IoReactor` and register listener sockets on startup.
+- Accept incoming sockets from reactor callbacks in bridge mode and spawn tracked
+	client threads.
+- Stop reactor and listeners on shutdown.
 - Wait for client threads up to a configured timeout and request socket shutdown
 	for remaining clients to unblock pending reads.
 

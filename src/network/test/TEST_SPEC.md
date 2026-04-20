@@ -6,6 +6,7 @@ Tests are split across:
 - `socket_ops_test.cpp`
 - `connection_slot_test.cpp`
 - `connection_table_test.cpp`
+- `io_reactor_test.cpp`
 
 Catch2 tag: `[network]`.
 
@@ -110,3 +111,16 @@ Catch2 tag: `[network]`.
 | `remove_unregisters_and_destroys_slot` | Removed slot is no longer retrievable |
 | `concurrent_find_from_many_threads_is_safe` | Multi-threaded lookups are safe and consistent |
 | `concurrent_add_remove_is_safe` | Concurrent add/remove keeps table consistent |
+
+---
+
+## IoReactor (Threading Refactor Step 04)
+
+| Test case | Behaviour |
+|-----------|-----------|
+| `start_then_stop_creates_and_joins_reactor_threads` | Reactor start/stop lifecycle is stable and idempotent |
+| `register_listener_invokes_accept_callback_on_incoming_connection` | Listener callback runs when a client connects |
+| `register_connection_invokes_read_callback_when_data_arrives` | Read callback runs after peer writes data |
+| `arm_write_invokes_write_callback_when_socket_writable` | Write callback runs after write-interest is armed |
+| `unregister_stops_callbacks_for_fd` | Unregistered fd no longer receives callbacks |
+| `concurrent_register_unregister_does_not_drop_events` | Concurrent registration/unregistration remains stable under 100-fd stress |
