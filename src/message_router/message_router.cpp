@@ -34,8 +34,23 @@ bool MessageRouter::route(Message &msg, std::string_view client_id,
   // 12.5 — Select one target per matching shared subscription group.
   std::vector<MatchResult> shared_targets =
       shared_dispatcher_.select_next_for_topic(msg.topic.value);
-    const bool has_matching_subscribers =
+  const bool has_matching_subscribers =
       !regular_subscribers.empty() || !shared_targets.empty();
+
+  TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "message_router") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "message_router";
+    event.info = "route_start";
+    event.data.emplace_back("publisher_client_id", std::string(client_id));
+    event.data.emplace_back("username", std::string(username));
+    event.data.emplace_back("topic", msg.topic.value);
+    event.data.emplace_back("qos", std::to_string(static_cast<int>(msg.qos)));
+    event.data.emplace_back("payload_bytes", std::to_string(msg.payload.data.size()));
+    event.data.emplace_back("regular_matches", std::to_string(regular_subscribers.size()));
+    event.data.emplace_back("shared_matches", std::to_string(shared_targets.size()));
+    structured_tracer_->emit(event);
+  }
 
   // 12.2 — Apply per-subscription rules for regular subscribers.
   auto regular_items =
@@ -52,6 +67,19 @@ bool MessageRouter::route(Message &msg, std::string_view client_id,
   // 12.4 + online/offline dispatch for shared subscription targets.
   for (const auto &item : shared_items) {
     dispatch_item(item, now);
+  }
+
+  TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "message_router") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "message_router";
+    event.info = "route_complete";
+    event.data.emplace_back("topic", msg.topic.value);
+    event.data.emplace_back("regular_dispatch_items", std::to_string(regular_items.size()));
+    event.data.emplace_back("shared_dispatch_items", std::to_string(shared_items.size()));
+    event.data.emplace_back("has_matching_subscribers",
+                            has_matching_subscribers ? "true" : "false");
+    structured_tracer_->emit(event);
   }
 
   return has_matching_subscribers;
@@ -76,6 +104,17 @@ void MessageRouter::dispatch_item(const DeliveryItem &item,
   }
 
   if (is_online_(item.client_id)) {
+    TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "message_router") {
+      TraceEvent event;
+      event.level = TraceLevel::Trace;
+      event.module = "message_router";
+      event.info = "online_dispatch";
+      event.data.emplace_back("client_id", std::string(item.client_id));
+      event.data.emplace_back("topic", msg_copy.topic.value);
+      event.data.emplace_back("qos", std::to_string(static_cast<int>(msg_copy.qos)));
+      event.data.emplace_back("payload_bytes", std::to_string(msg_copy.payload.data.size()));
+      structured_tracer_->emit(event);
+    }
     deliver_(item.client_id, msg_copy);
   } else {
     if (msg_copy.qos == QoS::AtMostOnce) {

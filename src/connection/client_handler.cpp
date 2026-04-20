@@ -85,7 +85,7 @@ void run_client_handler_flow(std::unique_ptr<TcpConnection> conn, Broker &broker
   set_receive_timeout(*conn, ws_transport.get(), timeout_millis);
 
   StreamBuffer stream_buffer;
-  WriteQueue write_queue;
+  WriteQueue write_queue(static_cast<std::size_t>(config.write_queue_max_bytes));
   std::thread drain_thread([
       &write_queue, connection = conn.get(), ws_instance = ws_transport.get(),
       is_websocket] {
@@ -120,6 +120,7 @@ void run_client_handler_flow(std::unique_ptr<TcpConnection> conn, Broker &broker
       std::make_shared<OutboundQueue>(
           static_cast<std::size_t>(config.max_queued_messages));
   broker.register_connection(connect_result.client_id, outbound_queue);
+  write_queue.set_tracer(&broker.structured_tracer(), connect_result.client_id);
   trace_connection_registration(broker, connect_result);
   flush_resumed_session_if_needed(broker, connect_result);
 
@@ -149,6 +150,7 @@ void run_client_handler_flow(std::unique_ptr<TcpConnection> conn, Broker &broker
       config.topic_alias_maximum,
       std::chrono::seconds(config.qos_retransmit_timeout_seconds),
       maximum_packet_size, connect_result.auth_method);
+  client_session.set_tracer(&broker.structured_tracer());
 
   if (connect_result.session_present) {
     client_session.mark_session_resumed();

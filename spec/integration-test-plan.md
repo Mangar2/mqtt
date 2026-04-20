@@ -509,9 +509,9 @@ Broker process management for tests that need restart/reconfigure.
 - 18.2.2 1 publisher, 1 subscriber, 1000 messages QoS 1 → all ACKed and delivered
 - 18.2.3 10 publishers, 10 subscribers (fan-out), 100 messages each → 10,000 deliveries total
 - 18.2.4 1 publisher, 100 subscribers, 100 messages → 10,000 deliveries total
-- 18.2.5 Large payload (256 KB) QoS 0 → delivered correctly
-- 18.2.6 Large payload (256 KB) QoS 1 → delivered and ACKed
-- 18.2.7 Maximum Packet Size boundary test → largest possible message delivered
+- 18.2.5 Large payload (256 KB) QoS 0 with INI `broker.write_queue_max_bytes` above frame size → delivered correctly
+- 18.2.6 Large payload (256 KB) QoS 1 with INI `broker.write_queue_max_bytes` above frame size → delivered and ACKed
+- 18.2.7 Large payload (256 KB) QoS 1 with INI `broker.write_queue_max_bytes` below frame size → PUBACK QuotaExceeded (0x97), no delivery to subscriber
 
 ### 18.3 Subscription Load
 - 18.3.1 1 client subscribes to 1000 different topic filters → all active

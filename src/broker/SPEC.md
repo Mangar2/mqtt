@@ -54,6 +54,7 @@ All parameters are optional; absent ones keep their default value.
 | `[broker]`    | `session_expiry_max`  | uint32   | `0`     | Hard cap on session expiry seconds. `0` = unlimited. |
 | `[broker]`    | `topic_alias_maximum` | uint16   | `10`    | Maximum topic alias value per connection. |
 | `[broker]`    | `max_queued_messages` | uint32   | `100`   | Per-client offline queue capacity. |
+| `[broker]`    | `write_queue_max_bytes` | uint32 | `65536` | Per-connection `WriteQueue` byte capacity. |
 | `[broker]`    | `qos_retransmit_timeout_seconds` | uint32 | `20` | Timeout before outbound QoS 1/2 retransmission is eligible in `ClientSession`. |
 | `[broker]`    | `tick_interval_ms`    | uint32   | `100`   | Main loop sleep interval between broker housekeeping ticks. |
 | `[auth]`      | `credential`          | string   | —       | Repeated `username:password` entries for `PasswordAuthenticator`. |
@@ -72,6 +73,8 @@ All parameters are optional; absent ones keep their default value.
 - `server_keep_alive`: `0–65535`. `0` disables the override.
 - `topic_alias_maximum`: `0–65535`. `0` disables topic aliases.
 - `max_queued_messages`: `1–100 000`.
+- `write_queue_max_bytes`: `1–4 194 304` (hard upper bound to avoid unbounded
+   per-connection buffering).
 - `session_expiry_max`: `0–4 294 967 295` (any uint32 value; `0` = no hard cap).
 
 ---
@@ -104,6 +107,7 @@ struct BrokerConfig {
     uint32_t session_expiry_max    = 0;
     uint16_t topic_alias_maximum   = 10;
     uint32_t max_queued_messages   = 100;
+   uint32_t write_queue_max_bytes = 65536;
    uint32_t qos_retransmit_timeout_seconds = 20;
    uint32_t tick_interval_ms      = 100;
    std::vector<PasswordCredentialConfig> password_credentials;

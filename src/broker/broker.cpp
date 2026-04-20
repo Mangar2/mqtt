@@ -23,6 +23,7 @@
 #include "authz/broker_acl_policy.h"
 #include "connection/client_handler.h"
 #include "connection/outbound_queue_bridge.h"
+#include "codec/packet/publish_codec.h"
 #include "data_model/property/property_id.h"
 #include "monitoring/statistics_collector.h"
 #include "monitoring/structured_tracer.h"
@@ -74,6 +75,23 @@ void append_authentication_method_property(std::vector<Property> &properties,
     }
   }
   return false;
+}
+
+[[nodiscard]] std::size_t estimated_publish_frame_bytes(const Message &message) {
+  PublishPacket packet;
+  packet.dup = false;
+  packet.qos = message.qos;
+  packet.retain = message.retain;
+  packet.topic = message.topic;
+  if (message.qos != QoS::AtMostOnce) {
+    packet.packet_id = 1U;
+  }
+  packet.payload = message.payload;
+  packet.properties = message.properties;
+
+  WriteBuffer encoded_frame;
+  encode_publish(encoded_frame, packet);
+  return encoded_frame.size();
 }
 
 } // namespace
@@ -484,13 +502,50 @@ ReasonCode Broker::handle_publish(Message &msg, std::string_view client_id,
   std::unique_lock<std::shared_mutex> lock_guard(broker_mutex_);
   stats_collector_->on_message_inbound();
 
+  TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "broker") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "broker";
+    event.info = "publish_received";
+    event.data.emplace_back("client_id", std::string(client_id));
+    event.data.emplace_back("topic", msg.topic.value);
+    event.data.emplace_back("qos", std::to_string(static_cast<int>(msg.qos)));
+    event.data.emplace_back("payload_bytes",
+                            std::to_string(msg.payload.data.size()));
+    structured_tracer_->emit(event);
+  }
+
   if (has_zero_topic_alias_property(msg)) {
+    TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "broker") {
+      TraceEvent event;
+      event.level = TraceLevel::Trace;
+      event.module = "broker";
+      event.info = "publish_rejected_zero_topic_alias";
+      event.data.emplace_back("client_id", std::string(client_id));
+      event.data.emplace_back("topic", msg.topic.value);
+      event.data.emplace_back("payload_bytes",
+                              std::to_string(msg.payload.data.size()));
+      structured_tracer_->emit(event);
+    }
     return ReasonCode::ImplementationSpecificError;
   }
 
   try {
     const bool has_matching_subscribers =
         message_router_->route(msg, client_id, username, alias_table);
+    TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "broker") {
+      TraceEvent event;
+      event.level = TraceLevel::Trace;
+      event.module = "broker";
+      event.info = "publish_routed";
+      event.data.emplace_back("client_id", std::string(client_id));
+      event.data.emplace_back("topic", msg.topic.value);
+      event.data.emplace_back("payload_bytes",
+              std::to_string(msg.payload.data.size()));
+      event.data.emplace_back("has_matching_subscribers",
+                              has_matching_subscribers ? "true" : "false");
+      structured_tracer_->emit(event);
+    }
     if (!has_matching_subscribers) {
       return ReasonCode::NoMatchingSubscribers;
     }
@@ -501,6 +556,23 @@ ReasonCode Broker::handle_publish(Message &msg, std::string_view client_id,
     }
     if (exception.error() == MessageRouterError::TopicAliasInvalid) {
       return ReasonCode::ProtocolError;
+    }
+    if (exception.error() == MessageRouterError::QueueFull) {
+      return ReasonCode::QuotaExceeded;
+    }
+
+    TRACE_GUARD(structured_tracer_, TraceLevel::Error, "broker") {
+      TraceEvent event;
+      event.level = TraceLevel::Error;
+      event.module = "broker";
+      event.info = "publish_route_failed";
+      event.data.emplace_back("client_id", std::string(client_id));
+      event.data.emplace_back("topic", msg.topic.value);
+      event.data.emplace_back("payload_bytes",
+              std::to_string(msg.payload.data.size()));
+      event.data.emplace_back("router_error",
+                              std::to_string(static_cast<int>(exception.error())));
+      structured_tracer_->emit(event);
     }
     throw;
   }
@@ -707,8 +779,48 @@ void Broker::create_modules() {
   auto deliver_fn = [this](std::string_view cid, const Message &msg) {
     auto iter = active_connections_.find(std::string(cid));
     if (iter != active_connections_.end()) {
+      const std::size_t frame_bytes = estimated_publish_frame_bytes(msg);
+      if (frame_bytes > config_.write_queue_max_bytes) {
+        TRACE_GUARD(structured_tracer_, TraceLevel::Warning, "broker") {
+          TraceEvent event;
+          event.level = TraceLevel::Warning;
+          event.module = "broker";
+          event.info = "outbound_frame_exceeds_write_queue_capacity";
+          event.data.emplace_back("client_id", std::string(cid));
+          event.data.emplace_back("topic", msg.topic.value);
+          event.data.emplace_back("qos", std::to_string(static_cast<int>(msg.qos)));
+          event.data.emplace_back("payload_bytes",
+                                  std::to_string(msg.payload.data.size()));
+          event.data.emplace_back("frame_bytes", std::to_string(frame_bytes));
+          event.data.emplace_back("write_queue_max_bytes",
+                                  std::to_string(config_.write_queue_max_bytes));
+          structured_tracer_->emit(event);
+        }
+        throw MessageRouterException(
+            MessageRouterError::QueueFull,
+            "outbound frame exceeds write queue capacity");
+      }
+
       stats_collector_->on_message_outbound();
-      (void)iter->second->push(msg);
+      const bool pushed = iter->second->push(msg);
+      TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "broker") {
+        TraceEvent event;
+        event.level = pushed ? TraceLevel::Trace : TraceLevel::Warning;
+        event.module = "broker";
+        event.info = pushed ? "outbound_queue_push_ok" : "outbound_queue_push_dropped";
+        event.data.emplace_back("client_id", std::string(cid));
+        event.data.emplace_back("topic", msg.topic.value);
+        event.data.emplace_back("qos", std::to_string(static_cast<int>(msg.qos)));
+        event.data.emplace_back("payload_bytes",
+                                std::to_string(msg.payload.data.size()));
+        event.data.emplace_back("queue_size", std::to_string(iter->second->size()));
+        structured_tracer_->emit(event);
+      }
+      if (!pushed) {
+        throw MessageRouterException(
+            MessageRouterError::QueueFull,
+            "online outbound queue capacity exceeded");
+      }
     }
   };
 

@@ -535,6 +535,7 @@ TEST_CASE("ws_transport_write_frame_to_client", "[transport]") {
   TcpConnection client_conn{k_invalid_socket};
   TcpConnection server_conn{k_invalid_socket};
   make_socket_pair(client_conn, server_conn);
+  client_conn.set_receive_timeout(1500U);
 
   const std::vector<uint8_t> mqtt_payload = {0x30U, 0x03U, 0x01U, 0x02U, 0x03U};
 
@@ -545,9 +546,24 @@ TEST_CASE("ws_transport_write_frame_to_client", "[transport]") {
 
   const auto request = make_valid_upgrade();
   REQUIRE(client_conn.write(request));
-  (void)read_once(client_conn); // handshake response
+  const auto handshake_and_maybe_frame = read_once(client_conn);
+  const std::string handshake_text(handshake_and_maybe_frame.begin(),
+                                   handshake_and_maybe_frame.end());
+  CHECK(handshake_text.find("101 Switching Protocols") != std::string::npos);
 
-  const auto encoded = read_once(client_conn);
+  std::vector<uint8_t> encoded;
+  const std::size_t header_end = handshake_text.find("\r\n\r\n");
+  if (header_end != std::string::npos) {
+    const std::size_t payload_offset = header_end + 4U;
+    if (payload_offset < handshake_and_maybe_frame.size()) {
+      encoded.assign(handshake_and_maybe_frame.begin() +
+                         static_cast<std::ptrdiff_t>(payload_offset),
+                     handshake_and_maybe_frame.end());
+    }
+  }
+  if (encoded.empty()) {
+    encoded = read_once(client_conn);
+  }
 
   server_thread.join();
 

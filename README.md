@@ -132,6 +132,7 @@ Notes:
 | `broker` | `session_expiry_max` | uint32 | `0` | `0..4294967295` | Hard cap for Session Expiry Interval. `0` means no hard cap. |
 | `broker` | `topic_alias_maximum` | uint16 | `10` | `0..65535` | Maximum topic alias value accepted by broker. |
 | `broker` | `max_queued_messages` | uint32 | `100` | `1..100000` | Per-client offline queue capacity. |
+| `broker` | `write_queue_max_bytes` | uint32 | `65536` | `1..4194304` | Per-connection outbound write-queue byte capacity (hard-capped). |
 | `broker` | `qos_retransmit_timeout_seconds` | uint32 | `20` | `>=1` | Timeout before QoS retransmit becomes eligible. |
 | `broker` | `tick_interval_ms` | uint32 | `100` | `>=1` | Main broker tick interval in milliseconds. |
 | `auth` | `credential` | string | none | `username:password` | Repeatable credential entry for password auth mode. |
@@ -163,6 +164,7 @@ server_keep_alive = 30
 session_expiry_max = 86400
 topic_alias_maximum = 20
 max_queued_messages = 1000
+write_queue_max_bytes = 262144
 qos_retransmit_timeout_seconds = 20
 tick_interval_ms = 100
 

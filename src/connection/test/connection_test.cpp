@@ -335,6 +335,14 @@ DisconnectPacket decode_disconnect_packet_or_fail(const std::vector<uint8_t> &fr
   return std::get<DisconnectPacket>(packet);
 }
 
+PubcompPacket decode_pubcomp_packet_or_fail(const std::vector<uint8_t> &frame) {
+  REQUIRE_FALSE(frame.empty());
+  ReadBuffer read_buffer(frame);
+  const AnyPacket packet = read_packet(read_buffer);
+  REQUIRE(std::holds_alternative<PubcompPacket>(packet));
+  return std::get<PubcompPacket>(packet);
+}
+
 ConnackPacket decode_connack_packet_or_fail(const std::vector<uint8_t> &frame) {
   REQUIRE_FALSE(frame.empty());
   ReadBuffer read_buffer(frame);
@@ -485,6 +493,16 @@ WriteBuffer make_puback_frame(uint16_t packet_id) {
   return frame;
 }
 
+WriteBuffer make_pubcomp_frame(uint16_t packet_id,
+                               ReasonCode reason_code = ReasonCode::Success) {
+  WriteBuffer frame;
+  encode_pubcomp(frame,
+                 PubcompPacket{.packet_id = packet_id,
+                               .reason_code = reason_code,
+                               .properties = {}});
+  return frame;
+}
+
 std::optional<uint16_t>
 decode_publish_packet_id(const std::vector<uint8_t> &frame) {
   if (frame.empty() || static_cast<uint8_t>(frame[0] >> 4U) != 3U) {
@@ -539,6 +557,10 @@ std::vector<uint8_t> malformed_connect_frame() {
 
 std::vector<uint8_t> malformed_runtime_frame() {
   return {0x00U, 0x00U};
+}
+
+std::vector<uint8_t> malformed_runtime_invalid_qos_frame() {
+  return {0x36U, 0x00U};
 }
 
 std::vector<uint8_t> make_valid_upgrade_request() {
@@ -1134,7 +1156,7 @@ TEST_CASE("client_handler_connect_ping_disconnect_roundtrip", "[connection]") {
   broker.startup();
 
   SocketPair sockets = make_socket_pair();
-  set_recv_timeout(sockets.client_fd, 3000U);
+  set_recv_timeout(sockets.client_fd, 1500U);
 
   ClientHandler handler;
   std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
@@ -1312,12 +1334,13 @@ TEST_CASE("client_handler_server_keep_alive_override_emits_disconnect",
 TEST_CASE("client_handler_connect_receive_maximum_limits_outbound_inflight_qos1",
           "[connection]") {
   BrokerConfig cfg = make_handler_test_config();
+  cfg.qos_retransmit_timeout_seconds = 120U;
 
   Broker broker(cfg);
   broker.startup();
 
   SocketPair sockets = make_socket_pair();
-  set_recv_timeout(sockets.client_fd, 1500U);
+  set_recv_timeout(sockets.client_fd, 3000U);
 
   ClientHandler handler;
   std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
@@ -1325,7 +1348,7 @@ TEST_CASE("client_handler_connect_receive_maximum_limits_outbound_inflight_qos1"
   });
 
   write_all(sockets.client_fd,
-            make_connect_with_receive_maximum_frame("client-rxmax-out", 10U,
+            make_connect_with_receive_maximum_frame("client-rxmax-out", 60U,
                                                     1U));
   (void)read_some(sockets.client_fd, 512U); // CONNACK
 
@@ -1409,7 +1432,9 @@ TEST_CASE("client_handler_connect_receive_maximum_limits_outbound_inflight_qos1"
   }
   CHECK(seen_second_outbound_publish);
 
-  write_all(sockets.client_fd, make_disconnect_frame());
+  if (seen_second_outbound_publish) {
+    write_all(sockets.client_fd, make_disconnect_frame());
+  }
   close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
@@ -1508,6 +1533,112 @@ TEST_CASE("client_handler_runtime_malformed_packet_returns_disconnect",
   const DisconnectPacket disconnect_packet = decode_disconnect_packet_or_fail(disconnect);
   CHECK(disconnect_packet.reason_code == ReasonCode::ProtocolError);
 
+  close_socket_handle(sockets.client_fd);
+  worker.join();
+  broker.shutdown();
+}
+
+TEST_CASE("client_handler_runtime_invalid_qos_packet_returns_malformed_disconnect",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  SocketPair sockets = make_socket_pair();
+  set_recv_timeout(sockets.client_fd, 1500U);
+
+  ClientHandler handler;
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
+  });
+
+  write_all(sockets.client_fd, make_connect_frame("client-4b", 10U));
+  (void)read_some(sockets.client_fd, 512U); // CONNACK
+
+  write_all(sockets.client_fd, malformed_runtime_invalid_qos_frame());
+  const std::vector<uint8_t> disconnect =
+      read_nonempty_with_retries(sockets.client_fd, 512U, 6);
+  CHECK_FALSE(disconnect.empty());
+  CHECK(packet_type_nibble(disconnect) == 14U);
+
+  const DisconnectPacket disconnect_packet = decode_disconnect_packet_or_fail(disconnect);
+  CHECK(disconnect_packet.reason_code == ReasonCode::MalformedPacket);
+
+  close_socket_handle(sockets.client_fd);
+  worker.join();
+  broker.shutdown();
+}
+
+TEST_CASE("client_handler_inbound_qos2_duplicate_publish_releases_inbound_slot",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+  cfg.receive_maximum = 2U;
+
+  Broker broker(cfg);
+  broker.startup();
+
+  SocketPair sockets = make_socket_pair();
+  set_recv_timeout(sockets.client_fd, 1500U);
+
+  ClientHandler handler;
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
+  });
+
+  write_all(sockets.client_fd, make_connect_frame("client-qos2-dup", 10U));
+  (void)read_some(sockets.client_fd, 512U); // CONNACK
+
+  write_all(sockets.client_fd, make_publish_qos2_frame(61U));
+  const std::vector<uint8_t> first_pubrec =
+      read_nonempty_with_retries(sockets.client_fd, 512U, 10);
+  REQUIRE_FALSE(first_pubrec.empty());
+  REQUIRE(packet_type_nibble(first_pubrec) == 5U);
+
+  write_all(sockets.client_fd, make_publish_qos2_frame(61U));
+  const std::vector<uint8_t> duplicate_pubrec =
+      read_nonempty_with_retries(sockets.client_fd, 512U, 10);
+  REQUIRE_FALSE(duplicate_pubrec.empty());
+  REQUIRE(packet_type_nibble(duplicate_pubrec) == 5U);
+
+  write_all(sockets.client_fd, make_pubrel_frame(61U));
+  const std::vector<uint8_t> pubcomp =
+      read_nonempty_with_retries(sockets.client_fd, 512U, 10);
+  REQUIRE_FALSE(pubcomp.empty());
+  REQUIRE(packet_type_nibble(pubcomp) == 7U);
+
+  write_all(sockets.client_fd, make_disconnect_frame());
+  close_socket_handle(sockets.client_fd);
+  worker.join();
+  broker.shutdown();
+}
+
+TEST_CASE("client_handler_runtime_unknown_pubrel_returns_packet_identifier_not_found",
+          "[connection]") {
+  BrokerConfig cfg = make_handler_test_config();
+  Broker broker(cfg);
+  broker.startup();
+
+  SocketPair sockets = make_socket_pair();
+  set_recv_timeout(sockets.client_fd, 1500U);
+
+  ClientHandler handler;
+  std::thread worker([&handler, &broker, &cfg, server_connection = std::move(sockets.server_connection)]() mutable {
+    handler.run(std::move(server_connection), broker, cfg, false);
+  });
+
+  write_all(sockets.client_fd, make_connect_frame("client-pubrel-miss", 10U));
+  (void)read_some(sockets.client_fd, 512U); // CONNACK
+
+  write_all(sockets.client_fd, make_pubrel_frame(99U));
+  const std::vector<uint8_t> pubcomp =
+      read_nonempty_with_retries(sockets.client_fd, 512U, 10);
+  REQUIRE_FALSE(pubcomp.empty());
+  REQUIRE(packet_type_nibble(pubcomp) == 7U);
+
+  const PubcompPacket pubcomp_packet = decode_pubcomp_packet_or_fail(pubcomp);
+  CHECK(pubcomp_packet.reason_code == ReasonCode::PacketIdentifierNotFound);
+
+  write_all(sockets.client_fd, make_disconnect_frame());
   close_socket_handle(sockets.client_fd);
   worker.join();
   broker.shutdown();
@@ -2347,6 +2478,8 @@ TEST_CASE("client_handler_outbound_qos2_ack_flow_exercises_pubrec_and_pubcomp",
   const std::vector<uint8_t> outbound_pubrel = read_some(sockets.client_fd, 512U);
   CHECK_FALSE(outbound_pubrel.empty());
   CHECK(packet_type_nibble(outbound_pubrel) == 6U);
+
+  write_all(sockets.client_fd, make_pubcomp_frame(*outbound_packet_id));
 
   close_socket_handle(sockets.client_fd);
   worker.join();

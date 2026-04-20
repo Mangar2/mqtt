@@ -34,6 +34,8 @@
 
 namespace mqtt {
 
+class StructuredTracer;
+
 /**
  * @brief Result of handling one inbound PUBLISH packet.
  */
@@ -176,6 +178,12 @@ public:
    */
   void mark_session_resumed() noexcept;
 
+  /**
+   * @brief Attach optional structured tracer for per-session diagnostics.
+   * @param tracer Tracer instance; nullptr disables session trace emission.
+   */
+  void set_tracer(StructuredTracer *tracer) noexcept;
+
 private:
   /**
    * @brief Convert an inbound PUBLISH into the broker message model.
@@ -246,6 +254,7 @@ private:
   std::chrono::steady_clock::duration
       retransmit_timeout_; ///< QoS retransmit timeout.
   uint32_t maximum_packet_size_; ///< 0 means no maximum packet size limit.
+  StructuredTracer *structured_tracer_{nullptr}; ///< Optional diagnostics tracer.
   bool replay_pending_inflight_{false}; ///< Immediate inflight replay on resume.
   std::deque<Message>
       deferred_messages_; ///< QoS 1/2 messages parked while receive-max paused.

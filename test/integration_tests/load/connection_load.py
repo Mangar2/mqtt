@@ -225,7 +225,7 @@ def run_18_1_1_hundred_concurrent_connections_all_connack_success(config) -> tup
     process = None
     try:
         host, port, process = _start_isolated_broker()
-        return _execute_connection_load(
+        success, details = _execute_connection_load(
             host,
             port,
             total_connections=100,
@@ -233,6 +233,7 @@ def run_18_1_1_hundred_concurrent_connections_all_connack_success(config) -> tup
             spacing_seconds=0.0,
             allow_rejection=False,
         )
+        return success, f"18.1.1 {details}"
     except Exception as error:
         return False, f"18.1.1 failed: {error}"
     finally:
@@ -243,7 +244,7 @@ def run_18_1_2_five_hundred_concurrent_connections_all_connack_success(config) -
     process = None
     try:
         host, port, process = _start_isolated_broker()
-        return _execute_connection_load(
+        success, details = _execute_connection_load(
             host,
             port,
             total_connections=500,
@@ -251,6 +252,7 @@ def run_18_1_2_five_hundred_concurrent_connections_all_connack_success(config) -
             spacing_seconds=0.0005,
             allow_rejection=False,
         )
+        return success, f"18.1.2 {details}"
     except Exception as error:
         return False, f"18.1.2 failed: {error}"
     finally:
@@ -261,7 +263,7 @@ def run_18_1_3_thousand_concurrent_connections_success_or_graceful_rejection(con
     process = None
     try:
         host, port, process = _start_isolated_broker()
-        return _execute_connection_load(
+        success, details = _execute_connection_load(
             host,
             port,
             total_connections=1000,
@@ -269,6 +271,7 @@ def run_18_1_3_thousand_concurrent_connections_success_or_graceful_rejection(con
             spacing_seconds=0.0005,
             allow_rejection=True,
         )
+        return success, f"18.1.3 {details}"
     except Exception as error:
         return False, f"18.1.3 failed: {error}"
     finally:

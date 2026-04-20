@@ -92,10 +92,13 @@ void process_auth_packets_from_buffer(Broker &broker, StreamBuffer &stream_buffe
         build_auth_properties(connect_result.auth_method,
                               connect_result.auth_data,
                               !connect_result.auth_method.empty());
-    enqueue_frame(write_queue,
-                  encode_auth_packet(connect_result.reason_code,
-                                     auth_properties),
-                  is_websocket);
+    if (!enqueue_frame(write_queue,
+                       encode_auth_packet(connect_result.reason_code,
+                                          auth_properties),
+                       is_websocket)) {
+      stop_transport();
+      return false;
+    }
     if (!wait_for_auth_packet(connection, ws_transport, broker,
                               stream_buffer, connect_result,
                               stop_transport)) {
@@ -159,14 +162,17 @@ void process_auth_packets_from_buffer(Broker &broker, StreamBuffer &stream_buffe
           connect_result.reason_code, connect_result.connack_properties);
     }
 
-    enqueue_frame(
+    if (!enqueue_frame(
         write_queue,
         encode_connack_packet(ConnackPacket{
-            .session_present = connect_result.session_present,
-            .reason_code = ReasonCode::Success,
-            .properties = connect_result.connack_properties,
+          .session_present = connect_result.session_present,
+          .reason_code = ReasonCode::Success,
+          .properties = connect_result.connack_properties,
         }),
-        is_websocket);
+        is_websocket)) {
+      stop_transport();
+      return false;
+    }
     return true;
   }
 }

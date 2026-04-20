@@ -61,8 +61,8 @@ struct RuntimeDisconnectState {
 [[nodiscard]] std::vector<Property> build_protocol_error_disconnect_properties(
     const ConnectPacket &connect_packet, std::string_view reason_text);
 
-void enqueue_frame(WriteQueue &write_queue, WriteBuffer frame,
-                   bool is_websocket);
+[[nodiscard]] bool enqueue_frame(WriteQueue &write_queue, WriteBuffer frame,
+                                 bool is_websocket);
 void write_frame_direct(TcpConnection &connection,
                         WebSocketTransport *ws_transport, WriteBuffer frame,
                         bool is_websocket);

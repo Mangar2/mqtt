@@ -70,6 +70,8 @@ Module-24 flow is split into focused components:
 Implemented behavior:
 - Optional WebSocket upgrade handshake when `is_ws=true`.
 - Socket timeout setup and async `WriteQueue` drain thread startup.
+- Per-connection `WriteQueue` capacity sourced from
+	`BrokerConfig::write_queue_max_bytes`.
 - CONNECT handshake handling via `Broker::handle_connect()` plus enhanced-auth loop via `Broker::handle_auth_packet()`.
 - Construction of `ClientSession` after successful CONNACK and registration of the per-client `OutboundQueue`.
 	- Effective keep-alive source: `broker.server_keep_alive` override when non-zero, otherwise CONNECT keep-alive.

@@ -47,8 +47,17 @@ struct PasswordCredentialConfig {
  * - `receive_maximum` must be in [1, 65 535].
  * - `server_keep_alive` must be in [0, 65 535].
  * - `max_queued_messages` must be in [1, 100 000].
+ * - `write_queue_max_bytes` must be in
+ *   [1, `k_write_queue_max_bytes_hard_limit`].
  */
 struct BrokerConfig {
+  /// Default per-connection write queue capacity in bytes.
+  static constexpr uint32_t k_write_queue_max_bytes_default = 64U * 1024U;
+
+  /// Hard upper bound for per-connection write queue capacity from config.
+  static constexpr uint32_t k_write_queue_max_bytes_hard_limit =
+      4U * 1024U * 1024U;
+
   //  15.1.2  Port configuration
 
   /// MQTT/TCP listener port.  0 = disabled.
@@ -79,6 +88,10 @@ struct BrokerConfig {
 
   /// Per-client offline queue capacity (1–100 000).
   uint32_t max_queued_messages = 100U;
+
+  /// Per-connection write queue capacity in bytes.
+  /// Allowed range: [1, k_write_queue_max_bytes_hard_limit].
+  uint32_t write_queue_max_bytes = k_write_queue_max_bytes_default;
 
   /// Timeout in seconds before an outbound QoS 1/2 exchange is eligible for
   /// retransmission.

@@ -7,6 +7,7 @@
 #include "codec/packet/publish_codec.h"
 #include "data_model/session/inflight_direction.h"
 #include "data_model/session/inflight_state.h"
+#include "monitoring/structured_tracer.h"
 
 namespace mqtt {
 
@@ -39,6 +40,10 @@ ClientSession::ClientSession(
 
 AuthResult ClientSession::initiate_auth(const ConnectPacket &connect_packet) {
   return enhanced_auth_handler_.initiate(connect_packet);
+}
+
+void ClientSession::set_tracer(StructuredTracer *tracer) noexcept {
+  structured_tracer_ = tracer;
 }
 
 InboundPublishResult
@@ -123,6 +128,20 @@ std::vector<WriteBuffer> ClientSession::drain_outbound() {
     Message queued_message = std::move(next_message.value());
 
     if (!is_outbound_publish_within_maximum_packet_size(queued_message)) {
+      TRACE_GUARD(structured_tracer_, TraceLevel::Warning, "connection") {
+        TraceEvent event;
+        event.level = TraceLevel::Warning;
+        event.module = "connection";
+        event.info = "outbound_publish_dropped_maximum_packet_size";
+        event.data.emplace_back("client_id", std::string(client_id_));
+        event.data.emplace_back("topic", queued_message.topic.value);
+        event.data.emplace_back("qos", std::to_string(static_cast<int>(queued_message.qos)));
+        event.data.emplace_back("payload_bytes",
+                                std::to_string(queued_message.payload.data.size()));
+        event.data.emplace_back("maximum_packet_size",
+                                std::to_string(maximum_packet_size_));
+        structured_tracer_->emit(event);
+      }
       continue;
     }
 
@@ -133,6 +152,18 @@ std::vector<WriteBuffer> ClientSession::drain_outbound() {
     }
 
     if (!receive_maximum_.acquire()) {
+      TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "connection") {
+        TraceEvent event;
+        event.level = TraceLevel::Trace;
+        event.module = "connection";
+        event.info = "outbound_publish_deferred_receive_maximum";
+        event.data.emplace_back("client_id", std::string(client_id_));
+        event.data.emplace_back("topic", queued_message.topic.value);
+        event.data.emplace_back("qos", std::to_string(static_cast<int>(queued_message.qos)));
+        event.data.emplace_back("payload_bytes",
+                                std::to_string(queued_message.payload.data.size()));
+        structured_tracer_->emit(event);
+      }
       deferred_messages_.push_front(std::move(queued_message));
       break;
     }

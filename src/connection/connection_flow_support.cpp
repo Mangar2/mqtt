@@ -147,13 +147,12 @@ std::vector<Property> build_protocol_error_disconnect_properties(
                    .value = Utf8String{std::string(reason_text)}}};
 }
 
-void enqueue_frame(WriteQueue &write_queue, WriteBuffer frame,
+bool enqueue_frame(WriteQueue &write_queue, WriteBuffer frame,
                    bool is_websocket) {
   if (is_websocket) {
-    (void)write_queue.enqueue(WebSocketTransport::encode_frame(frame));
-    return;
+    return write_queue.enqueue(WebSocketTransport::encode_frame(frame));
   }
-  (void)write_queue.enqueue(std::move(frame));
+  return write_queue.enqueue(std::move(frame));
 }
 
 void write_frame_direct(TcpConnection &connection,

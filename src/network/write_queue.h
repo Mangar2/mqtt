@@ -11,11 +11,14 @@
 #include <cstddef>
 #include <mutex>
 #include <queue>
+#include <string>
 #include <vector>
 
 #include "network/tcp_connection.h"
 
 namespace mqtt {
+
+class StructuredTracer;
 
 /**
  * @brief Thread-safe queue of outgoing serialized packets with asynchronous
@@ -50,6 +53,14 @@ public:
    * @param max_bytes Maximum total bytes that may be buffered.
    */
   explicit WriteQueue(std::size_t max_bytes = k_default_max_bytes);
+
+  /**
+   * @brief Attach optional structured tracer metadata for queue diagnostics.
+   *
+   * @param tracer Structured tracer instance; nullptr disables queue tracing.
+   * @param queue_id Stable queue identifier (for example client ID).
+   */
+  void set_tracer(StructuredTracer *tracer, std::string queue_id) noexcept;
 
   /**
    * @brief Enqueue one serialized packet (6.3.1).
@@ -114,6 +125,8 @@ private:
   std::queue<std::vector<uint8_t>> queue_; ///< Pending outgoing packets.
   std::size_t queued_bytes_{0};      ///< Running sum of queued packet sizes.
   std::atomic<bool> stopped_{false}; ///< True after stop() is called.
+  StructuredTracer *structured_tracer_{nullptr}; ///< Optional diagnostics tracer.
+  std::string queue_id_; ///< Trace correlation ID for this queue.
 };
 
 } // namespace mqtt

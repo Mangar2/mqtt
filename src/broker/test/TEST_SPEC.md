@@ -35,6 +35,8 @@ All tests are tagged `[broker]`.
 | `parse_max_connections_zero_throws` | bad max_conn | max_connections=0 | `max_connections=0` | BrokerException(InvalidConfig) |
 | `parse_receive_maximum_zero_throws` | bad recv_max | receive_maximum=0 | `receive_maximum=0` | BrokerException(InvalidConfig) |
 | `parse_max_queued_zero_throws` | bad queued | max_queued_messages=0 | `max_queued_messages=0` | BrokerException(InvalidConfig) |
+| `parse_write_queue_max_bytes_zero_throws` | bad write queue size | write_queue_max_bytes=0 | `write_queue_max_bytes=0` | BrokerException(InvalidConfig) |
+| `parse_write_queue_max_bytes_over_hard_limit_throws` | write queue hard cap | value above hard upper bound | `write_queue_max_bytes=<hard_limit+1>` | BrokerException(InvalidConfig) |
 
 ### ConfigLoader::load()
 

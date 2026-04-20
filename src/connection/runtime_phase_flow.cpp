@@ -54,6 +54,21 @@ public:
       : context_(context), should_break_(should_break) {}
 
   void operator()(const PublishPacket &packet) const {
+    TRACE_GUARD((&context_.broker.structured_tracer()), TraceLevel::Trace,
+                "connection") {
+      TraceEvent event;
+      event.level = TraceLevel::Trace;
+      event.module = "connection";
+      event.info = "inbound_publish_received";
+      event.data.emplace_back("client_id",
+                              std::string(context_.client_session.client_id()));
+      event.data.emplace_back("topic", packet.topic.value);
+      event.data.emplace_back("qos", std::to_string(static_cast<int>(packet.qos)));
+      event.data.emplace_back("payload_bytes",
+                              std::to_string(packet.payload.data.size()));
+      context_.broker.structured_tracer().emit(event);
+    }
+
     const auto encode_puback_frame = [](const PubackPacket &puback_packet) {
       WriteBuffer frame;
       encode_puback(frame, puback_packet);
@@ -92,6 +107,21 @@ public:
           routable_message, context_.client_session.client_id(),
           context_.client_session.username(),
           context_.client_session.topic_alias_table());
+
+      TRACE_GUARD((&context_.broker.structured_tracer()), TraceLevel::Trace,
+                  "connection") {
+        TraceEvent event;
+        event.level = TraceLevel::Trace;
+        event.module = "connection";
+        event.info = "inbound_publish_broker_result";
+        event.data.emplace_back("client_id",
+                                std::string(context_.client_session.client_id()));
+        event.data.emplace_back("topic", packet.topic.value);
+        event.data.emplace_back("qos", std::to_string(static_cast<int>(packet.qos)));
+        event.data.emplace_back("reason_code",
+                                std::to_string(static_cast<int>(publish_reason)));
+        context_.broker.structured_tracer().emit(event);
+      }
 
       if (publish_reason == ReasonCode::ProtocolError) {
         if (tracks_inbound_inflight) {
@@ -138,8 +168,22 @@ public:
     }
 
     for (WriteBuffer frame : publish_result.response_frames) {
-      enqueue_frame(context_.write_queue, std::move(frame),
-                    context_.is_websocket);
+      TRACE_GUARD((&context_.broker.structured_tracer()), TraceLevel::Trace,
+                  "connection") {
+        TraceEvent event;
+        event.level = TraceLevel::Trace;
+        event.module = "connection";
+        event.info = "enqueue_response_frame";
+        event.data.emplace_back("client_id",
+                                std::string(context_.client_session.client_id()));
+        event.data.emplace_back("frame_bytes", std::to_string(frame.size()));
+        context_.broker.structured_tracer().emit(event);
+      }
+      if (!enqueue_frame(context_.write_queue, std::move(frame),
+                         context_.is_websocket)) {
+        handle_write_queue_overflow();
+        return;
+      }
     }
   }
 
@@ -147,16 +191,20 @@ public:
     const SubackPacket suback =
         context_.broker.handle_subscribe(context_.client_session.client_id(),
                                          packet);
-    enqueue_frame(context_.write_queue, encode_suback_packet(suback),
-                  context_.is_websocket);
+    if (!enqueue_frame(context_.write_queue, encode_suback_packet(suback),
+                       context_.is_websocket)) {
+      handle_write_queue_overflow();
+    }
   }
 
   void operator()(const UnsubscribePacket &packet) const {
     const UnsubackPacket unsuback =
         context_.broker.handle_unsubscribe(context_.client_session.client_id(),
                                            packet);
-    enqueue_frame(context_.write_queue, encode_unsuback_packet(unsuback),
-                  context_.is_websocket);
+    if (!enqueue_frame(context_.write_queue, encode_unsuback_packet(unsuback),
+                       context_.is_websocket)) {
+      handle_write_queue_overflow();
+    }
   }
 
   void operator()(const PubackPacket &packet) const {
@@ -164,9 +212,11 @@ public:
   }
 
   void operator()(const PubrecPacket &packet) const {
-    enqueue_frame(context_.write_queue,
-                  context_.client_session.on_pubrec(packet),
-                  context_.is_websocket);
+    if (!enqueue_frame(context_.write_queue,
+                       context_.client_session.on_pubrec(packet),
+                       context_.is_websocket)) {
+      handle_write_queue_overflow();
+    }
   }
 
   void operator()(const PubrelPacket &packet) const {
@@ -190,7 +240,10 @@ public:
       context_.inbound_receive_maximum.release();
     } catch (const ConnectionException & /*unused*/) {
     }
-    enqueue_frame(context_.write_queue, pubcomp_frame, context_.is_websocket);
+    if (!enqueue_frame(context_.write_queue, pubcomp_frame,
+                       context_.is_websocket)) {
+      handle_write_queue_overflow();
+    }
   }
 
   void operator()(const PubcompPacket &packet) const {
@@ -198,8 +251,10 @@ public:
   }
 
   void operator()(const PingreqPacket & /*unused*/) const {
-    enqueue_frame(context_.write_queue, encode_pingresp_packet(),
-                  context_.is_websocket);
+    if (!enqueue_frame(context_.write_queue, encode_pingresp_packet(),
+                       context_.is_websocket)) {
+      handle_write_queue_overflow();
+    }
   }
 
   void operator()(const DisconnectPacket &packet) const {
@@ -234,10 +289,12 @@ public:
     const std::vector<Property> auth_properties =
       build_auth_properties(context_.client_session.negotiated_auth_method(),
                   auth_result.auth_data, true);
-    enqueue_frame(context_.write_queue,
-                  encode_auth_packet(auth_result.reason_code,
-                                     auth_properties),
-                  context_.is_websocket);
+    if (!enqueue_frame(context_.write_queue,
+                       encode_auth_packet(auth_result.reason_code,
+                                          auth_properties),
+                       context_.is_websocket)) {
+      handle_write_queue_overflow();
+    }
   }
 
   void operator()(const ConnectPacket & /*unused*/) const {
@@ -251,6 +308,14 @@ public:
   }
 
 private:
+  void handle_write_queue_overflow() const {
+    mark_clean_disconnect(context_.disconnect_state, ReasonCode::QuotaExceeded);
+    write_frame_direct(context_.connection, context_.ws_transport,
+                       encode_disconnect_packet(ReasonCode::QuotaExceeded),
+                       context_.is_websocket);
+    should_break_ = true;
+  }
+
   RuntimePacketDispatchContext &context_;
   bool &should_break_;
 };
@@ -374,7 +439,28 @@ void run_connected_session_loop(
     const std::vector<WriteBuffer> outbound_frames =
         client_session.drain_outbound();
     for (WriteBuffer frame : outbound_frames) {
-      enqueue_frame(write_queue, std::move(frame), is_websocket);
+      TRACE_GUARD((&broker.structured_tracer()), TraceLevel::Trace,
+                  "connection") {
+        TraceEvent event;
+        event.level = TraceLevel::Trace;
+        event.module = "connection";
+        event.info = "enqueue_outbound_frame";
+        event.data.emplace_back("client_id", std::string(client_session.client_id()));
+        event.data.emplace_back("frame_bytes", std::to_string(frame.size()));
+        broker.structured_tracer().emit(event);
+      }
+      if (!enqueue_frame(write_queue, std::move(frame), is_websocket)) {
+        disconnect_state.clean_disconnect = true;
+        disconnect_state.reason_code = ReasonCode::QuotaExceeded;
+        write_frame_direct(connection, ws_transport,
+                           encode_disconnect_packet(ReasonCode::QuotaExceeded),
+                           is_websocket);
+        break;
+      }
+    }
+
+    if (disconnect_state.clean_disconnect) {
+      break;
     }
 
     TransportReadChunk chunk = read_transport_chunk(connection, ws_transport);
