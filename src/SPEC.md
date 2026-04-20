@@ -13,6 +13,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `store/`       | 4        | In-memory runtime state: subscription store, retained message store, session store, and inflight store. Depends on `data_model/` and `topic/`. |
 | `qos/`         | 5        | QoS Engine — Packet ID allocation, QoS 1 and QoS 2 state machines with retransmission. Depends on `data_model/` and `store/`. |
 | `network/`     | 6        | Network Layer — TCP listener, connection wrapper, incoming stream buffer, and outgoing write queue. No MQTT knowledge. No external dependencies. |
+| `executor/`    | threading step 02 | Executor primitives — connection job model, concurrent queue, per-connection scheduler, pool scaling policy, and elastic worker pool. Not yet integrated into broker/connection runtime. |
 | `connection/`  | 7, 23, 24 | Connection Handler + Connection Manager — per-connection lifecycle helpers, outbound-queue bridging utilities, dedicated listener/thread lifecycle management, and lean client I/O orchestration delegating workflow to `Broker` facades and `ClientSession`. |
 | `auth/`        | 8        | Authentication Module — pluggable authenticator interface, username/password and anonymous authenticators, and enhanced AUTH packet handler. |
 | `authz/`            | 9        | Authorization Module — ACL engine with MQTT wildcard topic matching, ACL rule structure, configuration loader with runtime reload, and broker startup ACL policy helpers. |
@@ -101,6 +102,16 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `connection/receive_maximum.h/.cpp` | 7.4 | `ReceiveMaximum` — inflight QoS 1/2 packet counter with pause/resume flow control |
 | `connection/outbound_queue_bridge.h/.cpp` | 24 | Outbound queue bridge helpers for draining and transferring pending messages |
 | `connection/connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, accept-loop threads, and tracked client-thread lifecycle |
+
+## `executor/` sub-modules
+
+| Directory / File | Plan ref | Contents |
+|------------------|----------|----------|
+| `executor/connection_job.h` | threading step 02 | `ConnectionJob` value type with `JobType` and payload variant |
+| `executor/job_queue.h/.cpp` | threading step 02 | `JobQueue` — concurrent blocking FIFO for `ConnectionJob` |
+| `executor/pool_scaling_policy.h/.cpp` | threading step 02 | Pure scale-up decision helper `should_grow(...)` |
+| `executor/job_scheduler.h/.cpp` | threading step 02 | `JobScheduler` — per-fd serialization and deferred backlog |
+| `executor/worker_pool.h/.cpp` | threading step 02 | `WorkerPool` — elastic worker-thread execution on queued jobs |
 
 ## `auth/` sub-modules
 
