@@ -24,14 +24,29 @@ set(CMAKE_C_COMPILER_TARGET   ${CROSS_TRIPLE})
 set(CMAKE_CXX_COMPILER_TARGET ${CROSS_TRIPLE})
 
 # Raspberry Pi Zero/1: ARM1176JZF-S (ARMv6), VFP, hard-float ABI
-set(CMAKE_C_FLAGS_INIT   "-march=armv6zk -mfpu=vfp -mfloat-abi=hard -marm")
-set(CMAKE_CXX_FLAGS_INIT "-march=armv6zk -mfpu=vfp -mfloat-abi=hard -marm")
+# Pin Clang to GCC 12 cross runtime to match older Pi userspace ABI.
+set(GCC12_INSTALL_DIR "/usr/lib/gcc-cross/arm-linux-gnueabihf/12")
+set(CMAKE_C_FLAGS_INIT   "--gcc-install-dir=${GCC12_INSTALL_DIR} -march=armv6zk -mfpu=vfp -mfloat-abi=hard -marm")
+set(CMAKE_CXX_FLAGS_INIT "--gcc-install-dir=${GCC12_INSTALL_DIR} -nostdlib++ -march=armv6zk -mfpu=vfp -mfloat-abi=hard -marm")
 
-# Sysroot: try environment variable first, then the standard Debian cross location
+# Prefer target sysroot library directories at link time.
+# This keeps both glibc and libstdc++ aligned with the Raspberry Pi runtime.
+if(DEFINED ENV{ARM_SYSROOT})
+    string(APPEND CMAKE_EXE_LINKER_FLAGS_INIT
+        " -L$ENV{ARM_SYSROOT}/usr/lib/arm-linux-gnueabihf"
+        " -L$ENV{ARM_SYSROOT}/lib/arm-linux-gnueabihf"
+        " -Wl,-rpath-link,$ENV{ARM_SYSROOT}/usr/lib/arm-linux-gnueabihf"
+        " -Wl,-rpath-link,$ENV{ARM_SYSROOT}/lib/arm-linux-gnueabihf")
+endif()
+
+# Link standard C++ runtime explicitly from sysroot (paired with -nostdlib++).
+set(CMAKE_CXX_STANDARD_LIBRARIES_INIT "-lstdc++ -lm -lc")
+
+# Sysroot is optional. On Debian/Ubuntu cross packages, forcing
+# /usr/arm-linux-gnueabihf can break linker path resolution.
+# Only use a sysroot when explicitly provided by the caller.
 if(DEFINED ENV{ARM_SYSROOT})
     set(CMAKE_SYSROOT "$ENV{ARM_SYSROOT}")
-elseif(EXISTS "/usr/arm-linux-gnueabihf")
-    set(CMAKE_SYSROOT "/usr/arm-linux-gnueabihf")
 endif()
 
 # Never search host paths for target libraries/headers
