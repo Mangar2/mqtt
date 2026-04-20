@@ -55,10 +55,11 @@ Message SubscriberFanout::apply_subscription_rules(const Message &msg,
       out.properties.erase(dup_it);
     }
 
-    out.properties.push_back(Property{
-        .id = PropertyId::SubscriptionIdentifier,
-        .value = VariableByteInteger{sub.identifier.value()},
-    });
+    Property subscription_identifier_property{
+      .id = PropertyId::SubscriptionIdentifier,
+      .value = PropertyValue{VariableByteInteger{sub.identifier.value()}},
+    };
+    out.properties.push_back(subscription_identifier_property);
   }
 
   return out;

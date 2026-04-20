@@ -67,6 +67,9 @@
       "hidden":        true,
       "inherits":      "base",
       "toolchainFile": "${sourceDir}/cmake/toolchains/armv6-linux-gnueabihf.cmake",
+      "environment": {
+        "ARM_SYSROOT": "${sourceDir}/.sysroots/rpi-armv6-trixie"
+      },
       "cacheVariables": {
         "BUILD_TESTING": "OFF"
       }
