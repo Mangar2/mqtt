@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import socket
 import uuid
@@ -34,6 +35,10 @@ encode_utf8_string = _raw_tcp_module.encode_utf8_string
 send_and_expect_close = _raw_tcp_module.send_and_expect_close
 send_bytes = _raw_tcp_module.send_bytes
 
+_DEFAULT_AUTH_USERNAME = "default-user"
+_DEFAULT_AUTH_PASSWORD = "default-pass"
+_BROKER_MANAGED_ENV = "MQTT_INTEGRATION_BROKER_MANAGED"
+
 
 def _unique_client_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
@@ -59,6 +64,14 @@ def _start_isolated_broker(overrides: dict[str, object] | None = None):
 
     process = start_broker(effective_overrides)
     return _broker_module.resolve_target_host("127.0.0.1"), int(effective_overrides["network.mqtt_port"]), process
+
+
+def _require_managed_broker_in_remote(required_overrides: str) -> None:
+    if os.environ.get(_BROKER_MANAGED_ENV, "").strip() != "0":
+        return
+    raise _broker_module.ManagedBrokerRequired(
+        f"requires managed broker startup (requested overrides: {required_overrides})"
+    )
 
 
 def _assigned_client_identifier(connack_result) -> str | None:
@@ -97,8 +110,8 @@ def run_1_1_1_anonymous_connect_success(config) -> tuple[bool, str]:
 
 def run_1_1_2_valid_username_password_success(config) -> tuple[bool, str]:
     process = None
-    username = "integration-user"
-    password = "integration-pass"
+    username = _DEFAULT_AUTH_USERNAME
+    password = _DEFAULT_AUTH_PASSWORD
 
     try:
         host, port, process = _start_isolated_broker(
@@ -126,10 +139,11 @@ def run_1_1_2_valid_username_password_success(config) -> tuple[bool, str]:
 
 def run_1_1_3_invalid_username_password_rejected(config) -> tuple[bool, str]:
     process = None
-    username = "integration-user"
-    password = "integration-pass"
+    username = _DEFAULT_AUTH_USERNAME
+    password = _DEFAULT_AUTH_PASSWORD
 
     try:
+        _require_managed_broker_in_remote("auth.credential, broker.allow_anonymous")
         host, port, process = _start_isolated_broker(
             {
                 "broker.allow_anonymous": False,

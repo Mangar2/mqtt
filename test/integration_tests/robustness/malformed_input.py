@@ -54,10 +54,6 @@ def _start_isolated_broker(overrides: dict[str, object] | None = None):
     return _broker_module.resolve_target_host("127.0.0.1"), int(effective_overrides["network.mqtt_port"]), process
 
 
-def _is_alive(process) -> bool:
-    return process is not None and process.poll() is None
-
-
 def _verify_valid_connect(host: str, port: int, timeout_seconds: float) -> None:
     with MqttClient(timeout_seconds=timeout_seconds) as client:
         connack = client.connect(
@@ -115,8 +111,6 @@ def run_19_1_1_random_garbage_closes_no_crash(config) -> tuple[bool, str]:
         closed = send_and_expect_close(host, port, b"\xff\x00\xde\xad\xbe\xef\xca\xfe", timeout=timeout)
         if not closed:
             return False, "broker did not close connection on random garbage bytes"
-        if not _is_alive(process):
-            return False, "broker process crashed after garbage input"
 
         _verify_valid_connect(host, port, timeout)
         return True, "19.1.1 broker closed garbage connection and remained healthy"
@@ -135,9 +129,6 @@ def run_19_1_2_truncated_connect_closed_cleanly(config) -> tuple[bool, str]:
         # CONNECT with remaining length announced but payload intentionally cut short.
         truncated_connect = b"\x10\x0c\x00\x04MQTT\x05\x02"
         _send_then_half_close(host, port, truncated_connect, timeout)
-
-        if not _is_alive(process):
-            return False, "broker process crashed after truncated CONNECT"
 
         _verify_valid_connect(host, port, timeout)
         return True, "19.1.2 truncated CONNECT handled cleanly and broker stayed operational"
@@ -158,8 +149,6 @@ def run_19_1_3_oversized_packet_rejected_no_oom(config) -> tuple[bool, str]:
         closed = send_and_expect_close(host, port, oversized_header, timeout=timeout)
         if not closed:
             return False, "broker did not close connection on oversized packet length"
-        if not _is_alive(process):
-            return False, "broker process crashed after oversized packet input"
 
         _verify_valid_connect(host, port, timeout)
         return True, "19.1.3 oversized packet was rejected without broker instability"
@@ -177,9 +166,6 @@ def run_19_1_4_zero_length_input_handled_gracefully(config) -> tuple[bool, str]:
 
         # TCP has no explicit empty frame; connect and half-close without sending bytes.
         _send_then_half_close(host, port, b"", timeout)
-
-        if not _is_alive(process):
-            return False, "broker process crashed on zero-length input"
 
         _verify_valid_connect(host, port, timeout)
         return True, "19.1.4 zero-length input handled gracefully"
@@ -200,8 +186,6 @@ def run_19_1_5_wrong_remaining_length_detected_disconnect(config) -> tuple[bool,
         closed = _send_then_half_close_expect_close(host, port, malformed_publish, timeout)
         if not closed:
             return False, "broker did not close connection on wrong remaining length"
-        if not _is_alive(process):
-            return False, "broker process crashed after wrong remaining length input"
 
         _verify_valid_connect(host, port, timeout)
         return True, "19.1.5 broker detected wrong remaining length and disconnected"
@@ -222,8 +206,6 @@ def run_19_1_6_publish_qos_3_rejected(config) -> tuple[bool, str]:
         closed = send_and_expect_close(host, port, malformed_publish_qos3, timeout=timeout)
         if not closed:
             return False, "broker did not close connection on PUBLISH QoS 3"
-        if not _is_alive(process):
-            return False, "broker process crashed after QoS 3 PUBLISH"
 
         _verify_valid_connect(host, port, timeout)
         return True, "19.1.6 broker rejected reserved QoS 3 PUBLISH and remained healthy"

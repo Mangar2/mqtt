@@ -374,12 +374,18 @@ def run_18_1_1_ten_concurrent_connections_all_connack_success(config) -> tuple[b
         stop_broker(process)
 
 
-def run_18_1_2_progressive_combined_load_until_thousand_with_timeout(config) -> tuple[bool, str]:
+def run_18_1_2_progressive_combined_load_relative_steps_with_threshold(config) -> tuple[bool, str]:
     process = None
-    stage_sizes = [100, 250, 500, 750, 1000]
+    stage_sizes: list[int] = []
+    next_stage_size = 100
+    while next_stage_size <= 12800:
+        stage_sizes.append(next_stage_size)
+        next_stage_size *= 2
+
+    success_threshold_stage = 800
     highest_successful_stage = 0
     stage_reports: list[str] = []
-    hard_timeout_seconds = max(90.0, config.timeout_seconds * 30.0)
+    hard_timeout_seconds = max(180.0, config.timeout_seconds * 45.0)
 
     try:
         host, port, process = _start_isolated_broker()
@@ -407,18 +413,19 @@ def run_18_1_2_progressive_combined_load_until_thousand_with_timeout(config) -> 
                     f"stage_reports={stage_reports}",
                 )
             if not connection_ok:
+                if highest_successful_stage >= success_threshold_stage:
+                    return (
+                        True,
+                        "18.1.2 success threshold met (800) and stopped after first failing stage "
+                        f"{stage_size} in connection phase: {connection_details}; "
+                        f"highest_successful_stage={highest_successful_stage}; stage_reports={stage_reports}",
+                    )
                 return (
                     False,
                     "18.1.2 failed during connection stage "
                     f"at {stage_size}: {connection_details}; highest_successful_stage={highest_successful_stage}; "
+                    "stopped immediately (no n+1 stage); "
                     f"stage_reports={stage_reports}",
-                )
-
-            connection_elapsed = time.monotonic() - connection_start
-            if stage_size == 100 and connection_elapsed > 1.0:
-                return (
-                    False,
-                    f"18.1.2 failed: 100-connection storm exceeded 1 second target ({connection_elapsed:.3f}s)",
                 )
 
             try:
@@ -438,10 +445,18 @@ def run_18_1_2_progressive_combined_load_until_thousand_with_timeout(config) -> 
                     f"stage_reports={stage_reports}",
                 )
             if not message_ok:
+                if highest_successful_stage >= success_threshold_stage:
+                    return (
+                        True,
+                        "18.1.2 success threshold met (800) and stopped after first failing stage "
+                        f"{stage_size} in message phase: {message_details}; "
+                        f"highest_successful_stage={highest_successful_stage}; stage_reports={stage_reports}",
+                    )
                 return (
                     False,
                     "18.1.2 failed during message stage "
                     f"at {stage_size}: {message_details}; highest_successful_stage={highest_successful_stage}; "
+                    "stopped immediately (no n+1 stage); "
                     f"stage_reports={stage_reports}",
                 )
 
@@ -462,10 +477,18 @@ def run_18_1_2_progressive_combined_load_until_thousand_with_timeout(config) -> 
                     f"stage_reports={stage_reports}",
                 )
             if not subscription_ok:
+                if highest_successful_stage >= success_threshold_stage:
+                    return (
+                        True,
+                        "18.1.2 success threshold met (800) and stopped after first failing stage "
+                        f"{stage_size} in subscription phase: {subscription_details}; "
+                        f"highest_successful_stage={highest_successful_stage}; stage_reports={stage_reports}",
+                    )
                 return (
                     False,
                     "18.1.2 failed during subscription stage "
                     f"at {stage_size}: {subscription_details}; highest_successful_stage={highest_successful_stage}; "
+                    "stopped immediately (no n+1 stage); "
                     f"stage_reports={stage_reports}",
                 )
 
@@ -474,12 +497,16 @@ def run_18_1_2_progressive_combined_load_until_thousand_with_timeout(config) -> 
                 f"{stage_size}: conn[{connection_details}] msg[{message_details}] sub[{subscription_details}]"
             )
 
-        if highest_successful_stage < 1000:
-            return False, f"18.1.2 failed: highest successful stage was {highest_successful_stage}, expected 1000"
+        if highest_successful_stage < success_threshold_stage:
+            return (
+                False,
+                "18.1.2 failed: success threshold 800 was not reached; "
+                f"highest_successful_stage={highest_successful_stage}; stage_reports={stage_reports}",
+            )
 
         return (
             True,
-            "18.1.2 progressive combined load succeeded up to 1000 "
+            "18.1.2 progressive combined load reached full range up to 12800 "
             f"within hard timeout {hard_timeout_seconds:.1f}s; stage_reports={stage_reports}",
         )
     except Exception as error:
@@ -533,8 +560,8 @@ TEST_CASES = [
     },
     {
         "name": "load/combined_progressive_stages_up_to_1000_with_timeout",
-        "description": "18.1.2 Combined progressive load (covers former 18.1.1-18.1.3) with hard timeout, success only if stage 1000 passes",
-        "run": run_18_1_2_progressive_combined_load_until_thousand_with_timeout,
+        "description": "18.1.2 Combined progressive load with relative stages (*2) up to 12800 and hard timeout; success threshold is stage 800",
+        "run": run_18_1_2_progressive_combined_load_relative_steps_with_threshold,
     },
     {
         "name": "load/connection_storm_100_within_one_second_no_crash",

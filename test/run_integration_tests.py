@@ -14,6 +14,7 @@ Features:
 import argparse
 import hashlib
 import importlib.util
+import ipaddress
 import json
 import os
 import re
@@ -80,6 +81,55 @@ def _broker_reachable(hostname: str, port: int, timeout_seconds: float = 0.5) ->
             return True
     except OSError:
         return False
+
+
+def _is_ip_literal(hostname: str) -> bool:
+    try:
+        ipaddress.ip_address(hostname.strip())
+        return True
+    except ValueError:
+        return False
+
+
+def _resolve_runner_target_host(hostname: str, port: int) -> tuple[str, str | None]:
+    normalized_host = hostname.strip()
+    if not normalized_host or _is_ip_literal(normalized_host):
+        return normalized_host, None
+
+    try:
+        infos = socket.getaddrinfo(normalized_host, port, type=socket.SOCK_STREAM)
+    except OSError:
+        return normalized_host, None
+
+    candidates: list[tuple[int, str]] = []
+    for family, sock_type, protocol, _, sockaddr in infos:
+        if sock_type != socket.SOCK_STREAM:
+            continue
+        address = sockaddr[0]
+        if any(existing_address == address for _, existing_address in candidates):
+            continue
+        candidates.append((family, address))
+
+    if not candidates:
+        return normalized_host, None
+
+    for _, candidate_address in candidates:
+        if _broker_reachable(candidate_address, port, timeout_seconds=0.4):
+            if candidate_address != normalized_host:
+                return candidate_address, f"Resolved host {normalized_host} -> {candidate_address}"
+            return candidate_address, None
+
+    ipv4_candidate = next(
+        (candidate_address for family, candidate_address in candidates if family == socket.AF_INET),
+        None,
+    )
+    if ipv4_candidate is not None and ipv4_candidate != normalized_host:
+        return ipv4_candidate, (
+            f"Resolved host {normalized_host} -> {ipv4_candidate} "
+            "(IPv4 fallback to avoid IPv6-only connect failures)"
+        )
+
+    return normalized_host, None
 
 
 def _run_or_raise(command: list[str], label: str) -> None:
@@ -336,6 +386,13 @@ def _test_sort_key(test: TestCase) -> tuple:
     return (1, test.name)
 
 
+def _requirement_number_from_description(description: str) -> str | None:
+    number_match = REQUIREMENT_NUMBER_PREFIX.match(description)
+    if number_match is None:
+        return None
+    return number_match.group(1)
+
+
 def _ordered_results(results: dict, tests: list[TestCase]) -> dict:
     known_test_names = {test.name for test in tests}
     ordered_known_test_names = [test.name for test in tests if test.name in results]
@@ -470,7 +527,8 @@ def main() -> int:
         print("No tests selected. Use --list to inspect available names.")
         return 1
 
-    config = RunnerConfig(host=args.host, port=args.port, timeout_seconds=args.timeout)
+    resolved_host, resolution_message = _resolve_runner_target_host(args.host, args.port)
+    config = RunnerConfig(host=resolved_host, port=args.port, timeout_seconds=args.timeout)
     startup_options = StartupOptions(
         trace_level=args.trace_level,
         trace_modules=tuple(args.trace_module),
@@ -481,6 +539,9 @@ def main() -> int:
         config,
     )
     run_started_at = _now_utc_iso()
+
+    if resolution_message is not None:
+        print(f"[SETUP] {resolution_message}")
 
     broker_process: subprocess.Popen[str] | None = None
     try:
@@ -525,6 +586,22 @@ def main() -> int:
                     details = str(error)
                 else:
                     raise
+
+            if status_text == "skipped":
+                requirement_number = _requirement_number_from_description(test.description)
+                if requirement_number is not None:
+                    if not details:
+                        details = f"{requirement_number} skipped"
+                    elif not details.startswith(f"{requirement_number} "):
+                        details = f"{requirement_number} skipped: {details}"
+
+            if status_text == "failed":
+                requirement_number = _requirement_number_from_description(test.description)
+                if requirement_number is not None:
+                    if not details:
+                        details = f"{requirement_number} failed"
+                    elif not details.startswith(f"{requirement_number} "):
+                        details = f"{requirement_number} failed: {details}"
 
             print(f"[{status_text.upper()}] {test.name}")
             if details:

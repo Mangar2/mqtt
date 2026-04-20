@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import socket
 import uuid
@@ -39,8 +40,9 @@ _AUTH_DATA_PROPERTY_ID = 0x16
 _USER_PROPERTY_ID = 0x26
 _REASON_STRING_PROPERTY_ID = 0x1F
 
-_AUTH_USERNAME = "enhanced-user"
-_AUTH_PASSWORD = "enhanced-pass"
+_AUTH_USERNAME = "default-user"
+_AUTH_PASSWORD = "default-pass"
+_BROKER_MANAGED_ENV = "MQTT_INTEGRATION_BROKER_MANAGED"
 
 
 def _unique_client_id(prefix: str) -> str:
@@ -64,6 +66,14 @@ def _start_isolated_broker(overrides: dict[str, object] | None = None):
 
     process = start_broker(effective_overrides)
     return _broker_module.resolve_target_host("127.0.0.1"), int(effective_overrides["network.mqtt_port"]), process
+
+
+def _require_managed_broker_in_remote(required_overrides: str) -> None:
+    if os.environ.get(_BROKER_MANAGED_ENV, "").strip() != "0":
+        return
+    raise _broker_module.ManagedBrokerRequired(
+        f"requires managed broker startup (requested overrides: {required_overrides})"
+    )
 
 
 def _encode_auth_properties(auth_method: str | None = None, auth_data: bytes | None = None) -> bytes:
@@ -285,8 +295,8 @@ def _open_raw_connection(host: str, port: int, timeout_seconds: float) -> socket
 
 def run_10_1_1_valid_credentials_connack_success(config) -> tuple[bool, str]:
     process = None
-    username = "auth-user"
-    password = "auth-pass"
+    username = _AUTH_USERNAME
+    password = _AUTH_PASSWORD
 
     try:
         host, port, process = _start_isolated_broker(
@@ -316,10 +326,11 @@ def run_10_1_1_valid_credentials_connack_success(config) -> tuple[bool, str]:
 
 def run_10_1_2_invalid_credentials_connack_0x86(config) -> tuple[bool, str]:
     process = None
-    username = "auth-user"
-    password = "auth-pass"
+    username = _AUTH_USERNAME
+    password = _AUTH_PASSWORD
 
     try:
+        _require_managed_broker_in_remote("auth.credential, broker.allow_anonymous")
         host, port, process = _start_isolated_broker(
             {
                 "broker.allow_anonymous": False,
@@ -347,10 +358,11 @@ def run_10_1_2_invalid_credentials_connack_0x86(config) -> tuple[bool, str]:
 
 def run_10_1_3_missing_required_credentials_connack_0x86(config) -> tuple[bool, str]:
     process = None
-    username = "auth-user"
-    password = "auth-pass"
+    username = _AUTH_USERNAME
+    password = _AUTH_PASSWORD
 
     try:
+        _require_managed_broker_in_remote("auth.credential, broker.allow_anonymous")
         host, port, process = _start_isolated_broker(
             {
                 "broker.allow_anonymous": False,
@@ -379,6 +391,7 @@ def run_10_2_1_connect_with_auth_method_uses_auth_packets(config) -> tuple[bool,
     auth_method = "PLAIN"
 
     try:
+        _require_managed_broker_in_remote("auth.credential, broker.allow_anonymous")
         host, port, process = _start_isolated_broker(
             {
                 "broker.allow_anonymous": False,
@@ -529,6 +542,7 @@ def run_10_2_3_failed_handshake_connack_0x86(config) -> tuple[bool, str]:
     auth_method = "PLAIN"
 
     try:
+        _require_managed_broker_in_remote("auth.credential, broker.allow_anonymous")
         host, port, process = _start_isolated_broker(
             {
                 "broker.allow_anonymous": False,
@@ -592,6 +606,7 @@ def run_10_2_4_unknown_authentication_method_connack_0x8c(config) -> tuple[bool,
     process = None
 
     try:
+        _require_managed_broker_in_remote("auth.credential, broker.allow_anonymous")
         host, port, process = _start_isolated_broker(
             {
                 "broker.allow_anonymous": False,
@@ -758,6 +773,7 @@ def run_10_2_6_reauthentication_failure_disconnect(config) -> tuple[bool, str]:
     auth_method = "PLAIN"
 
     try:
+        _require_managed_broker_in_remote("auth.credential, broker.allow_anonymous")
         host, port, process = _start_isolated_broker(
             {
                 "broker.allow_anonymous": False,
@@ -847,10 +863,11 @@ def run_10_3_2_anonymous_access_disabled_connect_fails(config) -> tuple[bool, st
     process = None
 
     try:
+        _require_managed_broker_in_remote("auth.credential, broker.allow_anonymous")
         host, port, process = _start_isolated_broker(
             {
                 "broker.allow_anonymous": False,
-                "auth.credential": "auth-user:auth-pass",
+                "auth.credential": f"{_AUTH_USERNAME}:{_AUTH_PASSWORD}",
             }
         )
 

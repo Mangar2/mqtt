@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import shutil
 import signal
@@ -35,6 +36,8 @@ stop_broker = _broker_module.stop_broker
 MqttClient = _mqtt_client_module.MqttClient
 PacketTypes = _mqtt_client_module.PacketTypes
 Properties = _mqtt_client_module.Properties
+
+_BROKER_MANAGED_ENV = "MQTT_INTEGRATION_BROKER_MANAGED"
 
 
 def _unique_client_id(prefix: str) -> str:
@@ -71,6 +74,14 @@ def _start_isolated_broker(overrides: dict[str, object] | None = None):
     return _broker_module.resolve_target_host("127.0.0.1"), int(effective_overrides["network.mqtt_port"]), process, effective_overrides
 
 
+def _require_managed_broker_in_remote(required_overrides: str) -> None:
+    if os.environ.get(_BROKER_MANAGED_ENV, "").strip() != "0":
+        return
+    raise _broker_module.ManagedBrokerRequired(
+        f"requires managed broker startup (requested overrides: {required_overrides})"
+    )
+
+
 def _wait_for_process_exit(process, timeout_seconds: float) -> None:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
@@ -98,6 +109,7 @@ def run_16_1_1_sigterm_sends_disconnect_8b_to_all_clients(config) -> tuple[bool,
     clients: list[MqttClient] = []
 
     try:
+        _require_managed_broker_in_remote("broker process control (SIGTERM)")
         host, port, process, _ = _start_isolated_broker()
 
         for index in range(3):
@@ -133,6 +145,7 @@ def run_16_1_2_connections_close_cleanly_before_exit(config) -> tuple[bool, str]
     clients: list[MqttClient] = []
 
     try:
+        _require_managed_broker_in_remote("broker process control (SIGTERM)")
         host, port, process, _ = _start_isolated_broker()
 
         for index in range(2):
@@ -309,6 +322,7 @@ def run_16_1_4_sigint_behaves_like_sigterm(config) -> tuple[bool, str]:
     clients: list[MqttClient] = []
 
     try:
+        _require_managed_broker_in_remote("broker process control (SIGINT)")
         host, port, process, _ = _start_isolated_broker()
 
         for index in range(2):

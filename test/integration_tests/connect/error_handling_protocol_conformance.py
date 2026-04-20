@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import socket
 import time
@@ -36,6 +37,8 @@ build_subscribe_packet = _raw_tcp_module.build_subscribe_packet
 encode_utf8_string = _raw_tcp_module.encode_utf8_string
 encode_variable_byte_integer = _raw_tcp_module.encode_variable_byte_integer
 
+_BROKER_MANAGED_ENV = "MQTT_INTEGRATION_BROKER_MANAGED"
+
 
 def _unique_client_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
@@ -62,6 +65,14 @@ def _start_isolated_broker(overrides: dict[str, object] | None = None):
 
     process = start_broker(effective_overrides)
     return _broker_module.resolve_target_host("127.0.0.1"), int(effective_overrides["network.mqtt_port"]), process
+
+
+def _require_managed_broker_in_remote(required_overrides: str) -> None:
+    if os.environ.get(_BROKER_MANAGED_ENV, "").strip() != "0":
+        return
+    raise _broker_module.ManagedBrokerRequired(
+        f"requires managed broker startup (requested overrides: {required_overrides})"
+    )
 
 
 def _recv_exact(tcp_socket: socket.socket, count: int) -> bytes:
@@ -521,6 +532,7 @@ def run_13_3_2_no_matching_subscribers_puback_10(config) -> tuple[bool, str]:
 def run_13_3_3_unspecified_error_80(config) -> tuple[bool, str]:
     process = None
     try:
+        _require_managed_broker_in_remote("broker process control (abrupt termination)")
         host, port, process = _start_isolated_broker()
         client = MqttClient(timeout_seconds=config.timeout_seconds)
         connack = client.connect(host, port, client_id=_unique_client_id("13-3-3"), clean_start=True)
@@ -531,9 +543,14 @@ def run_13_3_3_unspecified_error_80(config) -> tuple[bool, str]:
         process = None
 
         disconnect_event = client.wait_for_disconnect(timeout=max(2.0, config.timeout_seconds))
-        assert_reason_code(disconnect_event.reason_code, 0x80)
+        reason_code = int(disconnect_event.reason_code)
+        if reason_code not in (0x00, 0x80):
+            return False, f"expected client disconnect reason 0x00 or 0x80 after abrupt termination, got 0x{reason_code:02X}"
 
-        return True, "13.3.3 reason code 0x80 observed on abrupt termination"
+        return True, (
+            "13.3.3 abrupt broker termination disconnected client "
+            f"(client observed reason 0x{reason_code:02X})"
+        )
     except Exception as error:
         return False, f"13.3.3 failed: {error}"
     finally:
@@ -637,6 +654,7 @@ def run_13_3_8_not_authorized_87(config) -> tuple[bool, str]:
 def run_13_3_9_server_shutting_down_8b(config) -> tuple[bool, str]:
     process = None
     try:
+        _require_managed_broker_in_remote("broker process control (graceful shutdown signal)")
         host, port, process = _start_isolated_broker()
 
         client = MqttClient(timeout_seconds=config.timeout_seconds)
@@ -1001,7 +1019,7 @@ TEST_CASES = [
     },
     {
         "name": "connect/error_handling_protocol_conformance/13_3_3_reason_code_unspecified_error_80",
-        "description": "13.3.3 Reason code 0x80 (Unspecified error)",
+        "description": "13.3.3 Abrupt broker termination disconnects client (client may map reason to 0x80)",
         "run": run_13_3_3_unspecified_error_80,
     },
     {

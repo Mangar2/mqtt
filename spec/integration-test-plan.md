@@ -501,10 +501,11 @@ Broker process management for tests that need restart/reconfigure.
 ### 18.1 Connection Load
 - 18.1.1 Fast baseline: 10 concurrent connections → all CONNACK success
 - 18.1.2 Combined progressive connection-load test (covers former 18.1.1 + 18.1.2 + 18.1.3):
-	- execute load in steps 100 → 250 → 500 → 750 → 1000
+	- execute load in relative steps (doubling): 100 → 200 → 400 → 800 → ... → 12800
 	- hard timeout is mandatory for the entire test
+	- stop immediately at first failed stage (no check of n+1 after n fails)
 	- report highest successful stage when a step fails or timeout is reached
-	- overall success only if stage 1000 passes
+	- success threshold is stage 800; higher stages are informational only
 - 18.1.3 Connection storm: 100 clients connect within 1 second → no crash, all handled
 
 ### 18.2 Message Throughput

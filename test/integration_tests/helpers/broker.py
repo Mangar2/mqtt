@@ -28,6 +28,76 @@ _TARGET_HOST_ENV = "MQTT_INTEGRATION_TARGET_HOST"
 _TARGET_PORT_ENV = "MQTT_INTEGRATION_TARGET_PORT"
 _TARGET_WS_PORT_ENV = "MQTT_INTEGRATION_TARGET_WS_PORT"
 _BROKER_MANAGED_ENV = "MQTT_INTEGRATION_BROKER_MANAGED"
+_EXTERNAL_AUTH_CREDENTIALS_ENV = "MQTT_INTEGRATION_EXTERNAL_AUTH_CREDENTIALS"
+_EXTERNAL_SYS_TOPIC_INTERVAL_ENV = "MQTT_INTEGRATION_EXTERNAL_SYS_TOPIC_INTERVAL"
+_DEFAULT_BROKER_INI = PROJECT_ROOT / "broker.ini"
+
+_EXTERNAL_SAFE_OVERRIDE_KEYS = {
+    "network.mqtt_port",
+    "network.ws_port",
+    "broker.allow_anonymous",
+    "tracing.global_level",
+    "tracing.trace_modules",
+}
+
+def _external_profile_accepted_overrides() -> dict[str, set[str]]:
+    accepted: dict[str, set[str]] = {}
+
+    default_credentials, default_sys_topic_interval = _read_default_profile_from_ini()
+    if default_credentials:
+        accepted["auth.credential"] = set(default_credentials)
+    if default_sys_topic_interval:
+        accepted["monitoring.sys_topic_interval"] = {default_sys_topic_interval}
+
+    credentials_raw = os.environ.get(_EXTERNAL_AUTH_CREDENTIALS_ENV, "").strip()
+    if credentials_raw:
+        credentials = {
+            token.strip()
+            for token in credentials_raw.split(",")
+            if token.strip()
+        }
+        if credentials:
+            accepted.setdefault("auth.credential", set()).update(credentials)
+
+    sys_topic_interval_raw = os.environ.get(_EXTERNAL_SYS_TOPIC_INTERVAL_ENV, "").strip()
+    if sys_topic_interval_raw:
+        accepted.setdefault("monitoring.sys_topic_interval", set()).add(sys_topic_interval_raw)
+
+    return accepted
+
+
+def _read_default_profile_from_ini() -> tuple[set[str], str | None]:
+    credentials: set[str] = set()
+    sys_topic_interval: str | None = None
+
+    try:
+        content = _DEFAULT_BROKER_INI.read_text(encoding="utf-8")
+    except OSError:
+        return credentials, sys_topic_interval
+
+    current_section = ""
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or line.startswith(";"):
+            continue
+
+        if line.startswith("[") and line.endswith("]"):
+            current_section = line[1:-1].strip().lower()
+            continue
+
+        if "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+
+        if current_section == "auth" and key == "credential" and value:
+            credentials.add(value)
+        elif current_section == "monitoring" and key == "sys_topic_interval" and value:
+            sys_topic_interval = value
+
+    return credentials, sys_topic_interval
 
 
 class ManagedBrokerRequired(BaseException):
@@ -77,16 +147,43 @@ def is_reachable(host: str, port: int, timeout: float) -> bool:
 def start_broker(config_overrides: dict[str, Any] | None = None) -> subprocess.Popen[str] | None:
     """Build and start broker process, then wait until listener is reachable."""
     managed_mode_value = os.environ.get(_BROKER_MANAGED_ENV, "").strip()
-    if managed_mode_value == "0":
-        override_keys = []
-        if config_overrides is not None:
-            override_keys = sorted(str(key) for key in config_overrides.keys())
+    normalized_overrides = _normalize_overrides(config_overrides)
 
-        override_text = "none" if not override_keys else ", ".join(override_keys)
-        raise ManagedBrokerRequired(
-            "requires managed broker startup"
-            + (f" (requested overrides: {override_text})" if override_text else "")
+    if managed_mode_value == "0":
+        accepted_profile_overrides = _external_profile_accepted_overrides()
+
+        def _matches_external_profile(override_key: str, override_value: Any) -> bool:
+            accepted_values = accepted_profile_overrides.get(override_key)
+            if accepted_values is None:
+                return False
+
+            if isinstance(override_value, bool):
+                value_text = "true" if override_value else "false"
+            else:
+                value_text = str(override_value).strip()
+
+            return value_text in accepted_values
+
+        disallowed_override_keys = sorted(
+            override_key
+            for override_key in normalized_overrides.keys()
+            if not override_key.startswith("__")
+            and override_key not in _EXTERNAL_SAFE_OVERRIDE_KEYS
+            and not _matches_external_profile(override_key, normalized_overrides[override_key])
         )
+
+        if disallowed_override_keys:
+            override_text = ", ".join(disallowed_override_keys)
+            raise ManagedBrokerRequired(
+                "requires managed broker startup"
+                + (f" (requested overrides: {override_text})" if override_text else "")
+            )
+
+        if config_overrides is not None:
+            config_overrides["network.mqtt_port"] = resolve_target_port(_DEFAULT_MQTT_PORT)
+            if "network.ws_port" in config_overrides:
+                config_overrides["network.ws_port"] = resolve_target_ws_port(_DEFAULT_WS_PORT)
+        return None
 
     external_target_host = _read_external_target_host()
     if external_target_host is not None and not _is_local_host(external_target_host):
@@ -96,13 +193,12 @@ def start_broker(config_overrides: dict[str, Any] | None = None) -> subprocess.P
                 config_overrides["network.ws_port"] = resolve_target_ws_port(_DEFAULT_WS_PORT)
         return None
 
-    normalized = _normalize_overrides(config_overrides)
-    _apply_trace_environment_overrides(normalized)
-    host = str(normalized.get("__host", _DEFAULT_HOST))
-    startup_timeout = float(normalized.get("__startup_timeout_seconds", _DEFAULT_WAIT_TIMEOUT_SECONDS))
+    _apply_trace_environment_overrides(normalized_overrides)
+    host = str(normalized_overrides.get("__host", _DEFAULT_HOST))
+    startup_timeout = float(normalized_overrides.get("__startup_timeout_seconds", _DEFAULT_WAIT_TIMEOUT_SECONDS))
 
-    mqtt_port = _extract_effective_port(normalized)
-    config_path = _write_config_if_needed(normalized)
+    mqtt_port = _extract_effective_port(normalized_overrides)
+    config_path = _write_config_if_needed(normalized_overrides)
 
     _run_or_raise(["cmake", "--preset", "release"], "cmake configure (release)")
     _run_or_raise(
