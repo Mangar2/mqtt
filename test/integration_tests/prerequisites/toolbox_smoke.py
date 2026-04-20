@@ -48,15 +48,18 @@ def _find_free_port() -> int:
 
 
 def _start_isolated_target() -> tuple[str, int, object, str]:
-    fallback_port = _find_free_port()
-    process = start_broker(
-        {
-            "network.mqtt_port": fallback_port,
-            "network.ws_port": 0,
-            "broker.allow_anonymous": True,
-        }
+    overrides: dict[str, object] = {
+        "network.mqtt_port": _find_free_port(),
+        "network.ws_port": 0,
+        "broker.allow_anonymous": True,
+    }
+    process = start_broker(overrides)
+    return (
+        _broker_module.resolve_target_host("127.0.0.1"),
+        int(overrides["network.mqtt_port"]),
+        process,
+        "isolated broker",
     )
-    return "127.0.0.1", fallback_port, process, "isolated broker"
 
 
 def run_paho_available(_config) -> tuple[bool, str]:

@@ -47,7 +47,7 @@ def _start_isolated_broker():
         "broker.allow_anonymous": True,
     }
     process = start_broker(overrides)
-    return "127.0.0.1", int(overrides["network.mqtt_port"]), process
+    return _broker_module.resolve_target_host("127.0.0.1"), int(overrides["network.mqtt_port"]), process
 
 
 def _run_prefix() -> str:
@@ -431,15 +431,15 @@ def run_3_4_1_sys_subscription_receives_messages(config) -> tuple[bool, str]:
     """$SYS/# subscription must receive broker-published $SYS messages."""
     process = None
     try:
-        port = _find_free_port()
-        overrides: dict = {
-            "network.mqtt_port": port,
+        overrides: dict[str, object] = {
+            "network.mqtt_port": _find_free_port(),
             "network.ws_port": 0,
             "broker.allow_anonymous": True,
             "monitoring.sys_topic_interval": 1,
         }
         process = start_broker(overrides)
-        host = "127.0.0.1"
+        host = _broker_module.resolve_target_host("127.0.0.1")
+        port = int(overrides["network.mqtt_port"])
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-4-1"), clean_start=True), reason_code=0x00, session_present=False)
             codes = sub.subscribe("$SYS/#", qos=0)
@@ -462,15 +462,15 @@ def run_3_4_2_hash_does_not_receive_sys(config) -> tuple[bool, str]:
     """# wildcard must NOT deliver $SYS topics per MQTT-4.7.2-1."""
     process = None
     try:
-        port = _find_free_port()
-        overrides: dict = {
-            "network.mqtt_port": port,
+        overrides: dict[str, object] = {
+            "network.mqtt_port": _find_free_port(),
             "network.ws_port": 0,
             "broker.allow_anonymous": True,
             "monitoring.sys_topic_interval": 1,
         }
         process = start_broker(overrides)
-        host = "127.0.0.1"
+        host = _broker_module.resolve_target_host("127.0.0.1")
+        port = int(overrides["network.mqtt_port"])
         import time
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-4-2"), clean_start=True), reason_code=0x00, session_present=False)

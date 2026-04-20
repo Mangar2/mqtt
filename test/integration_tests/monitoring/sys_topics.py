@@ -42,15 +42,14 @@ def _find_free_port() -> int:
 
 
 def _start_monitoring_broker():
-    mqtt_port = _find_free_port()
-    overrides = {
-        "network.mqtt_port": mqtt_port,
+    overrides: dict[str, object] = {
+        "network.mqtt_port": _find_free_port(),
         "network.ws_port": 0,
         "broker.allow_anonymous": True,
         "monitoring.sys_topic_interval": 1,
     }
     process = start_broker(overrides)
-    return "127.0.0.1", mqtt_port, process
+    return _broker_module.resolve_target_host("127.0.0.1"), int(overrides["network.mqtt_port"]), process
 
 
 def _parse_int_payload(message_payload: bytes, topic: str) -> int:

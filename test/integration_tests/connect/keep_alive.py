@@ -50,7 +50,7 @@ def _start_isolated_broker(overrides: dict[str, object] | None = None):
         effective_overrides.update(overrides)
 
     process = start_broker(effective_overrides)
-    return "127.0.0.1", int(effective_overrides["network.mqtt_port"]), process
+    return _broker_module.resolve_target_host("127.0.0.1"), int(effective_overrides["network.mqtt_port"]), process
 
 
 def _read_exact_bytes(tcp_socket: socket.socket, expected_size: int) -> bytes:

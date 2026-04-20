@@ -8,6 +8,9 @@ A fully specification-compliant MQTT 5.0 broker written in C++20.
 # Run with defaults
 ./build/release/mqtt-broker
 
+# Show CLI help
+./build/release/mqtt-broker --help
+
 # Run with config file
 ./build/release/mqtt-broker path/to/broker.ini
 
@@ -100,6 +103,7 @@ The broker supports a positional config path plus tracing flags:
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
 | `<config-path>` | positional path | none | Optional path to an INI config file. Must be the first argument when used. |
+| `--help` | flag | off | Prints CLI usage and exits successfully without starting the broker. |
 | `--trace-level=<none\|error\|warning\|info\|trace>` | flag | from config/default | Overrides tracing global level. |
 | `--trace-module=<module>` | repeatable flag | from config/default | Overrides tracing module list. Repeat flag for multiple modules. |
 

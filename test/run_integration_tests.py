@@ -61,6 +61,9 @@ class StartupOptions:
 TRACE_LEVEL_ENV = "MQTT_INTEGRATION_TRACE_LEVEL"
 TRACE_MODULES_ENV = "MQTT_INTEGRATION_TRACE_MODULES"
 BROKER_OUTPUT_ENV = "MQTT_INTEGRATION_BROKER_OUTPUT"
+TARGET_HOST_ENV = "MQTT_INTEGRATION_TARGET_HOST"
+TARGET_PORT_ENV = "MQTT_INTEGRATION_TARGET_PORT"
+BROKER_MANAGED_ENV = "MQTT_INTEGRATION_BROKER_MANAGED"
 
 
 REQUIREMENT_NUMBER_PREFIX = re.compile(r"^\s*(\d+(?:\.\d+)*)\b")
@@ -237,11 +240,17 @@ def _cleanup_generated_broker_config(process: subprocess.Popen[str]) -> None:
         setattr(process, "_integration_runner_generated_config_dir", "")
 
 
-def _apply_integration_trace_environment(startup_options: StartupOptions) -> dict[str, str | None]:
+def _apply_integration_trace_environment(
+    startup_options: StartupOptions,
+    config: RunnerConfig,
+) -> dict[str, str | None]:
     previous_values: dict[str, str | None] = {
         TRACE_LEVEL_ENV: os.environ.get(TRACE_LEVEL_ENV),
         TRACE_MODULES_ENV: os.environ.get(TRACE_MODULES_ENV),
         BROKER_OUTPUT_ENV: os.environ.get(BROKER_OUTPUT_ENV),
+        TARGET_HOST_ENV: os.environ.get(TARGET_HOST_ENV),
+        TARGET_PORT_ENV: os.environ.get(TARGET_PORT_ENV),
+        BROKER_MANAGED_ENV: os.environ.get(BROKER_MANAGED_ENV),
     }
 
     if startup_options.trace_level is None:
@@ -257,6 +266,8 @@ def _apply_integration_trace_environment(startup_options: StartupOptions) -> dic
     os.environ[BROKER_OUTPUT_ENV] = (
         "inherit" if startup_options.broker_output_inherit else "discard"
     )
+    os.environ[TARGET_HOST_ENV] = config.host
+    os.environ[TARGET_PORT_ENV] = str(config.port)
 
     return previous_values
 
@@ -466,7 +477,8 @@ def main() -> int:
         broker_output_inherit=(args.broker_output == "inherit"),
     )
     previous_trace_environment = _apply_integration_trace_environment(
-        startup_options
+        startup_options,
+        config,
     )
     run_started_at = _now_utc_iso()
 
@@ -490,15 +502,29 @@ def main() -> int:
         _save_state(results_path, state)
         return 1
 
+    broker_is_managed = broker_process is not None
+    os.environ[BROKER_MANAGED_ENV] = "1" if broker_is_managed else "0"
+    if not broker_is_managed:
+        print("[SETUP] Running only remote-safe test cases (managed-broker tests may be skipped)")
+
     print(f"Running {len(selected_tests)} integration test(s) against {config.host}:{config.port}")
 
     failures = 0
+    skipped = 0
     try:
         for test in selected_tests:
-            ok, details = test.execute(config)
-            status_text = "success" if ok else "failed"
-            if not ok:
-                failures += 1
+            try:
+                ok, details = test.execute(config)
+                status_text = "success" if ok else "failed"
+                if not ok:
+                    failures += 1
+            except BaseException as error:  # pylint: disable=broad-except
+                if error.__class__.__name__ == "ManagedBrokerRequired":
+                    status_text = "skipped"
+                    skipped += 1
+                    details = str(error)
+                else:
+                    raise
 
             print(f"[{status_text.upper()}] {test.name}")
             if details:
@@ -521,7 +547,8 @@ def main() -> int:
 
     total = len(selected_tests)
     passed = total - failures
-    print(f"Summary: {passed}/{total} success, {failures} failed")
+    passed = total - failures - skipped
+    print(f"Summary: {passed}/{total} success, {failures} failed, {skipped} skipped")
     print(f"Result file: {results_path}")
 
     return 0 if failures == 0 else 1

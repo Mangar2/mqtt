@@ -16,6 +16,30 @@
 namespace {
 constexpr std::string_view k_version = "0.1.0";
 
+[[nodiscard]] bool has_help_flag(int argument_count, char *argument_values[]) {
+  for (int argument_index = 1; argument_index < argument_count;
+       ++argument_index) {
+    if (std::string_view(argument_values[argument_index]) == "--help") {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void print_help(std::string_view executable_name) {
+  std::cout << "Usage:\n"
+            << "  " << executable_name << " [<config-path>] [options]\n\n"
+            << "Options:\n"
+            << "  --help                               Show this help and exit.\n"
+            << "  --trace-level=<none|error|warning|info|trace>\n"
+            << "                                       Override global tracing level.\n"
+            << "  --trace-module=<module>              Repeatable module trace override.\n\n"
+            << "Argument rules:\n"
+            << "  <config-path> is optional and must be the first argument when provided.\n"
+            << "  Unknown options cause startup failure.\n";
+}
+
 [[nodiscard]] bool is_cli_flag(std::string_view argument) {
   return argument.starts_with("--");
 }
@@ -85,6 +109,13 @@ bool apply_cli_trace_overrides(int argument_count, char *argument_values[],
 
 int main(int argc, char *argv[]) {
   std::cout << "mqtt-broker " << k_version << '\n';
+
+  if (has_help_flag(argc, argv)) {
+    const std::string_view executable_name =
+        argc > 0 ? std::string_view(argv[0]) : "mqtt-broker";
+    print_help(executable_name);
+    return EXIT_SUCCESS;
+  }
 
   // Precedence is deterministic: defaults < config file < CLI.
   mqtt::BrokerConfig config;

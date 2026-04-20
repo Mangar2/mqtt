@@ -20,9 +20,49 @@ BROKER_BINARY = RELEASE_DIR / ("mqtt-broker.exe" if os.name == "nt" else "mqtt-b
 _DEFAULT_WAIT_TIMEOUT_SECONDS = 8.0
 _DEFAULT_HOST = "127.0.0.1"
 _DEFAULT_MQTT_PORT = 1883
+_DEFAULT_WS_PORT = 8083
 _TRACE_LEVEL_ENV = "MQTT_INTEGRATION_TRACE_LEVEL"
 _TRACE_MODULES_ENV = "MQTT_INTEGRATION_TRACE_MODULES"
 _BROKER_OUTPUT_ENV = "MQTT_INTEGRATION_BROKER_OUTPUT"
+_TARGET_HOST_ENV = "MQTT_INTEGRATION_TARGET_HOST"
+_TARGET_PORT_ENV = "MQTT_INTEGRATION_TARGET_PORT"
+_TARGET_WS_PORT_ENV = "MQTT_INTEGRATION_TARGET_WS_PORT"
+_BROKER_MANAGED_ENV = "MQTT_INTEGRATION_BROKER_MANAGED"
+
+
+class ManagedBrokerRequired(BaseException):
+    """Signal to integration runner that this test requires managed broker mode."""
+
+
+def _is_local_host(hostname: str) -> bool:
+    normalized = hostname.strip().lower()
+    return normalized in {"localhost", "127.0.0.1", "::1"} or normalized.startswith("127.")
+
+
+def _read_external_target_host() -> str | None:
+    candidate = os.environ.get(_TARGET_HOST_ENV, "").strip()
+    return candidate or None
+
+
+def resolve_target_host(default_host: str = _DEFAULT_HOST) -> str:
+    external_host = _read_external_target_host()
+    if external_host is None:
+        return default_host
+    return external_host
+
+
+def resolve_target_port(default_port: int = _DEFAULT_MQTT_PORT) -> int:
+    raw_value = os.environ.get(_TARGET_PORT_ENV, "").strip()
+    if not raw_value:
+        return default_port
+    return int(raw_value)
+
+
+def resolve_target_ws_port(default_port: int = _DEFAULT_WS_PORT) -> int:
+    raw_value = os.environ.get(_TARGET_WS_PORT_ENV, "").strip()
+    if raw_value:
+        return int(raw_value)
+    return resolve_target_port(default_port)
 
 
 def is_reachable(host: str, port: int, timeout: float) -> bool:
@@ -34,8 +74,28 @@ def is_reachable(host: str, port: int, timeout: float) -> bool:
         return False
 
 
-def start_broker(config_overrides: dict[str, Any] | None = None) -> subprocess.Popen[str]:
+def start_broker(config_overrides: dict[str, Any] | None = None) -> subprocess.Popen[str] | None:
     """Build and start broker process, then wait until listener is reachable."""
+    managed_mode_value = os.environ.get(_BROKER_MANAGED_ENV, "").strip()
+    if managed_mode_value == "0":
+        override_keys = []
+        if config_overrides is not None:
+            override_keys = sorted(str(key) for key in config_overrides.keys())
+
+        override_text = "none" if not override_keys else ", ".join(override_keys)
+        raise ManagedBrokerRequired(
+            "requires managed broker startup"
+            + (f" (requested overrides: {override_text})" if override_text else "")
+        )
+
+    external_target_host = _read_external_target_host()
+    if external_target_host is not None and not _is_local_host(external_target_host):
+        if config_overrides is not None:
+            config_overrides["network.mqtt_port"] = resolve_target_port(_DEFAULT_MQTT_PORT)
+            if "network.ws_port" in config_overrides:
+                config_overrides["network.ws_port"] = resolve_target_ws_port(_DEFAULT_WS_PORT)
+        return None
+
     normalized = _normalize_overrides(config_overrides)
     _apply_trace_environment_overrides(normalized)
     host = str(normalized.get("__host", _DEFAULT_HOST))
@@ -106,7 +166,7 @@ def stop_broker(process: subprocess.Popen[str] | None) -> None:
 def restart_broker(
     process: subprocess.Popen[str] | None,
     config_overrides: dict[str, Any] | None = None,
-) -> subprocess.Popen[str]:
+) -> subprocess.Popen[str] | None:
     """Restart broker process with optional new configuration overrides."""
     stop_broker(process)
     return start_broker(config_overrides)

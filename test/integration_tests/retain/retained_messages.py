@@ -55,7 +55,7 @@ def _start_isolated_broker() -> tuple[str, int, object]:
         "broker.allow_anonymous": True,
     }
     process = start_broker(overrides)
-    return "127.0.0.1", int(overrides["network.mqtt_port"]), process
+    return _broker_module.resolve_target_host("127.0.0.1"), int(overrides["network.mqtt_port"]), process
 
 
 def _publish_retained(

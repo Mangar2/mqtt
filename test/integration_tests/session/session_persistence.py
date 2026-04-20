@@ -58,7 +58,7 @@ def _start_isolated_broker(overrides: dict[str, object] | None = None):
         effective_overrides.update(overrides)
 
     process = start_broker(effective_overrides)
-    return "127.0.0.1", int(effective_overrides["network.mqtt_port"]), process
+    return _broker_module.resolve_target_host("127.0.0.1"), int(effective_overrides["network.mqtt_port"]), process
 
 
 def _new_connect_properties(**values):
@@ -796,7 +796,7 @@ def run_6_3_4_queue_limit_enforced_drop_oldest(config) -> tuple[bool, str]:
             payloads = [bytes(message.payload) for message in messages]
             if payloads != [b"msg-2", b"msg-3"]:
                 return False, (
-                    "expected oldest message to be dropped at queue limit; "
+                    "6.3.4 expected oldest message to be dropped at queue limit; "
                     f"received payloads={payloads!r}"
                 )
 
