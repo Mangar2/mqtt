@@ -140,6 +140,17 @@ Never hardcode host or port — use `config.host` and `config.port`
 Timeouts always from `config.timeout_seconds`
 Exception in test function → return `(False, str(e))` — never let exceptions propagate
 
+## Defect visibility rule
+
+Integration tests must detect defects, never hide them.
+Do not relax assertions, expected reason codes, protocol checks, or timing expectations only to match current broker behavior.
+If broker behavior differs from spec expectation, keep spec-based assertion and let the test fail.
+Record the failure as implementation work (TODO) instead of weakening the test.
+If it is unclear whether a mismatch should be solved by changing the test or fixing the broker,
+read the MQTT 5.0 specification first (`spec/MQTT Version 5.0.html`) and decide from normative rules.
+Only change the test when the test expectation is not specification-conformant.
+Fix the broker when implementation behavior is not specification-conformant.
+
 ## Failed tests → create TODO file
 
 When an integration test fails and the failure indicates a broker defect or missing feature:
