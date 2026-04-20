@@ -32,6 +32,7 @@ Definitions of every MQTT 5.0 wire-level primitive type (Section 1.5 of the spec
 ### BinaryData
 - `std::vector<uint8_t> data` — max `k_max_byte_length` bytes.
 - `static constexpr std::size_t k_max_byte_length = 65535`.
+- `[[nodiscard]] static BinaryData from_string(std::string_view)` converts text bytes 1:1.
 - `operator==` defaulted.
 
 ### TwoByteInteger / FourByteInteger

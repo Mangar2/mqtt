@@ -93,12 +93,19 @@ Catch2 tag: `[network]`.
 | Test case | Behaviour |
 |-----------|-----------|
 | `slot_constructed_with_fd_starts_in_connecting_phase` | Slot starts in `Connecting` with stored fd |
+| `slot_capacity_and_free_space_accessors_report_current_values` | Read/write capacity and free space values are reported correctly |
 | `read_buffer_push_pop_preserves_bytes` | Read ring-buffer preserves byte order across push/pop |
+| `read_buffer_push_wraps_and_preserves_order` | Read ring-buffer handles wrap-around writes correctly |
 | `read_buffer_full_rejects_push_returns_false` | Push fails when read buffer capacity would be exceeded |
+| `empty_capacity_buffers_reject_push_and_pop_zero` | Zero-capacity buffers reject pushes and allow zero-pop safely |
 | `write_buffer_drains_in_fifo_order` | Write ring-buffer drains in FIFO order including wrap-around |
 | `phase_transitions_connecting_connected_closing_are_legal` | Forward phase transitions are accepted |
+| `phase_transition_to_same_phase_returns_true` | Transitioning to current phase is accepted as no-op |
 | `phase_transition_back_to_connecting_is_rejected` | Backwards transition to `Connecting` is rejected |
+| `phase_transition_from_closing_is_rejected` | Once closing, all further transitions are rejected |
 | `move_constructor_transfers_fd_and_buffers` | Move construction transfers fd and buffered bytes |
+| `move_assignment_transfers_fd_and_buffers` | Move assignment transfers state and invalidates source |
+| `move_assignment_to_self_is_noop` | Self move-assignment leaves slot state unchanged |
 
 ---
 
@@ -107,8 +114,12 @@ Catch2 tag: `[network]`.
 | Test case | Behaviour |
 |-----------|-----------|
 | `add_then_find_returns_slot_pointer` | Added slot can be retrieved by fd |
+| `add_duplicate_fd_returns_false` | Adding the same fd twice rejects the second insert |
 | `find_unknown_fd_returns_nullptr` | Lookup of missing fd returns null |
+| `const_find_returns_slot_pointer_for_existing_fd` | Const lookup returns the existing slot |
+| `const_find_unknown_fd_returns_nullptr` | Const lookup of missing fd returns null |
 | `remove_unregisters_and_destroys_slot` | Removed slot is no longer retrievable |
+| `remove_unknown_fd_returns_false` | Removing missing fd reports false |
 | `concurrent_find_from_many_threads_is_safe` | Multi-threaded lookups are safe and consistent |
 | `concurrent_add_remove_is_safe` | Concurrent add/remove keeps table consistent |
 

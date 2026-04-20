@@ -89,7 +89,7 @@ void BrokerModuleFactory::create(
     for (const PasswordCredentialConfig &credential : config.password_credentials) {
       password_authenticator->add_credential(
           Utf8String{credential.username},
-          binary_data_from_string(credential.password));
+          BinaryData::from_string(credential.password));
     }
     active_authenticator = password_authenticator.get();
   }

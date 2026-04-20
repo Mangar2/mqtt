@@ -85,6 +85,11 @@ TEST_CASE("binary_max_byte_length", "[types][binary]") {
   STATIC_CHECK(BinaryData::k_max_byte_length == 65535U);
 }
 
+TEST_CASE("binary_from_string_converts_text_bytes", "[types][binary]") {
+  const BinaryData binary_data = BinaryData::from_string("abc");
+  CHECK(binary_data.data == std::vector<uint8_t>{0x61U, 0x62U, 0x63U});
+}
+
 TEST_CASE("binary_equality", "[types][binary]") {
   BinaryData a{{0x01, 0x02}};
   BinaryData b{{0x01, 0x02}};

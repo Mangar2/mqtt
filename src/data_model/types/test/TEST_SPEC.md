@@ -27,6 +27,7 @@
 |-----------|----------|-------|----------|
 | `binary_default_empty` | Default-constructed | none | `data.empty()` |
 | `binary_max_byte_length` | Constant | none | `k_max_byte_length == 65535` |
+| `binary_from_string_converts_text_bytes` | Helper converts text to byte payload | `"abc"` | bytes `{0x61,0x62,0x63}` |
 | `binary_equality` | operator== | two equal payloads | equal |
 
 ## Integers

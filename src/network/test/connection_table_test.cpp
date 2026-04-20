@@ -17,9 +17,29 @@ TEST_CASE("add_then_find_returns_slot_pointer", "[network]") {
   CHECK(found_slot->fd() == static_cast<SocketHandle>(101));
 }
 
+TEST_CASE("add_duplicate_fd_returns_false", "[network]") {
+  ConnectionTable table;
+  REQUIRE(table.add(ConnectionSlot(static_cast<SocketHandle>(111))));
+  CHECK_FALSE(table.add(ConnectionSlot(static_cast<SocketHandle>(111))));
+}
+
 TEST_CASE("find_unknown_fd_returns_nullptr", "[network]") {
   ConnectionTable table;
   CHECK(table.find(404) == nullptr);
+}
+
+TEST_CASE("const_find_returns_slot_pointer_for_existing_fd", "[network]") {
+  ConnectionTable table;
+  REQUIRE(table.add(ConnectionSlot(static_cast<SocketHandle>(121))));
+  const ConnectionTable &const_table = table;
+  const ConnectionSlot *found_slot = const_table.find(121);
+  REQUIRE(found_slot != nullptr);
+  CHECK(found_slot->fd() == static_cast<SocketHandle>(121));
+}
+
+TEST_CASE("const_find_unknown_fd_returns_nullptr", "[network]") {
+  const ConnectionTable table;
+  CHECK(table.find(141) == nullptr);
 }
 
 TEST_CASE("remove_unregisters_and_destroys_slot", "[network]") {
@@ -27,6 +47,11 @@ TEST_CASE("remove_unregisters_and_destroys_slot", "[network]") {
   REQUIRE(table.add(ConnectionSlot(static_cast<SocketHandle>(202))));
   REQUIRE(table.remove(202));
   CHECK(table.find(202) == nullptr);
+}
+
+TEST_CASE("remove_unknown_fd_returns_false", "[network]") {
+  ConnectionTable table;
+  CHECK_FALSE(table.remove(212));
 }
 
 TEST_CASE("concurrent_find_from_many_threads_is_safe", "[network]") {
