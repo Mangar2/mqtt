@@ -12,17 +12,20 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
 #include "network/connection_table.h"
 #include "network/io_reactor.h"
+#include "network/socket_ops.h"
 #include "network/tcp_connection.h"
 #include "network/tcp_listener.h"
 
 namespace mqtt {
 
 class StructuredTracer;
+struct ConnectionManagerTestAccessor;
 
 /**
  * @brief Manages listener sockets, reactor lifecycle, and tracked client threads.
@@ -82,6 +85,13 @@ public:
   [[nodiscard]] bool is_running() const noexcept;
 
 private:
+  friend struct ConnectionManagerTestAccessor;
+
+  [[nodiscard]] static std::string io_result_to_string_for_test(IoResult io_result);
+  [[nodiscard]] static bool set_socket_blocking_for_test(
+      SocketHandle socket_handle) noexcept;
+  static void close_socket_handle_for_test(SocketHandle socket_handle) noexcept;
+
   /**
    * @brief Tracked client thread metadata.
    */

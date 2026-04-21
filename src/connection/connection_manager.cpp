@@ -209,6 +209,20 @@ void ConnectionManager::stop() noexcept {
 
 bool ConnectionManager::is_running() const noexcept { return running_.load(); }
 
+std::string ConnectionManager::io_result_to_string_for_test(IoResult io_result) {
+  return io_result_to_string(io_result);
+}
+
+bool ConnectionManager::set_socket_blocking_for_test(
+    SocketHandle socket_handle) noexcept {
+  return set_socket_blocking(socket_handle);
+}
+
+void ConnectionManager::close_socket_handle_for_test(
+    SocketHandle socket_handle) noexcept {
+  close_socket_handle(socket_handle);
+}
+
 void ConnectionManager::handle_accept_ready(SocketHandle listener_socket_handle,
                                             bool is_ws) {
   const std::string_view listener_kind = is_ws ? "ws" : "mqtt";

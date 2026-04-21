@@ -126,5 +126,11 @@
 | `connection_manager_stop_without_start` | Idempotent shutdown before startup | manager with both ports 0 | no throw; running remains false |
 | `connection_manager_start_idempotent` | Double start call on active manager | start() called twice, then one client connect | no throw; manager remains running and handles client |
 | `connection_manager_start_failure_resets_running` | Listener bind failure path in start() | occupy port externally, then start manager on same port | start throws; `is_running()==false` |
+| `connection_manager_start_bind_failure_inside_try_resets_running` | Bind conflict after reactor start executes internal catch cleanup | keep one `TcpListener` bound on port P, then `ConnectionManager(P,0,...)` start | start throws from listener creation; `is_running()==false` |
+| `connection_manager_start_ws_bind_failure_after_mqtt_listener_cleans_mqtt_listener` | WS bind failure after MQTT listener setup exercises catch cleanup with MQTT listener present | hold a listener on ws_port, start manager with free mqtt_port + occupied ws_port | start throws and manager is not running; cleanup branch with mqtt_listener has_value executed |
 | `connection_manager_stop_timeout_requests_socket_shutdown` | Timeout branch in stop() with slow callback | short join timeout, callback sleeps longer than timeout | stop returns and manager is stopped |
 | `connection_manager_callback_exception_isolated` | Client callback throws | callback throws `runtime_error` | manager survives and stop() succeeds |
+| `connection_manager_io_result_to_string_covers_all_cases` | Internal IoResult string conversion helper mappings | Ok, WouldBlock, Closed, Error, and unknown cast value | returns "ok", "would_block", "closed", "error", and "unknown" |
+| `connection_manager_set_socket_blocking_for_test_invalid_handle_returns_false` | Internal blocking-switch helper error branch | invalid socket handle | returns false |
+| `connection_manager_close_socket_handle_for_test_invalid_handle_no_throw` | Internal close helper executes close path on invalid handle | invalid socket handle | no throw |
+| `connection_manager_handle_accept_ready_invalid_listener_enters_error_path` | Accept loop error branch with invalid listener socket | force running=true and call handle_accept_ready with invalid fd | returns without crash, exercising accept-result error trace path |

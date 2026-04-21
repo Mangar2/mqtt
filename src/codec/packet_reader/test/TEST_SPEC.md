@@ -40,3 +40,5 @@ Unit tests for Module 2.13: Packet Reader (`read_packet`).
 | `read_packet_empty_buffer` | Buffer is empty | zero bytes | CodecError::BufferTooShort |
 | `read_packet_truncated_payload` | Buffer shorter than declared remaining_length | only Fixed Header, no payload | CodecError::BufferTooShort |
 | `read_packet_reserved_type_zero` | First byte encodes type nibble == 0 | 0x00 0x00 | CodecError::InvalidPacketType |
+| `codec_exception_detected_protocol_version_roundtrip` | CodecException stores detected protocol version when provided | construct `CodecException(InvalidProtocolVersion, ..., 0x04)` | `detected_protocol_version()==0x04`, `error()==InvalidProtocolVersion` |
+| `codec_exception_detected_protocol_version_default_nullopt` | CodecException protocol version is empty by default | construct `CodecException(BufferTooShort, ...)` | `detected_protocol_version()==nullopt`, `what()` preserved |

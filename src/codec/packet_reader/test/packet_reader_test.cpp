@@ -333,3 +333,22 @@ TEST_CASE("read_packet_reserved_type_zero", "[packet_reader]") {
     CHECK(exc.error() == CodecError::InvalidPacketType);
   }
 }
+
+TEST_CASE("codec_exception_detected_protocol_version_roundtrip",
+          "[packet_reader]") {
+  const CodecException exception(CodecError::InvalidProtocolVersion,
+                                 "invalid protocol version", 0x04U);
+
+  CHECK(exception.error() == CodecError::InvalidProtocolVersion);
+  REQUIRE(exception.detected_protocol_version().has_value());
+  CHECK(*exception.detected_protocol_version() == 0x04U);
+}
+
+TEST_CASE("codec_exception_detected_protocol_version_default_nullopt",
+          "[packet_reader]") {
+  const CodecException exception(CodecError::BufferTooShort, "short buffer");
+
+  CHECK(exception.error() == CodecError::BufferTooShort);
+  CHECK_FALSE(exception.detected_protocol_version().has_value());
+  CHECK(std::string(exception.what()) == "short buffer");
+}
