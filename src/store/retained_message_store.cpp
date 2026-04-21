@@ -8,6 +8,7 @@ namespace mqtt {
 
 void RetainedMessageStore::store(const Message &msg,
                                  std::chrono::steady_clock::time_point stored_at) {
+  std::lock_guard<std::mutex> lock(mutex_);
   const std::string &topic = msg.topic.value;
   if (msg.payload.data.empty()) {
     messages_.erase(topic);
@@ -18,6 +19,7 @@ void RetainedMessageStore::store(const Message &msg,
 
 std::vector<RetainedMessageRecord>
 RetainedMessageStore::find_records(std::string_view topic_filter) const {
+  std::lock_guard<std::mutex> lock(mutex_);
   // Build a temporary trie containing the given filter as a single dummy
   // subscription.  TopicMatcher::match then evaluates whether each stored
   // topic name is matched by the filter.
@@ -47,10 +49,12 @@ RetainedMessageStore::find(std::string_view topic_filter) const {
 }
 
 std::size_t RetainedMessageStore::size() const noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
   return messages_.size();
 }
 
 std::vector<Message> RetainedMessageStore::all() const {
+  std::lock_guard<std::mutex> lock(mutex_);
   std::vector<Message> result;
   result.reserve(messages_.size());
   for (const auto &[topic, record] : messages_) {

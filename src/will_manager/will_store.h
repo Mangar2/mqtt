@@ -6,6 +6,7 @@
  */
 
 #include <cstddef>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -61,6 +62,7 @@ public:
   [[nodiscard]] std::size_t size() const noexcept;
 
 private:
+  mutable std::mutex mutex_;
   std::unordered_map<std::string, WillMessage>
       wills_; ///< Will entries keyed by client ID.
 };

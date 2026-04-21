@@ -6,6 +6,7 @@
  */
 
 #include <cstddef>
+#include <shared_mutex>
 #include <string_view>
 #include <vector>
 
@@ -76,6 +77,7 @@ public:
   [[nodiscard]] std::size_t size() const noexcept;
 
 private:
+  mutable std::shared_mutex mutex_;
   SubscriptionTrie trie_; ///< Underlying trie used for storage and traversal.
 };
 

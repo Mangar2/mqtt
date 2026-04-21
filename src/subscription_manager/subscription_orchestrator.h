@@ -6,6 +6,7 @@
  */
 
 #include <functional>
+#include <mutex>
 #include <string_view>
 
 #include "authz/acl_engine.h"
@@ -75,6 +76,7 @@ public:
   void set_on_session_changed(std::function<void()> callback) noexcept;
 
 private:
+  mutable std::mutex mutex_;
   AclEngine &acl_engine_;
   SessionStore &session_store_;
   SubscriptionStore &subscription_store_;

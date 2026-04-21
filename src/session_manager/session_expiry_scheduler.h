@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -78,6 +79,7 @@ private:
     uint32_t expiry_interval;
   };
 
+  mutable std::mutex mutex_;
   std::unordered_map<std::string, TimerEntry> timers_;
 };
 

@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <chrono>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -91,6 +92,7 @@ public:
   [[nodiscard]] std::size_t size() const noexcept;
 
 private:
+  mutable std::mutex mutex_;
   std::unordered_map<std::string, RetainedMessageRecord>
       messages_; ///< Topic-name → retained message with store timestamp.
 };

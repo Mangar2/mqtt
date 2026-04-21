@@ -55,6 +55,7 @@ std::vector<MatchResult>
 InboundPublishProcessor::process(Message &msg, std::string_view client_id,
                                  std::string_view username,
                                  TopicAliasTable &alias_table) {
+  std::lock_guard<std::mutex> lock(mutex_);
   resolve_topic_alias(msg, alias_table);
 
   if (client_id != k_broker_internal_principal && is_system_topic(msg.topic.value)) {
@@ -81,11 +82,13 @@ InboundPublishProcessor::process(Message &msg, std::string_view client_id,
 
 std::vector<RetainedMessageRecord> InboundPublishProcessor::retained_for_filter(
     std::string_view topic_filter) const {
+  std::lock_guard<std::mutex> lock(mutex_);
   return retained_.find_records(topic_filter);
 }
 
 void InboundPublishProcessor::set_on_retained_changed(
     std::function<void()> callback) noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
   on_retained_changed_ = std::move(callback);
 }
 

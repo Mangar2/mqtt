@@ -7,6 +7,7 @@
  */
 
 #include "authz/acl_rule.h"
+#include <shared_mutex>
 #include <string_view>
 #include <vector>
 
@@ -88,6 +89,7 @@ public:
   [[nodiscard]] const std::vector<AclRule> &rules() const noexcept;
 
 private:
+  mutable std::shared_mutex mutex_;
   std::vector<AclRule> rules_; ///< Active ACL rules in evaluation order.
 
   /**

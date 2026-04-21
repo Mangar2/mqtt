@@ -19,17 +19,20 @@ MessageRouter::MessageRouter(InboundPublishProcessor &processor,
       deliver_(std::move(deliver)) {}
 
 void MessageRouter::set_tracer(StructuredTracer *tracer) noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
   structured_tracer_ = tracer;
 }
 
 void MessageRouter::set_on_offline_queue_changed(
     std::function<void()> callback) noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
   on_offline_queue_changed_ = std::move(callback);
 }
 
 bool MessageRouter::route(Message &msg, std::string_view client_id,
                           std::string_view username,
                           TopicAliasTable &alias_table) {
+  std::lock_guard<std::mutex> lock(mutex_);
   const auto now = std::chrono::steady_clock::now();
 
   // 12.1 — Pre-process inbound message; retrieve regular subscribers.
@@ -158,6 +161,7 @@ void MessageRouter::dispatch_item(const DeliveryItem &item,
 
 void MessageRouter::flush_offline_queue(
     std::string_view client_id, std::chrono::steady_clock::time_point now) {
+  std::lock_guard<std::mutex> lock(mutex_);
 
   const std::size_t queue_size_before = offline_queue_.size(client_id);
   std::vector<QueuedMessage> queued = offline_queue_.drain(client_id);
@@ -207,6 +211,7 @@ void MessageRouter::flush_offline_queue(
 
 std::size_t MessageRouter::buffer_offline_messages(
     std::string_view client_id, std::vector<Message> messages) {
+  std::lock_guard<std::mutex> lock(mutex_);
   std::size_t enqueued_count = 0U;
 
   for (Message &message : messages) {
@@ -234,6 +239,7 @@ void MessageRouter::deliver_retained(
     std::string_view client_id, std::string_view topic_filter,
     const Subscription &subscription, bool is_new_subscription,
     std::chrono::steady_clock::time_point now) {
+  std::lock_guard<std::mutex> lock(mutex_);
   if (!is_online_(client_id)) {
     return;
   }

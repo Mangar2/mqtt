@@ -94,6 +94,7 @@ void SharedSubscriptionDispatcher::add_member(std::string_view group,
                                               std::string_view topic_filter,
                                               std::string_view client_id,
                                               const Subscription &sub) {
+  std::lock_guard<std::mutex> lock(mutex_);
   auto &state = groups_[make_key(group, topic_filter)];
 
   // Replace existing entry for this client if present.
@@ -115,6 +116,7 @@ void SharedSubscriptionDispatcher::add_member(std::string_view group,
 void SharedSubscriptionDispatcher::remove_member(std::string_view group,
                                                  std::string_view topic_filter,
                                                  std::string_view client_id) {
+  std::lock_guard<std::mutex> lock(mutex_);
   const std::string key = make_key(group, topic_filter);
   auto group_it = groups_.find(key);
   if (group_it == groups_.end()) {
@@ -151,6 +153,7 @@ void SharedSubscriptionDispatcher::remove_member(std::string_view group,
 }
 
 void SharedSubscriptionDispatcher::remove_client(std::string_view client_id) {
+  std::lock_guard<std::mutex> lock(mutex_);
   for (auto iter = groups_.begin(); iter != groups_.end();) {
     auto &state = iter->second;
 
@@ -187,6 +190,7 @@ void SharedSubscriptionDispatcher::remove_client(std::string_view client_id) {
 
 std::vector<MatchResult> SharedSubscriptionDispatcher::select_next_for_topic(
     std::string_view topic_name) {
+  std::lock_guard<std::mutex> lock(mutex_);
   std::vector<MatchResult> results;
 
   for (auto &[key, state] : groups_) {
@@ -222,6 +226,7 @@ std::vector<MatchResult> SharedSubscriptionDispatcher::select_next_for_topic(
 
 std::size_t SharedSubscriptionDispatcher::member_count(
     std::string_view group, std::string_view topic_filter) const noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
   auto iter = groups_.find(make_key(group, topic_filter));
   if (iter == groups_.end()) {
     return 0U;

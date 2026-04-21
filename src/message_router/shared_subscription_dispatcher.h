@@ -7,6 +7,7 @@
  */
 
 #include <cstddef>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -155,6 +156,7 @@ private:
 
   std::unordered_map<std::string, GroupState>
       groups_; ///< (group+filter) → state.
+  mutable std::mutex mutex_;
 };
 
 } // namespace mqtt

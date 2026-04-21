@@ -7,6 +7,7 @@
  */
 
 #include <functional>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -76,6 +77,7 @@ public:
   [[nodiscard]] std::size_t size() const noexcept;
 
 private:
+  mutable std::mutex mutex_;
   /// Map from client_id → close callback.
   std::unordered_map<std::string, std::function<void()>> active_connections_;
 };

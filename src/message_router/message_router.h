@@ -9,6 +9,7 @@
 #include <chrono>
 #include <functional>
 #include <cstddef>
+#include <mutex>
 #include <string_view>
 #include <vector>
 
@@ -185,6 +186,7 @@ private:
                      std::chrono::steady_clock::time_point now);
 
   InboundPublishProcessor &processor_; ///< 12.1 — inbound pre-processing.
+  mutable std::mutex mutex_;
   OfflineQueue &offline_queue_;        ///< 12.3 — offline message buffer.
   SharedSubscriptionDispatcher
       &shared_dispatcher_; ///< 12.5 — shared subscription dispatch.

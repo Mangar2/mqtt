@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstddef>
 #include <deque>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -131,6 +132,7 @@ public:
   void restore(std::string_view client_id, std::vector<Message> messages);
 
 private:
+  mutable std::mutex mutex_;
   std::size_t max_size_; ///< Per-client queue depth limit.
   std::unordered_map<std::string, std::deque<QueuedMessage>>
       queues_; ///< Per-client FIFO queues.

@@ -7,6 +7,7 @@
  */
 
 #include <functional>
+#include <mutex>
 #include <string_view>
 #include <vector>
 
@@ -101,6 +102,7 @@ private:
   static void resolve_topic_alias(Message &msg, TopicAliasTable &alias_table);
 
   AclEngine &acl_;                                ///< ACL engine for publish authorization.
+  mutable std::mutex mutex_;
   RetainedMessageStore &retained_;               ///< Retained message store.
   SubscriptionStore &subscriptions_;             ///< Subscription store.
   std::function<void()> on_retained_changed_{};  ///< Write-through callback (13.4).

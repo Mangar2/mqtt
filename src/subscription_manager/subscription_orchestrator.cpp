@@ -160,11 +160,13 @@ SubscriptionOrchestrator::SubscriptionOrchestrator(
 
 void SubscriptionOrchestrator::set_on_session_changed(
     std::function<void()> callback) noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
   on_session_changed_ = std::move(callback);
 }
 
 SubackPacket SubscriptionOrchestrator::handle_subscribe(
     std::string_view client_id, const SubscribePacket &packet) {
+  std::lock_guard<std::mutex> lock(mutex_);
   SubackPacket suback;
   suback.packet_id = packet.packet_id;
 
@@ -252,6 +254,7 @@ SubackPacket SubscriptionOrchestrator::handle_subscribe(
 
 UnsubackPacket SubscriptionOrchestrator::handle_unsubscribe(
     std::string_view client_id, const UnsubscribePacket &packet) {
+  std::lock_guard<std::mutex> lock(mutex_);
   UnsubackPacket unsuback;
   unsuback.packet_id = packet.packet_id;
 

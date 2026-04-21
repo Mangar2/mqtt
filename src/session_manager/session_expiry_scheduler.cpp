@@ -10,17 +10,20 @@ void SessionExpiryScheduler::schedule(
     std::string_view client_id,
     std::chrono::steady_clock::time_point disconnect_time,
     uint32_t expiry_interval) {
+  std::lock_guard<std::mutex> lock(mutex_);
   timers_.insert_or_assign(std::string(client_id),
                            TimerEntry{.disconnect_time = disconnect_time,
                                       .expiry_interval = expiry_interval});
 }
 
 void SessionExpiryScheduler::cancel(std::string_view client_id) {
+  std::lock_guard<std::mutex> lock(mutex_);
   timers_.erase(std::string(client_id));
 }
 
 std::vector<std::string> SessionExpiryScheduler::collect_expired(
     std::chrono::steady_clock::time_point now) const {
+  std::lock_guard<std::mutex> lock(mutex_);
   std::vector<std::string> result;
 
   for (const auto &[cid, entry] : timers_) {
@@ -42,6 +45,7 @@ std::vector<std::string> SessionExpiryScheduler::collect_expired(
 }
 
 std::size_t SessionExpiryScheduler::size() const noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
   return timers_.size();
 }
 

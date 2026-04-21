@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -110,6 +111,7 @@ public:
   [[nodiscard]] bool contains(std::string_view client_id) const noexcept;
 
 private:
+  mutable std::mutex mutex_;
   std::unordered_map<std::string, SessionState>
       sessions_; ///< client_id → session state.
   std::unordered_map<std::string, std::chrono::steady_clock::time_point>

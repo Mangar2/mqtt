@@ -8,6 +8,7 @@
 namespace mqtt {
 
 void SessionStore::create(const SessionState &session) {
+  std::lock_guard<std::mutex> lock(mutex_);
   const std::string &cid = session.client_id.value;
   if (sessions_.contains(cid)) {
     throw StoreException(StoreError::SessionAlreadyExists,
@@ -18,6 +19,7 @@ void SessionStore::create(const SessionState &session) {
 
 std::optional<SessionState>
 SessionStore::load(std::string_view client_id) const {
+  std::lock_guard<std::mutex> lock(mutex_);
   const auto iter = sessions_.find(std::string(client_id));
   if (iter == sessions_.end()) {
     return std::nullopt;
@@ -26,6 +28,7 @@ SessionStore::load(std::string_view client_id) const {
 }
 
 void SessionStore::remove(std::string_view client_id) {
+  std::lock_guard<std::mutex> lock(mutex_);
   const std::string key(client_id);
   sessions_.erase(key);
   disconnect_times_.erase(key);
@@ -34,11 +37,13 @@ void SessionStore::remove(std::string_view client_id) {
 void SessionStore::mark_disconnected(
     std::string_view client_id,
     std::chrono::steady_clock::time_point timestamp) {
+  std::lock_guard<std::mutex> lock(mutex_);
   disconnect_times_.insert_or_assign(std::string(client_id), timestamp);
 }
 
 std::vector<SessionState> SessionStore::expired_sessions(
     std::chrono::steady_clock::time_point now) const {
+  std::lock_guard<std::mutex> lock(mutex_);
   std::vector<SessionState> result;
 
   for (const auto &[cid, state] : sessions_) {
@@ -70,9 +75,13 @@ std::vector<SessionState> SessionStore::expired_sessions(
   return result;
 }
 
-std::size_t SessionStore::size() const noexcept { return sessions_.size(); }
+std::size_t SessionStore::size() const noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return sessions_.size();
+}
 
 std::vector<SessionState> SessionStore::all() const {
+  std::lock_guard<std::mutex> lock(mutex_);
   std::vector<SessionState> result;
   result.reserve(sessions_.size());
   for (const auto &[cid, state] : sessions_) {
@@ -82,6 +91,7 @@ std::vector<SessionState> SessionStore::all() const {
 }
 
 bool SessionStore::contains(std::string_view client_id) const noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
   return sessions_.contains(std::string(client_id));
 }
 

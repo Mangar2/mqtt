@@ -8,6 +8,8 @@
 
 #include <chrono>
 #include <functional>
+#include <mutex>
+#include <optional>
 #include <string_view>
 
 #include "data_model/message/message.h"
@@ -122,10 +124,12 @@ public:
   void publish_due(std::chrono::steady_clock::time_point now);
 
 private:
-  /// Arm the delay timer; publish immediately when `delay_interval == 0`.
-  void arm_timer(std::string_view client_id,
-                 std::chrono::steady_clock::time_point now);
+  /// Arm the delay timer; return will for immediate publish when delay is 0.
+  [[nodiscard]] std::optional<WillMessage>
+  arm_timer(std::string_view client_id,
+            std::chrono::steady_clock::time_point now);
 
+  mutable std::mutex mutex_;
   WillStore &will_store_;       ///< Backing will store.
   WillDelayTimer &delay_timer_; ///< Backing delay timer.
   PublishCallback publish_fn_;  ///< Callback for routing the will message.

@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -79,6 +80,7 @@ private:
     uint32_t delay_seconds; ///< Will Delay Interval in seconds.
   };
 
+  mutable std::mutex mutex_;
   std::unordered_map<std::string, TimerEntry>
       timers_; ///< Pending timers keyed by Client ID.
 };

@@ -1,5 +1,7 @@
 #include "authz/acl_engine.h"
 
+#include <mutex>
+
 namespace mqtt {
 
 // ---------------------------------------------------------------------------
@@ -15,6 +17,7 @@ AclEngine::AclEngine(std::vector<AclRule> rules) : rules_(std::move(rules)) {}
 bool AclEngine::check_publish(std::string_view client_id,
                               std::string_view username,
                               std::string_view topic) const noexcept {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
   return evaluate(client_id, username, topic, AclAction::Publish) ==
          AclEffect::Allow;
 }
@@ -22,15 +25,20 @@ bool AclEngine::check_publish(std::string_view client_id,
 bool AclEngine::check_subscribe(std::string_view client_id,
                                 std::string_view username,
                                 std::string_view topic_filter) const noexcept {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
   return evaluate(client_id, username, topic_filter, AclAction::Subscribe) ==
          AclEffect::Allow;
 }
 
 void AclEngine::reload(std::vector<AclRule> rules) noexcept {
+  std::unique_lock<std::shared_mutex> lock(mutex_);
   rules_ = std::move(rules);
 }
 
-const std::vector<AclRule> &AclEngine::rules() const noexcept { return rules_; }
+const std::vector<AclRule> &AclEngine::rules() const noexcept {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return rules_;
+}
 
 // ---------------------------------------------------------------------------
 // Private helpers

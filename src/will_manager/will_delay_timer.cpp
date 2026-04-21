@@ -8,16 +8,19 @@ void WillDelayTimer::schedule(
     std::string_view client_id,
     std::chrono::steady_clock::time_point disconnect_time,
     uint32_t delay_seconds) {
+  std::lock_guard<std::mutex> lock(mutex_);
   timers_.insert_or_assign(std::string(client_id),
                            TimerEntry{disconnect_time, delay_seconds});
 }
 
 void WillDelayTimer::cancel(std::string_view client_id) {
+  std::lock_guard<std::mutex> lock(mutex_);
   timers_.erase(std::string(client_id));
 }
 
 std::vector<std::string>
 WillDelayTimer::collect_due(std::chrono::steady_clock::time_point now) const {
+  std::lock_guard<std::mutex> lock(mutex_);
   std::vector<std::string> due;
   for (const auto &[cid, entry] : timers_) {
     const auto deadline =
@@ -29,6 +32,9 @@ WillDelayTimer::collect_due(std::chrono::steady_clock::time_point now) const {
   return due;
 }
 
-std::size_t WillDelayTimer::size() const noexcept { return timers_.size(); }
+std::size_t WillDelayTimer::size() const noexcept {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return timers_.size();
+}
 
 } // namespace mqtt
