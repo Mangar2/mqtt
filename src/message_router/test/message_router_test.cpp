@@ -787,7 +787,7 @@ TEST_CASE("router_deliver_retained_send_if_new", "[message_router]") {
                           true); // new subscription
   REQUIRE(delivered.size() == 1U);
   CHECK(delivered[0].qos == QoS::AtLeastOnce);
-  CHECK_FALSE(delivered[0].retain);
+  CHECK(delivered[0].retain);
   const auto identifier = get_sub_id(delivered[0]);
   REQUIRE(identifier.has_value());
   CHECK(*identifier == 55U);

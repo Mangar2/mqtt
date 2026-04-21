@@ -92,7 +92,7 @@ def run_4_1_1_publish_retain_stores_message(config) -> tuple[bool, str]:
             )
             subscriber.subscribe(topic, qos=0)
             messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=True)
 
         return True, "4.1.1 retained publish is stored and available"
     except Exception as error:
@@ -118,7 +118,7 @@ def run_4_1_2_new_subscriber_gets_retained_immediately(config) -> tuple[bool, st
             )
             subscriber.subscribe(topic, qos=0)
             messages = subscriber.collect_messages(count=1, timeout=min(2.0, config.timeout_seconds))
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=True)
 
         return True, "4.1.2 new subscriber gets retained message directly after subscribe"
     except Exception as error:
@@ -171,7 +171,7 @@ def run_4_1_4_new_retained_replaces_old(config) -> tuple[bool, str]:
             )
             subscriber.subscribe(topic, qos=0)
             messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=b"new-retain", qos=0, retain=False)
+            assert_message(messages[0], topic=topic, payload=b"new-retain", qos=0, retain=True)
 
         return True, "4.1.4 second retained publish replaces previous retained payload"
     except Exception as error:
@@ -376,9 +376,9 @@ def run_4_4_2_rap_zero_clears_retain_flag(config) -> tuple[bool, str]:
             )
             subscriber.subscribe(topic, options=options)
             messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=True)
 
-        return True, "4.4.2 retain as published=0 clears retain flag"
+        return True, "4.4.2 subscription-time retained delivery carries RETAIN=1 even when RAP=0"
     except Exception as error:
         return False, f"4.4.2 failed: {error}"
     finally:
@@ -409,7 +409,7 @@ def run_4_5_1_retained_message_expires(config) -> tuple[bool, str]:
             )
             before_expiry_subscriber.subscribe(topic, qos=0)
             before_messages = before_expiry_subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(before_messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            assert_message(before_messages[0], topic=topic, payload=payload, qos=0, retain=True)
 
         time.sleep(3.2)
 
@@ -515,7 +515,7 @@ TEST_CASES = [
     },
     {
         "name": "retain/retain_as_published/clear_flag",
-        "description": "4.4.2 Retain As Published=0 clears RETAIN flag",
+        "description": "4.4.2 Subscription-time retained delivery has RETAIN=1 even when RAP=0 (MQTT-3.3.1-8)",
         "run": run_4_4_2_rap_zero_clears_retain_flag,
     },
     {
