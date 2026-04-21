@@ -35,6 +35,16 @@
     },
 
     {
+      "name":        "release-dbg",
+      "displayName": "Release with Debug Symbols (host)",
+      "inherits":    "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "BUILD_TESTING":    "OFF"
+      }
+    },
+
+    {
       "name":        "debug-sanitize",
       "displayName": "Debug + Sanitizers (host)",
       "inherits":    "debug",
