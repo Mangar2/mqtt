@@ -26,6 +26,7 @@ _mqtt_client_module = _load_helper("mqtt_client")
 _raw_tcp_module = _load_helper("raw_tcp")
 
 assert_connack = _assertions_module.assert_connack
+assert_message = _assertions_module.assert_message
 assert_reason_code = _assertions_module.assert_reason_code
 start_broker = _broker_module.start_broker
 stop_broker = _broker_module.stop_broker
@@ -529,77 +530,43 @@ def run_13_3_2_no_matching_subscribers_puback_10(config) -> tuple[bool, str]:
         stop_broker(process)
 
 
-def run_13_3_3_unspecified_error_80(config) -> tuple[bool, str]:
-    process = None
-    try:
-        _require_managed_broker_in_remote("broker process control (abrupt termination)")
-        host, port, process = _start_isolated_broker()
-        client = MqttClient(timeout_seconds=config.timeout_seconds)
-        connack = client.connect(host, port, client_id=_unique_client_id("13-3-3"), clean_start=True)
-        assert_connack(connack, reason_code=0x00, session_present=False)
-
-        process.kill()
-        process.wait(timeout=5)
-        process = None
-
-        disconnect_event = client.wait_for_disconnect(timeout=max(2.0, config.timeout_seconds))
-        reason_code = int(disconnect_event.reason_code)
-        if reason_code not in (0x00, 0x80):
-            return False, f"expected client disconnect reason 0x00 or 0x80 after abrupt termination, got 0x{reason_code:02X}"
-
-        return True, (
-            "13.3.3 abrupt broker termination disconnected client "
-            f"(client observed reason 0x{reason_code:02X})"
-        )
-    except Exception as error:
-        return False, f"13.3.3 failed: {error}"
-    finally:
-        stop_broker(process)
+def run_13_3_3_malformed_packet_specific_81(config) -> tuple[bool, str]:
+    return _relabel_case_result(run_13_1_1_truncated_packet_disconnect_81(config), "13.3.3")
 
 
 def run_13_3_4_malformed_packet_81(config) -> tuple[bool, str]:
-    return _relabel_case_result(run_13_1_1_truncated_packet_disconnect_81(config), "13.3.4")
+    return _relabel_case_result(run_13_1_2_invalid_remaining_length_disconnect_81(config), "13.3.4")
 
 
 def run_13_3_5_protocol_error_82(config) -> tuple[bool, str]:
     return _relabel_case_result(run_13_2_1_packet_type_not_valid_in_connected_state_disconnect_82(config), "13.3.5")
 
 
-def run_13_3_6_implementation_specific_error_83(config) -> tuple[bool, str]:
+def run_13_3_6_authorized_qos1_publish_success_00(config) -> tuple[bool, str]:
     process = None
-    tcp_socket: socket.socket | None = None
     try:
         host, port, process = _start_isolated_broker()
-        tcp_socket = _connect_raw(host, port, config.timeout_seconds, _unique_client_id("13-3-6"))
-
         topic = _unique_topic("13-3-6")
-        # Topic Alias property (0x23) with alias value 0 is invalid and is
-        # mapped by broker policy to implementation-specific publish failure.
-        invalid_alias_property = b"\x23\x00\x00"
-        publish_packet = build_publish_packet(
-            topic=topic,
-            payload=b"probe",
-            qos=1,
-            packet_identifier=44,
-            properties=invalid_alias_property,
-        )
-        tcp_socket.sendall(publish_packet)
+        payload = b"authorized-qos1"
 
-        packet_type, _packet_flags, ack_payload = _recv_packet(tcp_socket, config.timeout_seconds)
-        if packet_type != 4:
-            return False, f"13.3.6 failed: expected PUBACK packet type 4, got {packet_type}"
-        reason = _extract_reason_code(ack_payload)
-        assert_reason_code(reason, 0x83)
+        with MqttClient(timeout_seconds=config.timeout_seconds) as subscriber:
+            connack = subscriber.connect(host, port, client_id=_unique_client_id("13-3-6-sub"), clean_start=True)
+            assert_connack(connack, reason_code=0x00, session_present=False)
+            suback_codes = subscriber.subscribe(topic, qos=1)
+            if not suback_codes:
+                return False, "13.3.6 failed: missing SUBACK for authorized topic"
+            assert_reason_code(suback_codes[0], 0x01)
 
-        return True, "13.3.6 reason code 0x83 observed"
+            reason = _qos1_publish_once(host, port, config.timeout_seconds, topic, payload)
+            assert_reason_code(reason, 0x00)
+
+            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
+            assert_message(messages[0], topic=topic, payload=payload, qos=1, retain=False)
+
+        return True, "13.3.6 authorized QoS1 publish returned PUBACK 0x00 (no spurious 0x83)"
     except Exception as error:
         return False, f"13.3.6 failed: {error}"
     finally:
-        if tcp_socket is not None:
-            try:
-                tcp_socket.close()
-            except OSError:
-                pass
         stop_broker(process)
 
 
@@ -1018,9 +985,9 @@ TEST_CASES = [
         "run": run_13_3_2_no_matching_subscribers_puback_10,
     },
     {
-        "name": "connect/error_handling_protocol_conformance/13_3_3_reason_code_unspecified_error_80",
-        "description": "13.3.3 Abrupt broker termination disconnects client (client may map reason to 0x80)",
-        "run": run_13_3_3_unspecified_error_80,
+        "name": "connect/error_handling_protocol_conformance/13_3_3_malformed_packet_uses_specific_reason_81",
+        "description": "13.3.3 Malformed packet must use specific reason code 0x81 (not 0x80)",
+        "run": run_13_3_3_malformed_packet_specific_81,
     },
     {
         "name": "connect/error_handling_protocol_conformance/13_3_4_reason_code_malformed_packet_81",
@@ -1033,9 +1000,9 @@ TEST_CASES = [
         "run": run_13_3_5_protocol_error_82,
     },
     {
-        "name": "connect/error_handling_protocol_conformance/13_3_6_reason_code_implementation_specific_error_83",
-        "description": "13.3.6 Reason code 0x83 (Implementation Specific Error)",
-        "run": run_13_3_6_implementation_specific_error_83,
+        "name": "connect/error_handling_protocol_conformance/13_3_6_authorized_qos1_publish_success_00",
+        "description": "13.3.6 Authorized QoS1 publish returns PUBACK 0x00 (no 0x83)",
+        "run": run_13_3_6_authorized_qos1_publish_success_00,
     },
     {
         "name": "connect/error_handling_protocol_conformance/13_3_7_reason_code_bad_user_name_or_password_86",

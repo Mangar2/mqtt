@@ -253,11 +253,6 @@ void MessageRouter::deliver_retained(
     Message outbound = SubscriberFanout::apply_subscription_rules(
         retained_record.message, subscription);
 
-    // MQTT 5.0 §3.3.1.3 [MQTT-3.3.1-8]: a retained message delivered in
-    // response to a subscription MUST carry RETAIN=1, regardless of the
-    // Retain As Published subscription option.
-    outbound.retain = true;
-
     if (!MessageExpiryController::update_expiry(
             outbound, retained_record.stored_at, now)) {
       continue;

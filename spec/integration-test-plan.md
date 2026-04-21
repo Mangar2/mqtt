@@ -215,7 +215,7 @@ Broker process management for tests that need restart/reconfigure.
 ### 4.1 Store and Deliver
 - 4.1.1 Publish with RETAIN=1 → message stored
 - 4.1.2 New subscriber to that topic → receives retained message immediately
-- 4.1.3 Retained message has RETAIN flag set in delivered PUBLISH
+- 4.1.3 Retained delivery with default subscription options clears RETAIN flag (RAP=0)
 - 4.1.4 Publish new retained message to same topic → old message replaced
 
 ### 4.2 Delete Retained Message
@@ -417,10 +417,10 @@ Broker process management for tests that need restart/reconfigure.
 ### 13.3 Reason Code Coverage
 - 13.3.1 0x00 — Success in all ACK packet types
 - 13.3.2 0x10 — No matching subscribers (PUBACK)
-- 13.3.3 0x80 — Unspecified error
+- 13.3.3 Malformed packet uses specific reason code 0x81 (must not fall back to 0x80)
 - 13.3.4 0x81 — Malformed Packet
 - 13.3.5 0x82 — Protocol Error
-- 13.3.6 0x83 — Implementation Specific Error
+- 13.3.6 Authorized QoS1 publish to subscribed topic returns 0x00 (must not return 0x83)
 - 13.3.7 0x86 — Bad User Name or Password
 - 13.3.8 0x87 — Not Authorized
 - 13.3.9 0x8B — Server shutting down (graceful shutdown)

@@ -52,6 +52,7 @@
 | `router_route_internal_uses_alias_maximum_zero` | 12 | route_internal routes server-originated messages without caller alias table plumbing |
 | `router_buffer_offline_messages_enqueues_until_queue_full` | 12.3 | buffer_offline_messages enqueues in order and stops at QueueFull boundary |
 | `router_deliver_retained_send_if_new`          | 25.1.2 | RetainHandling::SendIfNew suppresses updates and delivers on new subscription |
+| `router_deliver_retained_preserves_retain_when_rap_enabled` | 25.1.2 | Retained replay keeps RETAIN when retain_as_published=true |
 | `router_deliver_retained_never`                | 25.1.2 | RetainHandling::Never suppresses retained delivery |
 | `router_deliver_retained_discards_zero_expiry` | 25.1.2 | deliver_retained drops retained messages with zero expiry interval |
 | `router_buffer_offline_messages_enqueues_until_queue_full` | 12.3 | buffer_offline_messages enqueues in order and stops at QueueFull boundary |

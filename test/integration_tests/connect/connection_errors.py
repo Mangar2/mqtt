@@ -299,13 +299,14 @@ def run_1_8_4_abrupt_tcp_close_detected(config) -> tuple[bool, str]:
                 port,
                 client_id=_unique_client_id("conn-errors-abrupt"),
                 clean_start=True,
-                keepalive=1,
+                keepalive=30,
             )
             assert_connack(abrupt_connack, reason_code=0x00, session_present=False)
 
             _force_abrupt_close(abrupt_client)
 
-            message = subscriber.collect_messages(count=1, timeout=max(2.0, config.timeout_seconds))[0]
+            detection_timeout = min(3.0, max(1.0, config.timeout_seconds))
+            message = subscriber.collect_messages(count=1, timeout=detection_timeout)[0]
             assert_message(
                 message,
                 topic=will_topic,
@@ -314,7 +315,7 @@ def run_1_8_4_abrupt_tcp_close_detected(config) -> tuple[bool, str]:
                 retain=False,
             )
 
-        return True, "1.8.4 abrupt TCP close was detected and will was published"
+        return True, "1.8.4 abrupt TCP close detected independently from keep-alive timeout"
     except Exception as error:
         return False, f"1.8.4 failed: {error}"
     finally:

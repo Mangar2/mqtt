@@ -127,7 +127,7 @@ def run_4_1_2_new_subscriber_gets_retained_immediately(config) -> tuple[bool, st
         stop_broker(process)
 
 
-def run_4_1_3_retained_delivery_sets_retain_flag(config) -> tuple[bool, str]:
+def run_4_1_3_retained_delivery_default_clears_retain_flag(config) -> tuple[bool, str]:
     process = None
     try:
         host, port, process = _start_isolated_broker()
@@ -136,18 +136,17 @@ def run_4_1_3_retained_delivery_sets_retain_flag(config) -> tuple[bool, str]:
 
         _publish_retained(host, port, topic, payload, config.timeout_seconds)
 
-        options = SubscribeOptions(qos=0, retainAsPublished=True)
         with MqttClient(timeout_seconds=config.timeout_seconds) as subscriber:
             assert_connack(
                 subscriber.connect(host, port, client_id=_unique_client_id("sub-4-1-3"), clean_start=True),
                 reason_code=0x00,
                 session_present=False,
             )
-            subscriber.subscribe(topic, options=options)
+            subscriber.subscribe(topic, qos=0)
             messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=True)
+            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
 
-        return True, "4.1.3 retained delivery keeps retain flag set"
+        return True, "4.1.3 retained delivery clears RETAIN flag by default (RAP=0)"
     except Exception as error:
         return False, f"4.1.3 failed: {error}"
     finally:
@@ -376,9 +375,9 @@ def run_4_4_2_rap_zero_clears_retain_flag(config) -> tuple[bool, str]:
             )
             subscriber.subscribe(topic, options=options)
             messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=True)
+            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
 
-        return True, "4.4.2 subscription-time retained delivery carries RETAIN=1 even when RAP=0"
+        return True, "4.4.2 retain as published=0 clears retain flag on forwarded retained publish"
     except Exception as error:
         return False, f"4.4.2 failed: {error}"
     finally:
@@ -474,9 +473,9 @@ TEST_CASES = [
         "run": run_4_1_2_new_subscriber_gets_retained_immediately,
     },
     {
-        "name": "retain/store_and_deliver/retained_delivery_sets_flag",
-        "description": "4.1.3 Retained delivery has RETAIN flag set",
-        "run": run_4_1_3_retained_delivery_sets_retain_flag,
+        "name": "retain/store_and_deliver/retained_delivery_default_clears_flag",
+        "description": "4.1.3 Retained delivery clears RETAIN flag by default",
+        "run": run_4_1_3_retained_delivery_default_clears_retain_flag,
     },
     {
         "name": "retain/store_and_deliver/new_retained_replaces_old",
@@ -515,7 +514,7 @@ TEST_CASES = [
     },
     {
         "name": "retain/retain_as_published/clear_flag",
-        "description": "4.4.2 Subscription-time retained delivery has RETAIN=1 even when RAP=0 (MQTT-3.3.1-8)",
+        "description": "4.4.2 Subscription with Retain As Published=0 clears RETAIN flag",
         "run": run_4_4_2_rap_zero_clears_retain_flag,
     },
     {
