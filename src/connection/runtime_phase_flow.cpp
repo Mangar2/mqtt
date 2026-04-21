@@ -41,10 +41,26 @@ struct RuntimePacketDispatchContext {
 void mark_clean_disconnect(RuntimeDisconnectState &disconnect_state,
                            ReasonCode reason_code,
                            std::optional<uint32_t> expiry_override =
-                               std::nullopt) {
+                                std::nullopt) {
   disconnect_state.clean_disconnect = true;
   disconnect_state.reason_code = reason_code;
   disconnect_state.expiry_override = expiry_override;
+}
+
+void emit_runtime_warning(Broker &broker, std::string_view client_id,
+                          std::string_view info,
+                          std::string_view detail = {}) {
+  TRACE_GUARD((&broker.structured_tracer()), TraceLevel::Warning, "connection") {
+    TraceEvent event;
+    event.level = TraceLevel::Warning;
+    event.module = "connection";
+    event.info = std::string(info);
+    event.data.emplace_back("client_id", std::string(client_id));
+    if (!detail.empty()) {
+      event.detail = std::string(detail);
+    }
+    broker.structured_tracer().emit(event);
+  }
 }
 
 class RuntimePacketDispatcher {
@@ -309,6 +325,8 @@ public:
 
 private:
   void handle_write_queue_overflow() const {
+    emit_runtime_warning(context_.broker, context_.client_session.client_id(),
+                         "disconnect_quota_exceeded_write_queue_overflow");
     mark_clean_disconnect(context_.disconnect_state, ReasonCode::QuotaExceeded);
     write_frame_direct(context_.connection, context_.ws_transport,
                        encode_disconnect_packet(ReasonCode::QuotaExceeded),
@@ -373,6 +391,9 @@ void dispatch_runtime_packet(
     try {
       packet_any = try_decode_packet(stream_buffer);
     } catch (const CodecException &codec_exception) {
+      emit_runtime_warning(
+          broker, client_session.client_id(), "runtime_packet_decode_failed",
+          codec_exception.what());
       const ReasonCode runtime_reason =
           map_codec_error_to_runtime_reason(codec_exception.error());
       if (runtime_reason == ReasonCode::MalformedPacket) {
@@ -382,6 +403,8 @@ void dispatch_runtime_packet(
       }
       return true;
     } catch (...) {
+      emit_runtime_warning(broker, client_session.client_id(),
+                           "runtime_packet_decode_failed_unknown");
       write_protocol_error_disconnect();
       return true;
     }
@@ -406,6 +429,8 @@ void dispatch_runtime_packet(
     try {
       dispatch_runtime_packet(*packet_any, dispatch_context, should_break);
     } catch (...) {
+      emit_runtime_warning(broker, client_session.client_id(),
+                           "runtime_packet_dispatch_failed");
       write_protocol_error_disconnect();
       return true;
     }
@@ -450,6 +475,8 @@ void run_connected_session_loop(
         broker.structured_tracer().emit(event);
       }
       if (!enqueue_frame(write_queue, std::move(frame), is_websocket)) {
+        emit_runtime_warning(broker, client_session.client_id(),
+                             "disconnect_quota_exceeded_outbound_enqueue");
         disconnect_state.clean_disconnect = true;
         disconnect_state.reason_code = ReasonCode::QuotaExceeded;
         write_frame_direct(connection, ws_transport,

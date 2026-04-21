@@ -200,6 +200,8 @@ void ConfigLoader::apply_key(const std::string &section, const std::string &key,
       cfg.trace_global_level = parse_trace_level_or_throw(value);
     } else if (key == "trace_modules") {
       cfg.trace_modules = parse_csv_modules(value);
+    } else if (key == "max_text_length") {
+      cfg.trace_max_text_length = parse_uint32(value);
     }
   } else if (section == "monitoring") {
     if (key == "sys_topic_interval") {
@@ -228,6 +230,15 @@ void ConfigLoader::validate(const BrokerConfig &cfg) {
         BrokerError::InvalidConfig,
         "write_queue_max_bytes must be in [1, " +
             std::to_string(BrokerConfig::k_write_queue_max_bytes_hard_limit) +
+            "]");
+  }
+  if (cfg.trace_max_text_length < 1U ||
+      cfg.trace_max_text_length >
+          BrokerConfig::k_trace_text_max_length_hard_limit) {
+    throw BrokerException(
+        BrokerError::InvalidConfig,
+        "tracing.max_text_length must be in [1, " +
+            std::to_string(BrokerConfig::k_trace_text_max_length_hard_limit) +
             "]");
   }
   if (cfg.qos_retransmit_timeout_seconds < 1U) {

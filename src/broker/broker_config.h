@@ -57,6 +57,10 @@ struct BrokerConfig {
   /// Hard upper bound for per-connection write queue capacity from config.
   static constexpr uint32_t k_write_queue_max_bytes_hard_limit =
       4U * 1024U * 1024U;
+  /// Default maximum length per structured trace text field.
+  static constexpr uint32_t k_trace_text_max_length_default = 2024U;
+  /// Hard upper bound for structured trace text field length from config.
+  static constexpr uint32_t k_trace_text_max_length_hard_limit = 1U * 1024U * 1024U;
 
   //  15.1.2  Port configuration
 
@@ -129,6 +133,9 @@ struct BrokerConfig {
   /// Modules for which trace-level events are enabled even when global level
   /// is below `trace`.
   std::vector<std::string> trace_modules;
+
+  /// Maximum UTF-8 byte length per structured trace text field.
+  uint32_t trace_max_text_length = k_trace_text_max_length_default;
 };
 
 } // namespace mqtt

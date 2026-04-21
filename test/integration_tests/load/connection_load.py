@@ -54,10 +54,6 @@ def _start_isolated_broker(overrides: dict[str, object] | None = None):
         "network.mqtt_port": _find_free_port(),
         "network.ws_port": 0,
         "broker.allow_anonymous": True,
-        # Load stages publish bursts to one subscriber; raise queue limits so
-        # the test measures broker routing progress rather than tiny defaults.
-        "broker.max_queued_messages": 5000,
-        "broker.write_queue_max_bytes": 524288,
     }
     if overrides is not None:
         effective_overrides.update(overrides)

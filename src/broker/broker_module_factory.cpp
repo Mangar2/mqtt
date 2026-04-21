@@ -193,6 +193,7 @@ void BrokerModuleFactory::create(
   structured_tracer = std::make_unique<StructuredTracer>(std::clog);
   structured_tracer->set_global_level(config.trace_global_level);
   structured_tracer->set_trace_modules(config.trace_modules);
+  structured_tracer->set_max_text_length(config.trace_max_text_length);
   message_router->set_tracer(structured_tracer.get());
   session_manager->set_tracer(structured_tracer.get());
 

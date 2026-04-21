@@ -41,6 +41,25 @@ namespace {
   return formatter.str();
 }
 
+[[nodiscard]] std::string truncate_text(std::string_view value_text,
+                                        std::size_t max_text_length) {
+  if (value_text.size() <= max_text_length) {
+    return std::string(value_text);
+  }
+  if (max_text_length == 0U) {
+    return {};
+  }
+
+  static constexpr std::string_view k_suffix = "...<truncated>";
+  if (max_text_length <= k_suffix.size()) {
+    return std::string(value_text.substr(0U, max_text_length));
+  }
+
+  std::string truncated(value_text.substr(0U, max_text_length - k_suffix.size()));
+  truncated.append(k_suffix);
+  return truncated;
+}
+
 } // namespace
 
 StructuredTracer::StructuredTracer(std::ostream &output_stream)
@@ -81,6 +100,14 @@ void StructuredTracer::set_trace_modules(const std::vector<std::string> &module_
   }
 }
 
+void StructuredTracer::set_max_text_length(std::size_t max_text_length) noexcept {
+  max_text_length_.store(max_text_length, std::memory_order_relaxed);
+}
+
+std::size_t StructuredTracer::max_text_length() const noexcept {
+  return max_text_length_.load(std::memory_order_relaxed);
+}
+
 bool StructuredTracer::should_emit(TraceLevel level,
                                    std::string_view module_name) const noexcept {
   return should_emit_unlocked(level, module_name);
@@ -98,6 +125,11 @@ void StructuredTracer::emit(const TraceEvent &event) {
 
   try {
     std::ostream &output_stream = *output_stream_;
+    const std::size_t max_text_length =
+        max_text_length_.load(std::memory_order_relaxed);
+    const std::string module_text =
+        truncate_text(event.module, max_text_length);
+    const std::string info_text = truncate_text(event.info, max_text_length);
     output_stream << '{';
 
     output_stream << "\"timestamp\":";
@@ -107,14 +139,15 @@ void StructuredTracer::emit(const TraceEvent &event) {
     write_json_string(output_stream, to_string(event.level));
 
     output_stream << ",\"module\":";
-    write_json_string(output_stream, event.module);
+    write_json_string(output_stream, module_text);
 
     output_stream << ",\"info\":";
-    write_json_string(output_stream, event.info);
+    write_json_string(output_stream, info_text);
 
     if (event.detail.has_value()) {
       output_stream << ",\"detail\":";
-      write_json_string(output_stream, *event.detail);
+      write_json_string(output_stream,
+                        truncate_text(*event.detail, max_text_length));
     }
 
     if (!event.data.empty()) {
@@ -124,9 +157,11 @@ void StructuredTracer::emit(const TraceEvent &event) {
         if (!is_first_field) {
           output_stream << ',';
         }
-        write_json_string(output_stream, field_name);
+        write_json_string(output_stream,
+                          truncate_text(field_name, max_text_length));
         output_stream << ':';
-        write_json_string(output_stream, field_value);
+        write_json_string(output_stream,
+                          truncate_text(field_value, max_text_length));
         is_first_field = false;
       }
       output_stream << '}';

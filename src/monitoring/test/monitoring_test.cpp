@@ -451,3 +451,25 @@ TEST_CASE("tracer_set_trace_modules_and_escape_sequences", "[monitoring]") {
   const std::string output_text = output_stream.str();
     CHECK_FALSE(output_text.empty());
 }
+
+TEST_CASE("tracer_truncates_overlong_text_fields", "[monitoring]") {
+  std::ostringstream output_stream;
+  StructuredTracer tracer(output_stream);
+  tracer.set_global_level(TraceLevel::Info);
+  tracer.set_max_text_length(32U);
+
+  TraceEvent event;
+  event.level = TraceLevel::Info;
+  event.module = "connection";
+  event.info = std::string(120U, 't');
+  event.detail = std::string(120U, 'x');
+  event.data = {{"key", std::string(120U, 'v')}};
+  tracer.emit(event);
+
+  const std::string output_text = output_stream.str();
+  CHECK_FALSE(output_text.empty());
+  CHECK(output_text.find("...<truncated>") != std::string::npos);
+  CHECK(output_text.find(std::string(48U, 't')) == std::string::npos);
+  CHECK(output_text.find(std::string(48U, 'x')) == std::string::npos);
+  CHECK(output_text.find(std::string(48U, 'v')) == std::string::npos);
+}

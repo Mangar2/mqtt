@@ -101,6 +101,18 @@ public:
   void set_trace_modules(const std::vector<std::string> &module_names);
 
   /**
+   * @brief Set maximum length for each serialized text field.
+   * @param max_text_length Maximum number of bytes per text field.
+   */
+  void set_max_text_length(std::size_t max_text_length) noexcept;
+
+  /**
+   * @brief Return configured maximum length for serialized text fields.
+   * @return Maximum number of bytes per text field.
+   */
+  [[nodiscard]] std::size_t max_text_length() const noexcept;
+
+  /**
    * @brief Return whether the event would pass current filtering.
    *
    * @param level Event level.
@@ -130,6 +142,7 @@ private:
 
   std::ostream *output_stream_;
   std::atomic<TraceLevel> global_level_{TraceLevel::Warning};
+  std::atomic<std::size_t> max_text_length_{2024U};
   std::unordered_set<std::string> trace_modules_;
   mutable std::mutex mutex_;
 };

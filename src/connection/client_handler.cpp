@@ -77,6 +77,13 @@ void run_client_handler_flow(std::unique_ptr<TcpConnection> conn, Broker &broker
       ws_transport = std::make_unique<WebSocketTransport>(*conn);
     }
   } catch (...) {
+    TRACE_GUARD((&broker.structured_tracer()), TraceLevel::Warning, "connection") {
+      TraceEvent event;
+      event.level = TraceLevel::Warning;
+      event.module = "connection";
+      event.info = "websocket_transport_init_failed";
+      broker.structured_tracer().emit(event);
+    }
     conn->close();
     return;
   }
@@ -137,6 +144,14 @@ void run_client_handler_flow(std::unique_ptr<TcpConnection> conn, Broker &broker
   const auto receive_maximum =
       find_receive_maximum(connect_packet->properties);
   if (receive_maximum.has_value() && receive_maximum.value() == 0U) {
+    TRACE_GUARD((&broker.structured_tracer()), TraceLevel::Warning, "connection") {
+      TraceEvent event;
+      event.level = TraceLevel::Warning;
+      event.module = "connection";
+      event.info = "connect_rejected_receive_maximum_zero";
+      event.data.emplace_back("client_id", connect_result.client_id);
+      broker.structured_tracer().emit(event);
+    }
     stop_transport();
     return;
   }

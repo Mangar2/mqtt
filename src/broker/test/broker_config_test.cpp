@@ -44,6 +44,8 @@ TEST_CASE("parse_minimal_valid_config", "[broker]") {
   CHECK(cfg.qos_retransmit_timeout_seconds == 20U);
   CHECK(cfg.tick_interval_ms == 100U);
   CHECK(cfg.persistence_enabled == false);
+  CHECK(cfg.trace_max_text_length ==
+        BrokerConfig::k_trace_text_max_length_default);
 }
 
 TEST_CASE("parse_all_network_keys", "[broker]") {
@@ -125,18 +127,27 @@ TEST_CASE("parse_tracing_section_global_level_and_modules", "[broker]") {
   const auto cfg = ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
                                        "[tracing]\n"
                                        "global_level = info\n"
-                                       "trace_modules = broker, connection\n");
+                                       "trace_modules = broker, connection\n"
+                                       "max_text_length = 4096\n");
 
   CHECK(cfg.trace_global_level == TraceLevel::Info);
   REQUIRE(cfg.trace_modules.size() == 2U);
   CHECK(cfg.trace_modules.at(0U) == "broker");
   CHECK(cfg.trace_modules.at(1U) == "connection");
+  CHECK(cfg.trace_max_text_length == 4096U);
 }
 
 TEST_CASE("parse_tracing_invalid_level_throws", "[broker]") {
   CHECK_THROWS_AS(ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
                                       "[tracing]\n"
                                       "global_level = verbose\n"),
+                  BrokerException);
+}
+
+TEST_CASE("parse_tracing_max_text_length_zero_throws", "[broker]") {
+  CHECK_THROWS_AS(ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
+                                      "[tracing]\n"
+                                      "max_text_length = 0\n"),
                   BrokerException);
 }
 
