@@ -6,6 +6,7 @@
  */
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <optional>
 
@@ -25,6 +26,7 @@ class WriteQueue;
     WriteQueue &write_queue, std::optional<ConnectPacket> &connect_packet,
     ConnectResult &connect_result,
     std::atomic<bool> &session_takeover_requested,
-    const std::function<void()> &stop_transport);
+    const std::function<void()> &stop_transport,
+    std::chrono::steady_clock::time_point handshake_deadline);
 
 } // namespace mqtt

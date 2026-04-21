@@ -73,6 +73,7 @@ Implemented behavior:
 - Per-connection `WriteQueue` capacity sourced from
 	`BrokerConfig::write_queue_max_bytes`.
 - CONNECT handshake handling via `Broker::handle_connect()` plus enhanced-auth loop via `Broker::handle_auth_packet()`.
+- CONNECT/auth handshake must complete within 30 seconds from socket accept; otherwise the broker closes the transport without entering runtime session handling.
 - Construction of `ClientSession` after successful CONNACK and registration of the per-client `OutboundQueue`.
 	- Effective keep-alive source: `broker.server_keep_alive` override when non-zero, otherwise CONNECT keep-alive.
 - Runtime per-packet dispatch loop with strict delegation:

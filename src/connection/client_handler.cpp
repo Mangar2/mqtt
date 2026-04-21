@@ -30,6 +30,7 @@ namespace mqtt {
 namespace {
 
 constexpr uint16_t k_default_receive_maximum = 65535U;
+constexpr auto k_connect_handshake_timeout = std::chrono::seconds(30);
 
 void trace_connection_registration(Broker &broker,
                                    const ConnectResult &connect_result) {
@@ -107,12 +108,14 @@ void run_client_handler_flow(std::unique_ptr<TcpConnection> conn, Broker &broker
   std::optional<ConnectPacket> connect_packet;
   ConnectResult connect_result;
   std::atomic<bool> session_takeover_requested{false};
+  const auto handshake_deadline =
+      std::chrono::steady_clock::now() + k_connect_handshake_timeout;
 
   if (!establish_connect_session(*conn, ws_transport.get(), is_websocket,
                                  broker, stream_buffer, write_queue,
                                  connect_packet, connect_result,
                                  session_takeover_requested,
-                                 stop_transport)) {
+                                 stop_transport, handshake_deadline)) {
     return;
   }
 

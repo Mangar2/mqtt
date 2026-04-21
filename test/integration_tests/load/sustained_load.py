@@ -115,13 +115,12 @@ def _read_process_rss_kb(pid: int) -> int | None:
 def run_18_4_1_fifty_clients_continuous_pub_sub_sixty_seconds(config) -> tuple[bool, str]:
     process = None
     client_count = 50
-    duration_seconds = 60.0
+    stabilization_seconds = 60.0
+    observation_seconds = 60.0
     topic_root = f"integration/load/sustained/18-4-1/{uuid.uuid4().hex}"
 
     try:
         host, port, process = _start_isolated_broker()
-        baseline_rss_kb = _read_process_rss_kb(process.pid) if process is not None else None
-
         with ExitStack() as stack:
             clients = [
                 stack.enter_context(_connect_client(host, port, config.timeout_seconds, f"load-18-4-1-{index}"))
@@ -135,11 +134,9 @@ def run_18_4_1_fifty_clients_continuous_pub_sub_sixty_seconds(config) -> tuple[b
                     return False, f"18.4.1 empty SUBACK for client index {index}"
                 assert_reason_code(suback_codes[0], 0x00)
 
-            end_time = time.monotonic() + duration_seconds
             publish_counter = 0
-            peak_rss_kb = baseline_rss_kb or 0
-
-            while time.monotonic() < end_time:
+            phase_end_time = time.monotonic() + stabilization_seconds
+            while time.monotonic() < phase_end_time:
                 for index, client in enumerate(clients):
                     target_index = (index + 1) % client_count
                     payload = f"18.4.1-{publish_counter}".encode("utf-8")
@@ -154,25 +151,43 @@ def run_18_4_1_fifty_clients_continuous_pub_sub_sixty_seconds(config) -> tuple[b
                 if process is None or process.poll() is not None:
                     return False, "18.4.1 broker crashed during sustained load"
 
-                current_rss_kb = _read_process_rss_kb(process.pid)
-                if current_rss_kb is not None and current_rss_kb > peak_rss_kb:
-                    peak_rss_kb = current_rss_kb
+            stabilized_rss_kb = _read_process_rss_kb(process.pid) if process is not None else None
+            if stabilized_rss_kb is None:
+                return False, "18.4.1 unable to read broker memory after stabilization phase"
+
+            phase_end_time = time.monotonic() + observation_seconds
+            while time.monotonic() < phase_end_time:
+                for index, client in enumerate(clients):
+                    target_index = (index + 1) % client_count
+                    payload = f"18.4.1-{publish_counter}".encode("utf-8")
+                    assert_reason_code(client.publish(topics[target_index], payload, qos=0), 0x00)
+                    publish_counter += 1
+
+                for index, client in enumerate(clients):
+                    messages = client.collect_messages(count=1, timeout=max(config.timeout_seconds, 8.0))
+                    if len(messages) != 1:
+                        return False, f"18.4.1 client {index} did not receive expected traffic"
+
+                if process is None or process.poll() is not None:
+                    return False, "18.4.1 broker crashed during sustained load"
 
         if process is None or process.poll() is not None:
             return False, "18.4.1 broker is not alive after sustained load"
 
         final_rss_kb = _read_process_rss_kb(process.pid)
-        if baseline_rss_kb is not None and final_rss_kb is not None:
-            allowed_growth_kb = max(20 * 1024, int(baseline_rss_kb * 0.50))
-            growth_kb = final_rss_kb - baseline_rss_kb
-            if growth_kb > allowed_growth_kb:
-                return (
-                    False,
-                    "18.4.1 memory growth above tolerance: "
-                    f"baseline={baseline_rss_kb}KB final={final_rss_kb}KB peak={peak_rss_kb}KB",
-                )
+        if final_rss_kb is None:
+            return False, "18.4.1 unable to read broker memory after observation phase"
+        if final_rss_kb > stabilized_rss_kb:
+            return (
+                False,
+                "18.4.1 memory growth detected after stabilization: "
+                f"stabilized={stabilized_rss_kb}KB final={final_rss_kb}KB",
+            )
 
-        return True, f"18.4.1 sustained load completed for 60s, publishes={publish_counter}, broker stable"
+        return (
+            True,
+            f"18.4.1 sustained load completed for 120s (60s stabilization + 60s observation), publishes={publish_counter}",
+        )
     except Exception as error:
         return False, f"18.4.1 failed: {error}"
     finally:
@@ -306,7 +321,7 @@ def run_18_4_3_offline_queue_five_hundred_messages_delivered_on_reconnect(config
 TEST_CASES = [
     {
         "name": "load/sustained_load_fifty_clients_sixty_seconds",
-        "description": "18.4.1 50 clients continuous pub/sub for 60 seconds -> no crash, no memory growth",
+        "description": "18.4.1 50 clients continuous pub/sub with 60s stabilization + 60s memory observation -> no crash, no memory growth",
         "run": run_18_4_1_fifty_clients_continuous_pub_sub_sixty_seconds,
     },
     {

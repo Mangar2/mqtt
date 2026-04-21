@@ -5,6 +5,8 @@
 
 #include "connection/connect_phase_flow.h"
 
+#include <chrono>
+
 #include "codec/codec_error.h"
 #include "connection/connection_error.h"
 #include "connection/connection_flow_support.h"
@@ -16,6 +18,13 @@
 namespace mqtt {
 
 namespace {
+
+constexpr auto k_connect_handshake_timeout = std::chrono::seconds(30);
+
+[[nodiscard]] bool handshake_expired(
+    std::chrono::steady_clock::time_point handshake_deadline) {
+  return std::chrono::steady_clock::now() >= handshake_deadline;
+}
 
 void mark_auth_failure(ConnectResult &connect_result, ReasonCode reason_code) {
   connect_result.auth_status = AuthStatus::Failure;
@@ -61,9 +70,15 @@ void process_auth_packets_from_buffer(Broker &broker, StreamBuffer &stream_buffe
 [[nodiscard]] bool wait_for_auth_packet(
     TcpConnection &connection, WebSocketTransport *ws_transport,
     Broker &broker, StreamBuffer &stream_buffer, ConnectResult &connect_result,
-    const std::function<void()> &stop_transport) {
+    const std::function<void()> &stop_transport,
+    std::chrono::steady_clock::time_point handshake_deadline) {
   bool got_auth_packet = false;
   while (broker.is_running() && !got_auth_packet) {
+    if (handshake_expired(handshake_deadline)) {
+      stop_transport();
+      return false;
+    }
+
     TransportReadChunk auth_chunk = read_transport_chunk(connection, ws_transport);
     if (auth_chunk.error || auth_chunk.eof) {
       stop_transport();
@@ -86,8 +101,14 @@ void process_auth_packets_from_buffer(Broker &broker, StreamBuffer &stream_buffe
     TcpConnection &connection, WebSocketTransport *ws_transport,
     bool is_websocket, Broker &broker, StreamBuffer &stream_buffer,
     WriteQueue &write_queue, ConnectResult &connect_result,
-    const std::function<void()> &stop_transport) {
+    const std::function<void()> &stop_transport,
+    std::chrono::steady_clock::time_point handshake_deadline) {
   while (connect_result.auth_status == AuthStatus::Continue) {
+    if (handshake_expired(handshake_deadline)) {
+      stop_transport();
+      return false;
+    }
+
     const std::vector<Property> auth_properties =
         build_auth_properties(connect_result.auth_method,
                               connect_result.auth_data,
@@ -100,8 +121,8 @@ void process_auth_packets_from_buffer(Broker &broker, StreamBuffer &stream_buffe
       return false;
     }
     if (!wait_for_auth_packet(connection, ws_transport, broker,
-                              stream_buffer, connect_result,
-                              stop_transport)) {
+                              stream_buffer, connect_result, stop_transport,
+                              handshake_deadline)) {
       return false;
     }
   }
@@ -115,7 +136,8 @@ void process_auth_packets_from_buffer(Broker &broker, StreamBuffer &stream_buffe
     WriteQueue &write_queue, std::optional<ConnectPacket> &connect_packet,
     ConnectResult &connect_result,
     std::atomic<bool> &session_takeover_requested,
-    const std::function<void()> &stop_transport) {
+    const std::function<void()> &stop_transport,
+    std::chrono::steady_clock::time_point handshake_deadline) {
   while (true) {
     std::optional<AnyPacket> packet_any;
     try {
@@ -151,7 +173,8 @@ void process_auth_packets_from_buffer(Broker &broker, StreamBuffer &stream_buffe
     if (!complete_connect_authentication(connection, ws_transport,
                                          is_websocket, broker,
                                          stream_buffer, write_queue,
-                                         connect_result, stop_transport)) {
+                                         connect_result, stop_transport,
+                                         handshake_deadline)) {
       return false;
     }
 
@@ -185,8 +208,18 @@ bool establish_connect_session(
     WriteQueue &write_queue, std::optional<ConnectPacket> &connect_packet,
     ConnectResult &connect_result,
     std::atomic<bool> &session_takeover_requested,
-    const std::function<void()> &stop_transport) {
+    const std::function<void()> &stop_transport,
+    std::chrono::steady_clock::time_point handshake_deadline) {
+  if (handshake_deadline == std::chrono::steady_clock::time_point{}) {
+    handshake_deadline = std::chrono::steady_clock::now() + k_connect_handshake_timeout;
+  }
+
   while (broker.is_running() && !connect_packet.has_value()) {
+    if (handshake_expired(handshake_deadline)) {
+      stop_transport();
+      return false;
+    }
+
     TransportReadChunk chunk = read_transport_chunk(connection, ws_transport);
     if (chunk.error || chunk.eof) {
       stop_transport();
@@ -201,7 +234,7 @@ bool establish_connect_session(
     if (!process_connect_packets_from_buffer(
             connection, ws_transport, is_websocket, broker, stream_buffer,
             write_queue, connect_packet, connect_result,
-            session_takeover_requested, stop_transport)) {
+            session_takeover_requested, stop_transport, handshake_deadline)) {
       return false;
     }
   }
