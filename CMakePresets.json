@@ -109,6 +109,34 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+
+    {
+      "name":          "armv6-zig-base",
+      "hidden":        true,
+      "inherits":      "base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/armv6-zig.cmake",
+      "cacheVariables": {
+        "BUILD_TESTING": "OFF"
+      }
+    },
+
+    {
+      "name":        "armv6-zig-debug",
+      "displayName": "Debug (Raspberry Pi Zero/1 – ARMv6, Zig, no sysroot)",
+      "inherits":    "armv6-zig-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+
+    {
+      "name":        "armv6-zig-release",
+      "displayName": "Release (Raspberry Pi Zero/1 – ARMv6, Zig, no sysroot)",
+      "inherits":    "armv6-zig-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
 
@@ -119,8 +147,10 @@
     { "name": "test-coverage",  "displayName": "Build Tests + Coverage (host)",       "configurePreset": "test-coverage"  },
     { "name": "arm-debug",      "displayName": "Build Debug (ARM 32-bit)",            "configurePreset": "arm-debug"      },
     { "name": "arm-release",    "displayName": "Build Release (ARM 32-bit)",          "configurePreset": "arm-release"    },
-    { "name": "armv6-debug",    "displayName": "Build Debug (ARMv6 32-bit)",          "configurePreset": "armv6-debug"    },
-    { "name": "armv6-release",  "displayName": "Build Release (ARMv6 32-bit)",        "configurePreset": "armv6-release"  }
+    { "name": "armv6-debug",       "displayName": "Build Debug (ARMv6 32-bit)",         "configurePreset": "armv6-debug"      },
+    { "name": "armv6-release",     "displayName": "Build Release (ARMv6 32-bit)",       "configurePreset": "armv6-release"    },
+    { "name": "armv6-zig-debug",   "displayName": "Build Debug (ARMv6, Zig)",           "configurePreset": "armv6-zig-debug"  },
+    { "name": "armv6-zig-release", "displayName": "Build Release (ARMv6, Zig)",         "configurePreset": "armv6-zig-release" }
   ],
 
   "testPresets": [
