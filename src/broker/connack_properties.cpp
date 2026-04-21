@@ -11,7 +11,6 @@ namespace mqtt {
 
 namespace {
 
-constexpr uint8_t k_maximum_qos = 2U;
 constexpr uint8_t k_retain_available = 1U;
 constexpr FourByteInteger k_maximum_packet_size = 0x0FFFFFFFU;
 constexpr uint8_t k_wildcard_subscription_available = 1U;
@@ -41,7 +40,6 @@ build_static_connack_properties(const BrokerConfig &broker_config) {
     properties.push_back({PropertyId::ServerKeepAlive,
                           TwoByteInteger{broker_config.server_keep_alive}});
   }
-  properties.push_back({PropertyId::MaximumQoS, k_maximum_qos});
   properties.push_back({PropertyId::RetainAvailable, k_retain_available});
   properties.push_back({PropertyId::MaximumPacketSize, k_maximum_packet_size});
   properties.push_back({PropertyId::TopicAliasMaximum,

@@ -247,6 +247,114 @@ def run_20_1_2_paho_full_session_lifecycle(config) -> tuple[bool, str]:
             stop_broker(process)
 
 
+def _find_mosquitto_pub() -> str | None:
+    return shutil.which("mosquitto_pub")
+
+
+def _find_mosquitto_sub() -> str | None:
+    return shutil.which("mosquitto_sub")
+
+
+def run_20_1_3_mosquitto_basic_pub_sub(config) -> tuple[bool, str]:
+    """20.1.3 — Mosquitto client tools basic pub/sub.
+
+    Exercises:
+      1. mosquitto_pub: CONNECT → PUBLISH QoS 0 → DISCONNECT
+      2. mosquitto_sub: CONNECT → SUBSCRIBE → receive exactly one message → exit
+         (-C 1 causes mosquitto_sub to exit after the first message)
+    """
+    mosquitto_pub = _find_mosquitto_pub()
+    mosquitto_sub = _find_mosquitto_sub()
+    if not mosquitto_pub:
+        return False, "mosquitto_pub not found — install mosquitto client tools"
+    if not mosquitto_sub:
+        return False, "mosquitto_sub not found — install mosquitto client tools"
+
+    process = None
+    sub_proc = None
+    try:
+        host, port, process = _start_isolated_broker()
+        topic = f"integration/interop/20-1-3/{uuid.uuid4().hex}"
+        payload = "hello-from-mosquitto"
+
+        sub_cmd = [
+            mosquitto_sub,
+            "-h", host,
+            "-p", str(port),
+            "-i", _unique_id("mosq-sub"),
+            "-t", topic,
+            "-q", "0",
+            "-V", "5",            # force MQTT 5.0 — broker does not support v3.1.1
+            "-C", "1",            # exit after first message
+            "-W", str(int(config.timeout_seconds)),
+        ]
+        sub_proc = subprocess.Popen(
+            sub_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        # Allow subscriber to connect before publishing.
+        time.sleep(1.5)
+
+        pub_cmd = [
+            mosquitto_pub,
+            "-h", host,
+            "-p", str(port),
+            "-i", _unique_id("mosq-pub"),
+            "-t", topic,
+            "-m", payload,
+            "-q", "0",
+            "-V", "5",            # force MQTT 5.0 — broker does not support v3.1.1
+        ]
+        pub_result = subprocess.run(
+            pub_cmd,
+            capture_output=True,
+            text=True,
+            timeout=config.timeout_seconds,
+        )
+        if pub_result.returncode != 0:
+            pub_out = "\n".join(
+                p for p in [pub_result.stdout.strip(), pub_result.stderr.strip()] if p
+            )
+            return False, f"mosquitto_pub failed (exit={pub_result.returncode}): {pub_out}"
+
+        # mosquitto_sub exits on its own after -C 1; wait for it.
+        try:
+            sub_stdout, sub_stderr = sub_proc.communicate(timeout=config.timeout_seconds)
+        except subprocess.TimeoutExpired:
+            sub_proc.kill()
+            sub_stdout, sub_stderr = sub_proc.communicate()
+            return False, f"mosquitto_sub timed out waiting for message"
+
+        if sub_proc.returncode != 0:
+            return False, (
+                f"mosquitto_sub exited with code {sub_proc.returncode}: "
+                f"stdout={sub_stdout!r} stderr={sub_stderr!r}"
+            )
+
+        received = sub_stdout.strip()
+        if payload not in received:
+            return False, (
+                f"mosquitto_sub did not receive expected payload '{payload}'; "
+                f"got: {received!r}"
+            )
+
+        return True, f"mosquitto pub/sub basic roundtrip OK — received '{received}'"
+
+    except subprocess.TimeoutExpired:
+        return False, f"mosquitto command timed out after {config.timeout_seconds:.1f}s"
+    except Exception as exc:
+        return False, str(exc)
+    finally:
+        if sub_proc is not None and sub_proc.poll() is None:
+            sub_proc.kill()
+            sub_proc.communicate()
+        if process is not None:
+            stop_broker(process)
+
+
 TEST_CASES = [
     {
         "name": "interop/20_1_1_mqttx_full_session_lifecycle",
@@ -257,5 +365,10 @@ TEST_CASES = [
         "name": "interop/20_1_2_paho_full_session_lifecycle",
         "description": "20.1.2 Paho MQTT Python client — full session lifecycle",
         "run": run_20_1_2_paho_full_session_lifecycle,
+    },
+    {
+        "name": "interop/20_1_3_mosquitto_basic_pub_sub",
+        "description": "20.1.3 Mosquitto client tools — basic pub/sub",
+        "run": run_20_1_3_mosquitto_basic_pub_sub,
     },
 ]

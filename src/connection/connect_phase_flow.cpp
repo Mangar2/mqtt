@@ -143,6 +143,16 @@ void process_auth_packets_from_buffer(Broker &broker, StreamBuffer &stream_buffe
     try {
       packet_any = try_decode_packet(stream_buffer);
     } catch (const CodecException &codec_exception) {
+      if (codec_exception.error() == CodecError::InvalidProtocolVersion &&
+          codec_exception.detected_protocol_version().has_value()) {
+        // Non-v5 CONNECT: send a version-appropriate rejection.
+        // MQTT 3.1.1 (version byte 4) requires a 2-byte CONNACK (return code 1).
+        // All other non-v5 versions receive the MQTT 5.0 rejection.
+        if (codec_exception.detected_protocol_version().value() == 0x04U) {
+          return send_v311_reject_and_stop(connection, ws_transport,
+                                           is_websocket, stop_transport);
+        }
+      }
       return send_connack_and_stop(
           connection, ws_transport, is_websocket, stop_transport,
           map_codec_error_to_connect_reason(codec_exception.error()));

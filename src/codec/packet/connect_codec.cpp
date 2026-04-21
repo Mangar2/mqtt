@@ -94,7 +94,7 @@ ConnectPacket decode_connect(ReadBuffer &buf) {
   uint8_t level = decode_byte(buf);
   if (level != 0x05U) {
     throw CodecException{CodecError::InvalidProtocolVersion,
-                         "CONNECT: protocol version must be 5"};
+                         "CONNECT: protocol version must be 5", level};
   }
 
   // Connect Flags

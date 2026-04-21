@@ -82,6 +82,13 @@ void set_receive_timeout(TcpConnection &connection,
     bool is_websocket, const std::function<void()> &stop_transport,
     ReasonCode reason_code, const std::vector<Property> &properties = {});
 
+// Sends a raw MQTT 3.1.1 CONNACK rejection (remaining_length=2, return_code=1)
+// and closes the connection.  Used when the client offered protocol version 4
+// (MQTT 3.1.1) which this broker does not support.
+[[nodiscard]] bool send_v311_reject_and_stop(
+    TcpConnection &connection, WebSocketTransport *ws_transport,
+    bool is_websocket, const std::function<void()> &stop_transport);
+
 void write_error_disconnect(TcpConnection &connection,
                             WebSocketTransport *ws_transport,
                             bool is_websocket,

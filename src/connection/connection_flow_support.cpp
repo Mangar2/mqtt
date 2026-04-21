@@ -243,6 +243,19 @@ bool send_connack_and_stop(
   return false;
 }
 
+bool send_v311_reject_and_stop(
+    TcpConnection &connection, WebSocketTransport *ws_transport,
+    bool is_websocket, const std::function<void()> &stop_transport) {
+  // MQTT 3.1.1 §3.2.2.3: CONNACK with return code 1 = Unacceptable Protocol Version.
+  // Fixed format: 0x20 0x02 0x00 0x01 (no properties).
+  static constexpr std::array<uint8_t, 4> k_v311_reject{0x20, 0x02, 0x00, 0x01};
+  WriteBuffer frame;
+  frame.insert(frame.end(), k_v311_reject.begin(), k_v311_reject.end());
+  write_frame_direct(connection, ws_transport, std::move(frame), is_websocket);
+  stop_transport();
+  return false;
+}
+
 void write_error_disconnect(TcpConnection &connection,
                             WebSocketTransport *ws_transport,
                             bool is_websocket,

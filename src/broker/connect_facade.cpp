@@ -63,6 +63,17 @@ ConnectResult ConnectFacade::handle_connect(const ConnectPacket &connect_packet,
   ConnectPacket effective_connect = connect_packet;
   std::optional<std::string> assigned_client_id;
   if (effective_connect.client_id.value.empty()) {
+    // MQTT 5.0 §3.1.3.1: a zero-length ClientID with CleanStart=0 is rejected
+    // with CONNACK 0x85 (Client Identifier not valid).
+    if (!effective_connect.clean_start) {
+      ConnectResult rejection;
+      rejection.client_id = "";
+      rejection.auth_status = AuthStatus::Failure;
+      rejection.reason_code = ReasonCode::ClientIdentifierNotValid;
+      rejection.connack_properties = build_static_connack_properties(config_);
+      emit_connect_trace(effective_connect, rejection);
+      return rejection;
+    }
     assigned_client_id = make_assigned_client_id();
     effective_connect.client_id.value = *assigned_client_id;
   }

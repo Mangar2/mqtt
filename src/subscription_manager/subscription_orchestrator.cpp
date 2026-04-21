@@ -195,8 +195,15 @@ SubackPacket SubscriptionOrchestrator::handle_subscribe(
 
     try {
       validate_topic_filter(effective_filter);
-    } catch (const TopicException & /*unused*/) {
-      suback.reason_codes.push_back(ReasonCode::TopicFilterInvalid);
+    } catch (const TopicException &topic_exception) {
+      // An empty filter violates §4.7.3 and is a Protocol Error (0x82).
+      // Other malformed filters (e.g. invalid wildcard placement) are
+      // TopicFilterInvalid (0x8F).
+      const ReasonCode filter_reason =
+          (topic_exception.error() == TopicError::EmptyTopic)
+              ? ReasonCode::ProtocolError
+              : ReasonCode::TopicFilterInvalid;
+      suback.reason_codes.push_back(filter_reason);
       continue;
     }
 

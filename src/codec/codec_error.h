@@ -6,6 +6,7 @@
  */
 
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -43,9 +44,11 @@ public:
      * @param error  Machine-readable error code.
      * @param msg    Human-readable description; forwarded to `std::runtime_error`.
      */
-    CodecException(CodecError error, const std::string& msg)
+    CodecException(CodecError error, const std::string& msg,
+                   std::optional<uint8_t> detected_protocol_version = std::nullopt)
         : std::runtime_error(msg)
         , error_(error)
+        , detected_protocol_version_(detected_protocol_version)
     {}
 
     /**
@@ -54,8 +57,19 @@ public:
      */
     [[nodiscard]] CodecError error() const noexcept { return error_; }
 
+    /**
+     * @brief Returns the detected MQTT protocol version byte, if available.
+     *
+     * Populated for CodecError::InvalidProtocolVersion so that the connection
+     * handler can send a version-appropriate rejection packet.
+     */
+    [[nodiscard]] std::optional<uint8_t> detected_protocol_version() const noexcept {
+        return detected_protocol_version_;
+    }
+
 private:
     CodecError error_;  ///< Machine-readable error code.
+    std::optional<uint8_t> detected_protocol_version_;  ///< Protocol version byte from CONNECT, if known.
 };
 
 } // namespace mqtt
