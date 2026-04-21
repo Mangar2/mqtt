@@ -14,7 +14,9 @@ All tests are tagged `[broker]`.
 | `parse_minimal_valid_config` | minimal | Only mqtt_port set | `[network]\nmqtt_port=1883` | mqtt_port=1883, all other fields at defaults |
 | `parse_all_network_keys` | network section | Both ports set | `[network]\nmqtt_port=1884\nws_port=9001` | mqtt_port=1884, ws_port=9001 |
 | `parse_broker_section` | broker section | All broker keys | max_connections, receive_maximum, etc. | fields match supplied values |
-| `parse_persistence_section` | persistence | enabled and dir | `enabled=true`, `dir=/tmp/data` | persistence_enabled=true, persistence_dir="/tmp/data" |
+| `parse_persistence_section` | persistence | mode and dir | `mode=no-states`, `dir=/tmp/data` | persistence_mode=NoStates, persistence_dir="/tmp/data" |
+| `parse_persistence_mode_invalid_throws` | persistence | invalid mode rejected | `mode=random` | BrokerException(InvalidConfig) |
+| `parse_persistence_enabled_backward_compatibility` | persistence | legacy boolean key still mapped | `enabled=true/false` | mapped to persistence_mode Full/Off |
 | `parse_auth_credentials_section` | auth section | repeated credential keys | `credential = alice:s3cr3t`, `credential = bob:pwd` | two credential entries parsed in order |
 | `parse_acl_rules_section` | acl section | repeated ACL rule keys | `rule = deny,anonymous,publish,a/#` + `rule = allow,dev1,subscribe,b/+` | two ACL rules parsed in order |
 | `parse_bool_true_variants` | bool true | "true", "1", "yes" | allow_anonymous=true/1/yes | allow_anonymous=true |
@@ -60,7 +62,7 @@ All tests are tagged `[broker]`.
 | `broker_shutdown_idempotent` | double shutdown | Call shutdown() twice | after startup | no crash / no throw |
 | `broker_destructor_auto_shutdown` | destructor | Let Broker go out of scope while running | ephemeral port | no crash |
 | `broker_shutdown_requested_false_initially` | signal | Before install_signal_handlers | — | shutdown_requested() == false |
-| `broker_with_persistence_startup` | persistence | Startup with persistence enabled | temp dir, persistence_enabled=true | is_running() == true, loads empty stores |
+| `broker_with_persistence_startup` | persistence | Startup with full persistence mode | temp dir, persistence_mode=Full | is_running() == true, loads empty stores |
 | `broker_persistence_startup_loads_seeded_records` | persistence | Startup with persisted session/retained/inflight snapshots | temp dir with pre-saved records | startup succeeds and clean_start=false reconnect reports session_present=true |
 | `broker_persistence_startup_loads_seeded_offline_queue` | persistence | Startup with persisted offline queue snapshot | temp dir with seeded session + offline queue entries | startup succeeds (offline queue restored) |
 | `broker_statistics_collector_accessor` | monitoring | statistics_collector() | after startup | snapshot all-zero |

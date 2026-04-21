@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import ExitStack
 import importlib.util
+import os
 from pathlib import Path
 import socket
 import time
@@ -13,6 +14,7 @@ import uuid
 _PAYLOAD_256KB_BYTES = 256 * 1024
 _WRITE_QUEUE_BYTES_ALLOW_256KB = 300 * 1024
 _WRITE_QUEUE_BYTES_REJECT_256KB = 200 * 1024
+_BROKER_MANAGED_ENV = "MQTT_INTEGRATION_BROKER_MANAGED"
 
 
 def _load_helper(module_name: str):
@@ -87,6 +89,10 @@ def _qos0_publish_spacing_seconds(total_messages: int) -> float:
     if total_messages >= 100:
         return 0.0005
     return 0.0
+
+
+def _is_remote_unmanaged_mode() -> bool:
+    return os.environ.get(_BROKER_MANAGED_ENV, "").strip() == "0"
 
 
 def run_18_2_1_one_pub_one_sub_qos0_thousand_under_five_seconds(config) -> tuple[bool, str]:
@@ -270,9 +276,10 @@ def run_18_2_5_large_payload_256kb_qos0_delivered(config) -> tuple[bool, str]:
     payload = bytes((index % 251 for index in range(_PAYLOAD_256KB_BYTES)))
 
     try:
-        host, port, process = _start_isolated_broker(
-            {"broker.write_queue_max_bytes": _WRITE_QUEUE_BYTES_ALLOW_256KB}
-        )
+        overrides = None
+        if not _is_remote_unmanaged_mode():
+            overrides = {"broker.write_queue_max_bytes": _WRITE_QUEUE_BYTES_ALLOW_256KB}
+        host, port, process = _start_isolated_broker(overrides)
         with _connect_client(host, port, config.timeout_seconds, "sub-18-2-5") as subscriber:
             suback_codes = subscriber.subscribe(topic, qos=0)
             if not suback_codes:
@@ -299,9 +306,10 @@ def run_18_2_6_large_payload_256kb_qos1_acked_and_delivered(config) -> tuple[boo
     payload = bytes((index % 253 for index in range(_PAYLOAD_256KB_BYTES)))
 
     try:
-        host, port, process = _start_isolated_broker(
-            {"broker.write_queue_max_bytes": _WRITE_QUEUE_BYTES_ALLOW_256KB}
-        )
+        overrides = None
+        if not _is_remote_unmanaged_mode():
+            overrides = {"broker.write_queue_max_bytes": _WRITE_QUEUE_BYTES_ALLOW_256KB}
+        host, port, process = _start_isolated_broker(overrides)
         with _connect_client(host, port, config.timeout_seconds, "sub-18-2-6") as subscriber:
             suback_codes = subscriber.subscribe(topic, qos=1)
             if not suback_codes:

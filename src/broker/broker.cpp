@@ -47,10 +47,13 @@ void Broker::startup() {
 
   create_modules();
 
-  if (config_.persistence_enabled) {
+  if (config_.persistence_mode != PersistenceMode::Off) {
+    const bool include_inflight_states =
+        (config_.persistence_mode == PersistenceMode::Full);
     PersistenceCoordinator::load(*session_persistence_, *retained_persistence_,
                                  *inflight_persistence_,
-                                 *offline_queue_persistence_, *session_store_,
+                                 *offline_queue_persistence_,
+                                 include_inflight_states, *session_store_,
                                  *retained_store_, *subscription_store_,
                                  *inflight_store_, *offline_queue_);
   }
@@ -79,10 +82,13 @@ void Broker::shutdown() noexcept {
     connection_manager_->stop();
   }
 
-  if (config_.persistence_enabled) {
+  if (config_.persistence_mode != PersistenceMode::Off) {
+    const bool include_inflight_states =
+        (config_.persistence_mode == PersistenceMode::Full);
     PersistenceCoordinator::flush(*session_persistence_, *retained_persistence_,
                                   *inflight_persistence_,
-                                  *offline_queue_persistence_, *session_store_,
+                                  *offline_queue_persistence_,
+                                  include_inflight_states, *session_store_,
                                   *retained_store_, *inflight_store_,
                                   *offline_queue_);
   }
@@ -245,7 +251,7 @@ void Broker::create_modules() {
                                                 *session_manager_, *sys_publisher_,
                                                 *structured_tracer_);
 
-  if (config_.persistence_enabled) {
+  if (config_.persistence_mode != PersistenceMode::Off) {
     publish_processor_->set_on_retained_changed(
         [this]() noexcept {
           try {

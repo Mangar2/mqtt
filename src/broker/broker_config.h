@@ -17,6 +17,19 @@
 namespace mqtt {
 
 /**
+ * @brief Persistence policy for broker runtime and snapshots.
+ *
+ * - `Full`: persist and restore all snapshot classes.
+ * - `Off`: disable persistence completely (no load, no flush, no live writes).
+ * - `NoStates`: persist durable data but skip in-flight QoS handshake state.
+ */
+enum class PersistenceMode : uint8_t {
+  Full,
+  Off,
+  NoStates,
+};
+
+/**
  * @brief One configured username/password credential entry for Module 8.2.
  */
 struct PasswordCredentialConfig {
@@ -113,8 +126,9 @@ struct BrokerConfig {
 
   //  Persistence
 
-  /// Enable crash-safe file persistence.
-  bool persistence_enabled = false;
+  /// Persistence behavior mode.
+  /// Default is full persistence for all snapshot classes.
+  PersistenceMode persistence_mode = PersistenceMode::Full;
 
   /// Directory for persistence snapshot files.
   std::filesystem::path persistence_dir{"./data"};

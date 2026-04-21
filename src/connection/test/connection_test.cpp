@@ -182,7 +182,7 @@ BrokerConfig make_handler_test_config() {
   config.mqtt_port = 0U;
   config.ws_port = 0U;
   config.allow_anonymous = true;
-  config.persistence_enabled = false;
+  config.persistence_mode = PersistenceMode::Off;
   config.tick_interval_ms = 100U;
   return config;
 }

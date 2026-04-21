@@ -205,7 +205,8 @@ void BrokerModuleFactory::create(
       std::move(sys_publish_function));
 
   connection_manager = std::make_unique<ConnectionManager>(
-      config.mqtt_port, config.ws_port, std::move(client_handler_callback));
+      config.mqtt_port, config.ws_port, std::move(client_handler_callback),
+      std::chrono::seconds(2), structured_tracer.get());
 }
 
 } // namespace mqtt

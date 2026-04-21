@@ -32,6 +32,11 @@ set(CMAKE_SYSROOT "$ENV{ARM_SYSROOT}")
 file(GLOB SYSROOT_GXX_INCLUDE_DIRS LIST_DIRECTORIES true "${CMAKE_SYSROOT}/usr/include/c++/*")
 list(SORT SYSROOT_GXX_INCLUDE_DIRS)
 list(REVERSE SYSROOT_GXX_INCLUDE_DIRS)
+if(SYSROOT_GXX_INCLUDE_DIRS STREQUAL "")
+    message(FATAL_ERROR
+        "Could not find libstdc++ include directories in ARM_SYSROOT (${CMAKE_SYSROOT}). "
+        "Expected at least one directory matching ${CMAKE_SYSROOT}/usr/include/c++/*")
+endif()
 list(GET SYSROOT_GXX_INCLUDE_DIRS 0 SYSROOT_GXX_INCLUDE_DIR)
 get_filename_component(SYSROOT_GXX_VERSION "${SYSROOT_GXX_INCLUDE_DIR}" NAME)
 

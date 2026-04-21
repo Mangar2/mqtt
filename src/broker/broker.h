@@ -118,7 +118,7 @@ public:
    * 3. Configure the authenticator according to `allow_anonymous` (15.2.3).
    * 4. Load ACL rules; always add a broker-internal allow-all rule so that
    *    will messages pass publish authorisation.
-   * 5. If `persistence_enabled`: load snapshots and populate stores
+   * 5. If `persistence_mode != Off`: load snapshots and populate stores
    *    (15.2.2).
    * 6. Open TCP listener(s) (15.3.1).
    * 7. Set `running_` to `true`.
@@ -134,7 +134,7 @@ public:
    * Sequence:
    * 1. Return immediately if not running.
    * 2. Close all TCP listeners.
-   * 3. If `persistence_enabled`: flush in-memory stores to snapshot files.
+   * 3. If `persistence_mode != Off`: flush in-memory stores to snapshot files.
    * 4. Set `running_` to `false`.
    *
    * `noexcept` — errors during persistence flush are silently swallowed so

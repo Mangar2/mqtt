@@ -7,6 +7,9 @@
 
 #include <algorithm>
 #include <chrono>
+#include <string>
+#include <string_view>
+#include <system_error>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -19,6 +22,7 @@
 #endif
 
 #include "network/socket_ops.h"
+#include "monitoring/structured_tracer.h"
 
 namespace mqtt {
 
@@ -48,11 +52,47 @@ bool set_socket_blocking(SocketHandle socket_handle) noexcept {
 
 } // namespace
 
+namespace {
+
+[[nodiscard]] std::string io_result_to_string(IoResult io_result) {
+  switch (io_result) {
+  case IoResult::Ok:
+    return "ok";
+  case IoResult::WouldBlock:
+    return "would_block";
+  case IoResult::Closed:
+    return "closed";
+  case IoResult::Error:
+    return "error";
+  }
+  return "unknown";
+}
+
+void emit_connection_event(StructuredTracer *structured_tracer,
+                           TraceLevel trace_level, std::string_view event_info,
+                           std::string_view listener_kind, int socket_fd,
+                           std::string detail) {
+  TRACE_GUARD(structured_tracer, trace_level, "connection") {
+    TraceEvent event;
+    event.level = trace_level;
+    event.module = "connection";
+    event.info = std::string(event_info);
+    event.data.emplace_back("listener_kind", std::string(listener_kind));
+    event.data.emplace_back("socket_fd", std::to_string(socket_fd));
+    event.data.emplace_back("detail", std::move(detail));
+    structured_tracer->emit(event);
+  }
+}
+
+} // namespace
+
 ConnectionManager::ConnectionManager(
     uint16_t mqtt_port, uint16_t ws_port, ClientHandlerCallback callback,
-    std::chrono::milliseconds client_join_timeout)
+    std::chrono::milliseconds client_join_timeout,
+    StructuredTracer *structured_tracer)
     : mqtt_port_(mqtt_port), ws_port_(ws_port), callback_(std::move(callback)),
-      client_join_timeout_(client_join_timeout) {}
+      client_join_timeout_(client_join_timeout),
+      structured_tracer_(structured_tracer) {}
 
 ConnectionManager::~ConnectionManager() { stop(); }
 
@@ -171,6 +211,7 @@ bool ConnectionManager::is_running() const noexcept { return running_.load(); }
 
 void ConnectionManager::handle_accept_ready(SocketHandle listener_socket_handle,
                                             bool is_ws) {
+  const std::string_view listener_kind = is_ws ? "ws" : "mqtt";
   while (running_.load()) {
     SocketHandle accepted_socket_handle = k_invalid_socket;
     const IoResult accept_result =
@@ -181,16 +222,28 @@ void ConnectionManager::handle_accept_ready(SocketHandle listener_socket_handle,
     }
     if (accept_result != IoResult::Ok ||
         accepted_socket_handle == k_invalid_socket) {
+      emit_connection_event(structured_tracer_, TraceLevel::Trace,
+                            "listener_accept_not_ok", listener_kind,
+                            static_cast<int>(listener_socket_handle),
+                            "accept_result=" + io_result_to_string(accept_result));
       break;
     }
 
     if (!set_socket_blocking(accepted_socket_handle)) {
+      emit_connection_event(structured_tracer_, TraceLevel::Trace,
+                            "accepted_socket_set_blocking_failed",
+                            listener_kind,
+                            static_cast<int>(accepted_socket_handle),
+                            "set_socket_blocking_failed");
       close_socket_handle(accepted_socket_handle);
       continue;
     }
 
     const int socket_fd = static_cast<int>(accepted_socket_handle);
     if (!connection_table_.add(ConnectionSlot(accepted_socket_handle))) {
+      emit_connection_event(
+          structured_tracer_, TraceLevel::Trace, "connection_slot_add_rejected",
+          listener_kind, socket_fd, "connection_slot_already_exists");
       close_socket_handle(accepted_socket_handle);
       continue;
     }
@@ -213,7 +266,18 @@ void ConnectionManager::handle_accept_ready(SocketHandle listener_socket_handle,
                 connection_table_.remove(socket_fd);
             finished->store(true);
           });
+    } catch (const std::system_error &system_error) {
+      emit_connection_event(
+          structured_tracer_, TraceLevel::Warning, "client_thread_start_failed",
+          listener_kind, socket_fd,
+          "system_error=" + std::string(system_error.what()));
+      [[maybe_unused]] const bool removed = connection_table_.remove(socket_fd);
+      close_socket_handle(accepted_socket_handle);
+      continue;
     } catch (...) {
+      emit_connection_event(structured_tracer_, TraceLevel::Warning,
+                            "client_thread_start_failed", listener_kind,
+                            socket_fd, "unknown_error");
       [[maybe_unused]] const bool removed = connection_table_.remove(socket_fd);
       close_socket_handle(accepted_socket_handle);
       continue;

@@ -22,6 +22,8 @@
 
 namespace mqtt {
 
+class StructuredTracer;
+
 /**
  * @brief Manages listener sockets, reactor lifecycle, and tracked client threads.
  *
@@ -50,7 +52,8 @@ public:
   ConnectionManager(uint16_t mqtt_port, uint16_t ws_port,
                     ClientHandlerCallback callback,
                     std::chrono::milliseconds client_join_timeout =
-                        std::chrono::seconds(2));
+                        std::chrono::seconds(2),
+                    StructuredTracer *structured_tracer = nullptr);
 
   /** @brief Destructor that performs best-effort shutdown via `stop()`. */
   ~ConnectionManager();
@@ -105,6 +108,7 @@ private:
 
   mutable std::mutex lifecycle_mutex_;
   std::atomic<bool> running_{false};
+  StructuredTracer *structured_tracer_{nullptr};
 
   std::unique_ptr<IoReactor> io_reactor_;
   ConnectionTable connection_table_;

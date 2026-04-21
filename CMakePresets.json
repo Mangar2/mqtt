@@ -8,7 +8,6 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_CXX_COMPILER":            "clang++",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
@@ -18,6 +17,7 @@
       "displayName": "Debug (host)",
       "inherits":    "base",
       "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_BUILD_TYPE": "Debug",
         "BUILD_TESTING":    "ON"
       }
@@ -28,6 +28,7 @@
       "displayName": "Release (host)",
       "inherits":    "base",
       "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_BUILD_TYPE": "Release",
         "BUILD_TESTING":    "OFF"
       }

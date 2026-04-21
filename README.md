@@ -141,7 +141,8 @@ Notes:
 | `broker` | `tick_interval_ms` | uint32 | `100` | `>=1` | Main broker tick interval in milliseconds. |
 | `auth` | `credential` | string | none | `username:password` | Repeatable credential entry for password auth mode. |
 | `acl` | `rule` | csv string | none | `effect,principal,action,topic` | Repeatable ACL rule entry, e.g. `deny,anonymous,publish,private/#`. |
-| `persistence` | `enabled` | bool | `false` | `true/false`, `1/0`, `yes/no` | Enable persistence snapshots. |
+| `persistence` | `mode` | enum | `full` | `full/off/no-states` | Persistence mode (`full`: all snapshots, `off`: no persistence, `no-states`: skip in-flight QoS state persistence). |
+| `persistence` | `enabled` | bool | legacy | `true/false`, `1/0`, `yes/no` | Backward-compatible alias for mode (`true`→`full`, `false`→`off`). |
 | `persistence` | `dir` | path string | `./data` | any path | Snapshot directory path. |
 | `tracing` | `global_level` | enum | `warning` | `none/error/warning/info/trace` | Global structured tracing threshold. |
 | `tracing` | `trace_modules` | csv string | empty | comma-separated module names | Module-level trace override list. |
@@ -181,7 +182,7 @@ rule = deny,anonymous,publish,private/#
 rule = allow,admin,publish_and_subscribe,#
 
 [persistence]
-enabled = true
+mode = full
 dir = ./data
 
 [tracing]

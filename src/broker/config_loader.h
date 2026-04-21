@@ -149,6 +149,21 @@ private:
   [[nodiscard]] static TraceLevel parse_trace_level_or_throw(std::string_view val);
 
   /**
+   * @brief Parse persistence mode text.
+   *
+   * Accepted values (case-insensitive):
+   * - `"full"`
+   * - `"off"`
+   * - `"no-states"`
+   *
+   * @param val Textual persistence mode.
+   * @return Parsed persistence mode enum value.
+   * @throws BrokerException(InvalidConfig) when the value is unknown.
+   */
+  [[nodiscard]] static PersistenceMode
+  parse_persistence_mode_or_throw(std::string_view val);
+
+  /**
    * @brief Apply one parsed key-value pair from @p section to @p cfg.
    *
    * Unknown sections or keys are silently ignored.

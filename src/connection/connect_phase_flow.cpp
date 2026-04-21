@@ -6,6 +6,8 @@
 #include "connection/connect_phase_flow.h"
 
 #include <chrono>
+#include <string>
+#include <string_view>
 
 #include "codec/codec_error.h"
 #include "connection/connection_error.h"
@@ -24,6 +26,23 @@ constexpr auto k_connect_handshake_timeout = std::chrono::seconds(30);
 [[nodiscard]] bool handshake_expired(
     std::chrono::steady_clock::time_point handshake_deadline) {
   return std::chrono::steady_clock::now() >= handshake_deadline;
+}
+
+void emit_handshake_abort_event(Broker &broker, std::string_view phase,
+                                std::string_view reason,
+                                std::string_view client_id = {}) {
+  TRACE_GUARD((&broker.structured_tracer()), TraceLevel::Info, "connection") {
+    TraceEvent event;
+    event.level = TraceLevel::Info;
+    event.module = "connection";
+    event.info = "connect_handshake_aborted";
+    event.data.emplace_back("phase", std::string(phase));
+    event.data.emplace_back("reason", std::string(reason));
+    if (!client_id.empty()) {
+      event.data.emplace_back("client_id", std::string(client_id));
+    }
+    broker.structured_tracer().emit(event);
+  }
 }
 
 void mark_auth_failure(ConnectResult &connect_result, ReasonCode reason_code) {
@@ -75,12 +94,17 @@ void process_auth_packets_from_buffer(Broker &broker, StreamBuffer &stream_buffe
   bool got_auth_packet = false;
   while (broker.is_running() && !got_auth_packet) {
     if (handshake_expired(handshake_deadline)) {
+      emit_handshake_abort_event(broker, "auth", "timeout",
+                                 connect_result.client_id);
       stop_transport();
       return false;
     }
 
     TransportReadChunk auth_chunk = read_transport_chunk(connection, ws_transport);
     if (auth_chunk.error || auth_chunk.eof) {
+      emit_handshake_abort_event(
+          broker, "auth", auth_chunk.error ? "transport_error" : "peer_closed",
+          connect_result.client_id);
       stop_transport();
       return false;
     }
@@ -105,6 +129,8 @@ void process_auth_packets_from_buffer(Broker &broker, StreamBuffer &stream_buffe
     std::chrono::steady_clock::time_point handshake_deadline) {
   while (connect_result.auth_status == AuthStatus::Continue) {
     if (handshake_expired(handshake_deadline)) {
+      emit_handshake_abort_event(broker, "auth_continue", "timeout",
+                                 connect_result.client_id);
       stop_transport();
       return false;
     }
@@ -226,12 +252,15 @@ bool establish_connect_session(
 
   while (broker.is_running() && !connect_packet.has_value()) {
     if (handshake_expired(handshake_deadline)) {
+      emit_handshake_abort_event(broker, "connect", "timeout");
       stop_transport();
       return false;
     }
 
     TransportReadChunk chunk = read_transport_chunk(connection, ws_transport);
     if (chunk.error || chunk.eof) {
+      emit_handshake_abort_event(broker, "connect",
+                                 chunk.error ? "transport_error" : "peer_closed");
       stop_transport();
       return false;
     }
@@ -250,6 +279,7 @@ bool establish_connect_session(
   }
 
   if (!connect_packet.has_value()) {
+    emit_handshake_abort_event(broker, "connect", "broker_stopped_before_connect");
     stop_transport();
     return false;
   }

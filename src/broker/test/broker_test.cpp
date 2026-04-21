@@ -53,7 +53,7 @@ BrokerConfig make_test_config() {
   cfg.mqtt_port = 18883U; // dedicated test port
   cfg.ws_port = 0U;       // disabled
   cfg.allow_anonymous = true;
-  cfg.persistence_enabled = false;
+  cfg.persistence_mode = PersistenceMode::Off;
   return cfg;
 }
 
@@ -259,7 +259,7 @@ TEST_CASE("broker_shutdown_requested_false_initially", "[broker]") {
 TEST_CASE("broker_with_persistence_startup", "[broker]") {
   const auto tmp_dir = make_temp_dir();
   BrokerConfig cfg = make_test_config();
-  cfg.persistence_enabled = true;
+  cfg.persistence_mode = PersistenceMode::Full;
   cfg.persistence_dir = tmp_dir;
 
   {
@@ -302,7 +302,7 @@ TEST_CASE("broker_persistence_startup_loads_seeded_records", "[broker]") {
       std::vector<InflightPersistence::ClientEntry>{{"seed_client", inflight}});
 
   BrokerConfig cfg = make_test_config();
-  cfg.persistence_enabled = true;
+  cfg.persistence_mode = PersistenceMode::Full;
   cfg.persistence_dir = tmp_dir;
 
   Broker broker(cfg);
@@ -341,7 +341,7 @@ TEST_CASE("broker_persistence_startup_loads_seeded_offline_queue", "[broker]") {
           {"queue_client", {queued_msg}}});
 
   BrokerConfig cfg = make_test_config();
-  cfg.persistence_enabled = true;
+  cfg.persistence_mode = PersistenceMode::Full;
   cfg.persistence_dir = tmp_dir;
 
   Broker broker(cfg);

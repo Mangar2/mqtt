@@ -43,7 +43,7 @@ TEST_CASE("parse_minimal_valid_config", "[broker]") {
       BrokerConfig::k_write_queue_max_bytes_default);
   CHECK(cfg.qos_retransmit_timeout_seconds == 20U);
   CHECK(cfg.tick_interval_ms == 100U);
-  CHECK(cfg.persistence_enabled == false);
+  CHECK(cfg.persistence_mode == PersistenceMode::Full);
   CHECK(cfg.trace_max_text_length ==
         BrokerConfig::k_trace_text_max_length_default);
 }
@@ -83,9 +83,26 @@ TEST_CASE("parse_broker_section", "[broker]") {
 TEST_CASE("parse_persistence_section", "[broker]") {
   const auto cfg =
       ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
-                          "[persistence]\nenabled = true\ndir = /tmp/data\n");
-  CHECK(cfg.persistence_enabled == true);
+                          "[persistence]\nmode = no-states\ndir = /tmp/data\n");
+  CHECK(cfg.persistence_mode == PersistenceMode::NoStates);
   CHECK(cfg.persistence_dir == std::filesystem::path{"/tmp/data"});
+}
+
+TEST_CASE("parse_persistence_mode_invalid_throws", "[broker]") {
+  CHECK_THROWS_AS(
+      ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
+                          "[persistence]\nmode = random\n"),
+      BrokerException);
+}
+
+TEST_CASE("parse_persistence_enabled_backward_compatibility", "[broker]") {
+  const auto cfg_on = ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
+                                          "[persistence]\nenabled = true\n");
+  CHECK(cfg_on.persistence_mode == PersistenceMode::Full);
+
+  const auto cfg_off = ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
+                                           "[persistence]\nenabled = false\n");
+  CHECK(cfg_off.persistence_mode == PersistenceMode::Off);
 }
 
 TEST_CASE("parse_auth_credentials_section", "[broker]") {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import ExitStack
 import importlib.util
+import os
 from pathlib import Path
 import socket
 import subprocess
@@ -14,6 +15,7 @@ import uuid
 _SESSION_EXPIRY_SECONDS = 300
 _WRITE_QUEUE_BYTES_HIGH = 4 * 1024 * 1024
 _MAX_QUEUED_MESSAGES_HIGH = 1000
+_BROKER_MANAGED_ENV = "MQTT_INTEGRATION_BROKER_MANAGED"
 
 
 def _load_helper(module_name: str):
@@ -54,9 +56,10 @@ def _start_isolated_broker(overrides: dict[str, object] | None = None):
         "network.mqtt_port": _find_free_port(),
         "network.ws_port": 0,
         "broker.allow_anonymous": True,
-        "broker.write_queue_max_bytes": _WRITE_QUEUE_BYTES_HIGH,
-        "broker.max_queued_messages": _MAX_QUEUED_MESSAGES_HIGH,
     }
+    if os.environ.get(_BROKER_MANAGED_ENV, "").strip() != "0":
+        effective_overrides["broker.write_queue_max_bytes"] = _WRITE_QUEUE_BYTES_HIGH
+        effective_overrides["broker.max_queued_messages"] = _MAX_QUEUED_MESSAGES_HIGH
     if overrides is not None:
         effective_overrides.update(overrides)
 

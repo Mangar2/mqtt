@@ -69,7 +69,8 @@ All parameters are optional; absent ones keep their default value.
 | `[broker]`    | `tick_interval_ms`    | uint32   | `100`   | Main loop sleep interval between broker housekeeping ticks. |
 | `[auth]`      | `credential`          | string   | —       | Repeated `username:password` entries for `PasswordAuthenticator`. |
 | `[acl]`       | `rule`                | csv      | —       | Repeated `effect,principal,action,topic` ACL entries. |
-| `[persistence]` | `enabled`           | bool     | `false` | Enable crash-safe file persistence. |
+| `[persistence]` | `mode`              | enum     | `full`  | Persistence mode: `full`, `off`, `no-states`. |
+| `[persistence]` | `enabled`           | bool     | —       | Legacy compatibility key mapped to `mode` (`true`→`full`, `false`→`off`). |
 | `[persistence]` | `dir`               | string   | `./data`| Directory for persistence snapshot files. |
 | `[tracing]`   | `global_level`      | enum     | `warning` | Global structured trace level (`none|error|warning|info|trace`). |
 | `[tracing]`   | `trace_modules`     | csv      | `""` | Comma-separated modules with trace override enabled. |
@@ -122,7 +123,7 @@ struct BrokerConfig {
    uint32_t tick_interval_ms      = 100;
    std::vector<PasswordCredentialConfig> password_credentials;
    std::vector<AclRuleConfig> acl_rules;
-    bool     persistence_enabled   = false;
+    PersistenceMode persistence_mode = PersistenceMode::Full;
     std::filesystem::path persistence_dir = "./data";
    TraceLevel trace_global_level  = TraceLevel::Warning;
    std::vector<std::string> trace_modules;
@@ -224,7 +225,7 @@ static void install_signal_handlers() noexcept;
 3. Configure authenticator according to `allow_anonymous`.
 4. Load ACL via `authz/broker_acl_policy` helper: internal principal allow
    rule, configured `[acl] rule` entries, and optional anonymous fallback.
-5. If `persistence_enabled`: call `load_persistence()` to populate in-memory
+5. If `persistence_mode != Off`: call `load_persistence()` to populate in-memory
    stores from the snapshot files.
 6. Start `ConnectionManager` (opens configured listener sockets and starts accept loops).
 7. Set `running_ = true`.
@@ -232,7 +233,7 @@ static void install_signal_handlers() noexcept;
 `load_persistence()` restores three persistence snapshots:
 - sessions into `SessionStore`
 - retained messages into `RetainedMessageStore`
-- inflight entries into `InflightStore`
+- inflight entries into `InflightStore` (only when `persistence_mode == Full`)
 
 For persisted sessions, all non-shared subscriptions stored in each
 `SessionState.subscriptions` entry are also re-registered in
@@ -243,7 +244,7 @@ persisted session state.
 
 1. Return immediately if not running.
 2. Stop all active `OutboundQueue`s and stop `ConnectionManager`.
-3. If `persistence_enabled`: call `flush_persistence()` to write current
+3. If `persistence_mode != Off`: call `flush_persistence()` to write current
    store contents to snapshot files.
 4. Set `running_ = false`.
 

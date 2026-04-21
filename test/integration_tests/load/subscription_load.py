@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import ExitStack
 import importlib.util
+import os
 from pathlib import Path
 import socket
 import uuid
@@ -30,6 +31,7 @@ stop_broker = _broker_module.stop_broker
 MqttClient = _mqtt_client_module.MqttClient
 
 _WRITE_QUEUE_BYTES_HIGH = 4 * 1024 * 1024
+_BROKER_MANAGED_ENV = "MQTT_INTEGRATION_BROKER_MANAGED"
 
 
 def _unique_client_id(prefix: str) -> str:
@@ -47,8 +49,9 @@ def _start_isolated_broker(overrides: dict[str, object] | None = None):
         "network.mqtt_port": _find_free_port(),
         "network.ws_port": 0,
         "broker.allow_anonymous": True,
-        "broker.write_queue_max_bytes": _WRITE_QUEUE_BYTES_HIGH,
     }
+    if os.environ.get(_BROKER_MANAGED_ENV, "").strip() != "0":
+        effective_overrides["broker.write_queue_max_bytes"] = _WRITE_QUEUE_BYTES_HIGH
     if overrides is not None:
         effective_overrides.update(overrides)
 

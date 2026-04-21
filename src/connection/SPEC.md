@@ -107,6 +107,8 @@ Responsibilities:
 - Own one `IoReactor` and register listener sockets on startup.
 - Accept incoming sockets from reactor callbacks in bridge mode and spawn tracked
 	client threads.
+- Emit optional structured trace events for accept anomalies (trace) and client
+	thread start failures (warning).
 - Stop reactor and listeners on shutdown.
 - Wait for client threads up to a configured timeout and request socket shutdown
 	for remaining clients to unblock pending reads.
@@ -121,7 +123,8 @@ ConnectionManager(uint16_t mqtt_port,
 									uint16_t ws_port,
 									ClientHandlerCallback callback,
 									std::chrono::milliseconds client_join_timeout =
-											std::chrono::seconds(2));
+											std::chrono::seconds(2),
+									StructuredTracer *structured_tracer = nullptr);
 
 void start();
 void stop() noexcept;

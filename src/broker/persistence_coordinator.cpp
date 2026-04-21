@@ -8,6 +8,7 @@ void PersistenceCoordinator::load(SessionPersistence &session_persistence,
                                   RetainedMessagePersistence &retained_persistence,
                                   InflightPersistence &inflight_persistence,
                                   OfflineQueuePersistence &offline_queue_persistence,
+                                  bool include_inflight_states,
                                   SessionStore &session_store,
                                   RetainedMessageStore &retained_store,
                                   SubscriptionStore &subscription_store,
@@ -26,9 +27,11 @@ void PersistenceCoordinator::load(SessionPersistence &session_persistence,
     retained_store.store(message);
   }
 
-  const auto inflight_entries = inflight_persistence.load_all();
-  for (const auto &entry : inflight_entries) {
-    inflight_store.create(entry.client_id, entry.entry);
+  if (include_inflight_states) {
+    const auto inflight_entries = inflight_persistence.load_all();
+    for (const auto &entry : inflight_entries) {
+      inflight_store.create(entry.client_id, entry.entry);
+    }
   }
 
   const auto queued = offline_queue_persistence.load_all();
@@ -41,6 +44,7 @@ void PersistenceCoordinator::flush(SessionPersistence &session_persistence,
                                    RetainedMessagePersistence &retained_persistence,
                                    InflightPersistence &inflight_persistence,
                                    OfflineQueuePersistence &offline_queue_persistence,
+                                   bool include_inflight_states,
                                    SessionStore &session_store,
                                    RetainedMessageStore &retained_store,
                                    InflightStore &inflight_store,
@@ -52,16 +56,18 @@ void PersistenceCoordinator::flush(SessionPersistence &session_persistence,
     std::vector<Message> retained_messages = retained_store.all();
     retained_persistence.save_all(retained_messages);
 
-    std::vector<InflightPersistence::ClientEntry> inflight_entries;
-    for (const auto &session_state : sessions) {
-      const auto client_entries =
-          inflight_store.entries_for(session_state.client_id.value);
-      for (const auto &entry : client_entries) {
-        inflight_entries.push_back(
-            {.client_id = session_state.client_id.value, .entry = entry});
+    if (include_inflight_states) {
+      std::vector<InflightPersistence::ClientEntry> inflight_entries;
+      for (const auto &session_state : sessions) {
+        const auto client_entries =
+            inflight_store.entries_for(session_state.client_id.value);
+        for (const auto &entry : client_entries) {
+          inflight_entries.push_back(
+              {.client_id = session_state.client_id.value, .entry = entry});
+        }
       }
+      inflight_persistence.save_all(inflight_entries);
     }
-    inflight_persistence.save_all(inflight_entries);
 
     const auto snap = offline_queue.snapshot();
     std::vector<OfflineQueuePersistence::ClientMessages> queued_entries;

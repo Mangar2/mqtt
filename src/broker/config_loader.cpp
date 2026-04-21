@@ -182,8 +182,12 @@ void ConfigLoader::apply_key(const std::string &section, const std::string &key,
       cfg.tick_interval_ms = parse_uint32(value);
     }
   } else if (section == "persistence") {
-    if (key == "enabled") {
-      cfg.persistence_enabled = parse_bool(value);
+    if (key == "mode") {
+      cfg.persistence_mode = parse_persistence_mode_or_throw(value);
+    } else if (key == "enabled") {
+      // Backward compatibility for older configs.
+      cfg.persistence_mode =
+          parse_bool(value) ? PersistenceMode::Full : PersistenceMode::Off;
     } else if (key == "dir") {
       cfg.persistence_dir = value;
     }
@@ -343,6 +347,28 @@ TraceLevel ConfigLoader::parse_trace_level_or_throw(std::string_view val) {
                           "Invalid trace level: " + std::string(val));
   }
   return *parsed_level;
+}
+
+PersistenceMode
+ConfigLoader::parse_persistence_mode_or_throw(std::string_view val) {
+  std::string lower{val};
+  std::ranges::transform(lower, lower.begin(), [](unsigned char chr) {
+    return static_cast<char>(std::tolower(chr));
+  });
+
+  if (lower == "full") {
+    return PersistenceMode::Full;
+  }
+  if (lower == "off") {
+    return PersistenceMode::Off;
+  }
+  if (lower == "no-states") {
+    return PersistenceMode::NoStates;
+  }
+
+  throw BrokerException(BrokerError::InvalidConfig,
+                        "Invalid persistence mode: " + std::string(val) +
+                            " (expected: full, off, no-states)");
 }
 
 } // namespace mqtt
