@@ -186,11 +186,20 @@ def run_20_2_1_empty_topic_filter_subscribe_rejected(config) -> tuple[bool, str]
         ptype = _packet_type(response)
 
         if ptype == 9:
-            # SUBACK — reason code is in the payload after the 2-byte packet identifier
+            # SUBACK payload layout: packet identifier (2) + properties + reason codes.
             payload = _packet_payload(response)
-            if len(payload) < 3:
+            if len(payload) < 4:
                 return False, f"SUBACK payload too short: {payload!r}"
-            reason_code = payload[2]
+            try:
+                properties_length, properties_length_bytes = _decode_variable_byte_integer(payload, 2)
+            except ValueError as error:
+                return False, f"invalid SUBACK properties length: {error}"
+
+            reason_code_index = 2 + properties_length_bytes + properties_length
+            if reason_code_index >= len(payload):
+                return False, f"SUBACK payload has no reason code: {payload!r}"
+
+            reason_code = payload[reason_code_index]
             if reason_code == 0x82:
                 return True, "broker returned SUBACK 0x82 (Protocol Error) for empty topic filter"
             return False, f"SUBACK reason code 0x{reason_code:02X} — expected 0x82"

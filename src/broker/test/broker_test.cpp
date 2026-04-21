@@ -841,8 +841,7 @@ TEST_CASE("broker_handle_connect_builds_connack_properties", "[broker]") {
 
     const auto maximum_qos =
       find_byte_property(result.connack_properties, PropertyId::MaximumQoS);
-    REQUIRE(maximum_qos.has_value());
-    CHECK(*maximum_qos == 2U);
+    CHECK_FALSE(maximum_qos.has_value());
 
     const auto retain_available =
       find_byte_property(result.connack_properties, PropertyId::RetainAvailable);
