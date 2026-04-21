@@ -59,4 +59,35 @@ void OfflineQueue::purge(std::string_view client_id) {
   queues_.erase(std::string(client_id));
 }
 
+std::unordered_map<std::string, std::vector<Message>>
+OfflineQueue::snapshot() const {
+  std::unordered_map<std::string, std::vector<Message>> result;
+  result.reserve(queues_.size());
+  for (const auto &[cid, queue] : queues_) {
+    if (queue.empty()) {
+      continue;
+    }
+    std::vector<Message> msgs;
+    msgs.reserve(queue.size());
+    for (const auto &queued_msg : queue) {
+      msgs.push_back(queued_msg.message);
+    }
+    result.emplace(cid, std::move(msgs));
+  }
+  return result;
+}
+
+void OfflineQueue::restore(std::string_view client_id,
+                           std::vector<Message> messages) {
+  auto &queue = queues_[std::string(client_id)];
+  queue.clear();
+  const auto now = std::chrono::steady_clock::now();
+  for (auto &msg : messages) {
+    queue.push_back(QueuedMessage{
+        .message = std::move(msg),
+        .enqueue_time = now,
+    });
+  }
+}
+
 } // namespace mqtt

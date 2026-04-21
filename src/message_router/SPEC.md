@@ -57,11 +57,15 @@ InboundPublishProcessor(AclEngine&, RetainedMessageStore&, SubscriptionStore&);
 
 [[nodiscard]] std::vector<RetainedMessageRecord> retained_for_filter(
     std::string_view topic_filter) const;
+
+// Write-through callback (13 — persistence)
+void set_on_retained_changed(std::function<void()> callback) noexcept;
 ```
 
 **`process`**: resolves optional Topic Alias in-place, checks publish ACL
 (throws `PublishNotAuthorized` on denial), stores retained message if
-`msg.retain` is set, returns matching subscriber list.
+`msg.retain` is set (and fires the `on_retained_changed` callback when set),
+returns matching subscriber list.
 
 `retained_for_filter` returns retained records including the original
 `stored_at` timestamp so `MessageExpiryController` can evaluate retained
@@ -95,11 +99,19 @@ void enqueue(std::string_view client_id, const Message& msg);
 [[nodiscard]] std::vector<QueuedMessage> drain(std::string_view client_id);
 [[nodiscard]] std::size_t               size(std::string_view client_id) const noexcept;
 void                                     purge(std::string_view client_id);
+
+// Persistence support (13.4)
+[[nodiscard]] std::unordered_map<std::string, std::vector<Message>> snapshot() const;
+void restore(std::string_view client_id, std::vector<Message> messages);
 ```
 
 `enqueue` throws `MessageRouterException(QueueFull)` when the per-client
 limit is exceeded.  `drain` clears the queue and returns all buffered
 `QueuedMessage` values in FIFO order.
+
+`snapshot` returns a map of all non-empty per-client queues for persistence.
+`restore` replaces a client's queue with the given messages, resetting the
+enqueue timestamp to `steady_clock::now()`.
 
 ---
 
@@ -167,6 +179,9 @@ void deliver_retained(std::string_view client_id,
                       const Subscription& subscription,
                       bool is_new_subscription,
                       std::chrono::steady_clock::time_point now = ...);
+
+// Write-through callbacks (13.4)
+void set_on_offline_queue_changed(std::function<void()> callback) noexcept;
 ```
 
 `route` runs the full pipeline: pre-process → shared dispatch → fanout →

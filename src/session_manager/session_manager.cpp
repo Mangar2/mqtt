@@ -38,6 +38,11 @@ void SessionManager::set_tracer(StructuredTracer *tracer) noexcept {
   structured_tracer_ = tracer;
 }
 
+void SessionManager::set_on_session_changed(
+    std::function<void()> callback) noexcept {
+  on_session_changed_ = std::move(callback);
+}
+
 SessionOpenResult
 SessionManager::handle_connect(const ConnectPacket &connect,
                                std::function<void()> close_callback) {
@@ -109,6 +114,12 @@ SessionManager::handle_connect(const ConnectPacket &connect,
   // 5. Register the connection for future takeover.
   takeover_handler_.register_connection(cid, std::move(close_callback));
 
+  if (on_session_changed_) {
+    try {
+      on_session_changed_();
+    } catch (...) {}
+  }
+
   TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "session_manager") {
     TraceEvent event;
     event.level = TraceLevel::Trace;
@@ -172,12 +183,22 @@ void SessionManager::handle_disconnect(
       event.data.push_back({"client_id", std::string(client_id)});
       structured_tracer_->emit(event);
     }
+    if (on_session_changed_) {
+      try {
+        on_session_changed_();
+      } catch (...) {}
+    }
     return;
   }
 
   // 4. Persist session — record disconnect time and schedule expiry (10.3.1).
   session_store_.mark_disconnected(client_id, now);
   expiry_scheduler_.schedule(client_id, now, effective_expiry);
+  if (on_session_changed_) {
+    try {
+      on_session_changed_();
+    } catch (...) {}
+  }
   TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "session_manager") {
     TraceEvent event;
     event.level = TraceLevel::Trace;
@@ -215,6 +236,12 @@ SessionManager::cleanup_expired(std::chrono::steady_clock::time_point now) {
   for (const auto &cid : expired) {
     remove_session_data(cid);
     expiry_scheduler_.cancel(cid);
+  }
+
+  if (!expired.empty() && on_session_changed_) {
+    try {
+      on_session_changed_();
+    } catch (...) {}
   }
 
   return expired;

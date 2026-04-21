@@ -23,3 +23,25 @@ Depends on: `authz/`, `store/`, `message_router/`, `topic/`, `data_model/`.
 | File | Plan ref | Description |
 |------|----------|-------------|
 | `subscription_orchestrator.h/.cpp` | 19 | `SubscriptionOrchestrator` — SUBSCRIBE/UNSUBSCRIBE orchestration and validation |
+
+## Public API
+
+### `SubscriptionOrchestrator` (subscription_orchestrator.h)
+
+```cpp
+SubscriptionOrchestrator(SubscriptionStore&, SessionStore&,
+                         SharedSubscriptionDispatcher&, MessageRouter&,
+                         TopicValidator&, AuthzService&);
+
+std::vector<ReasonCode> handle_subscribe(std::string_view client_id,
+                                         const SubscribePacket& packet);
+std::vector<ReasonCode> handle_unsubscribe(std::string_view client_id,
+                                           const UnsubscribePacket& packet);
+
+// Write-through callback (13 — persistence)
+void set_on_session_changed(std::function<void()> callback) noexcept;
+```
+
+The `set_on_session_changed` callback fires after any successful subscribe or
+unsubscribe that updates the durable `SessionStore` snapshot.  Exceptions from
+the callback are swallowed so they never propagate into the hot path.

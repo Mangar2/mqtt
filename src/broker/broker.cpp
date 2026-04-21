@@ -49,9 +49,10 @@ void Broker::startup() {
 
   if (config_.persistence_enabled) {
     PersistenceCoordinator::load(*session_persistence_, *retained_persistence_,
-                                 *inflight_persistence_, *session_store_,
+                                 *inflight_persistence_,
+                                 *offline_queue_persistence_, *session_store_,
                                  *retained_store_, *subscription_store_,
-                                 *inflight_store_);
+                                 *inflight_store_, *offline_queue_);
   }
 
   connection_manager_->start();
@@ -80,8 +81,10 @@ void Broker::shutdown() noexcept {
 
   if (config_.persistence_enabled) {
     PersistenceCoordinator::flush(*session_persistence_, *retained_persistence_,
-                                  *inflight_persistence_, *session_store_,
-                                  *retained_store_, *inflight_store_);
+                                  *inflight_persistence_,
+                                  *offline_queue_persistence_, *session_store_,
+                                  *retained_store_, *inflight_store_,
+                                  *offline_queue_);
   }
 }
 
@@ -215,13 +218,14 @@ void Broker::create_modules() {
 
   BrokerModuleFactory::create(
       config_, session_persistence_, retained_persistence_, inflight_persistence_,
-      session_store_, retained_store_, subscription_store_, inflight_store_,
-      anon_auth_, pass_auth_, active_auth_, acl_engine_, acl_loader_,
-      takeover_handler_, expiry_scheduler_, session_manager_, publish_processor_,
-      offline_queue_, shared_dispatcher_, subscription_orchestrator_,
-      message_router_, connection_registry_, will_store_, will_delay_timer_,
-      will_publisher_, stats_collector_, structured_tracer_, sys_publisher_,
-      connection_manager_, std::move(client_handler_callback));
+      offline_queue_persistence_, session_store_, retained_store_,
+      subscription_store_, inflight_store_, anon_auth_, pass_auth_, active_auth_,
+      acl_engine_, acl_loader_, takeover_handler_, expiry_scheduler_,
+      session_manager_, publish_processor_, offline_queue_, shared_dispatcher_,
+      subscription_orchestrator_, message_router_, connection_registry_,
+      will_store_, will_delay_timer_, will_publisher_, stats_collector_,
+      structured_tracer_, sys_publisher_, connection_manager_,
+      std::move(client_handler_callback));
 
   enhanced_auth_registry_ = std::make_unique<EnhancedAuthRegistry>();
   connect_facade_ = std::make_unique<ConnectFacade>(
@@ -240,6 +244,36 @@ void Broker::create_modules() {
   tick_handler_ = std::make_unique<TickHandler>(*will_publisher_,
                                                 *session_manager_, *sys_publisher_,
                                                 *structured_tracer_);
+
+  if (config_.persistence_enabled) {
+    publish_processor_->set_on_retained_changed(
+        [this]() noexcept {
+          try {
+            retained_persistence_->save_all(retained_store_->all());
+          } catch (...) {}
+        });
+
+    auto save_sessions = [this]() noexcept {
+      try {
+        session_persistence_->save_all(session_store_->all());
+      } catch (...) {}
+    };
+    session_manager_->set_on_session_changed(save_sessions);
+    subscription_orchestrator_->set_on_session_changed(save_sessions);
+
+    message_router_->set_on_offline_queue_changed(
+        [this]() noexcept {
+          try {
+            const auto snap = offline_queue_->snapshot();
+            std::vector<OfflineQueuePersistence::ClientMessages> entries;
+            entries.reserve(snap.size());
+            for (const auto &[cid, msgs] : snap) {
+              entries.push_back({.client_id = cid, .messages = msgs});
+            }
+            offline_queue_persistence_->save_all(entries);
+          } catch (...) {}
+        });
+  }
 }
 
 } // namespace mqtt

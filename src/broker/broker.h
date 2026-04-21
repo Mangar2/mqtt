@@ -39,6 +39,7 @@
 #include "monitoring/sys_topic_publisher.h"
 #include "outbound_queue/outbound_queue.h"
 #include "persistence/inflight_persistence.h"
+#include "persistence/offline_queue_persistence.h"
 #include "persistence/retained_message_persistence.h"
 #include "persistence/session_persistence.h"
 #include "session_manager/session_expiry_scheduler.h"
@@ -393,6 +394,7 @@ private:
   std::unique_ptr<SessionPersistence> session_persistence_;
   std::unique_ptr<RetainedMessagePersistence> retained_persistence_;
   std::unique_ptr<InflightPersistence> inflight_persistence_;
+  std::unique_ptr<OfflineQueuePersistence> offline_queue_persistence_;
 
   //  In-memory stores (Module 4)
 

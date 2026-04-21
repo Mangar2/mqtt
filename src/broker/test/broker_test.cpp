@@ -34,6 +34,7 @@
 #include "network/tcp_connection.h"
 #include "outbound_queue/outbound_queue.h"
 #include "persistence/inflight_persistence.h"
+#include "persistence/offline_queue_persistence.h"
 #include "persistence/retained_message_persistence.h"
 #include "persistence/session_persistence.h"
 
@@ -318,8 +319,38 @@ TEST_CASE("broker_persistence_startup_loads_seeded_records", "[broker]") {
   remove_temp_dir(tmp_dir);
 }
 
-//
-// Auth — password mode
+TEST_CASE("broker_persistence_startup_loads_seeded_offline_queue", "[broker]") {
+  const auto tmp_dir = make_temp_dir();
+
+  // Seed a session so persistence coordinator has something to load.
+  SessionState session;
+  session.client_id = Utf8String{"queue_client"};
+  session.session_expiry_interval = 300U;
+
+  SessionPersistence session_persistence(tmp_dir);
+  session_persistence.save_all(std::vector<SessionState>{session});
+
+  // Seed the offline queue with one message for queue_client.
+  Message queued_msg;
+  queued_msg.topic = Utf8String{"offline/topic"};
+  queued_msg.qos = QoS::AtLeastOnce;
+
+  OfflineQueuePersistence offline_persistence(tmp_dir);
+  offline_persistence.save_all(
+      std::vector<OfflineQueuePersistence::ClientMessages>{
+          {"queue_client", {queued_msg}}});
+
+  BrokerConfig cfg = make_test_config();
+  cfg.persistence_enabled = true;
+  cfg.persistence_dir = tmp_dir;
+
+  Broker broker(cfg);
+  broker.startup();
+  CHECK(broker.is_running() == true);
+
+  broker.shutdown();
+  remove_temp_dir(tmp_dir);
+}
 
 TEST_CASE("broker_password_auth_when_not_anonymous", "[broker]") {
   BrokerConfig cfg = make_test_config();

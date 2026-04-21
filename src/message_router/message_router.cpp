@@ -22,6 +22,11 @@ void MessageRouter::set_tracer(StructuredTracer *tracer) noexcept {
   structured_tracer_ = tracer;
 }
 
+void MessageRouter::set_on_offline_queue_changed(
+    std::function<void()> callback) noexcept {
+  on_offline_queue_changed_ = std::move(callback);
+}
+
 bool MessageRouter::route(Message &msg, std::string_view client_id,
                           std::string_view username,
                           TopicAliasTable &alias_table) {
@@ -130,6 +135,12 @@ void MessageRouter::dispatch_item(const DeliveryItem &item,
       offline_queue_.enqueue_drop_oldest(item.client_id, msg_copy);
     }
 
+    if (on_offline_queue_changed_) {
+      try {
+        on_offline_queue_changed_();
+      } catch (...) {}
+    }
+
     TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "message_router") {
       TraceEvent event;
       event.level = TraceLevel::Trace;
@@ -186,6 +197,12 @@ void MessageRouter::flush_offline_queue(
     event.data.push_back({"expired", std::to_string(expired_count)});
     structured_tracer_->emit(event);
   }
+
+  if (!queued.empty() && on_offline_queue_changed_) {
+    try {
+      on_offline_queue_changed_();
+    } catch (...) {}
+  }
 }
 
 std::size_t MessageRouter::buffer_offline_messages(
@@ -202,6 +219,12 @@ std::size_t MessageRouter::buffer_offline_messages(
       }
       throw;
     }
+  }
+
+  if (enqueued_count > 0U && on_offline_queue_changed_) {
+    try {
+      on_offline_queue_changed_();
+    } catch (...) {}
   }
 
   return enqueued_count;

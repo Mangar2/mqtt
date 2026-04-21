@@ -673,3 +673,184 @@ TEST_CASE("crash_safe_remove_all_throws_when_file_locked", "[persistence]") {
   lock.close(); // release the lock so TempDir can clean up
 }
 #endif
+
+//  OfflineQueuePersistence (Module 13.4)
+//
+
+#include "message_router/offline_queue.h"
+#include "persistence/offline_queue_persistence.h"
+
+TEST_CASE("offline_queue_persistence_empty_on_no_file", "[persistence]") {
+  TempDir tmp;
+  mqtt::OfflineQueuePersistence pers(tmp.path);
+  CHECK(pers.load_all().empty());
+}
+
+TEST_CASE("offline_queue_persistence_round_trip", "[persistence]") {
+  TempDir tmp;
+  mqtt::OfflineQueuePersistence pers(tmp.path);
+
+  mqtt::Message msg1 = make_message("sensor/temp", {0x01U, 0x02U});
+  mqtt::Message msg2 = make_message("sensor/hum",  {0x03U, 0x04U});
+
+  std::vector<mqtt::OfflineQueuePersistence::ClientMessages> entries;
+  entries.push_back({"client-a", {msg1, msg2}});
+
+  pers.save_all(entries);
+  auto loaded = pers.load_all();
+
+  REQUIRE(loaded.size() == 1U);
+  CHECK(loaded[0].client_id == "client-a");
+  REQUIRE(loaded[0].messages.size() == 2U);
+  CHECK(loaded[0].messages[0] == msg1);
+  CHECK(loaded[0].messages[1] == msg2);
+}
+
+TEST_CASE("offline_queue_persistence_multiple_clients", "[persistence]") {
+  TempDir tmp;
+  mqtt::OfflineQueuePersistence pers(tmp.path);
+
+  mqtt::Message msg_a = make_message("a/topic", {0x11U});
+  mqtt::Message msg_b = make_message("b/topic", {0x22U});
+
+  std::vector<mqtt::OfflineQueuePersistence::ClientMessages> entries;
+  entries.push_back({"alpha", {msg_a}});
+  entries.push_back({"beta",  {msg_b}});
+
+  pers.save_all(entries);
+  auto loaded = pers.load_all();
+
+  REQUIRE(loaded.size() == 2U);
+  // alpha is stored first
+  CHECK(loaded[0].client_id == "alpha");
+  CHECK(loaded[0].messages[0] == msg_a);
+  CHECK(loaded[1].client_id == "beta");
+  CHECK(loaded[1].messages[0] == msg_b);
+}
+
+TEST_CASE("offline_queue_persistence_fifo_order", "[persistence]") {
+  TempDir tmp;
+  mqtt::OfflineQueuePersistence pers(tmp.path);
+
+  std::vector<mqtt::Message> msgs;
+  for (uint8_t idx = 0U; idx < 5U; ++idx) {
+    msgs.push_back(make_message("q/order", {idx}));
+  }
+
+  std::vector<mqtt::OfflineQueuePersistence::ClientMessages> entries;
+  entries.push_back({"fifo-client", msgs});
+  pers.save_all(entries);
+
+  auto loaded = pers.load_all();
+  REQUIRE(loaded.size() == 1U);
+  REQUIRE(loaded[0].messages.size() == 5U);
+  for (std::size_t idx = 0U; idx < 5U; ++idx) {
+    CHECK(loaded[0].messages[idx] == msgs[idx]);
+  }
+}
+
+TEST_CASE("offline_queue_persistence_all_property_types", "[persistence]") {
+  TempDir tmp;
+  mqtt::OfflineQueuePersistence pers(tmp.path);
+
+  mqtt::Message msg = make_message("oq/props", {0x99U});
+  msg.properties.push_back(
+      {mqtt::PropertyId::PayloadFormatIndicator,
+       mqtt::PropertyValue{uint8_t{1U}}});
+  msg.properties.push_back(
+      {mqtt::PropertyId::ReceiveMaximum,
+       mqtt::PropertyValue{mqtt::TwoByteInteger{300U}}});
+  msg.properties.push_back(
+      {mqtt::PropertyId::MessageExpiryInterval,
+       mqtt::PropertyValue{mqtt::FourByteInteger{9000U}}});
+  msg.properties.push_back(
+      {mqtt::PropertyId::SubscriptionIdentifier,
+       mqtt::PropertyValue{mqtt::VariableByteInteger{42U}}});
+  msg.properties.push_back(
+      {mqtt::PropertyId::ContentType,
+       mqtt::PropertyValue{mqtt::Utf8String{"text/plain"}}});
+  msg.properties.push_back(
+      {mqtt::PropertyId::UserProperty,
+       mqtt::PropertyValue{mqtt::Utf8StringPair{utf8("key"), utf8("val")}}});
+  msg.properties.push_back(
+      {mqtt::PropertyId::CorrelationData,
+       mqtt::PropertyValue{binary({0xCAU, 0xFEU})}});
+
+  std::vector<mqtt::OfflineQueuePersistence::ClientMessages> entries;
+  entries.push_back({"props-client", {msg}});
+  pers.save_all(entries);
+
+  auto loaded = pers.load_all();
+  REQUIRE(loaded.size() == 1U);
+  REQUIRE(loaded[0].messages.size() == 1U);
+  CHECK(loaded[0].messages[0] == msg);
+}
+
+//  OfflineQueue::snapshot() / restore() (Module 12.3 persistence API)
+//
+
+TEST_CASE("offline_queue_snapshot_empty", "[persistence]") {
+  mqtt::OfflineQueue queue;
+  CHECK(queue.snapshot().empty());
+}
+
+TEST_CASE("offline_queue_snapshot_single_client", "[persistence]") {
+  mqtt::OfflineQueue queue;
+  mqtt::Message msg = make_message("snap/topic", {0x01U});
+  queue.enqueue("client-x", msg);
+
+  auto snap = queue.snapshot();
+  REQUIRE(snap.count("client-x") == 1U);
+  REQUIRE(snap.at("client-x").size() == 1U);
+  CHECK(snap.at("client-x")[0] == msg);
+}
+
+TEST_CASE("offline_queue_snapshot_skips_empty_queues", "[persistence]") {
+  mqtt::OfflineQueue queue;
+  mqtt::Message msg = make_message("drain/topic", {0xFFU});
+  queue.enqueue("drain-client", msg);
+  (void)queue.drain("drain-client"); // empties the queue
+
+  auto snap = queue.snapshot();
+  CHECK(snap.find("drain-client") == snap.end());
+}
+
+TEST_CASE("offline_queue_restore_replaces_queue", "[persistence]") {
+  mqtt::OfflineQueue queue;
+  mqtt::Message old_msg = make_message("old/topic", {0xAAU});
+  queue.enqueue("client-r", old_msg);
+
+  mqtt::Message new_msg = make_message("new/topic", {0xBBU});
+  queue.restore("client-r", {new_msg});
+
+  auto drained = queue.drain("client-r");
+  REQUIRE(drained.size() == 1U);
+  CHECK(drained[0].message == new_msg);
+}
+
+TEST_CASE("offline_queue_restore_fifo_order", "[persistence]") {
+  mqtt::OfflineQueue queue;
+  std::vector<mqtt::Message> msgs;
+  for (uint8_t idx = 0U; idx < 3U; ++idx) {
+    msgs.push_back(make_message("order/topic", {idx}));
+  }
+  queue.restore("order-client", msgs);
+
+  auto drained = queue.drain("order-client");
+  REQUIRE(drained.size() == 3U);
+  for (std::size_t idx = 0U; idx < 3U; ++idx) {
+    CHECK(drained[idx].message == msgs[idx]);
+  }
+}
+
+TEST_CASE("offline_queue_restore_timestamp_fresh", "[persistence]") {
+  mqtt::OfflineQueue queue;
+  mqtt::Message msg = make_message("ts/topic", {0x01U});
+
+  auto before = std::chrono::steady_clock::now();
+  queue.restore("ts-client", {msg});
+  auto drained = queue.drain("ts-client");
+
+  REQUIRE(drained.size() == 1U);
+  CHECK(drained[0].enqueue_time >= before);
+}

@@ -16,6 +16,8 @@
 
 #include "data_model/message/message.h"
 
+#include "data_model/message/message.h"
+
 namespace mqtt {
 
 /**
@@ -104,6 +106,29 @@ public:
    * @param client_id Identifier of the client whose queue is purged.
    */
   void purge(std::string_view client_id);
+
+  /**
+   * @brief Return a snapshot of all non-empty per-client queues (13.4).
+   *
+   * Only clients with at least one queued message are included.
+   * Used by the persistence layer to atomically snapshot the offline queue.
+   *
+   * @return Map from client_id to the ordered list of queued messages.
+   */
+  [[nodiscard]] std::unordered_map<std::string, std::vector<Message>>
+  snapshot() const;
+
+  /**
+   * @brief Restore queued messages for one client from persisted data (13.4).
+   *
+   * Replaces any existing queue content for @p client_id.
+   * The enqueue timestamp is set to `steady_clock::now()` so that
+   * MessageExpiryController does not immediately expire restored messages.
+   *
+   * @param client_id Identifier of the target client.
+   * @param messages  Messages to restore in FIFO order.
+   */
+  void restore(std::string_view client_id, std::vector<Message> messages);
 
 private:
   std::size_t max_size_; ///< Per-client queue depth limit.

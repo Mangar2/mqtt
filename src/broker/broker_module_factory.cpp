@@ -43,6 +43,7 @@ void BrokerModuleFactory::create(
     std::unique_ptr<SessionPersistence> &session_persistence,
     std::unique_ptr<RetainedMessagePersistence> &retained_persistence,
     std::unique_ptr<InflightPersistence> &inflight_persistence,
+    std::unique_ptr<OfflineQueuePersistence> &offline_queue_persistence,
     std::unique_ptr<SessionStore> &session_store,
     std::unique_ptr<RetainedMessageStore> &retained_store,
     std::unique_ptr<SubscriptionStore> &subscription_store,
@@ -74,6 +75,8 @@ void BrokerModuleFactory::create(
       std::make_unique<RetainedMessagePersistence>(config.persistence_dir);
   inflight_persistence =
       std::make_unique<InflightPersistence>(config.persistence_dir);
+  offline_queue_persistence =
+      std::make_unique<OfflineQueuePersistence>(config.persistence_dir);
 
   session_store = std::make_unique<SessionStore>();
   retained_store = std::make_unique<RetainedMessageStore>();

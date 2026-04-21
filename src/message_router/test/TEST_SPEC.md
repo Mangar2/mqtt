@@ -54,3 +54,6 @@
 | `router_deliver_retained_send_if_new`          | 25.1.2 | RetainHandling::SendIfNew suppresses updates and delivers on new subscription |
 | `router_deliver_retained_never`                | 25.1.2 | RetainHandling::Never suppresses retained delivery |
 | `router_deliver_retained_discards_zero_expiry` | 25.1.2 | deliver_retained drops retained messages with zero expiry interval |
+| `router_buffer_offline_messages_enqueues_until_queue_full` | 12.3 | buffer_offline_messages enqueues in order and stops at QueueFull boundary |
+| `router_on_offline_queue_changed_fires_on_flush` | 13.4 | on_offline_queue_changed_ callback fires after flush_offline_queue drains a non-empty queue |
+| `router_on_offline_queue_changed_fires_on_buffer` | 13.4 | on_offline_queue_changed_ callback fires after buffer_offline_messages enqueues messages |

@@ -134,6 +134,19 @@ public:
   void set_tracer(StructuredTracer *tracer) noexcept;
 
   /**
+   * @brief Register a write-through callback invoked after every session store
+   *        mutation (13.4).
+   *
+   * Called at the end of handle_connect(), after session removal in
+   * handle_disconnect() (when expiry == 0), and after every session deletion
+   * in cleanup_expired(). The callback must be noexcept — any exception is
+   * silently swallowed.
+   *
+   * @param callback Callback to register; pass {} to clear.
+   */
+  void set_on_session_changed(std::function<void()> callback) noexcept;
+
+  /**
    * @brief Return the shared inflight store used by this manager.
    *
    * This is used by the connection layer to construct per-client
@@ -152,6 +165,7 @@ private:
   SessionTakeoverHandler &takeover_handler_;
   SessionExpiryScheduler &expiry_scheduler_;
   StructuredTracer *structured_tracer_{nullptr};
+  std::function<void()> on_session_changed_{}; ///< Write-through callback (13.4).
 };
 
 } // namespace mqtt

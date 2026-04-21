@@ -5,6 +5,7 @@
  * @brief Orchestrates MQTT SUBSCRIBE and UNSUBSCRIBE flows for Broker.
  */
 
+#include <functional>
 #include <string_view>
 
 #include "authz/acl_engine.h"
@@ -61,12 +62,25 @@ public:
   handle_unsubscribe(std::string_view client_id,
                      const UnsubscribePacket &packet);
 
+  /**
+   * @brief Register a write-through callback invoked after every session
+   *        snapshot mutation triggered by SUBSCRIBE or UNSUBSCRIBE (13.4).
+   *
+   * Called after apply_subscribe_to_session_snapshot() and after
+   * apply_unsubscribe_to_session_snapshot(). The callback must be noexcept
+   * — any exception is silently swallowed.
+   *
+   * @param callback Callback to register; pass {} to clear.
+   */
+  void set_on_session_changed(std::function<void()> callback) noexcept;
+
 private:
   AclEngine &acl_engine_;
   SessionStore &session_store_;
   SubscriptionStore &subscription_store_;
   SharedSubscriptionDispatcher &shared_dispatcher_;
   MessageRouter &message_router_;
+  std::function<void()> on_session_changed_{}; ///< Write-through callback (13.4).
 };
 
 } // namespace mqtt

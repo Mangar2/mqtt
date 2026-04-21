@@ -7,10 +7,12 @@ namespace mqtt {
 void PersistenceCoordinator::load(SessionPersistence &session_persistence,
                                   RetainedMessagePersistence &retained_persistence,
                                   InflightPersistence &inflight_persistence,
+                                  OfflineQueuePersistence &offline_queue_persistence,
                                   SessionStore &session_store,
                                   RetainedMessageStore &retained_store,
                                   SubscriptionStore &subscription_store,
-                                  InflightStore &inflight_store) {
+                                  InflightStore &inflight_store,
+                                  OfflineQueue &offline_queue) {
   const auto sessions = session_persistence.load_all();
   for (const auto &session_state : sessions) {
     session_store.create(session_state);
@@ -28,14 +30,21 @@ void PersistenceCoordinator::load(SessionPersistence &session_persistence,
   for (const auto &entry : inflight_entries) {
     inflight_store.create(entry.client_id, entry.entry);
   }
+
+  const auto queued = offline_queue_persistence.load_all();
+  for (const auto &client_messages : queued) {
+    offline_queue.restore(client_messages.client_id, client_messages.messages);
+  }
 }
 
 void PersistenceCoordinator::flush(SessionPersistence &session_persistence,
                                    RetainedMessagePersistence &retained_persistence,
                                    InflightPersistence &inflight_persistence,
+                                   OfflineQueuePersistence &offline_queue_persistence,
                                    SessionStore &session_store,
                                    RetainedMessageStore &retained_store,
-                                   InflightStore &inflight_store) noexcept {
+                                   InflightStore &inflight_store,
+                                   OfflineQueue &offline_queue) noexcept {
   try {
     std::vector<SessionState> sessions = session_store.all();
     session_persistence.save_all(sessions);
@@ -53,6 +62,14 @@ void PersistenceCoordinator::flush(SessionPersistence &session_persistence,
       }
     }
     inflight_persistence.save_all(inflight_entries);
+
+    const auto snap = offline_queue.snapshot();
+    std::vector<OfflineQueuePersistence::ClientMessages> queued_entries;
+    queued_entries.reserve(snap.size());
+    for (const auto &[cid, msgs] : snap) {
+      queued_entries.push_back({.client_id = cid, .messages = msgs});
+    }
+    offline_queue_persistence.save_all(queued_entries);
   } catch (...) {
     // noexcept — swallow persistence errors during shutdown.
   }

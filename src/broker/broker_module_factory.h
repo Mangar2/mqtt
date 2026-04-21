@@ -24,6 +24,7 @@
 #include "monitoring/structured_tracer.h"
 #include "monitoring/sys_topic_publisher.h"
 #include "persistence/inflight_persistence.h"
+#include "persistence/offline_queue_persistence.h"
 #include "persistence/retained_message_persistence.h"
 #include "persistence/session_persistence.h"
 #include "session_manager/session_expiry_scheduler.h"
@@ -53,6 +54,7 @@ public:
       std::unique_ptr<SessionPersistence> &session_persistence,
       std::unique_ptr<RetainedMessagePersistence> &retained_persistence,
       std::unique_ptr<InflightPersistence> &inflight_persistence,
+      std::unique_ptr<OfflineQueuePersistence> &offline_queue_persistence,
       std::unique_ptr<SessionStore> &session_store,
       std::unique_ptr<RetainedMessageStore> &retained_store,
       std::unique_ptr<SubscriptionStore> &subscription_store,

@@ -1085,3 +1085,82 @@ TEST_CASE("shared_remove_client_skips_groups_without_client",
   CHECK(dispatcher.member_count("g1", "t") == 0U);
   CHECK(dispatcher.member_count("g2", "t") == 1U);
 }
+
+TEST_CASE("router_buffer_offline_messages_enqueues_until_queue_full",
+          "[message_router]") {
+  AclEngine acl({allow_all()});
+  RetainedMessageStore retained;
+  SubscriptionStore subs;
+  InboundPublishProcessor proc(acl, retained, subs);
+  OfflineQueue offline_queue(2U); // max 2 messages per client
+  SharedSubscriptionDispatcher shared;
+
+  MessageRouter router(proc, offline_queue, shared,
+                       [](std::string_view) { return false; },
+                       [](std::string_view, const Message &) {});
+
+  std::vector<Message> messages;
+  for (uint8_t idx = 0U; idx < 4U; ++idx) {
+    messages.push_back(make_msg("buf/t", QoS::AtLeastOnce));
+  }
+
+  const std::size_t enqueued = router.buffer_offline_messages("buf-client", messages);
+
+  // Queue limit 2 — only 2 messages should be enqueued.
+  CHECK(enqueued == 2U);
+  CHECK(offline_queue.size("buf-client") == 2U);
+}
+
+TEST_CASE("router_on_offline_queue_changed_fires_on_flush",
+          "[message_router]") {
+  AclEngine acl({allow_all()});
+  RetainedMessageStore retained;
+  SubscriptionStore subs;
+  subs.store("flush-sub", make_sub("t"));
+  InboundPublishProcessor proc(acl, retained, subs);
+  OfflineQueue offline_queue;
+  SharedSubscriptionDispatcher shared;
+
+  bool online_flag = false;
+
+  MessageRouter router(proc, offline_queue, shared,
+                       [&](std::string_view) { return online_flag; },
+                       [](std::string_view, const Message &) {});
+
+  // Route while offline — enqueues one message (callback not yet wired).
+  TopicAliasTable alias_table(0U);
+  Message msg = make_msg("t", QoS::AtLeastOnce);
+  router.route(msg, "pub", "", alias_table);
+  CHECK(offline_queue.size("flush-sub") == 1U);
+
+  // Wire callback only after the enqueue so we test the flush path alone.
+  int callback_count = 0;
+  router.set_on_offline_queue_changed([&]() { ++callback_count; });
+
+  // Flush — drains non-empty queue → callback fires exactly once.
+  online_flag = true;
+  router.flush_offline_queue("flush-sub");
+  CHECK(callback_count == 1);
+}
+
+TEST_CASE("router_on_offline_queue_changed_fires_on_buffer",
+          "[message_router]") {
+  AclEngine acl({allow_all()});
+  RetainedMessageStore retained;
+  SubscriptionStore subs;
+  InboundPublishProcessor proc(acl, retained, subs);
+  OfflineQueue offline_queue;
+  SharedSubscriptionDispatcher shared;
+
+  MessageRouter router(proc, offline_queue, shared,
+                       [](std::string_view) { return false; },
+                       [](std::string_view, const Message &) {});
+
+  int callback_count = 0;
+  router.set_on_offline_queue_changed([&]() { ++callback_count; });
+
+  std::vector<Message> messages = {make_msg("buf/t", QoS::AtLeastOnce)};
+  (void)router.buffer_offline_messages("buf2-client", messages);
+
+  CHECK(callback_count == 1);
+}

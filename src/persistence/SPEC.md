@@ -54,3 +54,4 @@ Binary blobs are encoded as `uint32_t length` followed by raw bytes.
 | `session_persistence.h` / `.cpp`       | 13.1     | Serialize / deserialize `SessionState`       |
 | `retained_message_persistence.h`/`.cpp`| 13.2     | Serialize / deserialize retained `Message`s  |
 | `inflight_persistence.h` / `.cpp`      | 13.3     | Serialize / deserialize `InflightEntry`s     |
+| `offline_queue_persistence.h` / `.cpp` | 13.4     | Serialize / deserialize offline `OfflineQueue` entries |

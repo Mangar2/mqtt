@@ -88,6 +88,19 @@ std::vector<std::string> cleanup_expired(std::chrono::steady_clock::time_point n
   subscriptions, removes the session record.
 - Returns the list of cleaned-up Client IDs.
 
+**`set_on_session_changed`** (13 — write-through persistence):
+- Registers a `std::function<void()>` callback that is invoked after every
+  mutation to session state (`handle_connect`, both paths of
+  `handle_disconnect`, and `cleanup_expired` when at least one session was
+  removed).
+- The callback is never invoked when there are no changes.
+- Exceptions from the callback are swallowed so they never propagate into
+  the hot path.
+
+```cpp
+void set_on_session_changed(std::function<void()> callback) noexcept;
+```
+
 ---
 
 ### `SessionTakeoverHandler` (session_takeover_handler.h)

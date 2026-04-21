@@ -161,6 +161,18 @@ public:
    */
   void set_tracer(StructuredTracer *tracer) noexcept;
 
+  /**
+   * @brief Register a write-through callback invoked after every offline queue
+   *        mutation (13.4).
+   *
+   * The callback is called after each enqueue in dispatch_item() and
+   * buffer_offline_messages(), and after drain in flush_offline_queue().
+   * It must be noexcept — any exception is silently swallowed.
+   *
+   * @param callback Callback to register; pass {} to clear.
+   */
+  void set_on_offline_queue_changed(std::function<void()> callback) noexcept;
+
 private:
   /**
    * @brief Deliver one DeliveryItem: forward to online client or enqueue
@@ -179,6 +191,7 @@ private:
   IsOnlineFn is_online_;   ///< Online presence predicate.
   DeliverFn deliver_;      ///< Online delivery callback.
   StructuredTracer *structured_tracer_{nullptr};
+  std::function<void()> on_offline_queue_changed_{}; ///< Write-through callback (13.4).
 };
 
 } // namespace mqtt

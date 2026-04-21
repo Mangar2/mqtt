@@ -62,6 +62,7 @@ All tests are tagged `[broker]`.
 | `broker_shutdown_requested_false_initially` | signal | Before install_signal_handlers | — | shutdown_requested() == false |
 | `broker_with_persistence_startup` | persistence | Startup with persistence enabled | temp dir, persistence_enabled=true | is_running() == true, loads empty stores |
 | `broker_persistence_startup_loads_seeded_records` | persistence | Startup with persisted session/retained/inflight snapshots | temp dir with pre-saved records | startup succeeds and clean_start=false reconnect reports session_present=true |
+| `broker_persistence_startup_loads_seeded_offline_queue` | persistence | Startup with persisted offline queue snapshot | temp dir with seeded session + offline queue entries | startup succeeds (offline queue restored) |
 | `broker_statistics_collector_accessor` | monitoring | statistics_collector() | after startup | snapshot all-zero |
 | `broker_register_increments_connected_clients` | monitoring | register/unregister | 2 clients | connected_clients tracks correctly |
 | `broker_register_same_client_does_not_double_count` | monitoring | re-register existing client ID | same client registered twice | connected_clients remains 1 |

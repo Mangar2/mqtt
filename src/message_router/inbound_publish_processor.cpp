@@ -69,6 +69,11 @@ InboundPublishProcessor::process(Message &msg, std::string_view client_id,
 
   if (msg.retain) {
     retained_.store(msg);
+    if (on_retained_changed_) {
+      try {
+        on_retained_changed_();
+      } catch (...) {}
+    }
   }
 
   return subscriptions_.subscribers_for(msg.topic.value);
@@ -77,6 +82,11 @@ InboundPublishProcessor::process(Message &msg, std::string_view client_id,
 std::vector<RetainedMessageRecord> InboundPublishProcessor::retained_for_filter(
     std::string_view topic_filter) const {
   return retained_.find_records(topic_filter);
+}
+
+void InboundPublishProcessor::set_on_retained_changed(
+    std::function<void()> callback) noexcept {
+  on_retained_changed_ = std::move(callback);
 }
 
 } // namespace mqtt

@@ -6,6 +6,7 @@
  *        messages before subscriber fanout (Module 12.1).
  */
 
+#include <functional>
 #include <string_view>
 #include <vector>
 
@@ -77,6 +78,18 @@ public:
   [[nodiscard]] std::vector<RetainedMessageRecord>
   retained_for_filter(std::string_view topic_filter) const;
 
+  /**
+   * @brief Register a write-through callback invoked after every retained
+   *        message store mutation (13.4).
+   *
+   * Called whenever a retained message is stored (added or replaced) via
+   * process(). The callback must be noexcept — any exception is silently
+   * swallowed.
+   *
+   * @param callback Callback to register; pass {} to clear.
+   */
+  void set_on_retained_changed(std::function<void()> callback) noexcept;
+
 private:
   /**
    * @brief Resolve the TopicAlias property in msg in-place (12.1.1).
@@ -87,9 +100,10 @@ private:
    */
   static void resolve_topic_alias(Message &msg, TopicAliasTable &alias_table);
 
-  AclEngine &acl_;                   ///< ACL engine for publish authorization.
-  RetainedMessageStore &retained_;   ///< Retained message store.
-  SubscriptionStore &subscriptions_; ///< Subscription store.
+  AclEngine &acl_;                                ///< ACL engine for publish authorization.
+  RetainedMessageStore &retained_;               ///< Retained message store.
+  SubscriptionStore &subscriptions_;             ///< Subscription store.
+  std::function<void()> on_retained_changed_{};  ///< Write-through callback (13.4).
 };
 
 } // namespace mqtt

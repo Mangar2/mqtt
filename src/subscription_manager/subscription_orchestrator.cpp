@@ -158,6 +158,11 @@ SubscriptionOrchestrator::SubscriptionOrchestrator(
       subscription_store_(subscription_store),
       shared_dispatcher_(shared_dispatcher), message_router_(message_router) {}
 
+void SubscriptionOrchestrator::set_on_session_changed(
+    std::function<void()> callback) noexcept {
+  on_session_changed_ = std::move(callback);
+}
+
 SubackPacket SubscriptionOrchestrator::handle_subscribe(
     std::string_view client_id, const SubscribePacket &packet) {
   SubackPacket suback;
@@ -230,6 +235,11 @@ SubackPacket SubscriptionOrchestrator::handle_subscribe(
 
   apply_subscribe_to_session_snapshot(session_store_, client_id, packet,
                                       suback);
+  if (on_session_changed_) {
+    try {
+      on_session_changed_();
+    } catch (...) {}
+  }
   return suback;
 }
 
@@ -279,6 +289,11 @@ UnsubackPacket SubscriptionOrchestrator::handle_unsubscribe(
 
   apply_unsubscribe_to_session_snapshot(session_store_, client_id, packet,
                                         unsuback);
+  if (on_session_changed_) {
+    try {
+      on_session_changed_();
+    } catch (...) {}
+  }
   return unsuback;
 }
 
