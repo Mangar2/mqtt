@@ -6,7 +6,6 @@
  */
 
 #include <functional>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -74,7 +73,6 @@ private:
   WillPublisher &will_publisher_;
   EnhancedAuthRegistry &enhanced_auth_registry_;
   StructuredTracer &structured_tracer_;
-  std::mutex mutex_;
 };
 
 } // namespace mqtt

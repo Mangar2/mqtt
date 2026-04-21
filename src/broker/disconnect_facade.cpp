@@ -25,7 +25,6 @@ void DisconnectFacade::handle_disconnect(
     std::optional<uint32_t> expiry_override,
     std::chrono::steady_clock::time_point now,
     const std::shared_ptr<OutboundQueue> &expected_queue) {
-  std::lock_guard<std::mutex> lock_guard(mutex_);
   TRACE_GUARD(&structured_tracer_, TraceLevel::Info, "broker") {
     TraceEvent event;
     event.level = TraceLevel::Info;
@@ -48,7 +47,6 @@ void DisconnectFacade::handle_disconnect(
 
 bool DisconnectFacade::is_disconnect_expiry_override_valid(
     std::string_view client_id, std::optional<uint32_t> expiry_override) {
-  std::lock_guard<std::mutex> lock_guard(mutex_);
   return session_manager_.is_disconnect_expiry_override_valid(client_id,
                                                               expiry_override);
 }
@@ -56,7 +54,6 @@ bool DisconnectFacade::is_disconnect_expiry_override_valid(
 void DisconnectFacade::handle_connection_lost(
     std::string_view client_id, std::chrono::steady_clock::time_point now,
     const std::shared_ptr<OutboundQueue> &expected_queue) {
-  std::lock_guard<std::mutex> lock_guard(mutex_);
   TRACE_GUARD(&structured_tracer_, TraceLevel::Info, "broker") {
     TraceEvent event;
     event.level = TraceLevel::Info;
@@ -74,7 +71,6 @@ void DisconnectFacade::handle_connection_lost(
 void DisconnectFacade::unregister_connection(
     std::string_view client_id,
     const std::shared_ptr<OutboundQueue> &expected_queue) {
-  std::lock_guard<std::mutex> lock_guard(mutex_);
   unregister_connection_impl(client_id, expected_queue);
 }
 

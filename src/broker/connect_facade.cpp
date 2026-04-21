@@ -58,8 +58,6 @@ ConnectFacade::ConnectFacade(const BrokerConfig &config, IAuthenticator &active_
 
 ConnectResult ConnectFacade::handle_connect(const ConnectPacket &connect_packet,
                                             std::function<void()> close_callback) {
-  std::lock_guard<std::mutex> lock_guard(mutex_);
-
   ConnectPacket effective_connect = connect_packet;
   std::optional<std::string> assigned_client_id;
   if (effective_connect.client_id.value.empty()) {
@@ -178,8 +176,6 @@ ConnectResult ConnectFacade::handle_connect(const ConnectPacket &connect_packet,
 
 ConnectResult ConnectFacade::handle_auth_packet(std::string_view client_id,
                                                 const AuthPacket &auth_packet) {
-  std::lock_guard<std::mutex> lock_guard(mutex_);
-
   ConnectResult result;
   result.client_id = std::string(client_id);
   result.connack_properties = build_static_connack_properties(config_);
@@ -248,8 +244,6 @@ ConnectResult ConnectFacade::handle_auth_packet(std::string_view client_id,
 
 AuthResult ConnectFacade::handle_reauthenticate(std::string_view client_id,
                                                 const AuthPacket &auth_packet) {
-  std::lock_guard<std::mutex> lock_guard(mutex_);
-
   AuthResult result = protocol_error_result();
   enhanced_auth_registry_.with_lock(
       [&result, client_id,

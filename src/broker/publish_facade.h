@@ -5,7 +5,6 @@
  * @brief Inbound publish facade extracted from Broker.
  */
 
-#include <mutex>
 #include <string_view>
 
 #include "connection/topic_alias_table.h"
@@ -41,7 +40,6 @@ private:
   MessageRouter &message_router_;
   StatisticsCollector &statistics_collector_;
   StructuredTracer &structured_tracer_;
-  std::mutex mutex_;
 };
 
 } // namespace mqtt

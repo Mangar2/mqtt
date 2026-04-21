@@ -12,7 +12,6 @@ SubscribeFacade::SubscribeFacade(
 
 SubackPacket SubscribeFacade::handle_subscribe(std::string_view client_id,
                                                const SubscribePacket &packet) {
-  std::lock_guard<std::mutex> lock_guard(mutex_);
   SubackPacket suback =
       subscription_orchestrator_.handle_subscribe(client_id, packet);
 
@@ -43,7 +42,6 @@ SubackPacket SubscribeFacade::handle_subscribe(std::string_view client_id,
 
 UnsubackPacket SubscribeFacade::handle_unsubscribe(
     std::string_view client_id, const UnsubscribePacket &packet) {
-  std::lock_guard<std::mutex> lock_guard(mutex_);
   UnsubackPacket unsuback =
       subscription_orchestrator_.handle_unsubscribe(client_id, packet);
 

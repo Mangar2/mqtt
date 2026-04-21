@@ -5,7 +5,6 @@
  * @brief SUBSCRIBE/UNSUBSCRIBE facade extracted from Broker.
  */
 
-#include <mutex>
 #include <string_view>
 
 #include "data_model/packet/subscribe_packets.h"
@@ -40,7 +39,6 @@ public:
 private:
   SubscriptionOrchestrator &subscription_orchestrator_;
   StructuredTracer &structured_tracer_;
-  std::mutex mutex_;
 };
 
 } // namespace mqtt

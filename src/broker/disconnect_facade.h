@@ -7,7 +7,6 @@
 
 #include <chrono>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string_view>
 
@@ -81,7 +80,6 @@ private:
   SharedSubscriptionDispatcher &shared_dispatcher_;
   StatisticsCollector &statistics_collector_;
   StructuredTracer &structured_tracer_;
-  std::mutex mutex_;
 };
 
 } // namespace mqtt

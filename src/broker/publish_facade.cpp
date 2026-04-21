@@ -35,7 +35,6 @@ ReasonCode PublishFacade::handle_publish(Message &message,
                                          std::string_view client_id,
                                          std::string_view username,
                                          TopicAliasTable &alias_table) {
-  std::lock_guard<std::mutex> lock_guard(mutex_);
   statistics_collector_.on_message_inbound();
 
   TRACE_GUARD(&structured_tracer_, TraceLevel::Trace, "broker") {
