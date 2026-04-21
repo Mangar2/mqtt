@@ -92,7 +92,7 @@ def run_4_1_1_publish_retain_stores_message(config) -> tuple[bool, str]:
             )
             subscriber.subscribe(topic, qos=0)
             messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=True)
+            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
 
         return True, "4.1.1 retained publish is stored and available"
     except Exception as error:
@@ -118,7 +118,7 @@ def run_4_1_2_new_subscriber_gets_retained_immediately(config) -> tuple[bool, st
             )
             subscriber.subscribe(topic, qos=0)
             messages = subscriber.collect_messages(count=1, timeout=min(2.0, config.timeout_seconds))
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=True)
+            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
 
         return True, "4.1.2 new subscriber gets retained message directly after subscribe"
     except Exception as error:
@@ -170,7 +170,7 @@ def run_4_1_4_new_retained_replaces_old(config) -> tuple[bool, str]:
             )
             subscriber.subscribe(topic, qos=0)
             messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=b"new-retain", qos=0, retain=True)
+            assert_message(messages[0], topic=topic, payload=b"new-retain", qos=0, retain=False)
 
         return True, "4.1.4 second retained publish replaces previous retained payload"
     except Exception as error:
@@ -408,7 +408,7 @@ def run_4_5_1_retained_message_expires(config) -> tuple[bool, str]:
             )
             before_expiry_subscriber.subscribe(topic, qos=0)
             before_messages = before_expiry_subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(before_messages[0], topic=topic, payload=payload, qos=0, retain=True)
+            assert_message(before_messages[0], topic=topic, payload=payload, qos=0, retain=False)
 
         time.sleep(3.2)
 

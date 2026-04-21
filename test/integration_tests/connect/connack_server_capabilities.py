@@ -97,11 +97,38 @@ def run_1_3_1_connack_contains_receive_maximum(config) -> tuple[bool, str]:
 
 
 def run_1_3_2_connack_contains_maximum_qos(config) -> tuple[bool, str]:
-    return _run_connack_property_presence_test(
-        config,
-        case_label="1.3.2",
-        property_name="MaximumQoS",
-    )
+    process = None
+    try:
+        host, port, process = _start_isolated_broker()
+
+        with MqttClient(timeout_seconds=config.timeout_seconds) as client:
+            connack = client.connect(
+                host,
+                port,
+                client_id=_unique_client_id("connack-cap"),
+                clean_start=True,
+            )
+            assert_connack(connack, reason_code=0x00, session_present=False)
+
+            maximum_qos = _connack_property(connack, "MaximumQoS")
+            if maximum_qos is None:
+                return True, (
+                    "1.3.2 CONNACK omits MaximumQoS; "
+                    "effective server maximum QoS is 2 per MQTT 5.0"
+                )
+
+            maximum_qos_value = int(maximum_qos)
+            if maximum_qos_value not in (0, 1):
+                return False, (
+                    "1.3.2 failed: CONNACK MaximumQoS must be 0 or 1 when present, "
+                    f"got {maximum_qos_value}"
+                )
+
+        return True, f"1.3.2 CONNACK contains MaximumQoS={maximum_qos_value}"
+    except Exception as error:
+        return False, f"1.3.2 failed: {error}"
+    finally:
+        stop_broker(process)
 
 
 def run_1_3_3_connack_contains_retain_available(config) -> tuple[bool, str]:

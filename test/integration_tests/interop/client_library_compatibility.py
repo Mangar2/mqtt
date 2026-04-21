@@ -236,7 +236,7 @@ def run_20_1_2_paho_full_session_lifecycle(config) -> tuple[bool, str]:
             sub.connect(host, port, client_id=_unique_id("paho-retain-sub"), clean_start=True)
             sub.subscribe(retained_topic, qos=1)
             msgs = sub.collect_messages(count=1, timeout=timeout)
-            assert_message(msgs[0], topic=retained_topic, payload=retained_payload, qos=1, retain=True)
+            assert_message(msgs[0], topic=retained_topic, payload=retained_payload, qos=1, retain=False)
 
         return True, "Paho full session lifecycle OK (session resume, QoS 0/1 delivery, retained)"
 

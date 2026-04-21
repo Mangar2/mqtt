@@ -872,12 +872,11 @@ def run_2_4_4_server_maximum_qos_respected(config) -> tuple[bool, str]:
 
             connack_properties = getattr(sub_connack, "properties", None)
             maximum_qos = getattr(connack_properties, "MaximumQoS", None)
-            if maximum_qos is None:
-                return False, "2.4.4 CONNACK did not include MaximumQoS property"
-
-            max_qos_int = int(maximum_qos)
-            if max_qos_int < 0 or max_qos_int > 2:
-                return False, f"2.4.4 invalid MaximumQoS value {max_qos_int}"
+            max_qos_int = 2 if maximum_qos is None else int(maximum_qos)
+            if max_qos_int not in (0, 1, 2):
+                return False, f"2.4.4 invalid effective MaximumQoS value {max_qos_int}"
+            if maximum_qos is not None and max_qos_int == 2:
+                return False, "2.4.4 MaximumQoS property must be 0 or 1 when present"
 
             suback_codes = subscriber.subscribe(topic, qos=2)
             if not suback_codes:
