@@ -78,10 +78,14 @@ def assert_message(message: Any, topic: str, payload: bytes | str, qos: int, ret
     actual_retain = getattr(message, "retain", None)
 
     if actual_topic != topic:
-        raise AssertionError(f"message topic mismatch: expected {topic!r}, got {actual_topic!r}")
+        expected_topic_repr = repr(topic[:100] + "..." if len(topic) > 100 else topic)
+        actual_topic_repr = repr(actual_topic[:100] + "..." if isinstance(actual_topic, str) and len(actual_topic) > 100 else actual_topic)
+        raise AssertionError(f"message topic mismatch: expected {expected_topic_repr}, got {actual_topic_repr}")
     if actual_payload != expected_payload:
+        expected_payload_repr = repr(expected_payload[:100] + b"..." if len(expected_payload) > 100 else expected_payload)
+        actual_payload_repr = repr(actual_payload[:100] + b"..." if isinstance(actual_payload, bytes) and len(actual_payload) > 100 else actual_payload)
         raise AssertionError(
-            f"message payload mismatch: expected {expected_payload!r}, got {actual_payload!r}"
+            f"message payload mismatch: expected {expected_payload_repr}, got {actual_payload_repr}"
         )
     if int(actual_qos) != int(qos):
         raise AssertionError(f"message qos mismatch: expected {int(qos)}, got {actual_qos}")

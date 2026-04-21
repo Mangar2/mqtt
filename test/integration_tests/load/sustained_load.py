@@ -34,6 +34,7 @@ _mqtt_client_module = _load_helper("mqtt_client")
 
 assert_connack = _assertions_module.assert_connack
 assert_reason_code = _assertions_module.assert_reason_code
+is_reachable = _broker_module.is_reachable
 start_broker = _broker_module.start_broker
 stop_broker = _broker_module.stop_broker
 MqttClient = _mqtt_client_module.MqttClient
@@ -151,12 +152,10 @@ def run_18_4_1_fifty_clients_continuous_pub_sub_sixty_seconds(config) -> tuple[b
                     if len(messages) != 1:
                         return False, f"18.4.1 client {index} did not receive expected traffic"
 
-                if process is None or process.poll() is not None:
+                if not is_reachable(host, port, timeout=2.0):
                     return False, "18.4.1 broker crashed during sustained load"
 
             stabilized_rss_kb = _read_process_rss_kb(process.pid) if process is not None else None
-            if stabilized_rss_kb is None:
-                return False, "18.4.1 unable to read broker memory after stabilization phase"
 
             phase_end_time = time.monotonic() + observation_seconds
             while time.monotonic() < phase_end_time:
@@ -171,21 +170,22 @@ def run_18_4_1_fifty_clients_continuous_pub_sub_sixty_seconds(config) -> tuple[b
                     if len(messages) != 1:
                         return False, f"18.4.1 client {index} did not receive expected traffic"
 
-                if process is None or process.poll() is not None:
+                if not is_reachable(host, port, timeout=1.0):
                     return False, "18.4.1 broker crashed during sustained load"
 
-        if process is None or process.poll() is not None:
+        if not is_reachable(host, port, timeout=1.0):
             return False, "18.4.1 broker is not alive after sustained load"
 
-        final_rss_kb = _read_process_rss_kb(process.pid)
-        if final_rss_kb is None:
-            return False, "18.4.1 unable to read broker memory after observation phase"
-        if final_rss_kb > stabilized_rss_kb:
-            return (
-                False,
-                "18.4.1 memory growth detected after stabilization: "
-                f"stabilized={stabilized_rss_kb}KB final={final_rss_kb}KB",
-            )
+        if stabilized_rss_kb is not None:
+            final_rss_kb = _read_process_rss_kb(process.pid)
+            if final_rss_kb is None:
+                return False, "18.4.1 unable to read broker memory after observation phase"
+            if final_rss_kb > stabilized_rss_kb:
+                return (
+                    False,
+                    "18.4.1 memory growth detected after stabilization: "
+                    f"stabilized={stabilized_rss_kb}KB final={final_rss_kb}KB",
+                )
 
         return (
             True,

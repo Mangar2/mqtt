@@ -25,12 +25,14 @@ InflightStore::find_entry(std::vector<InflightEntry> &list, uint16_t packet_id,
 
 void InflightStore::create(std::string_view client_id,
                            const InflightEntry &entry) {
+  const std::lock_guard<std::mutex> lock(mutex_);
   entries_[std::string(client_id)].push_back(entry);
 }
 
 void InflightStore::update(std::string_view client_id, uint16_t packet_id,
                            InflightDirection direction,
                            InflightState new_state) {
+  const std::lock_guard<std::mutex> lock(mutex_);
   const auto map_iter = entries_.find(std::string(client_id));
   if (map_iter != entries_.end()) {
     auto entry_iter = find_entry(map_iter->second, packet_id, direction);
@@ -47,6 +49,7 @@ void InflightStore::update(std::string_view client_id, uint16_t packet_id,
 
 void InflightStore::remove(std::string_view client_id, uint16_t packet_id,
                            InflightDirection direction) {
+  const std::lock_guard<std::mutex> lock(mutex_);
   const auto map_iter = entries_.find(std::string(client_id));
   if (map_iter == entries_.end()) {
     return;
@@ -64,6 +67,7 @@ void InflightStore::remove(std::string_view client_id, uint16_t packet_id,
 
 std::vector<InflightEntry>
 InflightStore::entries_for(std::string_view client_id) const {
+  const std::lock_guard<std::mutex> lock(mutex_);
   const auto map_iter = entries_.find(std::string(client_id));
   if (map_iter == entries_.end()) {
     return {};
@@ -74,6 +78,7 @@ InflightStore::entries_for(std::string_view client_id) const {
 bool InflightStore::is_packet_id_in_use(
     std::string_view client_id, uint16_t packet_id,
     InflightDirection direction) const noexcept {
+  const std::lock_guard<std::mutex> lock(mutex_);
   const auto map_iter = entries_.find(std::string(client_id));
   if (map_iter == entries_.end()) {
     return false;
@@ -86,6 +91,7 @@ bool InflightStore::is_packet_id_in_use(
 }
 
 std::size_t InflightStore::size_for(std::string_view client_id) const noexcept {
+  const std::lock_guard<std::mutex> lock(mutex_);
   const auto map_iter = entries_.find(std::string(client_id));
   if (map_iter == entries_.end()) {
     return 0U;

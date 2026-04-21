@@ -858,25 +858,74 @@ def run_13_3_15_packet_too_large_95(config) -> tuple[bool, str]:
         stop_broker(process)
 
 
+def _13_3_16_subscribe_worker(
+    host: str,
+    port: int,
+    client_index: int,
+    base: str,
+    max_subs: int,
+    timeout_seconds: float,
+    result_list: list,
+) -> None:
+    """Subscribe up to max_subs topics; record (reason, index) if 0x97 or error is received."""
+    try:
+        with MqttClient(timeout_seconds=timeout_seconds) as client:
+            connack = client.connect(host, port, client_id=_unique_client_id(f"13-3-16-w{client_index}"), clean_start=True)
+            if connack.reason_code != 0x00:
+                result_list.append(("connack_failed", client_index, 0, connack.reason_code))
+                return
+            for index in range(1, max_subs + 1):
+                suback_codes = client.subscribe(f"{base}/c{client_index}/{index}", qos=0)
+                if not suback_codes:
+                    result_list.append(("missing_suback", client_index, index, 0))
+                    return
+                reason = int(suback_codes[0])
+                if reason == 0x97:
+                    result_list.append(("quota_exceeded", client_index, index, reason))
+                    return
+                if reason >= 0x80:
+                    result_list.append(("unexpected_error", client_index, index, reason))
+                    return
+    except Exception as exc:
+        result_list.append(("exception", client_index, 0, str(exc)))
+
+
 def run_13_3_16_quota_exceeded_97(config) -> tuple[bool, str]:
+    import threading
+
     process = None
     try:
         host, port, process = _start_isolated_broker()
 
-        with MqttClient(timeout_seconds=config.timeout_seconds) as client:
-            connack = client.connect(host, port, client_id=_unique_client_id("13-3-16"), clean_start=True)
-            assert_connack(connack, reason_code=0x00, session_present=False)
+        _NUM_CLIENTS = 8
+        _SUBS_PER_CLIENT = 16384
 
-            base = _unique_topic("13-3-16")
-            for index in range(1, 4097):
-                suback_codes = client.subscribe(f"{base}/{index}", qos=0)
-                if not suback_codes:
-                    return False, f"13.3.16 failed: missing SUBACK at subscription #{index}"
-                reason = int(suback_codes[0])
-                if reason == 0x97:
-                    return True, f"13.3.16 reason code 0x97 observed at subscription #{index}"
-                if reason >= 0x80 and reason != 0x97:
-                    return False, f"13.3.16 failed: expected 0x97 when quota exceeded, got 0x{reason:02X}"
+        base = _unique_topic("13-3-16")
+        results: list = []
+        threads = [
+            threading.Thread(
+                target=_13_3_16_subscribe_worker,
+                args=(host, port, i, base, _SUBS_PER_CLIENT, config.timeout_seconds, results),
+                daemon=True,
+            )
+            for i in range(_NUM_CLIENTS)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=config.timeout_seconds * 2)
+
+        for kind, client_index, index, value in results:
+            if kind == "quota_exceeded":
+                return True, f"13.3.16 reason code 0x97 observed (client #{client_index}, subscription #{index})"
+            if kind == "missing_suback":
+                return False, f"13.3.16 failed: missing SUBACK (client #{client_index}, subscription #{index})"
+            if kind == "unexpected_error":
+                return False, f"13.3.16 failed: unexpected reason 0x{value:02X} (client #{client_index}, subscription #{index})"
+            if kind == "exception":
+                return False, f"13.3.16 failed: {value}"
+            if kind == "connack_failed":
+                return False, f"13.3.16 failed: CONNACK reason 0x{value:02X} (client #{client_index})"
 
         return True, "13.3.16 not applicable: broker did not signal quota exhaustion in tested range"
     except Exception as error:

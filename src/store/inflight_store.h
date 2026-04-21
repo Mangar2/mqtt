@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -26,7 +27,7 @@ namespace mqtt {
  * represents one pending acknowledgement in the handshake state machine
  * (Module 5).
  *
- * Thread safety: none — external synchronisation required for concurrent use.
+ * Thread safety: all public methods are internally synchronized.
  */
 class InflightStore {
 public:
@@ -93,6 +94,9 @@ public:
   [[nodiscard]] std::size_t size_for(std::string_view client_id) const noexcept;
 
 private:
+  /// Guards all accesses to @ref entries_.
+  mutable std::mutex mutex_;
+
   /// Per-session list of in-flight entries.
   std::unordered_map<std::string, std::vector<InflightEntry>> entries_;
 

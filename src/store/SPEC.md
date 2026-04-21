@@ -78,6 +78,8 @@ Keyed by `client_id + direction`. Entries are uniquely identified by
 | `is_packet_id_in_use(client_id, packet_id, direction)` | Check whether a packet ID is currently registered (4.4.5). |
 | `size_for(client_id)` | Number of inflight entries for the given session. |
 
+Thread safety: `InflightStore` public methods are internally synchronized.
+
 ## Error handling
 
 `StoreException` (derived from `std::runtime_error`) is thrown for unrecoverable

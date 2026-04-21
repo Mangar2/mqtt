@@ -147,7 +147,9 @@ def run_19_3_1_extremely_deep_topic_subscription_handled(config) -> tuple[bool, 
 
 def run_19_3_2_maximum_topic_length_publish_handled(config) -> tuple[bool, str]:
     process = None
-    topic = "t" * 65535
+    _prefix = "19.3.2/"
+    topic = _prefix + "t" * (65535 - len(_prefix))
+    subscribe_filter = "19.3.2/#"
     payload = b"19.3.2-max-topic-length"
 
     try:
@@ -157,10 +159,10 @@ def run_19_3_2_maximum_topic_length_publish_handled(config) -> tuple[bool, str]:
         with MqttClient(timeout_seconds=max(timeout_seconds, 12.0)) as subscriber:
             connack = subscriber.connect(host, port, client_id=_unique_client_id("sub-19-3-2"), clean_start=True)
             assert_connack(connack, reason_code=0x00, session_present=False)
-            suback_codes = subscriber.subscribe("#", qos=0)
+            suback_codes = subscriber.subscribe(subscribe_filter, qos=1)
             if not suback_codes:
-                return False, "19.3.2 wildcard subscriber returned empty SUBACK"
-            assert_reason_code(suback_codes[0], 0x00)
+                return False, "19.3.2 subscriber returned empty SUBACK"
+            assert_reason_code(suback_codes[0], 0x01)
 
             with MqttClient(timeout_seconds=max(timeout_seconds, 12.0)) as publisher:
                 pub_connack = publisher.connect(
