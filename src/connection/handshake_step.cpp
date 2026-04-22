@@ -50,7 +50,8 @@ HandshakeOutcome on_connect_packet(ConnectionSession &session, Broker &broker,
   }
 
   auto outbound_queue = std::make_shared<OutboundQueue>();
-  broker.register_connection(connect_result.client_id, outbound_queue);
+  broker.register_connection(connect_result.client_id, outbound_queue,
+                             static_cast<int>(session.connection().fd()));
 
   std::shared_ptr<IAuthenticator> authenticator(
       &broker.authenticator(), [](IAuthenticator * /*unused*/) {});

@@ -41,12 +41,8 @@ struct WsReadChunk {
  *
  * ### Write path
  * `write_frame()` wraps MQTT bytes in a WS Binary frame and writes
- * synchronously.  `encode_frame()` (static) pre-frames bytes for insertion
- * into a `WriteQueue` sink that writes to the raw `TcpConnection`.
- *
- * ### Queue sink compatibility
- * Configure `WriteQueue::set_sink(...)` with a writer bound to `tcp()` and
- * call `encode_frame()` before `WriteQueue::enqueue()`.
+ * synchronously. `encode_frame()` (static) pre-frames bytes for insertion
+ * into non-blocking outbound socket buffers.
  *
  * Thread safety: none — external synchronisation required.
  */
@@ -89,12 +85,7 @@ public:
   [[nodiscard]] bool write_frame(std::span<const uint8_t> mqtt_bytes) noexcept;
 
   /**
-   * @brief Wrap @p mqtt_bytes in a WS Binary frame (for WriteQueue
-   * pre-framing).
-   *
-  * The returned bytes can be passed directly to `WriteQueue::enqueue()`.
-  * A configured queue sink can write them to the raw `TcpConnection` via
-  * `tcp()`.
+  * @brief Wrap @p mqtt_bytes in a WS Binary frame for outbound buffering.
    *
    * @param mqtt_bytes Raw MQTT packet bytes.
    * @return Encoded WS Binary frame bytes.

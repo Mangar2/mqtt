@@ -22,16 +22,16 @@
 #include "broker/broker.h"
 #include "broker/broker_config.h"
 #include "codec/packet/connect_codec.h"
-#include "client_session/client_session.h"
 #include "connection/client_handler.h"
-#include "connection/connect_phase_flow.h"
-#include "connection/runtime_phase_flow.h"
+#include "connection/connection_flow_support.h"
+#include "connection/connection_session.h"
 #include "executor/job_queue.h"
 #include "executor/job_scheduler.h"
+#include "network/connection_slot.h"
 #include "network/connection_table.h"
 #include "network/io_reactor.h"
 #include "network/socket_ops.h"
-#include "network/write_queue.h"
+#include "network/tcp_connection.h"
 
 using namespace mqtt;
 
@@ -168,68 +168,195 @@ TEST_CASE("process_accept_job_ignores_invalid_socket", "[connection]") {
   broker.shutdown();
 }
 
-TEST_CASE("establish_connect_session_times_out_when_deadline_is_expired",
-          "[connection]") {
+TEST_CASE("process_decode_job_closes_on_empty_read", "[connection]") {
+#ifdef _WIN32
+  SUCCEED("socketpair-based coverage test is POSIX-only");
+#else
   const BrokerConfig config = make_config();
   Broker broker(config);
   broker.startup();
 
-  TcpConnection connection(k_invalid_socket);
-  StreamBuffer stream_buffer;
-  WriteQueue write_queue;
-  std::optional<ConnectPacket> connect_packet;
-  ConnectResult connect_result;
-  std::atomic<bool> session_takeover_requested{false};
-  bool stopped = false;
+  IoReactor reactor;
+  reactor.start();
+  JobQueue queue;
+  JobScheduler scheduler(queue);
+  ConnectionTable table;
 
-  const bool result = establish_connect_session(
-      connection, nullptr, false, broker, stream_buffer, write_queue,
-      connect_packet, connect_result, session_takeover_requested,
-      [&stopped]() { stopped = true; },
-      std::chrono::steady_clock::now() - std::chrono::milliseconds(1));
+  const auto socket_pair = make_connected_socket_pair();
+  const SocketHandle accepted_socket = socket_pair.first;
+  const SocketHandle client_socket = socket_pair.second;
+  const int connection_fd = static_cast<int>(accepted_socket);
 
-  CHECK_FALSE(result);
-  CHECK(stopped);
+  client_handler::process_accept_job(
+      AcceptJobPayload{.socket_handle = accepted_socket,
+                       .websocket_connection = false},
+      table, reactor, scheduler, broker, config);
+  REQUIRE(table.find(connection_fd) != nullptr);
+
+  close_socket_handle(client_socket);
+  client_handler::process_decode_job(connection_fd, table, reactor, scheduler,
+                                     broker);
+  client_handler::process_close_job(connection_fd, table, reactor, broker);
+  CHECK(table.find(connection_fd) == nullptr);
+
+  reactor.stop();
+  broker.shutdown();
+#endif
+}
+
+TEST_CASE("process_decode_job_malformed_packet_submits_close", "[connection]") {
+#ifdef _WIN32
+  SUCCEED("socketpair-based coverage test is POSIX-only");
+#else
+  const BrokerConfig config = make_config();
+  Broker broker(config);
+  broker.startup();
+
+  IoReactor reactor;
+  reactor.start();
+  JobQueue queue;
+  JobScheduler scheduler(queue);
+  ConnectionTable table;
+
+  const auto socket_pair = make_connected_socket_pair();
+  const SocketHandle accepted_socket = socket_pair.first;
+  const SocketHandle client_socket = socket_pair.second;
+  const int connection_fd = static_cast<int>(accepted_socket);
+
+  client_handler::process_accept_job(
+      AcceptJobPayload{.socket_handle = accepted_socket,
+                       .websocket_connection = false},
+      table, reactor, scheduler, broker, config);
+  REQUIRE(table.find(connection_fd) != nullptr);
+
+  const std::vector<uint8_t> malformed_packet{0x10U, 0x00U};
+  const int write_result = ::send(static_cast<int>(client_socket),
+                                  malformed_packet.data(),
+                                  malformed_packet.size(), 0);
+  REQUIRE(write_result >= 0);
+
+  client_handler::process_decode_job(connection_fd, table, reactor, scheduler,
+                                     broker);
+  client_handler::process_close_job(connection_fd, table, reactor, broker);
+  CHECK(table.find(connection_fd) == nullptr);
+
+  close_socket_handle(client_socket);
+  reactor.stop();
+  broker.shutdown();
+#endif
+}
+
+TEST_CASE("process_drain_and_close_ignore_missing_entry", "[connection]") {
+  const BrokerConfig config = make_config();
+  Broker broker(config);
+  broker.startup();
+
+  IoReactor reactor;
+  reactor.start();
+  ConnectionTable table;
+
+  CHECK_NOTHROW(client_handler::process_drain_job(12345, table, reactor, broker));
+  CHECK_NOTHROW(client_handler::process_close_job(12345, table, reactor, broker));
+
+  reactor.stop();
   broker.shutdown();
 }
 
-TEST_CASE("run_connected_session_loop_marks_server_shutting_down_when_stopped",
-          "[connection]") {
+TEST_CASE("process_accept_job_ignores_duplicate_fd", "[connection]") {
+#ifdef _WIN32
+  SUCCEED("socketpair-based coverage test is POSIX-only");
+#else
   const BrokerConfig config = make_config();
   Broker broker(config);
   broker.startup();
+
+  IoReactor reactor;
+  reactor.start();
+  JobQueue queue;
+  JobScheduler scheduler(queue);
+  ConnectionTable table;
+
+  const auto socket_pair = make_connected_socket_pair();
+  const SocketHandle accepted_socket = socket_pair.first;
+  const SocketHandle client_socket = socket_pair.second;
+  const int connection_fd = static_cast<int>(accepted_socket);
+
+  client_handler::process_accept_job(
+      AcceptJobPayload{.socket_handle = accepted_socket,
+                       .websocket_connection = false},
+      table, reactor, scheduler, broker, config);
+  REQUIRE(table.find(connection_fd) != nullptr);
+
+  client_handler::process_accept_job(
+      AcceptJobPayload{.socket_handle = accepted_socket,
+                       .websocket_connection = false},
+      table, reactor, scheduler, broker, config);
+  CHECK(table.find(connection_fd) != nullptr);
+
+  client_handler::process_close_job(connection_fd, table, reactor, broker);
+  close_socket_handle(client_socket);
+  reactor.stop();
   broker.shutdown();
+#endif
+}
 
-  TcpConnection connection(k_invalid_socket);
-  ConnectPacket connect_packet;
-  connect_packet.client_id = Utf8String{"stopped-client"};
-  connect_packet.clean_start = true;
-  connect_packet.keep_alive = 10U;
+TEST_CASE("process_decode_job_handles_peer_eof_with_close_job", "[connection]") {
+#ifdef _WIN32
+  SUCCEED("socketpair-based coverage test is POSIX-only");
+#else
+  const BrokerConfig config = make_config();
+  Broker broker(config);
+  broker.startup();
 
-  ConnectResult connect_result;
-  connect_result.client_id = "stopped-client";
-  connect_result.reason_code = ReasonCode::Success;
+  IoReactor reactor;
+  reactor.start();
+  JobQueue queue;
+  JobScheduler scheduler(queue);
+  ConnectionTable table;
 
-  std::shared_ptr<IAuthenticator> authenticator(
-      &broker.authenticator(), [](IAuthenticator * /*unused*/) {});
-  auto outbound_queue = std::make_shared<OutboundQueue>();
-  ClientSession client_session(
-      connect_result.client_id, "", std::move(authenticator), outbound_queue,
-      broker.session_manager().inflight_store(), 10U, 65535U,
-      config.topic_alias_maximum,
-      std::chrono::seconds(config.qos_retransmit_timeout_seconds), 0U,
-      connect_result.auth_method);
+  const auto socket_pair = make_connected_socket_pair();
+  const SocketHandle accepted_socket = socket_pair.first;
+  const SocketHandle client_socket = socket_pair.second;
+  const int connection_fd = static_cast<int>(accepted_socket);
 
-  std::atomic<bool> session_takeover_requested{false};
-  StreamBuffer stream_buffer;
-  WriteQueue write_queue;
-  RuntimeDisconnectState disconnect_state;
+  client_handler::process_accept_job(
+      AcceptJobPayload{.socket_handle = accepted_socket,
+                       .websocket_connection = false},
+      table, reactor, scheduler, broker, config);
+  REQUIRE(table.find(connection_fd) != nullptr);
 
-  run_connected_session_loop(
-      connection, nullptr, false, connect_packet, connect_result,
-      session_takeover_requested, stream_buffer, client_session, broker,
-      write_queue, disconnect_state, config.receive_maximum);
+  ::shutdown(static_cast<int>(client_socket), SHUT_WR);
+  client_handler::process_decode_job(connection_fd, table, reactor, scheduler,
+                                     broker);
+  client_handler::process_close_job(connection_fd, table, reactor, broker);
+  CHECK(table.find(connection_fd) == nullptr);
 
-  CHECK(disconnect_state.clean_disconnect);
-  CHECK(disconnect_state.reason_code == ReasonCode::ServerShuttingDown);
+  close_socket_handle(client_socket);
+  reactor.stop();
+  broker.shutdown();
+#endif
+}
+
+TEST_CASE("process_drain_job_websocket_frame_path_and_write_error", "[connection]") {
+  const BrokerConfig config = make_config();
+  Broker broker(config);
+  broker.startup();
+
+  IoReactor reactor;
+  reactor.start();
+  ConnectionTable table;
+
+  auto connection = std::make_unique<TcpConnection>(k_invalid_socket);
+  auto session = std::make_unique<ConnectionSession>(
+      std::move(connection), nullptr, true, config);
+  session->pending_write_frames().push_back(encode_pingresp_packet());
+
+  REQUIRE(table.add(static_cast<int>(k_invalid_socket),
+                    ConnectionSlot(k_invalid_socket), std::move(session)));
+  client_handler::process_drain_job(static_cast<int>(k_invalid_socket), table,
+                                    reactor, broker);
+  CHECK(table.find(static_cast<int>(k_invalid_socket)) == nullptr);
+
+  reactor.stop();
+  broker.shutdown();
 }

@@ -119,12 +119,12 @@ needing to know about the WebSocket framing layer.
 - Used for in-band writes before the async drain thread starts.
 
 **`encode_frame(span<const uint8_t>)`** → `vector<uint8_t>` *(static)*
-- Wraps MQTT bytes in a WS Binary frame for pre-framing into `WriteQueue`.
+- Wraps MQTT bytes in a WS Binary frame for pre-framing into outbound buffers.
 
 **`set_receive_timeout(uint32_t ms)`** — delegates to the underlying `TcpConnection`.
 
 **`tcp()`** → `TcpConnection&` — returns the underlying connection for
-`WriteQueue::run_drain`.
+low-level writes when needed.
 
 ```cpp
 // Example usage in connection handler

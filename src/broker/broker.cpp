@@ -23,8 +23,9 @@
 #include "broker/publish_facade.h"
 #include "broker/subscribe_facade.h"
 #include "broker/tick_handler.h"
-#include "connection/client_handler.h"
 #include "connection/outbound_queue_bridge.h"
+#include "executor/connection_job.h"
+#include "executor/job_scheduler.h"
 
 namespace mqtt {
 
@@ -167,9 +168,13 @@ ReasonCode Broker::handle_publish(Message &msg, std::string_view client_id,
 }
 
 void Broker::register_connection(std::string_view client_id,
-                                 std::shared_ptr<OutboundQueue> queue) {
+                 std::shared_ptr<OutboundQueue> queue,
+                 int connection_fd) {
   const ConnectionUpsertResult upsert_result =
-      connection_registry_->upsert(client_id, queue);
+    connection_registry_->upsert(
+      client_id, queue,
+      connection_fd >= 0 ? std::make_optional(connection_fd)
+               : std::nullopt);
   if (upsert_result.replaced_existing && upsert_result.previous_queue && queue &&
       upsert_result.previous_queue != queue) {
     (void)transfer_pending_outbound_messages(*upsert_result.previous_queue, *queue);
@@ -197,6 +202,27 @@ void Broker::unregister_connection(std::string_view client_id) noexcept {
   disconnect_facade_->unregister_connection(client_id, nullptr);
 }
 
+void Broker::wake_outbound(std::string_view client_id) {
+  if (job_scheduler_ == nullptr || connection_registry_ == nullptr) {
+    return;
+  }
+
+  const std::optional<int> connection_fd = connection_registry_->fd_for(client_id);
+  if (!connection_fd.has_value()) {
+    return;
+  }
+
+  job_scheduler_->submit(ConnectionJob{
+      .type = JobType::Drain,
+      .connection_fd = *connection_fd,
+      .payload = DrainJobPayload{},
+  });
+}
+
+void Broker::set_job_scheduler(JobScheduler *job_scheduler) noexcept {
+  job_scheduler_ = job_scheduler;
+}
+
 bool Broker::tick(std::chrono::steady_clock::time_point now) {
   return tick_handler_->tick(now);
 }
@@ -216,12 +242,6 @@ bool Broker::shutdown_requested() noexcept { return shutdown_requested_.load(); 
 void Broker::handle_signal(int /*sig*/) noexcept { shutdown_requested_.store(true); }
 
 void Broker::create_modules() {
-  auto client_handler_callback = [this](std::unique_ptr<TcpConnection> connection,
-                                        bool is_ws) {
-    ClientHandler handler;
-    handler.run(std::move(connection), *this, config_, is_ws);
-  };
-
   BrokerModuleFactory::create(
       config_, session_persistence_, retained_persistence_, inflight_persistence_,
       offline_queue_persistence_, session_store_, retained_store_,
@@ -231,11 +251,7 @@ void Broker::create_modules() {
       subscription_orchestrator_, message_router_, connection_registry_,
       will_store_, will_delay_timer_, will_publisher_, stats_collector_,
       structured_tracer_, sys_publisher_, connection_manager_,
-      std::move(client_handler_callback));
-
-  if (connection_manager_) {
-    connection_manager_->bind_runtime(*this, config_);
-  }
+      [this](std::string_view client_id) { wake_outbound(client_id); }, *this);
 
   enhanced_auth_registry_ = std::make_unique<EnhancedAuthRegistry>();
   connect_facade_ = std::make_unique<ConnectFacade>(

@@ -5,7 +5,6 @@
 
 #include "connection/connection_flow_support.h"
 
-#include <array>
 #include <cstddef>
 
 #include "codec/codec_error.h"
@@ -16,14 +15,11 @@
 #include "data_model/packet/packet_type.h"
 #include "network/stream_buffer.h"
 #include "network/tcp_connection.h"
-#include "network/write_queue.h"
 #include "transport/websocket_transport.h"
 
 namespace mqtt {
 
 namespace {
-
-constexpr std::size_t k_transport_read_chunk_size = 4096U;
 
 [[nodiscard]] bool requests_problem_information(
     const std::vector<Property> &properties) {
@@ -147,14 +143,6 @@ std::vector<Property> build_protocol_error_disconnect_properties(
                    .value = Utf8String{std::string(reason_text)}}};
 }
 
-bool enqueue_frame(WriteQueue &write_queue, WriteBuffer frame,
-                   bool is_websocket) {
-  if (is_websocket) {
-    return write_queue.enqueue(WebSocketTransport::encode_frame(frame));
-  }
-  return write_queue.enqueue(std::move(frame));
-}
-
 void write_frame_direct(TcpConnection &connection,
                         WebSocketTransport *ws_transport, WriteBuffer frame,
                         bool is_websocket) {
@@ -165,38 +153,6 @@ void write_frame_direct(TcpConnection &connection,
     return;
   }
   (void)connection.write(frame);
-}
-
-TransportReadChunk read_transport_chunk(TcpConnection &connection,
-                                        WebSocketTransport *ws_transport) {
-  if (ws_transport != nullptr) {
-    WsReadChunk ws_chunk = ws_transport->read_chunk();
-    return {.data = std::move(ws_chunk.data),
-            .timed_out = ws_chunk.timed_out,
-            .eof = ws_chunk.eof,
-            .error = false};
-  }
-
-  std::array<uint8_t, k_transport_read_chunk_size> raw_buffer{};
-  const std::ptrdiff_t bytes_read = connection.read(raw_buffer);
-  if (bytes_read > 0) {
-    return {.data = std::vector<uint8_t>(
-                raw_buffer.begin(),
-                raw_buffer.begin() + static_cast<std::size_t>(bytes_read)),
-            .timed_out = false,
-            .eof = false,
-            .error = false};
-  }
-
-  if (bytes_read == 0) {
-    return {.data = {}, .timed_out = false, .eof = true, .error = false};
-  }
-
-  if (connection.last_read_timed_out()) {
-    return {.data = {}, .timed_out = true, .eof = false, .error = false};
-  }
-
-  return {.data = {}, .timed_out = false, .eof = false, .error = true};
 }
 
 void set_receive_timeout(TcpConnection &connection,

@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <memory>
+#include <string_view>
 
 #include "auth/anonymous_authenticator.h"
 #include "auth/authenticator.h"
@@ -40,6 +41,8 @@
 #include "will_manager/will_store.h"
 
 namespace mqtt {
+
+class Broker;
 
 /**
  * @brief Factory that creates and wires broker module instances.
@@ -79,8 +82,8 @@ public:
       std::unique_ptr<StructuredTracer> &structured_tracer,
       std::unique_ptr<SysTopicPublisher> &sys_publisher,
       std::unique_ptr<ConnectionManager> &connection_manager,
-      std::function<void(std::unique_ptr<TcpConnection>, bool)>
-          client_handler_callback);
+        std::function<void(std::string_view)> wake_outbound_callback,
+        Broker &broker);
 };
 
 } // namespace mqtt

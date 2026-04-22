@@ -22,8 +22,12 @@
 |-----------|----------|-------|----------|
 | `process_accept_decode_drain_and_close_job_roundtrip` | End-to-end stateless job flow for one TCP connection | accepted socket + CONNECT frame + decode/drain/close processing | table entry created, CONNACK written to peer socket, entry removed on close |
 | `process_accept_job_ignores_invalid_socket` | Invalid accept payload guard | `AcceptJobPayload{socket_handle=k_invalid_socket}` | no table entry created |
-| `establish_connect_session_times_out_when_deadline_is_expired` | CONNECT handshake timeout branch | expired handshake deadline with no transport data | function returns false and stop callback invoked |
-| `run_connected_session_loop_marks_server_shutting_down_when_stopped` | Runtime loop shutdown branch | broker stopped before runtime loop starts | disconnect state set to clean `ServerShuttingDown` |
+| `process_decode_job_closes_on_empty_read` | Decode path schedules close on peer EOF | accepted socket with peer half-close | connection entry can be closed and removed |
+| `process_decode_job_malformed_packet_submits_close` | Decode path handles malformed packet bytes | accepted socket with malformed frame bytes | close path triggered and entry removed |
+| `process_drain_and_close_ignore_missing_entry` | Drain/close operations tolerate unknown fd | empty table and unknown fd | no throw and no side effects |
+| `process_accept_job_ignores_duplicate_fd` | Duplicate fd add guard in accept path | same accepted fd submitted twice | second add ignored, existing entry retained |
+| `process_decode_job_handles_peer_eof_with_close_job` | Decode path handles `read == 0` EOF branch | accepted socket with peer write-shutdown | close path is scheduled and cleanup succeeds |
+| `process_drain_job_websocket_frame_path_and_write_error` | WS frame append + write error close path | websocket session with pending frame and invalid socket | entry is finalized and removed |
 
 ## ConnectionStateMachine (7.1)
 

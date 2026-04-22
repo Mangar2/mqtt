@@ -69,8 +69,8 @@ void BrokerModuleFactory::create(
     std::unique_ptr<StructuredTracer> &structured_tracer,
     std::unique_ptr<SysTopicPublisher> &sys_publisher,
     std::unique_ptr<ConnectionManager> &connection_manager,
-    std::function<void(std::unique_ptr<TcpConnection>, bool)>
-        client_handler_callback) {
+    std::function<void(std::string_view)> wake_outbound_callback,
+    Broker &broker) {
   session_persistence = std::make_unique<SessionPersistence>(config.persistence_dir);
   retained_persistence =
       std::make_unique<RetainedMessagePersistence>(config.persistence_dir);
@@ -123,9 +123,10 @@ void BrokerModuleFactory::create(
                                 std::string_view client_id) -> bool {
     return registry_ptr->contains(client_id);
   };
-  auto deliver_function =
+    auto deliver_function =
       [registry_ptr = connection_registry.get(), stats_ptr = &statistics_collector,
-       tracer_ptr = &structured_tracer, router_config = config](
+      tracer_ptr = &structured_tracer, router_config = config,
+      wake_outbound_callback = std::move(wake_outbound_callback)](
           std::string_view client_id, const Message &message) {
         std::shared_ptr<OutboundQueue> queue = registry_ptr->find(client_id);
         if (!queue) {
@@ -165,6 +166,9 @@ void BrokerModuleFactory::create(
         if (!pushed) {
           throw MessageRouterException(MessageRouterError::QueueFull,
                                        "online outbound queue capacity exceeded");
+        }
+        if (wake_outbound_callback) {
+          wake_outbound_callback(client_id);
         }
       };
 
@@ -207,8 +211,7 @@ void BrokerModuleFactory::create(
       std::move(sys_publish_function));
 
   connection_manager = std::make_unique<ConnectionManager>(
-      config.mqtt_port, config.ws_port, std::move(client_handler_callback),
-      std::chrono::seconds(2), 2U,
+      config.mqtt_port, config.ws_port, broker, config, 2U,
       static_cast<std::size_t>(std::max(2U, config.max_connections)),
       structured_tracer.get());
 }

@@ -117,30 +117,6 @@ field (variable-byte-integer at offset 1–4) and returns them one at a time.
 
 ---
 
-### `WriteQueue` (6.3)
-
-**Purpose:** Thread-safe queue of outgoing serialized packets with optional
-immediate sink flushing.
-
-**Public API:**
-
-| Method | Description |
-|--------|-------------|
-| `WriteQueue(max_bytes)` | Create queue with capacity limit (default 64 KiB) |
-| `set_sink(writer)` | Optional sink callback for immediate flush behavior |
-| `enqueue(vector<uint8_t>)` → `bool` | Add packet; false = queue full (backpressure) |
-| `drain(TcpConnection&)` | Blocking: write all queued packets then return |
-| `stop()` | Mark queue stopped and reject future enqueue calls |
-| `is_full()` → `bool` | True when queued bytes ≥ max_bytes |
-| `is_empty()` → `bool` | True when queue holds no packets |
-| `queued_bytes()` → `size_t` | Current total byte count in the queue |
-
-**Constraints:**
-- `enqueue`, `set_sink`, and `stop` are safe to call from different threads.
-- Backpressure: `enqueue` returns `false` (does not throw) when at capacity.
-
----
-
 ### `SocketOps` (threading-refactoring step 01)
 
 **Purpose:** Provide non-blocking one-shot helpers around socket syscalls.

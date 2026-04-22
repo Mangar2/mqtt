@@ -355,3 +355,23 @@ TEST_CASE("session_manager_inflight_store_accessor_returns_shared_store",
   SessionManagerFixture fix;
   CHECK(&fix.manager.inflight_store() == &fix.inflight_store);
 }
+
+TEST_CASE("session_manager_disconnect_expiry_override_validation_paths",
+          "[session_manager]") {
+  SessionManagerFixture fix;
+
+  CHECK(fix.manager.is_disconnect_expiry_override_valid("missing", std::nullopt));
+  CHECK(fix.manager.is_disconnect_expiry_override_valid(
+      "missing", std::optional<uint32_t>{0U}));
+  CHECK_FALSE(fix.manager.is_disconnect_expiry_override_valid(
+      "missing", std::optional<uint32_t>{1U}));
+
+  fix.manager.handle_connect(make_connect("c1", true, 30U), []() {});
+  CHECK(fix.manager.is_disconnect_expiry_override_valid(
+      "c1", std::optional<uint32_t>{2U}));
+}
+
+TEST_CASE("session_manager_cleanup_expired_empty_noop", "[session_manager]") {
+  SessionManagerFixture fix;
+  CHECK(fix.manager.cleanup_expired(k_epoch).empty());
+}

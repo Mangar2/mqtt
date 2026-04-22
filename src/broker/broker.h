@@ -63,6 +63,7 @@ class DisconnectFacade;
 class PublishFacade;
 class SubscribeFacade;
 class TickHandler;
+class JobScheduler;
 
 /**
  * @brief Top-level broker orchestrator for the MQTT 5.0 broker (Module 15).
@@ -347,7 +348,8 @@ public:
    * @param queue      Shared outbound message queue for this client.
    */
   void register_connection(std::string_view client_id,
-                           std::shared_ptr<OutboundQueue> queue);
+                           std::shared_ptr<OutboundQueue> queue,
+                           int connection_fd = -1);
 
   /**
    * @brief Unregister a connection (e.g. on disconnect or close).
@@ -357,6 +359,10 @@ public:
    * @param client_id Client identifier to remove.
    */
   void unregister_connection(std::string_view client_id) noexcept;
+
+  void wake_outbound(std::string_view client_id);
+
+  void set_job_scheduler(JobScheduler *job_scheduler) noexcept;
 
   //  Signal handling (15.3.3)
 
@@ -458,6 +464,8 @@ private:
   std::unique_ptr<PublishFacade> publish_facade_;
   std::unique_ptr<SubscribeFacade> subscribe_facade_;
   std::unique_ptr<TickHandler> tick_handler_;
+
+  JobScheduler *job_scheduler_{nullptr};
 
   //  Signal flag
 

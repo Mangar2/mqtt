@@ -86,7 +86,6 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `network/tcp_connection.h/.cpp`                | 6.1.3    | `TcpConnection` — owns a connected socket fd; blocking read/write/close |
 | `network/tcp_listener.h/.cpp`                  | 6.1.1–2  | `TcpListener` — opens server socket, blocks on accept, hands off connections |
 | `network/stream_buffer.h/.cpp`                 | 6.2      | `StreamBuffer` — accumulates TCP bytes, extracts complete MQTT packets via VBI framing |
-| `network/write_queue.h/.cpp`                   | 6.3      | `WriteQueue` — thread-safe outgoing packet queue; async drain with backpressure |
 | `network/socket_ops.h/.cpp`                    | step 01  | Non-blocking socket helper functions (`set_nonblocking`, `nb_read`, `nb_write`, `nb_accept`) |
 | `network/connection_slot.h/.cpp`               | step 01  | Per-connection fd + read/write ring-buffer state and connection phase tracking |
 | `network/connection_table.h/.cpp`              | step 01, step 05 | `ConnectionTable` — thread-safe ownership table of `Entry { ConnectionSlot, ConnectionSession }` by fd |
@@ -110,7 +109,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `connection/outbound_drain_step.h/.cpp` | step 05 | Drains session outbound frames into pending encoded-write storage |
 | `connection/close_step.h/.cpp` | step 05 | Finalizes broker disconnect/lost handling for one session |
 | `connection/outbound_queue_bridge.h/.cpp` | 24 | Outbound queue bridge helpers for draining and transferring pending messages |
-| `connection/connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, IoReactor listener registration, and tracked client-thread lifecycle |
+| `connection/connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, IoReactor listener registration, and worker job dispatch |
 
 ## `executor/` sub-modules
 

@@ -24,14 +24,6 @@ namespace mqtt {
 class StreamBuffer;
 class TcpConnection;
 class WebSocketTransport;
-class WriteQueue;
-
-struct TransportReadChunk {
-  std::vector<uint8_t> data;
-  bool timed_out{false};
-  bool eof{false};
-  bool error{false};
-};
 
 struct RuntimeDisconnectState {
   bool clean_disconnect{false};
@@ -61,14 +53,9 @@ struct RuntimeDisconnectState {
 [[nodiscard]] std::vector<Property> build_protocol_error_disconnect_properties(
     const ConnectPacket &connect_packet, std::string_view reason_text);
 
-[[nodiscard]] bool enqueue_frame(WriteQueue &write_queue, WriteBuffer frame,
-                                 bool is_websocket);
 void write_frame_direct(TcpConnection &connection,
                         WebSocketTransport *ws_transport, WriteBuffer frame,
                         bool is_websocket);
-
-[[nodiscard]] TransportReadChunk read_transport_chunk(
-    TcpConnection &connection, WebSocketTransport *ws_transport);
 
 void set_receive_timeout(TcpConnection &connection,
                          WebSocketTransport *ws_transport,

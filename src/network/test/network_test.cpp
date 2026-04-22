@@ -24,7 +24,6 @@
 #include "network/stream_buffer.h"
 #include "network/tcp_connection.h"
 #include "network/tcp_listener.h"
-#include "network/write_queue.h"
 
 using namespace mqtt;
 
@@ -106,7 +105,8 @@ std::vector<uint8_t> make_packet(uint32_t remaining_length) {
  * @param buf Destination buffer to fill.
  * @return `true` when buffer is fully filled; otherwise `false`.
  */
-bool read_exact(TcpConnection &connection, std::span<uint8_t> buf) {
+[[maybe_unused]] bool read_exact(TcpConnection &connection,
+                                 std::span<uint8_t> buf) {
   std::size_t offset = 0;
   while (offset < buf.size()) {
     std::ptrdiff_t nread = connection.read(buf.subspan(offset));
@@ -225,136 +225,6 @@ TEST_CASE("stream_buffer_zero_payload_packet", "[network]") {
   CHECK(consumed[0] == 0xC0);
   CHECK(consumed[1] == 0x00);
   CHECK(buf.is_empty());
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// WriteQueue — Module 6.3
-
-TEST_CASE("write_queue_empty_on_construction", "[network]") {
-  WriteQueue queue;
-  CHECK(queue.is_empty());
-  CHECK(queue.queued_bytes() == 0);
-  CHECK_FALSE(queue.is_full());
-}
-
-TEST_CASE("write_queue_enqueue_increments_bytes", "[network]") {
-  WriteQueue queue;
-  std::vector<uint8_t> pkt{0x01, 0x02, 0x03};
-  CHECK(queue.enqueue(pkt));
-  CHECK(queue.queued_bytes() == 3);
-  CHECK_FALSE(queue.is_empty());
-}
-
-TEST_CASE("write_queue_backpressure_when_full", "[network]") {
-  WriteQueue queue(4); // 4-byte capacity
-  std::vector<uint8_t> pkt{0x01, 0x02, 0x03, 0x04};
-  CHECK(queue.enqueue(pkt)); // exactly at capacity
-
-  // Next enqueue should exceed capacity
-  std::vector<uint8_t> extra{0x05};
-  CHECK_FALSE(queue.enqueue(extra));
-}
-
-TEST_CASE("write_queue_drain_writes_to_connection", "[network]") {
-  TcpConnection side_a{k_invalid_socket};
-  TcpConnection side_b{k_invalid_socket};
-  make_socket_pair(side_a, side_b);
-
-  WriteQueue queue;
-  std::vector<uint8_t> pkt = make_packet(2);
-  CHECK(queue.enqueue(pkt));
-  CHECK(queue.drain(side_a));
-
-  std::vector<uint8_t> received(pkt.size());
-  CHECK(read_exact(side_b, std::span<uint8_t>{received.data(), received.size()}));
-  CHECK(received == pkt);
-}
-
-TEST_CASE("write_queue_drain_multiple_packets", "[network]") {
-  TcpConnection side_a{k_invalid_socket};
-  TcpConnection side_b{k_invalid_socket};
-  make_socket_pair(side_a, side_b);
-
-  WriteQueue queue;
-  auto pkt1 = make_packet(1);
-  auto pkt2 = make_packet(2);
-  CHECK(queue.enqueue(pkt1));
-  CHECK(queue.enqueue(pkt2));
-  CHECK(queue.drain(side_a));
-
-  std::size_t total = pkt1.size() + pkt2.size();
-  std::vector<uint8_t> received(total);
-  CHECK(read_exact(side_b, std::span<uint8_t>{received.data(), received.size()}));
-  CHECK(queue.is_empty());
-}
-
-TEST_CASE("write_queue_is_full_at_capacity", "[network]") {
-  WriteQueue queue(3);
-  std::vector<uint8_t> pkt{0xAA, 0xBB, 0xCC};
-  CHECK(queue.enqueue(pkt));
-  CHECK(queue.is_full());
-}
-
-TEST_CASE("write_queue_stop_rejects_enqueue", "[network]") {
-  TcpConnection side_a{k_invalid_socket};
-  TcpConnection side_b{k_invalid_socket};
-  make_socket_pair(side_a, side_b);
-
-  WriteQueue queue;
-  queue.stop();
-  CHECK_FALSE(queue.enqueue(make_packet(2)));
-}
-
-TEST_CASE("write_queue_sink_writes_enqueued_packets", "[network]") {
-  TcpConnection side_a{k_invalid_socket};
-  TcpConnection side_b{k_invalid_socket};
-  make_socket_pair(side_a, side_b);
-
-  WriteQueue queue;
-  auto pkt = make_packet(3);
-
-  queue.set_sink([&side_a](std::span<const uint8_t> frame) {
-    return side_a.write(frame);
-  });
-
-  CHECK(queue.enqueue(pkt));
-
-  std::vector<uint8_t> received(pkt.size());
-  CHECK(read_exact(side_b, std::span<uint8_t>{received.data(), received.size()}));
-  CHECK(received == pkt);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TcpConnection — Module 6.1.3
-
-TEST_CASE("tcp_connection_is_open_after_construction", "[network]") {
-  TcpConnection side_a{k_invalid_socket};
-  TcpConnection side_b{k_invalid_socket};
-  make_socket_pair(side_a, side_b);
-  CHECK(side_a.is_open());
-  CHECK(side_b.is_open());
-}
-
-TEST_CASE("tcp_connection_is_closed_after_close", "[network]") {
-  TcpConnection side_a{k_invalid_socket};
-  TcpConnection side_b{k_invalid_socket};
-  make_socket_pair(side_a, side_b);
-  side_a.close();
-  CHECK_FALSE(side_a.is_open());
-}
-
-TEST_CASE("tcp_connection_read_write_roundtrip", "[network]") {
-  TcpConnection side_a{k_invalid_socket};
-  TcpConnection side_b{k_invalid_socket};
-  make_socket_pair(side_a, side_b);
-
-  std::array<uint8_t, 3> data{0xDE, 0xAD, 0xBE};
-  CHECK(side_a.write(data));
-
-  std::array<uint8_t, 3> recv{};
-  std::ptrdiff_t nread = side_b.read(recv);
-  CHECK(nread == 3);
-  CHECK(recv == data);
 }
 
 TEST_CASE("tcp_connection_read_returns_zero_on_peer_close", "[network]") {

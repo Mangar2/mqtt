@@ -6,6 +6,7 @@
  */
 
 #include <memory>
+#include <optional>
 #include <shared_mutex>
 #include <string>
 #include <string_view>
@@ -23,6 +24,7 @@ struct ConnectionUpsertResult {
   bool replaced_existing{false};
   std::size_t active_connections{0U};
   std::shared_ptr<OutboundQueue> previous_queue;
+  std::optional<int> previous_fd;
 };
 
 /**
@@ -32,6 +34,12 @@ struct ConnectionRemoveResult {
   bool removed{false};
   std::size_t active_connections_before{0U};
   std::shared_ptr<OutboundQueue> removed_queue;
+  std::optional<int> removed_fd;
+};
+
+struct ActiveConnectionEntry {
+  std::shared_ptr<OutboundQueue> queue;
+  std::optional<int> fd;
 };
 
 /**
@@ -43,7 +51,8 @@ struct ConnectionRemoveResult {
 class ActiveConnectionRegistry {
 public:
   [[nodiscard]] ConnectionUpsertResult
-  upsert(std::string_view client_id, std::shared_ptr<OutboundQueue> queue);
+    upsert(std::string_view client_id, std::shared_ptr<OutboundQueue> queue,
+      std::optional<int> fd);
 
   [[nodiscard]] ConnectionRemoveResult
   remove_if_matches(std::string_view client_id,
@@ -54,6 +63,8 @@ public:
 
   [[nodiscard]] bool contains(std::string_view client_id) const;
 
+  [[nodiscard]] std::optional<int> fd_for(std::string_view client_id) const;
+
   [[nodiscard]] std::size_t size() const noexcept;
 
   [[nodiscard]] std::vector<std::shared_ptr<OutboundQueue>>
@@ -61,8 +72,7 @@ public:
 
 private:
   mutable std::shared_mutex mutex_;
-  std::unordered_map<std::string, std::shared_ptr<OutboundQueue>>
-      active_connections_;
+  std::unordered_map<std::string, ActiveConnectionEntry> active_connections_;
 };
 
 } // namespace mqtt
