@@ -13,6 +13,7 @@ C++20 coding rules for this project.
 - more than 600 loc is a hard limit. Ask for refactoring once it is larger.
 - NEVER add NOLINT comments outside test Files
 - use auto
+- Never use mutex only as name for mutexes. Always name a mutex according to the objekt it protects (e.g. message_list_mutex_)
 
 ## Compiler warnings
 

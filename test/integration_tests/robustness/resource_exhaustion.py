@@ -132,8 +132,8 @@ def run_19_3_1_extremely_deep_topic_subscription_handled(config) -> tuple[bool, 
                     )
                     assert_connack(pub_connack, reason_code=0x00, session_present=False)
                     assert_reason_code(publisher.publish(deep_topic, payload, qos=0), 0x00)
-                messages = subscriber.collect_messages(count=1, timeout=max(timeout_seconds, 6.0))
-                assert_message(messages[0], topic=deep_topic, payload=payload, qos=0, retain=False)
+                messages = subscriber.collect_message_for_topic(expected_topic=deep_topic, timeout=max(timeout_seconds, 6.0))
+                assert_message(messages, topic=deep_topic, payload=payload, qos=0, retain=False)
             elif suback_reason < 0x80:
                 return False, f"19.3.1 unexpected SUBACK reason code 0x{suback_reason:02X}"
 
@@ -172,8 +172,8 @@ def run_19_3_2_maximum_topic_length_publish_handled(config) -> tuple[bool, str]:
                 publish_reason = int(publisher.publish(topic, payload, qos=1))
 
             if publish_reason == 0x00:
-                messages = subscriber.collect_messages(count=1, timeout=max(timeout_seconds, 12.0))
-                assert_message(messages[0], topic=topic, payload=payload, qos=1, retain=False)
+                messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(timeout_seconds, 12.0))
+                assert_message(messages, topic=topic, payload=payload, qos=1, retain=False)
             elif publish_reason < 0x80:
                 return False, f"19.3.2 unexpected PUBACK reason code 0x{publish_reason:02X}"
 
@@ -220,8 +220,7 @@ def run_19_3_3_maximum_properties_publish_parsed(config) -> tuple[bool, str]:
                     0x00,
                 )
 
-            messages = subscriber.collect_messages(count=1, timeout=max(timeout_seconds, 8.0))
-            message = messages[0]
+            message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(timeout_seconds, 8.0))
             assert_message(message, topic=topic, payload=payload, qos=1, retain=False)
 
             inbound_user_properties = getattr(getattr(message, "properties", None), "UserProperty", None)

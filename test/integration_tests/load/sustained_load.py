@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from contextlib import ExitStack
 import importlib.util
-import os
 from pathlib import Path
 import socket
 import subprocess
@@ -13,9 +12,6 @@ import uuid
 
 
 _SESSION_EXPIRY_SECONDS = 300
-_WRITE_QUEUE_BYTES_HIGH = 4 * 1024 * 1024
-_MAX_QUEUED_MESSAGES_HIGH = 1000
-_BROKER_MANAGED_ENV = "MQTT_INTEGRATION_BROKER_MANAGED"
 
 
 def _load_helper(module_name: str):
@@ -58,9 +54,6 @@ def _start_isolated_broker(overrides: dict[str, object] | None = None):
         "network.ws_port": 0,
         "broker.allow_anonymous": True,
     }
-    if os.environ.get(_BROKER_MANAGED_ENV, "").strip() != "0":
-        effective_overrides["broker.write_queue_max_bytes"] = _WRITE_QUEUE_BYTES_HIGH
-        effective_overrides["broker.max_queued_messages"] = _MAX_QUEUED_MESSAGES_HIGH
     if overrides is not None:
         effective_overrides.update(overrides)
 
@@ -217,7 +210,15 @@ def run_18_4_2_retained_store_thousand_entries_returns_correct_retained(config) 
                 topic = f"{topic_root}/{index}"
                 payload = f"retained-18.4.2-{index}".encode("utf-8")
                 expected[topic] = payload
-                assert_reason_code(publisher.publish(topic, payload, qos=0, retain=True), 0x00)
+                # Use QoS1 as a processing barrier so all retained writes are
+                # acknowledged by the broker before replay validation starts.
+                publish_reason = publisher.publish(topic, payload, qos=1, retain=True)
+                if publish_reason not in (0x00, 0x10):
+                    return (
+                        False,
+                        "18.4.2 retained publish failed: "
+                        f"topic={topic} reason=0x{publish_reason:02X}",
+                    )
 
         with _connect_client(
             host,

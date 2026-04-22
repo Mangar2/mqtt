@@ -590,8 +590,8 @@ def run_9_2_3_too_large_message_dropped_for_limited_subscriber(config) -> tuple[
                     assert_connack(pub_connack, reason_code=0x00, session_present=False)
                     assert_reason_code(publisher.publish(topic, large_payload, qos=0), 0x00)
 
-                messages = regular_subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-                assert_message(messages[0], topic=topic, payload=large_payload, qos=0, retain=False)
+                messages = regular_subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+                assert_message(messages, topic=topic, payload=large_payload, qos=0, retain=False)
 
             limited_subscriber.settimeout(min(1.2, max(0.3, config.timeout_seconds / 3)))
             try:

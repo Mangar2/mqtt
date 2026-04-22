@@ -44,7 +44,9 @@ class StructuredTracer;
  * When a client reconnects, flush_offline_queue() drains the buffer, discards
  * any expired messages, and delivers the rest via DeliverFn (12.3.2).
  *
- * Thread safety: none — external synchronisation required.
+ * Thread safety: callback registration/access for
+ * `on_offline_queue_changed_` is synchronized via `std::mutex`.
+ * Other collaborator access relies on collaborator-internal synchronization.
  */
 class MessageRouter {
 public:
@@ -75,10 +77,13 @@ public:
    * connected.
    * @param deliver           Callback that forwards a message to an online
    * client.
+    * @param structured_tracer Optional diagnostics tracer; nullptr disables
+    * trace emission.
    */
   MessageRouter(InboundPublishProcessor &processor, OfflineQueue &offline_queue,
                 SharedSubscriptionDispatcher &shared_dispatcher,
-                IsOnlineFn is_online, DeliverFn deliver);
+             IsOnlineFn is_online, DeliverFn deliver,
+                StructuredTracer *structured_tracer = nullptr) noexcept;
 
   /**
    * @brief Route one inbound PUBLISH message to all matching subscribers
@@ -156,13 +161,6 @@ public:
                             std::chrono::steady_clock::now());
 
   /**
-   * @brief Attach optional structured tracer for runtime diagnostics.
-   *
-   * @param tracer Tracer instance; nullptr disables trace emission.
-   */
-  void set_tracer(StructuredTracer *tracer) noexcept;
-
-  /**
    * @brief Register a write-through callback invoked after every offline queue
    *        mutation (13.4).
    *
@@ -185,14 +183,20 @@ private:
   void dispatch_item(const DeliveryItem &item,
                      std::chrono::steady_clock::time_point now);
 
+  [[nodiscard]] std::function<void()>
+  snapshot_on_offline_queue_changed() const;
+  void set_on_offline_queue_changed_callback(
+      std::function<void()> callback) noexcept;
+  void emit_on_offline_queue_changed() const noexcept;
+
   InboundPublishProcessor &processor_; ///< 12.1 — inbound pre-processing.
-  mutable std::mutex mutex_;
   OfflineQueue &offline_queue_;        ///< 12.3 — offline message buffer.
   SharedSubscriptionDispatcher
       &shared_dispatcher_; ///< 12.5 — shared subscription dispatch.
   IsOnlineFn is_online_;   ///< Online presence predicate.
   DeliverFn deliver_;      ///< Online delivery callback.
-  StructuredTracer *structured_tracer_{nullptr};
+  StructuredTracer *const structured_tracer_;
+  mutable std::mutex on_offline_queue_changed_callback_mutex_;
   std::function<void()> on_offline_queue_changed_{}; ///< Write-through callback (13.4).
 };
 

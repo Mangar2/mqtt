@@ -104,8 +104,8 @@ def run_pub_sub_qos0_roundtrip(config) -> tuple[bool, str]:
                 publish_reason = publisher.publish(topic, payload, qos=0)
                 assert_reason_code(publish_reason, 0x00)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=0, retain=False)
         return True, f"0.5.3 QoS0 roundtrip successful ({target_label})"
     except Exception as error:
         return False, f"QoS0 roundtrip failed: {error}"
@@ -131,8 +131,8 @@ def run_pub_sub_qos1_roundtrip(config) -> tuple[bool, str]:
                 publish_reason = publisher.publish(topic, payload, qos=1)
                 assert_reason_code(publish_reason, 0x00)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=1, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=1, retain=False)
         return True, f"0.5.4 QoS1 roundtrip successful ({target_label})"
     except Exception as error:
         return False, f"QoS1 roundtrip failed: {error}"
@@ -158,8 +158,8 @@ def run_pub_sub_qos2_roundtrip(config) -> tuple[bool, str]:
                 publish_reason = publisher.publish(topic, payload, qos=2)
                 assert_reason_code(publish_reason, 0x00)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=2, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=2, retain=False)
         return True, f"0.5.5 QoS2 roundtrip successful ({target_label})"
     except Exception as error:
         return False, f"QoS2 roundtrip failed: {error}"

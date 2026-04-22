@@ -238,11 +238,7 @@ def run_19_2_5_many_half_open_connections_no_deadlock(config) -> tuple[bool, str
     process = None
     sockets: list[socket.socket] = []
     try:
-        host, port, process = _start_isolated_broker(
-            overrides={
-                "broker.max_connections": 2000,
-            }
-        )
+        host, port, process = _start_isolated_broker()
         timeout = max(1.0, float(config.timeout_seconds))
         target_connections = 100
 

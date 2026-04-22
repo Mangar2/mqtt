@@ -177,8 +177,8 @@ def run_11_1_1_publish_allowed_topic_message_routed(config) -> tuple[bool, str]:
                 publish_reason = publisher.publish(topic, payload, qos=1)
                 assert_reason_code(publish_reason, 0x00)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=1, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=1, retain=False)
 
         return True, "11.1.1 allowed publish was accepted and routed"
     except Exception as error:
@@ -262,8 +262,8 @@ def run_11_1_3_publish_acl_wildcard_matches_correctly(config) -> tuple[bool, str
                 allowed_reason = publisher.publish(allowed_topic, allowed_payload, qos=1)
                 assert_reason_code(allowed_reason, 0x00)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=allowed_topic, payload=allowed_payload, qos=1, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=allowed_topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=allowed_topic, payload=allowed_payload, qos=1, retain=False)
             assert_no_message(subscriber, timeout=0.7)
 
         return True, "11.1.3 wildcard ACL denied matching topic and allowed non-matching topic"

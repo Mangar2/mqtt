@@ -220,8 +220,8 @@ def run_7_1_2_no_local_disabled_self_publish_received(config) -> tuple[bool, str
 
             publish_reason = client.publish(topic, payload, qos=0)
             assert_reason_code(publish_reason, 0x00)
-            messages = client.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            messages = client.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=0, retain=False)
 
         return True, "7.1.2 No Local=0 delivered self-published message"
     except Exception as error:
@@ -257,8 +257,8 @@ def run_7_1_3_no_local_other_publisher_received(config) -> tuple[bool, str]:
                 publish_reason = publisher.publish(topic, payload, qos=0)
                 assert_reason_code(publish_reason, 0x00)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=0, retain=False)
 
         return True, "7.1.3 No Local=1 still delivered message from different client"
     except Exception as error:
@@ -292,10 +292,10 @@ def run_7_2_1_subscription_identifier_forwarded(config) -> tuple[bool, str]:
                 )
                 publisher.publish(topic, payload, qos=0)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=0, retain=False)
 
-            identifiers = _extract_subscription_identifiers(messages[0])
+            identifiers = _extract_subscription_identifiers(messages)
             if subscription_identifier not in identifiers:
                 return False, (
                     "7.2.1 outbound PUBLISH missing Subscription Identifier "
@@ -530,8 +530,8 @@ def run_7_3_3_shared_member_disconnect_remaining_receives(config) -> tuple[bool,
                 )
                 publisher.publish(base_topic, payload, qos=0)
 
-            messages_b = shared_b.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages_b[0], topic=base_topic, payload=payload, qos=0, retain=False)
+            messages_b = shared_b.collect_message_for_topic(expected_topic=base_topic, timeout=config.timeout_seconds)
+            assert_message(messages_b, topic=base_topic, payload=payload, qos=0, retain=False)
 
         return True, "7.3.3 remaining shared member received messages after peer disconnect"
     except Exception as error:
@@ -635,8 +635,8 @@ def run_7_3_5_non_shared_subscriber_gets_own_copy(config) -> tuple[bool, str]:
                 )
                 publisher.publish(base_topic, payload, qos=0)
 
-            main_messages = non_shared.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(main_messages[0], topic=base_topic, payload=payload, qos=0, retain=False)
+            main_messages = non_shared.collect_message_for_topic(expected_topic=base_topic, timeout=config.timeout_seconds)
+            assert_message(main_messages, topic=base_topic, payload=payload, qos=0, retain=False)
 
             shared_count = len(_try_collect_messages(shared_a, max_count=1, timeout_seconds=min(1.5, config.timeout_seconds)))
             shared_count += len(_try_collect_messages(shared_b, max_count=1, timeout_seconds=min(1.5, config.timeout_seconds)))

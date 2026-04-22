@@ -290,8 +290,8 @@ def run_18_2_5_large_payload_256kb_qos0_delivered(config) -> tuple[bool, str]:
                 publish_reason = publisher.publish(topic, payload, qos=0)
                 assert_reason_code(publish_reason, 0x00)
 
-            received_messages = subscriber.collect_messages(count=1, timeout=max(config.timeout_seconds * 2.0, 8.0))
-            assert_message(received_messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            received_messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(config.timeout_seconds * 2.0, 8.0))
+            assert_message(received_messages, topic=topic, payload=payload, qos=0, retain=False)
 
         return True, "18.2.5 delivered 256KB payload at QoS0"
     except Exception as error:
@@ -320,8 +320,8 @@ def run_18_2_6_large_payload_256kb_qos1_acked_and_delivered(config) -> tuple[boo
                 publish_reason = publisher.publish(topic, payload, qos=1)
                 assert_reason_code(publish_reason, 0x00)
 
-            received_messages = subscriber.collect_messages(count=1, timeout=max(config.timeout_seconds * 2.0, 8.0))
-            assert_message(received_messages[0], topic=topic, payload=payload, qos=1, retain=False)
+            received_messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(config.timeout_seconds * 2.0, 8.0))
+            assert_message(received_messages, topic=topic, payload=payload, qos=1, retain=False)
 
         return True, "18.2.6 delivered and ACKed 256KB payload at QoS1"
     except Exception as error:

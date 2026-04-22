@@ -33,6 +33,8 @@ struct RetainedMessageRecord {
  * the stored entry; an empty payload deletes it.
  *
  * Wildcard lookup at subscribe time uses `TopicMatcher` internally.
+ *
+ * Thread safety: internally synchronized via `std::mutex`.
  */
 class RetainedMessageStore {
 public:

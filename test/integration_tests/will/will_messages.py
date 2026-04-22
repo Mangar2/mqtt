@@ -157,7 +157,7 @@ def run_5_1_1_will_on_abrupt_tcp_close(config) -> tuple[bool, str]:
 
         _force_abrupt_close(will_client)
 
-        message = subscriber.collect_messages(count=1, timeout=max(2.0, config.timeout_seconds))[0]
+        message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(2.0, config.timeout_seconds))
         assert_message(message, topic=topic, payload=payload, qos=1, retain=False)
 
         return True, "5.1.1 abrupt TCP close published will message"
@@ -203,7 +203,7 @@ def run_5_1_2_will_on_keepalive_timeout(config) -> tuple[bool, str]:
         # keep the session alive indefinitely.
         _stop_client_network_loop(will_client)
 
-        message = subscriber.collect_messages(count=1, timeout=max(5.0, config.timeout_seconds))[0]
+        message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(5.0, config.timeout_seconds))
         assert_message(message, topic=topic, payload=payload, qos=1, retain=False)
 
         return True, "5.1.2 keep alive timeout published will message"
@@ -270,7 +270,7 @@ def run_5_1_4_disconnect_0x04_triggers_will(config) -> tuple[bool, str]:
                 assert_connack(connack, reason_code=0x00, session_present=False)
                 will_client.disconnect(reason_code=0x04)
 
-            message = subscriber.collect_messages(count=1, timeout=max(2.0, config.timeout_seconds))[0]
+            message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(2.0, config.timeout_seconds))
             assert_message(message, topic=topic, payload=payload, qos=1, retain=False)
 
         return True, "5.1.4 DISCONNECT 0x04 triggered will publication"
@@ -360,7 +360,7 @@ def run_5_2_2_will_delay_positive_publishes_after_delay(config) -> tuple[bool, s
 
         _force_abrupt_close(will_client)
 
-        message = subscriber.collect_messages(count=1, timeout=max(3.0, config.timeout_seconds))[0]
+        message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(3.0, config.timeout_seconds))
         assert_message(message, topic=topic, payload=payload, qos=1, retain=False)
 
         return True, "5.2.2 will delay > 0 published will after delay"
@@ -470,7 +470,7 @@ def run_5_2_4_session_expiry_before_delay_publishes_will(config) -> tuple[bool, 
 
         _force_abrupt_close(will_client)
 
-        message = subscriber.collect_messages(count=1, timeout=max(3.0, config.timeout_seconds))[0]
+        message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(3.0, config.timeout_seconds))
         assert_message(message, topic=topic, payload=payload, qos=1, retain=False)
 
         return True, "5.2.4 session expiry before Will Delay published will at expiry"
@@ -514,7 +514,7 @@ def run_5_3_1_will_qos0_delivered_qos0(config) -> tuple[bool, str]:
 
         _force_abrupt_close(will_client)
 
-        message = subscriber.collect_messages(count=1, timeout=max(2.0, config.timeout_seconds))[0]
+        message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(2.0, config.timeout_seconds))
         assert_message(message, topic=topic, payload=payload, qos=0, retain=False)
 
         return True, "5.3.1 will with QoS 0 delivered with QoS 0"
@@ -558,7 +558,7 @@ def run_5_3_2_will_qos1_delivered_qos1(config) -> tuple[bool, str]:
 
         _force_abrupt_close(will_client)
 
-        message = subscriber.collect_messages(count=1, timeout=max(2.0, config.timeout_seconds))[0]
+        message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(2.0, config.timeout_seconds))
         assert_message(message, topic=topic, payload=payload, qos=1, retain=False)
 
         return True, "5.3.2 will with QoS 1 delivered with QoS 1"
@@ -602,7 +602,7 @@ def run_5_3_3_will_qos2_delivered_qos2(config) -> tuple[bool, str]:
 
         _force_abrupt_close(will_client)
 
-        message = subscriber.collect_messages(count=1, timeout=max(2.0, config.timeout_seconds))[0]
+        message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(2.0, config.timeout_seconds))
         assert_message(message, topic=topic, payload=payload, qos=2, retain=False)
 
         return True, "5.3.3 will with QoS 2 delivered with QoS 2"
@@ -652,7 +652,7 @@ def run_5_3_4_will_retain_stores_retained_message(config) -> tuple[bool, str]:
             qos=1,
             options=options,
         ) as retained_subscriber:
-            message = retained_subscriber.collect_messages(count=1, timeout=max(2.0, config.timeout_seconds))[0]
+            message = retained_subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(2.0, config.timeout_seconds))
             assert_message(message, topic=topic, payload=payload, qos=1, retain=True)
 
         return True, "5.3.4 retained will was stored as retained message"
@@ -705,7 +705,7 @@ def run_5_3_5_will_message_expiry_expires_retained_will(config) -> tuple[bool, s
             qos=1,
             options=options,
         ) as first_subscriber:
-            first_message = first_subscriber.collect_messages(count=1, timeout=max(2.0, config.timeout_seconds))[0]
+            first_message = first_subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(2.0, config.timeout_seconds))
             assert_message(first_message, topic=topic, payload=payload, qos=1, retain=True)
 
         time.sleep(float(expiry_seconds) + 1.5)
@@ -766,7 +766,7 @@ def run_5_3_6_will_payload_format_and_content_type_forwarded(config) -> tuple[bo
 
         _force_abrupt_close(will_client)
 
-        message = subscriber.collect_messages(count=1, timeout=max(2.0, config.timeout_seconds))[0]
+        message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(2.0, config.timeout_seconds))
         assert_message(message, topic=topic, payload=payload, qos=1, retain=False)
 
         payload_format = _message_property(message, "PayloadFormatIndicator")
@@ -826,7 +826,7 @@ def run_5_3_7_will_user_properties_forwarded(config) -> tuple[bool, str]:
 
         _force_abrupt_close(will_client)
 
-        message = subscriber.collect_messages(count=1, timeout=max(2.0, config.timeout_seconds))[0]
+        message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(2.0, config.timeout_seconds))
         assert_message(message, topic=topic, payload=payload, qos=1, retain=False)
 
         actual_user_properties = _message_property(message, "UserProperty")
@@ -893,7 +893,7 @@ def run_5_3_8_will_response_topic_and_correlation_data_forwarded(config) -> tupl
 
         _force_abrupt_close(will_client)
 
-        message = subscriber.collect_messages(count=1, timeout=max(2.0, config.timeout_seconds))[0]
+        message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=max(2.0, config.timeout_seconds))
         assert_message(message, topic=topic, payload=payload, qos=1, retain=False)
 
         response_topic = _message_property(message, "ResponseTopic")

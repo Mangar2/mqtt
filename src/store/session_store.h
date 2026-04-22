@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -47,6 +48,35 @@ public:
    */
   [[nodiscard]] std::optional<SessionState>
   load(std::string_view client_id) const;
+
+  /**
+   * @brief Atomically mutate an existing session in place.
+   *
+   * The callback executes while the internal store mutex is held, so the
+   * complete read-modify-write operation is serialized against all other
+   * session store operations.
+   *
+   * @param client_id Client identifier of the session to update.
+   * @param updater   Mutation callback applied to the stored SessionState.
+   * @return `true` if the session existed and was updated, `false` otherwise.
+   */
+  [[nodiscard]] bool
+  update_if_exists(std::string_view client_id,
+                   const std::function<void(SessionState &)> &updater);
+
+  /**
+   * @brief Atomically mutate a session and return a copy of the updated value.
+   *
+   * The callback executes while the internal store mutex is held.
+   *
+   * @param client_id Client identifier of the session to update.
+   * @param updater   Mutation callback applied to the stored SessionState.
+   * @return Updated session copy when present, `std::nullopt` otherwise.
+   */
+  [[nodiscard]] std::optional<SessionState>
+  update_if_exists_and_load(
+      std::string_view client_id,
+      const std::function<void(SessionState &)> &updater);
 
   /**
    * @brief Delete a session and its disconnect timestamp (4.3.3).
@@ -111,7 +141,7 @@ public:
   [[nodiscard]] bool contains(std::string_view client_id) const noexcept;
 
 private:
-  mutable std::mutex mutex_;
+  mutable std::mutex session_maps_mutex_;
   std::unordered_map<std::string, SessionState>
       sessions_; ///< client_id → session state.
   std::unordered_map<std::string, std::chrono::steady_clock::time_point>

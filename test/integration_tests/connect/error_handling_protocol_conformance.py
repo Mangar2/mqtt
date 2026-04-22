@@ -560,8 +560,8 @@ def run_13_3_6_authorized_qos1_publish_success_00(config) -> tuple[bool, str]:
             reason = _qos1_publish_once(host, port, config.timeout_seconds, topic, payload)
             assert_reason_code(reason, 0x00)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=1, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=1, retain=False)
 
         return True, "13.3.6 authorized QoS1 publish returned PUBACK 0x00 (no spurious 0x83)"
     except Exception as error:

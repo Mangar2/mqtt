@@ -31,6 +31,7 @@ assert_connack = _assertions_module.assert_connack
 assert_reason_code = _assertions_module.assert_reason_code
 start_broker = _broker_module.start_broker
 stop_broker = _broker_module.stop_broker
+is_reachable = _broker_module.is_reachable
 MqttClient = _mqtt_client_module.MqttClient
 PacketTypes = _mqtt_client_module.PacketTypes
 Properties = _mqtt_client_module.Properties
@@ -53,9 +54,6 @@ def _start_isolated_broker(overrides: dict[str, object] | None = None):
         "network.mqtt_port": _find_free_port(),
         "network.ws_port": 0,
         "broker.allow_anonymous": True,
-        "broker.max_connections": 4000,
-        "broker.max_queued_messages": 5000,
-        "broker.write_queue_max_bytes": 4 * 1024 * 1024,
     }
     if overrides is not None:
         effective_overrides.update(overrides)
@@ -69,6 +67,12 @@ def _new_connect_properties(**values):
     for key_name, value in values.items():
         setattr(properties, key_name, value)
     return properties
+
+
+def _broker_alive(host: str, port: int, process, timeout_seconds: float) -> bool:
+    if process is not None:
+        return process.poll() is None
+    return is_reachable(host, port, timeout=max(0.2, min(1.0, timeout_seconds)))
 
 
 def run_19_5_1_two_publishers_same_topic_simultaneous_no_corruption(config) -> tuple[bool, str]:
@@ -107,7 +111,7 @@ def run_19_5_1_two_publishers_same_topic_simultaneous_no_corruption(config) -> t
             if delivered_payloads != expected_payloads:
                 return False, f"19.5.1 payload corruption/mismatch: expected={expected_payloads}, got={delivered_payloads}"
 
-        if process is None or process.poll() is not None:
+        if not _broker_alive(host, port, process, timeout_seconds):
             return False, "19.5.1 broker crashed during simultaneous publish test"
         return True, "19.5.1 simultaneous publish routed both messages without corruption"
     except Exception as error:
@@ -166,7 +170,7 @@ def run_19_5_2_publish_during_subscribe_no_race_condition(config) -> tuple[bool,
 
             _ = publishing_future.result(timeout=max(timeout_seconds, 10.0))
 
-        if process is None or process.poll() is not None:
+        if not _broker_alive(host, port, process, timeout_seconds):
             return False, "19.5.2 broker crashed during publish/subscribe race test"
         return True, "19.5.2 concurrent publish while subscribe completed without race-induced instability"
     except Exception as error:
@@ -234,7 +238,7 @@ def run_19_5_3_session_takeover_during_active_publish_no_loss(config) -> tuple[b
             if not takeover_seen:
                 return False, "19.5.3 subscriber did not receive post-takeover payload"
 
-        if process is None or process.poll() is not None:
+        if not _broker_alive(host, port, process, timeout_seconds):
             return False, "19.5.3 broker crashed during session takeover test"
         return True, "19.5.3 session takeover during active publish completed without crash or visible loss"
     except Exception as error:
@@ -318,7 +322,7 @@ def run_19_5_4_hundred_clients_random_actions_thirty_seconds_stable(config) -> t
                     subscriptions[index].discard(topic)
 
             action_count += 1
-            if process is None or process.poll() is not None:
+            if not _broker_alive(host, port, process, timeout_seconds):
                 return False, "19.5.4 broker crashed during random concurrency workload"
 
         with MqttClient(timeout_seconds=max(timeout_seconds, 8.0)) as probe:
@@ -403,7 +407,7 @@ def run_19_5_5_unsubscribe_during_delivery_consistent_no_crash(config) -> tuple[
                 if bytes(message.payload) == marker_payload:
                     return False, "19.5.5 received marker payload after unsubscribe acknowledgement"
 
-        if process is None or process.poll() is not None:
+        if not _broker_alive(host, port, process, timeout_seconds):
             return False, "19.5.5 broker crashed during unsubscribe-while-delivering scenario"
         return True, "19.5.5 unsubscribe during active delivery stayed consistent and broker remained stable"
     except Exception as error:

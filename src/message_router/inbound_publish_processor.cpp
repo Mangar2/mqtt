@@ -55,7 +55,6 @@ std::vector<MatchResult>
 InboundPublishProcessor::process(Message &msg, std::string_view client_id,
                                  std::string_view username,
                                  TopicAliasTable &alias_table) {
-  std::lock_guard<std::mutex> lock(mutex_);
   resolve_topic_alias(msg, alias_table);
 
   if (client_id != k_broker_internal_principal && is_system_topic(msg.topic.value)) {
@@ -70,11 +69,7 @@ InboundPublishProcessor::process(Message &msg, std::string_view client_id,
 
   if (msg.retain) {
     retained_.store(msg);
-    if (on_retained_changed_) {
-      try {
-        on_retained_changed_();
-      } catch (...) {}
-    }
+    emit_on_retained_changed();
   }
 
   return subscriptions_.subscribers_for(msg.topic.value);
@@ -82,14 +77,36 @@ InboundPublishProcessor::process(Message &msg, std::string_view client_id,
 
 std::vector<RetainedMessageRecord> InboundPublishProcessor::retained_for_filter(
     std::string_view topic_filter) const {
-  std::lock_guard<std::mutex> lock(mutex_);
   return retained_.find_records(topic_filter);
 }
 
 void InboundPublishProcessor::set_on_retained_changed(
     std::function<void()> callback) noexcept {
-  std::lock_guard<std::mutex> lock(mutex_);
+  set_on_retained_changed_callback(std::move(callback));
+}
+
+std::function<void()>
+InboundPublishProcessor::snapshot_on_retained_changed() const {
+  std::lock_guard<std::mutex> lock(on_retained_change_callback_mutex_);
+  return on_retained_changed_;
+}
+
+void InboundPublishProcessor::set_on_retained_changed_callback(
+    std::function<void()> callback) noexcept {
+  std::lock_guard<std::mutex> lock(on_retained_change_callback_mutex_);
   on_retained_changed_ = std::move(callback);
+}
+
+void InboundPublishProcessor::emit_on_retained_changed() const noexcept {
+  std::function<void()> callback = snapshot_on_retained_changed();
+  if (!callback) {
+    return;
+  }
+
+  try {
+    callback();
+  } catch (...) {
+  }
 }
 
 } // namespace mqtt

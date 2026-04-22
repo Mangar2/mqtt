@@ -167,9 +167,15 @@ void BrokerModuleFactory::create(
         }
       };
 
-  message_router = std::make_unique<MessageRouter>(
+    structured_tracer = std::make_unique<StructuredTracer>(std::clog);
+    structured_tracer->set_global_level(config.trace_global_level);
+    structured_tracer->set_trace_modules(config.trace_modules);
+    structured_tracer->set_max_text_length(config.trace_max_text_length);
+
+    message_router = std::make_unique<MessageRouter>(
       *publish_processor, *offline_queue, *shared_dispatcher,
-      std::move(is_online_function), std::move(deliver_function));
+      std::move(is_online_function), std::move(deliver_function),
+      structured_tracer.get());
 
   subscription_orchestrator = std::make_unique<SubscriptionOrchestrator>(
       *acl_engine, *session_store, *subscription_store, *shared_dispatcher,
@@ -190,11 +196,6 @@ void BrokerModuleFactory::create(
   statistics_collector =
       std::make_unique<StatisticsCollector>(*subscription_store, *retained_store);
 
-  structured_tracer = std::make_unique<StructuredTracer>(std::clog);
-  structured_tracer->set_global_level(config.trace_global_level);
-  structured_tracer->set_trace_modules(config.trace_modules);
-  structured_tracer->set_max_text_length(config.trace_max_text_length);
-  message_router->set_tracer(structured_tracer.get());
   session_manager->set_tracer(structured_tracer.get());
 
   auto sys_publish_function = [router_ptr = message_router.get()](Message message) {

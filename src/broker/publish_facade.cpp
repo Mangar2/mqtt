@@ -86,6 +86,18 @@ ReasonCode PublishFacade::handle_publish(Message &message,
     }
     return ReasonCode::Success;
   } catch (const MessageRouterException &exception) {
+    TRACE_GUARD(&structured_tracer_, TraceLevel::Trace, "broker") {
+      TraceEvent event;
+      event.level = TraceLevel::Trace;
+      event.module = "broker";
+      event.info = "publish_route_exception";
+      event.data.emplace_back("client_id", std::string(client_id));
+      event.data.emplace_back("topic", message.topic.value);
+      event.data.emplace_back("error", std::to_string(static_cast<int>(exception.error())));
+      event.data.emplace_back("detail", exception.what());
+      structured_tracer_.emit(event);
+    }
+
     if (exception.error() == MessageRouterError::PublishNotAuthorized) {
       return ReasonCode::NotAuthorized;
     }

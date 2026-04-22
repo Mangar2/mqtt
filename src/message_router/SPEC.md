@@ -159,7 +159,8 @@ using DeliverFn  = std::function<void(std::string_view, const Message&)>;
 using IsOnlineFn = std::function<bool(std::string_view)>;
 
 MessageRouter(InboundPublishProcessor&, OfflineQueue&,
-              SharedSubscriptionDispatcher&, IsOnlineFn, DeliverFn);
+              SharedSubscriptionDispatcher&, IsOnlineFn, DeliverFn,
+              StructuredTracer*);
 
 bool route(Message& msg, std::string_view client_id,
            std::string_view username, TopicAliasTable& alias_table);
@@ -195,6 +196,8 @@ messages. It creates an alias table with maximum `0` and delegates to
 
 `flush_offline_queue` drains buffered messages for a reconnecting client,
 discards any that have expired, and delivers the rest via `DeliverFn`.
+The flush operation has snapshot semantics at drain time: messages enqueued
+after drain are delivered by a later flush.
 
 `buffer_offline_messages` enqueues a pre-drained list of per-connection
 messages into the module-owned `OfflineQueue` and returns the number of

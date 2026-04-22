@@ -225,8 +225,8 @@ def run_15_1_3_messages_sent_increments(config) -> tuple[bool, str]:
                     )
                     publisher.publish(data_topic, payload, qos=0)
 
-                delivered = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-                assert_message(delivered[0], topic=data_topic, payload=payload, qos=0, retain=False)
+                delivered = subscriber.collect_message_for_topic(expected_topic=data_topic, timeout=config.timeout_seconds)
+                assert_message(delivered, topic=data_topic, payload=payload, qos=0, retain=False)
 
             updated = _wait_for_incremented_value(monitor, metric_topic, baseline, timeout_seconds=6.0)
 

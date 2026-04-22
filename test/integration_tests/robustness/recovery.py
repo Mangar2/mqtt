@@ -32,9 +32,6 @@ restart_broker = _broker_module.restart_broker
 MqttClient = _mqtt_client_module.MqttClient
 PacketTypes = _mqtt_client_module.PacketTypes
 Properties = _mqtt_client_module.Properties
-
-_HIGH_WRITE_QUEUE_BYTES = 4 * 1024 * 1024
-_HIGH_MAX_QUEUED_MESSAGES = 2000
 _SESSION_EXPIRY_SECONDS = 600
 
 
@@ -60,8 +57,6 @@ def _persistent_overrides(data_dir: Path, mqtt_port: int) -> dict[str, object]:
         "network.mqtt_port": mqtt_port,
         "network.ws_port": 0,
         "broker.allow_anonymous": True,
-        "broker.write_queue_max_bytes": _HIGH_WRITE_QUEUE_BYTES,
-        "broker.max_queued_messages": _HIGH_MAX_QUEUED_MESSAGES,
         "persistence.enabled": True,
         "persistence.dir": str(data_dir),
     }

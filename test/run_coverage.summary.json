@@ -1,0 +1,21 @@
+{
+  "coverage_total": {
+    "branches": "36.28%",
+    "file": "TOTAL",
+    "functions": "95.46%",
+    "lines": "96.55%",
+    "regions": "90.12%"
+  },
+  "duration_s": 139.893,
+  "exit_code": 0,
+  "files_below_threshold": [],
+  "finished_at": "2026-04-22T07:53:42",
+  "log_file": "/Users/volkerbohm/dev/yaha/mqtt/test/run.log",
+  "mode": "full",
+  "run_id": "08154057",
+  "started_at": "2026-04-22T07:51:22",
+  "status": "ok",
+  "tests_passed": 1129,
+  "tests_total": 1129,
+  "threshold_met": true
+}

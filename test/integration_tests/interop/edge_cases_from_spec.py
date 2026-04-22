@@ -254,8 +254,8 @@ def run_20_2_2_utf8_multibyte_topic_delivered(config) -> tuple[bool, str]:
                 pub.connect(host, port, client_id=_unique_id("utf8-pub"), clean_start=True)
                 pub.publish(topic, payload, qos=0)
 
-            msgs = sub.collect_messages(count=1, timeout=timeout)
-            assert_message(msgs[0], topic=topic, payload=payload, qos=0, retain=False)
+            msgs = sub.collect_message_for_topic(expected_topic=topic, timeout=timeout)
+            assert_message(msgs, topic=topic, payload=payload, qos=0, retain=False)
 
         return True, f"UTF-8 multi-byte topic delivered correctly: {topic!r}"
 
@@ -427,8 +427,8 @@ def run_20_2_5_zero_length_payload_delivered(config) -> tuple[bool, str]:
                 pub.connect(host, port, client_id=_unique_id("empty-pub"), clean_start=True)
                 pub.publish(topic, b"", qos=1)
 
-            msgs = sub.collect_messages(count=1, timeout=timeout)
-            assert_message(msgs[0], topic=topic, payload=b"", qos=1, retain=False)
+            msgs = sub.collect_message_for_topic(expected_topic=topic, timeout=timeout)
+            assert_message(msgs, topic=topic, payload=b"", qos=1, retain=False)
 
         return True, "zero-length payload delivered correctly"
 
@@ -465,8 +465,8 @@ def run_20_2_6_publish_to_root_separator_topic(config) -> tuple[bool, str]:
                 pub.connect(host, port, client_id=_unique_id("slash-pub"), clean_start=True)
                 pub.publish(topic, payload, qos=0)
 
-            msgs = sub.collect_messages(count=1, timeout=timeout)
-            assert_message(msgs[0], topic=topic, payload=payload, qos=0, retain=False)
+            msgs = sub.collect_message_for_topic(expected_topic=topic, timeout=timeout)
+            assert_message(msgs, topic=topic, payload=payload, qos=0, retain=False)
 
         return True, 'PUBLISH to "/" delivered correctly to subscriber of "/"'
 
@@ -502,10 +502,8 @@ def run_20_2_7_subscribe_to_root_separator_receives_messages(config) -> tuple[bo
                 pub.publish("//", b"no-match", qos=0)
                 pub.publish("a/b", b"no-match", qos=0)
 
-            msgs = sub.collect_messages(count=1, timeout=timeout)
-            if len(msgs) != 1:
-                return False, f"expected 1 message for '/', got {len(msgs)}"
-            assert_message(msgs[0], topic="/", payload=b"match", qos=0, retain=False)
+            msg = sub.collect_message_for_topic(expected_topic="/", timeout=timeout)
+            assert_message(msg, topic="/", payload=b"match", qos=0, retain=False)
 
             # Verify no extra messages arrive
             assert_no_message(sub, timeout=min(timeout / 4, 2.0))

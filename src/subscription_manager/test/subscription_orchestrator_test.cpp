@@ -17,6 +17,7 @@
 #include "data_model/types/variable_byte_integer.h"
 #include "message_router/inbound_publish_processor.h"
 #include "message_router/message_router.h"
+#include "message_router/message_router_error.h"
 #include "message_router/offline_queue.h"
 #include "message_router/shared_subscription_dispatcher.h"
 #include "store/retained_message_store.h"
@@ -70,7 +71,8 @@ SessionState make_session_state(std::string client_id,
 }
 
 struct Harness {
-  explicit Harness(std::vector<AclRule> rules)
+  explicit Harness(std::vector<AclRule> rules,
+                   bool fail_delivery_with_queue_full = false)
       : acl(std::move(rules)), retained(), subscriptions(), inbound(acl, retained, subscriptions),
         offline_queue(), shared_dispatcher(), session_store(), online_clients(), delivered_messages(),
         router(inbound,
@@ -79,7 +81,12 @@ struct Harness {
                [this](std::string_view client_id) {
                  return online_clients.contains(std::string(client_id));
                },
-               [this](std::string_view client_id, const Message &message) {
+               [this, fail_delivery_with_queue_full](std::string_view client_id,
+                                                     const Message &message) {
+                 if (fail_delivery_with_queue_full) {
+                   throw MessageRouterException(MessageRouterError::QueueFull,
+                                                "simulated outbound queue full");
+                 }
                  delivered_messages.emplace_back(std::string(client_id), message);
                }),
         orchestrator(acl, session_store, subscriptions, shared_dispatcher, router) {}
@@ -226,6 +233,21 @@ TEST_CASE("subscribe_retain_handling_send_if_new_delivers_only_once", "[subscrip
   REQUIRE(second_suback.reason_codes.size() == 1U);
   CHECK(second_suback.reason_codes[0] == ReasonCode::Success);
   CHECK(harness.delivered_messages.empty());
+}
+
+TEST_CASE("subscribe_retained_delivery_queue_full_returns_quota_exceeded", "[subscription_manager]") {
+  Harness harness({allow_all_subscribe_rule()}, true);
+  harness.online_clients.insert("client-a");
+  harness.retained.store(make_retained_message("alerts/high", {0x41U}));
+
+  const SubscribePacket packet =
+      make_subscribe_packet(17U, "alerts/high", make_options(QoS::AtMostOnce));
+
+  const SubackPacket suback = harness.orchestrator.handle_subscribe("client-a", packet);
+
+  REQUIRE(suback.reason_codes.size() == 1U);
+  CHECK(suback.reason_codes[0] == ReasonCode::QuotaExceeded);
+  CHECK(harness.subscriptions.subscribers_for("alerts/high").empty());
 }
 
 TEST_CASE("subscribe_regular_filter_updates_session_snapshot", "[subscription_manager]") {

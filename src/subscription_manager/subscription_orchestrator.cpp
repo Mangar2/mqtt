@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "data_model/subscription/retain_handling.h"
+#include "message_router/message_router_error.h"
 #include "topic/topic_error.h"
 #include "topic/topic_validator.h"
 
@@ -54,12 +55,6 @@ void apply_subscribe_to_session_snapshot(
     std::string_view client_id,
     const SubscribePacket &packet,
     const SubackPacket &suback) {
-  const auto existing_session = session_store.load(client_id);
-  if (!existing_session.has_value()) {
-    return;
-  }
-
-  SessionState updated_session = *existing_session;
   const std::optional<uint32_t> subscription_identifier =
       subscription_identifier_from(packet);
 
@@ -89,22 +84,22 @@ void apply_subscribe_to_session_snapshot(
         static_cast<RetainHandling>(filter.options.retain_handling);
     subscription.identifier = subscription_identifier;
 
-    bool replaced_existing = false;
-    for (Subscription &existing_subscription : updated_session.subscriptions) {
-      if (existing_subscription.topic_filter.value ==
-          filter.topic_filter.value) {
-        existing_subscription = subscription;
-        replaced_existing = true;
-        break;
-      }
-    }
-    if (!replaced_existing) {
-      updated_session.subscriptions.push_back(std::move(subscription));
-    }
+    (void)session_store.update_if_exists(
+        client_id, [&filter, &subscription](SessionState &session_state) {
+          bool replaced_existing = false;
+          for (Subscription &existing_subscription : session_state.subscriptions) {
+            if (existing_subscription.topic_filter.value ==
+                filter.topic_filter.value) {
+              existing_subscription = subscription;
+              replaced_existing = true;
+              break;
+            }
+          }
+          if (!replaced_existing) {
+            session_state.subscriptions.push_back(std::move(subscription));
+          }
+        });
   }
-
-  session_store.remove(client_id);
-  session_store.create(updated_session);
 }
 
 void apply_unsubscribe_to_session_snapshot(
@@ -112,13 +107,6 @@ void apply_unsubscribe_to_session_snapshot(
     std::string_view client_id,
     const UnsubscribePacket &packet,
     const UnsubackPacket &unsuback) {
-  const auto existing_session = session_store.load(client_id);
-  if (!existing_session.has_value()) {
-    return;
-  }
-
-  SessionState updated_session = *existing_session;
-
   const std::size_t filter_count = packet.topic_filters.size();
   const std::size_t reason_count = unsuback.reason_codes.size();
   const std::size_t common_count =
@@ -134,17 +122,17 @@ void apply_unsubscribe_to_session_snapshot(
       continue;
     }
 
-    for (auto iter = updated_session.subscriptions.begin();
-         iter != updated_session.subscriptions.end(); ++iter) {
-      if (iter->topic_filter.value == topic_filter.value) {
-        updated_session.subscriptions.erase(iter);
-        break;
-      }
-    }
+    (void)session_store.update_if_exists(
+        client_id, [&topic_filter](SessionState &session_state) {
+          for (auto iter = session_state.subscriptions.begin();
+               iter != session_state.subscriptions.end(); ++iter) {
+            if (iter->topic_filter.value == topic_filter.value) {
+              session_state.subscriptions.erase(iter);
+              break;
+            }
+          }
+        });
   }
-
-  session_store.remove(client_id);
-  session_store.create(updated_session);
 }
 
 } // namespace
@@ -160,13 +148,11 @@ SubscriptionOrchestrator::SubscriptionOrchestrator(
 
 void SubscriptionOrchestrator::set_on_session_changed(
     std::function<void()> callback) noexcept {
-  std::lock_guard<std::mutex> lock(mutex_);
-  on_session_changed_ = std::move(callback);
+  set_on_session_changed_callback(std::move(callback));
 }
 
 SubackPacket SubscriptionOrchestrator::handle_subscribe(
     std::string_view client_id, const SubscribePacket &packet) {
-  std::lock_guard<std::mutex> lock(mutex_);
   SubackPacket suback;
   suback.packet_id = packet.packet_id;
 
@@ -233,10 +219,22 @@ SubackPacket SubscriptionOrchestrator::handle_subscribe(
     } else {
       const bool is_new_subscription =
           subscription_store_.store(client_id, subscription);
-      message_router_.deliver_retained(client_id,
-                                       filter.topic_filter.value,
-                                       subscription,
-                                       is_new_subscription);
+      try {
+        message_router_.deliver_retained(client_id,
+                                         filter.topic_filter.value,
+                                         subscription,
+                                         is_new_subscription);
+      } catch (const MessageRouterException &exception) {
+        if (exception.error() == MessageRouterError::QueueFull) {
+          if (is_new_subscription) {
+            (void)subscription_store_.remove(client_id,
+                                             subscription.topic_filter.value);
+          }
+          suback.reason_codes.push_back(ReasonCode::QuotaExceeded);
+          continue;
+        }
+        throw;
+      }
     }
 
     suback.reason_codes.push_back(qos_to_granted_reason(filter.options.max_qos));
@@ -244,17 +242,12 @@ SubackPacket SubscriptionOrchestrator::handle_subscribe(
 
   apply_subscribe_to_session_snapshot(session_store_, client_id, packet,
                                       suback);
-  if (on_session_changed_) {
-    try {
-      on_session_changed_();
-    } catch (...) {}
-  }
+  emit_on_session_changed();
   return suback;
 }
 
 UnsubackPacket SubscriptionOrchestrator::handle_unsubscribe(
     std::string_view client_id, const UnsubscribePacket &packet) {
-  std::lock_guard<std::mutex> lock(mutex_);
   UnsubackPacket unsuback;
   unsuback.packet_id = packet.packet_id;
 
@@ -299,12 +292,32 @@ UnsubackPacket SubscriptionOrchestrator::handle_unsubscribe(
 
   apply_unsubscribe_to_session_snapshot(session_store_, client_id, packet,
                                         unsuback);
-  if (on_session_changed_) {
-    try {
-      on_session_changed_();
-    } catch (...) {}
-  }
+  emit_on_session_changed();
   return unsuback;
+}
+
+std::function<void()> SubscriptionOrchestrator::snapshot_on_session_changed()
+    const {
+  std::lock_guard<std::mutex> lock(on_session_changed_callback_mutex_);
+  return on_session_changed_;
+}
+
+void SubscriptionOrchestrator::set_on_session_changed_callback(
+    std::function<void()> callback) noexcept {
+  std::lock_guard<std::mutex> lock(on_session_changed_callback_mutex_);
+  on_session_changed_ = std::move(callback);
+}
+
+void SubscriptionOrchestrator::emit_on_session_changed() const noexcept {
+  std::function<void()> callback = snapshot_on_session_changed();
+  if (!callback) {
+    return;
+  }
+
+  try {
+    callback();
+  } catch (...) {
+  }
 }
 
 } // namespace mqtt

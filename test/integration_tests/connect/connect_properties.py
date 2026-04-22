@@ -222,8 +222,8 @@ def _queued_message_roundtrip(
         if not second_connack.session_present:
             return False, "expected Session Present = 1 on reconnect"
 
-        messages = subscriber_resume.collect_messages(count=1, timeout=timeout_seconds)
-        assert_message(messages[0], topic=topic, payload=payload, qos=1, retain=False)
+        messages = subscriber_resume.collect_message_for_topic(expected_topic=topic, timeout=timeout_seconds)
+        assert_message(messages, topic=topic, payload=payload, qos=1, retain=False)
 
     return True, "queued message delivered after reconnect"
 
@@ -509,9 +509,9 @@ def run_1_2_6_topic_alias_maximum_respected(config) -> tuple[bool, str]:
                 assert_connack(pub_connack, reason_code=0x00, session_present=False)
                 assert_reason_code(publisher.publish(topic, b"alias-check", qos=0), 0x00)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=b"alias-check", qos=0, retain=False)
-            inbound_alias = getattr(messages[0].properties, "TopicAlias", None)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=b"alias-check", qos=0, retain=False)
+            inbound_alias = getattr(messages.properties, "TopicAlias", None)
             if inbound_alias not in (None, 0):
                 return False, f"expected no inbound topic alias, got {inbound_alias}"
 

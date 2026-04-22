@@ -44,7 +44,7 @@ struct QueuedMessage {
  * unbounded memory growth: when the limit is reached, new messages are
  * discarded and a QueueFull exception is thrown (12.3.3).
  *
- * Thread safety: none — external synchronisation required.
+ * Thread safety: internally synchronized via `std::mutex`.
  */
 class OfflineQueue {
 public:

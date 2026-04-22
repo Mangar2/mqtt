@@ -13,26 +13,43 @@ namespace mqtt {
 MessageRouter::MessageRouter(InboundPublishProcessor &processor,
                              OfflineQueue &offline_queue,
                              SharedSubscriptionDispatcher &shared_dispatcher,
-                             IsOnlineFn is_online, DeliverFn deliver)
+                             IsOnlineFn is_online, DeliverFn deliver,
+                             StructuredTracer *structured_tracer) noexcept
     : processor_(processor), offline_queue_(offline_queue),
       shared_dispatcher_(shared_dispatcher), is_online_(std::move(is_online)),
-      deliver_(std::move(deliver)) {}
-
-void MessageRouter::set_tracer(StructuredTracer *tracer) noexcept {
-  std::lock_guard<std::mutex> lock(mutex_);
-  structured_tracer_ = tracer;
-}
+      deliver_(std::move(deliver)), structured_tracer_(structured_tracer) {}
 
 void MessageRouter::set_on_offline_queue_changed(
     std::function<void()> callback) noexcept {
-  std::lock_guard<std::mutex> lock(mutex_);
+  set_on_offline_queue_changed_callback(std::move(callback));
+}
+
+std::function<void()> MessageRouter::snapshot_on_offline_queue_changed() const {
+  std::lock_guard<std::mutex> lock(on_offline_queue_changed_callback_mutex_);
+  return on_offline_queue_changed_;
+}
+
+void MessageRouter::set_on_offline_queue_changed_callback(
+    std::function<void()> callback) noexcept {
+  std::lock_guard<std::mutex> lock(on_offline_queue_changed_callback_mutex_);
   on_offline_queue_changed_ = std::move(callback);
+}
+
+void MessageRouter::emit_on_offline_queue_changed() const noexcept {
+  std::function<void()> callback = snapshot_on_offline_queue_changed();
+  if (!callback) {
+    return;
+  }
+
+  try {
+    callback();
+  } catch (...) {
+  }
 }
 
 bool MessageRouter::route(Message &msg, std::string_view client_id,
                           std::string_view username,
                           TopicAliasTable &alias_table) {
-  std::lock_guard<std::mutex> lock(mutex_);
   const auto now = std::chrono::steady_clock::now();
 
   // 12.1 — Pre-process inbound message; retrieve regular subscribers.
@@ -138,11 +155,7 @@ void MessageRouter::dispatch_item(const DeliveryItem &item,
       offline_queue_.enqueue_drop_oldest(item.client_id, msg_copy);
     }
 
-    if (on_offline_queue_changed_) {
-      try {
-        on_offline_queue_changed_();
-      } catch (...) {}
-    }
+    emit_on_offline_queue_changed();
 
     TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "message_router") {
       TraceEvent event;
@@ -161,8 +174,6 @@ void MessageRouter::dispatch_item(const DeliveryItem &item,
 
 void MessageRouter::flush_offline_queue(
     std::string_view client_id, std::chrono::steady_clock::time_point now) {
-  std::lock_guard<std::mutex> lock(mutex_);
-
   const std::size_t queue_size_before = offline_queue_.size(client_id);
   std::vector<QueuedMessage> queued = offline_queue_.drain(client_id);
   std::size_t delivered_count = 0U;
@@ -202,16 +213,13 @@ void MessageRouter::flush_offline_queue(
     structured_tracer_->emit(event);
   }
 
-  if (!queued.empty() && on_offline_queue_changed_) {
-    try {
-      on_offline_queue_changed_();
-    } catch (...) {}
+  if (!queued.empty()) {
+    emit_on_offline_queue_changed();
   }
 }
 
 std::size_t MessageRouter::buffer_offline_messages(
     std::string_view client_id, std::vector<Message> messages) {
-  std::lock_guard<std::mutex> lock(mutex_);
   std::size_t enqueued_count = 0U;
 
   for (Message &message : messages) {
@@ -226,10 +234,8 @@ std::size_t MessageRouter::buffer_offline_messages(
     }
   }
 
-  if (enqueued_count > 0U && on_offline_queue_changed_) {
-    try {
-      on_offline_queue_changed_();
-    } catch (...) {}
+  if (enqueued_count > 0U) {
+    emit_on_offline_queue_changed();
   }
 
   return enqueued_count;
@@ -239,7 +245,6 @@ void MessageRouter::deliver_retained(
     std::string_view client_id, std::string_view topic_filter,
     const Subscription &subscription, bool is_new_subscription,
     std::chrono::steady_clock::time_point now) {
-  std::lock_guard<std::mutex> lock(mutex_);
   if (!is_online_(client_id)) {
     return;
   }
@@ -262,6 +267,20 @@ void MessageRouter::deliver_retained(
     if (!MessageExpiryController::update_expiry(
             outbound, retained_record.stored_at, now)) {
       continue;
+    }
+
+    TRACE_GUARD(structured_tracer_, TraceLevel::Trace, "message_router") {
+      TraceEvent event;
+      event.level = TraceLevel::Trace;
+      event.module = "message_router";
+      event.info = "retained_delivered_on_subscribe";
+      event.data.emplace_back("client_id", std::string(client_id));
+      event.data.emplace_back("topic_filter", std::string(topic_filter));
+      event.data.emplace_back("retained_topic", outbound.topic.value);
+      event.data.emplace_back("qos", std::to_string(static_cast<int>(outbound.qos)));
+      event.data.emplace_back("payload_bytes",
+                              std::to_string(outbound.payload.data.size()));
+      structured_tracer_->emit(event);
     }
 
     deliver_(client_id, outbound);

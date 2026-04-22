@@ -263,8 +263,8 @@ def run_2_1_1_qos0_publish_delivered(config) -> tuple[bool, str]:
                 publish_reason = publisher.publish(topic, payload, qos=0)
                 assert_reason_code(publish_reason, 0x00)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=0, retain=False)
 
         return True, "2.1.1 QoS0 publish delivered to subscriber"
     except Exception as error:
@@ -371,8 +371,8 @@ def run_2_2_2_qos1_delivery_respects_subscribed_qos(config) -> tuple[bool, str]:
                 publish_reason = publisher.publish(topic, payload, qos=1)
                 assert_reason_code(publish_reason, 0x00)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=0, retain=False)
 
         return True, "2.2.2 subscriber received message with QoS not higher than subscription QoS"
     except Exception as error:
@@ -407,8 +407,8 @@ def run_2_2_3_qos1_retransmit_with_dup(config) -> tuple[bool, str]:
             assert_reason_code(first_reason, 0x00)
             assert_reason_code(second_reason, 0x00)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=1, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=1, retain=False)
 
         return True, "2.2.3 broker accepted QoS1 retransmit with DUP flag and acknowledged both attempts"
     except Exception as error:
@@ -536,8 +536,8 @@ def run_2_3_2_qos2_exactly_once_delivery(config) -> tuple[bool, str]:
                 publish_reason = publisher.publish(topic, payload, qos=2)
                 assert_reason_code(publish_reason, 0x00)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=2, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=2, retain=False)
             assert_no_message(subscriber, timeout=min(1.5, config.timeout_seconds))
 
         return True, "2.3.2 QoS2 publish delivered exactly once"
@@ -599,8 +599,8 @@ def run_2_3_3_qos2_duplicate_publish_handled_once(config) -> tuple[bool, str]:
             finally:
                 raw_socket.close()
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=2, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=2, retain=False)
             assert_no_message(subscriber, timeout=min(1.5, config.timeout_seconds))
 
         return True, "2.3.3 duplicate QoS2 PUBLISH returned PUBREC again and was delivered once"
@@ -787,8 +787,8 @@ def run_2_4_1_qos2_to_qos1_downgrade(config) -> tuple[bool, str]:
                 publish_reason = publisher.publish(topic, payload, qos=2)
                 assert_reason_code(publish_reason, 0x00)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=1, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=1, retain=False)
 
         return True, "2.4.1 QoS2 publish delivered as QoS1 when subscriber max QoS is 1"
     except Exception as error:
@@ -818,8 +818,8 @@ def run_2_4_2_qos2_to_qos0_downgrade(config) -> tuple[bool, str]:
                 publish_reason = publisher.publish(topic, payload, qos=2)
                 assert_reason_code(publish_reason, 0x00)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=0, retain=False)
 
         return True, "2.4.2 QoS2 publish delivered as QoS0 when subscriber max QoS is 0"
     except Exception as error:
@@ -849,8 +849,8 @@ def run_2_4_3_qos1_to_qos0_downgrade(config) -> tuple[bool, str]:
                 publish_reason = publisher.publish(topic, payload, qos=1)
                 assert_reason_code(publish_reason, 0x00)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=0, retain=False)
 
         return True, "2.4.3 QoS1 publish delivered as QoS0 when subscriber max QoS is 0"
     except Exception as error:
@@ -893,9 +893,9 @@ def run_2_4_4_server_maximum_qos_respected(config) -> tuple[bool, str]:
                 publish_reason = publisher.publish(topic, payload, qos=requested_qos)
                 assert_reason_code(publish_reason, 0x00)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
             expected_qos = min(requested_qos, granted_qos, max_qos_int)
-            assert_message(messages[0], topic=topic, payload=payload, qos=expected_qos, retain=False)
+            assert_message(messages, topic=topic, payload=payload, qos=expected_qos, retain=False)
 
         return True, "2.4.4 outbound delivery respected server MaximumQoS from CONNACK"
     except Exception as error:

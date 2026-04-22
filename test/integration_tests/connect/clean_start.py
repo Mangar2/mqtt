@@ -175,8 +175,8 @@ def run_1_4_3_clean_start_false_with_prior_session_resumes(config) -> tuple[bool
             )
             assert_connack(resumed_connack, reason_code=0x00, session_present=True)
 
-            messages = resume_client.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=b"queued-for-resume", qos=1, retain=False)
+            messages = resume_client.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=b"queued-for-resume", qos=1, retain=False)
 
         return True, "1.4.3 Clean Start=0 resumed prior session with Session Present=1"
     except Exception as error:

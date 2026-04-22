@@ -5,6 +5,7 @@
 
 #include "connection/runtime_phase_flow.h"
 
+#include <exception>
 #include <functional>
 
 #include "broker/broker.h"
@@ -204,10 +205,53 @@ public:
   }
 
   void operator()(const SubscribePacket &packet) const {
+    TRACE_GUARD((&context_.broker.structured_tracer()), TraceLevel::Trace,
+                "connection") {
+      TraceEvent event;
+      event.level = TraceLevel::Trace;
+      event.module = "connection";
+      event.info = "inbound_subscribe_received";
+      event.data.emplace_back("client_id",
+                              std::string(context_.client_session.client_id()));
+      event.data.emplace_back("packet_id", std::to_string(packet.packet_id));
+      event.data.emplace_back("filter_count",
+                              std::to_string(packet.filters.size()));
+      context_.broker.structured_tracer().emit(event);
+    }
+
     const SubackPacket suback =
         context_.broker.handle_subscribe(context_.client_session.client_id(),
                                          packet);
-    if (!enqueue_frame(context_.write_queue, encode_suback_packet(suback),
+
+    TRACE_GUARD((&context_.broker.structured_tracer()), TraceLevel::Trace,
+                "connection") {
+      TraceEvent event;
+      event.level = TraceLevel::Trace;
+      event.module = "connection";
+      event.info = "inbound_subscribe_suback_built";
+      event.data.emplace_back("client_id",
+                              std::string(context_.client_session.client_id()));
+      event.data.emplace_back("packet_id", std::to_string(suback.packet_id));
+      event.data.emplace_back("reason_count",
+                              std::to_string(suback.reason_codes.size()));
+      context_.broker.structured_tracer().emit(event);
+    }
+
+    WriteBuffer suback_frame = encode_suback_packet(suback);
+    TRACE_GUARD((&context_.broker.structured_tracer()), TraceLevel::Trace,
+                "connection") {
+      TraceEvent event;
+      event.level = TraceLevel::Trace;
+      event.module = "connection";
+      event.info = "inbound_subscribe_enqueue_suback";
+      event.data.emplace_back("client_id",
+                              std::string(context_.client_session.client_id()));
+      event.data.emplace_back("packet_id", std::to_string(suback.packet_id));
+      event.data.emplace_back("frame_bytes", std::to_string(suback_frame.size()));
+      context_.broker.structured_tracer().emit(event);
+    }
+
+    if (!enqueue_frame(context_.write_queue, std::move(suback_frame),
                        context_.is_websocket)) {
       handle_write_queue_overflow();
     }
@@ -428,6 +472,12 @@ void dispatch_runtime_packet(
 
     try {
       dispatch_runtime_packet(*packet_any, dispatch_context, should_break);
+    } catch (const std::exception &exception) {
+      emit_runtime_warning(broker, client_session.client_id(),
+                           "runtime_packet_dispatch_failed_exception",
+                           exception.what());
+      write_protocol_error_disconnect();
+      return true;
     } catch (...) {
       emit_runtime_warning(broker, client_session.client_id(),
                            "runtime_packet_dispatch_failed");

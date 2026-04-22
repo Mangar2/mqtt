@@ -51,7 +51,6 @@ def _start_isolated_broker(extra_overrides: dict | None = None) -> tuple[str, in
         "network.mqtt_port": _find_free_port(),
         "network.ws_port": 0,
         "broker.allow_anonymous": True,
-        "broker.max_queued_messages": 100,
     }
     if extra_overrides:
         overrides.update(extra_overrides)
@@ -214,8 +213,8 @@ def run_20_1_2_paho_full_session_lifecycle(config) -> tuple[bool, str]:
                 properties=_new_connect_properties(SessionExpiryInterval=300),
             )
             assert_connack(connack, reason_code=0x00, session_present=True)
-            msgs = sub.collect_messages(count=1, timeout=timeout)
-            assert_message(msgs[0], topic=topic, payload=payload_offline, qos=1, retain=False)
+            msgs = sub.collect_message_for_topic(expected_topic=topic, timeout=timeout)
+            assert_message(msgs, topic=topic, payload=payload_offline, qos=1, retain=False)
 
         # --- Phase 4: QoS 0 immediate delivery roundtrip ---
         topic_qos0 = f"integration/interop/20-1-2/qos0/{uuid.uuid4().hex}"
@@ -225,8 +224,8 @@ def run_20_1_2_paho_full_session_lifecycle(config) -> tuple[bool, str]:
             with MqttClient(timeout_seconds=timeout) as pub:
                 pub.connect(host, port, client_id=_unique_id("paho-pub-q0"), clean_start=True)
                 pub.publish(topic_qos0, payload_qos0, qos=0)
-            msgs = sub.collect_messages(count=1, timeout=timeout)
-            assert_message(msgs[0], topic=topic_qos0, payload=payload_qos0, qos=0, retain=False)
+            msgs = sub.collect_message_for_topic(expected_topic=topic_qos0, timeout=timeout)
+            assert_message(msgs, topic=topic_qos0, payload=payload_qos0, qos=0, retain=False)
 
         # --- Phase 5: retained message delivered on fresh subscribe ---
         with MqttClient(timeout_seconds=timeout) as pub:
@@ -235,8 +234,8 @@ def run_20_1_2_paho_full_session_lifecycle(config) -> tuple[bool, str]:
         with MqttClient(timeout_seconds=timeout) as sub:
             sub.connect(host, port, client_id=_unique_id("paho-retain-sub"), clean_start=True)
             sub.subscribe(retained_topic, qos=1)
-            msgs = sub.collect_messages(count=1, timeout=timeout)
-            assert_message(msgs[0], topic=retained_topic, payload=retained_payload, qos=1, retain=False)
+            msgs = sub.collect_message_for_topic(expected_topic=retained_topic, timeout=timeout)
+            assert_message(msgs, topic=retained_topic, payload=retained_payload, qos=1, retain=False)
 
         return True, "Paho full session lifecycle OK (session resume, QoS 0/1 delivery, retained)"
 

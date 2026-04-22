@@ -35,7 +35,8 @@ namespace mqtt {
  * 4. **Subscriber lookup** (12.1.4): SubscriptionStore returns all clients
  *    whose topic filter matches the resolved `msg.topic`.
  *
- * Thread safety: none — external synchronisation required.
+ * Thread safety: collaborator access relies on collaborator-internal locking.
+ * Callback registration/access is synchronized via `std::mutex`.
  */
 class InboundPublishProcessor {
 public:
@@ -101,8 +102,12 @@ private:
    */
   static void resolve_topic_alias(Message &msg, TopicAliasTable &alias_table);
 
+  [[nodiscard]] std::function<void()> snapshot_on_retained_changed() const;
+  void set_on_retained_changed_callback(std::function<void()> callback) noexcept;
+  void emit_on_retained_changed() const noexcept;
+
   AclEngine &acl_;                                ///< ACL engine for publish authorization.
-  mutable std::mutex mutex_;
+  mutable std::mutex on_retained_change_callback_mutex_;
   RetainedMessageStore &retained_;               ///< Retained message store.
   SubscriptionStore &subscriptions_;             ///< Subscription store.
   std::function<void()> on_retained_changed_{};  ///< Write-through callback (13.4).

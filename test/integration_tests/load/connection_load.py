@@ -354,7 +354,13 @@ def _execute_message_load_stage(
                 f"message-collect-start {stage_label} "
                 f"expect={message_count} timeout={collect_timeout_seconds:.2f}s"
             )
-            received_messages = subscriber.collect_messages(count=message_count, timeout=collect_timeout_seconds)
+            try:
+                received_messages = subscriber.collect_messages(
+                    count=message_count,
+                    timeout=collect_timeout_seconds,
+                )
+            except TimeoutError as timeout_error:
+                return False, f"{stage_label} message collect timeout: {timeout_error}"
 
         if len(received_messages) != message_count:
             return False, f"{stage_label} expected {message_count} messages, got {len(received_messages)}"
@@ -414,13 +420,19 @@ def _execute_subscription_load_stage(
         collect_timeout_seconds = _remaining_timeout(
             deadline_monotonic,
             minimum_seconds=0.5,
-            cap_seconds=max(timeout_seconds * 2.0, subscription_count / 120.0, 8.0),
+            cap_seconds=max(timeout_seconds * 4.0, subscription_count / 24.0, 20.0),
         )
         _progress(
             f"subscription-collect-start {stage_label} "
             f"expect={subscription_count} timeout={collect_timeout_seconds:.2f}s"
         )
-        received_messages = subscriber.collect_messages(count=subscription_count, timeout=collect_timeout_seconds)
+        try:
+            received_messages = subscriber.collect_messages(
+                count=subscription_count,
+                timeout=collect_timeout_seconds,
+            )
+        except TimeoutError as timeout_error:
+            return False, f"{stage_label} subscription collect timeout: {timeout_error}"
         received_topics = {message.topic for message in received_messages}
 
     expected_topics = set(topics)

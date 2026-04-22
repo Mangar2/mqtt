@@ -291,9 +291,9 @@ def run_6_1_2_subscriptions_survive_reconnect(config) -> tuple[bool, str]:
             )
             assert_reason_code(publish_reason, 0x00)
 
-            messages = resumed.collect_messages(count=1, timeout=config.timeout_seconds)
+            messages = resumed.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
             assert_message(
-                messages[0],
+                messages,
                 topic=topic,
                 payload=b"subscription-still-active",
                 qos=1,
@@ -338,8 +338,8 @@ def run_6_1_3_offline_queued_messages_delivered(config) -> tuple[bool, str]:
         with MqttClient(timeout_seconds=config.timeout_seconds) as resumed:
             connack = resumed.connect(host, port, client_id=client_id, clean_start=False)
             assert_connack(connack, reason_code=0x00, session_present=True)
-            messages = resumed.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=b"queued-while-offline", qos=1, retain=False)
+            messages = resumed.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=b"queued-while-offline", qos=1, retain=False)
 
         return True, "6.1.3 offline QoS1 message was delivered on reconnect"
     except Exception as error:
@@ -669,8 +669,8 @@ def run_6_3_1_qos1_offline_message_queued(config) -> tuple[bool, str]:
         with MqttClient(timeout_seconds=config.timeout_seconds) as resumed:
             connack = resumed.connect(host, port, client_id=client_id, clean_start=False)
             assert_connack(connack, reason_code=0x00, session_present=True)
-            messages = resumed.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=b"offline-qos1", qos=1, retain=False)
+            messages = resumed.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=b"offline-qos1", qos=1, retain=False)
 
         return True, "6.3.1 offline QoS1 message was queued and delivered"
     except Exception as error:
@@ -710,10 +710,10 @@ def run_6_3_2_qos2_offline_message_queued(config) -> tuple[bool, str]:
         with MqttClient(timeout_seconds=config.timeout_seconds) as resumed:
             connack = resumed.connect(host, port, client_id=client_id, clean_start=False)
             assert_connack(connack, reason_code=0x00, session_present=True)
-            messages = resumed.collect_messages(count=1, timeout=config.timeout_seconds)
-            if int(messages[0].qos) != 2:
-                return False, f"expected QoS2 delivery, got QoS{int(messages[0].qos)}"
-            assert_message(messages[0], topic=topic, payload=b"offline-qos2", qos=2, retain=False)
+            messages = resumed.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            if int(messages.qos) != 2:
+                return False, f"expected QoS2 delivery, got QoS{int(messages.qos)}"
+            assert_message(messages, topic=topic, payload=b"offline-qos2", qos=2, retain=False)
 
         return True, "6.3.2 offline QoS2 message was queued and delivered"
     except Exception as error:

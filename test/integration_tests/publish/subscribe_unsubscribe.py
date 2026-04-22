@@ -224,8 +224,8 @@ def run_2_5_4_subscribe_updates_existing_subscription(config) -> tuple[bool, str
                 assert_connack(pub_connack, reason_code=0x00, session_present=False)
                 publisher.publish(topic, payload, qos=1)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=1, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=1, retain=False)
 
         return True, "2.5.4 re-subscribe with higher QoS updated existing subscription"
     except Exception as error:
@@ -311,8 +311,8 @@ def run_2_6_1_unsubscribe_stops_message_delivery(config) -> tuple[bool, str]:
                 assert_connack(pub_connack, reason_code=0x00, session_present=False)
                 publisher.publish(topic, b"before-unsub", qos=0)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=b"before-unsub", qos=0, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=b"before-unsub", qos=0, retain=False)
 
             unsuback_codes = subscriber.unsubscribe(topic)
             if not unsuback_codes:

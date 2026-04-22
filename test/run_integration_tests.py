@@ -12,6 +12,7 @@ Features:
 """
 
 import argparse
+import configparser
 import hashlib
 import importlib.util
 import ipaddress
@@ -36,6 +37,7 @@ RELEASE_DIR = PROJECT_ROOT / "build" / "release"
 BROKER_BINARY = RELEASE_DIR / ("mqtt-broker.exe" if sys.platform == "win32" else "mqtt-broker")
 DEFAULT_RESULTS_FILE = TEST_DIR / "integration_test_results.json"
 INTEGRATION_TESTS_DIR = TEST_DIR / "integration_tests"
+DEFAULT_BROKER_TEMPLATE_FILE = TEST_DIR / "broker.ws.ini"
 
 
 @dataclass(frozen=True)
@@ -247,33 +249,32 @@ def _format_ini_value(value: object) -> str:
 
 
 def _create_startup_config(config: RunnerConfig, startup_options: StartupOptions) -> Path | None:
-    sections: dict[str, dict[str, object]] = {
-        "network": {
-            "mqtt_port": config.port,
-            "ws_port": 0,
-        }
-    }
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.optionxform = str
+    if DEFAULT_BROKER_TEMPLATE_FILE.exists():
+        parser.read(DEFAULT_BROKER_TEMPLATE_FILE, encoding="utf-8")
 
-    tracing_section: dict[str, object] = {}
-    if startup_options.trace_level is not None:
-        tracing_section["global_level"] = startup_options.trace_level
-    if startup_options.trace_modules:
-        tracing_section["trace_modules"] = ",".join(startup_options.trace_modules)
+    if not parser.has_section("network"):
+        parser.add_section("network")
+    parser.set("network", "mqtt_port", _format_ini_value(config.port))
+    parser.set("network", "ws_port", _format_ini_value(0))
 
-    if tracing_section:
-        sections["tracing"] = tracing_section
-
-    if not sections:
-        return None
+    if startup_options.trace_level is not None or startup_options.trace_modules:
+        if not parser.has_section("tracing"):
+            parser.add_section("tracing")
+        if startup_options.trace_level is not None:
+            parser.set("tracing", "global_level", startup_options.trace_level)
+        if startup_options.trace_modules:
+            parser.set("tracing", "trace_modules", ",".join(startup_options.trace_modules))
 
     config_dir = Path(tempfile.mkdtemp(prefix="mqtt-integration-runner-config-"))
     config_path = config_dir / "broker.ini"
 
     lines: list[str] = []
-    for section_name in sorted(sections.keys()):
+    for section_name in parser.sections():
         lines.append(f"[{section_name}]")
-        for key_name in sorted(sections[section_name].keys()):
-            lines.append(f"{key_name} = {_format_ini_value(sections[section_name][key_name])}")
+        for key_name, value in parser.items(section_name):
+            lines.append(f"{key_name} = {value}")
         lines.append("")
 
     if lines and lines[-1] == "":

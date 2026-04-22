@@ -140,7 +140,7 @@ def run_12_1_1_payload_format_indicator_forwarded(config) -> tuple[bool, str]:
         publish_reason = publisher.publish(topic, payload, qos=1, properties=publish_properties)
         assert_reason_code(publish_reason, 0x00)
 
-        message = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)[0]
+        message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
         assert_message(message, topic=topic, payload=payload, qos=1, retain=False)
 
         payload_format = _message_property(message, "PayloadFormatIndicator")
@@ -226,7 +226,7 @@ def run_12_2_1_content_type_forwarded(config) -> tuple[bool, str]:
         publish_reason = publisher.publish(topic, payload, qos=1, properties=publish_properties)
         assert_reason_code(publish_reason, 0x00)
 
-        message = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)[0]
+        message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
         assert_message(message, topic=topic, payload=payload, qos=1, retain=False)
 
         actual_content_type = _message_property(message, "ContentType")
@@ -269,7 +269,7 @@ def run_12_3_1_response_topic_forwarded(config) -> tuple[bool, str]:
         publish_reason = publisher.publish(topic, payload, qos=1, properties=publish_properties)
         assert_reason_code(publish_reason, 0x00)
 
-        message = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)[0]
+        message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
         assert_message(message, topic=topic, payload=payload, qos=1, retain=False)
 
         actual_response_topic = _message_property(message, "ResponseTopic")
@@ -312,7 +312,7 @@ def run_12_3_2_correlation_data_forwarded(config) -> tuple[bool, str]:
         publish_reason = publisher.publish(topic, payload, qos=1, properties=publish_properties)
         assert_reason_code(publish_reason, 0x00)
 
-        message = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)[0]
+        message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
         assert_message(message, topic=topic, payload=payload, qos=1, retain=False)
 
         actual_correlation_data = _message_property(message, "CorrelationData")
@@ -386,7 +386,7 @@ def run_12_3_3_request_response_pattern(config) -> tuple[bool, str]:
         )
         assert_reason_code(request_reason, 0x00)
 
-        request_message = responder.collect_messages(count=1, timeout=config.timeout_seconds)[0]
+        request_message = responder.collect_message_for_topic(expected_topic=request_topic, timeout=config.timeout_seconds)
         assert_message(request_message, topic=request_topic, payload=b"request", qos=1, retain=False)
         if _message_property(request_message, "ResponseTopic") != response_topic:
             return False, "responder did not receive request ResponseTopic"
@@ -402,7 +402,7 @@ def run_12_3_3_request_response_pattern(config) -> tuple[bool, str]:
         )
         assert_reason_code(response_reason, 0x00)
 
-        response_message = requester.collect_messages(count=1, timeout=config.timeout_seconds)[0]
+        response_message = requester.collect_message_for_topic(expected_topic=response_topic, timeout=config.timeout_seconds)
         assert_message(response_message, topic=response_topic, payload=b"response", qos=1, retain=False)
         if _message_property(response_message, "CorrelationData") != correlation_data:
             return False, "requester response CorrelationData mismatch"
@@ -464,7 +464,7 @@ def run_12_4_1_message_expiry_decremented_in_forwarded_publish(config) -> tuple[
             )
             assert_connack(resumed_connack, reason_code=0x00, session_present=True)
 
-            message = resumed_subscriber.collect_messages(count=1, timeout=config.timeout_seconds)[0]
+            message = resumed_subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
             assert_message(message, topic=topic, payload=b"expiring", qos=1, retain=False)
 
             remaining_expiry = _message_property(message, "MessageExpiryInterval")
@@ -598,7 +598,7 @@ def run_12_5_1_user_properties_forwarded(config) -> tuple[bool, str]:
         publish_reason = publisher.publish(topic, payload, qos=1, properties=publish_properties)
         assert_reason_code(publish_reason, 0x00)
 
-        message = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)[0]
+        message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
         assert_message(message, topic=topic, payload=payload, qos=1, retain=False)
 
         user_properties = _message_property(message, "UserProperty")
@@ -643,7 +643,7 @@ def run_12_5_2_multiple_user_properties_forwarded(config) -> tuple[bool, str]:
         publish_reason = publisher.publish(topic, payload, qos=1, properties=publish_properties)
         assert_reason_code(publish_reason, 0x00)
 
-        message = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)[0]
+        message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
         assert_message(message, topic=topic, payload=payload, qos=1, retain=False)
 
         actual_properties = _message_property(message, "UserProperty")

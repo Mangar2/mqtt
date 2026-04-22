@@ -20,8 +20,11 @@ namespace mqtt {
  * @brief In-memory store for all active MQTT 5.0 subscriptions (Module 4.1).
  *
  * Wraps `SubscriptionTrie` (Module 3.2) and delegates topic matching to
- * `TopicMatcher` (Module 3.3).  A single instance is shared across all
- * connected clients; external synchronisation is required for concurrent use.
+ * `TopicMatcher` (Module 3.3). A single instance is shared across all
+ * connected clients.
+ *
+ * Thread safety: internally synchronized via `std::shared_mutex`.
+ * Concurrent readers are allowed; writers are serialized.
  */
 class SubscriptionStore {
 public:

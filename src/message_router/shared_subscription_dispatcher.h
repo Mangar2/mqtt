@@ -39,7 +39,7 @@ namespace mqtt {
  * one level, `#` matches any remaining levels, and topics beginning with `$`
  * are excluded from filters whose first level is a wildcard.
  *
- * Thread safety: none — external synchronisation required.
+ * Thread safety: internally synchronized via `std::mutex`.
  */
 class SharedSubscriptionDispatcher {
 public:

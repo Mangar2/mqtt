@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import socket
 import subprocess
+import configparser
 import tempfile
 import time
 from typing import Any
@@ -30,7 +31,7 @@ _TARGET_WS_PORT_ENV = "MQTT_INTEGRATION_TARGET_WS_PORT"
 _BROKER_MANAGED_ENV = "MQTT_INTEGRATION_BROKER_MANAGED"
 _EXTERNAL_AUTH_CREDENTIALS_ENV = "MQTT_INTEGRATION_EXTERNAL_AUTH_CREDENTIALS"
 _EXTERNAL_SYS_TOPIC_INTERVAL_ENV = "MQTT_INTEGRATION_EXTERNAL_SYS_TOPIC_INTERVAL"
-_DEFAULT_BROKER_INI = PROJECT_ROOT / "broker.ini"
+_DEFAULT_BROKER_INI = PROJECT_ROOT / "test" / "broker.ws.ini"
 
 _EXTERNAL_SAFE_OVERRIDE_KEYS = {
     "network.mqtt_port",
@@ -325,8 +326,6 @@ def _extract_effective_port(normalized_overrides: dict[str, Any]) -> int:
 
 def _write_config_if_needed(normalized_overrides: dict[str, Any]) -> Path | None:
     ini_lines = _render_ini_lines(normalized_overrides)
-    if not ini_lines:
-        return None
 
     config_dir = Path(tempfile.mkdtemp(prefix="mqtt-integration-config-"))
     config_path = config_dir / "broker.ini"
@@ -335,7 +334,12 @@ def _write_config_if_needed(normalized_overrides: dict[str, Any]) -> Path | None
 
 
 def _render_ini_lines(normalized_overrides: dict[str, Any]) -> list[str]:
-    sections: dict[str, dict[str, Any]] = {}
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.optionxform = str
+
+    if _DEFAULT_BROKER_INI.exists():
+        parser.read(_DEFAULT_BROKER_INI, encoding="utf-8")
+
     for full_key, raw_value in normalized_overrides.items():
         if full_key.startswith("__"):
             continue
@@ -344,15 +348,15 @@ def _render_ini_lines(normalized_overrides: dict[str, Any]) -> list[str]:
                 f"invalid override key {full_key!r}; expected section.key format or nested dict"
             )
         section_name, key_name = full_key.split(".", 1)
-        section_map = sections.setdefault(section_name, {})
-        section_map[key_name] = raw_value
+        if not parser.has_section(section_name):
+            parser.add_section(section_name)
+        parser.set(section_name, key_name, _format_ini_value(raw_value))
 
     lines: list[str] = []
-    for section_name in sorted(sections.keys()):
+    for section_name in parser.sections():
         lines.append(f"[{section_name}]")
-        section_map = sections[section_name]
-        for key_name in sorted(section_map.keys()):
-            lines.append(f"{key_name} = {_format_ini_value(section_map[key_name])}")
+        for key_name, value in parser.items(section_name):
+            lines.append(f"{key_name} = {value}")
         lines.append("")
 
     if lines and lines[-1] == "":

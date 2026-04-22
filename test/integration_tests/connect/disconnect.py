@@ -344,8 +344,8 @@ def run_1_6_2_disconnect_0x04_will_is_published(config) -> tuple[bool, str]:
                 assert_connack(will_connack, reason_code=0x00, session_present=False)
                 will_client.disconnect(reason_code=0x04)
 
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=1, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=1, retain=False)
 
         return True, "1.6.2 DISCONNECT 0x04 triggered will publication"
     except Exception as error:

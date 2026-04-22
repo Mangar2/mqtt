@@ -100,8 +100,8 @@ def run_17_1_1_one_publisher_ten_subscribers_receive(config) -> tuple[bool, str]
                 assert_reason_code(publish_reason, 0x00)
 
             for index, subscriber in enumerate(subscribers):
-                messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-                assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+                messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+                assert_message(messages, topic=topic, payload=payload, qos=0, retain=False)
 
         return True, "17.1.1 all 10 subscribers received the published message"
     except Exception as error:
@@ -150,8 +150,7 @@ def run_17_1_2_mixed_qos_each_subscriber_gets_subscribed_qos(config) -> tuple[bo
 
             delivered_qos: list[int] = []
             for subscriber, subscribed_qos in zip(subscribers, subscriber_qos_levels):
-                messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-                message = messages[0]
+                message = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
                 assert_message(message, topic=topic, payload=payload, qos=subscribed_qos, retain=False)
                 delivered_qos.append(int(message.qos))
 
@@ -297,8 +296,8 @@ def run_17_3_2_client_publishes_and_receives_own_message(config) -> tuple[bool, 
                 return False, "17.3.2 subscriber returned empty SUBACK"
             assert_reason_code(suback_codes[0], 0x00)
             assert_reason_code(client.publish(topic, payload, qos=0), 0x00)
-            messages = client.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            messages = client.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=0, retain=False)
 
         return True, "17.3.2 client received own message after publishing to subscribed topic"
     except Exception as error:

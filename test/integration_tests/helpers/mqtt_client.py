@@ -325,7 +325,6 @@ class MqttClient:
         if options is not None:
             result, mid = client.subscribe(
                 topic_filter,
-                qos=qos,
                 options=options,
                 properties=subscribe_properties,
             )
@@ -364,6 +363,39 @@ class MqttClient:
                     f"Timed out while waiting for {count} messages; got {len(messages)}"
                 ) from empty_error
         return messages
+
+    def collect_message_for_topic(
+        self,
+        *,
+        expected_topic: str,
+        timeout: float,
+        sample_limit: int = 5,
+    ) -> ReceivedMessage:
+        """Collect a single inbound message with expected topic, ignoring unrelated traffic."""
+        deadline = time.monotonic() + max(0.2, timeout)
+        sampled_topics: list[str] = []
+
+        while time.monotonic() < deadline:
+            remaining = max(0.05, deadline - time.monotonic())
+            try:
+                message = self.collect_messages(count=1, timeout=remaining)[0]
+            except TimeoutError as timeout_error:
+                sampled_text = ", ".join(sampled_topics) if sampled_topics else "none"
+                raise TimeoutError(
+                    "Timed out while waiting for expected topic "
+                    f"{expected_topic!r}; sampled unrelated topics: {sampled_text}"
+                ) from timeout_error
+
+            if message.topic == expected_topic:
+                return message
+            if len(sampled_topics) < max(0, sample_limit):
+                sampled_topics.append(message.topic)
+
+        sampled_text = ", ".join(sampled_topics) if sampled_topics else "none"
+        raise TimeoutError(
+            "Timed out while waiting for expected topic "
+            f"{expected_topic!r}; sampled unrelated topics: {sampled_text}"
+        )
 
     def wait_for_disconnect(self, timeout: float) -> DisconnectEvent:
         """Wait for server initiated disconnect and return details."""

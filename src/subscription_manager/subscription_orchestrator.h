@@ -76,7 +76,12 @@ public:
   void set_on_session_changed(std::function<void()> callback) noexcept;
 
 private:
-  mutable std::mutex mutex_;
+  [[nodiscard]] std::function<void()> snapshot_on_session_changed() const;
+  void
+  set_on_session_changed_callback(std::function<void()> callback) noexcept;
+  void emit_on_session_changed() const noexcept;
+
+  mutable std::mutex on_session_changed_callback_mutex_;
   AclEngine &acl_engine_;
   SessionStore &session_store_;
   SubscriptionStore &subscription_store_;

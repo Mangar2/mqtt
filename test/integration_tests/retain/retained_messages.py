@@ -75,6 +75,21 @@ def _publish_retained(
         publisher.publish(topic, payload, qos=0, retain=True, properties=properties)
 
 
+def _assert_no_message_for_topic(subscriber, topic: str, timeout_seconds: float) -> None:
+    deadline = time.monotonic() + max(0.2, timeout_seconds)
+    while time.monotonic() < deadline:
+        remaining = max(0.05, deadline - time.monotonic())
+        try:
+            message = subscriber.collect_messages(count=1, timeout=min(0.2, remaining))[0]
+        except TimeoutError:
+            return
+
+        if message.topic == topic:
+            raise AssertionError(
+                f"expected no message for topic {topic!r}, but received payload {message.payload!r}"
+            )
+
+
 def run_4_1_1_publish_retain_stores_message(config) -> tuple[bool, str]:
     process = None
     try:
@@ -91,8 +106,8 @@ def run_4_1_1_publish_retain_stores_message(config) -> tuple[bool, str]:
                 session_present=False,
             )
             subscriber.subscribe(topic, qos=0)
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=0, retain=False)
 
         return True, "4.1.1 retained publish is stored and available"
     except Exception as error:
@@ -117,8 +132,8 @@ def run_4_1_2_new_subscriber_gets_retained_immediately(config) -> tuple[bool, st
                 session_present=False,
             )
             subscriber.subscribe(topic, qos=0)
-            messages = subscriber.collect_messages(count=1, timeout=min(2.0, config.timeout_seconds))
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=min(2.0, config.timeout_seconds))
+            assert_message(messages, topic=topic, payload=payload, qos=0, retain=False)
 
         return True, "4.1.2 new subscriber gets retained message directly after subscribe"
     except Exception as error:
@@ -143,8 +158,8 @@ def run_4_1_3_retained_delivery_default_clears_retain_flag(config) -> tuple[bool
                 session_present=False,
             )
             subscriber.subscribe(topic, qos=0)
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=0, retain=False)
 
         return True, "4.1.3 retained delivery clears RETAIN flag by default (RAP=0)"
     except Exception as error:
@@ -169,8 +184,8 @@ def run_4_1_4_new_retained_replaces_old(config) -> tuple[bool, str]:
                 session_present=False,
             )
             subscriber.subscribe(topic, qos=0)
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=b"new-retain", qos=0, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=b"new-retain", qos=0, retain=False)
 
         return True, "4.1.4 second retained publish replaces previous retained payload"
     except Exception as error:
@@ -193,7 +208,7 @@ def run_4_2_1_empty_retained_publish_deletes_retained_message(config) -> tuple[b
                 reason_code=0x00,
                 session_present=False,
             )
-            publisher.publish(topic, b"", qos=0, retain=True)
+            publisher.publish(topic, b"", qos=1, retain=True)
 
         with MqttClient(timeout_seconds=config.timeout_seconds) as subscriber:
             assert_connack(
@@ -202,7 +217,7 @@ def run_4_2_1_empty_retained_publish_deletes_retained_message(config) -> tuple[b
                 session_present=False,
             )
             subscriber.subscribe(topic, qos=0)
-            assert_no_message(subscriber, timeout=min(1.5, config.timeout_seconds))
+            _assert_no_message_for_topic(subscriber, topic, timeout_seconds=min(1.5, config.timeout_seconds))
 
         return True, "4.2.1 retained message deleted by empty retained publish"
     except Exception as error:
@@ -225,7 +240,7 @@ def run_4_2_2_no_retained_delivery_after_deletion(config) -> tuple[bool, str]:
                 reason_code=0x00,
                 session_present=False,
             )
-            publisher.publish(topic, b"", qos=0, retain=True)
+            publisher.publish(topic, b"", qos=1, retain=True)
 
         with MqttClient(timeout_seconds=config.timeout_seconds) as subscriber:
             assert_connack(
@@ -234,7 +249,7 @@ def run_4_2_2_no_retained_delivery_after_deletion(config) -> tuple[bool, str]:
                 session_present=False,
             )
             subscriber.subscribe(topic, qos=0)
-            assert_no_message(subscriber, timeout=min(1.5, config.timeout_seconds))
+            _assert_no_message_for_topic(subscriber, topic, timeout_seconds=min(1.5, config.timeout_seconds))
 
         return True, "4.2.2 new subscriber receives no retained message after deletion"
     except Exception as error:
@@ -260,13 +275,13 @@ def run_4_3_1_retain_handling_zero_sends_on_every_subscribe(config) -> tuple[boo
                 session_present=False,
             )
             subscriber.subscribe(topic, options=options)
-            first = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(first[0], topic=topic, payload=payload, qos=0, retain=True)
+            first = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(first, topic=topic, payload=payload, qos=0, retain=True)
 
             subscriber.unsubscribe(topic)
             subscriber.subscribe(topic, options=options)
-            second = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(second[0], topic=topic, payload=payload, qos=0, retain=True)
+            second = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(second, topic=topic, payload=payload, qos=0, retain=True)
 
         return True, "4.3.1 retain handling 0 returns retained message on each subscribe"
     except Exception as error:
@@ -292,11 +307,11 @@ def run_4_3_2_retain_handling_one_only_on_new_subscribe(config) -> tuple[bool, s
                 session_present=False,
             )
             subscriber.subscribe(topic, options=options)
-            first = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(first[0], topic=topic, payload=payload, qos=0, retain=True)
+            first = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(first, topic=topic, payload=payload, qos=0, retain=True)
 
             subscriber.subscribe(topic, options=options)
-            assert_no_message(subscriber, timeout=min(1.5, config.timeout_seconds))
+            _assert_no_message_for_topic(subscriber, topic, timeout_seconds=min(1.5, config.timeout_seconds))
 
         return True, "4.3.2 retain handling 1 skips retained replay on re-subscribe"
     except Exception as error:
@@ -321,7 +336,7 @@ def run_4_3_3_retain_handling_two_never_sends_retained(config) -> tuple[bool, st
                 session_present=False,
             )
             subscriber.subscribe(topic, options=options)
-            assert_no_message(subscriber, timeout=min(1.5, config.timeout_seconds))
+            _assert_no_message_for_topic(subscriber, topic, timeout_seconds=min(1.5, config.timeout_seconds))
 
         return True, "4.3.3 retain handling 2 suppresses retained delivery"
     except Exception as error:
@@ -347,8 +362,8 @@ def run_4_4_1_rap_one_preserves_retain_flag(config) -> tuple[bool, str]:
                 session_present=False,
             )
             subscriber.subscribe(topic, options=options)
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=True)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=0, retain=True)
 
         return True, "4.4.1 retain as published=1 preserves retain flag"
     except Exception as error:
@@ -374,8 +389,8 @@ def run_4_4_2_rap_zero_clears_retain_flag(config) -> tuple[bool, str]:
                 session_present=False,
             )
             subscriber.subscribe(topic, options=options)
-            messages = subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            messages = subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(messages, topic=topic, payload=payload, qos=0, retain=False)
 
         return True, "4.4.2 retain as published=0 clears retain flag on forwarded retained publish"
     except Exception as error:
@@ -407,8 +422,8 @@ def run_4_5_1_retained_message_expires(config) -> tuple[bool, str]:
                 session_present=False,
             )
             before_expiry_subscriber.subscribe(topic, qos=0)
-            before_messages = before_expiry_subscriber.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(before_messages[0], topic=topic, payload=payload, qos=0, retain=False)
+            before_messages = before_expiry_subscriber.collect_message_for_topic(expected_topic=topic, timeout=config.timeout_seconds)
+            assert_message(before_messages, topic=topic, payload=payload, qos=0, retain=False)
 
         time.sleep(3.2)
 

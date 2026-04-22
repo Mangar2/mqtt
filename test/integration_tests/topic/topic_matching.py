@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import socket
+import time
 import uuid
 from pathlib import Path
 
@@ -54,6 +55,38 @@ def _run_prefix() -> str:
     return f"t/{uuid.uuid4().hex[:8]}"
 
 
+def _subscribe_without_retained(subscriber, topic_filter: str, qos: int = 0, subscription_id: int | None = None) -> list[int]:
+    options = _mqtt_client_module.SubscribeOptions(qos=qos, retainHandling=2)
+    return subscriber.subscribe(topic_filter, qos=qos, options=options, subscription_id=subscription_id)
+
+
+def _collect_expected_topic_message(subscriber, expected_topic: str, timeout_seconds: float, test_case: str):
+    deadline = time.monotonic() + max(0.2, timeout_seconds)
+    sampled_topics: list[str] = []
+
+    while time.monotonic() < deadline:
+        remaining = max(0.05, deadline - time.monotonic())
+        try:
+            candidate = subscriber.collect_messages(count=1, timeout=remaining)[0]
+        except TimeoutError as timeout_error:
+            sampled_text = ", ".join(sampled_topics) if sampled_topics else "none"
+            raise AssertionError(
+                f"{test_case} failed: expected topic '{expected_topic}' was not observed "
+                f"within timeout; sampled unrelated topics: {sampled_text}"
+            ) from timeout_error
+
+        if candidate.topic == expected_topic:
+            return candidate
+        if len(sampled_topics) < 5:
+            sampled_topics.append(candidate.topic)
+
+    sampled_text = ", ".join(sampled_topics) if sampled_topics else "none"
+    raise AssertionError(
+        f"{test_case} failed: expected topic '{expected_topic}' was not observed "
+        f"within timeout; sampled unrelated topics: {sampled_text}"
+    )
+
+
 # ─── 3.1 Exact Topic Match ────────────────────────────────────────────────────
 
 def run_3_1_1_exact_match_delivered(config) -> tuple[bool, str]:
@@ -66,12 +99,12 @@ def run_3_1_1_exact_match_delivered(config) -> tuple[bool, str]:
         payload = b"exact-match"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-1-1"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe(sub_filter, qos=0)
+            _subscribe_without_retained(sub, sub_filter, qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-1-1"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, payload, qos=0)
-            msgs = sub.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(msgs[0], topic=pub_topic, payload=payload, qos=0, retain=False)
+            matched = _collect_expected_topic_message(sub, pub_topic, config.timeout_seconds, "3.1.1")
+            assert_message(matched, topic=pub_topic, payload=payload, qos=0, retain=False)
         return True, "3.1.1 exact topic match delivered"
     except Exception as e:
         return False, f"3.1.1 failed: {e}"
@@ -88,7 +121,7 @@ def run_3_1_2_exact_mismatch_not_delivered(config) -> tuple[bool, str]:
         pub_topic = f"{pfx}/a/b/d"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-1-2"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe(sub_filter, qos=0)
+            _subscribe_without_retained(sub, sub_filter, qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-1-2"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, b"no-match", qos=0)
@@ -109,7 +142,7 @@ def run_3_1_3_exact_shorter_not_delivered(config) -> tuple[bool, str]:
         pub_topic = f"{pfx}/a/b"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-1-3"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe(sub_filter, qos=0)
+            _subscribe_without_retained(sub, sub_filter, qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-1-3"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, b"shorter", qos=0)
@@ -130,7 +163,7 @@ def run_3_1_4_exact_longer_not_delivered(config) -> tuple[bool, str]:
         pub_topic = f"{pfx}/a/b/c/d"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-1-4"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe(sub_filter, qos=0)
+            _subscribe_without_retained(sub, sub_filter, qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-1-4"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, b"longer", qos=0)
@@ -154,12 +187,12 @@ def run_3_2_1_plus_wildcard_match(config) -> tuple[bool, str]:
         payload = b"plus-match"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-2-1"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe(sub_filter, qos=0)
+            _subscribe_without_retained(sub, sub_filter, qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-2-1"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, payload, qos=0)
-            msgs = sub.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(msgs[0], topic=pub_topic, payload=payload, qos=0, retain=False)
+            matched = _collect_expected_topic_message(sub, pub_topic, config.timeout_seconds, "3.2.1")
+            assert_message(matched, topic=pub_topic, payload=payload, qos=0, retain=False)
         return True, "3.2.1 a/+/c matches a/b/c"
     except Exception as e:
         return False, f"3.2.1 failed: {e}"
@@ -177,12 +210,12 @@ def run_3_2_2_plus_wildcard_different_segment(config) -> tuple[bool, str]:
         payload = b"plus-x"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-2-2"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe(sub_filter, qos=0)
+            _subscribe_without_retained(sub, sub_filter, qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-2-2"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, payload, qos=0)
-            msgs = sub.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(msgs[0], topic=pub_topic, payload=payload, qos=0, retain=False)
+            matched = _collect_expected_topic_message(sub, pub_topic, config.timeout_seconds, "3.2.2")
+            assert_message(matched, topic=pub_topic, payload=payload, qos=0, retain=False)
         return True, "3.2.2 a/+/c matches a/x/c"
     except Exception as e:
         return False, f"3.2.2 failed: {e}"
@@ -199,7 +232,7 @@ def run_3_2_3_plus_wildcard_no_match_different_last(config) -> tuple[bool, str]:
         pub_topic = f"{pfx}/a/b/d"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-2-3"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe(sub_filter, qos=0)
+            _subscribe_without_retained(sub, sub_filter, qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-2-3"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, b"no-match", qos=0)
@@ -221,12 +254,12 @@ def run_3_2_4_plus_wildcard_at_start(config) -> tuple[bool, str]:
         payload = b"plus-start"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-2-4"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe(sub_filter, qos=0)
+            _subscribe_without_retained(sub, sub_filter, qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-2-4"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, payload, qos=0)
-            msgs = sub.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(msgs[0], topic=pub_topic, payload=payload, qos=0, retain=False)
+            matched = _collect_expected_topic_message(sub, pub_topic, config.timeout_seconds, "3.2.4")
+            assert_message(matched, topic=pub_topic, payload=payload, qos=0, retain=False)
         return True, "3.2.4 +/b/c matches a/b/c"
     except Exception as e:
         return False, f"3.2.4 failed: {e}"
@@ -244,12 +277,12 @@ def run_3_2_5_plus_wildcard_two_levels(config) -> tuple[bool, str]:
         payload = b"two-level"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-2-5"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe(sub_filter, qos=0)
+            _subscribe_without_retained(sub, sub_filter, qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-2-5"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, payload, qos=0)
-            msgs = sub.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(msgs[0], topic=pub_topic, payload=payload, qos=0, retain=False)
+            matched = _collect_expected_topic_message(sub, pub_topic, config.timeout_seconds, "3.2.5")
+            assert_message(matched, topic=pub_topic, payload=payload, qos=0, retain=False)
         return True, "3.2.5 a/+ matches a/b"
     except Exception as e:
         return False, f"3.2.5 failed: {e}"
@@ -268,12 +301,12 @@ def run_3_2_6_plus_wildcard_single_level(config) -> tuple[bool, str]:
         payload = b"single-level"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-2-6"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe(sub_filter, qos=0)
+            _subscribe_without_retained(sub, sub_filter, qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-2-6"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, payload, qos=0)
-            msgs = sub.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(msgs[0], topic=pub_topic, payload=payload, qos=0, retain=False)
+            matched = _collect_expected_topic_message(sub, pub_topic, config.timeout_seconds, "3.2.6")
+            assert_message(matched, topic=pub_topic, payload=payload, qos=0, retain=False)
         return True, "3.2.6 + matches single-level topic"
     except Exception as e:
         return False, f"3.2.6 failed: {e}"
@@ -290,7 +323,7 @@ def run_3_2_7_plus_wildcard_no_match_extra_level(config) -> tuple[bool, str]:
         pub_topic = f"{pfx}/a/b/c/d"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-2-7"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe(sub_filter, qos=0)
+            _subscribe_without_retained(sub, sub_filter, qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-2-7"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, b"extra-level", qos=0)
@@ -314,12 +347,12 @@ def run_3_3_1_hash_wildcard_single_child(config) -> tuple[bool, str]:
         payload = b"hash-single"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-3-1"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe(sub_filter, qos=0)
+            _subscribe_without_retained(sub, sub_filter, qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-3-1"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, payload, qos=0)
-            msgs = sub.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(msgs[0], topic=pub_topic, payload=payload, qos=0, retain=False)
+            matched = _collect_expected_topic_message(sub, pub_topic, config.timeout_seconds, "3.3.1")
+            assert_message(matched, topic=pub_topic, payload=payload, qos=0, retain=False)
         return True, "3.3.1 a/# matches a/b"
     except Exception as e:
         return False, f"3.3.1 failed: {e}"
@@ -337,12 +370,12 @@ def run_3_3_2_hash_wildcard_deep_hierarchy(config) -> tuple[bool, str]:
         payload = b"hash-deep"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-3-2"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe(sub_filter, qos=0)
+            _subscribe_without_retained(sub, sub_filter, qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-3-2"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, payload, qos=0)
-            msgs = sub.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(msgs[0], topic=pub_topic, payload=payload, qos=0, retain=False)
+            matched = _collect_expected_topic_message(sub, pub_topic, config.timeout_seconds, "3.3.2")
+            assert_message(matched, topic=pub_topic, payload=payload, qos=0, retain=False)
         return True, "3.3.2 a/# matches a/b/c/d"
     except Exception as e:
         return False, f"3.3.2 failed: {e}"
@@ -361,12 +394,12 @@ def run_3_3_3_hash_wildcard_parent_topic(config) -> tuple[bool, str]:
         payload = b"hash-parent"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-3-3"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe(sub_filter, qos=0)
+            _subscribe_without_retained(sub, sub_filter, qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-3-3"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, payload, qos=0)
-            msgs = sub.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(msgs[0], topic=pub_topic, payload=payload, qos=0, retain=False)
+            matched = _collect_expected_topic_message(sub, pub_topic, config.timeout_seconds, "3.3.3")
+            assert_message(matched, topic=pub_topic, payload=payload, qos=0, retain=False)
         return True, "3.3.3 a/# matches a (parent topic)"
     except Exception as e:
         return False, f"3.3.3 failed: {e}"
@@ -383,12 +416,12 @@ def run_3_3_4_hash_root_matches_all(config) -> tuple[bool, str]:
         payload = b"root-hash"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-3-4"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe("#", qos=0)
+            _subscribe_without_retained(sub, "#", qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-3-4"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, payload, qos=0)
-            msgs = sub.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(msgs[0], topic=pub_topic, payload=payload, qos=0, retain=False)
+            matched = _collect_expected_topic_message(sub, pub_topic, config.timeout_seconds, "3.3.4")
+            assert_message(matched, topic=pub_topic, payload=payload, qos=0, retain=False)
         return True, "3.3.4 # matches any regular topic"
     except Exception as e:
         return False, f"3.3.4 failed: {e}"
@@ -405,19 +438,22 @@ def run_3_3_5_hash_root_excludes_sys(config) -> tuple[bool, str]:
         payload = b"sys-excluded"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-3-5"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe("#", qos=0)
+            _subscribe_without_retained(sub, "#", qos=0)
             # Attempt to publish to a $SYS topic; broker may or may not accept it.
             # Regardless, the # subscriber must not receive it.
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-3-5"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(sys_topic, payload, qos=0)
-            # Collect any messages that arrive; none of them may have a $SYS topic
-            import time
-            time.sleep(min(1.0, config.timeout_seconds * 0.5))
-            msgs = sub.collect_messages(count=0, timeout=min(1.0, config.timeout_seconds))
-            sys_msgs = [m for m in msgs if m.topic.startswith("$SYS")]
-            if sys_msgs:
-                return False, f"3.3.5 # subscriber received {len(sys_msgs)} $SYS message(s): {sys_msgs[0].topic}"
+            observation_window = min(1.0, config.timeout_seconds)
+            deadline = time.monotonic() + max(0.2, observation_window)
+            while time.monotonic() < deadline:
+                remaining = max(0.05, deadline - time.monotonic())
+                try:
+                    candidate = sub.collect_messages(count=1, timeout=min(0.2, remaining))[0]
+                except TimeoutError:
+                    break
+                if candidate.topic.startswith("$SYS"):
+                    return False, f"3.3.5 # subscriber received $SYS message: {candidate.topic}"
         return True, "3.3.5 # subscriber received no $SYS messages"
     except Exception as e:
         return False, f"3.3.5 failed: {e}"
@@ -442,7 +478,7 @@ def run_3_4_1_sys_subscription_receives_messages(config) -> tuple[bool, str]:
         port = int(overrides["network.mqtt_port"])
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-4-1"), clean_start=True), reason_code=0x00, session_present=False)
-            codes = sub.subscribe("$SYS/#", qos=0)
+            codes = _subscribe_without_retained(sub, "$SYS/#", qos=0)
             if codes[0] > 2:
                 return False, f"3.4.1 SUBACK rejected $SYS/# with reason code 0x{codes[0]:02X}"
             msgs = sub.collect_messages(count=1, timeout=min(5.0, config.timeout_seconds))
@@ -471,18 +507,19 @@ def run_3_4_2_hash_does_not_receive_sys(config) -> tuple[bool, str]:
         process = start_broker(overrides)
         host = _broker_module.resolve_target_host("127.0.0.1")
         port = int(overrides["network.mqtt_port"])
-        import time
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-4-2"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe("#", qos=0)
-            time.sleep(min(2.0, config.timeout_seconds * 0.4))
-            try:
-                msgs = sub.collect_messages(count=1, timeout=0.5)
-                sys_msgs = [m for m in msgs if m.topic.startswith("$SYS")]
-                if sys_msgs:
-                    return False, f"3.4.2 # subscriber received $SYS message: {sys_msgs[0].topic}"
-            except TimeoutError:
-                pass
+            _subscribe_without_retained(sub, "#", qos=0)
+            observation_window = min(2.0, config.timeout_seconds)
+            deadline = time.monotonic() + max(0.2, observation_window)
+            while time.monotonic() < deadline:
+                remaining = max(0.05, deadline - time.monotonic())
+                try:
+                    candidate = sub.collect_messages(count=1, timeout=min(0.2, remaining))[0]
+                except TimeoutError:
+                    break
+                if candidate.topic.startswith("$SYS"):
+                    return False, f"3.4.2 # subscriber received $SYS message: {candidate.topic}"
         return True, "3.4.2 # subscriber received no $SYS messages"
     except Exception as e:
         return False, f"3.4.2 failed: {e}"
@@ -497,7 +534,7 @@ def run_3_4_3_plus_does_not_match_sys_prefix(config) -> tuple[bool, str]:
         host, port, process = _start_isolated_broker()
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-4-3"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe("+/broker/uptime", qos=0)
+            _subscribe_without_retained(sub, "+/broker/uptime", qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-4-3"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish("$SYS/broker/uptime", b"42", qos=0)
@@ -516,12 +553,44 @@ def run_3_4_4_client_cannot_publish_to_sys(config) -> tuple[bool, str]:
         host, port, process = _start_isolated_broker()
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-4-4"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe("$SYS/#", qos=0)
+            _subscribe_without_retained(sub, "$SYS/#", qos=0)
+
+            # Drain any pre-existing retained $SYS messages from earlier runs.
+            # Start the actual assertion only after the subscription is quiescent.
+            drained_sys_messages = 0
+            max_drain_messages = 256
+            drain_timeout = min(0.25, config.timeout_seconds)
+            for _ in range(max_drain_messages):
+                try:
+                    drained = sub.collect_messages(count=1, timeout=drain_timeout)
+                except TimeoutError:
+                    break
+
+                drained_message = drained[0]
+                if not drained_message.topic.startswith("$SYS"):
+                    return (
+                        False,
+                        "3.4.4 drain phase received non-$SYS message: "
+                        f"{drained_message.topic}",
+                    )
+                drained_sys_messages += 1
+
+            if drained_sys_messages == max_drain_messages:
+                return (
+                    False,
+                    "3.4.4 drain phase did not quiesce; too many pre-existing "
+                    "$SYS messages",
+                )
+
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-4-4"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish("$SYS/broker/clients/connected", b"99", qos=0)
             assert_no_message(sub, timeout=min(1.5, config.timeout_seconds))
-        return True, "3.4.4 client publish to $SYS not routed to subscribers"
+        return (
+            True,
+            "3.4.4 client publish to $SYS not routed to subscribers "
+            f"(drained {drained_sys_messages} pre-existing $SYS message(s))",
+        )
     except Exception as e:
         return False, f"3.4.4 failed: {e}"
     finally:
@@ -540,12 +609,12 @@ def run_3_5_1_combined_wildcards_match(config) -> tuple[bool, str]:
         payload = b"combined-wildcards"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-5-1"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe(sub_filter, qos=0)
+            _subscribe_without_retained(sub, sub_filter, qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-5-1"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, payload, qos=0)
-            msgs = sub.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(msgs[0], topic=pub_topic, payload=payload, qos=0, retain=False)
+            matched = _collect_expected_topic_message(sub, pub_topic, config.timeout_seconds, "3.5.1")
+            assert_message(matched, topic=pub_topic, payload=payload, qos=0, retain=False)
         return True, "3.5.1 sport/+/player/# matched sport/tennis/player/ranking"
     except Exception as e:
         return False, f"3.5.1 failed: {e}"
@@ -565,12 +634,12 @@ def run_3_5_2_triple_plus_match_and_no_extra_level(config) -> tuple[bool, str]:
         payload = b"triple-plus"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-5-2"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe(sub_filter, qos=0)
+            _subscribe_without_retained(sub, sub_filter, qos=0)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-5-2"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(topic_match, payload, qos=0)
-            msgs = sub.collect_messages(count=1, timeout=config.timeout_seconds)
-            assert_message(msgs[0], topic=topic_match, payload=payload, qos=0, retain=False)
+            matched = _collect_expected_topic_message(sub, topic_match, config.timeout_seconds, "3.5.2")
+            assert_message(matched, topic=topic_match, payload=payload, qos=0, retain=False)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub2:
                 assert_connack(pub2.connect(host, port, client_id=_unique_client_id("pub2-3-5-2"), clean_start=True), reason_code=0x00, session_present=False)
                 pub2.publish(topic_no_match, b"extra-level", qos=0)
@@ -591,24 +660,21 @@ def run_3_5_3_overlapping_subscriptions_with_identifiers(config) -> tuple[bool, 
         payload = b"overlap"
         with MqttClient(timeout_seconds=config.timeout_seconds) as sub:
             assert_connack(sub.connect(host, port, client_id=_unique_client_id("sub-3-5-3"), clean_start=True), reason_code=0x00, session_present=False)
-            sub.subscribe("sport/+/player/#", qos=0, subscription_id=1)
-            sub.subscribe("sport/tennis/#", qos=0, subscription_id=2)
+            _subscribe_without_retained(sub, "sport/+/player/#", qos=0, subscription_id=1)
+            _subscribe_without_retained(sub, "sport/tennis/#", qos=0, subscription_id=2)
             with MqttClient(timeout_seconds=config.timeout_seconds) as pub:
                 assert_connack(pub.connect(host, port, client_id=_unique_client_id("pub-3-5-3"), clean_start=True), reason_code=0x00, session_present=False)
                 pub.publish(pub_topic, payload, qos=0)
-            msgs = sub.collect_messages(count=1, timeout=config.timeout_seconds)
-            if not msgs:
-                return False, "3.5.3 no message received"
+            matched = _collect_expected_topic_message(sub, pub_topic, config.timeout_seconds, "3.5.3")
             sub_ids: list[int] = []
-            for msg in msgs:
-                props = getattr(msg, "properties", None)
-                if props is not None:
-                    sid = getattr(props, "SubscriptionIdentifier", None)
-                    if sid is not None:
-                        if isinstance(sid, list):
-                            sub_ids.extend(sid)
-                        else:
-                            sub_ids.append(int(sid))
+            props = getattr(matched, "properties", None)
+            if props is not None:
+                sid = getattr(props, "SubscriptionIdentifier", None)
+                if sid is not None:
+                    if isinstance(sid, list):
+                        sub_ids.extend(sid)
+                    else:
+                        sub_ids.append(int(sid))
             if not sub_ids:
                 return False, "3.5.3 no SubscriptionIdentifier in received PUBLISH properties"
             if not any(sid in (1, 2) for sid in sub_ids):

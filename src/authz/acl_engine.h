@@ -26,8 +26,8 @@ namespace mqtt {
  * trailing levels.  In the topic or filter string being checked, these
  * characters are treated as literals (9.1.4).
  *
- * Thread safety: none — external synchronisation required when `reload` and
- * `check_*` may execute concurrently.
+ * Thread safety: internally synchronized via `std::shared_mutex`.
+ * `check_*` acquires a shared lock; `reload` acquires an exclusive lock.
  */
 class AclEngine {
 public:
