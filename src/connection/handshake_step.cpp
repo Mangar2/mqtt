@@ -21,34 +21,10 @@ void append_frame(ConnectionSession &session, WriteBuffer frame) {
   session.pending_write_frames().push_back(std::move(frame));
 }
 
-HandshakeOutcome on_connect_packet(ConnectionSession &session, Broker &broker,
-                                   const ConnectPacket &packet) {
-  session.connect_packet() = packet;
-  session.connect_result() = broker.handle_connect(packet, []() {});
-
-  ConnectResult &connect_result = session.connect_result();
-  if (connect_result.auth_status == AuthStatus::Continue) {
-    append_frame(session,
-                 encode_auth_packet(connect_result.reason_code,
-                                    build_auth_properties(
-                                        connect_result.auth_method,
-                                        connect_result.auth_data,
-                                        !connect_result.auth_method.empty())));
-    return HandshakeOutcome::Continuing;
-  }
-
-  if (connect_result.auth_status != AuthStatus::Success ||
-      connect_result.reason_code != ReasonCode::Success) {
-    append_frame(session, encode_connack_packet(ConnackPacket{
-                          .session_present = false,
-                          .reason_code = connect_result.reason_code,
-                          .properties = connect_result.connack_properties,
-                        }));
-    session.disconnect_state().clean_disconnect = true;
-    session.disconnect_state().reason_code = connect_result.reason_code;
-    return HandshakeOutcome::Rejected;
-  }
-
+HandshakeOutcome finalize_connect_success(ConnectionSession &session,
+                                         Broker &broker,
+                                         const ConnectPacket &packet,
+                                         const ConnectResult &connect_result) {
   auto outbound_queue = std::make_shared<OutboundQueue>();
   broker.register_connection(connect_result.client_id, outbound_queue,
                              static_cast<int>(session.connection().fd()));
@@ -75,6 +51,10 @@ HandshakeOutcome on_connect_packet(ConnectionSession &session, Broker &broker,
   client_session->keep_alive_timer().reset();
   session.install_client_session(std::move(client_session));
 
+  if (connect_result.session_present) {
+    broker.flush_offline_queue(connect_result.client_id);
+  }
+
   append_frame(session, encode_connack_packet(ConnackPacket{
                         .session_present = connect_result.session_present,
                         .reason_code = ReasonCode::Success,
@@ -85,6 +65,87 @@ HandshakeOutcome on_connect_packet(ConnectionSession &session, Broker &broker,
   return HandshakeOutcome::ConnectAccepted;
 }
 
+HandshakeOutcome on_connect_packet(ConnectionSession &session, Broker &broker,
+                                   const ConnectPacket &packet) {
+  session.connect_packet() = packet;
+  session.connect_result() = broker.handle_connect(
+      packet, [&session, &broker]() {
+        session.request_session_takeover();
+        if (!session.connect_result().client_id.empty()) {
+          broker.wake_outbound(session.connect_result().client_id);
+        }
+      });
+
+  ConnectResult &connect_result = session.connect_result();
+  if (connect_result.auth_status == AuthStatus::Continue) {
+    append_frame(session,
+                 encode_auth_packet(connect_result.reason_code,
+                                    build_auth_properties(
+                                        connect_result.auth_method,
+                                        connect_result.auth_data,
+                                        !connect_result.auth_method.empty())));
+    return HandshakeOutcome::Continuing;
+  }
+
+  if (connect_result.auth_status != AuthStatus::Success ||
+      connect_result.reason_code != ReasonCode::Success) {
+    append_frame(session, encode_connack_packet(ConnackPacket{
+                          .session_present = false,
+                          .reason_code = connect_result.reason_code,
+                          .properties = connect_result.connack_properties,
+                        }));
+    session.disconnect_state().clean_disconnect = true;
+    session.disconnect_state().reason_code = connect_result.reason_code;
+    return HandshakeOutcome::Rejected;
+  }
+
+  return finalize_connect_success(session, broker, packet, connect_result);
+}
+
+HandshakeOutcome on_auth_packet(ConnectionSession &session, Broker &broker,
+                                const AuthPacket &packet) {
+  if (!session.connect_packet().has_value() ||
+      session.connect_result().client_id.empty()) {
+    append_frame(session, encode_connack_packet(ConnackPacket{
+                          .session_present = false,
+                          .reason_code = ReasonCode::ProtocolError,
+                          .properties = {},
+                        }));
+    session.disconnect_state().clean_disconnect = true;
+    session.disconnect_state().reason_code = ReasonCode::ProtocolError;
+    return HandshakeOutcome::Rejected;
+  }
+
+  ConnectResult auth_result =
+      broker.handle_auth_packet(session.connect_result().client_id, packet);
+  session.connect_result() = auth_result;
+
+  if (auth_result.auth_status == AuthStatus::Continue) {
+    append_frame(session,
+                 encode_auth_packet(auth_result.reason_code,
+                                    build_auth_properties(
+                                        auth_result.auth_method,
+                                        auth_result.auth_data,
+                                        !auth_result.auth_method.empty())));
+    return HandshakeOutcome::Continuing;
+  }
+
+  if (auth_result.auth_status != AuthStatus::Success ||
+      auth_result.reason_code != ReasonCode::Success) {
+    append_frame(session, encode_connack_packet(ConnackPacket{
+                          .session_present = false,
+                          .reason_code = auth_result.reason_code,
+                          .properties = auth_result.connack_properties,
+                        }));
+    session.disconnect_state().clean_disconnect = true;
+    session.disconnect_state().reason_code = auth_result.reason_code;
+    return HandshakeOutcome::Rejected;
+  }
+
+  return finalize_connect_success(session, broker, *session.connect_packet(),
+                                  auth_result);
+}
+
 } // namespace
 
 HandshakeOutcome process_handshake_packet(ConnectionSession &session,
@@ -92,6 +153,10 @@ HandshakeOutcome process_handshake_packet(ConnectionSession &session,
                                           const AnyPacket &packet) {
   if (std::holds_alternative<ConnectPacket>(packet)) {
     return on_connect_packet(session, broker, std::get<ConnectPacket>(packet));
+  }
+
+  if (std::holds_alternative<AuthPacket>(packet)) {
+    return on_auth_packet(session, broker, std::get<AuthPacket>(packet));
   }
 
   append_frame(session, encode_connack_packet(ConnackPacket{

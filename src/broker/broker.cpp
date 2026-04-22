@@ -219,6 +219,13 @@ void Broker::wake_outbound(std::string_view client_id) {
   });
 }
 
+void Broker::flush_offline_queue(std::string_view client_id) {
+  if (message_router_ == nullptr) {
+    return;
+  }
+  message_router_->flush_offline_queue(client_id);
+}
+
 void Broker::set_job_scheduler(JobScheduler *job_scheduler) noexcept {
   job_scheduler_ = job_scheduler;
 }

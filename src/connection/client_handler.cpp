@@ -12,7 +12,9 @@
 
 #include "broker/broker.h"
 #include "broker/broker_config.h"
+#include "client_session/client_session.h"
 #include "connection/close_step.h"
+#include "connection/connection_flow_support.h"
 #include "connection/connection_session.h"
 #include "connection/decode_step.h"
 #include "connection/outbound_drain_step.h"
@@ -85,6 +87,19 @@ void submit_close(JobScheduler &scheduler, int fd) {
                                  .payload = CloseJobPayload{.immediate = false}});
 }
 
+bool prepare_session_takeover_close(ConnectionSession &session) {
+  if (!session.consume_session_takeover_request()) {
+    return false;
+  }
+
+  session.disconnect_state().clean_disconnect = true;
+  session.disconnect_state().reason_code = ReasonCode::SessionTakenOver;
+  session.pending_write_frames().push_back(
+      encode_disconnect_packet(ReasonCode::SessionTakenOver));
+  session.set_phase(ConnectionSession::Phase::Closing);
+  return true;
+}
+
 } // namespace
 
 namespace client_handler {
@@ -150,9 +165,22 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
   ConnectionSession &session = *entry->session;
   ConnectionSlot &slot = entry->slot;
 
+  if (session.phase() == ConnectionSession::Phase::Connected &&
+      session.client_session() != nullptr) {
+    auto &keep_alive_timer = session.client_session()->keep_alive_timer();
+    if (keep_alive_timer.is_enabled() && keep_alive_timer.is_expired()) {
+      session.disconnect_state().clean_disconnect = false;
+      session.disconnect_state().reason_code = ReasonCode::KeepAliveTimeout;
+      submit_close(scheduler, fd);
+      return;
+    }
+  }
+
+  bool close_after_flush = prepare_session_takeover_close(session);
+
   std::array<uint8_t, k_decode_read_chunk_size> read_chunk{};
   std::size_t total_read = 0U;
-  while (total_read < k_decode_read_budget_bytes) {
+  while (!close_after_flush && total_read < k_decode_read_budget_bytes) {
     std::size_t bytes_read = 0U;
     const IoResult read_result = nb_read(
         slot.fd(), std::span<uint8_t>(read_chunk.data(), read_chunk.size()),
@@ -176,14 +204,14 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
   }
 
   std::size_t packets_processed = 0U;
-  while (packets_processed < k_decode_packet_budget) {
+  while (!close_after_flush && packets_processed < k_decode_packet_budget) {
     const DecodeOutcome outcome = decode_one_packet(session, broker);
     if (outcome == DecodeOutcome::NeedMore) {
       break;
     }
     if (outcome == DecodeOutcome::ProtocolError ||
         outcome == DecodeOutcome::Disconnected) {
-      submit_close(scheduler, fd);
+      close_after_flush = true;
       break;
     }
     ++packets_processed;
@@ -193,6 +221,15 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
   if (!move_pending_frames_to_slot(session, slot)) {
     submit_close(scheduler, fd);
     return;
+  }
+
+  if (close_after_flush && slot.write_size() == 0U) {
+    submit_close(scheduler, fd);
+    return;
+  }
+
+  if (close_after_flush) {
+    session.set_phase(ConnectionSession::Phase::Closing);
   }
 
   if (slot.write_size() > 0U) {
@@ -213,6 +250,8 @@ void process_drain_job(int fd, ConnectionTable &table, IoReactor &reactor,
   ConnectionSession &session = *entry->session;
   ConnectionSlot &slot = entry->slot;
 
+  const bool close_after_flush = prepare_session_takeover_close(session);
+
   drain_outbound_to_write_buffer(session, broker);
   if (!move_pending_frames_to_slot(session, slot)) {
     process_close_job(fd, table, reactor, broker);
@@ -229,6 +268,10 @@ void process_drain_job(int fd, ConnectionTable &table, IoReactor &reactor,
     return;
   }
   reactor.disarm_write(fd);
+
+  if (close_after_flush || session.phase() == ConnectionSession::Phase::Closing) {
+    process_close_job(fd, table, reactor, broker);
+  }
 }
 
 void process_close_job(int fd, ConnectionTable &table, IoReactor &reactor,

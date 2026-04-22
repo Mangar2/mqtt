@@ -78,4 +78,12 @@ void ConnectionSession::clear_pending_write_frames() noexcept {
   pending_write_frames_.clear();
 }
 
+void ConnectionSession::request_session_takeover() noexcept {
+  session_takeover_requested_.store(true, std::memory_order_release);
+}
+
+bool ConnectionSession::consume_session_takeover_request() noexcept {
+  return session_takeover_requested_.exchange(false, std::memory_order_acq_rel);
+}
+
 } // namespace mqtt

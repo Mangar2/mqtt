@@ -53,4 +53,9 @@ TEST_CASE("session_owns_subobjects_and_supports_phase_transition", "[connection]
   REQUIRE(session.client_session() != nullptr);
   REQUIRE(session.outbound_queue() != nullptr);
   CHECK(session.outbound_queue() == outbound_queue);
+
+  CHECK_FALSE(session.consume_session_takeover_request());
+  session.request_session_takeover();
+  CHECK(session.consume_session_takeover_request());
+  CHECK_FALSE(session.consume_session_takeover_request());
 }

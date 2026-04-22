@@ -362,6 +362,8 @@ public:
 
   void wake_outbound(std::string_view client_id);
 
+  void flush_offline_queue(std::string_view client_id);
+
   void set_job_scheduler(JobScheduler *job_scheduler) noexcept;
 
   //  Signal handling (15.3.3)

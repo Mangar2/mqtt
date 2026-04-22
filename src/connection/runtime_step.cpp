@@ -139,6 +139,7 @@ RuntimeOutcome process_runtime_packet(ConnectionSession &session, Broker &broker
 
   trace_connection_packet(broker, client_session->client_id(),
                           "runtime_packet_received", packet);
+  client_session->keep_alive_timer().reset();
 
   if (std::holds_alternative<PublishPacket>(packet)) {
     const PublishPacket &publish_packet = std::get<PublishPacket>(packet);

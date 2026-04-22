@@ -5,6 +5,7 @@
  * @brief Per-connection heap-owned session state for reactor/worker processing.
  */
 
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -71,6 +72,9 @@ public:
   std::vector<WriteBuffer> &pending_write_frames() noexcept;
   void clear_pending_write_frames() noexcept;
 
+  void request_session_takeover() noexcept;
+  [[nodiscard]] bool consume_session_takeover_request() noexcept;
+
 private:
   std::unique_ptr<TcpConnection> connection_;
   std::unique_ptr<WebSocketTransport> ws_transport_;
@@ -84,6 +88,7 @@ private:
   std::optional<ConnectPacket> connect_packet_;
   ConnectResult connect_result_{};
   std::vector<WriteBuffer> pending_write_frames_;
+  std::atomic<bool> session_takeover_requested_{false};
 };
 
 } // namespace mqtt

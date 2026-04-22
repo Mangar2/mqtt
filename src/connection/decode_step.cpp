@@ -38,10 +38,18 @@ DecodeOutcome decode_one_packet(ConnectionSession &session, Broker &broker) {
         (session.phase() == ConnectionSession::Phase::Handshake)
             ? map_codec_error_to_connect_reason(codec_exception.error())
             : map_codec_error_to_runtime_reason(codec_exception.error());
+    if (session.phase() == ConnectionSession::Phase::Connected) {
+      session.pending_write_frames().push_back(
+          encode_disconnect_packet(session.disconnect_state().reason_code));
+    }
     return DecodeOutcome::ProtocolError;
   } catch (...) {
     session.disconnect_state().clean_disconnect = true;
     session.disconnect_state().reason_code = ReasonCode::ProtocolError;
+    if (session.phase() == ConnectionSession::Phase::Connected) {
+      session.pending_write_frames().push_back(
+          encode_disconnect_packet(session.disconnect_state().reason_code));
+    }
     return DecodeOutcome::ProtocolError;
   }
 }

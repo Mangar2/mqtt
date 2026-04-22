@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <vector>
 
 #include "executor/worker_pool.h"
@@ -46,6 +47,7 @@ public:
 private:
   void handle_accept_ready(SocketHandle listener_socket_handle, bool is_ws);
   void handle_connection_job(const ConnectionJob &job);
+  void run_keepalive_watchdog();
 
   uint16_t mqtt_port_{0U};
   uint16_t ws_port_{0U};
@@ -64,6 +66,7 @@ private:
 
   std::optional<TcpListener> mqtt_listener_;
   std::optional<TcpListener> ws_listener_;
+  std::thread keepalive_watchdog_thread_;
 };
 
 } // namespace mqtt

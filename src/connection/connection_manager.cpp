@@ -5,6 +5,7 @@
 
 #include "connection/connection_manager.h"
 
+#include <chrono>
 #include <stdexcept>
 #include <utility>
 
@@ -75,8 +76,16 @@ void ConnectionManager::start() {
             handle_accept_ready(static_cast<SocketHandle>(listener_fd), true);
           });
     }
+
+    keepalive_watchdog_thread_ = std::thread([this]() {
+      run_keepalive_watchdog();
+    });
   } catch (...) {
     running_.store(false);
+
+    if (keepalive_watchdog_thread_.joinable()) {
+      keepalive_watchdog_thread_.join();
+    }
 
     if (ws_listener_.has_value()) {
       ws_listener_->close();
@@ -109,6 +118,10 @@ void ConnectionManager::stop() noexcept {
 
   running_.store(false);
 
+  if (keepalive_watchdog_thread_.joinable()) {
+    keepalive_watchdog_thread_.join();
+  }
+
   if (io_reactor_) {
     io_reactor_->stop();
     io_reactor_.reset();
@@ -137,6 +150,28 @@ void ConnectionManager::stop() noexcept {
 }
 
 bool ConnectionManager::is_running() const noexcept { return running_.load(); }
+
+void ConnectionManager::run_keepalive_watchdog() {
+  using namespace std::chrono_literals;
+  while (running_.load()) {
+    std::this_thread::sleep_for(250ms);
+    if (!running_.load() || worker_pool_ == nullptr) {
+      continue;
+    }
+
+    const std::vector<SocketHandle> socket_handles =
+        connection_table_.snapshot_socket_handles();
+    for (SocketHandle socket_handle : socket_handles) {
+      const int connection_fd = static_cast<int>(socket_handle);
+      try {
+        worker_pool_->submit(ConnectionJob{.type = JobType::Decode,
+                                           .connection_fd = connection_fd,
+                                           .payload = DecodeJobPayload{}});
+      } catch (const std::exception &) {
+      }
+    }
+  }
+}
 
 void ConnectionManager::handle_accept_ready(SocketHandle listener_socket_handle,
                                             bool is_ws) {
