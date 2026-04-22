@@ -3,9 +3,11 @@
 #include "network/io_reactor.h"
 
 #include <sys/epoll.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <array>
+#include <cerrno>
 #include <stdexcept>
 #include <utility>
 
@@ -16,6 +18,56 @@ namespace {
 void close_backend_fd(int backend_fd) noexcept {
   if (backend_fd >= 0) {
     ::close(backend_fd);
+  }
+}
+
+void close_fd(int file_descriptor) noexcept {
+  if (file_descriptor >= 0) {
+    ::close(file_descriptor);
+  }
+}
+
+bool set_nonblocking_cloexec(int file_descriptor) noexcept {
+  const int current_flags = ::fcntl(file_descriptor, F_GETFL, 0);
+  if (current_flags < 0) {
+    return false;
+  }
+  if (::fcntl(file_descriptor, F_SETFL, current_flags | O_NONBLOCK) != 0) {
+    return false;
+  }
+
+  const int current_fd_flags = ::fcntl(file_descriptor, F_GETFD, 0);
+  if (current_fd_flags < 0) {
+    return false;
+  }
+  return ::fcntl(file_descriptor, F_SETFD, current_fd_flags | FD_CLOEXEC) == 0;
+}
+
+bool create_wake_pipe(int *read_fd, int *write_fd) noexcept {
+  int wake_pipe[2] = {-1, -1};
+  if (::pipe(wake_pipe) != 0) {
+    return false;
+  }
+  if (!set_nonblocking_cloexec(wake_pipe[0]) ||
+      !set_nonblocking_cloexec(wake_pipe[1])) {
+    close_fd(wake_pipe[0]);
+    close_fd(wake_pipe[1]);
+    return false;
+  }
+  *read_fd = wake_pipe[0];
+  *write_fd = wake_pipe[1];
+  return true;
+}
+
+void drain_wake_pipe(int wake_read_fd) noexcept {
+  std::array<uint8_t, 64> wake_buffer{};
+  while (true) {
+    const ssize_t bytes_read =
+        ::read(wake_read_fd, wake_buffer.data(), wake_buffer.size());
+    if (bytes_read > 0) {
+      continue;
+    }
+    break;
   }
 }
 
@@ -36,6 +88,25 @@ void IoReactor::start() {
     throw std::runtime_error("IoReactor failed to create epoll backend");
   }
 
+  if (!create_wake_pipe(&wake_read_fd_, &wake_write_fd_)) {
+    close_backend_fd(backend_fd_);
+    backend_fd_ = -1;
+    throw std::runtime_error("IoReactor failed to create wake pipe");
+  }
+
+  epoll_event wake_event{};
+  wake_event.events = EPOLLIN;
+  wake_event.data.fd = wake_read_fd_;
+  if (::epoll_ctl(backend_fd_, EPOLL_CTL_ADD, wake_read_fd_, &wake_event) != 0) {
+    close_fd(wake_read_fd_);
+    close_fd(wake_write_fd_);
+    wake_read_fd_ = -1;
+    wake_write_fd_ = -1;
+    close_backend_fd(backend_fd_);
+    backend_fd_ = -1;
+    throw std::runtime_error("IoReactor failed to register wake pipe");
+  }
+
   running_.store(true);
   event_thread_ = std::thread([this]() { run_loop(); });
 }
@@ -49,6 +120,8 @@ void IoReactor::stop() noexcept {
     running_.store(false);
   }
 
+  wake();
+
   if (event_thread_.joinable()) {
     event_thread_.join();
   }
@@ -58,7 +131,19 @@ void IoReactor::stop() noexcept {
     callbacks_.clear();
     close_backend_fd(backend_fd_);
     backend_fd_ = -1;
+    close_fd(wake_read_fd_);
+    close_fd(wake_write_fd_);
+    wake_read_fd_ = -1;
+    wake_write_fd_ = -1;
   }
+}
+
+void IoReactor::wake() noexcept {
+  if (wake_write_fd_ < 0) {
+    return;
+  }
+  const uint8_t wake_byte = 1U;
+  (void)::write(wake_write_fd_, &wake_byte, sizeof(wake_byte));
 }
 
 void IoReactor::register_listener(int socket_fd, AcceptCallback callback) {
@@ -148,6 +233,10 @@ void IoReactor::run_loop() noexcept {
 
     for (int event_index = 0; event_index < event_count; ++event_index) {
       const int socket_fd = events[event_index].data.fd;
+      if (socket_fd == wake_read_fd_) {
+        drain_wake_pipe(wake_read_fd_);
+        continue;
+      }
 
       AcceptCallback accept_callback;
       ReadCallback read_callback;

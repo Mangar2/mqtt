@@ -36,6 +36,8 @@ void IoReactor::disarm_write(int socket_fd) { (void)socket_fd; }
 
 void IoReactor::unregister(int socket_fd) { (void)socket_fd; }
 
+void IoReactor::wake() noexcept {}
+
 void IoReactor::run_loop() noexcept {}
 
 } // namespace mqtt

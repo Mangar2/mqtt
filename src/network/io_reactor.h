@@ -40,6 +40,7 @@ public:
   void arm_write(int socket_fd);
   void disarm_write(int socket_fd);
   void unregister(int socket_fd);
+  void wake() noexcept;
 
 private:
   struct CallbackEntry {
@@ -54,6 +55,8 @@ private:
 
   std::atomic<bool> running_{false};
   int backend_fd_{-1};
+  int wake_read_fd_{-1};
+  int wake_write_fd_{-1};
   std::thread event_thread_;
   std::mutex mutation_mutex_;
   std::unordered_map<int, CallbackEntry> callbacks_;

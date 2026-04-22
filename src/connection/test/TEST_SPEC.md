@@ -16,6 +16,15 @@
 | `process_runtime_packet_pingreq_enqueues_pingresp` | Runtime control packet handling | Connected session + `PingreqPacket` | `RuntimeOutcome::Continuing` and one encoded response frame |
 | `drain_outbound_to_write_buffer_moves_client_session_frames` | Outbound drain helper appends encoded frames | Connected session with queued outbound message | pending encoded frame storage grows |
 
+## Client handler job processors (threading refactor step 05)
+
+| Test name | Scenario | Input | Expected |
+|-----------|----------|-------|----------|
+| `process_accept_decode_drain_and_close_job_roundtrip` | End-to-end stateless job flow for one TCP connection | accepted socket + CONNECT frame + decode/drain/close processing | table entry created, CONNACK written to peer socket, entry removed on close |
+| `process_accept_job_ignores_invalid_socket` | Invalid accept payload guard | `AcceptJobPayload{socket_handle=k_invalid_socket}` | no table entry created |
+| `establish_connect_session_times_out_when_deadline_is_expired` | CONNECT handshake timeout branch | expired handshake deadline with no transport data | function returns false and stop callback invoked |
+| `run_connected_session_loop_marks_server_shutting_down_when_stopped` | Runtime loop shutdown branch | broker stopped before runtime loop starts | disconnect state set to clean `ServerShuttingDown` |
+
 ## ConnectionStateMachine (7.1)
 
 | Test name | Scenario | Input | Expected |
