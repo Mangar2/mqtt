@@ -233,6 +233,10 @@ void Broker::create_modules() {
       structured_tracer_, sys_publisher_, connection_manager_,
       std::move(client_handler_callback));
 
+  if (connection_manager_) {
+    connection_manager_->bind_runtime(*this, config_);
+  }
+
   enhanced_auth_registry_ = std::make_unique<EnhancedAuthRegistry>();
   connect_facade_ = std::make_unique<ConnectFacade>(
       config_, *active_auth_, *session_manager_, *will_publisher_,

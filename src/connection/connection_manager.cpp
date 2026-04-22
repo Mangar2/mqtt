@@ -22,6 +22,7 @@
 #endif
 
 #include "network/socket_ops.h"
+#include "connection/client_handler.h"
 #include "monitoring/structured_tracer.h"
 
 namespace mqtt {
@@ -224,6 +225,13 @@ void ConnectionManager::stop() noexcept {
 
 bool ConnectionManager::is_running() const noexcept { return running_.load(); }
 
+void ConnectionManager::bind_runtime(Broker &broker,
+                                     const BrokerConfig &config) noexcept {
+  std::lock_guard<std::mutex> lock_guard(lifecycle_mutex_);
+  broker_ = &broker;
+  broker_config_ = &config;
+}
+
 std::string ConnectionManager::io_result_to_string_for_test(IoResult io_result) {
   return io_result_to_string(io_result);
 }
@@ -240,6 +248,8 @@ void ConnectionManager::close_socket_handle_for_test(
 
 void ConnectionManager::handle_accept_ready(SocketHandle listener_socket_handle,
                                             bool is_ws) {
+  const bool use_step_handlers =
+      broker_ != nullptr && broker_config_ != nullptr;
   const std::string_view listener_kind = is_ws ? "ws" : "mqtt";
   while (running_.load()) {
     SocketHandle accepted_socket_handle = k_invalid_socket;
@@ -259,18 +269,21 @@ void ConnectionManager::handle_accept_ready(SocketHandle listener_socket_handle,
     }
 
     const int socket_fd = static_cast<int>(accepted_socket_handle);
-    if (!connection_table_.add(socket_fd,
-                   ConnectionSlot(accepted_socket_handle),
+
+    if (!use_step_handlers &&
+      !connection_table_.add(socket_fd, ConnectionSlot(accepted_socket_handle),
                    nullptr)) {
       emit_connection_event(
-          structured_tracer_, TraceLevel::Trace, "connection_slot_add_rejected",
-          listener_kind, socket_fd, "connection_slot_already_exists");
+        structured_tracer_, TraceLevel::Trace, "connection_slot_add_rejected",
+        listener_kind, socket_fd, "connection_slot_already_exists");
       close_socket_handle(accepted_socket_handle);
       continue;
     }
 
     if (!worker_pool_) {
-      [[maybe_unused]] const bool removed = connection_table_.remove(socket_fd);
+      if (!use_step_handlers) {
+        [[maybe_unused]] const bool removed = connection_table_.remove(socket_fd);
+      }
       close_socket_handle(accepted_socket_handle);
       continue;
     }
@@ -286,7 +299,9 @@ void ConnectionManager::handle_accept_ready(SocketHandle listener_socket_handle,
           structured_tracer_, TraceLevel::Warning, "client_thread_start_failed",
           listener_kind, socket_fd,
           "worker_submit_error=" + std::string(exception.what()));
-      [[maybe_unused]] const bool removed = connection_table_.remove(socket_fd);
+      if (!use_step_handlers) {
+        [[maybe_unused]] const bool removed = connection_table_.remove(socket_fd);
+      }
       close_socket_handle(accepted_socket_handle);
       continue;
     }
@@ -294,6 +309,49 @@ void ConnectionManager::handle_accept_ready(SocketHandle listener_socket_handle,
 }
 
 void ConnectionManager::handle_connection_job(const ConnectionJob &job) {
+  const bool use_step_handlers =
+      broker_ != nullptr && broker_config_ != nullptr && io_reactor_ != nullptr &&
+      worker_pool_ != nullptr;
+
+  if (use_step_handlers) {
+    try {
+      switch (job.type) {
+      case JobType::Accept: {
+        const AcceptJobPayload *accept_payload =
+            std::get_if<AcceptJobPayload>(&job.payload);
+        if (accept_payload == nullptr) {
+          return;
+        }
+        client_handler::process_accept_job(*accept_payload, connection_table_,
+                                           *io_reactor_,
+                                           worker_pool_->job_scheduler(),
+                                           *broker_, *broker_config_);
+        return;
+      }
+      case JobType::Decode:
+        client_handler::process_decode_job(job.connection_fd, connection_table_,
+                                           *io_reactor_,
+                                           worker_pool_->job_scheduler(),
+                                           *broker_);
+        return;
+      case JobType::Drain:
+        client_handler::process_drain_job(job.connection_fd, connection_table_,
+                                          *io_reactor_, *broker_);
+        return;
+      case JobType::Close:
+        client_handler::process_close_job(job.connection_fd, connection_table_,
+                                          *io_reactor_, *broker_);
+        return;
+      }
+    } catch (...) {
+      if (io_reactor_ != nullptr) {
+        client_handler::process_close_job(job.connection_fd, connection_table_,
+                                          *io_reactor_, *broker_);
+      }
+      return;
+    }
+  }
+
   if (job.type != JobType::Accept) {
     return;
   }

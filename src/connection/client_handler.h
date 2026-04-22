@@ -5,14 +5,36 @@
  * @brief ClientHandler — lean per-connection I/O orchestrator (Module 24).
  */
 
-#include <memory>
 #include <chrono>
+#include <memory>
+
+#include "executor/connection_job.h"
 
 namespace mqtt {
 
 class Broker;
+class ConnectionTable;
+class IoReactor;
+class JobScheduler;
 struct BrokerConfig;
 class TcpConnection;
+
+namespace client_handler {
+
+void process_accept_job(const AcceptJobPayload &payload, ConnectionTable &table,
+                        IoReactor &reactor, JobScheduler &scheduler,
+                        Broker &broker, const BrokerConfig &config);
+
+void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
+                        JobScheduler &scheduler, Broker &broker);
+
+void process_drain_job(int fd, ConnectionTable &table, IoReactor &reactor,
+                       Broker &broker);
+
+void process_close_job(int fd, ConnectionTable &table, IoReactor &reactor,
+                       Broker &broker);
+
+} // namespace client_handler
 
 /**
  * @brief Thin per-connection orchestrator that handles transport I/O only.

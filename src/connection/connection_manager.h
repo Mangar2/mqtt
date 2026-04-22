@@ -24,6 +24,8 @@
 
 namespace mqtt {
 
+class Broker;
+struct BrokerConfig;
 class StructuredTracer;
 struct ConnectionManagerTestAccessor;
 
@@ -95,6 +97,11 @@ public:
    */
   [[nodiscard]] bool is_running() const noexcept;
 
+  /**
+   * @brief Bind broker runtime required by step-based worker job handlers.
+   */
+  void bind_runtime(Broker &broker, const BrokerConfig &config) noexcept;
+
 private:
   friend struct ConnectionManagerTestAccessor;
 
@@ -124,6 +131,8 @@ private:
   std::unique_ptr<IoReactor> io_reactor_;
   std::unique_ptr<WorkerPool> worker_pool_;
   ConnectionTable connection_table_;
+  Broker *broker_{nullptr};
+  const BrokerConfig *broker_config_{nullptr};
 
   std::optional<TcpListener> mqtt_listener_;
   std::optional<TcpListener> ws_listener_;

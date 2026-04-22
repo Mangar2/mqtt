@@ -54,6 +54,12 @@ public:
   void submit(ConnectionJob job);
 
   /**
+   * @brief Access per-connection scheduler used by this pool.
+   * @return Scheduler reference.
+   */
+  [[nodiscard]] JobScheduler &job_scheduler() noexcept;
+
+  /**
    * @brief Return number of currently running worker threads.
    * @return Worker count.
    */

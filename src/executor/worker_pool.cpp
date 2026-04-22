@@ -108,6 +108,8 @@ void WorkerPool::submit(ConnectionJob job) {
   job_scheduler_.submit(std::move(job));
 }
 
+JobScheduler &WorkerPool::job_scheduler() noexcept { return job_scheduler_; }
+
 std::size_t WorkerPool::worker_count() const noexcept {
   return worker_count_.load(std::memory_order_acquire);
 }
