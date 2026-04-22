@@ -19,6 +19,11 @@ Depends on: data_model (1), codec (2), qos (5), network (6), auth (8), session_m
 | `connection_flow_support.h/.cpp` | 24 | shared transport/codec helpers for connect/runtime phases |
 | `outbound_queue_bridge.h/.cpp` | 24 | outbound queue bridging helpers (drain pending messages, transfer pending messages between queue instances) |
 | `connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, IoReactor registration, and WorkerPool-dispatched connection jobs |
+| `decode_step.h/.cpp` | step 05 | single-packet decode step driven by `StreamBuffer` and phase dispatch |
+| `handshake_step.h/.cpp` | step 05 | single-packet handshake step for CONNECT-first processing |
+| `runtime_step.h/.cpp` | step 05 | single-packet runtime dispatch step |
+| `outbound_drain_step.h/.cpp` | step 05 | drains `ClientSession` outbound frames into session pending-write storage |
+| `close_step.h/.cpp` | step 05 | close-finalization helper calling broker disconnect/lost paths |
 
 ## 7.1 ConnectionStateMachine
 
@@ -28,6 +33,14 @@ Depends on: data_model (1), codec (2), qos (5), network (6), auth (8), session_m
 - The executor guarantees per-fd serialization: for one connection/socket fd,
   only one worker job executes at a time.
 - Different fds may be processed in parallel by different worker threads.
+
+## Step Helpers (step 05)
+
+- `decode_step` decodes at most one packet from `ConnectionSession::stream_buffer()`.
+- `handshake_step` handles handshake packet semantics one packet at a time.
+- `runtime_step` handles runtime packet semantics one packet at a time.
+- `outbound_drain_step` drains outbound session frames without transport writes.
+- `close_step` runs broker close bookkeeping without touching reactor state.
 
 States: `Connecting` → `Connected` → `Disconnecting` → `Closed`
 

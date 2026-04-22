@@ -104,6 +104,11 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `connection/topic_alias_table.h/.cpp` | 7.3 | `TopicAliasTable` — inbound and outbound alias↔topic mappings with maximum enforcement |
 | `connection/receive_maximum.h/.cpp` | 7.4 | `ReceiveMaximum` — inflight QoS 1/2 packet counter with pause/resume flow control |
 | `connection/connection_session.h/.cpp` | step 05 | `ConnectionSession` — heap-owned per-connection objects accessed under per-fd job serialization |
+| `connection/decode_step.h/.cpp` | step 05 | Single-packet decode helper that dispatches by connection phase |
+| `connection/handshake_step.h/.cpp` | step 05 | Single-packet handshake helper for CONNECT-first workflow |
+| `connection/runtime_step.h/.cpp` | step 05 | Single-packet runtime helper for packet dispatch without loops |
+| `connection/outbound_drain_step.h/.cpp` | step 05 | Drains session outbound frames into pending encoded-write storage |
+| `connection/close_step.h/.cpp` | step 05 | Finalizes broker disconnect/lost handling for one session |
 | `connection/outbound_queue_bridge.h/.cpp` | 24 | Outbound queue bridge helpers for draining and transferring pending messages |
 | `connection/connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, IoReactor listener registration, and tracked client-thread lifecycle |
 

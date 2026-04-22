@@ -1,23 +1,23 @@
 {
   "coverage_total": {
-    "branches": "36.15%",
+    "branches": "36.12%",
     "file": "TOTAL",
-    "functions": "95.36%",
-    "lines": "96.51%",
+    "functions": "95.39%",
+    "lines": "96.45%",
     "regions": "90.10%"
   },
-  "duration_s": 153.437,
+  "duration_s": 161.144,
   "exit_code": 0,
   "files_below_threshold": [
     "runtime_phase_flow.cpp (lines 79.69%)"
   ],
-  "finished_at": "2026-04-22T15:47:59",
+  "finished_at": "2026-04-22T16:37:20",
   "log_file": "/Users/volkerbohm/dev/yaha/mqtt/test/run.log",
   "mode": "full",
-  "run_id": "227167bf",
-  "started_at": "2026-04-22T15:45:25",
+  "run_id": "0390f04d",
+  "started_at": "2026-04-22T16:34:39",
   "status": "ok",
-  "tests_passed": 1131,
-  "tests_total": 1131,
+  "tests_passed": 1148,
+  "tests_total": 1148,
   "threshold_met": false
 }

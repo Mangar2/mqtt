@@ -6,11 +6,16 @@
  */
 
 #include <memory>
+#include <optional>
+#include <vector>
 
 #include "broker/broker_config.h"
+#include "broker/connect_result.h"
+#include "codec/write_buffer.h"
 #include "connection/connection_flow_support.h"
 #include "connection/receive_maximum.h"
 #include "connection/topic_alias_table.h"
+#include "data_model/packet/connect_packet.h"
 #include "network/stream_buffer.h"
 #include "network/tcp_connection.h"
 #include "transport/websocket_transport.h"
@@ -60,6 +65,12 @@ public:
 
   RuntimeDisconnectState &disconnect_state() noexcept;
 
+  std::optional<ConnectPacket> &connect_packet() noexcept;
+  ConnectResult &connect_result() noexcept;
+
+  std::vector<WriteBuffer> &pending_write_frames() noexcept;
+  void clear_pending_write_frames() noexcept;
+
 private:
   std::unique_ptr<TcpConnection> connection_;
   std::unique_ptr<WebSocketTransport> ws_transport_;
@@ -70,6 +81,9 @@ private:
   std::unique_ptr<ClientSession> client_session_;
   Phase phase_{Phase::Handshake};
   RuntimeDisconnectState disconnect_state_{};
+  std::optional<ConnectPacket> connect_packet_;
+  ConnectResult connect_result_{};
+  std::vector<WriteBuffer> pending_write_frames_;
 };
 
 } // namespace mqtt

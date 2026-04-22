@@ -62,4 +62,20 @@ RuntimeDisconnectState &ConnectionSession::disconnect_state() noexcept {
   return disconnect_state_;
 }
 
+std::optional<ConnectPacket> &ConnectionSession::connect_packet() noexcept {
+  return connect_packet_;
+}
+
+ConnectResult &ConnectionSession::connect_result() noexcept {
+  return connect_result_;
+}
+
+std::vector<WriteBuffer> &ConnectionSession::pending_write_frames() noexcept {
+  return pending_write_frames_;
+}
+
+void ConnectionSession::clear_pending_write_frames() noexcept {
+  pending_write_frames_.clear();
+}
+
 } // namespace mqtt

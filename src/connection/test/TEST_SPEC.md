@@ -6,6 +6,16 @@
 |-----------|----------|-------|----------|
 | `session_owns_subobjects_and_supports_phase_transition` | Session stores connection-owned subobjects and supports phase updates | `ConnectionSession(TcpConnection(fd), nullptr, false, config)` then `set_phase(Connected)` | accessors return valid references, configured limits are visible, initial phase is `Handshake`, and phase becomes `Connected` |
 
+## Step helpers (threading refactor step 05)
+
+| Test name | Scenario | Input | Expected |
+|-----------|----------|-------|----------|
+| `decode_one_packet_returns_need_more_on_empty_stream` | Decode step on empty stream buffer | `ConnectionSession` in handshake phase, empty stream | `DecodeOutcome::NeedMore` |
+| `process_handshake_packet_rejects_non_connect_packet` | Handshake protocol enforcement | Handshake session + `PingreqPacket` | `HandshakeOutcome::Rejected` and pending rejection frame |
+| `process_handshake_packet_accepts_connect_and_installs_client_session` | CONNECT accepted in single-step helper | Handshake session + valid `ConnectPacket` | `HandshakeOutcome::ConnectAccepted`, phase becomes connected, client session installed |
+| `process_runtime_packet_pingreq_enqueues_pingresp` | Runtime control packet handling | Connected session + `PingreqPacket` | `RuntimeOutcome::Continuing` and one encoded response frame |
+| `drain_outbound_to_write_buffer_moves_client_session_frames` | Outbound drain helper appends encoded frames | Connected session with queued outbound message | pending encoded frame storage grows |
+
 ## ConnectionStateMachine (7.1)
 
 | Test name | Scenario | Input | Expected |
