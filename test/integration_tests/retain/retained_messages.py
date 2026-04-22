@@ -26,6 +26,7 @@ _mqtt_client_module = _load_helper("mqtt_client")
 assert_connack = _assertions_module.assert_connack
 assert_message = _assertions_module.assert_message
 assert_no_message = _assertions_module.assert_no_message
+assert_reason_code = _assertions_module.assert_reason_code
 start_broker = _broker_module.start_broker
 stop_broker = _broker_module.stop_broker
 MqttClient = _mqtt_client_module.MqttClient
@@ -82,7 +83,7 @@ def _assert_no_message_for_topic(subscriber, topic: str, timeout_seconds: float)
         try:
             message = subscriber.collect_messages(count=1, timeout=min(0.2, remaining))[0]
         except TimeoutError:
-            return
+            continue
 
         if message.topic == topic:
             raise AssertionError(
@@ -208,7 +209,9 @@ def run_4_2_1_empty_retained_publish_deletes_retained_message(config) -> tuple[b
                 reason_code=0x00,
                 session_present=False,
             )
-            publisher.publish(topic, b"", qos=1, retain=True)
+            reason = int(publisher.publish(topic, b"", qos=1, retain=True))
+            if reason not in (0x00, 0x10):
+                return False, f"4.2.1 unexpected PUBACK reason 0x{reason:02X} for retained delete"
 
         with MqttClient(timeout_seconds=config.timeout_seconds) as subscriber:
             assert_connack(
@@ -216,7 +219,10 @@ def run_4_2_1_empty_retained_publish_deletes_retained_message(config) -> tuple[b
                 reason_code=0x00,
                 session_present=False,
             )
-            subscriber.subscribe(topic, qos=0)
+            suback_codes = subscriber.subscribe(topic, qos=0)
+            if not suback_codes:
+                return False, "4.2.1 empty SUBACK after retained delete"
+            assert_reason_code(suback_codes[0], 0x00)
             _assert_no_message_for_topic(subscriber, topic, timeout_seconds=min(1.5, config.timeout_seconds))
 
         return True, "4.2.1 retained message deleted by empty retained publish"
@@ -240,7 +246,9 @@ def run_4_2_2_no_retained_delivery_after_deletion(config) -> tuple[bool, str]:
                 reason_code=0x00,
                 session_present=False,
             )
-            publisher.publish(topic, b"", qos=1, retain=True)
+            reason = int(publisher.publish(topic, b"", qos=1, retain=True))
+            if reason not in (0x00, 0x10):
+                return False, f"4.2.2 unexpected PUBACK reason 0x{reason:02X} for retained delete"
 
         with MqttClient(timeout_seconds=config.timeout_seconds) as subscriber:
             assert_connack(
@@ -248,7 +256,10 @@ def run_4_2_2_no_retained_delivery_after_deletion(config) -> tuple[bool, str]:
                 reason_code=0x00,
                 session_present=False,
             )
-            subscriber.subscribe(topic, qos=0)
+            suback_codes = subscriber.subscribe(topic, qos=0)
+            if not suback_codes:
+                return False, "4.2.2 empty SUBACK after retained delete"
+            assert_reason_code(suback_codes[0], 0x00)
             _assert_no_message_for_topic(subscriber, topic, timeout_seconds=min(1.5, config.timeout_seconds))
 
         return True, "4.2.2 new subscriber receives no retained message after deletion"

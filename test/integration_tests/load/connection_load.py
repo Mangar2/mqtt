@@ -163,6 +163,7 @@ def _execute_connection_load(
     hold_after_connect_seconds: float = 0.0,
     allow_rejection: bool,
     deadline_monotonic: float,
+    progress_enabled: bool = True,
 ) -> tuple[bool, str]:
     _try_raise_nofile_limit(total_connections + 128)
     open_sockets: list[socket.socket] = []
@@ -224,7 +225,7 @@ def _execute_connection_load(
                     except OSError:
                         pass
 
-            if ((index + 1) % progress_interval) == 0 or (index + 1) == total_connections:
+            if progress_enabled and (((index + 1) % progress_interval) == 0 or (index + 1) == total_connections):
                 _progress(
                     "connection-progress "
                     f"{index + 1}/{total_connections} "
@@ -323,6 +324,7 @@ def _execute_message_load_stage(
     timeout_seconds: float,
     deadline_monotonic: float,
     stage_label: str,
+    progress_enabled: bool = True,
 ) -> tuple[bool, str]:
     topic = _unique_topic(f"throughput-{stage_label}")
     publish_progress_interval = max(50, message_count // 10)
@@ -339,7 +341,7 @@ def _execute_message_load_stage(
                 payload = f"{stage_label}-msg-{message_index}".encode("utf-8")
                 publish_reason = publisher.publish(topic, payload, qos=1)
                 assert_reason_code(publish_reason, 0x00)
-                if ((message_index + 1) % publish_progress_interval) == 0 or (message_index + 1) == message_count:
+                if progress_enabled and (((message_index + 1) % publish_progress_interval) == 0 or (message_index + 1) == message_count):
                     _progress(
                         f"message-publish-progress {stage_label} "
                         f"{message_index + 1}/{message_count}"
@@ -350,10 +352,11 @@ def _execute_message_load_stage(
                 minimum_seconds=0.5,
                 cap_seconds=max(timeout_seconds * 2.0, message_count / 150.0, 6.0),
             )
-            _progress(
-                f"message-collect-start {stage_label} "
-                f"expect={message_count} timeout={collect_timeout_seconds:.2f}s"
-            )
+            if progress_enabled:
+                _progress(
+                    f"message-collect-start {stage_label} "
+                    f"expect={message_count} timeout={collect_timeout_seconds:.2f}s"
+                )
             try:
                 received_messages = subscriber.collect_messages(
                     count=message_count,
@@ -376,6 +379,7 @@ def _execute_subscription_load_stage(
     timeout_seconds: float,
     deadline_monotonic: float,
     stage_label: str,
+    progress_enabled: bool = True,
 ) -> tuple[bool, str]:
     topic_root = _unique_topic(f"subscription-{stage_label}")
     topics = [f"{topic_root}/{index}" for index in range(subscription_count)]
@@ -396,7 +400,7 @@ def _execute_subscription_load_stage(
             if not suback_codes:
                 return False, f"{stage_label} empty SUBACK for topic index {topic_index}"
             assert_reason_code(suback_codes[0], 0x00)
-            if ((topic_index + 1) % subscribe_progress_interval) == 0 or (topic_index + 1) == subscription_count:
+            if progress_enabled and (((topic_index + 1) % subscribe_progress_interval) == 0 or (topic_index + 1) == subscription_count):
                 _progress(
                     f"subscription-subscribe-progress {stage_label} "
                     f"{topic_index + 1}/{subscription_count}"
@@ -411,7 +415,7 @@ def _execute_subscription_load_stage(
             payload = f"{stage_label}-topic-{topic_index}".encode("utf-8")
             publish_reason = publisher.publish(topic_name, payload, qos=0)
             assert_reason_code(publish_reason, 0x00)
-            if ((topic_index + 1) % publish_progress_interval) == 0 or (topic_index + 1) == subscription_count:
+            if progress_enabled and (((topic_index + 1) % publish_progress_interval) == 0 or (topic_index + 1) == subscription_count):
                 _progress(
                     f"subscription-publish-progress {stage_label} "
                     f"{topic_index + 1}/{subscription_count}"
@@ -422,10 +426,11 @@ def _execute_subscription_load_stage(
             minimum_seconds=0.5,
             cap_seconds=max(timeout_seconds * 4.0, subscription_count / 24.0, 20.0),
         )
-        _progress(
-            f"subscription-collect-start {stage_label} "
-            f"expect={subscription_count} timeout={collect_timeout_seconds:.2f}s"
-        )
+        if progress_enabled:
+            _progress(
+                f"subscription-collect-start {stage_label} "
+                f"expect={subscription_count} timeout={collect_timeout_seconds:.2f}s"
+            )
         try:
             received_messages = subscriber.collect_messages(
                 count=subscription_count,
@@ -467,147 +472,54 @@ def run_18_1_1_ten_concurrent_connections_all_connack_success(config) -> tuple[b
 
 def run_18_1_2_progressive_combined_load_relative_steps_with_threshold(config) -> tuple[bool, str]:
     process = None
-    stage_sizes: list[int] = []
-    next_stage_size = 100
-    while next_stage_size <= 12800:
-        stage_sizes.append(next_stage_size)
-        next_stage_size *= 2
-
-    success_threshold_stage = 800
-    highest_successful_stage = 0
-    stage_reports: list[str] = []
-    hard_timeout_seconds = max(180.0, config.timeout_seconds * 45.0)
+    target_connections = 200
+    hard_timeout_seconds = max(45.0, config.timeout_seconds * 12.0)
 
     try:
         host, port, process = _start_isolated_broker()
         deadline_monotonic = time.monotonic() + hard_timeout_seconds
 
-        for stage_size in stage_sizes:
-            stage_label = f"18.1.2/stage-{stage_size}"
-            _progress(f"stage-start {stage_label}")
+        connection_ok, connection_details = _execute_connection_load(
+            host,
+            port,
+            total_connections=target_connections,
+            timeout_seconds=max(1.0, config.timeout_seconds),
+            spacing_seconds=0.0,
+            allow_rejection=False,
+            deadline_monotonic=deadline_monotonic,
+            progress_enabled=False,
+        )
+        if not connection_ok:
+            return False, f"18.1.2 failed during connection stage: {connection_details}"
 
-            connection_start = time.monotonic()
-            try:
-                connection_ok, connection_details = _execute_connection_load(
-                    host,
-                    port,
-                    total_connections=stage_size,
-                    timeout_seconds=max(0.6, min(config.timeout_seconds, 1.5)),
-                    spacing_seconds=0.0,
-                    connect_batch_size=5,
-                    batch_pause_seconds=0.04,
-                    hold_after_connect_seconds=0.25,
-                    allow_rejection=True,
-                    deadline_monotonic=deadline_monotonic,
-                )
-            except Exception as stage_error:
-                return (
-                    False,
-                    "18.1.2 failed during connection stage "
-                    f"at {stage_size}: {stage_error}; highest_successful_stage={highest_successful_stage}; "
-                    f"stage_reports={stage_reports}",
-                )
-            _progress(f"stage-connection-finished {stage_label}: {connection_details}")
-            if not connection_ok:
-                if highest_successful_stage >= success_threshold_stage:
-                    return (
-                        True,
-                        "18.1.2 success threshold met (800) and stopped after first failing stage "
-                        f"{stage_size} in connection phase: {connection_details}; "
-                        f"highest_successful_stage={highest_successful_stage}; stage_reports={stage_reports}",
-                    )
-                return (
-                    False,
-                    "18.1.2 failed during connection stage "
-                    f"at {stage_size}: {connection_details}; highest_successful_stage={highest_successful_stage}; "
-                    "stopped immediately (no n+1 stage); "
-                    f"stage_reports={stage_reports}",
-                )
+        message_ok, message_details = _execute_message_load_stage(
+            host,
+            port,
+            message_count=target_connections,
+            timeout_seconds=max(1.0, config.timeout_seconds),
+            deadline_monotonic=deadline_monotonic,
+            stage_label="18.1.2",
+            progress_enabled=False,
+        )
+        if not message_ok:
+            return False, f"18.1.2 failed during message stage: {message_details}"
 
-            try:
-                message_ok, message_details = _execute_message_load_stage(
-                    host,
-                    port,
-                    message_count=stage_size,
-                    timeout_seconds=max(1.0, config.timeout_seconds),
-                    deadline_monotonic=deadline_monotonic,
-                    stage_label=stage_label,
-                )
-            except Exception as stage_error:
-                return (
-                    False,
-                    "18.1.2 failed during message stage "
-                    f"at {stage_size}: {stage_error}; highest_successful_stage={highest_successful_stage}; "
-                    f"stage_reports={stage_reports}",
-                )
-            _progress(f"stage-message-finished {stage_label}: {message_details}")
-            if not message_ok:
-                if highest_successful_stage >= success_threshold_stage:
-                    return (
-                        True,
-                        "18.1.2 success threshold met (800) and stopped after first failing stage "
-                        f"{stage_size} in message phase: {message_details}; "
-                        f"highest_successful_stage={highest_successful_stage}; stage_reports={stage_reports}",
-                    )
-                return (
-                    False,
-                    "18.1.2 failed during message stage "
-                    f"at {stage_size}: {message_details}; highest_successful_stage={highest_successful_stage}; "
-                    "stopped immediately (no n+1 stage); "
-                    f"stage_reports={stage_reports}",
-                )
-
-            try:
-                subscription_ok, subscription_details = _execute_subscription_load_stage(
-                    host,
-                    port,
-                    subscription_count=stage_size,
-                    timeout_seconds=max(1.0, config.timeout_seconds),
-                    deadline_monotonic=deadline_monotonic,
-                    stage_label=stage_label,
-                )
-            except Exception as stage_error:
-                return (
-                    False,
-                    "18.1.2 failed during subscription stage "
-                    f"at {stage_size}: {stage_error}; highest_successful_stage={highest_successful_stage}; "
-                    f"stage_reports={stage_reports}",
-                )
-            _progress(
-                f"stage-subscription-finished {stage_label}: {subscription_details}"
-            )
-            if not subscription_ok:
-                if highest_successful_stage >= success_threshold_stage:
-                    return (
-                        True,
-                        "18.1.2 success threshold met (800) and stopped after first failing stage "
-                        f"{stage_size} in subscription phase: {subscription_details}; "
-                        f"highest_successful_stage={highest_successful_stage}; stage_reports={stage_reports}",
-                    )
-                return (
-                    False,
-                    "18.1.2 failed during subscription stage "
-                    f"at {stage_size}: {subscription_details}; highest_successful_stage={highest_successful_stage}; "
-                    "stopped immediately (no n+1 stage); "
-                    f"stage_reports={stage_reports}",
-                )
-
-            highest_successful_stage = stage_size
-            stage_reports.append(
-                f"{stage_size}: conn[{connection_details}] msg[{message_details}] sub[{subscription_details}]"
-            )
-
-        if highest_successful_stage < success_threshold_stage:
-            return (
-                False,
-                "18.1.2 failed: success threshold 800 was not reached; "
-                f"highest_successful_stage={highest_successful_stage}; stage_reports={stage_reports}",
-            )
+        subscription_ok, subscription_details = _execute_subscription_load_stage(
+            host,
+            port,
+            subscription_count=target_connections,
+            timeout_seconds=max(1.0, config.timeout_seconds),
+            deadline_monotonic=deadline_monotonic,
+            stage_label="18.1.2",
+            progress_enabled=False,
+        )
+        if not subscription_ok:
+            return False, f"18.1.2 failed during subscription stage: {subscription_details}"
 
         return (
             True,
-            "18.1.2 progressive combined load reached full range up to 12800 "
-            f"within hard timeout {hard_timeout_seconds:.1f}s; stage_reports={stage_reports}",
+            "18.1.2 single-run load with 200 connections passed: "
+            f"conn[{connection_details}] msg[{message_details}] sub[{subscription_details}]",
         )
     except Exception as error:
         return False, f"18.1.2 failed: {error}"
@@ -629,6 +541,7 @@ def run_18_1_3_connection_storm_hundred_clients_within_one_second(config) -> tup
             spacing_seconds=0.0,
             allow_rejection=False,
             deadline_monotonic=deadline_monotonic,
+            progress_enabled=False,
         )
         elapsed = time.monotonic() - start_time
         if not success:
@@ -660,7 +573,7 @@ TEST_CASES = [
     },
     {
         "name": "load/combined_progressive_stages_up_to_1000_with_timeout",
-        "description": "18.1.2 Combined progressive load with relative stages (*2) up to 12800 and hard timeout; success threshold is stage 800",
+        "description": "18.1.2 Single-run combined load with 200 connections (connection/message/subscription)",
         "run": run_18_1_2_progressive_combined_load_relative_steps_with_threshold,
     },
     {

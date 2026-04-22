@@ -591,7 +591,7 @@ def main() -> int:
         _save_state(results_path, state)
         return 1
 
-    broker_is_managed = broker_process is not None
+    broker_is_managed = _is_local_host(config.host)
     os.environ[BROKER_MANAGED_ENV] = "1" if broker_is_managed else "0"
     if not broker_is_managed:
         print("[SETUP] Running only remote-safe test cases (managed-broker tests may be skipped)")

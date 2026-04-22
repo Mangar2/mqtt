@@ -1,0 +1,54 @@
+{
+  "run_started_at": "2026-04-22T10:21:52+00:00",
+  "run_finished_at": "2026-04-22T10:21:52+00:00",
+  "arguments": {
+    "host": "127.0.0.1",
+    "port": 1883,
+    "ws_port": null,
+    "timeout": 6.0,
+    "size": "small",
+    "repeat": 1,
+    "filter": [
+      "1"
+    ]
+  },
+  "resolved_target": {
+    "host": "127.0.0.1",
+    "port": 1883,
+    "ws_port": null,
+    "timeout_seconds": 6.0
+  },
+  "selected_stages": [
+    {
+      "stage_id": 1,
+      "title": "connection-baseline",
+      "description": "Baseline connection pressure",
+      "tests": [
+        "load/connection_load_10_concurrent_all_connack_success"
+      ]
+    }
+  ],
+  "summary": [
+    {
+      "stage_id": 1,
+      "stage_title": "connection-baseline",
+      "run_count": 1,
+      "total_seconds": 0.432259209,
+      "average_seconds": 0.432259209,
+      "deviations": 0,
+      "aborted": 0
+    }
+  ],
+  "measurements": [
+    {
+      "stage_id": 1,
+      "stage_title": "connection-baseline",
+      "test_name": "load/connection_load_10_concurrent_all_connack_success",
+      "duration_seconds": 0.432259209,
+      "outcome": "measured",
+      "details": "18.1.1 all 10 connections returned CONNACK success",
+      "started_at": "2026-04-22T10:21:52+00:00",
+      "finished_at": "2026-04-22T10:21:52+00:00"
+    }
+  ]
+}
