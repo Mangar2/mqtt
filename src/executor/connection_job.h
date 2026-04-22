@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <variant>
 
+#include "network/tcp_connection.h"
+
 namespace mqtt {
 
 /**
@@ -20,6 +22,7 @@ enum class JobType : std::uint8_t { Accept, Decode, Drain, Close };
  * @brief Payload for an accept job.
  */
 struct AcceptJobPayload {
+  SocketHandle socket_handle{k_invalid_socket};
   bool websocket_connection{false};
 };
 

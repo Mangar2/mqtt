@@ -13,9 +13,9 @@
 #include <mutex>
 #include <optional>
 #include <string>
-#include <thread>
 #include <vector>
 
+#include "executor/worker_pool.h"
 #include "network/connection_table.h"
 #include "network/io_reactor.h"
 #include "network/socket_ops.h"
@@ -32,7 +32,7 @@ struct ConnectionManagerTestAccessor;
  *
  * This class owns the networking lifecycle that was previously embedded in
  * `Broker`. It starts one IoReactor and registers enabled listeners. Accepted
- * connections are still dispatched to tracked per-client threads (bridge mode).
+ * connections are dispatched as WorkerPool jobs with bounded thread count.
  */
 class ConnectionManager {
 public:
@@ -48,15 +48,26 @@ public:
    * @param mqtt_port MQTT listener port. `0` disables the MQTT listener.
    * @param ws_port WebSocket listener port. `0` disables the WS listener.
    * @param callback Callback invoked on each accepted client connection.
-   * @param client_join_timeout Timeout used by `stop()` while waiting for
-   *                            client threads to finish before forcing socket
-   *                            shutdown.
+   * @param worker_stop_timeout Timeout used by `stop()` while waiting for
+   *                            worker jobs to drain after socket shutdown.
+   * @param worker_min_threads Minimum worker pool startup threads.
+   * @param worker_max_threads Maximum worker pool thread cap (0 = default).
    */
   ConnectionManager(uint16_t mqtt_port, uint16_t ws_port,
                     ClientHandlerCallback callback,
-                    std::chrono::milliseconds client_join_timeout =
+                    std::chrono::milliseconds worker_stop_timeout =
                         std::chrono::seconds(2),
+                    std::size_t worker_min_threads = 2U,
+                    std::size_t worker_max_threads = 0U,
                     StructuredTracer *structured_tracer = nullptr);
+
+  /**
+   * @brief Backward-compatible constructor using default worker limits.
+   */
+  ConnectionManager(uint16_t mqtt_port, uint16_t ws_port,
+                    ClientHandlerCallback callback,
+                    std::chrono::milliseconds worker_stop_timeout,
+                    StructuredTracer *structured_tracer);
 
   /** @brief Destructor that performs best-effort shutdown via `stop()`. */
   ~ConnectionManager();
@@ -92,42 +103,30 @@ private:
       SocketHandle socket_handle) noexcept;
   static void close_socket_handle_for_test(SocketHandle socket_handle) noexcept;
 
-  /**
-   * @brief Tracked client thread metadata.
-   */
-  struct ClientThreadEntry {
-    std::thread thread;
-    std::shared_ptr<std::atomic<bool>> finished;
-    SocketHandle socket_handle{0U};
-  };
-
   /** @brief Handle one listener-ready event and drain pending accepts. */
   void handle_accept_ready(SocketHandle listener_socket_handle, bool is_ws);
 
-  /** @brief Join and remove finished client threads from the registry. */
-  void cleanup_finished();
-
-  /** @brief Best-effort join of all client threads. */
-  void join_all_clients() noexcept;
+  /** @brief Execute one connection job from the worker pool. */
+  void handle_connection_job(const ConnectionJob &job);
 
   uint16_t mqtt_port_{0U};
   uint16_t ws_port_{0U};
   ClientHandlerCallback callback_;
 
-  std::chrono::milliseconds client_join_timeout_;
+  std::chrono::milliseconds worker_stop_timeout_;
+  std::size_t worker_min_threads_{2U};
+  std::size_t worker_max_threads_{0U};
 
   mutable std::mutex lifecycle_mutex_;
   std::atomic<bool> running_{false};
   StructuredTracer *structured_tracer_{nullptr};
 
   std::unique_ptr<IoReactor> io_reactor_;
+  std::unique_ptr<WorkerPool> worker_pool_;
   ConnectionTable connection_table_;
 
   std::optional<TcpListener> mqtt_listener_;
   std::optional<TcpListener> ws_listener_;
-
-  std::mutex client_threads_mutex_;
-  std::vector<ClientThreadEntry> client_threads_;
 };
 
 } // namespace mqtt

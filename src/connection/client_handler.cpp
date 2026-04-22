@@ -8,7 +8,6 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
-#include <thread>
 #include <utility>
 
 #include "auth/authenticator.h"
@@ -94,22 +93,22 @@ void run_client_handler_flow(std::unique_ptr<TcpConnection> conn, Broker &broker
 
   StreamBuffer stream_buffer;
   WriteQueue write_queue(static_cast<std::size_t>(config.write_queue_max_bytes));
-  std::thread drain_thread([
-      &write_queue, connection = conn.get(), ws_instance = ws_transport.get(),
-      is_websocket] {
+
+  write_queue.set_sink([connection = conn.get(), ws_instance = ws_transport.get(),
+                        is_websocket](std::span<const uint8_t> frame) {
     if (is_websocket) {
-      write_queue.run_drain(ws_instance->tcp());
-      return;
+      if (ws_instance == nullptr) {
+        return false;
+      }
+      std::vector<uint8_t> copy(frame.begin(), frame.end());
+      return ws_instance->tcp().write(copy);
     }
-    write_queue.run_drain(*connection);
+    return connection != nullptr && connection->write(frame);
   });
 
-  const auto stop_transport = [&write_queue, &drain_thread, &conn]() {
+  const auto stop_transport = [&write_queue, &conn]() {
     write_queue.stop();
     conn->close();
-    if (drain_thread.joinable()) {
-      drain_thread.join();
-    }
   };
 
   std::optional<ConnectPacket> connect_packet;

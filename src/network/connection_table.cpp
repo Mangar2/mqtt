@@ -46,4 +46,14 @@ std::size_t ConnectionTable::size() const noexcept {
   return slots_.size();
 }
 
+std::vector<SocketHandle> ConnectionTable::snapshot_socket_handles() const {
+  std::shared_lock<std::shared_mutex> lock_guard(mutex_);
+  std::vector<SocketHandle> socket_handles;
+  socket_handles.reserve(slots_.size());
+  for (const auto &entry : slots_) {
+    socket_handles.push_back(entry.second->fd());
+  }
+  return socket_handles;
+}
+
 } // namespace mqtt

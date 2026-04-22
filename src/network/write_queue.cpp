@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <mutex>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -41,21 +42,53 @@ void WriteQueue::set_tracer(StructuredTracer *tracer,
   queue_id_ = std::move(queue_id);
 }
 
-bool WriteQueue::enqueue(std::vector<uint8_t> packet) {
-  const std::size_t frame_bytes = packet.size();
+void WriteQueue::set_sink(SinkWriter sink_writer) noexcept {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (queued_bytes_ + frame_bytes > max_bytes_) {
-    emit_write_queue_trace(structured_tracer_, queue_id_,
-                           "write_queue_enqueue_rejected", frame_bytes,
-                           queued_bytes_, max_bytes_);
+  sink_writer_ = std::move(sink_writer);
+}
+
+bool WriteQueue::enqueue(std::vector<uint8_t> packet) {
+  if (stopped_.load(std::memory_order_acquire)) {
     return false;
   }
-  queued_bytes_ += frame_bytes;
-  queue_.push(std::move(packet));
-  emit_write_queue_trace(structured_tracer_, queue_id_,
-                         "write_queue_enqueue_accepted", frame_bytes,
-                         queued_bytes_, max_bytes_);
-  cv_.notify_one();
+
+  const std::size_t frame_bytes = packet.size();
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (queued_bytes_ + frame_bytes > max_bytes_) {
+      emit_write_queue_trace(structured_tracer_, queue_id_,
+                             "write_queue_enqueue_rejected", frame_bytes,
+                             queued_bytes_, max_bytes_);
+      return false;
+    }
+    queued_bytes_ += frame_bytes;
+    queue_.push(std::move(packet));
+    emit_write_queue_trace(structured_tracer_, queue_id_,
+                           "write_queue_enqueue_accepted", frame_bytes,
+                           queued_bytes_, max_bytes_);
+  }
+
+  while (true) {
+    SinkWriter sink_writer;
+    std::vector<uint8_t> next_packet;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (!sink_writer_ || queue_.empty()) {
+        break;
+      }
+      sink_writer = sink_writer_;
+      next_packet = std::move(queue_.front());
+      queue_.pop();
+      queued_bytes_ -= next_packet.size();
+    }
+
+    if (!sink_writer(std::span<const uint8_t>(next_packet.data(),
+                                              next_packet.size()))) {
+      stopped_.store(true, std::memory_order_release);
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -77,34 +110,8 @@ bool WriteQueue::drain(TcpConnection &conn) {
   return true;
 }
 
-void WriteQueue::run_drain(TcpConnection &conn) {
-  while (true) {
-    std::unique_lock<std::mutex> lock(mutex_);
-    cv_.wait(lock, [this] { return !queue_.empty() || stopped_.load(); });
-
-    if (stopped_.load() && queue_.empty()) {
-      break;
-    }
-
-    while (!queue_.empty()) {
-      std::vector<uint8_t> pkt = std::move(queue_.front());
-      queue_.pop();
-      queued_bytes_ -= pkt.size();
-      lock.unlock();
-      if (!conn.write(pkt)) {
-        emit_write_queue_trace(structured_tracer_, queue_id_,
-                               "write_queue_drain_write_failed", pkt.size(),
-                               queued_bytes_, max_bytes_);
-        return; // socket error — exit drain loop
-      }
-      lock.lock();
-    }
-  }
-}
-
 void WriteQueue::stop() {
-  stopped_.store(true);
-  cv_.notify_all();
+  stopped_.store(true, std::memory_order_release);
 }
 
 bool WriteQueue::is_full() const noexcept {

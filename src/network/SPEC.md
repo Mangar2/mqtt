@@ -22,7 +22,7 @@ all I/O.
 | `tcp_connection.h/.cpp`| 6.1.3    | `TcpConnection` — owns a connected socket fd; read/write/close |
 | `tcp_listener.h/.cpp`  | 6.1.1–2  | `TcpListener` — opens server socket, runs accept loop |
 | `stream_buffer.h`      | 6.2      | `StreamBuffer` — buffers incoming bytes, extracts complete MQTT packets |
-| `write_queue.h/.cpp`   | 6.3      | `WriteQueue` — thread-safe outgoing packet queue with async drain |
+| `write_queue.h/.cpp`   | 6.3      | `WriteQueue` — thread-safe outgoing packet queue with optional sink flush |
 | `socket_ops.h/.cpp`    | step 01  | Non-blocking socket helpers (`set_nonblocking`, `nb_read`, `nb_write`, `nb_accept`) |
 | `connection_slot.h/.cpp` | step 01 | Per-connection fd + read/write ring buffers + phase (`Connecting`, `Connected`, `Closing`) |
 | `connection_table.h/.cpp`| step 01 | Thread-safe fd-indexed ownership table for `ConnectionSlot` instances |
@@ -119,25 +119,24 @@ field (variable-byte-integer at offset 1–4) and returns them one at a time.
 
 ### `WriteQueue` (6.3)
 
-**Purpose:** Thread-safe queue of outgoing serialized packets.  
-A background drain loop writes them to the `TcpConnection`.
+**Purpose:** Thread-safe queue of outgoing serialized packets with optional
+immediate sink flushing.
 
 **Public API:**
 
 | Method | Description |
 |--------|-------------|
 | `WriteQueue(max_bytes)` | Create queue with capacity limit (default 64 KiB) |
+| `set_sink(writer)` | Optional sink callback for immediate flush behavior |
 | `enqueue(vector<uint8_t>)` → `bool` | Add packet; false = queue full (backpressure) |
 | `drain(TcpConnection&)` | Blocking: write all queued packets then return |
-| `run_drain(TcpConnection&)` | Loop: wait for packets, drain, repeat until stopped |
-| `stop()` | Signal the drain loop to exit |
+| `stop()` | Mark queue stopped and reject future enqueue calls |
 | `is_full()` → `bool` | True when queued bytes ≥ max_bytes |
 | `is_empty()` → `bool` | True when queue holds no packets |
 | `queued_bytes()` → `size_t` | Current total byte count in the queue |
 
 **Constraints:**
-- `enqueue` and `run_drain` are safe to call from different threads.
-- `run_drain` blocks the calling thread; intended to run in a `std::jthread`.
+- `enqueue`, `set_sink`, and `stop` are safe to call from different threads.
 - Backpressure: `enqueue` returns `false` (does not throw) when at capacity.
 
 ---

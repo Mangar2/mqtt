@@ -88,11 +88,21 @@ void emit_connection_event(StructuredTracer *structured_tracer,
 
 ConnectionManager::ConnectionManager(
     uint16_t mqtt_port, uint16_t ws_port, ClientHandlerCallback callback,
-    std::chrono::milliseconds client_join_timeout,
+    std::chrono::milliseconds worker_stop_timeout,
+    std::size_t worker_min_threads, std::size_t worker_max_threads,
     StructuredTracer *structured_tracer)
     : mqtt_port_(mqtt_port), ws_port_(ws_port), callback_(std::move(callback)),
-      client_join_timeout_(client_join_timeout),
+      worker_stop_timeout_(worker_stop_timeout),
+      worker_min_threads_(worker_min_threads),
+      worker_max_threads_(worker_max_threads),
       structured_tracer_(structured_tracer) {}
+
+    ConnectionManager::ConnectionManager(
+      uint16_t mqtt_port, uint16_t ws_port, ClientHandlerCallback callback,
+      std::chrono::milliseconds worker_stop_timeout,
+      StructuredTracer *structured_tracer)
+      : ConnectionManager(mqtt_port, ws_port, std::move(callback),
+                worker_stop_timeout, 2U, 0U, structured_tracer) {}
 
 ConnectionManager::~ConnectionManager() { stop(); }
 
@@ -110,6 +120,11 @@ void ConnectionManager::start() {
   running_.store(true);
 
   try {
+    worker_pool_ = std::make_unique<WorkerPool>(
+        [this](const ConnectionJob &job) { handle_connection_job(job); },
+        worker_max_threads_);
+    worker_pool_->start(worker_min_threads_);
+
     io_reactor_ = std::make_unique<IoReactor>();
     io_reactor_->start();
 
@@ -142,6 +157,11 @@ void ConnectionManager::start() {
     }
   } catch (...) {
     running_.store(false);
+
+    if (worker_pool_) {
+      worker_pool_->stop();
+      worker_pool_.reset();
+    }
 
     if (io_reactor_) {
       io_reactor_->stop();
@@ -182,29 +202,24 @@ void ConnectionManager::stop() noexcept {
     ws_listener_.reset();
   }
 
-  const auto deadline = std::chrono::steady_clock::now() + client_join_timeout_;
+  const auto deadline = std::chrono::steady_clock::now() + worker_stop_timeout_;
+  const std::vector<SocketHandle> socket_handles =
+      connection_table_.snapshot_socket_handles();
+  for (SocketHandle socket_handle : socket_handles) {
+    TcpConnection::shutdown_socket(socket_handle);
+  }
+
   while (std::chrono::steady_clock::now() < deadline) {
-    cleanup_finished();
-
-    {
-      std::lock_guard<std::mutex> client_lock_guard(client_threads_mutex_);
-      if (client_threads_.empty()) {
-        break;
-      }
+    if (connection_table_.size() == 0U) {
+      break;
     }
-
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
-  // After timeout, request socket shutdown to unblock blocked reads.
-  {
-    std::lock_guard<std::mutex> client_lock_guard(client_threads_mutex_);
-    for (const ClientThreadEntry &entry : client_threads_) {
-      TcpConnection::shutdown_socket(entry.socket_handle);
-    }
+  if (worker_pool_) {
+    worker_pool_->stop();
+    worker_pool_.reset();
   }
-
-  join_all_clients();
 }
 
 bool ConnectionManager::is_running() const noexcept { return running_.load(); }
@@ -243,16 +258,6 @@ void ConnectionManager::handle_accept_ready(SocketHandle listener_socket_handle,
       break;
     }
 
-    if (!set_socket_blocking(accepted_socket_handle)) {
-      emit_connection_event(structured_tracer_, TraceLevel::Trace,
-                            "accepted_socket_set_blocking_failed",
-                            listener_kind,
-                            static_cast<int>(accepted_socket_handle),
-                            "set_socket_blocking_failed");
-      close_socket_handle(accepted_socket_handle);
-      continue;
-    }
-
     const int socket_fd = static_cast<int>(accepted_socket_handle);
     if (!connection_table_.add(ConnectionSlot(accepted_socket_handle))) {
       emit_connection_event(
@@ -262,73 +267,53 @@ void ConnectionManager::handle_accept_ready(SocketHandle listener_socket_handle,
       continue;
     }
 
-    cleanup_finished();
+    if (!worker_pool_) {
+      [[maybe_unused]] const bool removed = connection_table_.remove(socket_fd);
+      close_socket_handle(accepted_socket_handle);
+      continue;
+    }
 
-    auto finished = std::make_shared<std::atomic<bool>>(false);
-    std::thread client_thread;
     try {
-      client_thread = std::thread(
-          [this, finished, is_ws, socket_fd,
-           connection =
-               std::make_unique<TcpConnection>(accepted_socket_handle)]() mutable {
-            try {
-              callback_(std::move(connection), is_ws);
-            } catch (...) {
-              // Individual client failures must not terminate acceptance.
-            }
-            [[maybe_unused]] const bool removed =
-                connection_table_.remove(socket_fd);
-            finished->store(true);
-          });
-    } catch (const std::system_error &system_error) {
+      worker_pool_->submit(ConnectionJob{
+          .type = JobType::Accept,
+          .connection_fd = socket_fd,
+          .payload = AcceptJobPayload{.socket_handle = accepted_socket_handle,
+                                      .websocket_connection = is_ws}});
+    } catch (const std::exception &exception) {
       emit_connection_event(
           structured_tracer_, TraceLevel::Warning, "client_thread_start_failed",
           listener_kind, socket_fd,
-          "system_error=" + std::string(system_error.what()));
-      [[maybe_unused]] const bool removed = connection_table_.remove(socket_fd);
-      close_socket_handle(accepted_socket_handle);
-      continue;
-    } catch (...) {
-      emit_connection_event(structured_tracer_, TraceLevel::Warning,
-                            "client_thread_start_failed", listener_kind,
-                            socket_fd, "unknown_error");
+          "worker_submit_error=" + std::string(exception.what()));
       [[maybe_unused]] const bool removed = connection_table_.remove(socket_fd);
       close_socket_handle(accepted_socket_handle);
       continue;
     }
-
-    std::lock_guard<std::mutex> client_lock_guard(client_threads_mutex_);
-    client_threads_.push_back(
-        ClientThreadEntry{.thread = std::move(client_thread),
-                          .finished = std::move(finished),
-                          .socket_handle = accepted_socket_handle});
   }
 }
 
-void ConnectionManager::cleanup_finished() {
-  std::lock_guard<std::mutex> client_lock_guard(client_threads_mutex_);
-
-  auto erase_begin = std::remove_if(client_threads_.begin(), client_threads_.end(),
-                                    [](ClientThreadEntry &entry) {
-                                      if (!entry.finished->load()) {
-                                        return false;
-                                      }
-                                      if (entry.thread.joinable()) {
-                                        entry.thread.join();
-                                      }
-                                      return true;
-                                    });
-  client_threads_.erase(erase_begin, client_threads_.end());
-}
-
-void ConnectionManager::join_all_clients() noexcept {
-  std::lock_guard<std::mutex> client_lock_guard(client_threads_mutex_);
-  for (ClientThreadEntry &entry : client_threads_) {
-    if (entry.thread.joinable()) {
-      entry.thread.join();
-    }
+void ConnectionManager::handle_connection_job(const ConnectionJob &job) {
+  if (job.type != JobType::Accept) {
+    return;
   }
-  client_threads_.clear();
+
+  const AcceptJobPayload *accept_payload =
+      std::get_if<AcceptJobPayload>(&job.payload);
+  if (accept_payload == nullptr ||
+      accept_payload->socket_handle == k_invalid_socket) {
+    [[maybe_unused]] const bool removed =
+        connection_table_.remove(job.connection_fd);
+    return;
+  }
+
+  auto connection =
+      std::make_unique<TcpConnection>(accept_payload->socket_handle);
+  try {
+    callback_(std::move(connection), accept_payload->websocket_connection);
+  } catch (...) {
+    // Individual client failures must not terminate worker dispatch.
+  }
+
+  [[maybe_unused]] const bool removed = connection_table_.remove(job.connection_fd);
 }
 
 } // namespace mqtt

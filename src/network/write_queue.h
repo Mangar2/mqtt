@@ -7,8 +7,8 @@
  */
 
 #include <atomic>
-#include <condition_variable>
 #include <cstddef>
+#include <functional>
 #include <mutex>
 #include <queue>
 #include <string>
@@ -25,26 +25,25 @@ class StructuredTracer;
  * drain capability (Module 6.3).
  *
  * ### Design
- * - `enqueue()` pushes a packet and wakes the drain thread (6.3.1).
- * - `run_drain()` blocks the *calling* thread, writing queued packets to the
- *   `TcpConnection` as they arrive; it exits when `stop()` is called (6.3.2).
+ * - `enqueue()` pushes a packet and optionally flushes through a configured
+ *   sink writer (6.3.1).
+ * - `drain()` writes queued packets to the provided `TcpConnection` and
+ *   returns to caller (6.3.2).
  * - Backpressure (6.3.3): `enqueue()` returns `false` — without throwing —
  *   when the total queued byte count would exceed `max_bytes`.
  *
  * ### Intended usage
- * ```cpp
- * WriteQueue queue;
- * std::jthread writer{[&](std::stop_token){ queue.run_drain(conn); }};
- * queue.enqueue(pkt);   // from a different thread
- * queue.stop();         // when connection closes
- * ```
+ * Use `set_sink()` to provide a writer callback when immediate flush behavior
+ * is desired.
  *
- * Thread safety: `enqueue()`, `stop()`, and `run_drain()` are safe to call
+ * Thread safety: `enqueue()`, `stop()`, and `set_sink()` are safe to call
  * concurrently from different threads.  `drain()` is a one-shot synchronous
  * helper intended for single-threaded use or testing.
  */
 class WriteQueue {
 public:
+  using SinkWriter = std::function<bool(std::span<const uint8_t>)>;
+
   /** @brief Default queue capacity in bytes (64 KiB). */
   static constexpr std::size_t k_default_max_bytes = 64U * 1024U;
 
@@ -61,6 +60,16 @@ public:
    * @param queue_id Stable queue identifier (for example client ID).
    */
   void set_tracer(StructuredTracer *tracer, std::string queue_id) noexcept;
+
+  /**
+   * @brief Attach an optional sink writer used for immediate flush on enqueue.
+   *
+   * When set, `enqueue()` will try to flush pending frames through the sink.
+   * The sink executes outside the queue mutex.
+   *
+   * @param sink_writer Writer callback; empty to disable sink flushing.
+   */
+  void set_sink(SinkWriter sink_writer) noexcept;
 
   /**
    * @brief Enqueue one serialized packet (6.3.1).
@@ -84,17 +93,7 @@ public:
   bool drain(TcpConnection &conn);
 
   /**
-   * @brief Block and drain packets to `conn` until `stop()` is called (6.3.2).
-   *
-   * Intended to run on a dedicated `std::jthread`.  Waits on a condition
-   * variable when the queue is empty.
-   *
-   * @param conn Connection to write to.
-   */
-  void run_drain(TcpConnection &conn);
-
-  /**
-   * @brief Signal the `run_drain` loop to exit (6.3.2).
+  * @brief Signal queue shutdown and reject future enqueue calls.
    *
    * Safe to call from any thread.  No-op if already stopped.
    */
@@ -121,12 +120,12 @@ public:
 private:
   const std::size_t max_bytes_;            ///< Upper bound for queued_bytes_.
   mutable std::mutex mutex_;               ///< Guards queue_ and queued_bytes_.
-  std::condition_variable cv_;             ///< Notified by enqueue() / stop().
   std::queue<std::vector<uint8_t>> queue_; ///< Pending outgoing packets.
   std::size_t queued_bytes_{0};      ///< Running sum of queued packet sizes.
   std::atomic<bool> stopped_{false}; ///< True after stop() is called.
   StructuredTracer *structured_tracer_{nullptr}; ///< Optional diagnostics tracer.
   std::string queue_id_; ///< Trace correlation ID for this queue.
+  SinkWriter sink_writer_; ///< Optional immediate sink writer.
 };
 
 } // namespace mqtt

@@ -9,6 +9,7 @@
 #include <memory>
 #include <shared_mutex>
 #include <unordered_map>
+#include <vector>
 
 #include "network/connection_slot.h"
 
@@ -52,6 +53,12 @@ public:
    * @return Number of entries.
    */
   [[nodiscard]] std::size_t size() const noexcept;
+
+  /**
+   * @brief Snapshot all currently tracked socket handles.
+   * @return Vector of socket handles for active slots.
+   */
+  [[nodiscard]] std::vector<SocketHandle> snapshot_socket_handles() const;
 
 private:
   mutable std::shared_mutex mutex_;

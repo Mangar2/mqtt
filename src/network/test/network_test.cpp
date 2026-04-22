@@ -295,22 +295,17 @@ TEST_CASE("write_queue_is_full_at_capacity", "[network]") {
   CHECK(queue.is_full());
 }
 
-TEST_CASE("write_queue_stop_exits_run_drain", "[network]") {
+TEST_CASE("write_queue_stop_rejects_enqueue", "[network]") {
   TcpConnection side_a{k_invalid_socket};
   TcpConnection side_b{k_invalid_socket};
   make_socket_pair(side_a, side_b);
 
   WriteQueue queue;
-  std::thread drain_thread{[&] { queue.run_drain(side_a); }};
-
-  // Give the thread a moment to start and block on the condition variable
-  std::this_thread::sleep_for(std::chrono::milliseconds(10));
   queue.stop();
-  drain_thread.join(); // Must not deadlock
-  CHECK(true);         // Reached here → thread exited cleanly
+  CHECK_FALSE(queue.enqueue(make_packet(2)));
 }
 
-TEST_CASE("write_queue_run_drain_writes_enqueued_packets", "[network]") {
+TEST_CASE("write_queue_sink_writes_enqueued_packets", "[network]") {
   TcpConnection side_a{k_invalid_socket};
   TcpConnection side_b{k_invalid_socket};
   make_socket_pair(side_a, side_b);
@@ -318,16 +313,15 @@ TEST_CASE("write_queue_run_drain_writes_enqueued_packets", "[network]") {
   WriteQueue queue;
   auto pkt = make_packet(3);
 
-  std::thread drain_thread{[&] { queue.run_drain(side_a); }};
+  queue.set_sink([&side_a](std::span<const uint8_t> frame) {
+    return side_a.write(frame);
+  });
 
   CHECK(queue.enqueue(pkt));
 
   std::vector<uint8_t> received(pkt.size());
   CHECK(read_exact(side_b, std::span<uint8_t>{received.data(), received.size()}));
   CHECK(received == pkt);
-
-  queue.stop();
-  drain_thread.join();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

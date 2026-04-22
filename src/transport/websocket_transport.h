@@ -42,12 +42,11 @@ struct WsReadChunk {
  * ### Write path
  * `write_frame()` wraps MQTT bytes in a WS Binary frame and writes
  * synchronously.  `encode_frame()` (static) pre-frames bytes for insertion
- * into a `WriteQueue` whose drain thread writes to the raw `TcpConnection`.
+ * into a `WriteQueue` sink that writes to the raw `TcpConnection`.
  *
- * ### Drain-thread compatibility
- * `WriteQueue::run_drain` writes pre-framed bytes to a `TcpConnection`.
- * Call `encode_frame()` before `WriteQueue::enqueue()` and pass `tcp()` to
- * `run_drain()`.
+ * ### Queue sink compatibility
+ * Configure `WriteQueue::set_sink(...)` with a writer bound to `tcp()` and
+ * call `encode_frame()` before `WriteQueue::enqueue()`.
  *
  * Thread safety: none — external synchronisation required.
  */
@@ -93,8 +92,9 @@ public:
    * @brief Wrap @p mqtt_bytes in a WS Binary frame (for WriteQueue
    * pre-framing).
    *
-   * The returned bytes can be passed directly to `WriteQueue::enqueue()`.
-   * The drain thread writes them to the raw `TcpConnection` via `tcp()`.
+  * The returned bytes can be passed directly to `WriteQueue::enqueue()`.
+  * A configured queue sink can write them to the raw `TcpConnection` via
+  * `tcp()`.
    *
    * @param mqtt_bytes Raw MQTT packet bytes.
    * @return Encoded WS Binary frame bytes.
@@ -109,10 +109,7 @@ public:
   void set_receive_timeout(uint32_t milliseconds_val) noexcept;
 
   /**
-   * @brief Return the underlying TcpConnection for WriteQueue::run_drain.
-   *
-   * The drain thread must call `WriteQueue::run_drain(transport.tcp())`
-   * after pre-framing all queued packets with `encode_frame()`.
+  * @brief Return the underlying TcpConnection used by queue sink writers.
    */
   [[nodiscard]] TcpConnection &tcp() noexcept;
 

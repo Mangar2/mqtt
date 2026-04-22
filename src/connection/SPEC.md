@@ -17,7 +17,7 @@ Depends on: data_model (1), codec (2), qos (5), network (6), auth (8), session_m
 | `runtime_phase_flow.h/.cpp` | 24 | post-CONNECT runtime packet loop and dispatch |
 | `connection_flow_support.h/.cpp` | 24 | shared transport/codec helpers for connect/runtime phases |
 | `outbound_queue_bridge.h/.cpp` | 24 | outbound queue bridging helpers (drain pending messages, transfer pending messages between queue instances) |
-| `connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, IoReactor registration, and tracked client threads |
+| `connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, IoReactor registration, and WorkerPool-dispatched connection jobs |
 
 ## 7.1 ConnectionStateMachine
 
@@ -69,7 +69,7 @@ Module-24 flow is split into focused components:
 
 Implemented behavior:
 - Optional WebSocket upgrade handshake when `is_ws=true`.
-- Socket timeout setup and async `WriteQueue` drain thread startup.
+- Socket timeout setup and `WriteQueue` sink binding for direct socket flush.
 - Per-connection `WriteQueue` capacity sourced from
 	`BrokerConfig::write_queue_max_bytes`.
 - CONNECT handshake handling via `Broker::handle_connect()` plus enhanced-auth loop via `Broker::handle_auth_packet()`.
@@ -99,19 +99,19 @@ Runtime protocol error handling:
 
 ## 23 ConnectionManager
 
-`ConnectionManager` extracts listener and thread lifecycle from `Broker`.
+`ConnectionManager` extracts listener and bounded worker lifecycle from `Broker`.
 
 Responsibilities:
 
 - Own MQTT and optional WebSocket `TcpListener` instances.
 - Own one `IoReactor` and register listener sockets on startup.
-- Accept incoming sockets from reactor callbacks in bridge mode and spawn tracked
-	client threads.
+- Accept incoming sockets from reactor callbacks and submit accept jobs to
+	`WorkerPool`.
 - Emit optional structured trace events for accept anomalies (trace) and client
-	thread start failures (warning).
-- Stop reactor and listeners on shutdown.
-- Wait for client threads up to a configured timeout and request socket shutdown
-	for remaining clients to unblock pending reads.
+	job submit failures (warning).
+- Stop reactor, listeners, and worker pool on shutdown.
+- Request socket shutdown for active slots, wait bounded time for connection
+	jobs to drain, then stop worker pool.
 
 Public API:
 
