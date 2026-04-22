@@ -5,6 +5,8 @@
 #include "broker/broker.h"
 #include "broker/broker_config.h"
 #include "codec/packet/connect_codec.h"
+#include "codec/packet_reader/packet_reader.h"
+#include "codec/read_buffer.h"
 #include "connection/connection_session.h"
 #include "connection/close_step.h"
 #include "connection/decode_step.h"
@@ -262,6 +264,36 @@ TEST_CASE("process_runtime_packet_pingreq_enqueues_pingresp", "[connection]") {
 
     broker.shutdown();
   }
+
+    TEST_CASE("process_runtime_packet_unknown_pubrel_returns_packet_identifier_not_found",
+        "[connection]") {
+      const BrokerConfig config = make_step_test_config();
+      Broker broker(config);
+      broker.startup();
+
+      ConnectionSession session = make_session(config);
+      const AnyPacket connect_packet = make_connect_packet();
+      REQUIRE(process_handshake_packet(session, broker, connect_packet) ==
+        HandshakeOutcome::ConnectAccepted);
+
+      session.clear_pending_write_frames();
+      const AnyPacket pubrel = PubrelPacket{.packet_id = 41U,
+              .reason_code = ReasonCode::Success,
+              .properties = {}};
+      CHECK(process_runtime_packet(session, broker, pubrel) ==
+      RuntimeOutcome::Continuing);
+      REQUIRE(session.pending_write_frames().size() == 1U);
+
+      const WriteBuffer &frame = session.pending_write_frames().front();
+      ReadBuffer reader(std::span<const uint8_t>(frame.data(), frame.size()));
+      const AnyPacket decoded = read_packet(reader);
+      REQUIRE(std::holds_alternative<PubcompPacket>(decoded));
+      const PubcompPacket &pubcomp = std::get<PubcompPacket>(decoded);
+      CHECK(pubcomp.packet_id == 41U);
+      CHECK(pubcomp.reason_code == ReasonCode::PacketIdentifierNotFound);
+
+      broker.shutdown();
+    }
 
 TEST_CASE("drain_outbound_to_write_buffer_moves_client_session_frames",
           "[connection]") {
