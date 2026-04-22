@@ -25,7 +25,7 @@ all I/O.
 | `write_queue.h/.cpp`   | 6.3      | `WriteQueue` — thread-safe outgoing packet queue with optional sink flush |
 | `socket_ops.h/.cpp`    | step 01  | Non-blocking socket helpers (`set_nonblocking`, `nb_read`, `nb_write`, `nb_accept`) |
 | `connection_slot.h/.cpp` | step 01 | Per-connection fd + read/write ring buffers + phase (`Connecting`, `Connected`, `Closing`) |
-| `connection_table.h/.cpp`| step 01 | Thread-safe fd-indexed ownership table for `ConnectionSlot` instances |
+| `connection_table.h/.cpp`| step 01, step 05 | Thread-safe fd-indexed ownership table for `Entry { ConnectionSlot, ConnectionSession }` |
 | `io_reactor.h`         | step 04  | Platform-neutral reactor interface and callback API |
 | `io_reactor_kqueue.cpp`| step 04  | kqueue backend (`EVFILT_READ`, `EVFILT_WRITE`) for macOS/BSD |
 | `io_reactor_epoll.cpp` | step 04  | epoll backend (`EPOLLIN`, `EPOLLOUT`, `EPOLLRDHUP`) for Linux |
@@ -179,14 +179,18 @@ Constraints:
 
 ---
 
-### `ConnectionTable` (threading-refactoring step 01)
+### `ConnectionTable` (threading-refactoring step 01 + step 05)
 
-**Purpose:** Own all `ConnectionSlot` objects and provide fd-indexed access.
+**Purpose:** Own per-fd connection entries and provide fd-indexed access.
+
+Entry model:
+- `Entry { ConnectionSlot slot; std::unique_ptr<ConnectionSession> session; }`
 
 Public API:
-- `add(slot)` inserts a slot by fd and returns `false` if fd already exists.
+- `add(fd, slot, session)` inserts an entry by fd and returns `false` if fd already exists.
 - `remove(fd)` removes an entry and returns whether removal happened.
-- `find(fd)` returns slot pointer or `nullptr`.
+- `find(fd)` returns entry pointer or `nullptr`.
+- `clear()` removes all entries.
 
 Locking:
 - one internal `std::shared_mutex`

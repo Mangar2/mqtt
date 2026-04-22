@@ -259,7 +259,9 @@ void ConnectionManager::handle_accept_ready(SocketHandle listener_socket_handle,
     }
 
     const int socket_fd = static_cast<int>(accepted_socket_handle);
-    if (!connection_table_.add(ConnectionSlot(accepted_socket_handle))) {
+    if (!connection_table_.add(socket_fd,
+                   ConnectionSlot(accepted_socket_handle),
+                   nullptr)) {
       emit_connection_event(
           structured_tracer_, TraceLevel::Trace, "connection_slot_add_rejected",
           listener_kind, socket_fd, "connection_slot_already_exists");

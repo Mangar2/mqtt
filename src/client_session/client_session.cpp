@@ -254,6 +254,10 @@ ConnectionStateMachine &ClientSession::connection_state_machine() noexcept {
   return connection_state_machine_;
 }
 
+std::shared_ptr<OutboundQueue> ClientSession::outbound_queue() const noexcept {
+  return outbound_queue_;
+}
+
 Message
 ClientSession::message_from_publish(const PublishPacket &publish_packet) {
   return Message{

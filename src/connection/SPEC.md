@@ -12,6 +12,7 @@ Depends on: data_model (1), codec (2), qos (5), network (6), auth (8), session_m
 | `keep_alive_timer.h/.cpp` | 7.2 | `KeepAliveTimer` — deadline tracking at 1.5 × Keep Alive interval |
 | `topic_alias_table.h/.cpp` | 7.3 | `TopicAliasTable` — inbound and outbound alias↔topic mappings with maximum enforcement |
 | `receive_maximum.h/.cpp` | 7.4 | `ReceiveMaximum` — inflight QoS 1+2 packet counter with pause/resume |
+| `connection_session.h/.cpp` | step 05 | `ConnectionSession` — heap-owned per-connection state used by serialized per-fd worker jobs |
 | `client_handler.h/.cpp` | 24 | `ClientHandler` — thin adapter that forwards accepted sockets into connection-flow orchestration |
 | `connect_phase_flow.h/.cpp` | 24 | CONNECT + AUTH handshake phase (`Broker::handle_connect`, `Broker::handle_auth_packet`) |
 | `runtime_phase_flow.h/.cpp` | 24 | post-CONNECT runtime packet loop and dispatch |
@@ -20,6 +21,13 @@ Depends on: data_model (1), codec (2), qos (5), network (6), auth (8), session_m
 | `connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, IoReactor registration, and WorkerPool-dispatched connection jobs |
 
 ## 7.1 ConnectionStateMachine
+
+## Threading Model Note (step 05)
+
+- `ConnectionSession` is intentionally not internally synchronized.
+- The executor guarantees per-fd serialization: for one connection/socket fd,
+  only one worker job executes at a time.
+- Different fds may be processed in parallel by different worker threads.
 
 States: `Connecting` → `Connected` → `Disconnecting` → `Closed`
 

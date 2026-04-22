@@ -14,7 +14,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `qos/`         | 5        | QoS Engine — Packet ID allocation, QoS 1 and QoS 2 state machines with retransmission. Depends on `data_model/` and `store/`. |
 | `network/`     | 6        | Network Layer — TCP listener, connection wrapper, incoming stream buffer, and outgoing write queue. No MQTT knowledge. No external dependencies. |
 | `executor/`    | threading step 02 | Executor primitives — connection job model, concurrent queue, per-connection scheduler, pool scaling policy, and elastic worker pool. Not yet integrated into broker/connection runtime. |
-| `connection/`  | 7, 23, 24 | Connection Handler + Connection Manager — per-connection lifecycle helpers, outbound-queue bridging utilities, dedicated listener/thread lifecycle management, and lean client I/O orchestration delegating workflow to `Broker` facades and `ClientSession`. |
+| `connection/`  | 7, 23, 24, step 05 | Connection Handler + Connection Manager — per-connection lifecycle helpers, heap-owned `ConnectionSession` state, outbound-queue bridging utilities, dedicated listener/thread lifecycle management, and lean client I/O orchestration delegating workflow to `Broker` facades and `ClientSession`. |
 | `auth/`        | 8        | Authentication Module — pluggable authenticator interface, username/password and anonymous authenticators, and enhanced AUTH packet handler. |
 | `authz/`            | 9        | Authorization Module — ACL engine with MQTT wildcard topic matching, ACL rule structure, configuration loader with runtime reload, and broker startup ACL policy helpers. |
 | `session_manager/`  | 10       | Session Manager — session lifecycle controller (create/resume/discard), session takeover handler (Client ID collision, Reason 0x8E), and session expiry scheduler. Depends on `store/`, `connection/`, `auth/`. |
@@ -89,7 +89,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `network/write_queue.h/.cpp`                   | 6.3      | `WriteQueue` — thread-safe outgoing packet queue; async drain with backpressure |
 | `network/socket_ops.h/.cpp`                    | step 01  | Non-blocking socket helper functions (`set_nonblocking`, `nb_read`, `nb_write`, `nb_accept`) |
 | `network/connection_slot.h/.cpp`               | step 01  | Per-connection fd + read/write ring-buffer state and connection phase tracking |
-| `network/connection_table.h/.cpp`              | step 01  | `ConnectionTable` — thread-safe ownership table of `ConnectionSlot` instances by fd |
+| `network/connection_table.h/.cpp`              | step 01, step 05 | `ConnectionTable` — thread-safe ownership table of `Entry { ConnectionSlot, ConnectionSession }` by fd |
 | `network/io_reactor.h`                         | step 04  | Platform-neutral `IoReactor` interface for listener/connection readiness callbacks |
 | `network/io_reactor_kqueue.cpp`                | step 04  | kqueue backend for macOS/BSD |
 | `network/io_reactor_epoll.cpp`                 | step 04  | epoll backend for Linux |
@@ -103,6 +103,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `connection/keep_alive_timer.h/.cpp` | 7.2 | `KeepAliveTimer` — 1.5 × Keep Alive deadline with reset-on-packet |
 | `connection/topic_alias_table.h/.cpp` | 7.3 | `TopicAliasTable` — inbound and outbound alias↔topic mappings with maximum enforcement |
 | `connection/receive_maximum.h/.cpp` | 7.4 | `ReceiveMaximum` — inflight QoS 1/2 packet counter with pause/resume flow control |
+| `connection/connection_session.h/.cpp` | step 05 | `ConnectionSession` — heap-owned per-connection objects accessed under per-fd job serialization |
 | `connection/outbound_queue_bridge.h/.cpp` | 24 | Outbound queue bridge helpers for draining and transferring pending messages |
 | `connection/connection_manager.h/.cpp` | 23 | `ConnectionManager` — owns listeners, IoReactor listener registration, and tracked client-thread lifecycle |
 

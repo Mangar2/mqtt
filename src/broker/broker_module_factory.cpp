@@ -1,5 +1,6 @@
 #include "broker/broker_module_factory.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <iostream>
@@ -207,7 +208,9 @@ void BrokerModuleFactory::create(
 
   connection_manager = std::make_unique<ConnectionManager>(
       config.mqtt_port, config.ws_port, std::move(client_handler_callback),
-      std::chrono::seconds(2), structured_tracer.get());
+      std::chrono::seconds(2), 2U,
+      static_cast<std::size_t>(std::max(2U, config.max_connections)),
+      structured_tracer.get());
 }
 
 } // namespace mqtt

@@ -1,5 +1,11 @@
 # connection/test — Unit Test Specification (Module 7)
 
+## ConnectionSession (threading refactor step 05)
+
+| Test name | Scenario | Input | Expected |
+|-----------|----------|-------|----------|
+| `session_owns_subobjects_and_supports_phase_transition` | Session stores connection-owned subobjects and supports phase updates | `ConnectionSession(TcpConnection(fd), nullptr, false, config)` then `set_phase(Connected)` | accessors return valid references, configured limits are visible, initial phase is `Handshake`, and phase becomes `Connected` |
+
 ## ConnectionStateMachine (7.1)
 
 | Test name | Scenario | Input | Expected |

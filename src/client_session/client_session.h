@@ -170,6 +170,9 @@ public:
   /** @brief Return per-session connection state machine. */
   [[nodiscard]] ConnectionStateMachine &connection_state_machine() noexcept;
 
+  /** @brief Return shared outbound queue for this client session. */
+  [[nodiscard]] std::shared_ptr<OutboundQueue> outbound_queue() const noexcept;
+
   /**
    * @brief Mark this connection as a resumed session.
    *

@@ -11,16 +11,19 @@ using namespace mqtt;
 
 TEST_CASE("add_then_find_returns_slot_pointer", "[network]") {
   ConnectionTable table;
-  REQUIRE(table.add(ConnectionSlot(static_cast<SocketHandle>(101))));
-  ConnectionSlot *found_slot = table.find(101);
-  REQUIRE(found_slot != nullptr);
-  CHECK(found_slot->fd() == static_cast<SocketHandle>(101));
+  REQUIRE(table.add(101, ConnectionSlot(static_cast<SocketHandle>(101)),
+                    nullptr));
+  ConnectionTable::Entry *found_entry = table.find(101);
+  REQUIRE(found_entry != nullptr);
+  CHECK(found_entry->slot.fd() == static_cast<SocketHandle>(101));
 }
 
 TEST_CASE("add_duplicate_fd_returns_false", "[network]") {
   ConnectionTable table;
-  REQUIRE(table.add(ConnectionSlot(static_cast<SocketHandle>(111))));
-  CHECK_FALSE(table.add(ConnectionSlot(static_cast<SocketHandle>(111))));
+  REQUIRE(table.add(111, ConnectionSlot(static_cast<SocketHandle>(111)),
+                    nullptr));
+  CHECK_FALSE(table.add(111, ConnectionSlot(static_cast<SocketHandle>(111)),
+                       nullptr));
 }
 
 TEST_CASE("find_unknown_fd_returns_nullptr", "[network]") {
@@ -30,11 +33,12 @@ TEST_CASE("find_unknown_fd_returns_nullptr", "[network]") {
 
 TEST_CASE("const_find_returns_slot_pointer_for_existing_fd", "[network]") {
   ConnectionTable table;
-  REQUIRE(table.add(ConnectionSlot(static_cast<SocketHandle>(121))));
+  REQUIRE(table.add(121, ConnectionSlot(static_cast<SocketHandle>(121)),
+                    nullptr));
   const ConnectionTable &const_table = table;
-  const ConnectionSlot *found_slot = const_table.find(121);
-  REQUIRE(found_slot != nullptr);
-  CHECK(found_slot->fd() == static_cast<SocketHandle>(121));
+  const ConnectionTable::Entry *found_entry = const_table.find(121);
+  REQUIRE(found_entry != nullptr);
+  CHECK(found_entry->slot.fd() == static_cast<SocketHandle>(121));
 }
 
 TEST_CASE("const_find_unknown_fd_returns_nullptr", "[network]") {
@@ -44,7 +48,8 @@ TEST_CASE("const_find_unknown_fd_returns_nullptr", "[network]") {
 
 TEST_CASE("remove_unregisters_and_destroys_slot", "[network]") {
   ConnectionTable table;
-  REQUIRE(table.add(ConnectionSlot(static_cast<SocketHandle>(202))));
+  REQUIRE(table.add(202, ConnectionSlot(static_cast<SocketHandle>(202)),
+                    nullptr));
   REQUIRE(table.remove(202));
   CHECK(table.find(202) == nullptr);
 }
@@ -56,7 +61,8 @@ TEST_CASE("remove_unknown_fd_returns_false", "[network]") {
 
 TEST_CASE("concurrent_find_from_many_threads_is_safe", "[network]") {
   ConnectionTable table;
-  REQUIRE(table.add(ConnectionSlot(static_cast<SocketHandle>(303))));
+  REQUIRE(table.add(303, ConnectionSlot(static_cast<SocketHandle>(303)),
+                    nullptr));
 
   constexpr int worker_thread_count = 8;
   constexpr int lookup_iterations_per_thread = 10000;
@@ -110,8 +116,10 @@ TEST_CASE("concurrent_add_remove_is_safe", "[network]") {
       const int begin_index = add_thread_index * (connection_count / add_thread_count);
       const int end_index = (add_thread_index + 1) * (connection_count / add_thread_count);
       for (int index = begin_index; index < end_index; ++index) {
-        const bool inserted =
-            table.add(ConnectionSlot(static_cast<SocketHandle>(connection_fds[index])));
+        const bool inserted = table.add(
+          connection_fds[index],
+          ConnectionSlot(static_cast<SocketHandle>(connection_fds[index])),
+          nullptr);
         (void)inserted;
       }
       finished_add_threads.fetch_add(1, std::memory_order_release);
