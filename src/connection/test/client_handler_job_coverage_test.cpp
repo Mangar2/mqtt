@@ -135,7 +135,8 @@ TEST_CASE("process_accept_and_close_job_lifecycle", "[connection]") {
   REQUIRE(decoded_entry != nullptr);
   CHECK(decoded_entry->session->phase() == ConnectionSession::Phase::Connected);
 
-  client_handler::process_drain_job(connection_fd, table, reactor, broker);
+  client_handler::process_drain_job(connection_fd, table, reactor, scheduler,
+                                    broker);
   CHECK(decoded_entry->slot.write_size() <= decoded_entry->slot.write_capacity());
 
   client_handler::process_close_job(connection_fd, table, reactor, broker);
@@ -253,9 +254,12 @@ TEST_CASE("process_drain_and_close_ignore_missing_entry", "[connection]") {
 
   IoReactor reactor;
   reactor.start();
+  JobQueue queue;
+  JobScheduler scheduler(queue);
   ConnectionTable table;
 
-  CHECK_NOTHROW(client_handler::process_drain_job(12345, table, reactor, broker));
+  CHECK_NOTHROW(client_handler::process_drain_job(12345, table, reactor,
+                                                  scheduler, broker));
   CHECK_NOTHROW(client_handler::process_close_job(12345, table, reactor, broker));
 
   reactor.stop();
@@ -344,6 +348,8 @@ TEST_CASE("process_drain_job_websocket_frame_path_and_write_error", "[connection
 
   IoReactor reactor;
   reactor.start();
+  JobQueue queue;
+  JobScheduler scheduler(queue);
   ConnectionTable table;
 
   auto connection = std::make_unique<TcpConnection>(k_invalid_socket);
@@ -354,7 +360,7 @@ TEST_CASE("process_drain_job_websocket_frame_path_and_write_error", "[connection
   REQUIRE(table.add(static_cast<int>(k_invalid_socket),
                     ConnectionSlot(k_invalid_socket), std::move(session)));
   client_handler::process_drain_job(static_cast<int>(k_invalid_socket), table,
-                                    reactor, broker);
+                                    reactor, scheduler, broker);
   CHECK(table.find(static_cast<int>(k_invalid_socket)) == nullptr);
 
   reactor.stop();

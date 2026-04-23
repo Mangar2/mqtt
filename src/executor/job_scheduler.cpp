@@ -55,9 +55,12 @@ void JobScheduler::submit(ConnectionJob job) {
   }
 
   if (is_suspicious_backlog_type(job.type)) {
-    if (state.active_type.has_value() && state.active_type.value() == job.type) {
-      return;
-    }
+    // Note: we deliberately do NOT drop when active_type == job.type. A Decode
+    // or Drain handler may need to self-reschedule (read/packet/write budget
+    // exhausted under load). Because the reactor is edge-triggered, dropping
+    // the resubmit would strand pending bytes in the stream buffer until new
+    // data accidentally arrives. The backlog_contains_type guard still
+    // coalesces concurrent reactor events into a single follow-up job.
     if (backlog_contains_type(state.backlog, job.type)) {
       return;
     }

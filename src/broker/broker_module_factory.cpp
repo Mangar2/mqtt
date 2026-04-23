@@ -164,6 +164,34 @@ void BrokerModuleFactory::create(
         }
         const bool pushed = queue->push(message);
         if (!pushed) {
+          if (*tracer_ptr) {
+            TRACE_GUARD(tracer_ptr->get(), TraceLevel::Info, "broker") {
+              TraceEvent event;
+              event.level = TraceLevel::Info;
+              event.module = "broker";
+              event.info = "online_outbound_queue_push_failed";
+              event.data.emplace_back("client_id", std::string(client_id));
+              event.data.emplace_back("topic", message.topic.value);
+              event.data.emplace_back(
+                  "qos", std::to_string(static_cast<int>(message.qos)));
+              event.data.emplace_back(
+                  "payload_bytes",
+                  std::to_string(message.payload.data.size()));
+              event.data.emplace_back("frame_bytes",
+                                      std::to_string(frame_bytes));
+              event.data.emplace_back("queue_size_at_failure",
+                                      std::to_string(queue->size()));
+              event.data.emplace_back("queue_stopped",
+                                      queue->is_stopped() ? "true" : "false");
+              event.data.emplace_back(
+                  "configured_max_queued_messages",
+                  std::to_string(router_config.max_queued_messages));
+              event.data.emplace_back(
+                  "configured_write_queue_max_bytes",
+                  std::to_string(router_config.write_queue_max_bytes));
+              tracer_ptr->get()->emit(event);
+            }
+          }
           throw MessageRouterException(MessageRouterError::QueueFull,
                                        "online outbound queue capacity exceeded");
         }

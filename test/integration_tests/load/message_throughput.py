@@ -101,6 +101,28 @@ def _qos0_publish_spacing_seconds(total_messages: int) -> float:
     return 0.0
 
 
+def _extract_received_count_from_timeout(timeout_text: str) -> int | None:
+    marker = "got "
+    marker_index = timeout_text.rfind(marker)
+    if marker_index < 0:
+        return None
+
+    count_start = marker_index + len(marker)
+    count_chars: list[str] = []
+    for char in timeout_text[count_start:]:
+        if not char.isdigit():
+            break
+        count_chars.append(char)
+
+    if not count_chars:
+        return None
+
+    try:
+        return int("".join(count_chars))
+    except ValueError:
+        return None
+
+
 def _is_remote_unmanaged_mode() -> bool:
     return os.environ.get(_BROKER_MANAGED_ENV, "").strip() == "0"
 
@@ -275,15 +297,61 @@ def run_18_2_4_one_publisher_hundred_subscribers_hundred_messages(config) -> tup
                         time.sleep(spacing_seconds)
 
             delivery_total = 0
-            for subscriber in subscribers:
-                received_messages = subscriber.collect_messages(
-                    count=message_count,
-                    timeout=_collect_timeout_remote_aware(config.timeout_seconds, message_count),
-                )
-                delivery_total += len(received_messages)
+            delivery_timeout = _collect_timeout_remote_aware(config.timeout_seconds, message_count)
+            delivery_deadline = time.monotonic() + delivery_timeout
+            subscriber_received_counts = [0 for _ in range(subscriber_count)]
+
+            # Fair collection across all subscribers in one shared window.
+            while time.monotonic() < delivery_deadline:
+                made_progress = False
+                for subscriber_index, subscriber in enumerate(subscribers):
+                    drained_messages = subscriber.drain_available_messages()
+                    if not drained_messages:
+                        continue
+                    drained_count = len(drained_messages)
+                    subscriber_received_counts[subscriber_index] += drained_count
+                    delivery_total += drained_count
+                    made_progress = True
+
+                if delivery_total >= expected_deliveries:
+                    break
+
+                if not made_progress:
+                    time.sleep(0.01)
+
+            # Final non-blocking drain after the timeout window.
+            for subscriber_index, subscriber in enumerate(subscribers):
+                drained_messages = subscriber.drain_available_messages()
+                if not drained_messages:
+                    continue
+                drained_count = len(drained_messages)
+                subscriber_received_counts[subscriber_index] += drained_count
+                delivery_total += drained_count
+
+            underfilled_subscribers = [
+                (subscriber_index, received_count)
+                for subscriber_index, received_count in enumerate(subscriber_received_counts)
+                if received_count != message_count
+            ]
 
             if delivery_total != expected_deliveries:
-                return False, f"18.2.4 expected {expected_deliveries} deliveries, got {delivery_total}"
+                min_count = min(subscriber_received_counts) if subscriber_received_counts else 0
+                max_count = max(subscriber_received_counts) if subscriber_received_counts else 0
+                delivery_percent = (delivery_total / expected_deliveries) * 100.0 if expected_deliveries > 0 else 0.0
+                lowest_subscribers = sorted(underfilled_subscribers, key=lambda item: item[1])[:10]
+                lowest_text = ", ".join(
+                    f"sub[{subscriber_index}]={received_count}"
+                    for subscriber_index, received_count in lowest_subscribers
+                )
+                return (
+                    False,
+                    "18.2.4 received "
+                    f"{delivery_total}/{expected_deliveries} deliveries "
+                    f"({delivery_percent:.1f}%); "
+                    f"underfilled={len(underfilled_subscribers)}/{subscriber_count}; "
+                    f"min_per_subscriber={min_count}; max_per_subscriber={max_count}; "
+                    f"lowest={lowest_text or 'none'}",
+                )
 
         return True, f"18.2.4 completed {expected_deliveries} total deliveries"
     except Exception as error:

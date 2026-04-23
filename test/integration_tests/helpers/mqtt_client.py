@@ -369,6 +369,19 @@ class MqttClient:
                 ) from empty_error
         return messages
 
+    def drain_available_messages(self, limit: int | None = None) -> list[ReceivedMessage]:
+        """Return currently queued inbound messages without blocking."""
+        if limit is not None and limit <= 0:
+            return []
+
+        messages: list[ReceivedMessage] = []
+        while limit is None or len(messages) < limit:
+            try:
+                messages.append(self._inbound_messages.get_nowait())
+            except Empty:
+                break
+        return messages
+
     def collect_message_for_topic(
         self,
         *,

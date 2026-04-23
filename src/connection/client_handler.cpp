@@ -7,7 +7,10 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
+#include <cstdint>
+#include <iostream>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -56,8 +59,119 @@ private:
 constexpr std::size_t k_decode_read_chunk_size = 4096U;
 constexpr std::size_t k_decode_read_budget_bytes = 64U * 1024U;
 constexpr std::size_t k_decode_packet_budget = 32U;
+constexpr std::size_t k_drain_write_budget_bytes = 64U * 1024U;
 constexpr auto k_handshake_timeout = std::chrono::seconds(30);
 constexpr auto k_session_takeover_grace = std::chrono::milliseconds(100);
+
+std::atomic<std::uint64_t> g_socket_write_bytes_total{0U};
+std::atomic<std::uint64_t> g_outbound_publish_total{0U};
+std::atomic<std::uint64_t> g_inbound_socket_bytes_total{0U};
+std::atomic<std::uint64_t> g_decode_rescheduled_total{0U};
+std::atomic<std::uint64_t> g_decode_packet_budget_exhausted_total{0U};
+std::atomic<std::uint64_t> g_decode_read_budget_exhausted_total{0U};
+std::atomic<std::uint64_t> g_decode_streambuffer_pending_total{0U};
+std::atomic<std::uint64_t> g_drain_rescheduled_total{0U};
+std::atomic<std::uint64_t> g_drain_write_budget_exhausted_total{0U};
+
+void note_decode_rescheduled_debug(bool packet_budget_exhausted,
+                                   bool read_budget_exhausted,
+                                   bool streambuffer_has_packet) {
+  if (packet_budget_exhausted) {
+    (void)g_decode_packet_budget_exhausted_total.fetch_add(1U);
+  }
+  if (read_budget_exhausted) {
+    (void)g_decode_read_budget_exhausted_total.fetch_add(1U);
+  }
+  if (streambuffer_has_packet) {
+    (void)g_decode_streambuffer_pending_total.fetch_add(1U);
+  }
+
+  const std::uint64_t decode_rescheduled_total =
+      g_decode_rescheduled_total.fetch_add(1U) + 1U;
+  if ((decode_rescheduled_total % 100U) == 0U) {
+    const std::uint64_t packet_budget_total =
+        g_decode_packet_budget_exhausted_total.load();
+    const std::uint64_t read_budget_total =
+        g_decode_read_budget_exhausted_total.load();
+    const std::uint64_t streambuffer_pending_total =
+        g_decode_streambuffer_pending_total.load();
+    std::cout << "[debug] decode_rescheduled_total="
+              << decode_rescheduled_total
+              << " decode_packet_budget_exhausted_total="
+              << packet_budget_total
+              << " decode_read_budget_exhausted_total="
+              << read_budget_total
+              << " decode_streambuffer_pending_total="
+              << streambuffer_pending_total << std::endl;
+  }
+}
+
+void note_drain_rescheduled_debug(bool write_budget_exhausted) {
+  if (write_budget_exhausted) {
+    (void)g_drain_write_budget_exhausted_total.fetch_add(1U);
+  }
+
+  const std::uint64_t drain_rescheduled_total =
+      g_drain_rescheduled_total.fetch_add(1U) + 1U;
+  if ((drain_rescheduled_total % 100U) == 0U) {
+    const std::uint64_t write_budget_total =
+        g_drain_write_budget_exhausted_total.load();
+    std::cout << "[debug] drain_rescheduled_total="
+              << drain_rescheduled_total
+              << " drain_write_budget_exhausted_total="
+              << write_budget_total << std::endl;
+  }
+}
+
+void note_inbound_socket_bytes_debug(std::size_t bytes_received) {
+  if (bytes_received == 0U) {
+    return;
+  }
+
+  const std::uint64_t previous_total =
+      g_inbound_socket_bytes_total.fetch_add(bytes_received);
+  const std::uint64_t updated_total = previous_total + bytes_received;
+  if (updated_total % 20021 != 0U) {
+    return;
+  }
+
+  std::cout << "[debug] inbound_socket_bytes_total=" << updated_total
+            << std::endl;
+}
+
+void note_outbound_publish_debug(const WriteBuffer &frame) {
+  if (frame.empty()) {
+    return;
+  }
+
+  constexpr uint8_t k_publish_packet_type = 3U;
+  const uint8_t packet_type =
+      static_cast<uint8_t>((frame.front() >> 4U) & 0x0FU);
+  if (packet_type != k_publish_packet_type) {
+    return;
+  }
+
+  const std::uint64_t publish_total =
+      g_outbound_publish_total.fetch_add(1U) + 1U;
+
+  if ((publish_total % 1000U) == 0U) {
+    std::cout << "[debug] outbound_publish_enqueued_total="
+              << publish_total << std::endl;
+  }
+}
+
+void note_socket_write_debug(std::size_t bytes_written) {
+  if (bytes_written == 0U) {
+    return;
+  }
+
+  const std::uint64_t bytes_total =
+      g_socket_write_bytes_total.fetch_add(bytes_written) + bytes_written;
+  if ((bytes_total % 812024U) == 0U) {
+    std::cout << "[debug] outbound_socket_bytes_total="
+              << bytes_total << std::endl;
+  }
+}
 
 bool append_frame_to_slot(ConnectionSlot &slot, const WriteBuffer &frame,
                           bool is_websocket) {
@@ -77,33 +191,48 @@ bool move_pending_frames_to_slot(ConnectionSession &session, ConnectionSlot &slo
     if (!append_frame_to_slot(slot, frame, session.is_websocket())) {
       return false;
     }
+    note_outbound_publish_debug(frame);
   }
   session.clear_pending_write_frames();
   return true;
 }
 
-bool drain_socket_write_buffer(ConnectionSlot &slot) {
+struct WriteDrainResult {
+  bool success{false};
+  bool write_budget_exhausted{false};
+};
+
+WriteDrainResult drain_socket_write_buffer(ConnectionSlot &slot,
+                                           std::size_t write_budget_bytes) {
+  std::size_t total_written = 0U;
   while (slot.write_size() > 0U) {
+    if (total_written >= write_budget_bytes) {
+      return WriteDrainResult{.success = true, .write_budget_exhausted = true};
+    }
+
     const std::span<const uint8_t> chunk = slot.write_contiguous_bytes();
     if (chunk.empty()) {
-      return true;
+      return WriteDrainResult{.success = true, .write_budget_exhausted = false};
     }
 
     std::size_t bytes_written = 0U;
     const IoResult write_result = nb_write(slot.fd(), chunk, &bytes_written);
     if (write_result == IoResult::Ok) {
       if (bytes_written == 0U) {
-        return false;
+        return WriteDrainResult{.success = false,
+                                .write_budget_exhausted = false};
       }
+      note_socket_write_debug(bytes_written);
       (void)slot.pop_write_bytes(bytes_written);
+      total_written += bytes_written;
       continue;
     }
     if (write_result == IoResult::WouldBlock) {
-      return true;
+      return WriteDrainResult{.success = true, .write_budget_exhausted = false};
     }
-    return false;
+    return WriteDrainResult{.success = false, .write_budget_exhausted = false};
   }
-  return true;
+  return WriteDrainResult{.success = true, .write_budget_exhausted = false};
 }
 
 void submit_close(JobScheduler &scheduler, int fd) {
@@ -253,6 +382,7 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
         session.stream_buffer().append(
             std::span<const uint8_t>(ws_chunk.data.data(), ws_chunk.data.size()));
         total_read += ws_chunk.data.size();
+        note_inbound_socket_bytes_debug(ws_chunk.data.size());
       }
 
       if (ws_chunk.eof) {
@@ -278,6 +408,7 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
       session.stream_buffer().append(
           std::span<const uint8_t>(read_chunk.data(), bytes_read));
       total_read += bytes_read;
+      note_inbound_socket_bytes_debug(bytes_read);
       continue;
     }
     if (read_result == IoResult::WouldBlock) {
@@ -307,7 +438,34 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
     ++packets_processed;
   }
 
-  if (peer_closed) {
+  const bool packet_budget_exhausted =
+      packets_processed >= k_decode_packet_budget;
+  const bool read_budget_exhausted = total_read >= k_decode_read_budget_bytes;
+  const bool streambuffer_has_packet =
+      session.stream_buffer().has_complete_packet();
+  // NOTE: peer_closed must NOT suppress the reschedule. When the peer sends
+  // FIN after a burst, more complete packets may still sit in stream_buffer.
+  // Suppressing reschedule here would silently drop those packets and trigger
+  // the close path before they are processed. The rescheduled Decode handles
+  // the EOF on its own read attempt and continues draining the buffer until
+  // empty, then closes naturally.
+  const bool should_reschedule_decode =
+      !close_after_flush &&
+      (packet_budget_exhausted || read_budget_exhausted ||
+       streambuffer_has_packet);
+  if (should_reschedule_decode) {
+    scheduler.submit(ConnectionJob{.type = JobType::Decode,
+                                   .connection_fd = fd,
+                                   .payload = DecodeJobPayload{}});
+    note_decode_rescheduled_debug(packet_budget_exhausted,
+                                  read_budget_exhausted,
+                                  streambuffer_has_packet);
+  }
+
+  // Only treat peer_closed as a definitive close-after-flush signal once the
+  // stream buffer has been fully consumed; otherwise we let the rescheduled
+  // Decode finish processing the remaining packets first.
+  if (peer_closed && !streambuffer_has_packet) {
     close_after_flush = true;
   }
 
@@ -339,7 +497,7 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
 }
 
 void process_drain_job(int fd, ConnectionTable &table, IoReactor &reactor,
-                       Broker &broker) {
+                       JobScheduler &scheduler, Broker &broker) {
   ConnectionTable::Entry *entry = table.find(fd);
   if (entry == nullptr || entry->session == nullptr) {
     return;
@@ -356,13 +514,21 @@ void process_drain_job(int fd, ConnectionTable &table, IoReactor &reactor,
     return;
   }
 
-  if (!drain_socket_write_buffer(slot)) {
+  const WriteDrainResult write_drain_result =
+      drain_socket_write_buffer(slot, k_drain_write_budget_bytes);
+  if (!write_drain_result.success) {
     process_close_job(fd, table, reactor, broker);
     return;
   }
 
   if (slot.write_size() > 0U) {
     reactor.arm_write(fd);
+    if (write_drain_result.write_budget_exhausted) {
+      scheduler.submit(ConnectionJob{.type = JobType::Drain,
+                                     .connection_fd = fd,
+                                     .payload = DrainJobPayload{}});
+      note_drain_rescheduled_debug(true);
+    }
     return;
   }
   reactor.disarm_write(fd);

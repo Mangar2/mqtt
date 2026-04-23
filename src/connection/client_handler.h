@@ -25,7 +25,7 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
                         JobScheduler &scheduler, Broker &broker);
 
 void process_drain_job(int fd, ConnectionTable &table, IoReactor &reactor,
-                       Broker &broker);
+                       JobScheduler &scheduler, Broker &broker);
 
 void process_close_job(int fd, ConnectionTable &table, IoReactor &reactor,
                        Broker &broker);

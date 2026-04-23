@@ -270,7 +270,8 @@ void ConnectionManager::handle_connection_job(const ConnectionJob &job) {
       return;
     case JobType::Drain:
       client_handler::process_drain_job(job.connection_fd, connection_table_,
-                                        *io_reactor_, broker_);
+                                        *io_reactor_,
+                                        worker_pool_->job_scheduler(), broker_);
       return;
     case JobType::Close:
       client_handler::process_close_job(job.connection_fd, connection_table_,

@@ -24,6 +24,7 @@ DEFAULT_REMOTE_PORT = 1883
 DEFAULT_START_TIMEOUT_SECONDS = 12.0
 DEFAULT_REMOTE_CONFIG = "broker.ws.ini"
 DEFAULT_LOG_TAIL_LINES = 80
+TRACE_LEVEL_CHOICES = ("none", "error", "warning", "info", "trace")
 
 
 def run_or_fail(command: list[str], *, label: str) -> None:
@@ -94,16 +95,23 @@ def stop_remote_broker(remote_host: str) -> None:
 
 
 def start_remote_broker(remote_host: str, remote_dir: str,
-                        remote_config: str) -> None:
+                        remote_config: str,
+                        trace_level: str) -> None:
+    trace_level_argument = ""
+    if trace_level:
+        trace_level_argument = f" --trace-level={shlex.quote(trace_level)}"
+
     start_script = (
         f"cd {remote_shell_dir(remote_dir)} && "
         "if command -v setsid >/dev/null 2>&1; then "
         "setsid -f ./mqtt-broker "
         f"{shlex.quote(remote_config)} "
+        f"{trace_level_argument} "
         "> broker.log 2>&1 < /dev/null; "
         "else "
         "nohup ./mqtt-broker "
         f"{shlex.quote(remote_config)} "
+        f"{trace_level_argument} "
         "> broker.log 2>&1 < /dev/null & "
         "fi; "
         "pgrep -n -x mqtt-broker > broker.pid || true"
@@ -230,6 +238,15 @@ def main() -> int:
         help="Remote broker config file used on start (for example broker.ws.ini)",
     )
     parser.add_argument(
+        "--trace-level",
+        choices=TRACE_LEVEL_CHOICES,
+        default="",
+        help=(
+            "Optional broker CLI trace level override. "
+            "When omitted, tracing level from remote config is used."
+        ),
+    )
+    parser.add_argument(
         "--show-log",
         action="store_true",
         help="Show the remote broker log tail after startup verification",
@@ -317,7 +334,7 @@ def main() -> int:
             print("STEP activate binary skipped (unchanged build output)")
 
         start_remote_broker(args.remote_host, args.remote_dir,
-                    args.remote_config)
+                args.remote_config, args.trace_level)
 
         remote_name = split_remote_host(args.remote_host)
         if not wait_for_tcp(remote_name, args.remote_port, args.start_timeout):
@@ -332,6 +349,7 @@ def main() -> int:
             f" port={args.remote_port}"
             f" config={args.remote_config}"
             f" target={args.target}"
+            f" trace_level={args.trace_level or '<config>'}"
         )
 
         if args.show_log:
