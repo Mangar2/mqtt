@@ -8,14 +8,36 @@
 #include <chrono>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 #include "broker/broker.h"
 #include "broker/broker_config.h"
 #include "connection/client_handler.h"
+#include "connection/connection_flow_support.h"
 #include "network/socket_ops.h"
 #include "network/tcp_connection.h"
+#include "transport/websocket_transport.h"
 
 namespace mqtt {
+
+namespace {
+
+void send_server_shutting_down_disconnect(ConnectionSession &session) {
+  WriteBuffer frame =
+    encode_disconnect_packet(ReasonCode::ServerShuttingDown);
+  if (session.is_websocket()) {
+  const std::vector<uint8_t> ws_frame = WebSocketTransport::encode_frame(
+    std::span<const uint8_t>(frame.data(), frame.size()));
+  (void)session.connection().write(
+    std::span<const uint8_t>(ws_frame.data(), ws_frame.size()));
+  return;
+  }
+
+  (void)session.connection().write(
+    std::span<const uint8_t>(frame.data(), frame.size()));
+}
+
+} // namespace
 
 ConnectionManager::ConnectionManager(uint16_t mqtt_port, uint16_t ws_port,
                                      Broker &broker,
@@ -136,15 +158,25 @@ void ConnectionManager::stop() noexcept {
     ws_listener_.reset();
   }
 
-  for (SocketHandle socket_handle : connection_table_.snapshot_socket_handles()) {
-    TcpConnection::shutdown_socket(socket_handle);
-  }
-
   if (worker_pool_) {
     worker_pool_->stop();
     worker_pool_.reset();
   }
   broker_.set_job_scheduler(nullptr);
+
+  const std::vector<SocketHandle> sockets_snapshot =
+      connection_table_.snapshot_socket_handles();
+  for (SocketHandle socket_handle : sockets_snapshot) {
+    const int connection_fd = static_cast<int>(socket_handle);
+    ConnectionTable::Entry *entry = connection_table_.find(connection_fd);
+    if (entry != nullptr && entry->session != nullptr) {
+      send_server_shutting_down_disconnect(*entry->session);
+    }
+  }
+
+  for (SocketHandle socket_handle : connection_table_.snapshot_socket_handles()) {
+    TcpConnection::shutdown_socket(socket_handle);
+  }
 
   connection_table_.clear();
 }
@@ -179,7 +211,8 @@ void ConnectionManager::handle_accept_ready(SocketHandle listener_socket_handle,
   while (running_.load()) {
     SocketHandle accepted_socket_handle = k_invalid_socket;
     const IoResult accept_result =
-        nb_accept(listener_socket_handle, &accepted_socket_handle);
+      nb_accept(listener_socket_handle, &accepted_socket_handle,
+            !is_ws);
 
     if (accept_result == IoResult::WouldBlock) {
       break;

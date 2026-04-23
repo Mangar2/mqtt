@@ -14,7 +14,8 @@ ConnectionSession::ConnectionSession(
       ws_transport_(std::move(ws_transport)),
       is_websocket_(is_websocket),
       topic_alias_table_(config.topic_alias_maximum),
-      inbound_receive_window_(config.receive_maximum) {}
+      inbound_receive_window_(config.receive_maximum),
+      accepted_at_(std::chrono::steady_clock::now()) {}
 
     ConnectionSession::~ConnectionSession() = default;
 
@@ -84,6 +85,26 @@ void ConnectionSession::request_session_takeover() noexcept {
 
 bool ConnectionSession::consume_session_takeover_request() noexcept {
   return session_takeover_requested_.exchange(false, std::memory_order_acq_rel);
+}
+
+void ConnectionSession::arm_session_takeover_close(
+    std::chrono::steady_clock::duration delay) noexcept {
+  session_takeover_close_pending_ = true;
+  session_takeover_close_deadline_ = std::chrono::steady_clock::now() + delay;
+}
+
+bool ConnectionSession::is_session_takeover_close_due(
+    std::chrono::steady_clock::time_point now) const noexcept {
+  return session_takeover_close_pending_ && now >= session_takeover_close_deadline_;
+}
+
+void ConnectionSession::clear_session_takeover_close_pending() noexcept {
+  session_takeover_close_pending_ = false;
+}
+
+std::chrono::steady_clock::time_point ConnectionSession::accepted_at() const
+    noexcept {
+  return accepted_at_;
 }
 
 } // namespace mqtt

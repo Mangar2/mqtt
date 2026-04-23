@@ -119,7 +119,8 @@ IoResult nb_write(SocketHandle socket_handle, std::span<const uint8_t> source,
 }
 
 IoResult nb_accept(SocketHandle listen_socket_handle,
-                   SocketHandle *accepted_socket_handle) noexcept {
+                   SocketHandle *accepted_socket_handle,
+                   bool make_nonblocking) noexcept {
   if (accepted_socket_handle != nullptr) {
     *accepted_socket_handle = k_invalid_socket;
   }
@@ -132,7 +133,7 @@ IoResult nb_accept(SocketHandle listen_socket_handle,
   }
 
   const SocketHandle accepted_handle = static_cast<SocketHandle>(accepted_socket);
-  if (set_nonblocking(accepted_handle) != IoResult::Ok) {
+  if (make_nonblocking && set_nonblocking(accepted_handle) != IoResult::Ok) {
     close_socket_handle(accepted_handle);
     return IoResult::Error;
   }
@@ -143,7 +144,7 @@ IoResult nb_accept(SocketHandle listen_socket_handle,
   }
 
   const SocketHandle accepted_handle = static_cast<SocketHandle>(accepted_fd);
-  if (set_nonblocking(accepted_handle) != IoResult::Ok) {
+  if (make_nonblocking && set_nonblocking(accepted_handle) != IoResult::Ok) {
     close_socket_handle(accepted_handle);
     return IoResult::Error;
   }

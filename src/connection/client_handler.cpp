@@ -5,7 +5,9 @@
 
 #include "connection/client_handler.h"
 
+#include <algorithm>
 #include <array>
+#include <chrono>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -33,6 +35,8 @@ namespace {
 constexpr std::size_t k_decode_read_chunk_size = 4096U;
 constexpr std::size_t k_decode_read_budget_bytes = 64U * 1024U;
 constexpr std::size_t k_decode_packet_budget = 32U;
+constexpr auto k_handshake_timeout = std::chrono::seconds(30);
+constexpr auto k_session_takeover_grace = std::chrono::milliseconds(100);
 
 bool append_frame_to_slot(ConnectionSlot &slot, const WriteBuffer &frame,
                           bool is_websocket) {
@@ -88,10 +92,15 @@ void submit_close(JobScheduler &scheduler, int fd) {
 }
 
 bool prepare_session_takeover_close(ConnectionSession &session) {
-  if (!session.consume_session_takeover_request()) {
+  if (session.consume_session_takeover_request()) {
+    session.arm_session_takeover_close(k_session_takeover_grace);
+  }
+
+  if (!session.is_session_takeover_close_due(std::chrono::steady_clock::now())) {
     return false;
   }
 
+  session.clear_session_takeover_close_pending();
   session.disconnect_state().clean_disconnect = true;
   session.disconnect_state().reason_code = ReasonCode::SessionTakenOver;
   session.pending_write_frames().push_back(
@@ -112,10 +121,6 @@ void process_accept_job(const AcceptJobPayload &payload, ConnectionTable &table,
   }
 
   auto connection = std::make_unique<TcpConnection>(payload.socket_handle);
-  if (set_nonblocking(payload.socket_handle) != IoResult::Ok) {
-    connection->close();
-    return;
-  }
 
   std::unique_ptr<WebSocketTransport> ws_transport;
   if (payload.websocket_connection) {
@@ -127,12 +132,26 @@ void process_accept_job(const AcceptJobPayload &payload, ConnectionTable &table,
     }
   }
 
+  if (set_nonblocking(payload.socket_handle) != IoResult::Ok) {
+    connection->close();
+    return;
+  }
+
   auto session = std::make_unique<ConnectionSession>(
       std::move(connection), std::move(ws_transport),
       payload.websocket_connection, config);
 
+  const std::size_t slot_write_capacity = std::max<std::size_t>(
+      ConnectionSlot::k_default_write_capacity,
+      static_cast<std::size_t>(config.write_queue_max_bytes) + 4096U);
+
   const int fd = static_cast<int>(payload.socket_handle);
-  if (!table.add(fd, ConnectionSlot(payload.socket_handle), std::move(session))) {
+  if (!table.add(
+          fd,
+          ConnectionSlot(payload.socket_handle,
+                         ConnectionSlot::k_default_read_capacity,
+                         slot_write_capacity),
+          std::move(session))) {
     return;
   }
 
@@ -165,30 +184,66 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
   ConnectionSession &session = *entry->session;
   ConnectionSlot &slot = entry->slot;
 
-  if (session.phase() == ConnectionSession::Phase::Connected &&
+  if (session.phase() == ConnectionSession::Phase::Handshake &&
+      std::chrono::steady_clock::now() - session.accepted_at() >=
+          k_handshake_timeout) {
+    submit_close(scheduler, fd);
+    return;
+  }
+
+  bool close_after_flush = false;
+
+  if (!close_after_flush &&
+      session.phase() == ConnectionSession::Phase::Connected &&
       session.client_session() != nullptr) {
     auto &keep_alive_timer = session.client_session()->keep_alive_timer();
     if (keep_alive_timer.is_enabled() && keep_alive_timer.is_expired()) {
-      session.disconnect_state().clean_disconnect = false;
+      session.disconnect_state().clean_disconnect = true;
       session.disconnect_state().reason_code = ReasonCode::KeepAliveTimeout;
-      submit_close(scheduler, fd);
-      return;
+      session.pending_write_frames().push_back(
+          encode_disconnect_packet(ReasonCode::KeepAliveTimeout));
+      session.set_phase(ConnectionSession::Phase::Closing);
+      close_after_flush = true;
     }
   }
 
-  bool close_after_flush = prepare_session_takeover_close(session);
-
   std::array<uint8_t, k_decode_read_chunk_size> read_chunk{};
   std::size_t total_read = 0U;
+  bool peer_closed = false;
   while (!close_after_flush && total_read < k_decode_read_budget_bytes) {
+    if (session.is_websocket()) {
+      WebSocketTransport *ws_transport = session.ws_transport();
+      if (ws_transport == nullptr) {
+        submit_close(scheduler, fd);
+        return;
+      }
+
+      WsReadChunk ws_chunk = ws_transport->read_chunk();
+      if (ws_chunk.eof) {
+        submit_close(scheduler, fd);
+        return;
+      }
+      if (ws_chunk.timed_out) {
+        break;
+      }
+      if (ws_chunk.data.empty()) {
+        break;
+      }
+
+      session.stream_buffer().append(
+          std::span<const uint8_t>(ws_chunk.data.data(), ws_chunk.data.size()));
+      total_read += ws_chunk.data.size();
+      continue;
+    }
+
     std::size_t bytes_read = 0U;
     const IoResult read_result = nb_read(
         slot.fd(), std::span<uint8_t>(read_chunk.data(), read_chunk.size()),
         &bytes_read);
     if (read_result == IoResult::Ok) {
       if (bytes_read == 0U) {
-        submit_close(scheduler, fd);
-        return;
+        peer_closed = true;
+        break;
       }
       session.stream_buffer().append(
           std::span<const uint8_t>(read_chunk.data(), bytes_read));
@@ -196,6 +251,11 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
       continue;
     }
     if (read_result == IoResult::WouldBlock) {
+      break;
+    }
+
+    if (read_result == IoResult::Closed) {
+      peer_closed = true;
       break;
     }
 
@@ -215,6 +275,14 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
       break;
     }
     ++packets_processed;
+  }
+
+  if (peer_closed) {
+    close_after_flush = true;
+  }
+
+  if (!close_after_flush) {
+    close_after_flush = prepare_session_takeover_close(session);
   }
 
   drain_outbound_to_write_buffer(session, broker);

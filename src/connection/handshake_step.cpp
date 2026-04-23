@@ -17,6 +17,20 @@ namespace {
 
 constexpr uint16_t k_default_receive_maximum = 65535U;
 
+std::optional<uint16_t> find_server_keep_alive(
+    const std::vector<Property> &properties) {
+  for (const Property &property : properties) {
+    if (property.id != PropertyId::ServerKeepAlive) {
+      continue;
+    }
+    if (const auto *keep_alive_ptr =
+            std::get_if<TwoByteInteger>(&property.value)) {
+      return *keep_alive_ptr;
+    }
+  }
+  return std::nullopt;
+}
+
 void append_frame(ConnectionSession &session, WriteBuffer frame) {
   session.pending_write_frames().push_back(std::move(frame));
 }
@@ -35,13 +49,16 @@ HandshakeOutcome finalize_connect_success(ConnectionSession &session,
       packet.username.has_value() ? packet.username->value : "";
   const uint16_t outbound_receive_maximum =
       find_receive_maximum(packet.properties).value_or(k_default_receive_maximum);
+    const uint16_t effective_keep_alive =
+      find_server_keep_alive(connect_result.connack_properties)
+        .value_or(packet.keep_alive);
   const uint32_t maximum_packet_size =
       find_maximum_packet_size(packet.properties).value_or(0U);
 
   auto client_session = std::make_unique<ClientSession>(
       connect_result.client_id, username, std::move(authenticator),
       outbound_queue, broker.session_manager().inflight_store(),
-      packet.keep_alive, outbound_receive_maximum,
+      effective_keep_alive, outbound_receive_maximum,
       session.topic_alias_table().max_aliases(), std::chrono::seconds(20),
       maximum_packet_size, connect_result.auth_method);
 

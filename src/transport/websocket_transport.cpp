@@ -19,6 +19,9 @@ WebSocketTransport::WebSocketTransport(TcpConnection &conn) : conn_(conn) {
 
   while (!handshake.is_complete()) {
     std::ptrdiff_t num = conn_.read(raw);
+    if (num < 0 && conn_.last_read_timed_out()) {
+      continue;
+    }
     if (num <= 0) {
       throw TransportException(TransportError::InvalidHandshake,
                                "websocket handshake failed: socket closed");

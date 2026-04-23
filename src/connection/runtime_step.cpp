@@ -124,7 +124,16 @@ RuntimeOutcome protocol_error(ConnectionSession &session, Broker &broker,
 
   session.disconnect_state().clean_disconnect = true;
   session.disconnect_state().reason_code = ReasonCode::ProtocolError;
-  append_frame(session, encode_disconnect_packet(ReasonCode::ProtocolError));
+  const std::string_view reason_text =
+      detail.empty() ? std::string_view{"runtime_protocol_error"} : detail;
+  std::vector<Property> properties;
+  if (session.connect_packet().has_value()) {
+    properties = build_protocol_error_disconnect_properties(
+        *session.connect_packet(), reason_text);
+  }
+  append_frame(
+      session,
+      encode_disconnect_packet(ReasonCode::ProtocolError, properties));
   return RuntimeOutcome::DisconnectError;
 }
 

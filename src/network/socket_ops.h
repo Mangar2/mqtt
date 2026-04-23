@@ -60,6 +60,7 @@ enum class IoResult : std::uint8_t {
  */
 [[nodiscard]] IoResult
 nb_accept(SocketHandle listen_socket_handle,
-          SocketHandle *accepted_socket_handle = nullptr) noexcept;
+          SocketHandle *accepted_socket_handle = nullptr,
+          bool make_nonblocking = true) noexcept;
 
 } // namespace mqtt

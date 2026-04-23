@@ -6,6 +6,7 @@
  */
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -74,6 +75,14 @@ public:
 
   void request_session_takeover() noexcept;
   [[nodiscard]] bool consume_session_takeover_request() noexcept;
+    void arm_session_takeover_close(
+      std::chrono::steady_clock::duration delay) noexcept;
+    [[nodiscard]] bool is_session_takeover_close_due(
+      std::chrono::steady_clock::time_point now) const noexcept;
+    void clear_session_takeover_close_pending() noexcept;
+
+  [[nodiscard]] std::chrono::steady_clock::time_point
+  accepted_at() const noexcept;
 
 private:
   std::unique_ptr<TcpConnection> connection_;
@@ -89,6 +98,9 @@ private:
   ConnectResult connect_result_{};
   std::vector<WriteBuffer> pending_write_frames_;
   std::atomic<bool> session_takeover_requested_{false};
+  bool session_takeover_close_pending_{false};
+  std::chrono::steady_clock::time_point session_takeover_close_deadline_{};
+  std::chrono::steady_clock::time_point accepted_at_{};
 };
 
 } // namespace mqtt
