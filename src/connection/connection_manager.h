@@ -32,8 +32,7 @@ public:
   ConnectionManager(uint16_t mqtt_port, uint16_t ws_port, Broker &broker,
                     const BrokerConfig &config,
                     std::size_t worker_min_threads = 2U,
-                    std::size_t worker_max_threads = 0U,
-                    StructuredTracer *structured_tracer = nullptr);
+                    std::size_t worker_max_threads = 0U);
 
   ~ConnectionManager();
 
@@ -56,7 +55,6 @@ private:
   std::size_t worker_max_threads_{0U};
 
   std::atomic<bool> running_{false};
-  StructuredTracer *structured_tracer_{nullptr};
 
   std::unique_ptr<IoReactor> io_reactor_;
   std::unique_ptr<WorkerPool> worker_pool_;

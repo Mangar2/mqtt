@@ -43,12 +43,11 @@ ConnectionManager::ConnectionManager(uint16_t mqtt_port, uint16_t ws_port,
                                      Broker &broker,
                                      const BrokerConfig &config,
                                      std::size_t worker_min_threads,
-                                     std::size_t worker_max_threads,
-                                     StructuredTracer *structured_tracer)
+                                     std::size_t worker_max_threads)
     : mqtt_port_(mqtt_port), ws_port_(ws_port),
       worker_min_threads_(worker_min_threads),
       worker_max_threads_(worker_max_threads),
-      structured_tracer_(structured_tracer), broker_(broker),
+      broker_(broker),
       broker_config_(config) {}
 
 ConnectionManager::~ConnectionManager() { stop(); }

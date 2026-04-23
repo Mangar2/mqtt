@@ -212,8 +212,7 @@ void BrokerModuleFactory::create(
 
   connection_manager = std::make_unique<ConnectionManager>(
       config.mqtt_port, config.ws_port, broker, config, 2U,
-      static_cast<std::size_t>(std::max(2U, config.max_connections)),
-      structured_tracer.get());
+      static_cast<std::size_t>(std::max(2U, config.max_connections)));
 }
 
 } // namespace mqtt
