@@ -8,6 +8,7 @@
 #include "data_model/session/inflight_direction.h"
 #include "data_model/session/inflight_state.h"
 #include "monitoring/structured_tracer.h"
+#include "message_router/message_expiry_controller.h"
 
 namespace mqtt {
 
@@ -111,6 +112,11 @@ AuthResult ClientSession::on_auth(const AuthPacket &auth_packet) {
 }
 
 void ClientSession::mark_session_resumed() noexcept {
+  const std::vector<InflightEntry> entries = inflight_store_.entries_for(client_id_);
+  for (const InflightEntry &entry : entries) {
+    (void)packet_id_manager_.register_existing(entry.packet_id, entry.direction);
+  }
+
   replay_pending_inflight_ = true;
 }
 
@@ -206,13 +212,50 @@ void ClientSession::append_retransmission_frames(
 
     if (entry.qos == QoS::AtLeastOnce &&
         entry.state == InflightState::WaitingForPuback) {
+      Message retransmit_message = entry.message;
+      if (!MessageExpiryController::update_expiry(retransmit_message,
+                                                  entry.timestamp, now)) {
+        inflight_store_.remove(client_id_, entry.packet_id,
+                               InflightDirection::Outbound);
+        packet_id_manager_.release(entry.packet_id,
+                                   InflightDirection::Outbound);
+        continue;
+      }
+
       const PublishPacket retransmitted_packet =
           qos1_state_machine_.retransmit(entry.packet_id);
-      frames.push_back(encode_publish_packet(retransmitted_packet));
+      PublishPacket adjusted_packet = retransmitted_packet;
+      adjusted_packet.properties = retransmit_message.properties;
+      frames.push_back(encode_publish_packet(adjusted_packet));
       continue;
     }
 
     if (entry.qos == QoS::ExactlyOnce) {
+      if (entry.state == InflightState::WaitingForPubrec) {
+        Message retransmit_message = entry.message;
+        if (!MessageExpiryController::update_expiry(retransmit_message,
+                                                    entry.timestamp, now)) {
+          inflight_store_.remove(client_id_, entry.packet_id,
+                                 InflightDirection::Outbound);
+          packet_id_manager_.release(entry.packet_id,
+                                     InflightDirection::Outbound);
+          continue;
+        }
+
+        const auto retransmitted_packet =
+            qos2_state_machine_.retransmit(entry.packet_id);
+        if (std::holds_alternative<PublishPacket>(retransmitted_packet)) {
+          PublishPacket adjusted_packet =
+              std::get<PublishPacket>(retransmitted_packet);
+          adjusted_packet.properties = retransmit_message.properties;
+          frames.push_back(encode_publish_packet(adjusted_packet));
+        } else {
+          frames.push_back(
+              encode_pubrel_packet(std::get<PubrelPacket>(retransmitted_packet)));
+        }
+        continue;
+      }
+
       const auto retransmitted_packet =
           qos2_state_machine_.retransmit(entry.packet_id);
       if (std::holds_alternative<PublishPacket>(retransmitted_packet)) {

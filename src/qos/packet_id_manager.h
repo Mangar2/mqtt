@@ -59,6 +59,20 @@ public:
   [[nodiscard]] bool try_register_inbound(uint16_t pid);
 
   /**
+   * @brief Register an already-existing Packet ID for a direction.
+   *
+   * Used when rebuilding per-connection state from persisted inflight entries
+   * after session resume.
+   *
+   * @param pid Packet ID to register.
+   * @param dir Direction space where the ID is active.
+   * @return `true` if the ID was newly inserted, `false` if it was already
+   *         present.
+   */
+  [[nodiscard]] bool register_existing(uint16_t pid,
+                                       InflightDirection dir);
+
+  /**
    * @brief Release a Packet ID back to the free pool (5.1.2).
    *
    * No-op when the ID is not registered in the given direction.

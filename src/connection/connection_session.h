@@ -84,6 +84,9 @@ public:
   [[nodiscard]] std::chrono::steady_clock::time_point
   accepted_at() const noexcept;
 
+  [[nodiscard]] bool try_begin_decode() noexcept;
+  void end_decode() noexcept;
+
 private:
   std::unique_ptr<TcpConnection> connection_;
   std::unique_ptr<WebSocketTransport> ws_transport_;
@@ -98,6 +101,7 @@ private:
   ConnectResult connect_result_{};
   std::vector<WriteBuffer> pending_write_frames_;
   std::atomic<bool> session_takeover_requested_{false};
+  std::atomic<bool> decode_in_progress_{false};
   bool session_takeover_close_pending_{false};
   std::chrono::steady_clock::time_point session_takeover_close_deadline_{};
   std::chrono::steady_clock::time_point accepted_at_{};

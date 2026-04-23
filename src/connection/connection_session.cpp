@@ -107,4 +107,15 @@ std::chrono::steady_clock::time_point ConnectionSession::accepted_at() const
   return accepted_at_;
 }
 
+bool ConnectionSession::try_begin_decode() noexcept {
+  bool expected = false;
+  return decode_in_progress_.compare_exchange_strong(expected, true,
+                                                     std::memory_order_acq_rel,
+                                                     std::memory_order_acquire);
+}
+
+void ConnectionSession::end_decode() noexcept {
+  decode_in_progress_.store(false, std::memory_order_release);
+}
+
 } // namespace mqtt

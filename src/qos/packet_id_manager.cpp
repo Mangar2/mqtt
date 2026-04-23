@@ -33,6 +33,14 @@ bool PacketIdManager::try_register_inbound(uint16_t pid) {
   return inbound_ids_.insert(pid).second;
 }
 
+bool PacketIdManager::register_existing(uint16_t pid,
+                                        InflightDirection dir) {
+  if (dir == InflightDirection::Outbound) {
+    return outbound_ids_.insert(pid).second;
+  }
+  return inbound_ids_.insert(pid).second;
+}
+
 void PacketIdManager::release(uint16_t pid, InflightDirection dir) noexcept {
   if (dir == InflightDirection::Outbound) {
     outbound_ids_.erase(pid);

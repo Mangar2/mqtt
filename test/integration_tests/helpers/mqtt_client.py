@@ -296,7 +296,12 @@ class MqttClient:
             raise RuntimeError(f"publish failed with rc={info.rc}")
 
         if qos == 0:
-            return 0
+            deadline = time.monotonic() + self._timeout_seconds
+            while time.monotonic() < deadline:
+                if info.is_published():
+                    return 0
+                time.sleep(0.01)
+            raise TimeoutError("Timed out while waiting for QoS0 publish completion")
 
         deadline = time.monotonic() + self._timeout_seconds
         while time.monotonic() < deadline:

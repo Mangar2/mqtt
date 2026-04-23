@@ -32,6 +32,27 @@ namespace mqtt {
 
 namespace {
 
+class DecodeGuard {
+public:
+  explicit DecodeGuard(ConnectionSession &session) noexcept
+      : session_(session), active_(session.try_begin_decode()) {}
+
+  DecodeGuard(const DecodeGuard &) = delete;
+  DecodeGuard &operator=(const DecodeGuard &) = delete;
+
+  ~DecodeGuard() {
+    if (active_) {
+      session_.end_decode();
+    }
+  }
+
+  [[nodiscard]] bool active() const noexcept { return active_; }
+
+private:
+  ConnectionSession &session_;
+  bool active_;
+};
+
 constexpr std::size_t k_decode_read_chunk_size = 4096U;
 constexpr std::size_t k_decode_read_budget_bytes = 64U * 1024U;
 constexpr std::size_t k_decode_packet_budget = 32U;
@@ -182,6 +203,11 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
   }
 
   ConnectionSession &session = *entry->session;
+  DecodeGuard decode_guard(session);
+  if (!decode_guard.active()) {
+    return;
+  }
+
   ConnectionSlot &slot = entry->slot;
 
   if (session.phase() == ConnectionSession::Phase::Handshake &&
@@ -219,20 +245,24 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
       }
 
       WsReadChunk ws_chunk = ws_transport->read_chunk();
-      if (ws_chunk.eof) {
-        submit_close(scheduler, fd);
-        return;
-      }
       if (ws_chunk.timed_out) {
         break;
       }
-      if (ws_chunk.data.empty()) {
+
+      if (!ws_chunk.data.empty()) {
+        session.stream_buffer().append(
+            std::span<const uint8_t>(ws_chunk.data.data(), ws_chunk.data.size()));
+        total_read += ws_chunk.data.size();
+      }
+
+      if (ws_chunk.eof) {
+        peer_closed = true;
         break;
       }
 
-      session.stream_buffer().append(
-          std::span<const uint8_t>(ws_chunk.data.data(), ws_chunk.data.size()));
-      total_read += ws_chunk.data.size();
+      if (ws_chunk.data.empty()) {
+        break;
+      }
       continue;
     }
 

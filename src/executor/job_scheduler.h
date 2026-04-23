@@ -44,6 +44,7 @@ public:
 private:
   struct ScheduleState {
     bool active{false};
+    std::optional<JobType> active_type;
     std::deque<ConnectionJob> backlog;
   };
 

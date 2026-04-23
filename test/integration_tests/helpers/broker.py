@@ -133,7 +133,7 @@ def resolve_target_ws_port(default_port: int = _DEFAULT_WS_PORT) -> int:
     raw_value = os.environ.get(_TARGET_WS_PORT_ENV, "").strip()
     if raw_value:
         return int(raw_value)
-    return resolve_target_port(default_port)
+    return default_port
 
 
 def is_reachable(host: str, port: int, timeout: float) -> bool:
