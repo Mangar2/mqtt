@@ -20,17 +20,6 @@ namespace mqtt {
 
 namespace {
 
-std::atomic<std::uint64_t> g_inbound_publish_total{0U};
-
-void note_inbound_publish_debug() {
-  const std::uint64_t inbound_publish_total =
-      g_inbound_publish_total.fetch_add(1U) + 1U;
-  if ((inbound_publish_total % 10U) == 0U) {
-    std::cout << "[debug] inbound_publish_received_total="
-              << inbound_publish_total << std::endl;
-  }
-}
-
 void append_frame(ConnectionSession &session, WriteBuffer frame) {
   session.pending_write_frames().push_back(std::move(frame));
 }
@@ -182,7 +171,6 @@ RuntimeOutcome process_runtime_packet(ConnectionSession &session, Broker &broker
     }
 
     if (publish_result.routable_message.has_value()) {
-      note_inbound_publish_debug();
       Message routable_message = std::move(*publish_result.routable_message);
       const ReasonCode publish_reason =
           broker.handle_publish(routable_message, client_session->client_id(),

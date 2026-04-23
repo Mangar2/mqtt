@@ -63,15 +63,10 @@ constexpr std::size_t k_drain_write_budget_bytes = 64U * 1024U;
 constexpr auto k_handshake_timeout = std::chrono::seconds(30);
 constexpr auto k_session_takeover_grace = std::chrono::milliseconds(100);
 
-std::atomic<std::uint64_t> g_socket_write_bytes_total{0U};
-std::atomic<std::uint64_t> g_outbound_publish_total{0U};
-std::atomic<std::uint64_t> g_inbound_socket_bytes_total{0U};
 std::atomic<std::uint64_t> g_decode_rescheduled_total{0U};
 std::atomic<std::uint64_t> g_decode_packet_budget_exhausted_total{0U};
 std::atomic<std::uint64_t> g_decode_read_budget_exhausted_total{0U};
 std::atomic<std::uint64_t> g_decode_streambuffer_pending_total{0U};
-std::atomic<std::uint64_t> g_drain_rescheduled_total{0U};
-std::atomic<std::uint64_t> g_drain_write_budget_exhausted_total{0U};
 
 void note_decode_rescheduled_debug(bool packet_budget_exhausted,
                                    bool read_budget_exhausted,
@@ -106,73 +101,6 @@ void note_decode_rescheduled_debug(bool packet_budget_exhausted,
   }
 }
 
-void note_drain_rescheduled_debug(bool write_budget_exhausted) {
-  if (write_budget_exhausted) {
-    (void)g_drain_write_budget_exhausted_total.fetch_add(1U);
-  }
-
-  const std::uint64_t drain_rescheduled_total =
-      g_drain_rescheduled_total.fetch_add(1U) + 1U;
-  if ((drain_rescheduled_total % 100U) == 0U) {
-    const std::uint64_t write_budget_total =
-        g_drain_write_budget_exhausted_total.load();
-    std::cout << "[debug] drain_rescheduled_total="
-              << drain_rescheduled_total
-              << " drain_write_budget_exhausted_total="
-              << write_budget_total << std::endl;
-  }
-}
-
-void note_inbound_socket_bytes_debug(std::size_t bytes_received) {
-  if (bytes_received == 0U) {
-    return;
-  }
-
-  const std::uint64_t previous_total =
-      g_inbound_socket_bytes_total.fetch_add(bytes_received);
-  const std::uint64_t updated_total = previous_total + bytes_received;
-  if (updated_total % 20021 != 0U) {
-    return;
-  }
-
-  std::cout << "[debug] inbound_socket_bytes_total=" << updated_total
-            << std::endl;
-}
-
-void note_outbound_publish_debug(const WriteBuffer &frame) {
-  if (frame.empty()) {
-    return;
-  }
-
-  constexpr uint8_t k_publish_packet_type = 3U;
-  const uint8_t packet_type =
-      static_cast<uint8_t>((frame.front() >> 4U) & 0x0FU);
-  if (packet_type != k_publish_packet_type) {
-    return;
-  }
-
-  const std::uint64_t publish_total =
-      g_outbound_publish_total.fetch_add(1U) + 1U;
-
-  if ((publish_total % 1000U) == 0U) {
-    std::cout << "[debug] outbound_publish_enqueued_total="
-              << publish_total << std::endl;
-  }
-}
-
-void note_socket_write_debug(std::size_t bytes_written) {
-  if (bytes_written == 0U) {
-    return;
-  }
-
-  const std::uint64_t bytes_total =
-      g_socket_write_bytes_total.fetch_add(bytes_written) + bytes_written;
-  if ((bytes_total % 812024U) == 0U) {
-    std::cout << "[debug] outbound_socket_bytes_total="
-              << bytes_total << std::endl;
-  }
-}
-
 bool append_frame_to_slot(ConnectionSlot &slot, const WriteBuffer &frame,
                           bool is_websocket) {
   if (!is_websocket) {
@@ -191,7 +119,6 @@ bool move_pending_frames_to_slot(ConnectionSession &session, ConnectionSlot &slo
     if (!append_frame_to_slot(slot, frame, session.is_websocket())) {
       return false;
     }
-    note_outbound_publish_debug(frame);
   }
   session.clear_pending_write_frames();
   return true;
@@ -222,7 +149,6 @@ WriteDrainResult drain_socket_write_buffer(ConnectionSlot &slot,
         return WriteDrainResult{.success = false,
                                 .write_budget_exhausted = false};
       }
-      note_socket_write_debug(bytes_written);
       (void)slot.pop_write_bytes(bytes_written);
       total_written += bytes_written;
       continue;
@@ -382,7 +308,6 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
         session.stream_buffer().append(
             std::span<const uint8_t>(ws_chunk.data.data(), ws_chunk.data.size()));
         total_read += ws_chunk.data.size();
-        note_inbound_socket_bytes_debug(ws_chunk.data.size());
       }
 
       if (ws_chunk.eof) {
@@ -408,7 +333,6 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
       session.stream_buffer().append(
           std::span<const uint8_t>(read_chunk.data(), bytes_read));
       total_read += bytes_read;
-      note_inbound_socket_bytes_debug(bytes_read);
       continue;
     }
     if (read_result == IoResult::WouldBlock) {
@@ -527,7 +451,7 @@ void process_drain_job(int fd, ConnectionTable &table, IoReactor &reactor,
       scheduler.submit(ConnectionJob{.type = JobType::Drain,
                                      .connection_fd = fd,
                                      .payload = DrainJobPayload{}});
-      note_drain_rescheduled_debug(true);
+      // note_drain_rescheduled_debug(true);
     }
     return;
   }
