@@ -15,6 +15,8 @@
 
 namespace mqtt {
 
+class StructuredTracer;
+
 /**
  * @brief Serializes jobs per connection fd.
  *
@@ -25,8 +27,10 @@ public:
   /**
    * @brief Construct scheduler writing dispatch-ready jobs to `job_queue`.
    * @param job_queue Underlying work queue used by workers.
+    * @param tracer Optional structured tracer for scheduler diagnostics.
    */
-  explicit JobScheduler(JobQueue &job_queue) noexcept;
+    explicit JobScheduler(JobQueue &job_queue,
+                  StructuredTracer *tracer = nullptr) noexcept;
 
   /**
    * @brief Submit a job for scheduling.
@@ -49,6 +53,7 @@ private:
   };
 
   JobQueue &job_queue_;
+  StructuredTracer *tracer_;
   std::mutex mutex_;
   std::unordered_map<int, ScheduleState> states_;
 };

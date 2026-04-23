@@ -67,7 +67,7 @@ void ConnectionManager::start() {
   try {
     worker_pool_ = std::make_unique<WorkerPool>(
         [this](const ConnectionJob &job) { handle_connection_job(job); },
-        worker_max_threads_);
+          worker_max_threads_, &broker_.structured_tracer());
     worker_pool_->start(worker_min_threads_);
     broker_.set_job_scheduler(&worker_pool_->job_scheduler());
 
@@ -192,8 +192,13 @@ void ConnectionManager::run_keepalive_watchdog() {
 
     const std::vector<SocketHandle> socket_handles =
         connection_table_.snapshot_socket_handles();
+    const auto now = std::chrono::steady_clock::now();
     for (SocketHandle socket_handle : socket_handles) {
       const int connection_fd = static_cast<int>(socket_handle);
+      if (ConnectionTable::Entry *entry = connection_table_.find(connection_fd);
+          entry != nullptr) {
+        entry->slot.maybe_trim_write_capacity(now);
+      }
       try {
         worker_pool_->submit(ConnectionJob{.type = JobType::Decode,
                                            .connection_fd = connection_fd,

@@ -3,8 +3,8 @@ from __future__ import annotations
 
 """Single-topic load runner for mqtt-broker.
 
-Start with one focused scenario: repeated MQTT connect/disconnect at a
-configured target rate for a fixed duration.
+Provides focused load cases that isolate one behavior at a time with shared
+global rate/duration parameters.
 """
 
 import argparse
@@ -50,7 +50,7 @@ class TestCase:
     run: Callable[[RunnerConfig], RunStats]
 
 
-def _run_connect_disconnect_case(config: RunnerConfig) -> RunStats:
+def _run_fixed_rate_case(config: RunnerConfig, operation: Callable[[int], None]) -> RunStats:
     stats = RunStats()
     period_seconds = 1.0 / float(config.rate_per_second)
 
@@ -74,17 +74,7 @@ def _run_connect_disconnect_case(config: RunnerConfig) -> RunStats:
         op_start = time.monotonic()
 
         try:
-            client_id = f"load-connect-{stats.attempted}"
-            with MqttClient(client_id=client_id, timeout_seconds=config.timeout_seconds) as client:
-                connack = client.connect(
-                    host=config.host,
-                    port=config.port,
-                    clean_start=True,
-                    keepalive=config.keepalive_seconds,
-                )
-                if connack.reason_code != 0:
-                    raise RuntimeError(f"CONNACK reason code {connack.reason_code}")
-                client.disconnect()
+            operation(stats.attempted)
             stats.succeeded += 1
         except Exception as error:
             stats.failed += 1
@@ -105,11 +95,122 @@ def _run_connect_disconnect_case(config: RunnerConfig) -> RunStats:
     return stats
 
 
+def _require_success_codes(codes: list[int], operation_name: str) -> None:
+    if not codes:
+        raise RuntimeError(f"{operation_name} returned no reason codes")
+    if any(code >= 128 for code in codes):
+        raise RuntimeError(f"{operation_name} failed with reason codes {codes}")
+
+
+def _run_connect_disconnect_case(config: RunnerConfig) -> RunStats:
+    def operation(sequence: int) -> None:
+        client_id = f"load-connect-{sequence}"
+        with MqttClient(client_id=client_id, timeout_seconds=config.timeout_seconds) as client:
+            connack = client.connect(
+                host=config.host,
+                port=config.port,
+                clean_start=True,
+                keepalive=config.keepalive_seconds,
+            )
+            if connack.reason_code != 0:
+                raise RuntimeError(f"CONNACK reason code {connack.reason_code}")
+            client.disconnect()
+
+    return _run_fixed_rate_case(config, operation)
+
+
+def _run_publish_case(config: RunnerConfig) -> RunStats:
+    publish_topic = "load/single-topic/publish"
+    with MqttClient(
+        client_id="load-pub-sender",
+        timeout_seconds=config.timeout_seconds,
+    ) as publisher, MqttClient(
+        client_id="load-pub-receiver",
+        timeout_seconds=config.timeout_seconds,
+    ) as subscriber:
+        publisher_connack = publisher.connect(
+            host=config.host,
+            port=config.port,
+            clean_start=True,
+            keepalive=config.keepalive_seconds,
+        )
+        if publisher_connack.reason_code != 0:
+            raise RuntimeError(f"publisher CONNACK reason code {publisher_connack.reason_code}")
+
+        subscriber_connack = subscriber.connect(
+            host=config.host,
+            port=config.port,
+            clean_start=True,
+            keepalive=config.keepalive_seconds,
+        )
+        if subscriber_connack.reason_code != 0:
+            raise RuntimeError(f"subscriber CONNACK reason code {subscriber_connack.reason_code}")
+
+        suback_codes = subscriber.subscribe(publish_topic, qos=0)
+        _require_success_codes(suback_codes, "subscribe")
+
+        def operation(sequence: int) -> None:
+            payload = f"load-payload-{sequence}".encode("utf-8")
+            publish_reason = publisher.publish(
+                publish_topic,
+                payload,
+                qos=0,
+                retain=False,
+            )
+            if publish_reason != 0:
+                raise RuntimeError(f"publish failed with reason code {publish_reason}")
+
+            received = subscriber.collect_message_for_topic(
+                expected_topic=publish_topic,
+                timeout=config.timeout_seconds,
+            )
+            if received.payload != payload:
+                raise RuntimeError("subscriber received unexpected payload")
+
+        return _run_fixed_rate_case(config, operation)
+
+
+def _run_subscribe_case(config: RunnerConfig) -> RunStats:
+    topic_filter = "load/single-topic/subscription"
+    with MqttClient(
+        client_id="load-sub-cycle",
+        timeout_seconds=config.timeout_seconds,
+    ) as subscriber:
+        connack = subscriber.connect(
+            host=config.host,
+            port=config.port,
+            clean_start=True,
+            keepalive=config.keepalive_seconds,
+        )
+        if connack.reason_code != 0:
+            raise RuntimeError(f"subscriber CONNACK reason code {connack.reason_code}")
+
+        def operation(_sequence: int) -> None:
+            suback_codes = subscriber.subscribe(topic_filter, qos=0)
+            _require_success_codes(suback_codes, "subscribe")
+            unsuback_codes = subscriber.unsubscribe(topic_filter)
+            _require_success_codes(unsuback_codes, "unsubscribe")
+
+        return _run_fixed_rate_case(config, operation)
+
+
 TEST_CASES: dict[str, TestCase] = {
-    "connect-disconnect": TestCase(
-        name="connect-disconnect",
+    "connect": TestCase(
+        name="connect",
         description="Repeated MQTT CONNECT + DISCONNECT with fixed rate",
         run=_run_connect_disconnect_case,
+    ),
+    "publish": TestCase(
+        name="publish",
+        description=(
+            "Two fixed clients: publisher sends and subscriber receives one message per cycle"
+        ),
+        run=_run_publish_case,
+    ),
+    "subscribe": TestCase(
+        name="subscribe",
+        description="One fixed client repeatedly SUBSCRIBE then UNSUBSCRIBE",
+        run=_run_subscribe_case,
     ),
 }
 
@@ -121,7 +222,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--case",
         choices=sorted(TEST_CASES.keys()),
-        default="connect-disconnect",
+        default="connect",
         help="Focused load test case to run",
     )
     parser.add_argument("--host", default="127.0.0.1", help="Broker host")

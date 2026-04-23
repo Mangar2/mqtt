@@ -19,6 +19,8 @@
 
 namespace mqtt {
 
+class StructuredTracer;
+
 /**
  * @brief Elastic worker pool with per-connection serialized scheduling.
  */
@@ -30,9 +32,11 @@ public:
    * @brief Construct a worker pool.
    * @param job_handler Callable executed for each dequeued job.
    * @param max_threads Hard upper bound for worker thread count.
+    * @param tracer Optional structured tracer for scheduler diagnostics.
    */
   explicit WorkerPool(JobHandler job_handler,
-                      std::size_t max_threads = 0U);
+                 std::size_t max_threads = 0U,
+                 StructuredTracer *tracer = nullptr);
 
   ~WorkerPool();
 

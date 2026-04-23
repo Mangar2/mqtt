@@ -145,7 +145,7 @@ STAGES: tuple[StageSpec, ...] = (
         stage_id=8,
         title="combined-progressive",
         description="Progressive combined load stages",
-        test_names=("load/combined_progressive_stages_up_to_1000_with_timeout",),
+        test_names=("load/combined_progressive_200_connections_with_timeout",),
     ),
     StageSpec(
         stage_id=9,

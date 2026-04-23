@@ -4,6 +4,7 @@ from __future__ import annotations
 """Build ARMv6 broker binary and deploy it to a Raspberry Pi via scp."""
 
 import argparse
+import hashlib
 import os
 import shutil
 import socket
@@ -22,6 +23,7 @@ DEFAULT_REMOTE_DIR = "~/mqtt"
 DEFAULT_REMOTE_PORT = 1883
 DEFAULT_START_TIMEOUT_SECONDS = 12.0
 DEFAULT_REMOTE_CONFIG = "broker.ws.ini"
+DEFAULT_LOG_TAIL_LINES = 80
 
 
 def run_or_fail(command: list[str], *, label: str) -> None:
@@ -117,6 +119,79 @@ def require_tool(name: str) -> None:
         raise RuntimeError(f"required tool not found in PATH: {name}")
 
 
+def sha256_file(file_path: Path) -> str:
+    digest = hashlib.sha256()
+    with file_path.open("rb") as file_handle:
+        for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def read_remote_binary_sha256(remote_host: str, remote_dir: str) -> str | None:
+    remote_command = (
+        f"cd {remote_shell_dir(remote_dir)} && "
+        "if [ ! -f mqtt-broker ]; then "
+        "echo MISSING; "
+        "elif command -v sha256sum >/dev/null 2>&1; then "
+        "sha256sum mqtt-broker | awk '{print $1}'; "
+        "elif command -v shasum >/dev/null 2>&1; then "
+        "shasum -a 256 mqtt-broker | awk '{print $1}'; "
+        "else "
+        "echo NOHASH; "
+        "fi"
+    )
+    completed = subprocess.run(
+        ["ssh", "-n", "-o", "BatchMode=yes", remote_host, remote_command],
+        cwd=PROJECT_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        stderr_text = completed.stderr.strip()
+        raise RuntimeError(
+            "failed to read remote broker checksum"
+            + (f": {stderr_text}" if stderr_text else "")
+        )
+
+    output_lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    if not output_lines:
+        return None
+
+    first_line = output_lines[0]
+    if first_line == "MISSING":
+        return None
+    if first_line == "NOHASH":
+        raise RuntimeError("remote host has neither sha256sum nor shasum")
+    return first_line
+
+
+def show_remote_log_tail(remote_host: str, remote_dir: str, lines: int) -> None:
+    tail_command = (
+        f"cd {remote_shell_dir(remote_dir)} && "
+        f"tail -n {lines} broker.log || true"
+    )
+    run_or_fail(
+        ["ssh", "-n", "-o", "BatchMode=yes", remote_host, tail_command],
+        label="show remote broker log",
+    )
+
+
+def follow_remote_log(remote_host: str, remote_dir: str, lines: int) -> None:
+    follow_command = (
+        f"cd {remote_shell_dir(remote_dir)} && "
+        f"tail -n {lines} -f broker.log"
+    )
+    print("STEP follow remote broker log...")
+    print("Press Ctrl+C to stop log streaming. Broker keeps running on the Pi.")
+    subprocess.run(
+        ["ssh", "-o", "BatchMode=yes", remote_host, follow_command],
+        cwd=PROJECT_ROOT,
+        check=False,
+    )
+    print("STEP follow remote broker log ok")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Build armv6 broker with Zig and copy binary to Raspberry Pi."
@@ -154,12 +229,30 @@ def main() -> int:
         default=DEFAULT_REMOTE_CONFIG,
         help="Remote broker config file used on start (for example broker.ws.ini)",
     )
+    parser.add_argument(
+        "--show-log",
+        action="store_true",
+        help="Show the remote broker log tail after startup verification",
+    )
+    parser.add_argument(
+        "--follow-log",
+        action="store_true",
+        help="Follow remote broker log after deploy (Ctrl+C to stop following)",
+    )
+    parser.add_argument(
+        "--log-lines",
+        type=int,
+        default=DEFAULT_LOG_TAIL_LINES,
+        help="Number of log lines used by --show-log or as initial lines for --follow-log",
+    )
     args = parser.parse_args()
 
     try:
         require_tool("cmake")
         require_tool("ssh")
         require_tool("scp")
+        if args.log_lines <= 0:
+            raise RuntimeError("--log-lines must be > 0")
 
         build_mode = configure_if_needed(ARMV6_PRESET)
         run_or_fail(
@@ -175,6 +268,10 @@ def main() -> int:
         if not binary_path.exists():
             raise RuntimeError(f"build finished but binary not found: {binary_path}")
 
+        local_binary_sha256 = sha256_file(binary_path)
+        remote_binary_sha256 = read_remote_binary_sha256(args.remote_host, args.remote_dir)
+        should_copy_binary = remote_binary_sha256 != local_binary_sha256
+
         stop_remote_broker(args.remote_host)
 
         run_or_fail(
@@ -189,31 +286,35 @@ def main() -> int:
             label="create remote directory",
         )
 
-        remote_temp = f"{args.remote_dir}/mqtt-broker.new"
-        run_or_fail(
-            [
-                "scp",
-                "-o",
-                "BatchMode=yes",
-                str(binary_path),
-                f"{args.remote_host}:{remote_temp}",
-            ],
-            label="copy binary",
-        )
-        run_or_fail(
-            [
-                "ssh",
-                "-n",
-                "-o",
-                "BatchMode=yes",
-                args.remote_host,
-                f"cd {remote_shell_dir(args.remote_dir)} && "
-                + shell_join(["mv", "mqtt-broker.new", "mqtt-broker"])
-                + " && "
-                + shell_join(["chmod", "+x", "mqtt-broker"]),
-            ],
-            label="activate binary",
-        )
+        if should_copy_binary:
+            remote_temp = f"{args.remote_dir}/mqtt-broker.new"
+            run_or_fail(
+                [
+                    "scp",
+                    "-o",
+                    "BatchMode=yes",
+                    str(binary_path),
+                    f"{args.remote_host}:{remote_temp}",
+                ],
+                label="copy binary",
+            )
+            run_or_fail(
+                [
+                    "ssh",
+                    "-n",
+                    "-o",
+                    "BatchMode=yes",
+                    args.remote_host,
+                    f"cd {remote_shell_dir(args.remote_dir)} && "
+                    + shell_join(["mv", "mqtt-broker.new", "mqtt-broker"])
+                    + " && "
+                    + shell_join(["chmod", "+x", "mqtt-broker"]),
+                ],
+                label="activate binary",
+            )
+        else:
+            print("STEP copy binary skipped (unchanged build output)")
+            print("STEP activate binary skipped (unchanged build output)")
 
         start_remote_broker(args.remote_host, args.remote_dir,
                     args.remote_config)
@@ -232,6 +333,13 @@ def main() -> int:
             f" config={args.remote_config}"
             f" target={args.target}"
         )
+
+        if args.show_log:
+            show_remote_log_tail(args.remote_host, args.remote_dir, args.log_lines)
+
+        if args.follow_log:
+            follow_remote_log(args.remote_host, args.remote_dir, args.log_lines)
+
         return 0
     except Exception as error:
         print(f"DEPLOY fail error={error}", file=sys.stderr)

@@ -28,11 +28,12 @@ private:
 
 } // namespace
 
-WorkerPool::WorkerPool(JobHandler job_handler, std::size_t max_threads)
+WorkerPool::WorkerPool(JobHandler job_handler, std::size_t max_threads,
+                       StructuredTracer *tracer)
     : job_handler_(std::move(job_handler)),
       max_threads_(max_threads == 0U ? compute_default_max_threads()
                                      : max_threads),
-      job_scheduler_(job_queue_) {
+      job_scheduler_(job_queue_, tracer) {
   if (!job_handler_) {
     throw std::invalid_argument("WorkerPool requires a valid job handler");
   }

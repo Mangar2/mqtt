@@ -99,4 +99,14 @@ std::size_t InflightStore::size_for(std::string_view client_id) const noexcept {
   return map_iter->second.size();
 }
 
+std::size_t InflightStore::total_size() const noexcept {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  std::size_t total_entries = 0U;
+  for (const auto &[client_id, entries] : entries_) {
+    (void)client_id;
+    total_entries += entries.size();
+  }
+  return total_entries;
+}
+
 } // namespace mqtt

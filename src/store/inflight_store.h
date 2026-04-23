@@ -93,6 +93,12 @@ public:
    */
   [[nodiscard]] std::size_t size_for(std::string_view client_id) const noexcept;
 
+  /**
+   * @brief Return the number of inflight entries across all sessions.
+   * @return Total inflight entry count.
+   */
+  [[nodiscard]] std::size_t total_size() const noexcept;
+
 private:
   /// Guards all accesses to @ref entries_.
   mutable std::mutex mutex_;

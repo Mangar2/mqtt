@@ -23,6 +23,33 @@ find_session_expiry(const std::vector<Property> &props) {
   return std::nullopt;
 }
 
+void trace_storage_snapshot(StructuredTracer *structured_tracer,
+                            const SessionStore &session_store,
+                            const SubscriptionStore &subscription_store,
+                            const InflightStore &inflight_store,
+                            const SessionTakeoverHandler &takeover_handler,
+                            std::string_view trigger,
+                            std::string_view client_id = {}) {
+  TRACE_GUARD(structured_tracer, TraceLevel::Trace, "session_manager") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "session_manager";
+    event.info = "storage_snapshot";
+    event.data.push_back({"trigger", std::string(trigger)});
+    if (!client_id.empty()) {
+      event.data.push_back({"client_id", std::string(client_id)});
+    }
+    event.data.push_back({"sessions", std::to_string(session_store.size())});
+    event.data.push_back(
+        {"subscriptions", std::to_string(subscription_store.size())});
+    event.data.push_back({"inflight_entries",
+                          std::to_string(inflight_store.total_size())});
+    event.data.push_back(
+        {"active_takeovers", std::to_string(takeover_handler.size())});
+    structured_tracer->emit(event);
+  }
+}
+
 } // namespace
 
 SessionManager::SessionManager(SessionStore &session_store,
@@ -141,6 +168,10 @@ SessionManager::handle_connect(const ConnectPacket &connect,
     structured_tracer_->emit(event);
   }
 
+  trace_storage_snapshot(structured_tracer_, session_store_, subscription_store_,
+                         inflight_store_, takeover_handler_,
+                         "after_handle_connect", cid);
+
   return result;
 }
 
@@ -188,6 +219,10 @@ void SessionManager::handle_disconnect(
         on_session_changed_();
       } catch (...) {}
     }
+    trace_storage_snapshot(structured_tracer_, session_store_,
+                           subscription_store_, inflight_store_,
+                           takeover_handler_, "after_disconnect_remove",
+                           client_id);
     return;
   }
 
@@ -208,6 +243,10 @@ void SessionManager::handle_disconnect(
     event.data.push_back({"effective_expiry", std::to_string(effective_expiry)});
     structured_tracer_->emit(event);
   }
+
+  trace_storage_snapshot(structured_tracer_, session_store_, subscription_store_,
+                         inflight_store_, takeover_handler_,
+                         "after_disconnect_schedule", client_id);
 }
 
 bool SessionManager::is_disconnect_expiry_override_valid(
@@ -242,6 +281,12 @@ SessionManager::cleanup_expired(std::chrono::steady_clock::time_point now) {
     try {
       on_session_changed_();
     } catch (...) {}
+  }
+
+  if (!expired.empty()) {
+    trace_storage_snapshot(structured_tracer_, session_store_,
+                           subscription_store_, inflight_store_,
+                           takeover_handler_, "after_cleanup_expired");
   }
 
   return expired;

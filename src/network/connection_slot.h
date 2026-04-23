@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <span>
 #include <vector>
 
@@ -33,6 +34,9 @@ class ConnectionSlot {
 public:
   static constexpr std::size_t k_default_read_capacity = 256U * 1024U;
   static constexpr std::size_t k_default_write_capacity = 256U * 1024U;
+  static constexpr std::size_t k_min_write_capacity = 16U * 1024U;
+  static constexpr auto k_write_peak_window = std::chrono::seconds(10);
+  static constexpr auto k_write_shrink_idle = std::chrono::seconds(10);
 
   /**
    * @brief Construct with owned socket handle and ring-buffer capacities.
@@ -74,6 +78,12 @@ public:
   [[nodiscard]] std::size_t pop_write_bytes(std::size_t bytes_to_pop) noexcept;
   [[nodiscard]] std::span<const uint8_t> write_contiguous_bytes() const noexcept;
 
+  /**
+   * @brief Shrink write buffer capacity after sustained low usage.
+   * @param now Current monotonic time.
+   */
+  void maybe_trim_write_capacity(std::chrono::steady_clock::time_point now) noexcept;
+
 private:
   [[nodiscard]] static bool push_bytes(std::vector<uint8_t> &storage,
                                        std::size_t &head_index,
@@ -86,6 +96,9 @@ private:
   [[nodiscard]] static std::span<const uint8_t>
   contiguous_bytes(const std::vector<uint8_t> &storage, std::size_t head_index,
                    std::size_t used_size) noexcept;
+  [[nodiscard]] bool ensure_write_capacity_for(std::size_t additional_bytes) noexcept;
+  void reallocate_write_storage(std::size_t new_capacity) noexcept;
+  void refresh_write_peak_window(std::chrono::steady_clock::time_point now) noexcept;
 
   SocketHandle socket_handle_{k_invalid_socket};
   ConnectionPhase phase_{ConnectionPhase::Connecting};
@@ -95,8 +108,12 @@ private:
   std::size_t read_used_size_{0};
 
   std::vector<uint8_t> write_storage_;
+  std::size_t write_limit_capacity_{0};
   std::size_t write_head_index_{0};
   std::size_t write_used_size_{0};
+  std::size_t write_peak_window_bytes_{0};
+  std::chrono::steady_clock::time_point write_peak_window_started_at_{};
+  std::chrono::steady_clock::time_point last_write_activity_at_{};
 };
 
 } // namespace mqtt
