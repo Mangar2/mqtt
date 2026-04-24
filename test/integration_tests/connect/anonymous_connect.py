@@ -65,7 +65,7 @@ def run_connect_anonymous(config) -> tuple[bool, str]:
 TEST_CASES = [
     {
         "name": "connect/anonymous",
-        "description": "Connect to broker without credentials using mqttx",
+        "description": "1.1.9 Connect to broker without credentials using mqttx publish flow",
         "run": run_connect_anonymous,
     }
 ]

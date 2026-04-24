@@ -1,0 +1,20 @@
+{
+  "results": {
+    "websocket/binary_and_text_frame_handling": {
+      "status": "success",
+      "updated_at": "2026-04-24T15:09:55+00:00",
+      "details": "14.2.5 broker closed connection for text MQTT frame"
+    },
+    "publish/fan_out_one_publisher_ten_subscribers": {
+      "status": "success",
+      "updated_at": "2026-04-24T15:09:56+00:00",
+      "details": "17.1.1 all 10 subscribers received the published message"
+    }
+  },
+  "last_run_started_at": "2026-04-24T15:09:55+00:00",
+  "last_run_finished_at": "2026-04-24T15:09:56+00:00",
+  "last_run_selection": [
+    "websocket/binary_and_text_frame_handling",
+    "publish/fan_out_one_publisher_ten_subscribers"
+  ]
+}

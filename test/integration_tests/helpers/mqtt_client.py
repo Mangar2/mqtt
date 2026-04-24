@@ -281,6 +281,7 @@ class MqttClient:
         retain: bool = False,
         properties: Properties | None = None,
         wait_for_qos0_publish: bool = True,
+        wait_for_qos1_publish: bool = True,
     ) -> int:
         """Publish and block for acknowledgement when required by QoS."""
         client = self._require_client()
@@ -306,6 +307,9 @@ class MqttClient:
                 time.sleep(0.01)
             raise TimeoutError("Timed out while waiting for QoS0 publish completion")
 
+        if qos == 1 and not wait_for_qos1_publish:
+            return int(info.mid)
+
         deadline = time.monotonic() + self._timeout_seconds
         while time.monotonic() < deadline:
             with self._mid_lock:
@@ -314,6 +318,19 @@ class MqttClient:
             time.sleep(0.01)
 
         raise TimeoutError("Timed out while waiting for PUBACK/PUBCOMP")
+
+    def drain_published_mids(self, limit: int | None = None) -> dict[int, int]:
+        """Return currently completed publish mids and reason codes without blocking."""
+        with self._mid_lock:
+            if limit is None or limit >= len(self._published_mids):
+                completed = dict(self._published_mids)
+                self._published_mids.clear()
+                return completed
+
+            completed: dict[int, int] = {}
+            for mid in list(self._published_mids.keys())[:limit]:
+                completed[mid] = self._published_mids.pop(mid)
+            return completed
 
     def subscribe(
         self,

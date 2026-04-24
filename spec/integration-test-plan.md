@@ -74,6 +74,7 @@ Broker process management for tests that need restart/reconfigure.
 - 1.1.6 Connect with invalid protocol version (e.g. 0x03) → connection refused
 - 1.1.7 Connect with invalid protocol name (not "MQTT") → connection closed
 - 1.1.8 Connect with reserved header flags set → connection closed (Malformed Packet)
+- 1.1.9 Anonymous connect and publish via mqttx CLI → connect succeeds and publish accepted
 
 ### 1.2 CONNECT — Properties
 - 1.2.1 Session Expiry Interval = 0 → session discarded on disconnect

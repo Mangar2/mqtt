@@ -75,7 +75,7 @@ Scope: sections 0–13. Each test case is rated:
 
 ## 1. Connection Lifecycle
 
-### 1.1 CONNECT — Basic (`connect_basic.py`)
+### 1.1 CONNECT — Basic (`connect_basic.py`, `anonymous_connect.py`)
 
 | ID | Description | Status | Notes |
 |----|-------------|--------|-------|
@@ -87,6 +87,7 @@ Scope: sections 0–13. Each test case is rated:
 | 1.1.6 | Invalid protocol version → connection refused | ✓ | |
 | 1.1.7 | Invalid protocol name → connection closed | ✓ | |
 | 1.1.8 | Reserved header flags set → connection closed | ✓ | Sends CONNECT with flags byte `0x01` (reserved bit set) |
+| 1.1.9 | Anonymous connect and publish via mqttx CLI | ✓ | `connect/anonymous` |
 
 ### 1.2 CONNECT — Properties (`connect_properties.py`)
 

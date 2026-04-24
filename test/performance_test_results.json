@@ -1,15 +1,16 @@
 {
-  "run_started_at": "2026-04-24T04:32:46+00:00",
-  "run_finished_at": "2026-04-24T04:34:47+00:00",
+  "run_started_at": "2026-04-24T19:14:10+00:00",
+  "run_finished_at": "2026-04-24T19:16:12+00:00",
   "arguments": {
     "host": "raspberrypi",
     "port": 1883,
     "ws_port": null,
     "timeout": 8.0,
-    "size": "middle",
+    "duration": 120.0,
+    "size": "small",
     "repeat": 1,
     "filter": [
-      "S01"
+      "P02"
     ]
   },
   "resolved_target": {
@@ -17,44 +18,43 @@
     "port": 1883,
     "ws_port": 8083,
     "timeout_seconds": 8.0,
-    "size_profile": "middle"
+    "size_profile": "small",
+    "duration_seconds": 120.0
   },
   "selected_scenarios": [
     {
-      "stage_id": 1,
-      "scenario_id": "S01",
-      "title": "connect-ramp-two-minute",
-      "purpose": "2-minute connect load with hold phase and accelerated ramp",
-      "success_limit": "range by size: small 10-100, middle 50-1000, large 500-10000",
-      "work_units": null,
-      "work_unit_label": null
+      "stage_id": 12,
+      "scenario_id": "P02",
+      "title": "qos1-message-rate-ramp",
+      "purpose": "QoS1 throughput with PUBACK latency",
+      "success_limit": ">=99% delivered and >=99% PUBACK in hold",
+      "work_units": 1.0,
+      "work_unit_label": "msg"
     }
   ],
   "results": [
     {
-      "stage_id": 1,
-      "scenario_id": "S01",
+      "stage_id": 12,
+      "scenario_id": "P02",
       "run_index": 1,
-      "title": "connect-ramp-two-minute",
-      "status": "PASS",
-      "duration_seconds": 121.516856375,
-      "throughput_per_second": 84.75367662430541,
-      "summary": "profile=middle range=50-1000 duration=120s requested=10307 success=10299 fail=8 avg_connect_rate=152.10/s peak_open=949 max_target_reached=True highest_target=1000 overload=none",
+      "title": "qos1-message-rate-ramp",
+      "status": "DEVIATION",
+      "duration_seconds": 121.057581167,
+      "throughput_per_second": 736.2497060343777,
+      "summary": "duration=121.004s planned_sent=140500 sent=125016 acked=89089 received=89089 send_rate=1033.16/s ack_rate=736.25/s recv_rate=736.25/s ack_ratio=0.7126 delivery_ratio=0.7126 ramp_stopped=True",
       "counters": {
-        "range_min": 50,
-        "range_max": 1000,
-        "requested": 10307,
-        "success": 10299,
-        "rejected": 0,
-        "network_close": 0,
-        "local_resource": 0,
-        "other": 8,
-        "peak_open": 949,
-        "closed": 10299,
-        "overload_target": 0
+        "planned_sent": 140500,
+        "sent": 125016,
+        "acked": 89089,
+        "received": 89089,
+        "missing": 35927,
+        "unacked": 35927,
+        "pending_publish_mids": 35927,
+        "ramp_stopped": 1,
+        "ramp_stopped_at_rate": 1557.7777777777778
       },
-      "started_at": "2026-04-24T04:32:46+00:00",
-      "finished_at": "2026-04-24T04:34:47+00:00"
+      "started_at": "2026-04-24T19:14:10+00:00",
+      "finished_at": "2026-04-24T19:16:12+00:00"
     }
   ]
 }

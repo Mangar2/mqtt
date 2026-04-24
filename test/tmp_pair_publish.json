@@ -1,0 +1,20 @@
+{
+  "results": {
+    "shutdown/graceful/sigint_behaves_like_sigterm": {
+      "status": "skipped",
+      "updated_at": "2026-04-24T15:08:18+00:00",
+      "details": "16.1.4 skipped: requires managed broker startup (requested overrides: broker process control (SIGINT))"
+    },
+    "publish/fan_out_one_publisher_ten_subscribers": {
+      "status": "success",
+      "updated_at": "2026-04-24T15:08:20+00:00",
+      "details": "17.1.1 all 10 subscribers received the published message"
+    }
+  },
+  "last_run_started_at": "2026-04-24T15:08:18+00:00",
+  "last_run_finished_at": "2026-04-24T15:08:20+00:00",
+  "last_run_selection": [
+    "shutdown/graceful/sigint_behaves_like_sigterm",
+    "publish/fan_out_one_publisher_ten_subscribers"
+  ]
+}

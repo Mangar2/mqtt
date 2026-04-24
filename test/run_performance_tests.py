@@ -48,6 +48,7 @@ class RunnerConfig:
     ws_port: int | None
     timeout_seconds: float
     size_profile: str
+    duration_seconds: float
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,8 @@ class ScenarioOutcome:
     summary: str
     counters: dict[str, int]
     work_units: float | None
+    throughput_per_second: float | None = None
+    throughput_basis_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -107,24 +110,201 @@ SCENARIO_SPECS: tuple[ScenarioSpec, ...] = (
         None,
         None,
     ),
-    ScenarioSpec(2, "S02", "connection-storm", "100 fast connects under burst load", "100/100 successful connects", 100.0, "conn"),
-    ScenarioSpec(3, "S03", "qos0-throughput", "single pub/sub throughput", "1000 msgs under target seconds", 1000.0, "msg"),
-    ScenarioSpec(4, "S04", "qos1-throughput", "single pub/sub QoS1 reliability", "1000 msgs acked and delivered", 1000.0, "msg"),
-    ScenarioSpec(5, "S05", "fanout-medium", "multi pub/sub fanout load", "all expected fanout deliveries", 1250.0, "delivery"),
-    ScenarioSpec(6, "S06", "subscriptions-single-client", "single client high filter count", "all subscriptions routable", 300.0, "sub"),
-    ScenarioSpec(7, "S07", "subscriptions-many-clients", "many clients filter routing", "all routes match clients", 100.0, "sub"),
-    ScenarioSpec(8, "S08", "combined-progressive", "progressive mixed load", "all phases complete", 200.0, "op"),
-    ScenarioSpec(9, "S09A", "sustained-retained-store", "retained replay completeness", "all retained entries replayed", 300.0, "entry"),
-    ScenarioSpec(9, "S09B", "sustained-offline-queue", "offline queued redelivery", "all queued messages redelivered", 200.0, "msg"),
-    ScenarioSpec(10, "S10", "sustained-long-run", "mixed traffic over runtime window", "no disconnect and no loss in window", None, None),
+    ScenarioSpec(11, "P01", "qos0-message-rate-ramp", "QoS0 throughput with increasing message rate", ">=99% delivered in hold phase", 1.0, "msg"),
+    ScenarioSpec(12, "P02", "qos1-message-rate-ramp", "QoS1 throughput with PUBACK latency", ">=99% delivered and >=99% PUBACK in hold", 1.0, "msg"),
+    ScenarioSpec(13, "P03", "qos2-message-rate-ramp", "QoS2 exactly-once handshake throughput", ">=99% PUBCOMP and deliveries in hold", 1.0, "msg"),
+    ScenarioSpec(14, "P04", "subscriber-fanout-ramp", "One publisher with increasing subscriber fan-out", ">=99% of expected deliveries in hold", 1.0, "delivery"),
+    ScenarioSpec(15, "P05", "publisher-fanin-ramp", "Increasing concurrent publishers to one subscriber", ">=99% delivered in hold", 1.0, "msg"),
+    ScenarioSpec(16, "P06", "large-payload-throughput-ramp", "Payload size ramp and peak-size burst", "all hold burst messages delivered in timeout", 1.0, "byte"),
+    ScenarioSpec(17, "P07", "retained-replay-ramp", "Retained replay latency under topic growth", ">=99% retained replay per hold iteration", 1.0, "entry"),
+    ScenarioSpec(18, "P08", "offline-queue-pressure-ramp", "QoS1 offline queue growth and reconnect drain", "all queued messages drained in hold", 1.0, "msg"),
+    ScenarioSpec(19, "P09", "subscription-churn-ramp", "Subscribe/unsubscribe churn under increasing clients", "stable delivery ratio >=99% in hold", 1.0, "msg"),
+    ScenarioSpec(20, "P10", "will-delivery-ramp", "Will delivery under abrupt disconnect ramp", ">=99% will messages observed in hold", 1.0, "will"),
 )
 
 
 SIZE_STAGE_RANGES: dict[str, tuple[int, int]] = {
-    "small": (1, 3),
-    "middle": (3, 5),
-    "large": (5, 10),
+    "small": (1, 13),
+    "middle": (1, 17),
+    "large": (1, 20),
 }
+
+
+PARAMS_P01 = {
+    "small": {"start_msg_s": 10, "end_msg_s": 500, "step": 10, "ramp_interval_s": 3.0, "hold_seconds": 30},
+    "middle": {"start_msg_s": 200, "end_msg_s": 2000, "step": 50, "ramp_interval_s": 2.0, "hold_seconds": 30},
+    "large": {"start_msg_s": 1000, "end_msg_s": 10000, "step": 200, "ramp_interval_s": 1.0, "hold_seconds": 30},
+}
+
+PARAMS_P02 = {
+    "small": {"start_msg_s": 1, "end_msg_s": 50, "step": 1, "ramp_interval_s": 10.0, "hold_seconds": 30},
+    "middle": {"start_msg_s": 20, "end_msg_s": 200, "step": 20, "ramp_interval_s": 10.0, "hold_seconds": 30},
+    "large": {"start_msg_s": 100, "end_msg_s": 1000, "step": 100, "ramp_interval_s": 10.0, "hold_seconds": 30},
+}
+
+PARAMS_P03 = {
+    "small": {"start_msg_s": 5, "end_msg_s": 50, "step": 5, "ramp_interval_s": 4.0, "hold_seconds": 30},
+    "middle": {"start_msg_s": 20, "end_msg_s": 500, "step": 20, "ramp_interval_s": 2.0, "hold_seconds": 30},
+    "large": {"start_msg_s": 50, "end_msg_s": 3000, "step": 50, "ramp_interval_s": 1.5, "hold_seconds": 30},
+}
+
+PARAMS_P04 = {
+    "small": {"start_subscribers": 1, "end_subscribers": 10, "step": 1, "ramp_interval_s": 5.0, "msg_per_step": 20, "hold_seconds": 30, "qos": 0},
+    "middle": {"start_subscribers": 1, "end_subscribers": 50, "step": 5, "ramp_interval_s": 3.0, "msg_per_step": 50, "hold_seconds": 30, "qos": 0},
+    "large": {"start_subscribers": 5, "end_subscribers": 200, "step": 10, "ramp_interval_s": 2.0, "msg_per_step": 100, "hold_seconds": 30, "qos": 0},
+}
+
+PARAMS_P05 = {
+    "small": {"start_publishers": 1, "end_publishers": 10, "step": 1, "ramp_interval_s": 5.0, "msg_per_publisher_per_step": 10, "hold_seconds": 30, "qos": 0},
+    "middle": {"start_publishers": 1, "end_publishers": 50, "step": 5, "ramp_interval_s": 3.0, "msg_per_publisher_per_step": 20, "hold_seconds": 30, "qos": 0},
+    "large": {"start_publishers": 5, "end_publishers": 200, "step": 10, "ramp_interval_s": 2.0, "msg_per_publisher_per_step": 30, "hold_seconds": 30, "qos": 0},
+}
+
+PARAMS_P06 = {
+    "small": {"start_payload_bytes": 64, "end_payload_bytes": 8192, "step_bytes": 512, "ramp_interval_s": 2.0, "burst_count": 50, "hold_seconds": 20, "qos": 1},
+    "middle": {"start_payload_bytes": 128, "end_payload_bytes": 65536, "step_bytes": 4096, "ramp_interval_s": 2.0, "burst_count": 100, "hold_seconds": 20, "qos": 1},
+    "large": {"start_payload_bytes": 512, "end_payload_bytes": 262144, "step_bytes": 16384, "ramp_interval_s": 2.0, "burst_count": 200, "hold_seconds": 20, "qos": 1},
+}
+
+PARAMS_P07 = {
+    "small": {"start_topics": 10, "end_topics": 200, "step": 10, "ramp_interval_s": 2.0, "hold_seconds": 20, "qos": 0},
+    "middle": {"start_topics": 50, "end_topics": 1000, "step": 50, "ramp_interval_s": 2.0, "hold_seconds": 20, "qos": 0},
+    "large": {"start_topics": 200, "end_topics": 5000, "step": 200, "ramp_interval_s": 1.5, "hold_seconds": 20, "qos": 0},
+}
+
+PARAMS_P08 = {
+    "small": {"start_queued": 10, "end_queued": 100, "step": 10, "ramp_interval_s": 3.0, "hold_seconds": 20, "session_expiry_s": 300, "drain_timeout_s": 30},
+    "middle": {"start_queued": 50, "end_queued": 500, "step": 50, "ramp_interval_s": 3.0, "hold_seconds": 20, "session_expiry_s": 300, "drain_timeout_s": 30},
+    "large": {"start_queued": 100, "end_queued": 2000, "step": 100, "ramp_interval_s": 2.0, "hold_seconds": 20, "session_expiry_s": 300, "drain_timeout_s": 60},
+}
+
+PARAMS_P09 = {
+    "small": {"start_clients": 2, "end_clients": 10, "step": 1, "ramp_interval_s": 5.0, "filters_per_client": 10, "churn_interval_s": 0.5, "hold_seconds": 30},
+    "middle": {"start_clients": 5, "end_clients": 50, "step": 5, "ramp_interval_s": 3.0, "filters_per_client": 20, "churn_interval_s": 0.3, "hold_seconds": 30},
+    "large": {"start_clients": 10, "end_clients": 200, "step": 10, "ramp_interval_s": 2.0, "filters_per_client": 30, "churn_interval_s": 0.2, "hold_seconds": 30},
+}
+
+PARAMS_P10 = {
+    "small": {"start_clients": 2, "end_clients": 20, "step": 2, "ramp_interval_s": 4.0, "hold_seconds": 30, "will_qos": 1, "will_delay_s": 0},
+    "middle": {"start_clients": 5, "end_clients": 100, "step": 5, "ramp_interval_s": 3.0, "hold_seconds": 30, "will_qos": 1, "will_delay_s": 0},
+    "large": {"start_clients": 10, "end_clients": 400, "step": 10, "ramp_interval_s": 2.0, "hold_seconds": 30, "will_qos": 1, "will_delay_s": 0},
+}
+
+
+def _planned_hold_seconds(config: RunnerConfig, base_hold_seconds: float) -> float:
+    return max(0.0, float(base_hold_seconds) + max(0.0, config.duration_seconds - 120.0))
+
+
+def _planned_ramp_duration_seconds(start_value: int, end_value: int, step_value: int, ramp_interval_seconds: float) -> float:
+    step_count = len(list(_ramp_steps(int(start_value), int(end_value), int(step_value))))
+    return float(step_count) * float(ramp_interval_seconds)
+
+
+def _planned_ramp_duration_rate_scenario_seconds(
+    start_value: int,
+    end_value: int,
+    step_value: int,
+    ramp_interval_seconds: float,
+) -> float:
+    # Rate scenarios run each ramp level as a paced constant-load window.
+    step_count = len(list(_ramp_steps(int(start_value), int(end_value), int(step_value))))
+    return float(step_count) * float(ramp_interval_seconds)
+
+
+def _planned_duration_seconds_for_scenario(config: RunnerConfig, scenario_id: str) -> float | None:
+    if scenario_id == "S01":
+        return 120.0
+    if scenario_id in {"P01", "P02"}:
+        return 120.0
+
+    params_map = {
+        "P02": PARAMS_P02,
+        "P03": PARAMS_P03,
+        "P04": PARAMS_P04,
+        "P05": PARAMS_P05,
+        "P06": PARAMS_P06,
+        "P07": PARAMS_P07,
+        "P08": PARAMS_P08,
+        "P09": PARAMS_P09,
+        "P10": PARAMS_P10,
+    }
+    params = params_map.get(scenario_id)
+    if params is None:
+        return None
+
+    profile_params = params[config.size_profile]
+    hold_seconds = _planned_hold_seconds(config, float(profile_params["hold_seconds"]))
+
+    if scenario_id in {"P01", "P02", "P03"}:
+        ramp_seconds = _planned_ramp_duration_rate_scenario_seconds(
+            int(profile_params["start_msg_s"]),
+            int(profile_params["end_msg_s"]),
+            int(profile_params["step"]),
+            float(profile_params["ramp_interval_s"]),
+        )
+    elif scenario_id == "P04":
+        ramp_seconds = _planned_ramp_duration_seconds(
+            int(profile_params["start_subscribers"]),
+            int(profile_params["end_subscribers"]),
+            int(profile_params["step"]),
+            float(profile_params["ramp_interval_s"]),
+        )
+    elif scenario_id == "P05":
+        ramp_seconds = _planned_ramp_duration_seconds(
+            int(profile_params["start_publishers"]),
+            int(profile_params["end_publishers"]),
+            int(profile_params["step"]),
+            float(profile_params["ramp_interval_s"]),
+        )
+    elif scenario_id == "P06":
+        ramp_seconds = _planned_ramp_duration_seconds(
+            int(profile_params["start_payload_bytes"]),
+            int(profile_params["end_payload_bytes"]),
+            int(profile_params["step_bytes"]),
+            float(profile_params["ramp_interval_s"]),
+        )
+    elif scenario_id == "P07":
+        ramp_seconds = _planned_ramp_duration_seconds(
+            int(profile_params["start_topics"]),
+            int(profile_params["end_topics"]),
+            int(profile_params["step"]),
+            float(profile_params["ramp_interval_s"]),
+        )
+    elif scenario_id == "P08":
+        ramp_seconds = _planned_ramp_duration_seconds(
+            int(profile_params["start_queued"]),
+            int(profile_params["end_queued"]),
+            int(profile_params["step"]),
+            float(profile_params["ramp_interval_s"]),
+        )
+    elif scenario_id == "P09":
+        ramp_seconds = _planned_ramp_duration_seconds(
+            int(profile_params["start_clients"]),
+            int(profile_params["end_clients"]),
+            int(profile_params["step"]),
+            float(profile_params["ramp_interval_s"]),
+        )
+    elif scenario_id == "P10":
+        ramp_seconds = _planned_ramp_duration_seconds(
+            int(profile_params["start_clients"]),
+            int(profile_params["end_clients"]),
+            int(profile_params["step"]),
+            float(profile_params["ramp_interval_s"]),
+        )
+    else:
+        return None
+
+    return ramp_seconds + hold_seconds
+
+
+def _planned_total_duration_seconds(selected: list[ScenarioDef], config: RunnerConfig, repeat: int) -> float | None:
+    total = 0.0
+    for definition in selected:
+        planned = _planned_duration_seconds_for_scenario(config, definition.spec.scenario_id)
+        if planned is None:
+            return None
+        total += planned * float(repeat)
+    return total
 
 
 def _now_utc_iso() -> str:
@@ -425,25 +605,152 @@ def _run_connection_wave(
     return counters, active_sockets, wave_duration, submit_duration
 
 
-def _scenario_connection_attempts(config: RunnerConfig, total_attempts: int) -> ScenarioOutcome:
-    counters = {
-        "success": 0,
-        "rejected": 0,
-        "network_close": 0,
-        "local_resource": 0,
-        "other": 0,
-    }
-    for index in range(total_attempts):
-        category, _detail = _tcp_connect_trial(config, f"perf-{index}-{_unique_suffix()}")
-        counters[category] += 1
+def _effective_hold_seconds(config: RunnerConfig, base_hold_seconds: float) -> float:
+    return max(0.0, float(base_hold_seconds) + max(0.0, config.duration_seconds - 120.0))
 
-    success = counters["success"] == total_attempts
-    summary = (
-        f"connects success={counters['success']}/{total_attempts} "
-        f"reject={counters['rejected']} net_close={counters['network_close']} "
-        f"local_res={counters['local_resource']} other={counters['other']}"
-    )
-    return ScenarioOutcome(success=success, summary=summary, counters=counters, work_units=float(total_attempts))
+
+def _ramp_steps(start_value: int, end_value: int, step_value: int):
+    if step_value <= 0:
+        raise ValueError("step must be > 0")
+    current = int(start_value)
+    final = int(end_value)
+    while current < final:
+        yield current
+        current += int(step_value)
+    yield final
+
+
+def _drain_until(subscriber: MqttClient, expected_count: int, timeout_seconds: float) -> int:
+    if expected_count <= 0:
+        return 0
+    received = 0
+    deadline = time.monotonic() + max(0.1, timeout_seconds)
+    while received < expected_count and time.monotonic() < deadline:
+        remaining = expected_count - received
+        drained = subscriber.drain_available_messages(limit=remaining)
+        if drained:
+            received += len(drained)
+            continue
+        time.sleep(0.005)
+    return received
+
+
+def _abrupt_disconnect(client: MqttClient) -> None:
+    internal = getattr(client, "_client", None)
+    if internal is None:
+        return
+    try:
+        socket_object = internal.socket()
+        if socket_object is not None:
+            socket_object.close()
+    except BaseException:
+        pass
+    try:
+        internal.loop_stop()
+    except BaseException:
+        pass
+
+
+def _scenario_step_logger(scenario_id: str):
+    step_index = 1
+
+    def _step(message: str) -> None:
+        nonlocal step_index
+        print(f"  [{scenario_id} STEP {step_index:02d}] {message}")
+        step_index += 1
+
+    return _step
+
+
+def _progress_checkpoints(total_items: int) -> set[int]:
+    if total_items <= 0:
+        return set()
+    return {
+        1,
+        max(1, math.ceil(total_items * 0.25)),
+        max(1, math.ceil(total_items * 0.50)),
+        max(1, math.ceil(total_items * 0.75)),
+        total_items,
+    }
+
+
+def _safe_rate(work_units: float, elapsed_seconds: float) -> float:
+    return float(work_units) / max(1e-6, float(elapsed_seconds))
+
+
+def _drain_matching_messages(
+    subscriber: MqttClient,
+    expected_prefix: str,
+    valid_ids: set[int],
+    drain_seconds: float,
+) -> int:
+    delivered = 0
+    deadline = time.monotonic() + max(0.01, float(drain_seconds))
+    while time.monotonic() < deadline and valid_ids:
+        drained = subscriber.drain_available_messages(limit=2048)
+        if not drained:
+            time.sleep(0.002)
+            continue
+        for message in drained:
+            try:
+                text = bytes(message.payload).decode("utf-8", errors="ignore")
+            except BaseException:
+                continue
+            if not text.startswith(expected_prefix):
+                continue
+            parts = text.split(":", 1)
+            if len(parts) != 2:
+                continue
+            try:
+                seq = int(parts[1])
+            except ValueError:
+                continue
+            if seq in valid_ids:
+                valid_ids.remove(seq)
+                delivered += 1
+    return delivered
+
+
+def _run_paced_window_qos0(
+    publisher: MqttClient,
+    subscriber: MqttClient,
+    topic: str,
+    *,
+    target_msgs_per_second: int,
+    window_seconds: float,
+    sequence_prefix: str,
+    next_sequence: int,
+) -> tuple[int, int, int, float, float]:
+    target_rate = max(1, int(target_msgs_per_second))
+    duration = max(0.1, float(window_seconds))
+    send_target = max(1, int(round(target_rate * duration)))
+
+    sent_ids: set[int] = set()
+    send_started = time.monotonic()
+    send_deadline = send_started + duration
+    sent = 0
+
+    for index in range(send_target):
+        scheduled = send_started + (float(index) / float(target_rate))
+        now = time.monotonic()
+        if scheduled > now:
+            time.sleep(scheduled - now)
+        payload = f"{sequence_prefix}:{next_sequence}".encode("utf-8")
+        publisher.publish(topic, payload, qos=0)
+        sent_ids.add(next_sequence)
+        next_sequence += 1
+        sent += 1
+
+    send_elapsed = max(1e-6, time.monotonic() - send_started)
+    remaining_window = max(0.0, send_deadline - time.monotonic())
+    if remaining_window > 0.0:
+        time.sleep(remaining_window)
+
+    drain_budget = max(0.2, duration * 0.35)
+    drain_started = time.monotonic()
+    delivered = _drain_matching_messages(subscriber, sequence_prefix, sent_ids, drain_budget)
+    drain_elapsed = max(1e-6, time.monotonic() - drain_started)
+    return sent, delivered, next_sequence, send_elapsed, drain_elapsed
 
 
 def _scenario_s01(config: RunnerConfig) -> ScenarioOutcome:
@@ -635,10 +942,6 @@ def _scenario_s01(config: RunnerConfig) -> ScenarioOutcome:
     return ScenarioOutcome(success=success, summary=summary, counters=counters, work_units=float(total_success))
 
 
-def _scenario_s02(config: RunnerConfig) -> ScenarioOutcome:
-    return _scenario_connection_attempts(config, total_attempts=100)
-
-
 def _connect_client(config: RunnerConfig, prefix: str, timeout: float | None = None, clean_start: bool = True, client_id: str = "", properties=None):
     client = MqttClient(timeout_seconds=timeout or config.timeout_seconds)
     result = client.connect(
@@ -653,275 +956,1059 @@ def _connect_client(config: RunnerConfig, prefix: str, timeout: float | None = N
     return client
 
 
-def _scenario_qos_throughput(config: RunnerConfig, qos: int, count: int, target_seconds: float | None) -> ScenarioOutcome:
-    topic = f"perf/{'qos1' if qos == 1 else 'qos0'}/{_unique_suffix()}"
-    timeout = max(config.timeout_seconds, 15.0)
-    with _connect_client(config, "sub", timeout=timeout) as subscriber:
-        suback = subscriber.subscribe(topic, qos=qos)
-        if not suback:
-            raise RuntimeError("missing SUBACK")
-        with _connect_client(config, "pub", timeout=timeout) as publisher:
-            start = time.monotonic()
-            for index in range(count):
-                reason = int(publisher.publish(topic, f"m-{index}".encode("utf-8"), qos=qos))
-                if reason not in (0x00, 0x10):
-                    raise RuntimeError(f"publish failed reason={reason}")
-            received = subscriber.collect_messages(count=count, timeout=max(20.0, config.timeout_seconds * 3.0))
-            elapsed = time.monotonic() - start
+def _scenario_p01(config: RunnerConfig) -> ScenarioOutcome:
+    profile_rate_ranges: dict[str, tuple[float, float]] = {
+        "small": (100.0, 20000.0),
+        "middle": (1000.0, 200000.0),
+        "large": (10000.0, 1000000.0),
+    }
+    ramp_start_rate, ramp_end_rate = profile_rate_ranges[config.size_profile]
+    ramp_duration_seconds = 90.0
+    hold_duration_seconds = 30.0
+    duration_seconds = ramp_duration_seconds + hold_duration_seconds
+    rate_step_seconds = 10.0
+    ramp_step_count = int(ramp_duration_seconds / rate_step_seconds)
+    rate_step_per_level = (ramp_end_rate - ramp_start_rate) / float(ramp_step_count)
+    overload_deficit_threshold = 0.30
+    report_interval_seconds = 10.0
+    topic = f"perf/p01/{_unique_suffix()}"
+    step = _scenario_step_logger("P01")
 
-    delivered = len(received)
-    counters = {"sent": count, "delivered": delivered, "lost": max(0, count - delivered)}
-    success = delivered == count
-    if target_seconds is not None:
-        success = success and elapsed < target_seconds
+    def _mmss(seconds_value: float) -> str:
+        total_seconds = max(0, int(round(seconds_value)))
+        minutes = total_seconds // 60
+        seconds = total_seconds % 60
+        return f"{minutes}:{seconds:02d}"
 
-    limit_text = "none"
-    if target_seconds is not None:
-        limit_text = f"target_s={target_seconds:.1f}"
-    summary = f"sent={count} delivered={delivered} elapsed_s={elapsed:.3f} {limit_text}"
-    return ScenarioOutcome(success=success, summary=summary, counters=counters, work_units=float(count))
+    step(
+        f"duration={duration_seconds:.0f}s ramp={ramp_start_rate:.0f}->{ramp_end_rate:.0f}/s "
+        f"ramp_step={rate_step_seconds:.0f}s hold={hold_duration_seconds:.0f}s report={report_interval_seconds:.0f}s"
+    )
 
+    sent_total = 0
+    received_total = 0
+    ramp_stopped = False
+    ramp_stopped_at_rate = 0.0
 
-def _scenario_s03(config: RunnerConfig) -> ScenarioOutcome:
-    target_seconds = 5.0 if _is_local_host(config.host) else 15.0
-    return _scenario_qos_throughput(config, qos=0, count=1000, target_seconds=target_seconds)
+    with _connect_client(config, "p01-sub", timeout=max(config.timeout_seconds, 20.0)) as subscriber:
+        subscriber.subscribe(topic, qos=0)
+        with _connect_client(config, "p01-pub", timeout=max(config.timeout_seconds, 20.0)) as publisher:
+            started = time.monotonic()
+            ended = started + duration_seconds
+            block_start = started
+            block_end = min(ended, block_start + report_interval_seconds)
+            block_sent = 0
+            block_received = 0
+            current_rate = ramp_start_rate
+            current_interval = 1.0 / current_rate
+            sequence = 1
 
+            while time.monotonic() < ended:
+                now = time.monotonic()
+                block_elapsed = max(0.0, min(now, block_end) - block_start)
+                required_sent_until_now = int(math.floor((block_elapsed / current_interval) + 1e-9))
+                messages_to_send_now = max(0, required_sent_until_now - block_sent)
 
-def _scenario_s04(config: RunnerConfig) -> ScenarioOutcome:
-    return _scenario_qos_throughput(config, qos=1, count=1000, target_seconds=None)
+                for _ in range(messages_to_send_now):
+                    publisher.publish(
+                        topic,
+                        f"p01:{sequence}".encode("utf-8"),
+                        qos=0,
+                        wait_for_qos0_publish=False,
+                    )
+                    sent_total += 1
+                    block_sent += 1
+                    sequence += 1
 
+                drained = subscriber.drain_available_messages(limit=4096)
+                if drained:
+                    received_count = len(drained)
+                    received_total += received_count
+                    block_received += received_count
 
-def _scenario_s05(config: RunnerConfig) -> ScenarioOutcome:
-    publishers = 5
-    subscribers_count = 5
-    per_publisher = 50
-    expected_publications = publishers * per_publisher
-    expected_deliveries = expected_publications * subscribers_count
-    topic = f"perf/fanout/{_unique_suffix()}"
+                now = time.monotonic()
+                while now >= block_end and block_start < ended:
+                    interval_elapsed = max(1e-6, block_end - block_start)
+                    send_rate = _safe_rate(float(block_sent), interval_elapsed)
+                    receive_rate = _safe_rate(float(block_received), interval_elapsed)
+                    stamp = _mmss(block_end - started)
+                    step(
+                        f"{stamp:>5} send: {block_sent:>5d} {send_rate:>6.1f}/s "
+                        f"recv: {block_received:>5d} {receive_rate:>6.1f}/s"
+                    )
 
-    timeout = max(config.timeout_seconds, 20.0)
-    clients = []
-    try:
-        subscribers = [_connect_client(config, f"sub{i}", timeout=timeout) for i in range(subscribers_count)]
-        clients.extend(subscribers)
-        publishers_clients = [_connect_client(config, f"pub{i}", timeout=timeout) for i in range(publishers)]
-        clients.extend(publishers_clients)
+                    if (not ramp_stopped) and block_end <= (started + ramp_duration_seconds):
+                        deficit_ratio = (
+                            (float(block_sent - block_received) / float(block_sent))
+                            if block_sent > 0
+                            else 0.0
+                        )
+                        if deficit_ratio >= overload_deficit_threshold:
+                            ramp_stopped = True
+                            ramp_stopped_at_rate = current_rate
+                        elif current_rate < ramp_end_rate:
+                            current_rate = min(ramp_end_rate, current_rate + rate_step_per_level)
+                            current_interval = 1.0 / current_rate
 
-        for subscriber in subscribers:
-            suback = subscriber.subscribe(topic, qos=1)
-            if not suback:
-                raise RuntimeError("missing SUBACK in fanout")
+                    block_sent = 0
+                    block_received = 0
+                    block_start = block_end
+                    block_end = min(ended, block_start + report_interval_seconds)
+                    now = time.monotonic()
 
-        for publisher_index, publisher in enumerate(publishers_clients):
-            for message_index in range(per_publisher):
-                payload = f"p{publisher_index}-m{message_index}".encode("utf-8")
-                publisher.publish(topic, payload, qos=1)
+                time.sleep(0.001)
 
-        delivery_total = 0
-        for subscriber in subscribers:
-            got = subscriber.collect_messages(count=expected_publications, timeout=max(25.0, timeout * 2.0))
-            delivery_total += len(got)
-    finally:
-        for client in clients:
-            try:
-                client.disconnect()
-            except BaseException:
-                pass
+            flush_deadline = time.monotonic() + 1.0
+            while time.monotonic() < flush_deadline:
+                drained = subscriber.drain_available_messages(limit=4096)
+                if not drained:
+                    time.sleep(0.005)
+                    continue
+                received_total += len(drained)
+
+            elapsed = max(1e-6, time.monotonic() - started)
+
+    planned_sent = int(
+        sum(
+            (
+                ramp_start_rate + (rate_step_per_level * float(level_index))
+            )
+            * rate_step_seconds
+            for level_index in range(ramp_step_count)
+        )
+        + (ramp_end_rate * hold_duration_seconds)
+    )
+    send_rate_total = _safe_rate(float(sent_total), elapsed)
+    recv_rate_total = _safe_rate(float(received_total), elapsed)
+    delivery_ratio_total = (float(received_total) / float(sent_total)) if sent_total > 0 else 0.0
 
     counters = {
-        "publications": expected_publications,
-        "expected_deliveries": expected_deliveries,
-        "actual_deliveries": delivery_total,
+        "planned_sent": planned_sent,
+        "sent": sent_total,
+        "received": received_total,
+        "missing": max(0, sent_total - received_total),
+        "ramp_stopped": int(ramp_stopped),
+        "ramp_stopped_at_rate": ramp_stopped_at_rate,
     }
-    success = delivery_total == expected_deliveries
-    summary = f"publications={expected_publications} deliveries={delivery_total}/{expected_deliveries}"
-    return ScenarioOutcome(success=success, summary=summary, counters=counters, work_units=float(expected_deliveries))
+    summary = (
+        f"duration={elapsed:.3f}s planned_sent={planned_sent} sent={sent_total} received={received_total} "
+        f"send_rate={send_rate_total:.2f}/s recv_rate={recv_rate_total:.2f}/s delivery_ratio={delivery_ratio_total:.4f} "
+        f"ramp_stopped={ramp_stopped}"
+    )
+    final_stamp = _mmss(elapsed)
+    step(
+        f"{final_stamp:>5} send: {sent_total:>5d} {send_rate_total:>6.1f}/s "
+        f"recv: {received_total:>5d} {recv_rate_total:>6.1f}/s"
+    )
+    return ScenarioOutcome(
+        success=sent_total > 0,
+        summary=summary,
+        counters=counters,
+        work_units=float(received_total),
+        throughput_per_second=recv_rate_total,
+        throughput_basis_seconds=elapsed,
+    )
 
 
-def _scenario_s06(config: RunnerConfig) -> ScenarioOutcome:
-    filter_count = 300
-    prefix = f"perf/sub-single/{_unique_suffix()}"
-    with _connect_client(config, "sub", timeout=max(config.timeout_seconds, 20.0)) as subscriber:
-        for index in range(filter_count):
-            subscriber.subscribe(f"{prefix}/{index}", qos=0)
+def _scenario_p02(config: RunnerConfig) -> ScenarioOutcome:
+    profile_rate_ranges: dict[str, tuple[float, float]] = {
+        "small": (10.0, 2000.0),
+        "middle": (100.0, 20000.0),
+        "large": (1000.0, 100000.0),
+    }
+    ramp_start_rate, ramp_end_rate = profile_rate_ranges[config.size_profile]
+    ramp_duration_seconds = 90.0
+    hold_duration_seconds = 30.0
+    duration_seconds = ramp_duration_seconds + hold_duration_seconds
+    rate_step_seconds = 10.0
+    ramp_step_count = int(ramp_duration_seconds / rate_step_seconds)
+    rate_step_per_level = (ramp_end_rate - ramp_start_rate) / float(ramp_step_count)
+    overload_deficit_threshold = 0.30
+    report_interval_seconds = 10.0
+    topic = f"perf/p02/{_unique_suffix()}"
+    step = _scenario_step_logger("P02")
 
-        with _connect_client(config, "pub", timeout=max(config.timeout_seconds, 20.0)) as publisher:
-            for index in range(filter_count):
-                publisher.publish(f"{prefix}/{index}", f"v-{index}".encode("utf-8"), qos=0)
+    def _mmss(seconds_value: float) -> str:
+        total_seconds = max(0, int(round(seconds_value)))
+        minutes = total_seconds // 60
+        seconds = total_seconds % 60
+        return f"{minutes}:{seconds:02d}"
 
-        messages = subscriber.collect_messages(count=filter_count, timeout=max(25.0, config.timeout_seconds * 3.0))
-        delivered_topics = {msg.topic for msg in messages}
+    step(
+        f"duration={duration_seconds:.0f}s ramp={ramp_start_rate:.0f}->{ramp_end_rate:.0f}/s "
+        f"ramp_step={rate_step_seconds:.0f}s hold={hold_duration_seconds:.0f}s report={report_interval_seconds:.0f}s"
+    )
 
-    success = len(delivered_topics) == filter_count
-    counters = {"filters": filter_count, "delivered_topics": len(delivered_topics)}
-    summary = f"filters={filter_count} delivered_topics={len(delivered_topics)}"
-    return ScenarioOutcome(success=success, summary=summary, counters=counters, work_units=float(filter_count))
+    sent_total = 0
+    ack_total = 0
+    received_total = 0
+    ramp_stopped = False
+    ramp_stopped_at_rate = 0.0
+    pending_publish_mids: set[int] = set()
+
+    with _connect_client(config, "p02-sub", timeout=max(config.timeout_seconds, 20.0)) as subscriber:
+        subscriber.subscribe(topic, qos=1)
+        with _connect_client(config, "p02-pub", timeout=max(config.timeout_seconds, 20.0)) as publisher:
+            started = time.monotonic()
+            ended = started + duration_seconds
+            block_start = started
+            block_end = min(ended, block_start + report_interval_seconds)
+            block_sent = 0
+            block_received = 0
+            current_rate = ramp_start_rate
+            current_interval = 1.0 / current_rate
+            sequence = 1
+
+            while time.monotonic() < ended:
+                now = time.monotonic()
+                block_elapsed = max(0.0, min(now, block_end) - block_start)
+                required_sent_until_now = int(math.floor((block_elapsed / current_interval) + 1e-9))
+                messages_to_send_now = max(0, required_sent_until_now - block_sent)
+
+                for _ in range(messages_to_send_now):
+                    publish_mid = int(
+                        publisher.publish(
+                            topic,
+                            f"p02:{sequence}".encode("utf-8"),
+                            qos=1,
+                            wait_for_qos1_publish=False,
+                        )
+                    )
+                    pending_publish_mids.add(publish_mid)
+                    sent_total += 1
+                    block_sent += 1
+                    sequence += 1
+
+                completed_mids = publisher.drain_published_mids(limit=65536)
+                if completed_mids:
+                    for mid_value, reason_value in completed_mids.items():
+                        pending_publish_mids.discard(mid_value)
+                        if reason_value in (0x00, 0x10):
+                            ack_total += 1
+
+                drained = subscriber.drain_available_messages(limit=4096)
+                if drained:
+                    received_count = len(drained)
+                    received_total += received_count
+                    block_received += received_count
+
+                now = time.monotonic()
+                while now >= block_end and block_start < ended:
+                    interval_elapsed = max(1e-6, block_end - block_start)
+                    send_rate = _safe_rate(float(block_sent), interval_elapsed)
+                    receive_rate = _safe_rate(float(block_received), interval_elapsed)
+                    stamp = _mmss(block_end - started)
+                    step(
+                        f"{stamp:>5} send: {block_sent:>5d} {send_rate:>6.1f}/s "
+                        f"recv: {block_received:>5d} {receive_rate:>6.1f}/s"
+                    )
+
+                    if (not ramp_stopped) and block_end <= (started + ramp_duration_seconds):
+                        deficit_ratio = (
+                            (float(block_sent - block_received) / float(block_sent))
+                            if block_sent > 0
+                            else 0.0
+                        )
+                        if deficit_ratio >= overload_deficit_threshold:
+                            ramp_stopped = True
+                            ramp_stopped_at_rate = current_rate
+                        elif current_rate < ramp_end_rate:
+                            current_rate = min(ramp_end_rate, current_rate + rate_step_per_level)
+                            current_interval = 1.0 / current_rate
+
+                    block_sent = 0
+                    block_received = 0
+                    block_start = block_end
+                    block_end = min(ended, block_start + report_interval_seconds)
+                    now = time.monotonic()
+
+                time.sleep(0.001)
+
+            flush_deadline = time.monotonic() + 1.0
+            while time.monotonic() < flush_deadline:
+                completed_mids = publisher.drain_published_mids(limit=65536)
+                if completed_mids:
+                    for mid_value, reason_value in completed_mids.items():
+                        pending_publish_mids.discard(mid_value)
+                        if reason_value in (0x00, 0x10):
+                            ack_total += 1
+
+                drained = subscriber.drain_available_messages(limit=4096)
+                if not drained:
+                    time.sleep(0.005)
+                    continue
+                received_total += len(drained)
+
+            elapsed = max(1e-6, time.monotonic() - started)
+
+    planned_sent = int(
+        sum(
+            (
+                ramp_start_rate + (rate_step_per_level * float(level_index))
+            )
+            * rate_step_seconds
+            for level_index in range(ramp_step_count)
+        )
+        + (ramp_end_rate * hold_duration_seconds)
+    )
+    send_rate_total = _safe_rate(float(sent_total), elapsed)
+    recv_rate_total = _safe_rate(float(received_total), elapsed)
+    ack_rate_total = _safe_rate(float(ack_total), elapsed)
+    delivery_ratio_total = (float(received_total) / float(sent_total)) if sent_total > 0 else 0.0
+    ack_ratio_total = (float(ack_total) / float(sent_total)) if sent_total > 0 else 0.0
+
+    success = delivery_ratio_total >= 0.99 and ack_ratio_total >= 0.99
+    counters = {
+        "planned_sent": planned_sent,
+        "sent": sent_total,
+        "acked": ack_total,
+        "received": received_total,
+        "missing": max(0, sent_total - received_total),
+        "unacked": max(0, sent_total - ack_total),
+        "pending_publish_mids": len(pending_publish_mids),
+        "ramp_stopped": int(ramp_stopped),
+        "ramp_stopped_at_rate": ramp_stopped_at_rate,
+    }
+    summary = (
+        f"duration={elapsed:.3f}s planned_sent={planned_sent} sent={sent_total} acked={ack_total} received={received_total} "
+        f"send_rate={send_rate_total:.2f}/s ack_rate={ack_rate_total:.2f}/s recv_rate={recv_rate_total:.2f}/s "
+        f"ack_ratio={ack_ratio_total:.4f} delivery_ratio={delivery_ratio_total:.4f} ramp_stopped={ramp_stopped}"
+    )
+    final_stamp = _mmss(elapsed)
+    step(
+        f"{final_stamp:>5} send: {sent_total:>5d} {send_rate_total:>6.1f}/s "
+        f"recv: {received_total:>5d} {recv_rate_total:>6.1f}/s"
+    )
+    return ScenarioOutcome(
+        success=success,
+        summary=summary,
+        counters=counters,
+        work_units=float(received_total),
+        throughput_per_second=recv_rate_total,
+        throughput_basis_seconds=elapsed,
+    )
 
 
-def _scenario_s07(config: RunnerConfig) -> ScenarioOutcome:
-    clients_count = 20
-    filters_per_client = 5
-    prefix = f"perf/sub-many/{_unique_suffix()}"
+def _scenario_p03(config: RunnerConfig) -> ScenarioOutcome:
+    parameters = PARAMS_P03[config.size_profile]
+    hold_seconds = _effective_hold_seconds(config, parameters["hold_seconds"])
+    topic = f"perf/p03/{_unique_suffix()}"
+    step = _scenario_step_logger("P03")
+    ramp_rates = list(_ramp_steps(parameters["start_msg_s"], parameters["end_msg_s"], parameters["step"]))
+    ramp_checkpoints = _progress_checkpoints(len(ramp_rates))
 
-    subscribers = []
+    step(
+        f"profile={config.size_profile} ramp={parameters['start_msg_s']}-{parameters['end_msg_s']} "
+        f"step={parameters['step']} hold={hold_seconds:.1f}s"
+    )
+    step(f"ramp plan levels={len(ramp_rates)} topic={topic}")
+
+    hold_sent = 0
+    hold_completed = 0
+    hold_delivered = 0
+    peak_pending = 0
+
+    with _connect_client(config, "p03-sub", timeout=max(config.timeout_seconds, 25.0)) as subscriber:
+        subscriber.subscribe(topic, qos=2)
+        with _connect_client(config, "p03-pub", timeout=max(config.timeout_seconds, 25.0)) as publisher:
+            for rate_index, rate in enumerate(ramp_rates, start=1):
+                sent_ramp = 0
+                completed_ramp = 0
+                level_started = time.monotonic()
+                for index in range(rate):
+                    sent_ramp += 1
+                    reason = int(publisher.publish(topic, f"p03-r-{rate}-{index}".encode("utf-8"), qos=2))
+                    if reason in (0x00, 0x10):
+                        completed_ramp += 1
+                peak_pending = max(peak_pending, sent_ramp - completed_ramp)
+                delivered = _drain_until(subscriber, rate, timeout_seconds=max(2.0, parameters["ramp_interval_s"]))
+                if rate_index in ramp_checkpoints:
+                    progress = int((rate_index / float(len(ramp_rates))) * 100.0)
+                    level_elapsed = max(1e-6, time.monotonic() - level_started)
+                    actual_rate = float(delivered) / level_elapsed
+                    step(
+                        f"ramp {progress}% target_msgs_per_step={rate} completed={completed_ramp}/{sent_ramp} "
+                        f"delivered={delivered}/{rate} step_elapsed={level_elapsed:.3f}s "
+                        f"actual_msgs_per_s={actual_rate:.2f}"
+                    )
+                time.sleep(parameters["ramp_interval_s"])
+
+            hold_rounds = max(1, int(math.ceil(hold_seconds)))
+            hold_rate = int(parameters["end_msg_s"])
+            hold_checkpoints = _progress_checkpoints(hold_rounds)
+            step(f"hold start rounds={hold_rounds} target_msgs_per_round={hold_rate}")
+            hold_started = time.monotonic()
+            for round_index in range(hold_rounds):
+                sent_round = 0
+                completed_round = 0
+                for item_index in range(hold_rate):
+                    hold_sent += 1
+                    sent_round += 1
+                    reason = int(publisher.publish(topic, f"p03-h-{round_index}-{item_index}".encode("utf-8"), qos=2))
+                    if reason in (0x00, 0x10):
+                        hold_completed += 1
+                        completed_round += 1
+                peak_pending = max(peak_pending, sent_round - completed_round)
+                delivered = _drain_until(subscriber, hold_rate, timeout_seconds=max(2.0, hold_seconds / hold_rounds))
+                hold_delivered += delivered
+                if (round_index + 1) in hold_checkpoints:
+                    ratio_complete = (hold_completed / hold_sent) if hold_sent > 0 else 0.0
+                    ratio_delivered = (hold_delivered / hold_sent) if hold_sent > 0 else 0.0
+                    hold_elapsed_now = max(1e-6, time.monotonic() - hold_started)
+                    actual_rate_now = float(hold_delivered) / hold_elapsed_now
+                    step(
+                        f"hold {(round_index + 1)}/{hold_rounds} completed={hold_completed}/{hold_sent} "
+                        f"delivered={hold_delivered}/{hold_sent} pending_peak={peak_pending}"
+                    )
+                    step(
+                        f"hold ratios complete={ratio_complete:.4f} delivery={ratio_delivered:.4f} "
+                        f"hold_elapsed={hold_elapsed_now:.3f}s actual_msgs_per_s={actual_rate_now:.2f}"
+                    )
+            hold_elapsed = max(1e-6, time.monotonic() - hold_started)
+
+    ratio_complete = (hold_completed / hold_sent) if hold_sent > 0 else 0.0
+    ratio_delivered = (hold_delivered / hold_sent) if hold_sent > 0 else 0.0
+    success = ratio_complete >= 0.99 and ratio_delivered >= 0.99
+    counters = {
+        "hold_sent": hold_sent,
+        "hold_completed": hold_completed,
+        "hold_delivered": hold_delivered,
+        "peak_pending": peak_pending,
+    }
+    summary = (
+        f"hold_sent={hold_sent} complete_ratio={ratio_complete:.4f} "
+        f"deliver_ratio={ratio_delivered:.4f} peak_pending={peak_pending}"
+    )
+    step(f"final success={success} complete_ratio={ratio_complete:.4f} delivery_ratio={ratio_delivered:.4f}")
+    return ScenarioOutcome(
+        success=success,
+        summary=summary,
+        counters=counters,
+        work_units=float(hold_delivered),
+        throughput_per_second=_safe_rate(float(hold_delivered), hold_elapsed),
+        throughput_basis_seconds=hold_elapsed,
+    )
+
+
+def _scenario_p04(config: RunnerConfig) -> ScenarioOutcome:
+    parameters = PARAMS_P04[config.size_profile]
+    hold_seconds = _effective_hold_seconds(config, parameters["hold_seconds"])
+    topic = f"perf/p04/{_unique_suffix()}"
+    step = _scenario_step_logger("P04")
+    ramp_targets = list(
+        _ramp_steps(
+            int(parameters["start_subscribers"]),
+            int(parameters["end_subscribers"]),
+            int(parameters["step"]),
+        )
+    )
+    ramp_checkpoints = _progress_checkpoints(len(ramp_targets))
+
+    step(
+        f"profile={config.size_profile} subscribers={parameters['start_subscribers']}-{parameters['end_subscribers']} "
+        f"step={parameters['step']} hold={hold_seconds:.1f}s"
+    )
+    step(f"ramp plan levels={len(ramp_targets)} msg_per_step={parameters['msg_per_step']}")
+
+    subscribers: list[MqttClient] = []
+    hold_expected = 0
+    hold_delivered = 0
     try:
-        subscribers = [_connect_client(config, f"sub{idx}", timeout=max(config.timeout_seconds, 20.0)) for idx in range(clients_count)]
-        with _connect_client(config, "pub", timeout=max(config.timeout_seconds, 20.0)) as publisher:
-            topic_map: list[list[str]] = []
-            for client_index, subscriber in enumerate(subscribers):
-                topics: list[str] = []
-                for filter_index in range(filters_per_client):
-                    topic = f"{prefix}/c{client_index}/f{filter_index}"
-                    topics.append(topic)
-                    subscriber.subscribe(topic, qos=0)
-                topic_map.append(topics)
+        with _connect_client(config, "p04-pub", timeout=max(config.timeout_seconds, 20.0)) as publisher:
+            subscriber_target = int(parameters["start_subscribers"])
+            while len(subscribers) < subscriber_target:
+                subscriber = _connect_client(config, f"p04-sub{len(subscribers)}", timeout=max(config.timeout_seconds, 20.0))
+                subscriber.subscribe(topic, qos=int(parameters["qos"]))
+                subscribers.append(subscriber)
 
-            for topics in topic_map:
-                for topic in topics:
-                    publisher.publish(topic, b"x", qos=0)
+            for level_index, subscriber_target in enumerate(ramp_targets, start=1):
+                while len(subscribers) < subscriber_target:
+                    subscriber = _connect_client(config, f"p04-sub{len(subscribers)}", timeout=max(config.timeout_seconds, 20.0))
+                    subscriber.subscribe(topic, qos=int(parameters["qos"]))
+                    subscribers.append(subscriber)
 
-            mismatches = 0
-            for client_index, subscriber in enumerate(subscribers):
-                got = subscriber.collect_messages(count=filters_per_client, timeout=max(20.0, config.timeout_seconds * 3.0))
-                got_topics = {message.topic for message in got}
-                if got_topics != set(topic_map[client_index]):
-                    mismatches += 1
+                for message_index in range(int(parameters["msg_per_step"])):
+                    publisher.publish(topic, f"p04-r-{subscriber_target}-{message_index}".encode("utf-8"), qos=int(parameters["qos"]))
+                for subscriber in subscribers:
+                    _drain_until(subscriber, int(parameters["msg_per_step"]), timeout_seconds=max(2.0, parameters["ramp_interval_s"]))
+                if level_index in ramp_checkpoints:
+                    progress = int((level_index / float(len(ramp_targets))) * 100.0)
+                    step(f"ramp {progress}% subscribers={len(subscribers)}")
+                time.sleep(parameters["ramp_interval_s"])
+
+            hold_rounds = max(1, int(math.ceil(hold_seconds)))
+            hold_messages = int(parameters["msg_per_step"])
+            hold_checkpoints = _progress_checkpoints(hold_rounds)
+            step(f"hold start rounds={hold_rounds} subscribers={len(subscribers)}")
+            hold_started = time.monotonic()
+            for round_index in range(hold_rounds):
+                for message_index in range(hold_messages):
+                    publisher.publish(topic, f"p04-h-{round_index}-{message_index}".encode("utf-8"), qos=int(parameters["qos"]))
+                hold_expected += hold_messages * len(subscribers)
+                for subscriber in subscribers:
+                    hold_delivered += _drain_until(subscriber, hold_messages, timeout_seconds=max(2.0, hold_seconds / hold_rounds))
+                if (round_index + 1) in hold_checkpoints:
+                    ratio = (hold_delivered / hold_expected) if hold_expected > 0 else 0.0
+                    step(f"hold {(round_index + 1)}/{hold_rounds} delivered={hold_delivered}/{hold_expected} ratio={ratio:.4f}")
+            hold_elapsed = max(1e-6, time.monotonic() - hold_started)
     finally:
-        for client in subscribers:
+        for subscriber in subscribers:
             try:
-                client.disconnect()
+                subscriber.disconnect()
             except BaseException:
                 pass
 
-    expected_subs = clients_count * filters_per_client
-    success = mismatches == 0
-    counters = {"subscriptions": expected_subs, "mismatched_clients": mismatches}
-    summary = f"subscriptions={expected_subs} mismatched_clients={mismatches}"
-    return ScenarioOutcome(success=success, summary=summary, counters=counters, work_units=float(expected_subs))
+    ratio = (hold_delivered / hold_expected) if hold_expected > 0 else 0.0
+    success = ratio >= 0.99
+    counters = {
+        "hold_expected": hold_expected,
+        "hold_delivered": hold_delivered,
+        "subscribers_peak": len(subscribers),
+    }
+    summary = f"hold_expected={hold_expected} hold_delivered={hold_delivered} ratio={ratio:.4f}"
+    step(f"final success={success} ratio={ratio:.4f} peak_subscribers={len(subscribers)}")
+    return ScenarioOutcome(
+        success=success,
+        summary=summary,
+        counters=counters,
+        work_units=float(hold_delivered),
+        throughput_per_second=_safe_rate(float(hold_delivered), hold_elapsed),
+        throughput_basis_seconds=hold_elapsed,
+    )
 
 
-def _scenario_s08(config: RunnerConfig) -> ScenarioOutcome:
-    phases = [20, 40, 60, 80]
-    total_ops = 0
-    for attempts in phases:
-        outcome = _scenario_connection_attempts(config, attempts)
-        total_ops += attempts
-        if not outcome.success:
-            return ScenarioOutcome(
-                success=False,
-                summary=f"phase_attempts={attempts} failed: {outcome.summary}",
-                counters={"failed_phase": attempts, **outcome.counters},
-                work_units=float(total_ops),
-            )
-    return ScenarioOutcome(success=True, summary=f"phases_ok attempts_total={total_ops}", counters={"attempts": total_ops}, work_units=float(total_ops))
+def _scenario_p05(config: RunnerConfig) -> ScenarioOutcome:
+    parameters = PARAMS_P05[config.size_profile]
+    hold_seconds = _effective_hold_seconds(config, parameters["hold_seconds"])
+    topic = f"perf/p05/{_unique_suffix()}"
+    step = _scenario_step_logger("P05")
+    ramp_targets = list(
+        _ramp_steps(
+            int(parameters["start_publishers"]),
+            int(parameters["end_publishers"]),
+            int(parameters["step"]),
+        )
+    )
+    ramp_checkpoints = _progress_checkpoints(len(ramp_targets))
+
+    step(
+        f"profile={config.size_profile} publishers={parameters['start_publishers']}-{parameters['end_publishers']} "
+        f"step={parameters['step']} hold={hold_seconds:.1f}s"
+    )
+    step(f"ramp plan levels={len(ramp_targets)} msg_per_pub={parameters['msg_per_publisher_per_step']}")
+
+    publishers: list[MqttClient] = []
+    hold_sent = 0
+    hold_delivered = 0
+    try:
+        with _connect_client(config, "p05-sub", timeout=max(config.timeout_seconds, 20.0)) as subscriber:
+            subscriber.subscribe(topic, qos=int(parameters["qos"]))
+
+            while len(publishers) < int(parameters["start_publishers"]):
+                publishers.append(_connect_client(config, f"p05-pub{len(publishers)}", timeout=max(config.timeout_seconds, 20.0)))
+
+            for level_index, publisher_target in enumerate(ramp_targets, start=1):
+                while len(publishers) < publisher_target:
+                    publishers.append(_connect_client(config, f"p05-pub{len(publishers)}", timeout=max(config.timeout_seconds, 20.0)))
+
+                messages_per_publisher = int(parameters["msg_per_publisher_per_step"])
+                for publisher_index, publisher in enumerate(publishers):
+                    for message_index in range(messages_per_publisher):
+                        publisher.publish(topic, f"p05-r-{publisher_index}-{message_index}".encode("utf-8"), qos=int(parameters["qos"]))
+                expected_step = len(publishers) * messages_per_publisher
+                _drain_until(subscriber, expected_step, timeout_seconds=max(2.0, parameters["ramp_interval_s"]))
+                if level_index in ramp_checkpoints:
+                    progress = int((level_index / float(len(ramp_targets))) * 100.0)
+                    step(f"ramp {progress}% publishers={len(publishers)} expected_step={expected_step}")
+                time.sleep(parameters["ramp_interval_s"])
+
+            hold_rounds = max(1, int(math.ceil(hold_seconds)))
+            messages_per_publisher = int(parameters["msg_per_publisher_per_step"])
+            hold_checkpoints = _progress_checkpoints(hold_rounds)
+            step(f"hold start rounds={hold_rounds} publishers={len(publishers)}")
+            hold_started = time.monotonic()
+            for round_index in range(hold_rounds):
+                for publisher_index, publisher in enumerate(publishers):
+                    for message_index in range(messages_per_publisher):
+                        publisher.publish(topic, f"p05-h-{round_index}-{publisher_index}-{message_index}".encode("utf-8"), qos=int(parameters["qos"]))
+                expected_round = len(publishers) * messages_per_publisher
+                hold_sent += expected_round
+                hold_delivered += _drain_until(subscriber, expected_round, timeout_seconds=max(2.0, hold_seconds / hold_rounds))
+                if (round_index + 1) in hold_checkpoints:
+                    ratio = (hold_delivered / hold_sent) if hold_sent > 0 else 0.0
+                    step(f"hold {(round_index + 1)}/{hold_rounds} delivered={hold_delivered}/{hold_sent} ratio={ratio:.4f}")
+            hold_elapsed = max(1e-6, time.monotonic() - hold_started)
+    finally:
+        for publisher in publishers:
+            try:
+                publisher.disconnect()
+            except BaseException:
+                pass
+
+    ratio = (hold_delivered / hold_sent) if hold_sent > 0 else 0.0
+    success = ratio >= 0.99
+    counters = {
+        "hold_sent": hold_sent,
+        "hold_delivered": hold_delivered,
+        "publishers_peak": len(publishers),
+    }
+    summary = f"hold_sent={hold_sent} hold_delivered={hold_delivered} ratio={ratio:.4f}"
+    step(f"final success={success} ratio={ratio:.4f} peak_publishers={len(publishers)}")
+    return ScenarioOutcome(
+        success=success,
+        summary=summary,
+        counters=counters,
+        work_units=float(hold_delivered),
+        throughput_per_second=_safe_rate(float(hold_delivered), hold_elapsed),
+        throughput_basis_seconds=hold_elapsed,
+    )
 
 
-def _scenario_s09a(config: RunnerConfig) -> ScenarioOutcome:
-    count = 300
-    root = f"perf/retained/{_unique_suffix()}"
-    expected: dict[str, bytes] = {}
-    with _connect_client(config, "pub", timeout=max(config.timeout_seconds, 20.0)) as publisher:
-        for index in range(count):
-            topic = f"{root}/{index}"
-            payload = f"ret-{index}".encode("utf-8")
-            expected[topic] = payload
-            publisher.publish(topic, payload, qos=1, retain=True)
+def _scenario_p06(config: RunnerConfig) -> ScenarioOutcome:
+    parameters = PARAMS_P06[config.size_profile]
+    hold_seconds = _effective_hold_seconds(config, parameters["hold_seconds"])
+    topic = f"perf/p06/{_unique_suffix()}"
+    step = _scenario_step_logger("P06")
+    payload_levels = list(
+        _ramp_steps(
+            int(parameters["start_payload_bytes"]),
+            int(parameters["end_payload_bytes"]),
+            int(parameters["step_bytes"]),
+        )
+    )
+    ramp_checkpoints = _progress_checkpoints(len(payload_levels))
 
-    with _connect_client(config, "sub", timeout=max(config.timeout_seconds, 20.0)) as subscriber:
-        subscriber.subscribe(f"{root}/#", qos=0)
-        messages = subscriber.collect_messages(count=count, timeout=max(25.0, config.timeout_seconds * 3.0))
-        got = {message.topic: bytes(message.payload) for message in messages}
+    step(
+        f"profile={config.size_profile} payload={parameters['start_payload_bytes']}-{parameters['end_payload_bytes']} "
+        f"step={parameters['step_bytes']} hold={hold_seconds:.1f}s"
+    )
+    step(f"ramp plan levels={len(payload_levels)} burst={parameters['burst_count']}")
 
-    success = got == expected
-    missing = len(set(expected.keys()) - set(got.keys()))
-    mismatched = sum(1 for topic, payload in expected.items() if topic in got and got[topic] != payload)
-    counters = {"expected": count, "received": len(got), "missing": missing, "payload_mismatch": mismatched}
-    summary = f"retained expected={count} received={len(got)} missing={missing} mismatch={mismatched}"
-    return ScenarioOutcome(success=success, summary=summary, counters=counters, work_units=float(count))
+    qos = int(parameters["qos"])
+    with _connect_client(config, "p06-sub", timeout=max(config.timeout_seconds, 30.0)) as subscriber:
+        subscriber.subscribe(topic, qos=qos)
+        with _connect_client(config, "p06-pub", timeout=max(config.timeout_seconds, 30.0)) as publisher:
+            for level_index, payload_size in enumerate(payload_levels, start=1):
+                payload = (b"r" * payload_size)
+                publisher.publish(topic, payload, qos=qos)
+                _drain_until(subscriber, 1, timeout_seconds=max(2.0, parameters["ramp_interval_s"]))
+                if level_index in ramp_checkpoints:
+                    progress = int((level_index / float(len(payload_levels))) * 100.0)
+                    step(f"ramp {progress}% payload_bytes={payload_size}")
+                time.sleep(parameters["ramp_interval_s"])
+
+            burst_count = int(parameters["burst_count"])
+            peak_payload = b"h" * int(parameters["end_payload_bytes"])
+            step(f"hold burst start count={burst_count} payload_bytes={parameters['end_payload_bytes']}")
+            hold_start = time.monotonic()
+            for _index in range(burst_count):
+                publisher.publish(topic, peak_payload, qos=qos)
+            hold_delivered = _drain_until(subscriber, burst_count, timeout_seconds=max(hold_seconds, 2.0))
+            hold_elapsed = max(1e-6, time.monotonic() - hold_start)
+
+    delivered_bytes = hold_delivered * int(parameters["end_payload_bytes"])
+    throughput_bytes_s = delivered_bytes / hold_elapsed
+    success = hold_delivered == int(parameters["burst_count"])
+    counters = {
+        "hold_burst": int(parameters["burst_count"]),
+        "hold_delivered": hold_delivered,
+        "payload_bytes": int(parameters["end_payload_bytes"]),
+        "delivered_bytes": delivered_bytes,
+    }
+    summary = (
+        f"burst={parameters['burst_count']} delivered={hold_delivered} payload={parameters['end_payload_bytes']} "
+        f"bytes throughput={throughput_bytes_s:.2f}"
+    )
+    step(f"final success={success} delivered={hold_delivered}/{burst_count} throughput={throughput_bytes_s:.2f}B/s")
+    return ScenarioOutcome(
+        success=success,
+        summary=summary,
+        counters=counters,
+        work_units=float(delivered_bytes),
+        throughput_per_second=_safe_rate(float(delivered_bytes), hold_elapsed),
+        throughput_basis_seconds=hold_elapsed,
+    )
 
 
-def _scenario_s09b(config: RunnerConfig) -> ScenarioOutcome:
-    queued = 200
-    topic = f"perf/offline/{_unique_suffix()}"
-    client_id = f"offline-{_unique_suffix()}"
+def _scenario_p07(config: RunnerConfig) -> ScenarioOutcome:
+    parameters = PARAMS_P07[config.size_profile]
+    hold_seconds = _effective_hold_seconds(config, parameters["hold_seconds"])
+    root = f"perf/p07/{_unique_suffix()}"
+    qos = int(parameters["qos"])
+    step = _scenario_step_logger("P07")
+    ramp_topics = list(
+        _ramp_steps(
+            int(parameters["start_topics"]),
+            int(parameters["end_topics"]),
+            int(parameters["step"]),
+        )
+    )
+    ramp_checkpoints = _progress_checkpoints(len(ramp_topics))
+
+    step(
+        f"profile={config.size_profile} topics={parameters['start_topics']}-{parameters['end_topics']} "
+        f"step={parameters['step']} hold={hold_seconds:.1f}s"
+    )
+    step(f"ramp plan levels={len(ramp_topics)} root={root}")
+
+    created_topics: list[str] = []
+    replay_attempts = 0
+    replay_ok = 0
+    hold_replayed = 0
+    hold_expected = 0
+
+    try:
+        with _connect_client(config, "p07-pub", timeout=max(config.timeout_seconds, 25.0)) as publisher:
+            last_count = 0
+            for level_index, topic_count in enumerate(ramp_topics, start=1):
+                for index in range(last_count, topic_count):
+                    topic = f"{root}/{index}"
+                    created_topics.append(topic)
+                    publisher.publish(topic, f"ret-{index}".encode("utf-8"), qos=qos, retain=True)
+                last_count = topic_count
+
+                replay_attempts += 1
+                with _connect_client(config, "p07-ramp-sub", timeout=max(config.timeout_seconds, 25.0)) as ramp_subscriber:
+                    ramp_subscriber.subscribe(f"{root}/#", qos=qos)
+                    received = _drain_until(ramp_subscriber, topic_count, timeout_seconds=max(3.0, parameters["ramp_interval_s"] * 2.0))
+                    if topic_count > 0 and (received / topic_count) >= 0.99:
+                        replay_ok += 1
+                if level_index in ramp_checkpoints:
+                    progress = int((level_index / float(len(ramp_topics))) * 100.0)
+                    step(f"ramp {progress}% topics={topic_count} replay_attempts={replay_attempts}")
+                time.sleep(parameters["ramp_interval_s"])
+
+            hold_deadline = time.monotonic() + max(1.0, hold_seconds)
+            step(f"hold start target_topics={parameters['end_topics']}")
+            hold_started = time.monotonic()
+            while time.monotonic() < hold_deadline:
+                replay_attempts += 1
+                hold_expected += int(parameters["end_topics"])
+                with _connect_client(config, "p07-hold-sub", timeout=max(config.timeout_seconds, 25.0)) as hold_subscriber:
+                    hold_subscriber.subscribe(f"{root}/#", qos=qos)
+                    received = _drain_until(hold_subscriber, int(parameters["end_topics"]), timeout_seconds=max(1.5, hold_seconds / 2.0))
+                    hold_replayed += received
+                    if int(parameters["end_topics"]) > 0 and (received / int(parameters["end_topics"])) >= 0.99:
+                        replay_ok += 1
+                hold_ratio = (hold_replayed / hold_expected) if hold_expected > 0 else 0.0
+                step(
+                    f"hold attempt={replay_attempts} replay_ok={replay_ok} "
+                    f"replayed={hold_replayed}/{hold_expected} ratio={hold_ratio:.4f}"
+                )
+                if hold_seconds <= 1.0:
+                    break
+            hold_elapsed = max(1e-6, time.monotonic() - hold_started)
+    finally:
+        with _connect_client(config, "p07-clean", timeout=max(config.timeout_seconds, 25.0)) as cleanup_publisher:
+            for topic in created_topics:
+                cleanup_publisher.publish(topic, b"", qos=qos, retain=True)
+
+    hold_ratio = (hold_replayed / hold_expected) if hold_expected > 0 else 0.0
+    success = replay_attempts > 0 and replay_ok == replay_attempts and hold_ratio >= 0.99
+    counters = {
+        "replay_attempts": replay_attempts,
+        "replay_ok": replay_ok,
+        "hold_expected": hold_expected,
+        "hold_replayed": hold_replayed,
+    }
+    summary = f"attempts={replay_attempts} replay_ok={replay_ok} hold_ratio={hold_ratio:.4f}"
+    step(f"final success={success} attempts={replay_attempts} hold_ratio={hold_ratio:.4f}")
+    return ScenarioOutcome(
+        success=success,
+        summary=summary,
+        counters=counters,
+        work_units=float(hold_replayed),
+        throughput_per_second=_safe_rate(float(hold_replayed), hold_elapsed),
+        throughput_basis_seconds=hold_elapsed,
+    )
+
+
+def _scenario_p08(config: RunnerConfig) -> ScenarioOutcome:
+    parameters = PARAMS_P08[config.size_profile]
+    hold_seconds = _effective_hold_seconds(config, parameters["hold_seconds"])
+    topic = f"perf/p08/{_unique_suffix()}"
+    client_id = f"p08-sub-{_unique_suffix()}"
+    step = _scenario_step_logger("P08")
+    queue_levels = list(
+        _ramp_steps(
+            int(parameters["start_queued"]),
+            int(parameters["end_queued"]),
+            int(parameters["step"]),
+        )
+    )
+    ramp_checkpoints = _progress_checkpoints(len(queue_levels))
+
+    step(
+        f"profile={config.size_profile} queued={parameters['start_queued']}-{parameters['end_queued']} "
+        f"step={parameters['step']} hold={hold_seconds:.1f}s"
+    )
+    step(f"ramp plan levels={len(queue_levels)} drain_timeout={parameters['drain_timeout_s']}s")
 
     connect_props = Properties(PacketTypes.CONNECT)
-    setattr(connect_props, "SessionExpiryInterval", 300)
+    setattr(connect_props, "SessionExpiryInterval", int(parameters["session_expiry_s"]))
 
-    with _connect_client(config, "sub-init", clean_start=True, client_id=client_id, properties=connect_props) as sub_init:
-        sub_init.subscribe(topic, qos=1)
+    with _connect_client(config, "p08-init", clean_start=True, client_id=client_id, properties=connect_props) as initial_subscriber:
+        initial_subscriber.subscribe(topic, qos=1)
 
-    with _connect_client(config, "pub", timeout=max(config.timeout_seconds, 20.0)) as publisher:
-        for index in range(queued):
-            publisher.publish(topic, f"q-{index}".encode("utf-8"), qos=1)
+    missing_total = 0
+    hold_missing = 0
+    hold_expected = 0
+    hold_delivered = 0
 
-    reconnect_props = Properties(PacketTypes.CONNECT)
-    setattr(reconnect_props, "SessionExpiryInterval", 300)
+    with _connect_client(config, "p08-pub", timeout=max(config.timeout_seconds, 25.0)) as publisher:
+        for level_index, queued_count in enumerate(queue_levels, start=1):
+            for index in range(queued_count):
+                publisher.publish(topic, f"p08-r-{queued_count}-{index}".encode("utf-8"), qos=1)
 
-    with _connect_client(config, "sub-resume", clean_start=False, client_id=client_id, properties=reconnect_props) as resumed:
-        messages = resumed.collect_messages(count=queued, timeout=max(30.0, config.timeout_seconds * 4.0))
-        delivered = {bytes(message.payload) for message in messages}
-    expected = {f"q-{index}".encode("utf-8") for index in range(queued)}
+            with _connect_client(config, "p08-resume", clean_start=False, client_id=client_id, properties=connect_props) as resumed:
+                drained = _drain_until(resumed, queued_count, timeout_seconds=float(parameters["drain_timeout_s"]))
+            missing_total += max(0, queued_count - drained)
+            if level_index in ramp_checkpoints:
+                progress = int((level_index / float(len(queue_levels))) * 100.0)
+                step(f"ramp {progress}% queued={queued_count} drained={drained}/{queued_count}")
+            time.sleep(parameters["ramp_interval_s"])
 
-    missing = len(expected - delivered)
-    success = missing == 0
-    counters = {"queued": queued, "delivered": len(delivered), "missing": missing}
-    summary = f"offline queued={queued} delivered={len(delivered)} missing={missing}"
-    return ScenarioOutcome(success=success, summary=summary, counters=counters, work_units=float(queued))
+        hold_rounds = max(1, int(math.ceil(hold_seconds / max(1.0, parameters["ramp_interval_s"]))))
+        hold_checkpoints = _progress_checkpoints(hold_rounds)
+        step(f"hold start rounds={hold_rounds} queued={parameters['end_queued']}")
+        hold_started = time.monotonic()
+        for round_index in range(hold_rounds):
+            queued_count = int(parameters["end_queued"])
+            for index in range(queued_count):
+                publisher.publish(topic, f"p08-h-{round_index}-{index}".encode("utf-8"), qos=1)
+
+            with _connect_client(config, "p08-hold", clean_start=False, client_id=client_id, properties=connect_props) as resumed:
+                drained = _drain_until(resumed, queued_count, timeout_seconds=float(parameters["drain_timeout_s"]))
+            hold_expected += queued_count
+            hold_delivered += drained
+            hold_missing += max(0, queued_count - drained)
+            if (round_index + 1) in hold_checkpoints:
+                step(
+                    f"hold {(round_index + 1)}/{hold_rounds} delivered={hold_delivered}/{hold_expected} "
+                    f"missing={hold_missing}"
+                )
+        hold_elapsed = max(1e-6, time.monotonic() - hold_started)
+
+    success = hold_missing == 0 and missing_total == 0
+    counters = {
+        "missing_total": missing_total,
+        "hold_expected": hold_expected,
+        "hold_delivered": hold_delivered,
+        "hold_missing": hold_missing,
+    }
+    summary = (
+        f"missing_total={missing_total} hold_expected={hold_expected} "
+        f"hold_delivered={hold_delivered} hold_missing={hold_missing}"
+    )
+    step(f"final success={success} hold_missing={hold_missing} ramp_missing={missing_total}")
+    return ScenarioOutcome(
+        success=success,
+        summary=summary,
+        counters=counters,
+        work_units=float(hold_delivered),
+        throughput_per_second=_safe_rate(float(hold_delivered), hold_elapsed),
+        throughput_basis_seconds=hold_elapsed,
+    )
 
 
-def _scenario_s10(config: RunnerConfig) -> ScenarioOutcome:
-    runtime_seconds = 20.0
-    clients_count = 10
-    root = f"perf/sustained/{_unique_suffix()}"
+def _scenario_p09(config: RunnerConfig) -> ScenarioOutcome:
+    parameters = PARAMS_P09[config.size_profile]
+    hold_seconds = _effective_hold_seconds(config, parameters["hold_seconds"])
+    root = f"perf/p09/{_unique_suffix()}"
+    stable_topic = f"{root}/stable"
+    step = _scenario_step_logger("P09")
+    client_levels = list(
+        _ramp_steps(
+            int(parameters["start_clients"]),
+            int(parameters["end_clients"]),
+            int(parameters["step"]),
+        )
+    )
+    ramp_checkpoints = _progress_checkpoints(len(client_levels))
 
-    clients = []
+    step(
+        f"profile={config.size_profile} clients={parameters['start_clients']}-{parameters['end_clients']} "
+        f"step={parameters['step']} hold={hold_seconds:.1f}s"
+    )
+    step(f"ramp plan levels={len(client_levels)} filters_per_client={parameters['filters_per_client']}")
+
+    churn_clients: list[MqttClient] = []
+    stable_sent = 0
+    stable_received = 0
     try:
-        clients = [_connect_client(config, f"s{index}", timeout=max(config.timeout_seconds, 20.0)) for index in range(clients_count)]
-        topics = [f"{root}/{index}" for index in range(clients_count)]
-        for index, client in enumerate(clients):
-            client.subscribe(topics[index], qos=0)
+        with _connect_client(config, "p09-stable", timeout=max(config.timeout_seconds, 25.0)) as stable_subscriber:
+            stable_subscriber.subscribe(stable_topic, qos=0)
+            with _connect_client(config, "p09-pub", timeout=max(config.timeout_seconds, 25.0)) as publisher:
+                for level_index, target_clients in enumerate(client_levels, start=1):
+                    while len(churn_clients) < target_clients:
+                        churn_clients.append(_connect_client(config, f"p09-churn{len(churn_clients)}", timeout=max(config.timeout_seconds, 25.0)))
 
-        sent = 0
-        deadline = time.monotonic() + runtime_seconds
-        while time.monotonic() < deadline:
-            for index, client in enumerate(clients):
-                dst = (index + 1) % clients_count
-                client.publish(topics[dst], f"s-{sent}".encode("utf-8"), qos=0)
-                sent += 1
+                    for client_index, churn_client in enumerate(churn_clients):
+                        for filter_index in range(int(parameters["filters_per_client"])):
+                            topic_filter = f"{root}/c{client_index}/f{filter_index}"
+                            churn_client.subscribe(topic_filter, qos=0)
+                            churn_client.unsubscribe(topic_filter)
+                    if level_index in ramp_checkpoints:
+                        progress = int((level_index / float(len(client_levels))) * 100.0)
+                        step(f"ramp {progress}% churn_clients={len(churn_clients)}")
+                    time.sleep(parameters["ramp_interval_s"])
 
-            for client in clients:
-                drained = client.drain_available_messages(limit=4)
-                if not drained:
-                    raise RuntimeError("no message received during sustained window")
+                hold_deadline = time.monotonic() + max(1.0, hold_seconds)
+                stable_per_round = 50
+                step(f"hold start stable_per_round={stable_per_round} churn_clients={len(churn_clients)}")
+                hold_started = time.monotonic()
+                while time.monotonic() < hold_deadline:
+                    for client_index, churn_client in enumerate(churn_clients):
+                        topic_filter = f"{root}/c{client_index}/hold"
+                        churn_client.subscribe(topic_filter, qos=0)
+                        churn_client.unsubscribe(topic_filter)
 
-        alive = _broker_reachable(config.host, config.port, timeout_seconds=1.0)
+                    for message_index in range(stable_per_round):
+                        publisher.publish(stable_topic, f"p09-h-{message_index}".encode("utf-8"), qos=0)
+                    stable_sent += stable_per_round
+                    stable_received += _drain_until(stable_subscriber, stable_per_round, timeout_seconds=max(1.0, float(parameters["churn_interval_s"])))
+                    ratio = (stable_received / stable_sent) if stable_sent > 0 else 0.0
+                    step(f"hold sent={stable_sent} received={stable_received} ratio={ratio:.4f}")
+                    time.sleep(float(parameters["churn_interval_s"]))
+
+                    if hold_seconds <= 1.0:
+                        break
+                hold_elapsed = max(1e-6, time.monotonic() - hold_started)
     finally:
-        for client in clients:
+        for churn_client in churn_clients:
             try:
-                client.disconnect()
+                churn_client.disconnect()
             except BaseException:
                 pass
 
-    success = alive
-    counters = {"sent": sent, "broker_alive": 1 if alive else 0}
-    summary = f"runtime_s={runtime_seconds:.0f} sent={sent} broker_alive={alive}"
-    return ScenarioOutcome(success=success, summary=summary, counters=counters, work_units=None)
+    stable_ratio = (stable_received / stable_sent) if stable_sent > 0 else 0.0
+    broker_alive = _broker_reachable(config.host, config.port, timeout_seconds=1.0)
+    success = broker_alive and stable_ratio >= 0.99
+    counters = {
+        "stable_sent": stable_sent,
+        "stable_received": stable_received,
+        "churn_clients_peak": len(churn_clients),
+        "broker_alive": 1 if broker_alive else 0,
+    }
+    summary = f"stable_sent={stable_sent} stable_received={stable_received} ratio={stable_ratio:.4f} broker_alive={broker_alive}"
+    step(f"final success={success} ratio={stable_ratio:.4f} broker_alive={broker_alive}")
+    return ScenarioOutcome(
+        success=success,
+        summary=summary,
+        counters=counters,
+        work_units=float(stable_received),
+        throughput_per_second=_safe_rate(float(stable_received), hold_elapsed),
+        throughput_basis_seconds=hold_elapsed,
+    )
+
+
+def _scenario_p10(config: RunnerConfig) -> ScenarioOutcome:
+    parameters = PARAMS_P10[config.size_profile]
+    hold_seconds = _effective_hold_seconds(config, parameters["hold_seconds"])
+    root = f"perf/p10/{_unique_suffix()}"
+    will_topic = f"{root}/will"
+    step = _scenario_step_logger("P10")
+    client_levels = list(
+        _ramp_steps(
+            int(parameters["start_clients"]),
+            int(parameters["end_clients"]),
+            int(parameters["step"]),
+        )
+    )
+    ramp_checkpoints = _progress_checkpoints(len(client_levels))
+
+    step(
+        f"profile={config.size_profile} will_clients={parameters['start_clients']}-{parameters['end_clients']} "
+        f"step={parameters['step']} hold={hold_seconds:.1f}s"
+    )
+    step(f"ramp plan levels={len(client_levels)} will_qos={parameters['will_qos']}")
+
+    hold_expected = 0
+    hold_received = 0
+    with _connect_client(config, "p10-watch", timeout=max(config.timeout_seconds, 25.0)) as watcher:
+        watcher.subscribe(will_topic, qos=int(parameters["will_qos"]))
+
+        for level_index, client_count in enumerate(client_levels, start=1):
+            will_clients: list[MqttClient] = []
+            for index in range(client_count):
+                client = MqttClient(timeout_seconds=max(config.timeout_seconds, 25.0))
+                client.set_will(
+                    topic=will_topic,
+                    payload=f"p10-r-{client_count}-{index}".encode("utf-8"),
+                    qos=int(parameters["will_qos"]),
+                    delay=int(parameters["will_delay_s"]),
+                )
+                client.connect(config.host, config.port, client_id=f"p10-r-{client_count}-{index}-{_unique_suffix()}")
+                will_clients.append(client)
+
+            for client in will_clients:
+                _abrupt_disconnect(client)
+            delivered = _drain_until(watcher, client_count, timeout_seconds=max(2.0, parameters["ramp_interval_s"] * 2.0))
+            if level_index in ramp_checkpoints:
+                progress = int((level_index / float(len(client_levels))) * 100.0)
+                step(f"ramp {progress}% disconnected={client_count} wills={delivered}/{client_count}")
+            time.sleep(parameters["ramp_interval_s"])
+
+        hold_start = time.monotonic()
+        hold_iteration = 0
+        step(f"hold start end_clients={parameters['end_clients']}")
+        while time.monotonic() - hold_start < max(1.0, hold_seconds):
+            hold_clients: list[MqttClient] = []
+            for index in range(int(parameters["end_clients"])):
+                client = MqttClient(timeout_seconds=max(config.timeout_seconds, 25.0))
+                client.set_will(
+                    topic=will_topic,
+                    payload=f"p10-h-{hold_iteration}-{index}".encode("utf-8"),
+                    qos=int(parameters["will_qos"]),
+                    delay=int(parameters["will_delay_s"]),
+                )
+                client.connect(config.host, config.port, client_id=f"p10-h-{hold_iteration}-{index}-{_unique_suffix()}")
+                hold_clients.append(client)
+
+            for client in hold_clients:
+                _abrupt_disconnect(client)
+
+            expected_this_round = int(parameters["end_clients"])
+            hold_expected += expected_this_round
+            hold_received += _drain_until(watcher, expected_this_round, timeout_seconds=max(2.0, hold_seconds / 2.0))
+            ratio = (hold_received / hold_expected) if hold_expected > 0 else 0.0
+            step(f"hold iter={hold_iteration + 1} received={hold_received}/{hold_expected} ratio={ratio:.4f}")
+            hold_iteration += 1
+            if hold_seconds <= 1.0:
+                break
+
+    ratio = (hold_received / hold_expected) if hold_expected > 0 else 0.0
+    success = ratio >= 0.99
+    counters = {
+        "hold_expected": hold_expected,
+        "hold_received": hold_received,
+        "hold_missing": max(0, hold_expected - hold_received),
+    }
+    summary = f"hold_expected={hold_expected} hold_received={hold_received} ratio={ratio:.4f}"
+    step(f"final success={success} ratio={ratio:.4f}")
+    return ScenarioOutcome(
+        success=success,
+        summary=summary,
+        counters=counters,
+        work_units=float(hold_received),
+        throughput_per_second=_safe_rate(float(hold_received), max(1e-6, time.monotonic() - hold_start)),
+        throughput_basis_seconds=max(1e-6, time.monotonic() - hold_start),
+    )
 
 
 def _scenario_definitions() -> tuple[ScenarioDef, ...]:
     impl = {
         "S01": _scenario_s01,
-        "S02": _scenario_s02,
-        "S03": _scenario_s03,
-        "S04": _scenario_s04,
-        "S05": _scenario_s05,
-        "S06": _scenario_s06,
-        "S07": _scenario_s07,
-        "S08": _scenario_s08,
-        "S09A": _scenario_s09a,
-        "S09B": _scenario_s09b,
-        "S10": _scenario_s10,
+        "P01": _scenario_p01,
+        "P02": _scenario_p02,
+        "P03": _scenario_p03,
+        "P04": _scenario_p04,
+        "P05": _scenario_p05,
+        "P06": _scenario_p06,
+        "P07": _scenario_p07,
+        "P08": _scenario_p08,
+        "P09": _scenario_p09,
+        "P10": _scenario_p10,
     }
     return tuple(ScenarioDef(spec=spec, execute=impl[spec.scenario_id]) for spec in SCENARIO_SPECS)
 
@@ -932,6 +2019,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=1883, help="Broker TCP port (default: 1883)")
     parser.add_argument("--ws-port", type=int, default=None, help="Broker WebSocket port")
     parser.add_argument("--timeout", type=float, default=8.0, help="Base timeout in seconds")
+    parser.add_argument("--duration", type=float, default=120.0, help="Scenario duration in seconds (default: 120)")
     parser.add_argument("--size", choices=["small", "middle", "large"], default="small", help="Profile")
     parser.add_argument("--repeat", type=int, default=1, help="Repeat each scenario")
     parser.add_argument("--filter", action="append", default=[], help="Scenario ID, stage, or title prefix")
@@ -1046,15 +2134,20 @@ def _run_scenarios(selected: list[ScenarioDef], repeat: int, config: RunnerConfi
             counters: dict[str, int] = {}
             summary = ""
             throughput: float | None = None
+            throughput_basis_seconds: float | None = None
             try:
                 outcome = definition.execute(config)
                 summary = outcome.summary
                 counters = dict(outcome.counters)
                 if not outcome.success:
                     status = "DEVIATION"
-                if outcome.work_units is not None:
+                if outcome.throughput_per_second is not None:
+                    throughput = float(outcome.throughput_per_second)
+                    throughput_basis_seconds = outcome.throughput_basis_seconds
+                elif outcome.work_units is not None:
                     elapsed = max(time.perf_counter() - started_perf, 1e-6)
                     throughput = outcome.work_units / elapsed
+                    throughput_basis_seconds = elapsed
             except BaseException as error:  # pylint: disable=broad-except
                 status = "ABORTED"
                 summary = str(error)
@@ -1063,7 +2156,10 @@ def _run_scenarios(selected: list[ScenarioDef], repeat: int, config: RunnerConfi
             finished_at = _now_utc_iso()
             rate_text = "n/a"
             if throughput is not None and spec.work_unit_label is not None:
-                rate_text = f"{throughput:.2f} {spec.work_unit_label}/s"
+                if throughput_basis_seconds is not None:
+                    rate_text = f"{throughput:.2f} {spec.work_unit_label}/s (basis={throughput_basis_seconds:.3f}s)"
+                else:
+                    rate_text = f"{throughput:.2f} {spec.work_unit_label}/s"
 
             print(f"  run {run_index:02d} : {status:<9} t={duration_seconds:7.3f}s rate={rate_text}")
             print(f"           summary: {_clip(summary)}")
@@ -1118,9 +2214,12 @@ def _build_preflight_abort_results(selected: list[ScenarioDef], repeat: int, rea
 
 def _print_header(args: argparse.Namespace, config: RunnerConfig, selected: list[ScenarioDef]) -> None:
     start_stage, end_stage = SIZE_STAGE_RANGES[args.size]
+    planned_total_seconds = _planned_total_duration_seconds(selected, config, args.repeat)
     print("=== MQTT Performance Run ===")
     print(f"target   : {config.host}:{config.port}")
     print(f"profile  : {args.size} stages={start_stage}-{end_stage}")
+    if planned_total_seconds is not None:
+        print(f"duration : {planned_total_seconds:.3f}s")
     print(f"repeat   : {args.repeat}")
     print(f"scenarios: {len(selected)}")
 
@@ -1143,6 +2242,7 @@ def _save_results(
             "port": args.port,
             "ws_port": args.ws_port,
             "timeout": args.timeout,
+            "duration": args.duration,
             "size": args.size,
             "repeat": args.repeat,
             "filter": args.filter,
@@ -1168,7 +2268,7 @@ def _print_summary(results: list[ScenarioResult], results_path: Path) -> None:
     print("\n=== Summary ===")
     print("result    : %s" % ("PASS" if deviation_count == 0 and aborted_count == 0 else "FAIL"))
     print(f"runs      : total={total} pass={pass_count} deviation={deviation_count} aborted={aborted_count}")
-    print(f"runtime   : {total_seconds:.3f}s")
+    print(f"runtime_actual : {total_seconds:.3f}s")
     print(f"run_rate  : {run_rate:.2f} runs/s")
 
     print("\nrun details")
@@ -1211,6 +2311,7 @@ def main() -> int:
         ws_port=resolved_ws_port,
         timeout_seconds=args.timeout,
         size_profile=args.size,
+        duration_seconds=args.duration,
     )
     startup_options = StartupOptions(
         trace_level=args.trace_level,
