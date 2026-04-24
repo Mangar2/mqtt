@@ -129,19 +129,23 @@ void submit_close(JobScheduler &scheduler, int fd) {
 
 bool prepare_session_takeover_close(ConnectionSession &session) {
   if (session.consume_session_takeover_request()) {
+    session.disconnect_state().clean_disconnect = true;
+    session.disconnect_state().reason_code = ReasonCode::SessionTakenOver;
+    session.pending_write_frames().push_back(
+        encode_disconnect_packet(ReasonCode::SessionTakenOver));
+    session.set_phase(ConnectionSession::Phase::Closing);
     session.arm_session_takeover_close(k_session_takeover_grace);
   }
 
-  if (!session.is_session_takeover_close_due(std::chrono::steady_clock::now())) {
+  if (session.disconnect_state().reason_code != ReasonCode::SessionTakenOver ||
+      session.phase() != ConnectionSession::Phase::Closing) {
     return false;
   }
 
-  session.clear_session_takeover_close_pending();
-  session.disconnect_state().clean_disconnect = true;
-  session.disconnect_state().reason_code = ReasonCode::SessionTakenOver;
-  session.pending_write_frames().push_back(
-      encode_disconnect_packet(ReasonCode::SessionTakenOver));
-  session.set_phase(ConnectionSession::Phase::Closing);
+  if (session.is_session_takeover_close_due(std::chrono::steady_clock::now())) {
+    session.clear_session_takeover_close_pending();
+  }
+
   return true;
 }
 
@@ -286,6 +290,10 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
       session.set_phase(ConnectionSession::Phase::Closing);
       close_after_flush = true;
     }
+  }
+
+  if (!close_after_flush) {
+    close_after_flush = prepare_session_takeover_close(session);
   }
 
   std::array<uint8_t, k_decode_read_chunk_size> read_chunk{};
