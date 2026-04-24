@@ -15,6 +15,9 @@
 
 namespace mqtt {
 
+/**
+ * @brief Forward declaration of StructuredTracer.
+ */
 class StructuredTracer;
 
 /**
@@ -46,6 +49,9 @@ public:
   [[nodiscard]] std::optional<ConnectionJob> mark_done(int connection_fd);
 
 private:
+  /**
+   * @brief Scheduling state for one connection descriptor.
+   */
   struct ScheduleState {
     bool active{false};
     std::optional<JobType> active_type;

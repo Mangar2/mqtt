@@ -67,8 +67,7 @@ public:
    * @param sub The matching subscription.
    * @return Outbound message with QoS, retain, and identifier adjusted.
    */
-  [[nodiscard]] static Message
-  apply_subscription_rules(const Message &msg, const Subscription &sub);
+  [[nodiscard]] static Message apply_subscription_rules(const Message &msg, const Subscription &sub);
 
 private:
 };

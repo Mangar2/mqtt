@@ -22,8 +22,17 @@
 
 namespace mqtt {
 
+/**
+ * @brief Forward declaration of Broker.
+ */
 class Broker;
+/**
+ * @brief Forward declaration of BrokerConfig.
+ */
 struct BrokerConfig;
+/**
+ * @brief Forward declaration of StructuredTracer.
+ */
 class StructuredTracer;
 
 /**
@@ -36,18 +45,43 @@ public:
                     std::size_t worker_min_threads = 2U,
                     std::size_t worker_max_threads = 0U);
 
+  /**
+   * @brief Destroy connection manager and release runtime resources.
+   */
   ~ConnectionManager();
 
   ConnectionManager(const ConnectionManager &) = delete;
   ConnectionManager &operator=(const ConnectionManager &) = delete;
 
+  /**
+   * @brief Start listeners, reactor, and worker infrastructure.
+   */
   void start();
+  /**
+   * @brief Stop listeners, reactor, and worker infrastructure.
+   */
   void stop() noexcept;
+  /**
+   * @brief Query running state.
+   * @return True when manager is running.
+   */
   [[nodiscard]] bool is_running() const noexcept;
 
 private:
+  /**
+   * @brief Accept one incoming connection from listener event.
+   * @param listener_socket_handle Listener socket that became ready.
+   * @param is_ws True when listener is WebSocket listener.
+   */
   void handle_accept_ready(SocketHandle listener_socket_handle, bool is_ws);
+  /**
+   * @brief Process one scheduled connection job.
+   * @param job Job payload to execute.
+   */
   void handle_connection_job(const ConnectionJob &job);
+  /**
+   * @brief Watch keepalive deadlines and schedule closes.
+   */
   void run_keepalive_watchdog();
 
   uint16_t mqtt_port_{0U};

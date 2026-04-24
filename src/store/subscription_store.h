@@ -61,8 +61,7 @@ public:
    * @return Vector of `MatchResult` pairs; may be empty if no subscriptions
    * match.
    */
-  [[nodiscard]] std::vector<MatchResult>
-  subscribers_for(std::string_view topic_name) const;
+  [[nodiscard]] std::vector<MatchResult> subscribers_for(std::string_view topic_name) const;
 
   /**
    * @brief Remove all subscriptions held by a client session (4.1.4).

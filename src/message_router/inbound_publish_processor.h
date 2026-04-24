@@ -77,8 +77,7 @@ public:
    * @param topic_filter Topic filter expression.
     * @return Matching retained records (message + store timestamp).
    */
-  [[nodiscard]] std::vector<RetainedMessageRecord>
-  retained_for_filter(std::string_view topic_filter) const;
+  [[nodiscard]] std::vector<RetainedMessageRecord> retained_for_filter(std::string_view topic_filter) const;
 
   /**
    * @brief Register a write-through callback invoked after every retained
@@ -102,8 +101,19 @@ private:
    */
   static void resolve_topic_alias(Message &msg, TopicAliasTable &alias_table);
 
+  /**
+   * @brief Snapshot retained-change callback.
+   * @return Callback copy.
+   */
   [[nodiscard]] std::function<void()> snapshot_on_retained_changed() const;
+  /**
+   * @brief Install retained-change callback.
+   * @param callback Callback to install.
+   */
   void set_on_retained_changed_callback(std::function<void()> callback) noexcept;
+  /**
+   * @brief Emit retained-change callback when present.
+   */
   void emit_on_retained_changed() const noexcept;
 
   AclEngine &acl_;                                ///< ACL engine for publish authorization.

@@ -21,19 +21,50 @@
 
 namespace mqtt {
 
+/**
+ * @brief Forward declaration of StreamBuffer.
+ */
 class StreamBuffer;
+/**
+ * @brief Forward declaration of TcpConnection.
+ */
 class TcpConnection;
+/**
+ * @brief Forward declaration of WebSocketTransport.
+ */
 class WebSocketTransport;
 
+/**
+ * @brief Runtime disconnect metadata attached to a connection session.
+ */
 struct RuntimeDisconnectState {
   bool clean_disconnect{false};
   ReasonCode reason_code{ReasonCode::Success};
   std::optional<uint32_t> expiry_override;
 };
 
+/**
+ * @brief Encode CONNACK packet into write buffer.
+ * @param packet CONNACK packet model.
+ * @return Encoded wire buffer.
+ */
 [[nodiscard]] WriteBuffer encode_connack_packet(const ConnackPacket &packet);
+/**
+ * @brief Encode SUBACK packet into write buffer.
+ * @param packet SUBACK packet model.
+ * @return Encoded wire buffer.
+ */
 [[nodiscard]] WriteBuffer encode_suback_packet(const SubackPacket &packet);
+/**
+ * @brief Encode UNSUBACK packet into write buffer.
+ * @param packet UNSUBACK packet model.
+ * @return Encoded wire buffer.
+ */
 [[nodiscard]] WriteBuffer encode_unsuback_packet(const UnsubackPacket &packet);
+/**
+ * @brief Encode PINGRESP packet into write buffer.
+ * @return Encoded wire buffer.
+ */
 [[nodiscard]] WriteBuffer encode_pingresp_packet();
 [[nodiscard]] WriteBuffer encode_disconnect_packet(
     ReasonCode reason_code, const std::vector<Property> &properties = {});
@@ -64,17 +95,27 @@ void set_receive_timeout(TcpConnection &connection,
 [[nodiscard]] std::optional<AnyPacket> try_decode_packet(
     StreamBuffer &stream_buffer);
 
-[[nodiscard]] bool send_connack_and_stop(
-    TcpConnection &connection, WebSocketTransport *ws_transport,
-    bool is_websocket, const std::function<void()> &stop_transport,
-    ReasonCode reason_code, const std::vector<Property> &properties = {});
+/**
+ * @brief Send CONNACK and stop transport when send succeeds.
+ * @param connection TCP connection to write to.
+ * @param ws_transport Optional WebSocket transport.
+ * @param is_websocket True when connection uses WebSocket framing.
+ * @param stop_transport Callback to stop transport loop.
+ * @param reason_code CONNACK reason code.
+ * @param properties CONNACK properties to include.
+ * @return True when packet send path completed.
+ */
+[[nodiscard]] bool send_connack_and_stop(TcpConnection &connection, WebSocketTransport *ws_transport, bool is_websocket, const std::function<void()> &stop_transport, ReasonCode reason_code, const std::vector<Property> &properties = {});
 
-// Sends a raw MQTT 3.1.1 CONNACK rejection (remaining_length=2, return_code=1)
-// and closes the connection.  Used when the client offered protocol version 4
-// (MQTT 3.1.1) which this broker does not support.
-[[nodiscard]] bool send_v311_reject_and_stop(
-    TcpConnection &connection, WebSocketTransport *ws_transport,
-    bool is_websocket, const std::function<void()> &stop_transport);
+/**
+ * @brief Send MQTT 3.1.1 CONNACK reject packet and stop transport.
+ * @param connection TCP connection to write to.
+ * @param ws_transport Optional WebSocket transport.
+ * @param is_websocket True when connection uses WebSocket framing.
+ * @param stop_transport Callback to stop transport loop.
+ * @return True when reject packet send path completed.
+ */
+[[nodiscard]] bool send_v311_reject_and_stop(TcpConnection &connection, WebSocketTransport *ws_transport, bool is_websocket, const std::function<void()> &stop_transport);
 
 void write_error_disconnect(TcpConnection &connection,
                             WebSocketTransport *ws_transport,

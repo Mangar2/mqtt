@@ -34,6 +34,9 @@
 
 namespace mqtt {
 
+/**
+ * @brief Forward declaration of StructuredTracer.
+ */
 class StructuredTracer;
 
 /**
@@ -96,8 +99,7 @@ public:
    * @param publish_packet Incoming PUBLISH packet.
    * @return Message for routing plus encoded ACK frames.
    */
-  [[nodiscard]] InboundPublishResult
-  on_publish(const PublishPacket &publish_packet);
+  [[nodiscard]] InboundPublishResult on_publish(const PublishPacket &publish_packet);
 
   /**
    * @brief Handle inbound PUBACK and free one outbound inflight slot.
@@ -176,8 +178,7 @@ public:
    * Returns `now` while resumed inflight replay is pending so the caller can
    * trigger an immediate outbound drain.
    */
-  [[nodiscard]] std::optional<std::chrono::steady_clock::time_point>
-  next_outbound_retransmit_deadline() const;
+  [[nodiscard]] std::optional<std::chrono::steady_clock::time_point> next_outbound_retransmit_deadline() const;
 
   /** @brief Return per-session connection state machine. */
   [[nodiscard]] ConnectionStateMachine &connection_state_machine() noexcept;
@@ -205,45 +206,43 @@ private:
    * @param publish_packet Source packet.
    * @return Converted message.
    */
-  [[nodiscard]] static Message
-  message_from_publish(const PublishPacket &publish_packet);
+  [[nodiscard]] static Message message_from_publish(const PublishPacket &publish_packet);
 
   /**
    * @brief Convert a message to a QoS 0 PUBLISH packet.
    * @param message Message to encode.
    * @return Wire-level PUBLISH packet.
    */
-  [[nodiscard]] static PublishPacket
-  qos0_publish_from_message(const Message &message);
+  [[nodiscard]] static PublishPacket qos0_publish_from_message(const Message &message);
 
   /** @brief Encode one PUBACK packet. */
-  [[nodiscard]] static WriteBuffer
-  encode_puback_packet(const PubackPacket &pkt);
+  [[nodiscard]] static WriteBuffer encode_puback_packet(const PubackPacket &pkt);
 
   /** @brief Encode one PUBREC packet. */
-  [[nodiscard]] static WriteBuffer
-  encode_pubrec_packet(const PubrecPacket &pkt);
+  [[nodiscard]] static WriteBuffer encode_pubrec_packet(const PubrecPacket &pkt);
 
   /** @brief Encode one PUBREL packet. */
-  [[nodiscard]] static WriteBuffer
-  encode_pubrel_packet(const PubrelPacket &pkt);
+  [[nodiscard]] static WriteBuffer encode_pubrel_packet(const PubrelPacket &pkt);
 
   /** @brief Encode one PUBCOMP packet. */
-  [[nodiscard]] static WriteBuffer
-  encode_pubcomp_packet(const PubcompPacket &pkt);
+  [[nodiscard]] static WriteBuffer encode_pubcomp_packet(const PubcompPacket &pkt);
 
   /** @brief Encode one PUBLISH packet. */
-  [[nodiscard]] static WriteBuffer
-  encode_publish_packet(const PublishPacket &pkt);
+  [[nodiscard]] static WriteBuffer encode_publish_packet(const PublishPacket &pkt);
 
-  /// Return true when a message can be encoded into a PUBLISH frame that
-  /// respects the negotiated Maximum Packet Size limit.
-  [[nodiscard]] bool
-  is_outbound_publish_within_maximum_packet_size(const Message &message) const;
+  /**
+   * @brief Check whether outbound message fits maximum packet size constraint.
+   * @param message Outbound message candidate.
+   * @return True when encoded packet size is within configured limit.
+   */
+  [[nodiscard]] bool is_outbound_publish_within_maximum_packet_size(const Message &message) const;
 
-  /// Build a representative outbound PUBLISH packet for frame-size checks.
-  [[nodiscard]] static PublishPacket
-  publish_from_message_for_size_check(const Message &message);
+  /**
+   * @brief Build representative PUBLISH packet for size checks.
+   * @param message Outbound message candidate.
+   * @return Derived PUBLISH packet.
+   */
+  [[nodiscard]] static PublishPacket publish_from_message_for_size_check(const Message &message);
 
   /**
    * @brief Pop one outbound message from deferred or shared queue.
@@ -251,7 +250,10 @@ private:
    */
   [[nodiscard]] std::optional<Message> pop_next_message();
 
-  /// Emit retransmission frames for overdue outbound inflight entries.
+  /**
+   * @brief Append retransmission frames for overdue outbound inflight entries.
+   * @param frames Target frame vector receiving retransmission packets.
+   */
   void append_retransmission_frames(std::vector<WriteBuffer> &frames);
 
   std::string client_id_;                         ///< Owning client identifier.

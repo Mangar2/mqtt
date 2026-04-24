@@ -113,8 +113,7 @@ private:
   std::unique_ptr<Node> root_{std::make_unique<Node>()};
 
   /** @brief Splits @p filter on '/' and returns the resulting level strings. */
-  [[nodiscard]] static std::vector<std::string>
-  split_filter(std::string_view filter);
+  [[nodiscard]] static std::vector<std::string> split_filter(std::string_view filter);
 
   /**
    * @brief Recursive helper for remove().

@@ -23,8 +23,7 @@ namespace mqtt {
  * @param broker_config Broker runtime configuration.
  * @return Property list to include in successful CONNACK packets.
  */
-[[nodiscard]] std::vector<Property>
-build_static_connack_properties(const BrokerConfig &broker_config);
+[[nodiscard]] std::vector<Property> build_static_connack_properties(const BrokerConfig &broker_config);
 
 /**
  * @brief Append CONNECT-driven optional CONNACK properties.

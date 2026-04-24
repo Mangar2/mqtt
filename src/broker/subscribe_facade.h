@@ -32,9 +32,12 @@ public:
 
   /**
    * @brief Handle UNSUBSCRIBE packet.
+    * @param client_id Client identifier.
+    * @param packet UNSUBSCRIBE packet.
+    * @return UNSUBACK packet.
    */
-  [[nodiscard]] UnsubackPacket
-  handle_unsubscribe(std::string_view client_id, const UnsubscribePacket &packet);
+  [[nodiscard]] UnsubackPacket handle_unsubscribe(std::string_view client_id,
+                                                  const UnsubscribePacket &packet);
 
 private:
   SubscriptionOrchestrator &subscription_orchestrator_;

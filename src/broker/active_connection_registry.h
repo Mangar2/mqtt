@@ -37,6 +37,9 @@ struct ConnectionRemoveResult {
   std::optional<int> removed_fd;
 };
 
+/**
+ * @brief Stored online connection entry with queue and optional socket fd.
+ */
 struct ActiveConnectionEntry {
   std::shared_ptr<OutboundQueue> queue;
   std::optional<int> fd;
@@ -58,17 +61,38 @@ public:
   remove_if_matches(std::string_view client_id,
                     const std::shared_ptr<OutboundQueue> &expected_queue);
 
-  [[nodiscard]] std::shared_ptr<OutboundQueue>
-  find(std::string_view client_id) const;
+  /**
+   * @brief Find outbound queue by client id.
+   * @param client_id Client identifier.
+   * @return Shared queue pointer or empty pointer when missing.
+   */
+  [[nodiscard]] std::shared_ptr<OutboundQueue> find(std::string_view client_id) const;
 
+  /**
+   * @brief Check whether client id exists in registry.
+   * @param client_id Client identifier.
+   * @return True when entry exists.
+   */
   [[nodiscard]] bool contains(std::string_view client_id) const;
 
+  /**
+   * @brief Return socket fd for client id when present.
+   * @param client_id Client identifier.
+   * @return Socket fd or std::nullopt.
+   */
   [[nodiscard]] std::optional<int> fd_for(std::string_view client_id) const;
 
+  /**
+   * @brief Return count of active registry entries.
+   * @return Active entry count.
+   */
   [[nodiscard]] std::size_t size() const noexcept;
 
-  [[nodiscard]] std::vector<std::shared_ptr<OutboundQueue>>
-  snapshot_queues() const;
+  /**
+   * @brief Return snapshot of all active outbound queues.
+   * @return Vector of shared queue pointers.
+   */
+  [[nodiscard]] std::vector<std::shared_ptr<OutboundQueue>> snapshot_queues() const;
 
 private:
   mutable std::shared_mutex mutex_;

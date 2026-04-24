@@ -99,6 +99,10 @@ public:
   TcpListener &operator=(TcpListener &&other) noexcept;
 
 private:
+  /**
+   * @brief Construct listener from owned socket handle.
+   * @param hdl Pre-opened listener socket handle.
+   */
   explicit TcpListener(SocketHandle hdl) noexcept;
 
   SocketHandle fd_{k_invalid_socket}; ///< Owned server socket handle;

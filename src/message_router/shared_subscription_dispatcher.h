@@ -93,8 +93,7 @@ public:
    * @param topic_name Publish topic name (must not contain wildcards).
    * @return One MatchResult per matching group; empty when no group matches.
    */
-  [[nodiscard]] std::vector<MatchResult>
-  select_next_for_topic(std::string_view topic_name);
+  [[nodiscard]] std::vector<MatchResult> select_next_for_topic(std::string_view topic_name);
 
   /**
    * @brief Return the number of members in a specific group.

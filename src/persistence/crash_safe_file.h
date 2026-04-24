@@ -45,9 +45,13 @@ namespace mqtt {
  */
 class CrashSafeFile {
 public:
-  /// Magic bytes placed at the start of every file produced by this class.
+  /**
+   * @brief Magic bytes placed at the start of every file produced by this class.
+   */
   static constexpr uint8_t k_magic[4] = {'M', 'Q', 'T', 'T'};
-  /// Format version encoded in byte 4 of every file.
+  /**
+   * @brief Format version encoded in byte 4 of every file.
+   */
   static constexpr uint8_t k_format_version = 0x01U;
 
   /**
@@ -85,8 +89,7 @@ public:
    * @return Pair of (record_count, record_bytes), or `std::nullopt`.
    * @throws PersistenceException(ReadFailure) on unexpected I/O errors.
    */
-  [[nodiscard]] std::optional<std::pair<uint32_t, std::vector<uint8_t>>>
-  read_latest() const;
+  [[nodiscard]] std::optional<std::pair<uint32_t, std::vector<uint8_t>>> read_latest() const;
 
   /**
    * @brief Delete all files managed by this instance (`dat`, `bak`, `tmp`).
@@ -114,7 +117,11 @@ private:
   std::filesystem::path dir_; ///< Directory holding the data files.
   std::string stem_;          ///< Base name for `.dat`, `.bak`, `.tmp`.
 
-  /// Return the full path for a file with @p suffix (e.g. ".dat").
+  /**
+   * @brief Return full path for one managed file suffix.
+   * @param suffix File suffix, for example ".dat".
+   * @return Full path in configured directory.
+   */
   [[nodiscard]] std::filesystem::path path_for(std::string_view suffix) const;
 
   /**
@@ -124,8 +131,7 @@ private:
    * read, and its CRC-32 footer matches.  Returns `std::nullopt` otherwise
    * without throwing.
    */
-  [[nodiscard]] static std::optional<std::pair<uint32_t, std::vector<uint8_t>>>
-  try_read(const std::filesystem::path &path);
+  [[nodiscard]] static std::optional<std::pair<uint32_t, std::vector<uint8_t>>> try_read(const std::filesystem::path &path);
 };
 
 } // namespace mqtt

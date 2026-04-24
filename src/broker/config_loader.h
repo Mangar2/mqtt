@@ -70,8 +70,7 @@ private:
    * @return Parsed credential entry.
    * @throws BrokerException(InvalidConfig) on malformed input.
    */
-  [[nodiscard]] static PasswordCredentialConfig
-  parse_password_credential(std::string_view value);
+  [[nodiscard]] static PasswordCredentialConfig parse_password_credential(std::string_view value);
 
   /**
    * @brief Parse one ACL rule entry from `effect,principal,action,topic`.
@@ -136,8 +135,7 @@ private:
    * @param val Input text, e.g. `"broker,connection"`.
    * @return Parsed module names in input order.
    */
-  [[nodiscard]] static std::vector<std::string>
-  parse_csv_modules(std::string_view val);
+  [[nodiscard]] static std::vector<std::string> parse_csv_modules(std::string_view val);
 
   /**
    * @brief Parse a structured tracing level.
@@ -160,8 +158,7 @@ private:
    * @return Parsed persistence mode enum value.
    * @throws BrokerException(InvalidConfig) when the value is unknown.
    */
-  [[nodiscard]] static PersistenceMode
-  parse_persistence_mode_or_throw(std::string_view val);
+  [[nodiscard]] static PersistenceMode parse_persistence_mode_or_throw(std::string_view val);
 
   /**
    * @brief Apply one parsed key-value pair from @p section to @p cfg.

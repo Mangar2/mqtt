@@ -84,8 +84,7 @@ public:
    * @param topic  Full topic string.
    * @return The alias if one has been assigned, or `std::nullopt`.
    */
-  [[nodiscard]] std::optional<uint16_t>
-  get_outbound(std::string_view topic) const;
+  [[nodiscard]] std::optional<uint16_t> get_outbound(std::string_view topic) const;
 
   /**
    * @brief Clear all inbound and outbound mappings (7.3.3).

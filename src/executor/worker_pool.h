@@ -19,6 +19,9 @@
 
 namespace mqtt {
 
+/**
+ * @brief Forward declaration of StructuredTracer.
+ */
 class StructuredTracer;
 
 /**
@@ -26,6 +29,9 @@ class StructuredTracer;
  */
 class WorkerPool {
 public:
+  /**
+   * @brief Worker job callback type.
+   */
   using JobHandler = std::function<void(const ConnectionJob &)>;
 
   /**
@@ -38,6 +44,9 @@ public:
                  std::size_t max_threads = 0U,
                  StructuredTracer *tracer = nullptr);
 
+  /**
+   * @brief Destroy worker pool and join all threads.
+   */
   ~WorkerPool();
 
   /**
@@ -82,9 +91,22 @@ public:
   [[nodiscard]] bool is_running() const noexcept;
 
 private:
+  /**
+   * @brief Compute default maximum worker count.
+   * @return Default maximum thread count.
+   */
   [[nodiscard]] static std::size_t compute_default_max_threads() noexcept;
+  /**
+   * @brief Worker thread loop.
+   */
   void worker_loop();
+  /**
+   * @brief Scaling controller thread loop.
+   */
   void scaling_loop();
+  /**
+   * @brief Spawn one worker thread.
+   */
   void spawn_worker();
 
   JobHandler job_handler_;

@@ -71,8 +71,7 @@ public:
    * @return Vector of all `InflightEntry` values; empty if the session has
    * none.
    */
-  [[nodiscard]] std::vector<InflightEntry>
-  entries_for(std::string_view client_id) const;
+  [[nodiscard]] std::vector<InflightEntry> entries_for(std::string_view client_id) const;
 
   /**
    * @brief Check whether a packet ID is currently registered (4.4.5).

@@ -48,8 +48,7 @@ public:
    *         May contain multiple entries for the same client when subscriptions
    *         overlap.
    */
-  [[nodiscard]] static std::vector<MatchResult>
-  match(const SubscriptionTrie &trie, std::string_view topic_name);
+  [[nodiscard]] static std::vector<MatchResult> match(const SubscriptionTrie &trie, std::string_view topic_name);
 
 private:
   /**

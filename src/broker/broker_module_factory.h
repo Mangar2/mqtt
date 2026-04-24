@@ -42,6 +42,9 @@
 
 namespace mqtt {
 
+/**
+ * @brief Forward declaration of Broker.
+ */
 class Broker;
 
 /**

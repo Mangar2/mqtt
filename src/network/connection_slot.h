@@ -48,10 +48,22 @@ public:
 
   ConnectionSlot(const ConnectionSlot &) = delete;
   ConnectionSlot &operator=(const ConnectionSlot &) = delete;
+  /**
+   * @brief Move-construct connection slot.
+   * @param other Source slot to move from.
+   */
   ConnectionSlot(ConnectionSlot &&other) noexcept;
   ConnectionSlot &operator=(ConnectionSlot &&other) noexcept;
 
+  /**
+   * @brief Return socket handle for this slot.
+   * @return Socket handle value.
+   */
   [[nodiscard]] SocketHandle fd() const noexcept;
+  /**
+   * @brief Return current connection phase.
+   * @return Current phase value.
+   */
   [[nodiscard]] ConnectionPhase phase() const noexcept;
 
   /**
@@ -61,11 +73,37 @@ public:
    */
   [[nodiscard]] bool transition_to(ConnectionPhase next_phase) noexcept;
 
+  /**
+   * @brief Return queued byte count in write buffer.
+   * @return Number of queued bytes.
+   */
   [[nodiscard]] std::size_t write_size() const noexcept;
+  /**
+   * @brief Return write buffer capacity.
+   * @return Capacity in bytes.
+   */
   [[nodiscard]] std::size_t write_capacity() const noexcept;
+  /**
+   * @brief Return write buffer free space.
+   * @return Free bytes available.
+   */
   [[nodiscard]] std::size_t write_free_space() const noexcept;
+  /**
+   * @brief Append bytes to write buffer.
+   * @param data Byte span to append.
+   * @return True on success.
+   */
   [[nodiscard]] bool push_write_bytes(std::span<const uint8_t> data) noexcept;
+  /**
+   * @brief Remove bytes from front of write buffer.
+   * @param bytes_to_pop Requested byte count.
+   * @return Number of bytes removed.
+   */
   [[nodiscard]] std::size_t pop_write_bytes(std::size_t bytes_to_pop) noexcept;
+  /**
+   * @brief Return contiguous span from write buffer front.
+   * @return Front contiguous span.
+   */
   [[nodiscard]] std::span<const uint8_t> write_contiguous_bytes() const noexcept;
 
   /**
@@ -86,8 +124,21 @@ private:
   [[nodiscard]] static std::span<const uint8_t>
   contiguous_bytes(const std::vector<uint8_t> &storage, std::size_t head_index,
                    std::size_t used_size) noexcept;
+  /**
+   * @brief Ensure write storage can accept additional bytes.
+   * @param additional_bytes Additional bytes required.
+   * @return True when capacity requirement is satisfied.
+   */
   [[nodiscard]] bool ensure_write_capacity_for(std::size_t additional_bytes) noexcept;
+  /**
+   * @brief Reallocate write storage to new capacity.
+   * @param new_capacity Target capacity in bytes.
+   */
   void reallocate_write_storage(std::size_t new_capacity) noexcept;
+  /**
+   * @brief Update write-peak tracking window.
+   * @param now Current monotonic time.
+   */
   void refresh_write_peak_window(std::chrono::steady_clock::time_point now) noexcept;
 
   SocketHandle socket_handle_{k_invalid_socket};

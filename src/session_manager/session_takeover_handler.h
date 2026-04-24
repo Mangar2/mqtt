@@ -38,8 +38,7 @@ public:
    * @param close_callback Callable invoked by `takeover_if_exists` to
    *        forcibly close this connection.
    */
-  void register_connection(std::string_view client_id,
-                           std::function<void()> close_callback);
+  void register_connection(std::string_view client_id, std::function<void()> close_callback);
 
   /**
    * @brief Unregister a connection when it closes normally (10.2.1).

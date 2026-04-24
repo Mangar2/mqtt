@@ -64,8 +64,7 @@ public:
    * @param now Reference time for deadline comparison.
    * @return Vector of Client IDs whose expiry deadline is ≤ @p now.
    */
-  [[nodiscard]] std::vector<std::string>
-  collect_expired(std::chrono::steady_clock::time_point now) const;
+  [[nodiscard]] std::vector<std::string> collect_expired(std::chrono::steady_clock::time_point now) const;
 
   /**
    * @brief Return the number of pending timer entries.
@@ -74,6 +73,9 @@ public:
   [[nodiscard]] std::size_t size() const noexcept;
 
 private:
+  /**
+   * @brief One scheduled session expiry timer entry.
+   */
   struct TimerEntry {
     std::chrono::steady_clock::time_point disconnect_time;
     uint32_t expiry_interval;

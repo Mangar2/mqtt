@@ -57,12 +57,33 @@
 
 namespace mqtt {
 
+/**
+ * @brief Forward declaration of EnhancedAuthRegistry.
+ */
 class EnhancedAuthRegistry;
+/**
+ * @brief Forward declaration of ConnectFacade.
+ */
 class ConnectFacade;
+/**
+ * @brief Forward declaration of DisconnectFacade.
+ */
 class DisconnectFacade;
+/**
+ * @brief Forward declaration of PublishFacade.
+ */
 class PublishFacade;
+/**
+ * @brief Forward declaration of SubscribeFacade.
+ */
 class SubscribeFacade;
+/**
+ * @brief Forward declaration of TickHandler.
+ */
 class TickHandler;
+/**
+ * @brief Forward declaration of JobScheduler.
+ */
 class JobScheduler;
 
 /**
@@ -151,25 +172,46 @@ public:
 
   //  Module accessors (valid after startup())
 
-  /// @return Reference to the `SessionManager` (Module 10).
+  /**
+   * @brief Return SessionManager module reference.
+   * @return SessionManager reference.
+   */
   [[nodiscard]] SessionManager &session_manager() noexcept;
 
-  /// @return Reference to the `MessageRouter` (Module 12).
+  /**
+   * @brief Return MessageRouter module reference.
+   * @return MessageRouter reference.
+   */
   [[nodiscard]] MessageRouter &message_router() noexcept;
 
-  /// @return Reference to the active `IAuthenticator` (Module 8).
+  /**
+   * @brief Return active authenticator reference.
+   * @return IAuthenticator reference.
+   */
   [[nodiscard]] IAuthenticator &authenticator() noexcept;
 
-  /// @return Reference to the `AclEngine` (Module 9).
+  /**
+   * @brief Return ACL engine reference.
+   * @return AclEngine reference.
+   */
   [[nodiscard]] AclEngine &acl_engine() noexcept;
 
-  /// @return Reference to the `WillPublisher` (Module 11).
+  /**
+   * @brief Return WillPublisher module reference.
+   * @return WillPublisher reference.
+   */
   [[nodiscard]] WillPublisher &will_publisher() noexcept;
 
-  /// @return Reference to the `StatisticsCollector` (Module 16).
+  /**
+   * @brief Return statistics collector reference.
+   * @return StatisticsCollector reference.
+   */
   [[nodiscard]] StatisticsCollector &statistics_collector() noexcept;
 
-  /// @return Reference to the `StructuredTracer` (Module 26).
+  /**
+   * @brief Return structured tracer reference.
+   * @return StructuredTracer reference.
+   */
   [[nodiscard]] StructuredTracer &structured_tracer() noexcept;
 
   /**
@@ -190,8 +232,7 @@ public:
    * @param close_callback Connection close callback for session takeover.
    * @return `ConnectResult` with complete handshake outcome.
    */
-  ConnectResult handle_connect(const ConnectPacket &connect_packet,
-                               std::function<void()> close_callback);
+  ConnectResult handle_connect(const ConnectPacket &connect_packet, std::function<void()> close_callback);
 
   /**
    * @brief Continue an in-progress enhanced CONNECT authentication exchange.
@@ -318,8 +359,7 @@ public:
    * @param now Current time; defaults to `steady_clock::now()`.
    * @return `true` if `$SYS` topics were published.
    */
-  bool tick(std::chrono::steady_clock::time_point now =
-                std::chrono::steady_clock::now());
+  bool tick(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
 
   /**
    * @brief Apply a runtime tracing configuration system message.
@@ -360,10 +400,22 @@ public:
    */
   void unregister_connection(std::string_view client_id) noexcept;
 
+  /**
+   * @brief Wake outbound processing path for one client id.
+   * @param client_id Client identifier to wake.
+   */
   void wake_outbound(std::string_view client_id);
 
+  /**
+   * @brief Flush buffered offline queue for one client id.
+   * @param client_id Client identifier to flush.
+   */
   void flush_offline_queue(std::string_view client_id);
 
+  /**
+   * @brief Install job scheduler bridge used by outbound wakeups.
+   * @param job_scheduler Scheduler instance or nullptr.
+   */
   void set_job_scheduler(JobScheduler *job_scheduler) noexcept;
 
   //  Signal handling (15.3.3)
@@ -386,10 +438,15 @@ public:
   [[nodiscard]] static bool shutdown_requested() noexcept;
 
 private:
-  /// Instantiate all module objects (15.2.1 + threading step 03).
+  /**
+   * @brief Instantiate all module objects (15.2.1 + threading step 03).
+   */
   void create_modules();
 
-  /// Static C signal handler (15.3.3).
+  /**
+   * @brief Static C signal handler (15.3.3).
+   * @param sig Signal number.
+   */
   static void handle_signal(int sig) noexcept;
 
   //  State

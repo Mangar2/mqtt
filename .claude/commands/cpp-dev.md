@@ -113,6 +113,8 @@ Parameters and return values
 
 Use @param and @return when meaning is not trivial.
 
+Always document every function and method parameter with `@param` in header declarations. No exceptions.
+
 ```cpp
 /
  * @brief Returns the encoded size of this value on the wire.

@@ -90,8 +90,7 @@ public:
    * @throws QosException(InvalidPacket) if `pkt.qos != ExactlyOnce` or
    * `packet_id` is absent.
    */
-  [[nodiscard]] Qos2InboundPublishResult
-  on_publish_received(const PublishPacket &pkt);
+  [[nodiscard]] Qos2InboundPublishResult on_publish_received(const PublishPacket &pkt);
 
   /**
    * @brief Inbound: handle a received PUBREL and return PUBCOMP (5.3.1).
@@ -167,8 +166,7 @@ public:
    * @throws QosException(UnexpectedPacketId) if no matching outbound entry
    * exists.
    */
-  [[nodiscard]] std::variant<PublishPacket, PubrelPacket>
-  retransmit(uint16_t packet_id);
+  [[nodiscard]] std::variant<PublishPacket, PubrelPacket> retransmit(uint16_t packet_id);
 
 private:
   std::string client_id_; ///< Owning client session identifier.

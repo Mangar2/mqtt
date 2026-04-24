@@ -22,8 +22,7 @@ namespace mqtt {
  * @param source Queue to drain.
  * @return All drained messages in FIFO order.
  */
-[[nodiscard]] std::vector<Message>
-drain_pending_outbound_messages(OutboundQueue &source);
+[[nodiscard]] std::vector<Message> drain_pending_outbound_messages(OutboundQueue &source);
 
 /**
  * @brief Move pending messages from one outbound queue to another.

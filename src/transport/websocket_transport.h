@@ -90,8 +90,7 @@ public:
    * @param mqtt_bytes Raw MQTT packet bytes.
    * @return Encoded WS Binary frame bytes.
    */
-  [[nodiscard]] static std::vector<uint8_t>
-  encode_frame(std::span<const uint8_t> mqtt_bytes);
+  [[nodiscard]] static std::vector<uint8_t> encode_frame(std::span<const uint8_t> mqtt_bytes);
 
   /**
    * @brief Set the socket receive timeout (delegates to the TcpConnection).

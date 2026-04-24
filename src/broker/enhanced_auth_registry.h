@@ -78,6 +78,9 @@ public:
    */
   template <typename CallbackType>
   decltype(auto) with_lock(CallbackType &&callback) {
+    /**
+     * @brief Guard registry state during callback execution.
+     */
     std::lock_guard<std::mutex> lock_guard(mutex_);
     return std::forward<CallbackType>(callback)(pending_enhanced_auth_,
                                                 active_enhanced_auth_);

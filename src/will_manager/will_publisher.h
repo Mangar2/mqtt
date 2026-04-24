@@ -40,7 +40,9 @@ namespace mqtt {
  */
 class WillPublisher {
 public:
-  /// Callback invoked to publish a will message into the routing pipeline.
+  /**
+   * @brief Callback invoked to publish a will message into routing pipeline.
+   */
   using PublishCallback = std::function<void(const WillMessage &)>;
 
   /**

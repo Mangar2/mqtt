@@ -63,8 +63,7 @@ public:
    * @param now Reference time for deadline comparison.
    * @return Vector of Client IDs whose delay has elapsed.
    */
-  [[nodiscard]] std::vector<std::string>
-  collect_due(std::chrono::steady_clock::time_point now) const;
+  [[nodiscard]] std::vector<std::string> collect_due(std::chrono::steady_clock::time_point now) const;
 
   /**
    * @brief Return the number of pending timer entries.
@@ -73,7 +72,9 @@ public:
   [[nodiscard]] std::size_t size() const noexcept;
 
 private:
-  /// Per-client timer entry.
+  /**
+   * @brief Per-client timer entry.
+   */
   struct TimerEntry {
     std::chrono::steady_clock::time_point
         disconnect_time;    ///< When the connection closed.

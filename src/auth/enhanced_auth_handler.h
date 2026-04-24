@@ -165,8 +165,7 @@ private:
    * @param properties Property list to search.
    * @return The method string, or empty string if not present.
    */
-  static std::string
-  extract_auth_method(const std::vector<Property> &properties);
+  static std::string extract_auth_method(const std::vector<Property> &properties);
 
   /**
    * @brief Validate that packet's Authentication Method equals the

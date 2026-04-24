@@ -39,7 +39,6 @@ enum class TraceLevel : std::uint8_t {
  * @param level_name Input level text.
  * @return Parsed level when recognised; otherwise `std::nullopt`.
  */
-[[nodiscard]] std::optional<TraceLevel>
-parse_trace_level(std::string_view level_name) noexcept;
+[[nodiscard]] std::optional<TraceLevel> parse_trace_level(std::string_view level_name) noexcept;
 
 } // namespace mqtt

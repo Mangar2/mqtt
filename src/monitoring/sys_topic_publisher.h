@@ -76,14 +76,20 @@ public:
    * @param now Current time reference; defaults to `steady_clock::now()`.
    * @return `true` if statistics were published during this call.
    */
-  bool tick(std::chrono::steady_clock::time_point now =
-                std::chrono::steady_clock::now());
+  bool tick(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
 
 private:
-  /// Publish all `$SYS` topics for the given snapshot.
+  /**
+   * @brief Publish all $SYS topics for a statistics snapshot.
+   * @param snap Statistics snapshot to publish.
+   */
   void publish_stats(const StatisticsSnapshot &snap);
 
-  /// Build and emit a single `$SYS` message with a decimal numeric payload.
+  /**
+   * @brief Build and emit one $SYS message with numeric payload.
+   * @param topic_name $SYS topic name.
+   * @param value Numeric payload value.
+   */
   void publish_one(std::string_view topic_name, std::uint64_t value);
 
   const StatisticsCollector &stats_; ///< Source of statistics snapshots.

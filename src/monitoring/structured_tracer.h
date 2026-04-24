@@ -138,6 +138,10 @@ private:
   static void write_json_string(std::ostream &output_stream,
                                 std::string_view value_text);
 
+  /**
+   * @brief Write fallback error record for serialization failures.
+   * @param output_stream Target output stream.
+   */
   static void write_fallback_serialization_error(std::ostream &output_stream) noexcept;
 
   std::ostream *output_stream_;

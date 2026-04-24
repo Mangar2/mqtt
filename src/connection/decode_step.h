@@ -7,9 +7,18 @@
 
 namespace mqtt {
 
+/**
+ * @brief Forward declaration of Broker.
+ */
 class Broker;
+/**
+ * @brief Forward declaration of ConnectionSession.
+ */
 class ConnectionSession;
 
+/**
+ * @brief Result classification for one decode step.
+ */
 enum class DecodeOutcome {
   NeedMore,
   Processed,

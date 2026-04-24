@@ -23,6 +23,9 @@
 
 namespace mqtt {
 
+/**
+ * @brief Forward declaration of StructuredTracer.
+ */
 class StructuredTracer;
 
 /**
@@ -125,8 +128,7 @@ public:
    *                  steady_clock::now().
    */
   void flush_offline_queue(std::string_view client_id,
-                           std::chrono::steady_clock::time_point now =
-                               std::chrono::steady_clock::now());
+                           std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
 
     /**
      * @brief Buffer already prepared outbound messages for an offline client.
@@ -153,12 +155,9 @@ public:
    * @param is_new_subscription True when the subscription was newly created.
    * @param now Reference instant for expiry calculation.
    */
-  void deliver_retained(std::string_view client_id,
-                        std::string_view topic_filter,
-                        const Subscription &subscription,
-                        bool is_new_subscription,
-                        std::chrono::steady_clock::time_point now =
-                            std::chrono::steady_clock::now());
+  void deliver_retained(std::string_view client_id, std::string_view topic_filter,
+                        const Subscription &subscription, bool is_new_subscription,
+                        std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
 
   /**
    * @brief Register a write-through callback invoked after every offline queue
@@ -183,10 +182,19 @@ private:
   void dispatch_item(const DeliveryItem &item,
                      std::chrono::steady_clock::time_point now);
 
-  [[nodiscard]] std::function<void()>
-  snapshot_on_offline_queue_changed() const;
-  void set_on_offline_queue_changed_callback(
-      std::function<void()> callback) noexcept;
+  /**
+   * @brief Snapshot offline-queue-changed callback.
+   * @return Callback copy.
+   */
+  [[nodiscard]] std::function<void()> snapshot_on_offline_queue_changed() const;
+  /**
+   * @brief Install offline-queue-changed callback.
+   * @param callback Callback to install.
+   */
+  void set_on_offline_queue_changed_callback(std::function<void()> callback) noexcept;
+  /**
+   * @brief Emit offline-queue-changed callback when set.
+   */
   void emit_on_offline_queue_changed() const noexcept;
 
   InboundPublishProcessor &processor_; ///< 12.1 — inbound pre-processing.

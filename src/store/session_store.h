@@ -46,8 +46,7 @@ public:
    * @param client_id Client identifier to look up.
    * @return `std::optional<SessionState>` — present if found, empty otherwise.
    */
-  [[nodiscard]] std::optional<SessionState>
-  load(std::string_view client_id) const;
+  [[nodiscard]] std::optional<SessionState> load(std::string_view client_id) const;
 
   /**
    * @brief Atomically mutate an existing session in place.
@@ -60,9 +59,7 @@ public:
    * @param updater   Mutation callback applied to the stored SessionState.
    * @return `true` if the session existed and was updated, `false` otherwise.
    */
-  [[nodiscard]] bool
-  update_if_exists(std::string_view client_id,
-                   const std::function<void(SessionState &)> &updater);
+  [[nodiscard]] bool update_if_exists(std::string_view client_id, const std::function<void(SessionState &)> &updater);
 
   /**
    * @brief Atomically mutate a session and return a copy of the updated value.
@@ -73,10 +70,7 @@ public:
    * @param updater   Mutation callback applied to the stored SessionState.
    * @return Updated session copy when present, `std::nullopt` otherwise.
    */
-  [[nodiscard]] std::optional<SessionState>
-  update_if_exists_and_load(
-      std::string_view client_id,
-      const std::function<void(SessionState &)> &updater);
+  [[nodiscard]] std::optional<SessionState> update_if_exists_and_load(std::string_view client_id, const std::function<void(SessionState &)> &updater);
 
   /**
    * @brief Delete a session and its disconnect timestamp (4.3.3).
@@ -115,8 +109,7 @@ public:
    * @param now The current time used as the expiry reference point.
    * @return Vector of expired `SessionState` values (copies).
    */
-  [[nodiscard]] std::vector<SessionState>
-  expired_sessions(std::chrono::steady_clock::time_point now) const;
+  [[nodiscard]] std::vector<SessionState> expired_sessions(std::chrono::steady_clock::time_point now) const;
 
   /**
    * @brief Return copies of all stored sessions.

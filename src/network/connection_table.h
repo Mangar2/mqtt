@@ -21,6 +21,9 @@ namespace mqtt {
  */
 class ConnectionTable {
 public:
+  /**
+   * @brief Connection table entry containing slot and session.
+   */
   struct Entry {
     ConnectionSlot slot;
     std::unique_ptr<ConnectionSession> session;

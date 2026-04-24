@@ -116,8 +116,7 @@ public:
    *
    * @return Map from client_id to the ordered list of queued messages.
    */
-  [[nodiscard]] std::unordered_map<std::string, std::vector<Message>>
-  snapshot() const;
+  [[nodiscard]] std::unordered_map<std::string, std::vector<Message>> snapshot() const;
 
   /**
    * @brief Restore queued messages for one client from persisted data (13.4).

@@ -93,8 +93,7 @@ private:
    * @return Parsed rule vector ready for installation.
    * @throws AuthzException on parse errors.
    */
-  [[nodiscard]] static std::vector<AclRule>
-  parse(const std::vector<AclRuleConfig> &config);
+  [[nodiscard]] static std::vector<AclRule> parse(const std::vector<AclRuleConfig> &config);
 
   /**
    * @brief Convert a single config record into an `AclRule`.

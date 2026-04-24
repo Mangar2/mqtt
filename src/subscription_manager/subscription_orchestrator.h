@@ -76,9 +76,19 @@ public:
   void set_on_session_changed(std::function<void()> callback) noexcept;
 
 private:
+  /**
+   * @brief Snapshot session-changed callback.
+   * @return Callback copy.
+   */
   [[nodiscard]] std::function<void()> snapshot_on_session_changed() const;
-  void
-  set_on_session_changed_callback(std::function<void()> callback) noexcept;
+  /**
+   * @brief Install session-changed callback.
+   * @param callback Callback to install.
+   */
+  void set_on_session_changed_callback(std::function<void()> callback) noexcept;
+  /**
+   * @brief Emit session-changed callback when registered.
+   */
   void emit_on_session_changed() const noexcept;
 
   mutable std::mutex on_session_changed_callback_mutex_;

@@ -66,8 +66,7 @@ public:
    * @throws QosException(InvalidPacket) if `pkt.qos != AtLeastOnce` or
    * `packet_id` is absent.
    */
-  [[nodiscard]] static PubackPacket
-  on_publish_received(const PublishPacket &pkt);
+  [[nodiscard]] static PubackPacket on_publish_received(const PublishPacket &pkt);
 
   /**
    * @brief Outbound: initiate delivery of a QoS 1 message (5.2.2).

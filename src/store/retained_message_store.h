@@ -50,10 +50,8 @@ public:
   * @param stored_at Timestamp captured when the broker stores the retained
   *                  message.
    */
-  void store(
-      const Message &msg,
-      std::chrono::steady_clock::time_point stored_at =
-          std::chrono::steady_clock::now());
+  void store(const Message &msg,
+             std::chrono::steady_clock::time_point stored_at = std::chrono::steady_clock::now());
 
   /**
    * @brief Return all retained messages matching a topic filter (4.2.3).
@@ -84,8 +82,7 @@ public:
    * @param topic_filter The subscriber's topic filter; may contain `+` or `#`.
    * @return Vector of matching retained records; order is unspecified.
    */
-  [[nodiscard]] std::vector<RetainedMessageRecord>
-  find_records(std::string_view topic_filter) const;
+  [[nodiscard]] std::vector<RetainedMessageRecord> find_records(std::string_view topic_filter) const;
 
   /**
    * @brief Return the number of currently stored retained messages.

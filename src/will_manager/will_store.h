@@ -43,8 +43,7 @@ public:
    * @param client_id Client identifier to look up.
    * @return `WillMessage` if found, `std::nullopt` otherwise.
    */
-  [[nodiscard]] std::optional<WillMessage>
-  load(std::string_view client_id) const;
+  [[nodiscard]] std::optional<WillMessage> load(std::string_view client_id) const;
 
   /**
    * @brief Delete the Will Message for a client (11.1.3).

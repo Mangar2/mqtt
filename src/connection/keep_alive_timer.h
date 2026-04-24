@@ -70,10 +70,12 @@ public:
    * @brief Return the absolute keep-alive deadline when enabled.
    * @return Deadline time-point or `std::nullopt` when timer is disabled.
    */
-  [[nodiscard]] std::optional<std::chrono::steady_clock::time_point>
-  deadline() const noexcept;
+  [[nodiscard]] std::optional<std::chrono::steady_clock::time_point> deadline() const noexcept;
 
 private:
+  /**
+   * @brief Clock type used for deadline values.
+   */
   using Clock = std::chrono::steady_clock;
 
   std::chrono::milliseconds interval_ms_; ///< 1.5 × keep_alive in milliseconds.

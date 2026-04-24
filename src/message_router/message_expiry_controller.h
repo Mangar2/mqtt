@@ -47,11 +47,9 @@ public:
    * @return `true` when the message is still valid; `false` when it has
    *         expired and must be discarded.
    */
-  [[nodiscard]] static bool
-  update_expiry(Message &msg,
-                std::chrono::steady_clock::time_point enqueue_time,
-                std::chrono::steady_clock::time_point now =
-                    std::chrono::steady_clock::now());
+    [[nodiscard]] static bool update_expiry(
+      Message &msg, std::chrono::steady_clock::time_point enqueue_time,
+      std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
 };
 
 } // namespace mqtt

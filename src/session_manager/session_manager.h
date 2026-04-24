@@ -23,6 +23,9 @@
 
 namespace mqtt {
 
+/**
+ * @brief Forward declaration of StructuredTracer.
+ */
 class StructuredTracer;
 
 /**
@@ -72,8 +75,7 @@ public:
    * @throws SessionManagerException(InvalidClientId) when
    *         `connect.client_id.value` is empty.
    */
-  SessionOpenResult handle_connect(const ConnectPacket &connect,
-                                   std::function<void()> close_callback);
+  SessionOpenResult handle_connect(const ConnectPacket &connect, std::function<void()> close_callback);
 
   /**
    * @brief Process a client disconnect event (10.1.4, 10.3.1).
@@ -123,8 +125,7 @@ public:
    * @param now Current reference time for deadline evaluation.
    * @return List of Client IDs whose sessions were cleaned up.
    */
-  std::vector<std::string>
-  cleanup_expired(std::chrono::steady_clock::time_point now);
+  std::vector<std::string> cleanup_expired(std::chrono::steady_clock::time_point now);
 
   /**
    * @brief Attach optional structured tracer for runtime diagnostics.
@@ -155,8 +156,10 @@ public:
   [[nodiscard]] InflightStore &inflight_store() noexcept;
 
 private:
-  /// Remove all data associated with a session (subscriptions + inflight +
-  /// session record).
+  /**
+   * @brief Remove all data associated with a session.
+   * @param client_id Client identifier.
+   */
   void remove_session_data(std::string_view client_id);
 
   SessionStore &session_store_;
