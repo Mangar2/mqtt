@@ -7,8 +7,9 @@ Features:
 - Hierarchical test names (for example: connect/anonymous).
 - Prefix-based filtering via --filter (for example: --filter connect).
 - Re-run only previously failed tests via --only-failed.
+- Re-run each selected test multiple times via --repeat.
 - Reset persisted state via --reset-state.
-- Persist success/failed results to broker-type specific result files (local/remote).
+- Persist success/failed/flaky results to broker-type specific result files (local/remote).
 """
 
 import argparse
@@ -427,6 +428,68 @@ def _ordered_results(results: dict, tests: list[TestCase]) -> dict:
     return ordered
 
 
+def _positive_int(raw_value: str) -> int:
+    try:
+        parsed = int(raw_value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be an integer") from error
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return parsed
+
+
+def _normalize_status_details(status_text: str, details: str, description: str) -> tuple[str, str]:
+    requirement_number = _requirement_number_from_description(description)
+    if requirement_number is None:
+        return status_text, details
+
+    if status_text == "skipped":
+        if not details:
+            return status_text, f"{requirement_number} skipped"
+        if not details.startswith(f"{requirement_number} "):
+            return status_text, f"{requirement_number} skipped: {details}"
+        return status_text, details
+
+    if status_text == "failed":
+        if not details:
+            return status_text, f"{requirement_number} failed"
+        if not details.startswith(f"{requirement_number} "):
+            return status_text, f"{requirement_number} failed: {details}"
+        return status_text, details
+
+    return status_text, details
+
+
+def _run_single_test_case(test: TestCase, config: RunnerConfig) -> tuple[str, str]:
+    try:
+        ok, details = test.execute(config)
+        status_text = "success" if ok else "failed"
+    except BaseException as error:  # pylint: disable=broad-except
+        if error.__class__.__name__ == "ManagedBrokerRequired":
+            status_text = "skipped"
+            details = str(error)
+        else:
+            raise
+
+    return _normalize_status_details(status_text, details, test.description)
+
+
+def _finalize_repeated_result(run_outcomes: list[dict[str, str]]) -> tuple[str, str]:
+    statuses = {outcome["status"] for outcome in run_outcomes}
+    if len(statuses) == 1:
+        final_status = run_outcomes[-1]["status"]
+        final_details = run_outcomes[-1]["details"]
+        return final_status, final_details
+
+    run_summaries = [
+        f"run {index + 1}: {outcome['status']}"
+        + (f" ({outcome['details']})" if outcome["details"] else "")
+        for index, outcome in enumerate(run_outcomes)
+    ]
+    merged_details = "inconsistent outcomes across repeated runs: " + "; ".join(run_summaries)
+    return "flaky", merged_details
+
+
 def _discover_tests() -> list[TestCase]:
     if not INTEGRATION_TESTS_DIR.exists():
         return []
@@ -492,7 +555,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--only-failed",
         action="store_true",
-        help="Re-run only tests that are marked as failed in the result file",
+        help="Re-run only tests that are marked as failed or flaky in the result file",
+    )
+    parser.add_argument(
+        "--repeat",
+        type=_positive_int,
+        default=1,
+        help="Run each selected test this many times in sequence (default: 1)",
     )
     parser.add_argument(
         "--reset-state",
@@ -554,11 +623,11 @@ def main() -> int:
         failed_names = {
             name
             for name, result in existing_results.items()
-            if isinstance(result, dict) and result.get("status") == "failed"
+            if isinstance(result, dict) and result.get("status") in {"failed", "flaky"}
         }
         selected_tests = [test for test in all_tests if test.name in failed_names]
         if not selected_tests:
-            print("No failed tests to re-run.")
+            print("No failed or flaky tests to re-run.")
             return 0
     else:
         selected_tests = _select_by_filters(all_tests, args.filter)
@@ -617,50 +686,53 @@ def main() -> int:
     if not broker_is_managed:
         print("[SETUP] Running only remote-safe test cases (managed-broker tests may be skipped)")
 
-    print(f"Running {len(selected_tests)} integration test(s) against {config.host}:{config.port}")
+    print(
+        f"Running {len(selected_tests)} integration test(s) against {config.host}:{config.port} "
+        f"(repeat per test: {args.repeat})"
+    )
 
     failures = 0
+    flaky = 0
     skipped = 0
+    success = 0
     try:
         for test in selected_tests:
-            try:
-                ok, details = test.execute(config)
-                status_text = "success" if ok else "failed"
-                if not ok:
-                    failures += 1
-            except BaseException as error:  # pylint: disable=broad-except
-                if error.__class__.__name__ == "ManagedBrokerRequired":
-                    status_text = "skipped"
-                    skipped += 1
-                    details = str(error)
+            run_outcomes: list[dict[str, str]] = []
+            for run_index in range(args.repeat):
+                status_text, details = _run_single_test_case(test, config)
+                run_outcomes.append({"status": status_text, "details": details})
+
+                if args.repeat == 1:
+                    print(f"[{status_text.upper()}] {test.name}")
                 else:
-                    raise
+                    print(f"[{status_text.upper()}] {test.name} ({run_index + 1}/{args.repeat})")
+                if details:
+                    print(f"  {details}")
 
-            if status_text == "skipped":
-                requirement_number = _requirement_number_from_description(test.description)
-                if requirement_number is not None:
-                    if not details:
-                        details = f"{requirement_number} skipped"
-                    elif not details.startswith(f"{requirement_number} "):
-                        details = f"{requirement_number} skipped: {details}"
+            final_status, final_details = _finalize_repeated_result(run_outcomes)
+            if final_status == "failed":
+                failures += 1
+            elif final_status == "flaky":
+                flaky += 1
+            elif final_status == "skipped":
+                skipped += 1
+            else:
+                success += 1
 
-            if status_text == "failed":
-                requirement_number = _requirement_number_from_description(test.description)
-                if requirement_number is not None:
-                    if not details:
-                        details = f"{requirement_number} failed"
-                    elif not details.startswith(f"{requirement_number} "):
-                        details = f"{requirement_number} failed: {details}"
+            if args.repeat > 1:
+                print(f"[FINAL:{final_status.upper()}] {test.name}")
+                if final_details:
+                    print(f"  {final_details}")
 
-            print(f"[{status_text.upper()}] {test.name}")
-            if details:
-                print(f"  {details}")
-
-            existing_results[test.name] = {
-                "status": status_text,
+            result_entry = {
+                "status": final_status,
                 "updated_at": _now_utc_iso(),
-                "details": details,
+                "details": final_details,
             }
+            if args.repeat > 1:
+                result_entry["runs"] = run_outcomes
+
+            existing_results[test.name] = result_entry
     finally:
         _stop_broker_if_started(broker_process)
         _restore_integration_trace_environment(previous_trace_environment)
@@ -672,12 +744,12 @@ def main() -> int:
     _save_state(results_path, state)
 
     total = len(selected_tests)
-    passed = total - failures
-    passed = total - failures - skipped
-    print(f"Summary: {passed}/{total} success, {failures} failed, {skipped} skipped")
+    print(
+        f"Summary: {success}/{total} success, {failures} failed, {flaky} flaky, {skipped} skipped"
+    )
     print(f"Result file: {results_path}")
 
-    return 0 if failures == 0 else 1
+    return 0 if failures == 0 and flaky == 0 else 1
 
 
 if __name__ == "__main__":

@@ -264,7 +264,12 @@ void ConnectionManager::run_keepalive_watchdog() {
       keepalive_watchdog_cv_.wait_for(lock_guard, k_idle_scan_interval,
                                       [this] { return !running_.load(); });
     } else {
-      keepalive_watchdog_cv_.wait_until(lock_guard, next_deadline,
+      const auto now_for_wait = std::chrono::steady_clock::now();
+      const auto max_sleep_deadline = now_for_wait + k_idle_scan_interval;
+      const auto wake_deadline =
+          (next_deadline < max_sleep_deadline) ? next_deadline
+                                               : max_sleep_deadline;
+      keepalive_watchdog_cv_.wait_until(lock_guard, wake_deadline,
                                         [this] { return !running_.load(); });
     }
   }

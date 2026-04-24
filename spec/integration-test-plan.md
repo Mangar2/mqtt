@@ -118,6 +118,7 @@ Broker process management for tests that need restart/reconfigure.
 - 1.7.2 Client goes silent beyond 1.5× Keep Alive → broker closes connection
 - 1.7.3 Keep Alive = 0 → no timeout enforced
 - 1.7.4 Server Keep Alive override in CONNACK → client must use server's value
+- 1.7.5 Keep Alive timeout still triggers when previous connection ended with immediate Protocol Error DISCONNECT (regression guard for stale watchdog deadline)
 
 ### 1.8 Connection Errors
 - 1.8.1 First packet is not CONNECT → connection closed

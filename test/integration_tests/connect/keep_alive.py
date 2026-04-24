@@ -132,6 +132,16 @@ def _decode_connack_reason_code(packet: bytes) -> int:
     return int(payload[1])
 
 
+def _decode_disconnect_reason_code(packet: bytes) -> int:
+    if _mqtt_packet_type(packet) != 14:
+        raise AssertionError(f"expected DISCONNECT packet type 14, got {_mqtt_packet_type(packet)}")
+
+    payload = _mqtt_payload(packet)
+    if not payload:
+        return 0x00
+    return int(payload[0])
+
+
 def _decode_connack_server_keep_alive(packet: bytes) -> int | None:
     if _mqtt_packet_type(packet) != 2:
         raise AssertionError(f"expected CONNACK packet type 2, got {_mqtt_packet_type(packet)}")
@@ -348,6 +358,89 @@ def run_1_7_4_server_keep_alive_override_applied(config) -> tuple[bool, str]:
         stop_broker(process)
 
 
+def run_1_7_5_keep_alive_timeout_after_protocol_error_disconnect(config) -> tuple[bool, str]:
+    process = None
+    first_socket = None
+    second_socket = None
+
+    try:
+        host, port, process = _start_isolated_broker()
+
+        first_socket = socket.create_connection((host, port), timeout=config.timeout_seconds)
+        first_socket.settimeout(config.timeout_seconds)
+
+        first_connect_packet = build_connect_packet(
+            protocol_name="MQTT",
+            protocol_version=5,
+            connect_flags=0x02,
+            keepalive_seconds=60,
+            properties=b"",
+            payload=encode_utf8_string(_unique_client_id("keepalive-bug-precondition-1")),
+        )
+        second_connect_packet = build_connect_packet(
+            protocol_name="MQTT",
+            protocol_version=5,
+            connect_flags=0x02,
+            keepalive_seconds=60,
+            properties=b"",
+            payload=encode_utf8_string(_unique_client_id("keepalive-bug-precondition-2")),
+        )
+
+        first_socket.sendall(first_connect_packet)
+        connack_packet = _read_mqtt_packet(first_socket, config.timeout_seconds)
+        assert_reason_code(_decode_connack_reason_code(connack_packet), 0x00)
+
+        first_socket.sendall(second_connect_packet)
+        protocol_error_disconnect = _read_mqtt_packet(first_socket, config.timeout_seconds)
+        assert_reason_code(_decode_disconnect_reason_code(protocol_error_disconnect), 0x82)
+
+        first_socket.close()
+        first_socket = None
+
+        second_socket, _ = _connect_tcp(
+            host,
+            port,
+            keep_alive_seconds=1,
+            timeout_seconds=config.timeout_seconds,
+        )
+
+        deadline = time.monotonic() + 3.0
+        disconnected = False
+        while time.monotonic() < deadline:
+            try:
+                packet = _read_mqtt_packet(second_socket, 0.5)
+                if _mqtt_packet_type(packet) == 14:
+                    disconnected = True
+                    break
+            except TimeoutError:
+                continue
+            except socket.timeout:
+                continue
+            except RuntimeError as runtime_error:
+                if "connection closed" in str(runtime_error):
+                    disconnected = True
+                    break
+                raise
+
+        if not disconnected:
+            return False, (
+                "broker did not disconnect silent client after keep alive timeout "
+                "when a protocol-error disconnect happened immediately before"
+            )
+
+        return True, (
+            "1.7.5 keep alive timeout still triggered after immediate prior protocol-error disconnect"
+        )
+    except Exception as error:
+        return False, f"1.7.5 failed: {error}"
+    finally:
+        if second_socket is not None:
+            second_socket.close()
+        if first_socket is not None:
+            first_socket.close()
+        stop_broker(process)
+
+
 TEST_CASES = [
     {
         "name": "connect/keep_alive/pingreq_pingresp",
@@ -368,5 +461,10 @@ TEST_CASES = [
         "name": "connect/keep_alive/server_keep_alive_override_applied",
         "description": "1.7.4 Server Keep Alive override in CONNACK is enforced",
         "run": run_1_7_4_server_keep_alive_override_applied,
+    },
+    {
+        "name": "connect/keep_alive/silent_client_timeout_after_protocol_error_disconnect",
+        "description": "1.7.5 Silent keep-alive timeout still works after prior protocol-error disconnect",
+        "run": run_1_7_5_keep_alive_timeout_after_protocol_error_disconnect,
     },
 ]

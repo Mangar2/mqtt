@@ -193,7 +193,15 @@ def run_19_5_3_session_takeover_during_active_publish_no_loss(config) -> tuple[b
             assert_connack(connack, reason_code=0x00, session_present=False)
             while not stop_publishing.is_set() and sent_count < 200:
                 payload = f"pre-takeover-{sent_count}".encode("utf-8")
-                assert_reason_code(publisher.publish(topic, payload, qos=1), 0x00)
+                try:
+                    publish_reason = int(publisher.publish(topic, payload, qos=1))
+                except RuntimeError as error:
+                    # Expected race during takeover: old connection can be dropped
+                    # between loop iterations, which surfaces as paho rc=4.
+                    if "rc=4" in str(error):
+                        break
+                    raise
+                assert_reason_code(publish_reason, 0x00)
                 sent_count += 1
                 time.sleep(0.005)
         return sent_count
@@ -227,6 +235,9 @@ def run_19_5_3_session_takeover_during_active_publish_no_loss(config) -> tuple[b
 
                 stop_publishing.set()
                 messages_sent_before_takeover = active_future.result(timeout=max(timeout_seconds, 10.0))
+
+            if messages_sent_before_takeover < 1:
+                return False, "19.5.3 active publisher did not send any pre-takeover QoS1 messages"
 
             takeover_seen = False
             deadline = time.monotonic() + max(timeout_seconds, 10.0)
