@@ -18,8 +18,14 @@
 | `process_handshake_packet_accepts_connect_and_installs_client_session` | CONNECT accepted in single-step helper | Handshake session + valid `ConnectPacket` | `HandshakeOutcome::ConnectAccepted`, phase becomes connected, client session installed |
 | `process_handshake_packet_auth_method_connect_not_rejected` | CONNECT with auth method follows non-reject path | handshake session + CONNECT with auth method | outcome is not `Rejected` and response frame is queued |
 | `process_handshake_packet_auth_success_path` | Enhanced auth completion branch | ongoing auth exchange + AUTH continue packet | `HandshakeOutcome::ConnectAccepted` |
+| `process_handshake_packet_connect_resume_sets_session_present` | Resumed session path in handshake helper | two CONNECT handshakes with same client ID and non-zero session expiry | second connect is accepted and `session_present=true` |
 | `process_runtime_packet_pingreq_enqueues_pingresp` | Runtime control packet handling | Connected session + `PingreqPacket` | `RuntimeOutcome::Continuing` and one encoded response frame |
+| `process_runtime_packet_publish_qos1_and_qos2_response_paths` | Runtime inbound publish response rewrite paths | connected session + inbound QoS1 and QoS2 PUBLISH with packet ids | runtime continues and appends PUBACK/PUBREC response frames |
+| `process_runtime_packet_puback_pubrec_pubcomp_paths` | Runtime ACK handler branches | connected session with outbound QoS1/QoS2 inflight packets | PUBACK/PUBREC/PUBCOMP all return `Continuing`; PUBREC enqueues follow-up frame |
+| `process_runtime_packet_qos2_receive_maximum_exceeded_disconnects` | Runtime inbound receive-maximum guard branch | connected session with receive window pre-acquired + inbound QoS2 PUBLISH | runtime returns `DisconnectError` with `ReceiveMaximumExceeded` |
+| `process_runtime_packet_disconnect_invalid_expiry_override_returns_disconnect_error` | Runtime DISCONNECT invalid expiry branch | connected session + DISCONNECT with SessionExpiryInterval override for non-persistent session | `RuntimeOutcome::DisconnectError` |
 | `process_runtime_packet_auth_failure_returns_disconnect_error` | Runtime AUTH failure branch | connected session with enhanced auth, then failing AUTH packet | `RuntimeOutcome::DisconnectError` |
+| `process_runtime_packet_auth_status_failure_returns_disconnect_error` | Runtime AUTH failure-status branch without exception | connected enhanced-auth session + AUTH with valid method and wrong credentials | runtime returns `DisconnectError` and stores auth failure reason |
 | `drain_outbound_to_write_buffer_moves_client_session_frames` | Outbound drain helper appends encoded frames | Connected session with queued outbound message | pending encoded frame storage grows |
 
 ## Client handler job processors (threading refactor step 05)
@@ -36,6 +42,8 @@
 | `process_accept_job_ignores_duplicate_fd` | Duplicate fd add guard in accept path | same accepted fd submitted twice | second add ignored, existing entry retained |
 | `process_decode_job_handles_peer_eof_with_close_job` | Decode path handles `read == 0` EOF branch | accepted socket with peer write-shutdown | close path is scheduled and cleanup succeeds |
 | `process_drain_job_websocket_frame_path_and_write_error` | WS frame append + write error close path | websocket session with pending frame and invalid socket | entry is finalized and removed |
+| `process_decode_job_keep_alive_timeout_enters_closing_and_drain` | Keep-alive timeout decode branch | connected session with expired keep-alive timer | session enters closing phase and drain job is queued |
+| `process_drain_job_takeover_due_closes_connection` | Session takeover due branch in drain | session with takeover-close deadline due immediately | connection is finalized and removed |
 
 ## ConnectionStateMachine (7.1)
 
@@ -163,6 +171,7 @@
 | `connection_manager_start_stop_ws` | WS listener accepts one client and marks ws path | mqtt_port=0, ws_port=ephemeral, one loopback connect | callback invoked with `is_ws=true`; manager stops cleanly |
 | `connection_manager_stop_without_start` | Idempotent shutdown before startup | manager with both ports 0 | no throw; running remains false |
 | `connection_manager_start_idempotent` | Double start call on active manager | start() called twice, then one client connect | no throw; manager remains running and handles client |
+| `connection_manager_stop_with_active_mqtt_connection` | Stop with active accepted MQTT entry | running manager with one active MQTT connection | stop completes cleanly while shutdown handling runs for active entries |
 | `connection_manager_start_failure_resets_running` | Listener bind failure path in start() | occupy port externally, then start manager on same port | start throws; `is_running()==false` |
 | `connection_manager_start_bind_failure_inside_try_resets_running` | Bind conflict after reactor start executes internal catch cleanup | keep one `TcpListener` bound on port P, then `ConnectionManager(P,0,...)` start | start throws from listener creation; `is_running()==false` |
 | `connection_manager_start_ws_bind_failure_after_mqtt_listener_cleans_mqtt_listener` | WS bind failure after MQTT listener setup exercises catch cleanup with MQTT listener present | hold a listener on ws_port, start manager with free mqtt_port + occupied ws_port | start throws and manager is not running; cleanup branch with mqtt_listener has_value executed |

@@ -8,7 +8,7 @@ Features:
 - Prefix-based filtering via --filter (for example: --filter connect).
 - Re-run only previously failed tests via --only-failed.
 - Reset persisted state via --reset-state.
-- Persist success/failed results to a result file.
+- Persist success/failed results to broker-type specific result files (local/remote).
 """
 
 import argparse
@@ -344,6 +344,16 @@ def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _default_results_file_for_type(result_type: str) -> Path:
+    return DEFAULT_RESULTS_FILE.with_name(f"{DEFAULT_RESULTS_FILE.stem}.{result_type}{DEFAULT_RESULTS_FILE.suffix}")
+
+
+def _resolve_results_path(raw_results_file: str | None, result_type: str) -> Path:
+    if raw_results_file is None:
+        return _default_results_file_for_type(result_type).resolve()
+    return Path(raw_results_file).expanduser().resolve()
+
+
 def _load_state(path: Path) -> dict:
     if not path.exists():
         return {"results": {}}
@@ -465,8 +475,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=8.0, help="mqttx command timeout in seconds")
     parser.add_argument(
         "--results-file",
-        default=str(DEFAULT_RESULTS_FILE),
-        help=f"Result state file (default: {DEFAULT_RESULTS_FILE.relative_to(TEST_DIR.parent)})",
+        default=None,
+        help=(
+            "Result state file override. "
+            f"Default uses broker type specific files: "
+            f"{_default_results_file_for_type('local').relative_to(TEST_DIR.parent)} and "
+            f"{_default_results_file_for_type('remote').relative_to(TEST_DIR.parent)}"
+        ),
     )
     parser.add_argument(
         "--filter",
@@ -520,11 +535,17 @@ def main() -> int:
             print(f"- {test.name}: {test.description}")
         return 0
 
-    results_path = Path(args.results_file).expanduser().resolve()
+    result_type = "local" if _is_local_host(args.host) else "remote"
+    results_path = _resolve_results_path(args.results_file, result_type)
 
     if args.reset_state and results_path.exists():
         results_path.unlink()
         print(f"State reset: removed {results_path}")
+
+    if args.results_file is None:
+        print(f"[SETUP] Using broker-type result file ({result_type}): {results_path}")
+    else:
+        print(f"[SETUP] Using explicit result file: {results_path}")
 
     state = _load_state(results_path)
     existing_results = state.get("results", {})

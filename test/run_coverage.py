@@ -48,15 +48,6 @@ SUMMARY_FILE = TEST_DIR / "run_coverage.summary.json"
 
 THRESHOLD = 80.0  # minimum coverage percent
 
-# Legacy hotspots tracked separately from the hard 80% per-file gate.
-# Keep this list short and remove entries as dedicated coverage work lands.
-THRESHOLD_EXEMPT_FILES = {
-    "runtime_step.cpp",
-    "handshake_step.cpp",
-    "client_handler.cpp",
-    "connection_manager.cpp",
-}
-
 # Unit-test execution safety guards to avoid indefinite waits in step 2.
 CTEST_PER_TEST_TIMEOUT_SECONDS = int(os.environ.get("MQTT_CTEST_TIMEOUT", "120"))
 CTEST_TOTAL_TIMEOUT_SECONDS = int(os.environ.get("MQTT_CTEST_TOTAL_TIMEOUT", "1800"))
@@ -547,8 +538,6 @@ def _pct(pct_str: str) -> float:
 def _files_below_threshold(rows: list[dict]) -> list[str]:
     bad = []
     for row in rows:
-        if row["file"] in THRESHOLD_EXEMPT_FILES:
-            continue
         for key in ("regions", "functions", "lines"):
             if _pct(row[key]) < THRESHOLD:
                 bad.append(f"{row['file']} ({key} {row[key]})")
@@ -596,12 +585,6 @@ def print_summary(ctest_output: str, cov_output: str) -> None:
         print(f"\n  Use: python run_coverage.py --show src/.../file.cpp")
     else:
         print(f"  Threshold  : MET  (all production files >= {THRESHOLD:.0f}%)")
-
-    if THRESHOLD_EXEMPT_FILES:
-        print()
-        print("  Threshold Exemptions:")
-        for file_name in sorted(THRESHOLD_EXEMPT_FILES):
-            print(f"    - {file_name}")
 
     print("=" * W)
     print(f"  Log        : {LOG_FILE}")

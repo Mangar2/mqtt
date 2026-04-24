@@ -526,3 +526,110 @@ TEST_CASE("process_decode_job_websocket_without_transport_submits_close",
   broker.shutdown();
 #endif
 }
+
+TEST_CASE("process_decode_job_keep_alive_timeout_enters_closing_and_drain",
+          "[connection]") {
+#ifdef _WIN32
+  SUCCEED("socketpair-based coverage test is POSIX-only");
+#else
+  const BrokerConfig config = make_config();
+  Broker broker(config);
+  broker.startup();
+
+  IoReactor reactor;
+  reactor.start();
+  JobQueue queue;
+  JobScheduler scheduler(queue);
+  ConnectionTable table;
+
+  const auto socket_pair = make_connected_socket_pair();
+  const SocketHandle accepted_socket = socket_pair.first;
+  const SocketHandle client_socket = socket_pair.second;
+  REQUIRE(set_nonblocking(accepted_socket) == IoResult::Ok);
+
+  auto connection = std::make_unique<TcpConnection>(accepted_socket);
+  auto session = std::make_unique<ConnectionSession>(std::move(connection),
+                                                     nullptr, false, config);
+  session->set_phase(ConnectionSession::Phase::Connected);
+  session->connect_result().client_id = "keepalive-timeout-client";
+
+  InflightStore inflight_store;
+  auto authenticator =
+      std::make_shared<CallbackAuthenticator>([](const ConnectPacket &) {
+        return AuthResult{.status = AuthStatus::Success,
+                          .reason_code = ReasonCode::Success,
+                          .auth_data = std::nullopt};
+      });
+  auto outbound_queue = std::make_shared<OutboundQueue>();
+  auto client_session = std::make_unique<ClientSession>(
+      "keepalive-timeout-client", "user", authenticator, outbound_queue,
+      inflight_store, 1U, 100U, 8U);
+  std::this_thread::sleep_for(std::chrono::milliseconds(1700));
+  session->install_client_session(std::move(client_session));
+
+  const int connection_fd = static_cast<int>(accepted_socket);
+  REQUIRE(table.add(connection_fd, ConnectionSlot(accepted_socket),
+                    std::move(session)));
+
+  client_handler::process_decode_job(connection_fd, table, reactor, scheduler,
+                                     broker);
+
+  bool drain_job_seen = false;
+  const std::size_t pending_jobs = queue.size();
+  for (std::size_t index = 0; index < pending_jobs; ++index) {
+    const auto maybe_job = queue.pop_blocking();
+    REQUIRE(maybe_job.has_value());
+    if (maybe_job->type == JobType::Drain) {
+      drain_job_seen = true;
+    }
+  }
+  CHECK(drain_job_seen);
+
+  ConnectionTable::Entry *entry = table.find(connection_fd);
+  REQUIRE(entry != nullptr);
+  CHECK(entry->session->phase() == ConnectionSession::Phase::Closing);
+
+  client_handler::process_close_job(connection_fd, table, reactor, broker);
+  close_socket_handle(client_socket);
+  reactor.stop();
+  broker.shutdown();
+#endif
+}
+
+TEST_CASE("process_drain_job_takeover_due_closes_connection", "[connection]") {
+#ifdef _WIN32
+  SUCCEED("socketpair-based coverage test is POSIX-only");
+#else
+  const BrokerConfig config = make_config();
+  Broker broker(config);
+  broker.startup();
+
+  IoReactor reactor;
+  reactor.start();
+  JobQueue queue;
+  JobScheduler scheduler(queue);
+  ConnectionTable table;
+
+  const auto socket_pair = make_connected_socket_pair();
+  const SocketHandle accepted_socket = socket_pair.first;
+  const SocketHandle client_socket = socket_pair.second;
+  REQUIRE(set_nonblocking(accepted_socket) == IoResult::Ok);
+
+  auto connection = std::make_unique<TcpConnection>(accepted_socket);
+  auto session = std::make_unique<ConnectionSession>(std::move(connection),
+                                                     nullptr, false, config);
+  session->arm_session_takeover_close(std::chrono::milliseconds(0));
+
+  const int connection_fd = static_cast<int>(accepted_socket);
+  REQUIRE(table.add(connection_fd, ConnectionSlot(accepted_socket),
+                    std::move(session)));
+
+  client_handler::process_drain_job(connection_fd, table, reactor, scheduler,
+                                    broker);
+  CHECK(table.find(connection_fd) == nullptr);
+
+  close_socket_handle(client_socket);
+  reactor.stop();
+  broker.shutdown();
+#endif
+}
