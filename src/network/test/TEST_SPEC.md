@@ -93,11 +93,8 @@ Catch2 tag: `[network]`.
 | Test case | Behaviour |
 |-----------|-----------|
 | `slot_constructed_with_fd_starts_in_connecting_phase` | Slot starts in `Connecting` with stored fd |
-| `slot_capacity_and_free_space_accessors_report_current_values` | Read/write capacity and free space values are reported correctly |
-| `read_buffer_push_pop_preserves_bytes` | Read ring-buffer preserves byte order across push/pop |
-| `read_buffer_push_wraps_and_preserves_order` | Read ring-buffer handles wrap-around writes correctly |
-| `read_buffer_full_rejects_push_returns_false` | Push fails when read buffer capacity would be exceeded |
-| `zero_capacity_read_and_clamped_write_capacity` | Zero read capacity rejects pushes; write capacity 0 clamps to one-byte writable limit |
+| `slot_capacity_and_free_space_accessors_report_current_values` | Write capacity and free space values are reported correctly |
+| `zero_capacity_write_capacity_is_clamped` | Write capacity 0 clamps to one-byte writable limit |
 | `write_buffer_drains_in_fifo_order` | Write ring-buffer drains in FIFO order including wrap-around |
 | `phase_transitions_connecting_connected_closing_are_legal` | Forward phase transitions are accepted |
 | `phase_transition_to_same_phase_returns_true` | Transitioning to current phase is accepted as no-op |

@@ -24,7 +24,7 @@ all I/O.
 | `stream_buffer.h`      | 6.2      | `StreamBuffer` — buffers incoming bytes, extracts complete MQTT packets |
 | `write_queue.h/.cpp`   | 6.3      | `WriteQueue` — thread-safe outgoing packet queue with optional sink flush |
 | `socket_ops.h/.cpp`    | step 01  | Non-blocking socket helpers (`set_nonblocking`, `nb_read`, `nb_write`, `nb_accept`) |
-| `connection_slot.h/.cpp` | step 01 | Per-connection fd + read/write ring buffers + phase (`Connecting`, `Connected`, `Closing`) |
+| `connection_slot.h/.cpp` | step 01 | Per-connection fd + write ring buffer + phase (`Connecting`, `Connected`, `Closing`) |
 | `connection_table.h/.cpp`| step 01, step 05 | Thread-safe fd-indexed ownership table for `Entry { ConnectionSlot, ConnectionSession }` |
 | `io_reactor.h`         | step 04  | Platform-neutral reactor interface and callback API |
 | `io_reactor_kqueue.cpp`| step 04  | kqueue backend (`EVFILT_READ`, `EVFILT_WRITE`) for macOS/BSD |
@@ -146,7 +146,6 @@ field (variable-byte-integer at offset 1–4) and returns them one at a time.
 
 Contains:
 - socket handle (`fd`)
-- read ring buffer
 - write ring buffer
 - phase enum: `Connecting` → `Connected` → `Closing`
 

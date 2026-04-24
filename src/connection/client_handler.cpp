@@ -266,9 +266,7 @@ void process_accept_job(const AcceptJobPayload &payload, ConnectionTable &table,
   const int fd = static_cast<int>(payload.socket_handle);
   if (!table.add(
           fd,
-          ConnectionSlot(payload.socket_handle,
-                         ConnectionSlot::k_default_read_capacity,
-                         slot_write_capacity),
+      ConnectionSlot(payload.socket_handle, slot_write_capacity),
           std::move(session))) {
     return;
   }

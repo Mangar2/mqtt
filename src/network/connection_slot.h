@@ -25,14 +25,13 @@ enum class ConnectionPhase : std::uint8_t {
 };
 
 /**
- * @brief Per-connection I/O state: socket handle, read/write ring buffers,
+ * @brief Per-connection I/O state: socket handle, write ring buffer,
  * and connection phase.
  *
  * Thread safety: none. Access must be externally serialized.
  */
 class ConnectionSlot {
 public:
-  static constexpr std::size_t k_default_read_capacity = 256U * 1024U;
   static constexpr std::size_t k_default_write_capacity = 256U * 1024U;
   static constexpr std::size_t k_min_write_capacity = 16U * 1024U;
   static constexpr auto k_write_peak_window = std::chrono::seconds(10);
@@ -41,12 +40,10 @@ public:
   /**
    * @brief Construct with owned socket handle and ring-buffer capacities.
    * @param socket_handle Connected socket handle.
-   * @param read_capacity_bytes Read-buffer capacity.
    * @param write_capacity_bytes Write-buffer capacity.
    */
   explicit ConnectionSlot(
       SocketHandle socket_handle,
-      std::size_t read_capacity_bytes = k_default_read_capacity,
       std::size_t write_capacity_bytes = k_default_write_capacity);
 
   ConnectionSlot(const ConnectionSlot &) = delete;
@@ -63,13 +60,6 @@ public:
    * @return True if accepted, false if rejected.
    */
   [[nodiscard]] bool transition_to(ConnectionPhase next_phase) noexcept;
-
-  [[nodiscard]] std::size_t read_size() const noexcept;
-  [[nodiscard]] std::size_t read_capacity() const noexcept;
-  [[nodiscard]] std::size_t read_free_space() const noexcept;
-  [[nodiscard]] bool push_read_bytes(std::span<const uint8_t> data) noexcept;
-  [[nodiscard]] std::size_t pop_read_bytes(std::size_t bytes_to_pop) noexcept;
-  [[nodiscard]] std::span<const uint8_t> read_contiguous_bytes() const noexcept;
 
   [[nodiscard]] std::size_t write_size() const noexcept;
   [[nodiscard]] std::size_t write_capacity() const noexcept;
@@ -102,10 +92,6 @@ private:
 
   SocketHandle socket_handle_{k_invalid_socket};
   ConnectionPhase phase_{ConnectionPhase::Connecting};
-
-  std::vector<uint8_t> read_storage_;
-  std::size_t read_head_index_{0};
-  std::size_t read_used_size_{0};
 
   std::vector<uint8_t> write_storage_;
   std::size_t write_limit_capacity_{0};

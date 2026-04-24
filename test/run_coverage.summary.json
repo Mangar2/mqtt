@@ -1,15 +1,15 @@
 {
   "coverage_total": null,
-  "duration_s": 47.955,
+  "duration_s": 47.293,
   "exit_code": 0,
   "files_below_threshold": [],
-  "finished_at": "2026-04-24T05:57:55",
+  "finished_at": "2026-04-24T06:32:36",
   "log_file": "/Users/volkerbohm/dev/yaha/mqtt/test/run.log",
   "mode": "unit-only",
-  "run_id": "cd0a9780",
-  "started_at": "2026-04-24T05:57:07",
+  "run_id": "15b38e44",
+  "started_at": "2026-04-24T06:31:49",
   "status": "ok",
-  "tests_passed": 1060,
-  "tests_total": 1060,
+  "tests_passed": 1057,
+  "tests_total": 1057,
   "threshold_met": null
 }

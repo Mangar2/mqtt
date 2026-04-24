@@ -7,9 +7,8 @@
 namespace mqtt {
 
 ConnectionSlot::ConnectionSlot(SocketHandle socket_handle,
-                               std::size_t read_capacity_bytes,
                                std::size_t write_capacity_bytes)
-    : socket_handle_(socket_handle), read_storage_(read_capacity_bytes),
+    : socket_handle_(socket_handle),
       write_storage_(std::min(std::max<std::size_t>(1U, write_capacity_bytes),
                               k_min_write_capacity)),
       write_limit_capacity_(std::max<std::size_t>(1U, write_capacity_bytes)),
@@ -18,24 +17,19 @@ ConnectionSlot::ConnectionSlot(SocketHandle socket_handle,
 
 ConnectionSlot::ConnectionSlot(ConnectionSlot &&other) noexcept
     : socket_handle_(other.socket_handle_), phase_(other.phase_),
-      read_storage_(std::move(other.read_storage_)),
-      read_head_index_(other.read_head_index_),
-      read_used_size_(other.read_used_size_),
       write_storage_(std::move(other.write_storage_)),
-        write_limit_capacity_(other.write_limit_capacity_),
+      write_limit_capacity_(other.write_limit_capacity_),
       write_head_index_(other.write_head_index_),
-        write_used_size_(other.write_used_size_),
-        write_peak_window_bytes_(other.write_peak_window_bytes_),
-        write_peak_window_started_at_(other.write_peak_window_started_at_),
-        last_write_activity_at_(other.last_write_activity_at_) {
+      write_used_size_(other.write_used_size_),
+      write_peak_window_bytes_(other.write_peak_window_bytes_),
+      write_peak_window_started_at_(other.write_peak_window_started_at_),
+      last_write_activity_at_(other.last_write_activity_at_) {
   other.socket_handle_ = k_invalid_socket;
   other.phase_ = ConnectionPhase::Closing;
-  other.read_head_index_ = 0;
-  other.read_used_size_ = 0;
-      other.write_limit_capacity_ = 0;
+  other.write_limit_capacity_ = 0;
   other.write_head_index_ = 0;
   other.write_used_size_ = 0;
-      other.write_peak_window_bytes_ = 0;
+  other.write_peak_window_bytes_ = 0;
 }
 
 ConnectionSlot &ConnectionSlot::operator=(ConnectionSlot &&other) noexcept {
@@ -45,9 +39,6 @@ ConnectionSlot &ConnectionSlot::operator=(ConnectionSlot &&other) noexcept {
 
   socket_handle_ = other.socket_handle_;
   phase_ = other.phase_;
-  read_storage_ = std::move(other.read_storage_);
-  read_head_index_ = other.read_head_index_;
-  read_used_size_ = other.read_used_size_;
   write_storage_ = std::move(other.write_storage_);
   write_limit_capacity_ = other.write_limit_capacity_;
   write_head_index_ = other.write_head_index_;
@@ -58,8 +49,6 @@ ConnectionSlot &ConnectionSlot::operator=(ConnectionSlot &&other) noexcept {
 
   other.socket_handle_ = k_invalid_socket;
   other.phase_ = ConnectionPhase::Closing;
-  other.read_head_index_ = 0;
-  other.read_used_size_ = 0;
   other.write_limit_capacity_ = 0;
   other.write_head_index_ = 0;
   other.write_used_size_ = 0;
@@ -94,29 +83,6 @@ bool ConnectionSlot::transition_to(ConnectionPhase next_phase) noexcept {
     return false;
   }
   return false;
-}
-
-std::size_t ConnectionSlot::read_size() const noexcept { return read_used_size_; }
-
-std::size_t ConnectionSlot::read_capacity() const noexcept {
-  return read_storage_.size();
-}
-
-std::size_t ConnectionSlot::read_free_space() const noexcept {
-  return read_storage_.size() - read_used_size_;
-}
-
-bool ConnectionSlot::push_read_bytes(std::span<const uint8_t> data) noexcept {
-  return push_bytes(read_storage_, read_head_index_, read_used_size_, data);
-}
-
-std::size_t ConnectionSlot::pop_read_bytes(std::size_t bytes_to_pop) noexcept {
-  return pop_bytes(read_head_index_, read_used_size_, bytes_to_pop,
-                   read_storage_.size());
-}
-
-std::span<const uint8_t> ConnectionSlot::read_contiguous_bytes() const noexcept {
-  return contiguous_bytes(read_storage_, read_head_index_, read_used_size_);
 }
 
 std::size_t ConnectionSlot::write_size() const noexcept {
