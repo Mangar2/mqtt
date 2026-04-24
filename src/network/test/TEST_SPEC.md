@@ -97,7 +97,7 @@ Catch2 tag: `[network]`.
 | `read_buffer_push_pop_preserves_bytes` | Read ring-buffer preserves byte order across push/pop |
 | `read_buffer_push_wraps_and_preserves_order` | Read ring-buffer handles wrap-around writes correctly |
 | `read_buffer_full_rejects_push_returns_false` | Push fails when read buffer capacity would be exceeded |
-| `empty_capacity_buffers_reject_push_and_pop_zero` | Zero-capacity buffers reject pushes and allow zero-pop safely |
+| `zero_capacity_read_and_clamped_write_capacity` | Zero read capacity rejects pushes; write capacity 0 clamps to one-byte writable limit |
 | `write_buffer_drains_in_fifo_order` | Write ring-buffer drains in FIFO order including wrap-around |
 | `phase_transitions_connecting_connected_closing_are_legal` | Forward phase transitions are accepted |
 | `phase_transition_to_same_phase_returns_true` | Transitioning to current phase is accepted as no-op |

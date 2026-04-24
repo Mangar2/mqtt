@@ -96,13 +96,18 @@ TEST_CASE("read_buffer_push_wraps_and_preserves_order", "[network]") {
                    second_chunk_expected.begin()));
 }
 
-TEST_CASE("empty_capacity_buffers_reject_push_and_pop_zero", "[network]") {
+TEST_CASE("zero_capacity_read_and_clamped_write_capacity", "[network]") {
   ConnectionSlot slot(static_cast<SocketHandle>(12), 0U, 0U);
+
+  // Read capacity remains zero and rejects all writes.
   CHECK_FALSE(slot.push_read_bytes(std::array<uint8_t, 1>{1}));
-  CHECK_FALSE(slot.push_write_bytes(std::array<uint8_t, 1>{2}));
   CHECK(slot.pop_read_bytes(3U) == 0U);
-  CHECK(slot.pop_write_bytes(3U) == 0U);
   CHECK(slot.read_contiguous_bytes().empty());
+
+  // Write limit is clamped to at least one byte even when configured as zero.
+  CHECK(slot.push_write_bytes(std::array<uint8_t, 1>{2}));
+  CHECK_FALSE(slot.push_write_bytes(std::array<uint8_t, 1>{3}));
+  CHECK(slot.pop_write_bytes(3U) == 1U);
   CHECK(slot.write_contiguous_bytes().empty());
 }
 

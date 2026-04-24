@@ -29,6 +29,8 @@ all I/O.
 | `io_reactor.h`         | step 04  | Platform-neutral reactor interface and callback API |
 | `io_reactor_kqueue.cpp`| step 04  | kqueue backend (`EVFILT_READ`, `EVFILT_WRITE`) for macOS/BSD |
 | `io_reactor_epoll.cpp` | step 04  | epoll backend (`EPOLLIN`, `EPOLLOUT`, `EPOLLRDHUP`) for Linux |
+| `io_reactor_win32.cpp` | step 04  | WSAPoll backend (`POLLRDNORM`, `POLLWRNORM`) for Windows |
+| `io_reactor_unsupported.cpp` | step 04 | fallback backend that throws on unsupported platforms |
 
 ---
 
@@ -190,6 +192,8 @@ Public API:
 Platform mapping:
 - macOS/BSD: `io_reactor_kqueue.cpp`
 - Linux: `io_reactor_epoll.cpp`
+- Windows: `io_reactor_win32.cpp`
+- Other platforms: `io_reactor_unsupported.cpp`
 
 Locking:
 - one internal `std::mutex` for registration mutations

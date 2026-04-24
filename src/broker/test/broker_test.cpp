@@ -1,5 +1,6 @@
 ﻿#include <catch2/catch_test_macros.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <csignal>
 #include <filesystem>
@@ -46,11 +47,81 @@ using namespace std::chrono_literals;
 
 namespace {
 
+SocketHandle create_tcp_socket() {
+  return static_cast<SocketHandle>(::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+}
+
+void close_socket_handle(mqtt::SocketHandle socket_handle) {
+#ifdef _WIN32
+  ::closesocket(static_cast<SOCKET>(socket_handle));
+#else
+  ::close(static_cast<int>(socket_handle));
+#endif
+}
+
+bool can_bind_loopback_port(uint16_t port_value) {
+  const SocketHandle probe_socket = create_tcp_socket();
+  if (probe_socket == mqtt::k_invalid_socket) {
+    return false;
+  }
+
+  int reuse_addr = 1;
+#ifdef _WIN32
+  (void)::setsockopt(static_cast<SOCKET>(probe_socket), SOL_SOCKET,
+                     SO_REUSEADDR,
+                     reinterpret_cast<const char *>(&reuse_addr),
+                     static_cast<int>(sizeof(reuse_addr)));
+#else
+  (void)::setsockopt(static_cast<int>(probe_socket), SOL_SOCKET, SO_REUSEADDR,
+                     reinterpret_cast<const char *>(&reuse_addr),
+                     static_cast<socklen_t>(sizeof(reuse_addr)));
+#endif
+
+  sockaddr_in probe_addr{};
+  probe_addr.sin_family = AF_INET;
+  probe_addr.sin_port = htons(port_value);
+  probe_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+#ifdef _WIN32
+  const int bind_result =
+      ::bind(static_cast<SOCKET>(probe_socket),
+             reinterpret_cast<const sockaddr *>(&probe_addr),
+             static_cast<int>(sizeof(probe_addr)));
+#else
+  const int bind_result =
+      ::bind(static_cast<int>(probe_socket),
+             reinterpret_cast<const sockaddr *>(&probe_addr),
+             static_cast<socklen_t>(sizeof(probe_addr)));
+#endif
+  close_socket_handle(probe_socket);
+  return bind_result == 0;
+}
+
+uint16_t next_test_port() {
+  static std::atomic<uint32_t> next_port_candidate{18883U};
+  constexpr uint32_t port_max_exclusive = 60999U;
+
+  for (uint32_t attempt_index = 0; attempt_index < 3000U; ++attempt_index) {
+    uint32_t candidate_port =
+        next_port_candidate.fetch_add(1U, std::memory_order_relaxed);
+    if (candidate_port >= port_max_exclusive) {
+      const uint32_t wrapped_port = 18883U + (candidate_port % 1000U);
+      candidate_port = wrapped_port;
+    }
+
+    if (can_bind_loopback_port(static_cast<uint16_t>(candidate_port))) {
+      return static_cast<uint16_t>(candidate_port);
+    }
+  }
+
+  return 18883U;
+}
+
 /// Build a BrokerConfig that binds a single MQTT TCP listener on a
-/// high-numbered test port unlikely to conflict in CI environments.
+/// high-numbered ephemeral test port selected at runtime.
 BrokerConfig make_test_config() {
   BrokerConfig cfg;
-  cfg.mqtt_port = 18883U; // dedicated test port
+  cfg.mqtt_port = next_test_port();
   cfg.ws_port = 0U;       // disabled
   cfg.allow_anonymous = true;
   cfg.persistence_mode = PersistenceMode::Off;
@@ -67,17 +138,8 @@ void remove_temp_dir(const std::filesystem::path &dir) {
   std::filesystem::remove_all(dir);
 }
 
-void close_socket_handle(mqtt::SocketHandle socket_handle) {
-#ifdef _WIN32
-  ::closesocket(static_cast<SOCKET>(socket_handle));
-#else
-  ::close(static_cast<int>(socket_handle));
-#endif
-}
-
 void connect_loopback(uint16_t port_value) {
-  mqtt::SocketHandle socket_handle =
-      ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  mqtt::SocketHandle socket_handle = create_tcp_socket();
   REQUIRE(socket_handle != mqtt::k_invalid_socket);
 
   sockaddr_in server_addr{};
@@ -384,7 +446,7 @@ TEST_CASE("broker_handle_signal_sets_shutdown_requested", "[broker]") {
 
 TEST_CASE("broker_ws_listener_startup_and_shutdown", "[broker]") {
   BrokerConfig cfg = make_test_config();
-  cfg.ws_port = 18884U; // dedicated WS test port
+  cfg.ws_port = next_test_port();
   Broker broker(cfg);
   broker.startup();
   CHECK(broker.is_running() == true);
@@ -394,7 +456,7 @@ TEST_CASE("broker_ws_listener_startup_and_shutdown", "[broker]") {
 
 TEST_CASE("broker_reactor_accept_invokes_client_handler", "[broker]") {
   BrokerConfig cfg = make_test_config();
-  cfg.mqtt_port = 18885U;
+  cfg.mqtt_port = next_test_port();
 
   Broker broker(cfg);
   broker.startup();

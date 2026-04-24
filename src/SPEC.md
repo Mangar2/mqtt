@@ -92,6 +92,8 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `network/io_reactor.h`                         | step 04  | Platform-neutral `IoReactor` interface for listener/connection readiness callbacks |
 | `network/io_reactor_kqueue.cpp`                | step 04  | kqueue backend for macOS/BSD |
 | `network/io_reactor_epoll.cpp`                 | step 04  | epoll backend for Linux |
+| `network/io_reactor_win32.cpp`                 | step 04  | WSAPoll backend for Windows |
+| `network/io_reactor_unsupported.cpp`           | step 04  | unsupported-platform fallback backend |
 
 ## `connection/` sub-modules
 

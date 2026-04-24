@@ -1,5 +1,5 @@
 #if !defined(__linux__) && !defined(__APPLE__) && !defined(__FreeBSD__) &&     \
-    !defined(__OpenBSD__) && !defined(__NetBSD__)
+  !defined(__OpenBSD__) && !defined(__NetBSD__) && !defined(_WIN32)
 
 #include "network/io_reactor.h"
 
@@ -13,7 +13,7 @@ IoReactor::~IoReactor() { stop(); }
 
 void IoReactor::start() {
   throw std::runtime_error(
-      "IoReactor is unsupported on this platform (requires epoll or kqueue)");
+  "IoReactor is unsupported on this platform (requires epoll, kqueue, or WSAPoll)");
 }
 
 void IoReactor::stop() noexcept {}

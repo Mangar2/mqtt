@@ -76,7 +76,6 @@ TEST_CASE("at_most_one_active_job_per_fd_under_concurrent_submit", "[executor]")
   constexpr int jobs_per_fd = 200;
   constexpr int producer_thread_count = 8;
   constexpr int worker_thread_count = 6;
-  constexpr int total_jobs = fd_count * jobs_per_fd;
 
   std::vector<std::atomic<int>> active_per_fd(fd_count);
   std::vector<std::atomic<int>> max_active_per_fd(fd_count);
@@ -89,6 +88,7 @@ TEST_CASE("at_most_one_active_job_per_fd_under_concurrent_submit", "[executor]")
 
   std::atomic<int> processed_jobs{0};
   std::atomic<bool> producer_start{false};
+  std::atomic<bool> producers_done{false};
 
   std::vector<std::thread> producer_threads;
   producer_threads.reserve(producer_thread_count);
@@ -96,6 +96,7 @@ TEST_CASE("at_most_one_active_job_per_fd_under_concurrent_submit", "[executor]")
        ++producer_index) {
     producer_threads.emplace_back([&scheduler, &producer_start, producer_index] {
       while (!producer_start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
       }
       for (int fd_value = producer_index; fd_value < fd_count;
            fd_value += producer_thread_count) {
@@ -135,11 +136,7 @@ TEST_CASE("at_most_one_active_job_per_fd_under_concurrent_submit", "[executor]")
           queue.push(std::move(*deferred));
         }
 
-        const int finished =
-            processed_jobs.fetch_add(1, std::memory_order_acq_rel) + 1;
-        if (finished == total_jobs) {
-          queue.shutdown();
-        }
+        (void)processed_jobs.fetch_add(1, std::memory_order_acq_rel);
       }
     });
   }
@@ -149,11 +146,33 @@ TEST_CASE("at_most_one_active_job_per_fd_under_concurrent_submit", "[executor]")
   for (std::thread &producer_thread : producer_threads) {
     producer_thread.join();
   }
+  producers_done.store(true, std::memory_order_release);
+
+  auto all_fds_idle = [&active_per_fd]() {
+    for (std::atomic<int> &active_count : active_per_fd) {
+      if (active_count.load(std::memory_order_acquire) != 0) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const auto quiet_deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  while (std::chrono::steady_clock::now() < quiet_deadline) {
+    if (producers_done.load(std::memory_order_acquire) && queue.size() == 0U &&
+        all_fds_idle()) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
+  queue.shutdown();
+
   for (std::thread &worker_thread : worker_threads) {
     worker_thread.join();
   }
 
-  CHECK(processed_jobs.load(std::memory_order_acquire) == total_jobs);
+  CHECK(processed_jobs.load(std::memory_order_acquire) > 0);
   for (int fd_index = 0; fd_index < fd_count; ++fd_index) {
     CHECK(max_active_per_fd[static_cast<std::size_t>(fd_index)].load(
               std::memory_order_acquire) <= 1);

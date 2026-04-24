@@ -1,54 +1,60 @@
 {
-  "run_started_at": "2026-04-22T10:21:52+00:00",
-  "run_finished_at": "2026-04-22T10:21:52+00:00",
+  "run_started_at": "2026-04-24T03:42:11+00:00",
+  "run_finished_at": "2026-04-24T03:44:12+00:00",
   "arguments": {
-    "host": "127.0.0.1",
+    "host": "raspberrypi",
     "port": 1883,
     "ws_port": null,
-    "timeout": 6.0,
-    "size": "small",
+    "timeout": 8.0,
+    "size": "middle",
     "repeat": 1,
     "filter": [
-      "1"
+      "S01"
     ]
   },
   "resolved_target": {
-    "host": "127.0.0.1",
+    "host": "192.168.0.182",
     "port": 1883,
-    "ws_port": null,
-    "timeout_seconds": 6.0
+    "ws_port": 8083,
+    "timeout_seconds": 8.0,
+    "size_profile": "middle"
   },
-  "selected_stages": [
+  "selected_scenarios": [
     {
       "stage_id": 1,
-      "title": "connection-baseline",
-      "description": "Baseline connection pressure",
-      "tests": [
-        "load/connection_load_10_concurrent_all_connack_success"
-      ]
+      "scenario_id": "S01",
+      "title": "connect-ramp-two-minute",
+      "purpose": "2-minute connect load with hold phase and accelerated ramp",
+      "success_limit": "range by size: small 10-100, middle 50-1000, large 500-10000",
+      "work_units": null,
+      "work_unit_label": null
     }
   ],
-  "summary": [
+  "results": [
     {
       "stage_id": 1,
-      "stage_title": "connection-baseline",
-      "run_count": 1,
-      "total_seconds": 0.432259209,
-      "average_seconds": 0.432259209,
-      "deviations": 0,
-      "aborted": 0
-    }
-  ],
-  "measurements": [
-    {
-      "stage_id": 1,
-      "stage_title": "connection-baseline",
-      "test_name": "load/connection_load_10_concurrent_all_connack_success",
-      "duration_seconds": 0.432259209,
-      "outcome": "measured",
-      "details": "18.1.1 all 10 connections returned CONNACK success",
-      "started_at": "2026-04-22T10:21:52+00:00",
-      "finished_at": "2026-04-22T10:21:52+00:00"
+      "scenario_id": "S01",
+      "run_index": 1,
+      "title": "connect-ramp-two-minute",
+      "status": "DEVIATION",
+      "duration_seconds": 121.702511459,
+      "throughput_per_second": 58.182859807556575,
+      "summary": "profile=middle range=50-1000 duration=120s requested=7650 success=7081 fail=569 avg_connect_rate=96.56/s peak_open=738 max_target_reached=False highest_target=850 overload=target=650 requested_rate=240.3/s achieved_rate=202.4/s",
+      "counters": {
+        "range_min": 50,
+        "range_max": 1000,
+        "requested": 7650,
+        "success": 7081,
+        "rejected": 0,
+        "network_close": 0,
+        "local_resource": 0,
+        "other": 569,
+        "peak_open": 738,
+        "closed": 7081,
+        "overload_target": 650
+      },
+      "started_at": "2026-04-24T03:42:11+00:00",
+      "finished_at": "2026-04-24T03:44:12+00:00"
     }
   ]
 }

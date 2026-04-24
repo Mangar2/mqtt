@@ -14,7 +14,7 @@
 namespace mqtt {
 
 /**
- * @brief Single-reactor event loop wrapper (kqueue on macOS/BSD, epoll on Linux).
+ * @brief Single-reactor event loop wrapper (kqueue on macOS/BSD, epoll on Linux, WSAPoll on Windows).
  *
  * The reactor owns one event-loop thread. Registration changes are synchronized
  * via an internal mutex. Callbacks are invoked on the reactor thread.
