@@ -167,6 +167,18 @@ public:
   /** @brief Return per-session keep-alive timer. */
   [[nodiscard]] KeepAliveTimer &keep_alive_timer() noexcept;
 
+  /** @brief Return per-session keep-alive timer (const access). */
+  [[nodiscard]] const KeepAliveTimer &keep_alive_timer() const noexcept;
+
+  /**
+   * @brief Return the next outbound retransmission deadline, if any.
+   *
+   * Returns `now` while resumed inflight replay is pending so the caller can
+   * trigger an immediate outbound drain.
+   */
+  [[nodiscard]] std::optional<std::chrono::steady_clock::time_point>
+  next_outbound_retransmit_deadline() const;
+
   /** @brief Return per-session connection state machine. */
   [[nodiscard]] ConnectionStateMachine &connection_state_machine() noexcept;
 

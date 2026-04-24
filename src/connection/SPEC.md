@@ -55,6 +55,7 @@ States: `Connecting` → `Connected` → `Disconnecting` → `Closed`
 - `reset()` — sets deadline to now + 1.5 × keep_alive_seconds.
 - `is_expired()` — true if deadline has passed and timer is enabled.
 - `is_enabled()` — false if keep_alive == 0.
+- `deadline()` — returns absolute deadline when enabled, else `nullopt`.
 
 ## 7.3 TopicAliasTable
 
@@ -98,6 +99,9 @@ Responsibilities:
 - Own one `IoReactor` and register listener sockets on startup.
 - Accept incoming sockets from reactor callbacks and submit accept jobs to `WorkerPool`.
 - Dispatch worker jobs to `client_handler::process_*_job` functions.
+- Run a deadline watchdog that submits `Decode` only for connections whose
+	next timer is due (handshake timeout, keep-alive timeout, session-takeover
+	grace, outbound retransmit), instead of periodic global decode ticks.
 - Stop order: reactor → listeners → socket shutdown snapshot → worker pool → table clear.
 
 Public API:

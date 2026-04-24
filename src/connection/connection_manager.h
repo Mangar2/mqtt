@@ -6,9 +6,11 @@
  */
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -65,6 +67,8 @@ private:
   std::optional<TcpListener> mqtt_listener_;
   std::optional<TcpListener> ws_listener_;
   std::thread keepalive_watchdog_thread_;
+  std::condition_variable keepalive_watchdog_cv_;
+  std::mutex keepalive_watchdog_mutex_;
 };
 
 } // namespace mqtt

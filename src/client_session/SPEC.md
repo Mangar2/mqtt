@@ -56,6 +56,10 @@ Owned state:
   - Also scans outbound inflight entries and retransmits overdue QoS 1/2 exchanges
     based on a per-session retransmission timeout.
   - Retransmitted QoS 1/2 packets are encoded and returned in the same drain result.
+- `next_outbound_retransmit_deadline() -> optional<steady_clock::time_point>`
+  - Returns the earliest outbound inflight retransmission deadline.
+  - Returns `now` while resumed inflight replay is pending so a scheduler can
+    trigger immediate drain without global polling.
 
 ### Notes
 

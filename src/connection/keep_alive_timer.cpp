@@ -30,4 +30,12 @@ bool KeepAliveTimer::is_expired() const noexcept {
 
 bool KeepAliveTimer::is_enabled() const noexcept { return enabled_; }
 
+std::optional<KeepAliveTimer::Clock::time_point>
+KeepAliveTimer::deadline() const noexcept {
+  if (!enabled_) {
+    return std::nullopt;
+  }
+  return deadline_;
+}
+
 } // namespace mqtt

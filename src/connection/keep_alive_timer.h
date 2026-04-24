@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <optional>
 
 namespace mqtt {
 
@@ -64,6 +65,13 @@ public:
    * @return `false` when Keep Alive was negotiated as 0.
    */
   [[nodiscard]] bool is_enabled() const noexcept;
+
+  /**
+   * @brief Return the absolute keep-alive deadline when enabled.
+   * @return Deadline time-point or `std::nullopt` when timer is disabled.
+   */
+  [[nodiscard]] std::optional<std::chrono::steady_clock::time_point>
+  deadline() const noexcept;
 
 private:
   using Clock = std::chrono::steady_clock;

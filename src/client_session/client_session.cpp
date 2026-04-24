@@ -293,6 +293,31 @@ KeepAliveTimer &ClientSession::keep_alive_timer() noexcept {
   return keep_alive_timer_;
 }
 
+const KeepAliveTimer &ClientSession::keep_alive_timer() const noexcept {
+  return keep_alive_timer_;
+}
+
+std::optional<std::chrono::steady_clock::time_point>
+ClientSession::next_outbound_retransmit_deadline() const {
+  if (replay_pending_inflight_) {
+    return std::chrono::steady_clock::now();
+  }
+
+  const std::vector<InflightEntry> entries = inflight_store_.entries_for(client_id_);
+  std::optional<std::chrono::steady_clock::time_point> next_deadline;
+  for (const InflightEntry &entry : entries) {
+    if (entry.direction != InflightDirection::Outbound) {
+      continue;
+    }
+
+    const auto candidate_deadline = entry.timestamp + retransmit_timeout_;
+    if (!next_deadline.has_value() || candidate_deadline < *next_deadline) {
+      next_deadline = candidate_deadline;
+    }
+  }
+  return next_deadline;
+}
+
 ConnectionStateMachine &ClientSession::connection_state_machine() noexcept {
   return connection_state_machine_;
 }

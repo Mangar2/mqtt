@@ -46,6 +46,10 @@ ClientSession *ConnectionSession::client_session() noexcept {
   return client_session_.get();
 }
 
+const ClientSession *ConnectionSession::client_session() const noexcept {
+  return client_session_.get();
+}
+
 std::shared_ptr<OutboundQueue> ConnectionSession::outbound_queue() noexcept {
   if (client_session_ == nullptr) {
     return nullptr;
@@ -96,6 +100,14 @@ void ConnectionSession::arm_session_takeover_close(
 bool ConnectionSession::is_session_takeover_close_due(
     std::chrono::steady_clock::time_point now) const noexcept {
   return session_takeover_close_pending_ && now >= session_takeover_close_deadline_;
+}
+
+std::optional<std::chrono::steady_clock::time_point>
+ConnectionSession::session_takeover_close_deadline() const noexcept {
+  if (!session_takeover_close_pending_) {
+    return std::nullopt;
+  }
+  return session_takeover_close_deadline_;
 }
 
 void ConnectionSession::clear_session_takeover_close_pending() noexcept {

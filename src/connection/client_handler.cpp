@@ -189,6 +189,48 @@ bool prepare_session_takeover_close(ConnectionSession &session) {
 
 namespace client_handler {
 
+std::optional<std::chrono::steady_clock::time_point>
+next_decode_deadline(ConnectionSession &session) {
+  using Clock = std::chrono::steady_clock;
+
+  std::optional<Clock::time_point> next_deadline;
+  const auto update_min_deadline =
+      [&next_deadline](Clock::time_point candidate_deadline) {
+        if (!next_deadline.has_value() || candidate_deadline < *next_deadline) {
+          next_deadline = candidate_deadline;
+        }
+      };
+
+  if (session.phase() == ConnectionSession::Phase::Handshake) {
+    update_min_deadline(session.accepted_at() + k_handshake_timeout);
+  }
+
+  if (session.phase() == ConnectionSession::Phase::Connected) {
+    if (ClientSession *client_session = session.client_session();
+        client_session != nullptr) {
+      if (const auto keep_alive_deadline =
+              client_session->keep_alive_timer().deadline();
+          keep_alive_deadline.has_value()) {
+        update_min_deadline(*keep_alive_deadline);
+      }
+
+      if (const auto retransmit_deadline =
+              client_session->next_outbound_retransmit_deadline();
+          retransmit_deadline.has_value()) {
+        update_min_deadline(*retransmit_deadline);
+      }
+    }
+  }
+
+  if (const auto session_takeover_deadline =
+          session.session_takeover_close_deadline();
+      session_takeover_deadline.has_value()) {
+    update_min_deadline(*session_takeover_deadline);
+  }
+
+  return next_deadline;
+}
+
 void process_accept_job(const AcceptJobPayload &payload, ConnectionTable &table,
                         IoReactor &reactor, JobScheduler &scheduler,
                         Broker &broker, const BrokerConfig &config) {

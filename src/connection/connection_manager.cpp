@@ -138,6 +138,7 @@ void ConnectionManager::stop() noexcept {
   }
 
   running_.store(false);
+  keepalive_watchdog_cv_.notify_all();
 
   if (keepalive_watchdog_thread_.joinable()) {
     keepalive_watchdog_thread_.join();
@@ -184,27 +185,64 @@ bool ConnectionManager::is_running() const noexcept { return running_.load(); }
 
 void ConnectionManager::run_keepalive_watchdog() {
   using namespace std::chrono_literals;
+
+  constexpr auto k_idle_scan_interval = 100ms;
+  constexpr auto k_due_epsilon = 1ms;
+
   while (running_.load()) {
-    std::this_thread::sleep_for(250ms);
-    if (!running_.load() || worker_pool_ == nullptr) {
+    const auto now = std::chrono::steady_clock::now();
+    auto next_deadline = std::chrono::steady_clock::time_point::max();
+    std::vector<int> due_decode_fds;
+
+    if (worker_pool_ == nullptr) {
+      std::unique_lock<std::mutex> lock_guard(keepalive_watchdog_mutex_);
+      keepalive_watchdog_cv_.wait_for(lock_guard, k_idle_scan_interval,
+                                      [this] { return !running_.load(); });
       continue;
     }
 
     const std::vector<SocketHandle> socket_handles =
         connection_table_.snapshot_socket_handles();
-    const auto now = std::chrono::steady_clock::now();
     for (SocketHandle socket_handle : socket_handles) {
       const int connection_fd = static_cast<int>(socket_handle);
       if (ConnectionTable::Entry *entry = connection_table_.find(connection_fd);
           entry != nullptr) {
         entry->slot.maybe_trim_write_capacity(now);
+
+        if (entry->session != nullptr) {
+          const auto decode_deadline =
+              client_handler::next_decode_deadline(*entry->session);
+          if (decode_deadline.has_value()) {
+            if (*decode_deadline <= now + k_due_epsilon) {
+              due_decode_fds.push_back(connection_fd);
+            } else if (*decode_deadline < next_deadline) {
+              next_deadline = *decode_deadline;
+            }
+          }
+        }
       }
+    }
+
+    for (int connection_fd : due_decode_fds) {
       try {
         worker_pool_->submit(ConnectionJob{.type = JobType::Decode,
                                            .connection_fd = connection_fd,
                                            .payload = DecodeJobPayload{}});
       } catch (const std::exception &) {
       }
+    }
+
+    std::unique_lock<std::mutex> lock_guard(keepalive_watchdog_mutex_);
+    if (!running_.load()) {
+      break;
+    }
+
+    if (next_deadline == std::chrono::steady_clock::time_point::max()) {
+      keepalive_watchdog_cv_.wait_for(lock_guard, k_idle_scan_interval,
+                                      [this] { return !running_.load(); });
+    } else {
+      keepalive_watchdog_cv_.wait_until(lock_guard, next_deadline,
+                                        [this] { return !running_.load(); });
     }
   }
 }

@@ -60,6 +60,7 @@ public:
 
   void install_client_session(std::unique_ptr<ClientSession> client_session);
   ClientSession *client_session() noexcept;
+  [[nodiscard]] const ClientSession *client_session() const noexcept;
   std::shared_ptr<OutboundQueue> outbound_queue() noexcept;
 
   [[nodiscard]] Phase phase() const noexcept;
@@ -79,6 +80,8 @@ public:
       std::chrono::steady_clock::duration delay) noexcept;
     [[nodiscard]] bool is_session_takeover_close_due(
       std::chrono::steady_clock::time_point now) const noexcept;
+    [[nodiscard]] std::optional<std::chrono::steady_clock::time_point>
+    session_takeover_close_deadline() const noexcept;
     void clear_session_takeover_close_pending() noexcept;
 
   [[nodiscard]] std::chrono::steady_clock::time_point

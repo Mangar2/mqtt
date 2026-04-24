@@ -7,9 +7,13 @@
 
 #include "executor/connection_job.h"
 
+#include <chrono>
+#include <optional>
+
 namespace mqtt {
 
 class Broker;
+class ConnectionSession;
 class ConnectionTable;
 class IoReactor;
 class JobScheduler;
@@ -29,6 +33,9 @@ void process_drain_job(int fd, ConnectionTable &table, IoReactor &reactor,
 
 void process_close_job(int fd, ConnectionTable &table, IoReactor &reactor,
                        Broker &broker);
+
+[[nodiscard]] std::optional<std::chrono::steady_clock::time_point>
+next_decode_deadline(ConnectionSession &session);
 
 } // namespace client_handler
 
