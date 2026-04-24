@@ -6,8 +6,8 @@ from __future__ import annotations
 Features:
 - Hierarchical test names (for example: connect/anonymous).
 - Prefix-based filtering via --filter (for example: --filter connect).
-- Re-run only previously failed tests via --only-failed.
-- Re-run each selected test multiple times via --repeat.
+- Re-run previously failed/flaky tests and tests without persisted results via --only-failed.
+- Re-run each selected test multiple times via --repeat (skip outcomes stop further repeats).
 - Reset persisted state via --reset-state.
 - Persist success/failed/flaky results to broker-type specific result files (local/remote).
 """
@@ -555,7 +555,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--only-failed",
         action="store_true",
-        help="Re-run only tests that are marked as failed or flaky in the result file",
+        help="Re-run tests that are failed/flaky or missing from the result file",
     )
     parser.add_argument(
         "--repeat",
@@ -620,17 +620,26 @@ def main() -> int:
     existing_results = state.get("results", {})
 
     if args.only_failed:
-        failed_names = {
+        failed_or_flaky_names = {
             name
             for name, result in existing_results.items()
             if isinstance(result, dict) and result.get("status") in {"failed", "flaky"}
         }
-        selected_tests = [test for test in all_tests if test.name in failed_names]
+        selected_tests = [
+            test
+            for test in all_tests
+            if test.name in failed_or_flaky_names or test.name not in existing_results
+        ]
         if not selected_tests:
-            print("No failed or flaky tests to re-run.")
+            print("No failed, flaky, or untracked tests to re-run.")
             return 0
     else:
         selected_tests = _select_by_filters(all_tests, args.filter)
+
+    is_full_unfiltered_run = not args.only_failed and len(args.filter) == 0
+    if is_full_unfiltered_run:
+        existing_results = {}
+        print("[SETUP] Full unfiltered run: cleared previous result entries")
 
     if not selected_tests:
         print("No tests selected. Use --list to inspect available names.")
@@ -708,6 +717,10 @@ def main() -> int:
                     print(f"[{status_text.upper()}] {test.name} ({run_index + 1}/{args.repeat})")
                 if details:
                     print(f"  {details}")
+
+                if status_text == "skipped" and run_index + 1 < args.repeat:
+                    print("  Skipped run detected, stopping remaining repeats for this test")
+                    break
 
             final_status, final_details = _finalize_repeated_result(run_outcomes)
             if final_status == "failed":
