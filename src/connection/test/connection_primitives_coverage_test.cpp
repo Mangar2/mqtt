@@ -56,6 +56,17 @@ TEST_CASE("keep_alive_timer_enabled_and_disabled_paths", "[connection]") {
   CHECK_FALSE(enabled_timer.is_expired());
 }
 
+TEST_CASE("keep_alive_deadline_reflects_enabled_and_disabled_state",
+          "[connection]") {
+  KeepAliveTimer disabled_timer(0U);
+  CHECK_FALSE(disabled_timer.deadline().has_value());
+
+  KeepAliveTimer enabled_timer(10U);
+  const auto enabled_deadline = enabled_timer.deadline();
+  REQUIRE(enabled_deadline.has_value());
+  CHECK(*enabled_deadline > std::chrono::steady_clock::now());
+}
+
 TEST_CASE("topic_alias_table_all_core_paths", "[connection]") {
   TopicAliasTable table(2U);
   CHECK(table.max_aliases() == 2U);

@@ -11,9 +11,15 @@
 | Test name | Scenario | Input | Expected |
 |-----------|----------|-------|----------|
 | `decode_one_packet_returns_need_more_on_empty_stream` | Decode step on empty stream buffer | `ConnectionSession` in handshake phase, empty stream | `DecodeOutcome::NeedMore` |
+| `decode_one_packet_runtime_pingreq_returns_processed` | Decode step runtime success branch | connected `ConnectionSession` + encoded `PINGREQ` in stream | `DecodeOutcome::Processed` |
+| `decode_one_packet_runtime_codec_error_enqueues_disconnect` | Runtime codec error branch with connected session | connected `ConnectionSession` + malformed runtime packet bytes | `DecodeOutcome::ProtocolError` and pending DISCONNECT frame |
+| `decode_one_packet_runtime_unknown_exception_maps_protocol_error` | Decode step catch-all exception branch | connected session + broker shutdown before runtime decode of AUTH packet | `DecodeOutcome::ProtocolError` |
 | `process_handshake_packet_rejects_non_connect_packet` | Handshake protocol enforcement | Handshake session + `PingreqPacket` | `HandshakeOutcome::Rejected` and pending rejection frame |
 | `process_handshake_packet_accepts_connect_and_installs_client_session` | CONNECT accepted in single-step helper | Handshake session + valid `ConnectPacket` | `HandshakeOutcome::ConnectAccepted`, phase becomes connected, client session installed |
+| `process_handshake_packet_auth_method_connect_not_rejected` | CONNECT with auth method follows non-reject path | handshake session + CONNECT with auth method | outcome is not `Rejected` and response frame is queued |
+| `process_handshake_packet_auth_success_path` | Enhanced auth completion branch | ongoing auth exchange + AUTH continue packet | `HandshakeOutcome::ConnectAccepted` |
 | `process_runtime_packet_pingreq_enqueues_pingresp` | Runtime control packet handling | Connected session + `PingreqPacket` | `RuntimeOutcome::Continuing` and one encoded response frame |
+| `process_runtime_packet_auth_failure_returns_disconnect_error` | Runtime AUTH failure branch | connected session with enhanced auth, then failing AUTH packet | `RuntimeOutcome::DisconnectError` |
 | `drain_outbound_to_write_buffer_moves_client_session_frames` | Outbound drain helper appends encoded frames | Connected session with queued outbound message | pending encoded frame storage grows |
 
 ## Client handler job processors (threading refactor step 05)
@@ -24,6 +30,8 @@
 | `process_accept_job_ignores_invalid_socket` | Invalid accept payload guard | `AcceptJobPayload{socket_handle=k_invalid_socket}` | no table entry created |
 | `process_decode_job_closes_on_empty_read` | Decode path schedules close on peer EOF | accepted socket with peer half-close | connection entry can be closed and removed |
 | `process_decode_job_malformed_packet_submits_close` | Decode path handles malformed packet bytes | accepted socket with malformed frame bytes | close path triggered and entry removed |
+| `process_decode_job_reschedules_when_stream_buffer_still_has_packets` | Decode reschedule branch for remaining buffered packets | accepted non-blocking fd + preloaded stream with > decode packet budget frames | decode follow-up job is queued |
+| `next_decode_deadline_combines_handshake_keepalive_retransmit_and_takeover` | Deadline helper covers all candidate sources | sessions in handshake/connected/takeover states with active timers | earliest expected deadline is returned |
 | `process_drain_and_close_ignore_missing_entry` | Drain/close operations tolerate unknown fd | empty table and unknown fd | no throw and no side effects |
 | `process_accept_job_ignores_duplicate_fd` | Duplicate fd add guard in accept path | same accepted fd submitted twice | second add ignored, existing entry retained |
 | `process_decode_job_handles_peer_eof_with_close_job` | Decode path handles `read == 0` EOF branch | accepted socket with peer write-shutdown | close path is scheduled and cleanup succeeds |
@@ -58,6 +66,7 @@
 | `not_expired_after_reset` | Timer reset before expiry | reset() | is_expired() == false |
 | `disabled_timer_never_expires` | Disabled timer | KeepAliveTimer(0) | is_expired() == false always |
 | `enabled_when_keep_alive_nonzero` | Keep Alive > 0 | KeepAliveTimer(10) | is_enabled() == true |
+| `keep_alive_deadline_reflects_enabled_and_disabled_state` | Deadline accessor paths | KeepAliveTimer(0) and KeepAliveTimer(10) | disabled returns nullopt, enabled returns a deadline |
 
 ## TopicAliasTable (7.3)
 

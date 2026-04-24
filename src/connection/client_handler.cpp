@@ -7,10 +7,8 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <iostream>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -62,44 +60,6 @@ constexpr std::size_t k_decode_packet_budget = 32U;
 constexpr std::size_t k_drain_write_budget_bytes = 64U * 1024U;
 constexpr auto k_handshake_timeout = std::chrono::seconds(30);
 constexpr auto k_session_takeover_grace = std::chrono::milliseconds(100);
-
-std::atomic<std::uint64_t> g_decode_rescheduled_total{0U};
-std::atomic<std::uint64_t> g_decode_packet_budget_exhausted_total{0U};
-std::atomic<std::uint64_t> g_decode_read_budget_exhausted_total{0U};
-std::atomic<std::uint64_t> g_decode_streambuffer_pending_total{0U};
-
-void note_decode_rescheduled_debug(bool packet_budget_exhausted,
-                                   bool read_budget_exhausted,
-                                   bool streambuffer_has_packet) {
-  if (packet_budget_exhausted) {
-    (void)g_decode_packet_budget_exhausted_total.fetch_add(1U);
-  }
-  if (read_budget_exhausted) {
-    (void)g_decode_read_budget_exhausted_total.fetch_add(1U);
-  }
-  if (streambuffer_has_packet) {
-    (void)g_decode_streambuffer_pending_total.fetch_add(1U);
-  }
-
-  const std::uint64_t decode_rescheduled_total =
-      g_decode_rescheduled_total.fetch_add(1U) + 1U;
-  if ((decode_rescheduled_total % 100U) == 0U) {
-    const std::uint64_t packet_budget_total =
-        g_decode_packet_budget_exhausted_total.load();
-    const std::uint64_t read_budget_total =
-        g_decode_read_budget_exhausted_total.load();
-    const std::uint64_t streambuffer_pending_total =
-        g_decode_streambuffer_pending_total.load();
-    std::cout << "[debug] decode_rescheduled_total="
-              << decode_rescheduled_total
-              << " decode_packet_budget_exhausted_total="
-              << packet_budget_total
-              << " decode_read_budget_exhausted_total="
-              << read_budget_total
-              << " decode_streambuffer_pending_total="
-              << streambuffer_pending_total << std::endl;
-  }
-}
 
 bool append_frame_to_slot(ConnectionSlot &slot, const WriteBuffer &frame,
                           bool is_websocket) {
@@ -421,9 +381,6 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
     scheduler.submit(ConnectionJob{.type = JobType::Decode,
                                    .connection_fd = fd,
                                    .payload = DecodeJobPayload{}});
-    note_decode_rescheduled_debug(packet_budget_exhausted,
-                                  read_budget_exhausted,
-                                  streambuffer_has_packet);
   }
 
   // Only treat peer_closed as a definitive close-after-flush signal once the

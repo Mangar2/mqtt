@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
+#include <optional>
 #include <utility>
 
 #include "broker/broker.h"
@@ -15,6 +17,8 @@
 #include "connection/runtime_step.h"
 #include "data_model/message/message.h"
 #include "data_model/packet/control_packets.h"
+#include "data_model/property/property.h"
+#include "data_model/property/property_id.h"
 #include "data_model/types/binary_data.h"
 #include "data_model/types/utf8_string.h"
 #include "network/tcp_connection.h"
@@ -108,6 +112,45 @@ TEST_CASE("decode_one_packet_returns_disconnected_for_non_connected_phase",
   broker.shutdown();
 }
 
+TEST_CASE("decode_one_packet_runtime_pingreq_returns_processed", "[connection]") {
+  const BrokerConfig config = make_step_test_config();
+  Broker broker(config);
+  broker.startup();
+
+  ConnectionSession session = make_session(config);
+  const AnyPacket connect_packet = make_connect_packet();
+  REQUIRE(process_handshake_packet(session, broker, connect_packet) ==
+          HandshakeOutcome::ConnectAccepted);
+  session.clear_pending_write_frames();
+
+  const std::array<uint8_t, 2> pingreq_frame{0xC0U, 0x00U};
+  session.stream_buffer().append(pingreq_frame);
+  CHECK(decode_one_packet(session, broker) == DecodeOutcome::Processed);
+
+  broker.shutdown();
+}
+
+TEST_CASE("decode_one_packet_runtime_codec_error_enqueues_disconnect",
+          "[connection]") {
+  const BrokerConfig config = make_step_test_config();
+  Broker broker(config);
+  broker.startup();
+
+  ConnectionSession session = make_session(config);
+  const AnyPacket connect_packet = make_connect_packet();
+  REQUIRE(process_handshake_packet(session, broker, connect_packet) ==
+          HandshakeOutcome::ConnectAccepted);
+  session.clear_pending_write_frames();
+
+  const std::vector<uint8_t> malformed_publish{0x36U, 0x02U, 0x00U, 0x01U};
+  session.stream_buffer().append(malformed_publish);
+
+  CHECK(decode_one_packet(session, broker) == DecodeOutcome::ProtocolError);
+  CHECK_FALSE(session.pending_write_frames().empty());
+
+  broker.shutdown();
+}
+
 TEST_CASE("process_handshake_packet_rejects_non_connect_packet", "[connection]") {
   const BrokerConfig config = make_step_test_config();
   Broker broker(config);
@@ -171,6 +214,26 @@ TEST_CASE("process_handshake_packet_auth_branch_handles_missing_exchange",
   const AnyPacket auth_packet = AuthPacket{};
   CHECK(process_handshake_packet(session, broker, auth_packet) ==
         HandshakeOutcome::Rejected);
+
+  broker.shutdown();
+}
+
+TEST_CASE("process_handshake_packet_auth_method_connect_not_rejected", "[connection]") {
+  BrokerConfig config = make_step_test_config();
+  Broker broker(config);
+  broker.startup();
+
+  ConnectionSession session = make_session(config);
+  ConnectPacket connect_packet = make_connect_packet();
+  connect_packet.properties.push_back(Property{
+      .id = PropertyId::AuthenticationMethod,
+      .value = Utf8String{"token-auth"},
+  });
+
+  const HandshakeOutcome outcome =
+      process_handshake_packet(session, broker, connect_packet);
+  CHECK(outcome != HandshakeOutcome::Rejected);
+  CHECK_FALSE(session.pending_write_frames().empty());
 
   broker.shutdown();
 }

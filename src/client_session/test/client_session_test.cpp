@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <memory>
+#include <sstream>
 #include <thread>
 #include <utility>
 
@@ -16,6 +17,7 @@
 #include "data_model/types/qos.h"
 #include "data_model/types/utf8_string.h"
 #include "outbound_queue/outbound_queue.h"
+#include "monitoring/structured_tracer.h"
 #include "store/inflight_store.h"
 
 namespace mqtt {
@@ -520,6 +522,89 @@ TEST_CASE("on_auth_routes_to_handler_when_not_reauthenticate",
   const AuthResult auth_result = session.on_auth(auth_packet);
   CHECK(auth_result.status == AuthStatus::Failure);
   CHECK(auth_result.reason_code == ReasonCode::BadAuthenticationMethod);
+}
+
+TEST_CASE("client_session_tracer_and_auth_accessors_cover_helper_paths",
+          "[client_session]") {
+  InflightStore inflight_store;
+  auto authenticator = std::make_shared<CallbackAuthenticator>(
+      [](const ConnectPacket &) {
+        BinaryData challenge;
+        challenge.data = {0x01U};
+        return AuthResult{.status = AuthStatus::Continue,
+                          .reason_code = ReasonCode::ContinueAuthentication,
+                          .auth_data = challenge};
+      });
+
+  auto queue = std::make_shared<OutboundQueue>();
+  ClientSession session("client-1", "user-1", authenticator, queue,
+                        inflight_store, 30U, 10U, 8U,
+                        std::chrono::seconds(20), 0U, "token-auth");
+
+  std::ostringstream trace_output;
+  StructuredTracer tracer(trace_output);
+  session.set_tracer(&tracer);
+
+  const ClientSession &const_session = session;
+  CHECK(const_session.keep_alive_timer().is_enabled());
+  CHECK(const_session.negotiated_auth_method() == "token-auth");
+}
+
+TEST_CASE("mark_session_resumed_and_next_retransmit_deadline_cover_paths",
+          "[client_session]") {
+  InflightStore inflight_store;
+  auto authenticator =
+      std::make_shared<CallbackAuthenticator>([](const ConnectPacket &) {
+        return AuthResult{.status = AuthStatus::Success,
+                          .reason_code = ReasonCode::Success,
+                          .auth_data = std::nullopt};
+      });
+
+  auto queue = std::make_shared<OutboundQueue>();
+  ClientSession session("client-1", "user-1", authenticator, queue,
+                        inflight_store, 30U, 10U, 8U, 10ms);
+
+  const auto now = std::chrono::steady_clock::now();
+  inflight_store.create(
+      "client-1",
+      InflightEntry{.packet_id = 22U,
+                    .message = make_message("out/retry", QoS::AtLeastOnce),
+                    .qos = QoS::AtLeastOnce,
+                    .state = InflightState::WaitingForPuback,
+                    .direction = InflightDirection::Outbound,
+                    .timestamp = now});
+
+  session.mark_session_resumed();
+  const auto next_deadline = session.next_outbound_retransmit_deadline();
+  REQUIRE(next_deadline.has_value());
+
+  const auto immediate_frames = session.drain_outbound();
+  CHECK_FALSE(immediate_frames.empty());
+
+  CHECK_NOTHROW(session.abort_inbound_qos2(999U));
+}
+
+TEST_CASE("drain_outbound_qos1_size_check_path_sets_packet_id_for_limit_encoding",
+          "[client_session]") {
+  InflightStore inflight_store;
+  auto authenticator =
+      std::make_shared<CallbackAuthenticator>([](const ConnectPacket &) {
+        return AuthResult{.status = AuthStatus::Success,
+                          .reason_code = ReasonCode::Success,
+                          .auth_data = std::nullopt};
+      });
+
+  auto queue = std::make_shared<OutboundQueue>();
+  ClientSession session("client-1", "user-1", authenticator, queue,
+                        inflight_store, 30U, 10U, 8U,
+                        std::chrono::seconds(20), 32U);
+
+  Message oversized_qos1 = make_message("out/max/qos1", QoS::AtLeastOnce);
+  oversized_qos1.payload.data.assign(128U, 0x42U);
+  REQUIRE(queue->push(oversized_qos1));
+
+  const std::vector<WriteBuffer> frames = session.drain_outbound();
+  CHECK(frames.empty());
 }
 
 } // namespace mqtt

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
@@ -71,6 +72,25 @@ TEST_CASE("write_buffer_drains_in_fifo_order", "[network]") {
   const std::vector<uint8_t> drained = drain_all_contiguous_write_bytes(slot);
   const std::vector<uint8_t> expected{3, 4, 5, 6};
   CHECK(drained == expected);
+}
+
+TEST_CASE("write_buffer_grows_and_trims_after_idle", "[network]") {
+  ConnectionSlot slot(static_cast<SocketHandle>(111));
+
+  std::vector<uint8_t> large_frame(40U * 1024U, 0xAB);
+  REQUIRE(slot.push_write_bytes(large_frame));
+  CHECK(slot.write_capacity() > ConnectionSlot::k_min_write_capacity);
+
+  REQUIRE(slot.pop_write_bytes(large_frame.size()) == large_frame.size());
+  CHECK(slot.write_size() == 0U);
+
+  const auto future_time = std::chrono::steady_clock::now() +
+                           ConnectionSlot::k_write_peak_window +
+                           ConnectionSlot::k_write_shrink_idle +
+                           std::chrono::seconds(1);
+  slot.maybe_trim_write_capacity(future_time);
+
+  CHECK(slot.write_capacity() == ConnectionSlot::k_min_write_capacity);
 }
 
 TEST_CASE("phase_transitions_connecting_connected_closing_are_legal",

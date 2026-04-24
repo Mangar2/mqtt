@@ -9,6 +9,7 @@ namespace mqtt {
 
 namespace {
 
+#ifndef MQTT_TRACING_DISABLED
 std::string_view job_type_name(JobType job_type) {
   switch (job_type) {
   case JobType::Accept:
@@ -22,6 +23,7 @@ std::string_view job_type_name(JobType job_type) {
   }
   return "Unknown";
 }
+#endif
 
 bool is_suspicious_backlog_type(JobType job_type) {
   return job_type == JobType::Decode || job_type == JobType::Drain;
@@ -67,6 +69,7 @@ void JobScheduler::submit(ConnectionJob job) {
   }
 
   if (is_suspicious_backlog_type(job.type)) {
+#ifndef MQTT_TRACING_DISABLED
     TRACE_GUARD(tracer_, TraceLevel::Trace, "executor") {
       TraceEvent event;
       event.level = TraceLevel::Trace;
@@ -81,6 +84,7 @@ void JobScheduler::submit(ConnectionJob job) {
                               std::to_string(state.backlog.size()));
       tracer_->emit(event);
     }
+#endif
   }
 
   state.backlog.push_back(std::move(job));

@@ -96,6 +96,7 @@ Catch2 tag: `[network]`.
 | `slot_capacity_and_free_space_accessors_report_current_values` | Write capacity and free space values are reported correctly |
 | `zero_capacity_write_capacity_is_clamped` | Write capacity 0 clamps to one-byte writable limit |
 | `write_buffer_drains_in_fifo_order` | Write ring-buffer drains in FIFO order including wrap-around |
+| `write_buffer_grows_and_trims_after_idle` | Write buffer grows for larger frames and later trims under idle low usage |
 | `phase_transitions_connecting_connected_closing_are_legal` | Forward phase transitions are accepted |
 | `phase_transition_to_same_phase_returns_true` | Transitioning to current phase is accepted as no-op |
 | `phase_transition_back_to_connecting_is_rejected` | Backwards transition to `Connecting` is rejected |

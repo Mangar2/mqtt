@@ -21,7 +21,9 @@
 
 #include "broker/broker.h"
 #include "broker/broker_config.h"
+#include "auth/authenticator.h"
 #include "codec/packet/connect_codec.h"
+#include "client_session/client_session.h"
 #include "connection/client_handler.h"
 #include "connection/connection_flow_support.h"
 #include "connection/connection_session.h"
@@ -32,6 +34,7 @@
 #include "network/io_reactor.h"
 #include "network/socket_ops.h"
 #include "network/tcp_connection.h"
+#include "store/inflight_store.h"
 
 using namespace mqtt;
 
@@ -365,4 +368,161 @@ TEST_CASE("process_drain_job_websocket_frame_path_and_write_error", "[connection
 
   reactor.stop();
   broker.shutdown();
+}
+
+TEST_CASE("next_decode_deadline_combines_handshake_keepalive_retransmit_and_takeover",
+          "[connection]") {
+  const BrokerConfig config = make_config();
+
+  auto handshake_connection = std::make_unique<TcpConnection>(k_invalid_socket);
+  ConnectionSession handshake_session(std::move(handshake_connection), nullptr,
+                                      false, config);
+  const auto handshake_deadline = client_handler::next_decode_deadline(handshake_session);
+  CHECK(handshake_deadline.has_value());
+
+  auto connected_connection = std::make_unique<TcpConnection>(k_invalid_socket);
+  ConnectionSession connected_session(std::move(connected_connection), nullptr,
+                                      false, config);
+  connected_session.set_phase(ConnectionSession::Phase::Connected);
+
+  InflightStore inflight_store;
+  auto authenticator =
+      std::make_shared<CallbackAuthenticator>([](const ConnectPacket &) {
+        return AuthResult{.status = AuthStatus::Success,
+                          .reason_code = ReasonCode::Success,
+                          .auth_data = std::nullopt};
+      });
+  auto outbound_queue = std::make_shared<OutboundQueue>();
+  auto client_session = std::make_unique<ClientSession>(
+      "deadline-client", "user", authenticator, outbound_queue,
+      inflight_store, 10U, 10U, 8U, std::chrono::milliseconds(50));
+
+  inflight_store.create(
+      "deadline-client",
+      InflightEntry{.packet_id = 4U,
+                    .message = Message{.topic = Utf8String{"d/topic"},
+                                       .payload = BinaryData{{0x01U}},
+                                       .qos = QoS::AtLeastOnce,
+                                       .retain = false,
+                                       .properties = {}},
+                    .qos = QoS::AtLeastOnce,
+                    .state = InflightState::WaitingForPuback,
+                    .direction = InflightDirection::Outbound,
+                    .timestamp = std::chrono::steady_clock::now()});
+
+  connected_session.install_client_session(std::move(client_session));
+  connected_session.arm_session_takeover_close(std::chrono::milliseconds(200));
+  const auto connected_deadline =
+      client_handler::next_decode_deadline(connected_session);
+  CHECK(connected_deadline.has_value());
+}
+
+TEST_CASE("process_decode_job_reschedules_when_stream_buffer_still_has_packets",
+          "[connection]") {
+#ifdef _WIN32
+  SUCCEED("socketpair-based coverage test is POSIX-only");
+#else
+  const BrokerConfig config = make_config();
+  Broker broker(config);
+  broker.startup();
+
+  IoReactor reactor;
+  reactor.start();
+  JobQueue queue;
+  JobScheduler scheduler(queue);
+  ConnectionTable table;
+
+  const auto socket_pair = make_connected_socket_pair();
+  const SocketHandle accepted_socket = socket_pair.first;
+  const SocketHandle client_socket = socket_pair.second;
+  REQUIRE(set_nonblocking(accepted_socket) == IoResult::Ok);
+
+  auto connection = std::make_unique<TcpConnection>(accepted_socket);
+  auto session = std::make_unique<ConnectionSession>(std::move(connection),
+                                                     nullptr, false, config);
+  session->set_phase(ConnectionSession::Phase::Connected);
+  session->connect_result().client_id = "reschedule-client";
+
+  InflightStore inflight_store;
+  auto authenticator =
+      std::make_shared<CallbackAuthenticator>([](const ConnectPacket &) {
+        return AuthResult{.status = AuthStatus::Success,
+                          .reason_code = ReasonCode::Success,
+                          .auth_data = std::nullopt};
+      });
+  auto outbound_queue = std::make_shared<OutboundQueue>();
+  auto client_session = std::make_unique<ClientSession>(
+      "reschedule-client", "user", authenticator, outbound_queue,
+      inflight_store, 30U, 100U, 8U);
+  session->install_client_session(std::move(client_session));
+
+  static constexpr std::array<uint8_t, 2> k_pingreq_frame{0xC0U, 0x00U};
+  for (std::size_t index = 0; index < 40U; ++index) {
+    session->stream_buffer().append(k_pingreq_frame);
+  }
+
+  const int connection_fd = static_cast<int>(accepted_socket);
+  REQUIRE(table.add(connection_fd, ConnectionSlot(accepted_socket),
+                    std::move(session)));
+
+  client_handler::process_decode_job(connection_fd, table, reactor, scheduler,
+                                     broker);
+
+  bool decode_job_seen = false;
+  const std::size_t pending_jobs = queue.size();
+  for (std::size_t index = 0; index < pending_jobs; ++index) {
+    const auto maybe_job = queue.pop_blocking();
+    REQUIRE(maybe_job.has_value());
+    if (maybe_job->type == JobType::Decode) {
+      decode_job_seen = true;
+    }
+  }
+  CHECK(decode_job_seen);
+
+  client_handler::process_close_job(connection_fd, table, reactor, broker);
+  close_socket_handle(client_socket);
+  reactor.stop();
+  broker.shutdown();
+#endif
+}
+
+TEST_CASE("process_decode_job_websocket_without_transport_submits_close",
+          "[connection]") {
+#ifdef _WIN32
+  SUCCEED("socketpair-based coverage test is POSIX-only");
+#else
+  const BrokerConfig config = make_config();
+  Broker broker(config);
+  broker.startup();
+
+  IoReactor reactor;
+  reactor.start();
+  JobQueue queue;
+  JobScheduler scheduler(queue);
+  ConnectionTable table;
+
+  const auto socket_pair = make_connected_socket_pair();
+  const SocketHandle accepted_socket = socket_pair.first;
+  const SocketHandle client_socket = socket_pair.second;
+  REQUIRE(set_nonblocking(accepted_socket) == IoResult::Ok);
+
+  auto connection = std::make_unique<TcpConnection>(accepted_socket);
+  auto session = std::make_unique<ConnectionSession>(std::move(connection),
+                                                     nullptr, true, config);
+  const int connection_fd = static_cast<int>(accepted_socket);
+  REQUIRE(table.add(connection_fd, ConnectionSlot(accepted_socket),
+                    std::move(session)));
+
+  client_handler::process_decode_job(connection_fd, table, reactor, scheduler,
+                                     broker);
+
+  const auto maybe_job = queue.pop_blocking();
+  REQUIRE(maybe_job.has_value());
+  CHECK(maybe_job->type == JobType::Close);
+
+  client_handler::process_close_job(connection_fd, table, reactor, broker);
+  close_socket_handle(client_socket);
+  reactor.stop();
+  broker.shutdown();
+#endif
 }

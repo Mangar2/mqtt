@@ -5,6 +5,8 @@
 | Test name | Scenario | Input | Expected |
 |-----------|----------|-------|----------|
 | `client_session_ctor_sets_connected_and_exposes_accessors` | Construct post-CONNECT context | client_id, username, queue, store | accessors return values; state is Connected |
+| `client_session_tracer_and_auth_accessors_cover_helper_paths` | Accessor/helper coverage for tracer/auth methods | set tracer pointer, const keep-alive access, negotiated auth method | all accessor methods return expected values without throwing |
+| `mark_session_resumed_and_next_retransmit_deadline_cover_paths` | Session resume helper and retransmit deadline lookup | preloaded outbound inflight entries + mark_session_resumed | replay pending state and next deadline are reported |
 
 ## Inbound handlers
 
@@ -25,6 +27,7 @@
 | `drain_outbound_retransmits_overdue_qos1` | QoS1 retransmission | queue QoS1, wait past retransmit timeout, drain again | second drain returns retransmitted PUBLISH with DUP=true |
 | `drain_outbound_retransmits_overdue_qos2_waiting_for_pubrec` | QoS2 retransmission phase 1 | queue QoS2, wait past retransmit timeout, drain again | second drain returns retransmitted PUBLISH with DUP=true |
 | `drain_outbound_retransmits_overdue_qos2_waiting_for_pubcomp` | QoS2 retransmission phase 2 | queue QoS2, process PUBREC, wait timeout, drain again | returns retransmitted PUBREL |
+| `drain_outbound_qos1_size_check_path_sets_packet_id_for_limit_encoding` | Size-check helper path for QoS>0 | maximum packet size configured low with queued QoS1 message | message is dropped by size check without crash |
 
 ## AUTH handling
 

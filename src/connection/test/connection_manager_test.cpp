@@ -134,3 +134,4 @@ TEST_CASE("connection_manager_ws_bind_failure_after_mqtt_listener",
 
   occupied_ws_listener.close();
 }
+

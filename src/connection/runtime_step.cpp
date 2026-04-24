@@ -24,6 +24,7 @@ void append_frame(ConnectionSession &session, WriteBuffer frame) {
   session.pending_write_frames().push_back(std::move(frame));
 }
 
+#ifndef MQTT_TRACING_DISABLED
 std::string packet_name(const AnyPacket &packet) {
   return std::visit(
       [](const auto &typed_packet) -> std::string {
@@ -111,6 +112,27 @@ void trace_connection_packet(Broker &broker, std::string_view client_id,
     broker.structured_tracer().emit(event);
   }
 }
+#else
+void trace_connection_warning(Broker &broker, std::string_view client_id,
+                              std::string_view info,
+                              const AnyPacket *packet = nullptr,
+                              std::string_view detail = {}) {
+  (void)broker;
+  (void)client_id;
+  (void)info;
+  (void)packet;
+  (void)detail;
+}
+
+void trace_connection_packet(Broker &broker, std::string_view client_id,
+                             std::string_view info,
+                             const AnyPacket &packet) {
+  (void)broker;
+  (void)client_id;
+  (void)info;
+  (void)packet;
+}
+#endif
 
 RuntimeOutcome protocol_error(ConnectionSession &session, Broker &broker,
                               const AnyPacket *packet = nullptr,
