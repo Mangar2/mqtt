@@ -16,6 +16,7 @@
 #include "broker/broker.h"
 #include "broker/broker_config.h"
 #include "client_session/client_session.h"
+#include "monitoring/structured_tracer.h"
 #include "connection/close_step.h"
 #include "connection/connection_flow_support.h"
 #include "connection/connection_session.h"
@@ -282,13 +283,32 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
       session.phase() == ConnectionSession::Phase::Connected &&
       session.client_session() != nullptr) {
     auto &keep_alive_timer = session.client_session()->keep_alive_timer();
+    TRACE_GUARD(&broker.structured_tracer(), TraceLevel::Trace, "connection") {
+      TraceEvent event;
+      event.level = TraceLevel::Trace;
+      event.module = "connection";
+      event.info = "keepalive_check";
+      event.data.emplace_back("fd", std::to_string(fd));
+      event.data.emplace_back("enabled",
+          keep_alive_timer.is_enabled() ? "true" : "false");
+      event.data.emplace_back("expired",
+          keep_alive_timer.is_expired() ? "true" : "false");
+      broker.structured_tracer().emit(event);
+    }
     if (keep_alive_timer.is_enabled() && keep_alive_timer.is_expired()) {
       session.disconnect_state().clean_disconnect = true;
       session.disconnect_state().reason_code = ReasonCode::KeepAliveTimeout;
       session.pending_write_frames().push_back(
           encode_disconnect_packet(ReasonCode::KeepAliveTimeout));
       session.set_phase(ConnectionSession::Phase::Closing);
-      close_after_flush = true;
+      // Best-effort: flush DISCONNECT immediately without waiting for
+      // write-readiness. The will message must be published promptly and the
+      // remote socket may not become writable before the test times out.
+      if (move_pending_frames_to_slot(session, slot)) {
+        drain_socket_write_buffer(slot, k_drain_write_budget_bytes);
+      }
+      submit_close(scheduler, fd);
+      return;
     }
   }
 

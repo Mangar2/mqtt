@@ -96,10 +96,17 @@ def stop_remote_broker(remote_host: str) -> None:
 
 def start_remote_broker(remote_host: str, remote_dir: str,
                         remote_config: str,
-                        trace_level: str) -> None:
+                        trace_level: str,
+                        trace_modules: list[str] | None = None) -> None:
     trace_level_argument = ""
     if trace_level:
         trace_level_argument = f" --trace-level={shlex.quote(trace_level)}"
+
+    trace_module_arguments = ""
+    if trace_modules:
+        trace_module_arguments = " " + " ".join(
+            f"--trace-module={shlex.quote(m)}" for m in trace_modules
+        )
 
     start_script = (
         f"cd {remote_shell_dir(remote_dir)} && "
@@ -107,11 +114,13 @@ def start_remote_broker(remote_host: str, remote_dir: str,
         "setsid -f ./mqtt-broker "
         f"{shlex.quote(remote_config)} "
         f"{trace_level_argument} "
+        f"{trace_module_arguments} "
         "> broker.log 2>&1 < /dev/null; "
         "else "
         "nohup ./mqtt-broker "
         f"{shlex.quote(remote_config)} "
         f"{trace_level_argument} "
+        f"{trace_module_arguments} "
         "> broker.log 2>&1 < /dev/null & "
         "fi; "
         "pgrep -n -x mqtt-broker > broker.pid || true"
@@ -247,6 +256,14 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--trace-module",
+        dest="trace_modules",
+        action="append",
+        default=[],
+        metavar="MODULE",
+        help="Repeatable: add a trace module override (e.g. connection, will_manager).",
+    )
+    parser.add_argument(
         "--show-log",
         action="store_true",
         help="Show the remote broker log tail after startup verification",
@@ -334,7 +351,8 @@ def main() -> int:
             print("STEP activate binary skipped (unchanged build output)")
 
         start_remote_broker(args.remote_host, args.remote_dir,
-                args.remote_config, args.trace_level)
+                args.remote_config, args.trace_level,
+                args.trace_modules or None)
 
         remote_name = split_remote_host(args.remote_host)
         if not wait_for_tcp(remote_name, args.remote_port, args.start_timeout):

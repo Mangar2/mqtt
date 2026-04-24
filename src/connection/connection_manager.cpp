@@ -14,6 +14,7 @@
 #include "broker/broker_config.h"
 #include "connection/client_handler.h"
 #include "connection/connection_flow_support.h"
+#include "monitoring/structured_tracer.h"
 #include "network/socket_ops.h"
 #include "network/tcp_connection.h"
 #include "transport/websocket_transport.h"
@@ -203,6 +204,7 @@ void ConnectionManager::run_keepalive_watchdog() {
 
     const std::vector<SocketHandle> socket_handles =
         connection_table_.snapshot_socket_handles();
+
     for (SocketHandle socket_handle : socket_handles) {
       const int connection_fd = static_cast<int>(socket_handle);
       if (ConnectionTable::Entry *entry = connection_table_.find(connection_fd);
@@ -230,6 +232,27 @@ void ConnectionManager::run_keepalive_watchdog() {
                                            .payload = DecodeJobPayload{}});
       } catch (const std::exception &) {
       }
+    }
+
+    TRACE_GUARD(&broker_.structured_tracer(), TraceLevel::Trace, "connection") {
+      const auto ms_until_deadline =
+          next_deadline == std::chrono::steady_clock::time_point::max()
+              ? -1LL
+              : static_cast<long long>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        next_deadline - std::chrono::steady_clock::now())
+                        .count());
+      TraceEvent event;
+      event.level = TraceLevel::Trace;
+      event.module = "connection";
+      event.info = "watchdog_sleep";
+      event.data.emplace_back("handle_count",
+                              std::to_string(socket_handles.size()));
+      event.data.emplace_back("due_count",
+                              std::to_string(due_decode_fds.size()));
+      event.data.emplace_back("ms_until_deadline",
+                              std::to_string(ms_until_deadline));
+      broker_.structured_tracer().emit(event);
     }
 
     std::unique_lock<std::mutex> lock_guard(keepalive_watchdog_mutex_);
