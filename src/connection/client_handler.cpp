@@ -316,7 +316,11 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
       }
 
       if (ws_chunk.data.empty()) {
-        break;
+        // A WS read can legitimately yield no MQTT bytes yet (for example when
+        // only a partial frame header/payload has arrived). Keep reading until
+        // timeout/eof or budget limits are reached so fragmented frames can be
+        // fully assembled.
+        continue;
       }
       continue;
     }

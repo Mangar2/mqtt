@@ -145,7 +145,12 @@ def run_18_2_1_one_pub_one_sub_qos0_thousand_under_five_seconds(config) -> tuple
                 spacing_seconds = _qos0_publish_spacing_seconds(message_count)
                 for message_index in range(message_count):
                     payload = f"18.2.1-{message_index}".encode("utf-8")
-                    publish_reason = publisher.publish(topic, payload, qos=0)
+                    publish_reason = publisher.publish(
+                        topic,
+                        payload,
+                        qos=0,
+                        wait_for_qos0_publish=False,
+                    )
                     assert_reason_code(publish_reason, 0x00)
                     if spacing_seconds > 0.0:
                         time.sleep(spacing_seconds)

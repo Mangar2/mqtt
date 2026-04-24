@@ -280,6 +280,7 @@ class MqttClient:
         qos: int = 0,
         retain: bool = False,
         properties: Properties | None = None,
+        wait_for_qos0_publish: bool = True,
     ) -> int:
         """Publish and block for acknowledgement when required by QoS."""
         client = self._require_client()
@@ -296,6 +297,8 @@ class MqttClient:
             raise RuntimeError(f"publish failed with rc={info.rc}")
 
         if qos == 0:
+            if not wait_for_qos0_publish:
+                return 0
             deadline = time.monotonic() + self._timeout_seconds
             while time.monotonic() < deadline:
                 if info.is_published():
