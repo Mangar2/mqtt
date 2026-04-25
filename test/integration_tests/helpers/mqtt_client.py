@@ -107,9 +107,15 @@ class ReceivedMessage:
 class DisconnectEvent:
     """Server initiated disconnect details."""
 
-    def __init__(self, reason_code: int, properties: Properties | None) -> None:
+    def __init__(
+        self,
+        reason_code: int,
+        properties: Properties | None,
+        from_broker: bool | None = None,
+    ) -> None:
         self.reason_code = reason_code
         self.properties = properties
+        self.from_broker = from_broker
 
 
 class MqttClient:
@@ -295,7 +301,7 @@ class MqttClient:
             properties=outbound_properties,
         )
         if info.rc != mqtt.MQTT_ERR_SUCCESS:
-            raise RuntimeError(f"publish failed with rc={info.rc}")
+            raise RuntimeError(self._build_publish_error_text(int(info.rc)))
 
         if qos == 0:
             if not wait_for_qos0_publish:
@@ -318,6 +324,50 @@ class MqttClient:
             time.sleep(0.01)
 
         raise TimeoutError("Timed out while waiting for PUBACK/PUBCOMP")
+
+    def _build_publish_error_text(self, publish_rc: int) -> str:
+        error_parts = [f"publish failed with rc={publish_rc}"]
+
+        try:
+            error_parts[0] = f"{error_parts[0]} ({mqtt.error_string(publish_rc)})"
+        except Exception:
+            pass
+
+        disconnect_event = self._disconnect_result
+        if disconnect_event is None:
+            # If publish raced with socket close, the disconnect callback may
+            # arrive just after publish() returns rc!=0.
+            self._disconnect_event.wait(timeout=min(0.5, self._timeout_seconds))
+            disconnect_event = self._disconnect_result
+
+        if disconnect_event is None:
+            error_parts.append("disconnect=no-callback")
+            return "; ".join(error_parts)
+
+        source_text = "unknown"
+        if disconnect_event.from_broker is True:
+            source_text = "broker"
+        elif disconnect_event.from_broker is False:
+            source_text = "local"
+
+        reason_value = int(disconnect_event.reason_code)
+        reason_text = None
+        if disconnect_event.from_broker is True:
+            try:
+                reason_text = mqtt.ReasonCode(mqtt.DISCONNECT >> 4, identifier=reason_value).getName()
+            except Exception:
+                reason_text = None
+        if reason_text is None:
+            try:
+                reason_text = mqtt.error_string(reason_value)
+            except Exception:
+                reason_text = None
+
+        disconnect_fragment = f"disconnect_source={source_text} reason=0x{reason_value:02X}"
+        if reason_text:
+            disconnect_fragment = f"{disconnect_fragment} ({reason_text})"
+        error_parts.append(disconnect_fragment)
+        return "; ".join(error_parts)
 
     def drain_published_mids(self, limit: int | None = None) -> dict[int, int]:
         """Return currently completed publish mids and reason codes without blocking."""
@@ -532,6 +582,9 @@ class MqttClient:
 
         reason_from_reason_arg = _normalize_reason(reason_code)
         reason_from_flags_arg = _normalize_reason(disconnect_flags)
+        from_broker = getattr(disconnect_flags, "is_disconnect_packet_from_server", None)
+        if from_broker is not None:
+            from_broker = bool(from_broker)
 
         if os.environ.get("MQTT_INTEGRATION_DEBUG_DISCONNECT", "") == "1":
             print(
@@ -563,6 +616,7 @@ class MqttClient:
                 self._disconnect_result = DisconnectEvent(
                     reason_code=reason_code_int,
                     properties=properties,
+                    from_broker=from_broker,
                 )
                 self._disconnect_event.set()
                 return
@@ -570,7 +624,11 @@ class MqttClient:
                 self._disconnect_event.set()
                 return
 
-        self._disconnect_result = DisconnectEvent(reason_code=reason_code_int, properties=properties)
+        self._disconnect_result = DisconnectEvent(
+            reason_code=reason_code_int,
+            properties=properties,
+            from_broker=from_broker,
+        )
         self._disconnect_event.set()
 
     def _on_log(self, _client: mqtt.Client, _userdata: Any, _level: int, message: str) -> None:

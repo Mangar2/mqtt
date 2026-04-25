@@ -1,16 +1,16 @@
 {
-  "run_started_at": "2026-04-25T08:42:33+00:00",
-  "run_finished_at": "2026-04-25T08:44:35+00:00",
+  "run_started_at": "2026-04-25T16:50:42+00:00",
+  "run_finished_at": "2026-04-25T16:52:43+00:00",
   "arguments": {
     "host": "raspberrypi",
     "port": 1883,
     "ws_port": null,
     "timeout": 8.0,
     "duration": 120.0,
-    "size": "middle",
+    "size": "small",
     "repeat": 1,
     "filter": [
-      "P01"
+      "P02"
     ]
   },
   "resolved_target": {
@@ -18,33 +18,43 @@
     "port": 1883,
     "ws_port": 8083,
     "timeout_seconds": 8.0,
-    "size_profile": "middle",
+    "size_profile": "small",
     "duration_seconds": 120.0
   },
   "selected_scenarios": [
     {
-      "stage_id": 11,
-      "scenario_id": "P01",
-      "title": "qos0-message-rate-ramp",
-      "purpose": "QoS0 throughput with increasing message rate",
-      "success_limit": ">=99% delivered in hold phase",
+      "stage_id": 12,
+      "scenario_id": "P02",
+      "title": "qos1-message-rate-ramp",
+      "purpose": "QoS1 throughput with PUBACK latency",
+      "success_limit": ">=99% delivered and >=99% PUBACK in hold",
       "work_units": 1.0,
       "work_unit_label": "msg"
     }
   ],
   "results": [
     {
-      "stage_id": 11,
-      "scenario_id": "P01",
+      "stage_id": 12,
+      "scenario_id": "P02",
       "run_index": 1,
-      "title": "qos0-message-rate-ramp",
-      "status": "ABORTED",
-      "duration_seconds": 122.20733545799999,
-      "throughput_per_second": null,
-      "summary": "publish failed with rc=4",
-      "counters": {},
-      "started_at": "2026-04-25T08:42:33+00:00",
-      "finished_at": "2026-04-25T08:44:35+00:00"
+      "title": "qos1-message-rate-ramp",
+      "status": "DEVIATION",
+      "duration_seconds": 121.372114542,
+      "throughput_per_second": 134.22433821366457,
+      "summary": "duration=121.006s planned_sent=140500 sent=25521 acked=16243 received=16242 send_rate=210.91/s ack_rate=134.23/s recv_rate=134.22/s ack_ratio=0.6365 delivery_ratio=0.6364 ramp_stopped=True",
+      "counters": {
+        "planned_sent": 140500,
+        "sent": 25521,
+        "acked": 16243,
+        "received": 16242,
+        "missing": 9279,
+        "unacked": 9278,
+        "pending_publish_mids": 9278,
+        "ramp_stopped": 1,
+        "ramp_stopped_at_rate": 231.11111111111111
+      },
+      "started_at": "2026-04-25T16:50:42+00:00",
+      "finished_at": "2026-04-25T16:52:43+00:00"
     }
   ]
 }
