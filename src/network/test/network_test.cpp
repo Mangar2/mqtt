@@ -98,6 +98,11 @@ std::vector<uint8_t> make_packet(uint32_t remaining_length) {
   return pkt;
 }
 
+void append_ok(StreamBuffer &buffer, std::span<const uint8_t> data) {
+  const StreamBufferAppendResult append_result = buffer.append(data);
+  REQUIRE(append_result == StreamBufferAppendResult::kOk);
+}
+
 /**
  * @brief Read exactly `buf.size()` bytes unless peer closes or read fails.
  *
@@ -132,7 +137,7 @@ TEST_CASE("stream_buffer_empty_on_construction", "[network]") {
 TEST_CASE("stream_buffer_single_packet_1byte_rl", "[network]") {
   StreamBuffer buf;
   auto pkt = make_packet(1);
-  buf.append(pkt);
+  append_ok(buf, pkt);
   CHECK(buf.has_complete_packet());
   auto consumed = buf.consume_packet();
   CHECK(consumed == pkt);
@@ -143,7 +148,7 @@ TEST_CASE("stream_buffer_single_packet_2byte_rl", "[network]") {
   StreamBuffer buf;
   // Remaining length 128 requires 2-byte VBI encoding
   auto pkt = make_packet(128);
-  buf.append(pkt);
+  append_ok(buf, pkt);
   CHECK(buf.has_complete_packet());
   auto consumed = buf.consume_packet();
   CHECK(consumed == pkt);
@@ -153,17 +158,19 @@ TEST_CASE("stream_buffer_single_packet_3byte_rl", "[network]") {
   StreamBuffer buf;
   // Remaining length 16384 requires 3-byte VBI encoding
   auto pkt = make_packet(16384);
-  buf.append(pkt);
+  append_ok(buf, pkt);
   CHECK(buf.has_complete_packet());
   auto consumed = buf.consume_packet();
   CHECK(consumed == pkt);
 }
 
 TEST_CASE("stream_buffer_single_packet_4byte_rl", "[network]") {
-  StreamBuffer buf;
+  StreamBuffer buf(StreamBufferConfig{.chunk_size = 16U * 1024U,
+                                      .max_buffered = 3U * 1024U * 1024U,
+                                      .free_list_max = 4U});
   // Remaining length 2097152 requires 4-byte VBI encoding
   auto pkt = make_packet(2097152);
-  buf.append(pkt);
+  append_ok(buf, pkt);
   CHECK(buf.has_complete_packet());
   auto consumed = buf.consume_packet();
   CHECK(consumed == pkt);
@@ -177,10 +184,10 @@ TEST_CASE("stream_buffer_fragmented_delivery", "[network]") {
   auto first_half = std::vector<uint8_t>(pkt.begin(), pkt.begin() + 5);
   auto second_half = std::vector<uint8_t>(pkt.begin() + 5, pkt.end());
 
-  buf.append(first_half);
+  append_ok(buf, first_half);
   CHECK_FALSE(buf.has_complete_packet());
 
-  buf.append(second_half);
+  append_ok(buf, second_half);
   CHECK(buf.has_complete_packet());
   CHECK(buf.consume_packet() == pkt);
 }
@@ -194,7 +201,7 @@ TEST_CASE("stream_buffer_multiple_packets_in_one_append", "[network]") {
   combined.insert(combined.end(), pkt1.begin(), pkt1.end());
   combined.insert(combined.end(), pkt2.begin(), pkt2.end());
 
-  buf.append(combined);
+  append_ok(buf, combined);
 
   CHECK(buf.has_complete_packet());
   CHECK(buf.consume_packet() == pkt1);
@@ -209,7 +216,7 @@ TEST_CASE("stream_buffer_consume_without_complete_packet_throws", "[network]") {
   StreamBuffer buf;
   // Only append the type byte — incomplete packet
   std::array<uint8_t, 1> partial{0x10};
-  buf.append(partial);
+  append_ok(buf, partial);
   CHECK_FALSE(buf.has_complete_packet());
   CHECK_THROWS_AS(buf.consume_packet(), std::logic_error);
 }
@@ -218,13 +225,108 @@ TEST_CASE("stream_buffer_zero_payload_packet", "[network]") {
   StreamBuffer buf;
   // PINGREQ: 0xC0 0x00 — remaining length = 0
   std::array<uint8_t, 2> pingreq{0xC0, 0x00};
-  buf.append(pingreq);
+  append_ok(buf, pingreq);
   CHECK(buf.has_complete_packet());
   auto consumed = buf.consume_packet();
   CHECK(consumed.size() == 2);
   CHECK(consumed[0] == 0xC0);
   CHECK(consumed[1] == 0x00);
   CHECK(buf.is_empty());
+}
+
+TEST_CASE("stream_buffer_packet_split_across_three_chunks", "[network]") {
+  StreamBuffer buf(StreamBufferConfig{.chunk_size = 16U,
+                                      .max_buffered = 1024U,
+                                      .free_list_max = 2U});
+  const auto packet = make_packet(40U);
+
+  append_ok(buf, packet);
+  REQUIRE(buf.has_complete_packet());
+  CHECK(buf.consume_packet() == packet);
+}
+
+TEST_CASE("stream_buffer_vbi_split_across_chunk_boundary", "[network]") {
+  StreamBuffer buf(StreamBufferConfig{.chunk_size = 16U,
+                                      .max_buffered = 1024U,
+                                      .free_list_max = 2U});
+
+  // Fill 14 bytes so the next packet's type byte and first RL byte end at
+  // the chunk boundary. The second RL byte then lands in the next chunk.
+  const auto first_packet = make_packet(12U); // total size 14
+  append_ok(buf, first_packet);
+  REQUIRE(buf.has_complete_packet());
+  CHECK(buf.consume_packet() == first_packet);
+
+  const std::array<uint8_t, 2> second_packet_prefix{0x30U, 0x80U};
+  append_ok(buf, second_packet_prefix);
+  CHECK_FALSE(buf.has_complete_packet());
+
+  const std::array<uint8_t, 1> second_rl_byte{0x01U};
+  append_ok(buf, second_rl_byte);
+  CHECK_FALSE(buf.has_complete_packet());
+
+  const std::vector<uint8_t> payload(128U, 0x00U);
+  append_ok(buf, payload);
+  REQUIRE(buf.has_complete_packet());
+  CHECK(buf.consume_packet().size() == 131U);
+}
+
+TEST_CASE("stream_buffer_capacity_stays_bounded_with_lockstep_consume",
+          "[network]") {
+  StreamBuffer buf(StreamBufferConfig{.chunk_size = 256U,
+                                      .max_buffered = 16U * 1024U,
+                                      .free_list_max = 1U});
+  const auto packet = make_packet(32U);
+
+  for (std::size_t loop_index = 0U; loop_index < 10000U; ++loop_index) {
+    append_ok(buf, packet);
+    REQUIRE(buf.has_complete_packet());
+    CHECK(buf.consume_packet() == packet);
+  }
+
+  CHECK(buf.capacity() <= 2U * 256U);
+}
+
+TEST_CASE("stream_buffer_rejects_append_when_hard_cap_would_be_exceeded",
+          "[network]") {
+  StreamBuffer buf(StreamBufferConfig{.chunk_size = 64U,
+                                      .max_buffered = 100U,
+                                      .free_list_max = 1U});
+  std::vector<uint8_t> first(60U, 0x11U);
+  std::vector<uint8_t> second(50U, 0x22U);
+
+  append_ok(buf, first);
+  const std::size_t size_before = buf.size();
+  const StreamBufferAppendResult overflow_result = buf.append(second);
+  CHECK(overflow_result == StreamBufferAppendResult::kBufferFull);
+  CHECK(buf.size() == size_before);
+}
+
+TEST_CASE("stream_buffer_move_construct_and_assign_transfer_chunks", "[network]") {
+  const auto packet = make_packet(20U);
+
+  StreamBuffer source(StreamBufferConfig{.chunk_size = 32U,
+                                         .max_buffered = 1024U,
+                                         .free_list_max = 2U});
+  append_ok(source, packet);
+  StreamBuffer moved(std::move(source));
+
+  CHECK(source.is_empty());
+  REQUIRE(moved.has_complete_packet());
+  CHECK(moved.consume_packet() == packet);
+
+  StreamBuffer source_assign(StreamBufferConfig{.chunk_size = 32U,
+                                                .max_buffered = 1024U,
+                                                .free_list_max = 2U});
+  append_ok(source_assign, packet);
+  StreamBuffer target(StreamBufferConfig{.chunk_size = 64U,
+                                         .max_buffered = 1024U,
+                                         .free_list_max = 2U});
+  target = std::move(source_assign);
+
+  CHECK(source_assign.is_empty());
+  REQUIRE(target.has_complete_packet());
+  CHECK(target.consume_packet() == packet);
 }
 
 TEST_CASE("tcp_connection_read_returns_zero_on_peer_close", "[network]") {

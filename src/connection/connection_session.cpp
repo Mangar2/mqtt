@@ -13,6 +13,12 @@ ConnectionSession::ConnectionSession(
     : connection_(std::move(connection)),
       ws_transport_(std::move(ws_transport)),
       is_websocket_(is_websocket),
+    stream_buffer_(StreamBufferConfig{.chunk_size =
+                      StreamBufferConfig::k_default_chunk_size,
+                    .max_buffered =
+                      static_cast<std::size_t>(config.stream_buffer_max_bytes),
+                    .free_list_max =
+                      StreamBufferConfig::k_default_free_list_max}),
       topic_alias_table_(config.topic_alias_maximum),
       inbound_receive_window_(config.receive_maximum),
       accepted_at_(std::chrono::steady_clock::now()) {}

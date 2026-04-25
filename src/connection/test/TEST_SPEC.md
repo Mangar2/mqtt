@@ -42,8 +42,8 @@
 | `process_accept_job_ignores_duplicate_fd` | Duplicate fd add guard in accept path | same accepted fd submitted twice | second add ignored, existing entry retained |
 | `process_decode_job_handles_peer_eof_with_close_job` | Decode path handles `read == 0` EOF branch | accepted socket with peer write-shutdown | close path is scheduled and cleanup succeeds |
 | `process_drain_job_websocket_frame_path_and_write_error` | WS frame append + write error close path | websocket session with pending frame and invalid socket | entry is finalized and removed |
-| `process_decode_job_keep_alive_timeout_enters_closing_and_drain` | Keep-alive timeout decode branch | connected session with expired keep-alive timer | session enters closing phase and drain job is queued |
-| `process_drain_job_takeover_due_closes_connection` | Session takeover due branch in drain | session with takeover-close deadline due immediately | connection is finalized and removed |
+| `process_decode_job_keep_alive_timeout_enters_closing_and_drain` | Keep-alive timeout decode branch | connected session with expired keep-alive timer | session enters closing phase with `KeepAliveTimeout` reason |
+| `process_drain_job_takeover_due_closes_connection` | Session takeover branch in drain | session with pending takeover request | session is moved to closing with `SessionTakenOver`; close finalization may already be done or remain pending |
 
 ## ConnectionStateMachine (7.1)
 

@@ -137,6 +137,7 @@ Notes:
 | `broker` | `topic_alias_maximum` | uint16 | `10` | `0..65535` | Maximum topic alias value accepted by broker. |
 | `broker` | `max_queued_messages` | uint32 | `100` | `1..100000` | Per-client offline queue capacity. |
 | `broker` | `write_queue_max_bytes` | uint32 | `65536` | `1..4194304` | Per-connection outbound write-queue byte capacity (hard-capped). |
+| `broker` | `stream_buffer_max_bytes` | uint32 | `1048576` | `1..67108864` | Per-connection inbound stream-buffer hard cap in bytes. |
 | `broker` | `qos_retransmit_timeout_seconds` | uint32 | `20` | `>=1` | Timeout before QoS retransmit becomes eligible. |
 | `broker` | `tick_interval_ms` | uint32 | `100` | `>=1` | Main broker tick interval in milliseconds. |
 | `auth` | `credential` | string | none | `username:password` | Repeatable credential entry for password auth mode. |
@@ -170,6 +171,7 @@ session_expiry_max = 86400
 topic_alias_maximum = 20
 max_queued_messages = 1000
 write_queue_max_bytes = 262144
+stream_buffer_max_bytes = 1048576
 qos_retransmit_timeout_seconds = 20
 tick_interval_ms = 100
 

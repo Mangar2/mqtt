@@ -25,6 +25,11 @@ Catch2 tag: `[network]`.
 | `stream_buffer_multiple_packets_in_one_append` | Two packets appended at once; both consumed |
 | `stream_buffer_consume_without_complete_packet_throws` | `consume_packet()` on incomplete data → `std::logic_error` |
 | `stream_buffer_zero_payload_packet` | Packet with RL=0 (PINGREQ); consumed correctly |
+| `stream_buffer_packet_split_across_three_chunks` | Packet payload crossing multiple fixed-size chunks is reconstructed byte-identical |
+| `stream_buffer_vbi_split_across_chunk_boundary` | RL VBI split between chunks transitions to complete exactly when VBI+payload complete |
+| `stream_buffer_capacity_stays_bounded_with_lockstep_consume` | Long append/consume lock-step keeps `capacity()` bounded at 2 chunks with `free_list_max=1` |
+| `stream_buffer_rejects_append_when_hard_cap_would_be_exceeded` | Append above hard cap returns `kBufferFull` and leaves buffered size unchanged |
+| `stream_buffer_move_construct_and_assign_transfer_chunks` | Move ctor/assignment transfer ownership; source becomes empty |
 
 ---
 

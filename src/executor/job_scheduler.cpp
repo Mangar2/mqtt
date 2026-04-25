@@ -9,8 +9,7 @@ namespace mqtt {
 
 namespace {
 
-#ifndef MQTT_TRACING_DISABLED
-std::string_view job_type_name(JobType job_type) {
+[[maybe_unused]] std::string_view job_type_name(JobType job_type) {
   switch (job_type) {
   case JobType::Accept:
     return "Accept";
@@ -23,7 +22,6 @@ std::string_view job_type_name(JobType job_type) {
   }
   return "Unknown";
 }
-#endif
 
 bool is_suspicious_backlog_type(JobType job_type) {
   return job_type == JobType::Decode || job_type == JobType::Drain;

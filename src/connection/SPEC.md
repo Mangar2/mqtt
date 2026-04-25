@@ -81,7 +81,7 @@ States: `Connecting` → `Connected` → `Disconnecting` → `Closed`
 
 Connection handling is now split into stateless worker-job handlers:
 - `process_accept_job(...)`: adopts accepted socket, creates `ConnectionSession`, inserts `ConnectionTable::Entry`, registers reactor callbacks.
-- `process_decode_job(...)`: performs non-blocking reads, decodes up to a bounded packet budget, dispatches via step helpers.
+- `process_decode_job(...)`: performs non-blocking reads, appends inbound bytes to `StreamBuffer`, decodes up to a bounded packet budget, and reacts to inbound stream-buffer overflow with clean disconnect state (`ReasonCode::QuotaExceeded`) for connected sessions.
 - `process_drain_job(...)`: drains queued outbound frames into slot write-buffer and drives non-blocking write progress.
 - `process_close_job(...)`: finalizes broker bookkeeping, unregisters reactor fd, closes socket, removes table entry.
 

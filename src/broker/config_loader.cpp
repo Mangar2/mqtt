@@ -176,6 +176,8 @@ void ConfigLoader::apply_key(const std::string &section, const std::string &key,
       cfg.max_queued_messages = parse_uint32(value);
     } else if (key == "write_queue_max_bytes") {
       cfg.write_queue_max_bytes = parse_uint32(value);
+    } else if (key == "stream_buffer_max_bytes") {
+      cfg.stream_buffer_max_bytes = parse_uint32(value);
     } else if (key == "qos_retransmit_timeout_seconds") {
       cfg.qos_retransmit_timeout_seconds = parse_uint32(value);
     } else if (key == "tick_interval_ms") {
@@ -236,6 +238,15 @@ void ConfigLoader::validate(const BrokerConfig &cfg) {
             std::to_string(BrokerConfig::k_write_queue_max_bytes_hard_limit) +
             "]");
   }
+        if (cfg.stream_buffer_max_bytes < 1U ||
+          cfg.stream_buffer_max_bytes >
+            BrokerConfig::k_stream_buffer_max_bytes_hard_limit) {
+        throw BrokerException(
+          BrokerError::InvalidConfig,
+          "stream_buffer_max_bytes must be in [1, " +
+            std::to_string(BrokerConfig::k_stream_buffer_max_bytes_hard_limit) +
+            "]");
+        }
   if (cfg.trace_max_text_length < 1U ||
       cfg.trace_max_text_length >
           BrokerConfig::k_trace_text_max_length_hard_limit) {

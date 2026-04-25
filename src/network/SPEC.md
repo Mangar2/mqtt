@@ -97,18 +97,26 @@ Error codes for socket and I/O failures:
 
 ### `StreamBuffer` (6.2)
 
-**Purpose:** Incrementally accumulates raw bytes from a TCP stream.  
+**Purpose:** Incrementally accumulates raw bytes from a TCP stream in a chunked
+ring of fixed-size segments.
 Detects complete MQTT packets by reading the fixed-header Remaining Length
 field (variable-byte-integer at offset 1–4) and returns them one at a time.
+
+The implementation uses a singly-linked list of fixed-size chunks with
+read/write cursors per chunk. This avoids O(n) front-erases and avoids
+reallocation/copy of already-buffered bytes under backlog growth.
 
 **Public API:**
 
 | Method | Description |
 |--------|-------------|
-| `append(span<const uint8_t>)` | Add bytes received from socket |
+| `StreamBuffer(StreamBufferConfig)` | Construct with configurable chunk size, hard cap and free-list depth |
+| `append(span<const uint8_t>)` → `StreamBufferAppendResult` | Add bytes; returns `kBufferFull` when hard cap would be exceeded |
 | `has_complete_packet()` → `bool` | True if ≥ 1 complete packet is buffered |
 | `consume_packet()` → `vector<uint8_t>` | Remove and return the front packet |
 | `is_empty()` → `bool` | True when the internal buffer holds no bytes |
+| `size()` → `size_t` | Number of unread bytes currently buffered |
+| `capacity()` → `size_t` | Currently allocated bytes across active chunks + free-list chunks |
 
 **Packet framing logic:**
 1. The MQTT fixed header is at least 2 bytes: `[type+flags][remaining_length…]`.
@@ -116,6 +124,15 @@ field (variable-byte-integer at offset 1–4) and returns them one at a time.
    encoded size is 1–4 bytes (MSB continuation bit).
 3. Total packet size = (index of first RL byte after header) + remaining_length.
 4. If fewer bytes than the total size are available, no packet is returned.
+
+**Additional constraints and behavior:**
+- Per-connection hard cap (`StreamBufferConfig.max_buffered`) is enforced
+  before writing any new bytes; rejected appends leave state unchanged.
+- Drained chunks are recycled via a per-buffer free list (`free_list_max`) and
+  released when the free-list is full.
+- Remaining-Length VBI parsing supports byte sequences crossing chunk
+  boundaries and keeps malformed 5-byte VBI fallback behavior (consume 6-byte
+  malformed frame once available).
 
 ---
 

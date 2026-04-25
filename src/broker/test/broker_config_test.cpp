@@ -41,6 +41,8 @@ TEST_CASE("parse_minimal_valid_config", "[broker]") {
   CHECK(cfg.max_queued_messages == 100U);
     CHECK(cfg.write_queue_max_bytes ==
       BrokerConfig::k_write_queue_max_bytes_default);
+  CHECK(cfg.stream_buffer_max_bytes ==
+        BrokerConfig::k_stream_buffer_max_bytes_default);
   CHECK(cfg.qos_retransmit_timeout_seconds == 20U);
   CHECK(cfg.tick_interval_ms == 100U);
   CHECK(cfg.persistence_mode == PersistenceMode::Full);
@@ -66,6 +68,7 @@ TEST_CASE("parse_broker_section", "[broker]") {
                                        "topic_alias_maximum = 20\n"
                                        "max_queued_messages = 50\n"
                                        "write_queue_max_bytes = 131072\n"
+                                       "stream_buffer_max_bytes = 2097152\n"
                                        "qos_retransmit_timeout_seconds = 35\n"
                                        "tick_interval_ms = 250\n");
   CHECK(cfg.allow_anonymous == false);
@@ -76,6 +79,7 @@ TEST_CASE("parse_broker_section", "[broker]") {
   CHECK(cfg.topic_alias_maximum == 20U);
   CHECK(cfg.max_queued_messages == 50U);
   CHECK(cfg.write_queue_max_bytes == 131072U);
+  CHECK(cfg.stream_buffer_max_bytes == 2097152U);
   CHECK(cfg.qos_retransmit_timeout_seconds == 35U);
   CHECK(cfg.tick_interval_ms == 250U);
 }
@@ -300,6 +304,22 @@ TEST_CASE("parse_write_queue_max_bytes_over_hard_limit_throws", "[broker]") {
   CHECK_THROWS_AS(
       ConfigLoader::parse("[network]\nmqtt_port = 1883\n[broker]\n"
                           "write_queue_max_bytes = " +
+                          std::to_string(invalid_value) + "\n"),
+      BrokerException);
+}
+
+TEST_CASE("parse_stream_buffer_max_bytes_zero_throws", "[broker]") {
+  CHECK_THROWS_AS(ConfigLoader::parse("[network]\nmqtt_port = 1883\n[broker]\n"
+                                      "stream_buffer_max_bytes = 0\n"),
+                  BrokerException);
+}
+
+TEST_CASE("parse_stream_buffer_max_bytes_over_hard_limit_throws", "[broker]") {
+  const uint32_t invalid_value =
+      BrokerConfig::k_stream_buffer_max_bytes_hard_limit + 1U;
+  CHECK_THROWS_AS(
+      ConfigLoader::parse("[network]\nmqtt_port = 1883\n[broker]\n"
+                          "stream_buffer_max_bytes = " +
                           std::to_string(invalid_value) + "\n"),
       BrokerException);
 }

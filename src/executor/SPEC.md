@@ -71,6 +71,8 @@ public:
 - Ensures at most one active job per connection fd.
 - Additional jobs for the same fd are buffered in per-fd backlog.
 - `mark_done(fd)` returns the next backlog job if present.
+- Internal tracing metadata formatting (job-type names) is available in all
+    build modes, including tracing-disabled/coverage configurations.
 
 ### `WorkerPool`
 

@@ -10,9 +10,37 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <vector>
 
 namespace mqtt {
+
+/**
+ * @brief Runtime configuration for `StreamBuffer`.
+ */
+struct StreamBufferConfig {
+  /// Default bytes per chunk.
+  static constexpr std::size_t k_default_chunk_size = 16U * 1024U;
+  /// Default hard cap for buffered bytes per connection.
+  static constexpr std::size_t k_default_max_buffered = 1U * 1024U * 1024U;
+  /// Default count of drained chunks retained for reuse.
+  static constexpr std::size_t k_default_free_list_max = 4U;
+
+  /// Bytes in each fixed-size chunk.
+  std::size_t chunk_size = k_default_chunk_size;
+  /// Hard cap of currently buffered unread bytes.
+  std::size_t max_buffered = k_default_max_buffered;
+  /// Max chunks kept in free list before release to allocator.
+  std::size_t free_list_max = k_default_free_list_max;
+};
+
+/**
+ * @brief Result of `StreamBuffer::append()`.
+ */
+enum class StreamBufferAppendResult : uint8_t {
+  kOk,
+  kBufferFull,
+};
 
 /**
  * @brief Accumulates a raw TCP byte stream and extracts complete MQTT packets
@@ -48,11 +76,26 @@ namespace mqtt {
 class StreamBuffer {
 public:
   /**
+   * @brief Construct a stream buffer with fixed-size chunk storage.
+   * @param config Runtime limits and chunk sizing.
+   * @throws std::invalid_argument if `chunk_size < 16` or `max_buffered == 0`.
+   */
+  explicit StreamBuffer(StreamBufferConfig config = {});
+
+  ~StreamBuffer();
+
+  StreamBuffer(const StreamBuffer &) = delete;
+  StreamBuffer &operator=(const StreamBuffer &) = delete;
+  StreamBuffer(StreamBuffer &&other) noexcept;
+  StreamBuffer &operator=(StreamBuffer &&other) noexcept;
+
+  /**
    * @brief Append bytes received from the socket to the internal buffer
    * (6.2.1).
    * @param data Byte span (may be empty — no-op).
+   * @return `kBufferFull` when the append would exceed configured hard cap.
    */
-  void append(std::span<const uint8_t> data);
+  StreamBufferAppendResult append(std::span<const uint8_t> data) noexcept;
 
   /**
    * @brief Return whether at least one complete MQTT packet is buffered
@@ -81,7 +124,25 @@ public:
 
   [[nodiscard]] std::size_t size() const noexcept;
 
+  /**
+   * @brief Return bytes currently allocated in chunk storage.
+   * @return Sum of in-use and free-list chunk capacities.
+   */
+  [[nodiscard]] std::size_t capacity() const noexcept;
+
 private:
+  struct Chunk {
+    explicit Chunk(std::size_t chunk_size);
+
+    Chunk(const Chunk &) = delete;
+    Chunk &operator=(const Chunk &) = delete;
+
+    std::vector<uint8_t> data;
+    std::size_t read_pos{0U};
+    std::size_t write_pos{0U};
+    Chunk *next{nullptr};
+  };
+
   /**
    * @brief Compute the total wire size of the front packet.
    *
@@ -92,7 +153,19 @@ private:
    */
   [[nodiscard]] std::optional<std::size_t> front_packet_size() const noexcept;
 
-  std::vector<uint8_t> buffer_; ///< Accumulated incoming bytes.
+  [[nodiscard]] Chunk *acquire_chunk();
+  void release_chunk(Chunk *chunk) noexcept;
+  void clear_all_chunks() noexcept;
+  [[nodiscard]] std::size_t peek_bytes(uint8_t *out,
+                                       std::size_t max_count) const noexcept;
+
+  StreamBufferConfig config_;
+  Chunk *head_{nullptr};
+  Chunk *tail_{nullptr};
+  Chunk *free_head_{nullptr};
+  std::size_t free_count_{0U};
+  std::size_t allocated_chunk_count_{0U};
+  std::size_t size_{0U};
 };
 
 } // namespace mqtt

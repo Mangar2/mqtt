@@ -75,7 +75,7 @@ All tests are tagged `[broker]`.
 | `broker_handle_publish_rejects_zero_topic_alias` | publish facade | reject Topic Alias value 0 before routing | PUBLISH with TopicAlias=0 property | returns `ImplementationSpecificError` |
 | `broker_handle_publish_maps_acl_rejection_to_not_authorized` | publish facade | map ACL publish denial | allow_anonymous=false without publish ACL + PUBLISH | returns `NotAuthorized` |
 | `broker_handle_publish_maps_invalid_topic_alias_to_protocol_error` | publish facade | map invalid alias usage | inbound PUBLISH with empty topic + alias property | returns `ProtocolError` |
-| `broker_handle_publish_maps_online_queue_full_to_quota_exceeded` | publish facade | map outbound queue capacity failure | subscribed online client queue already full | returns `QuotaExceeded` |
+| `broker_handle_publish_maps_online_queue_full_to_quota_exceeded` | publish facade | map outbound queue capacity failure for QoS1/2 | subscribed online client queue already full + subscription max QoS1 + QoS1 publish | returns `QuotaExceeded` |
 | `broker_handle_publish_maps_frame_too_large_to_quota_exceeded` | publish facade | map write-queue byte-cap overflow | small `write_queue_max_bytes` + large routed publish | returns `QuotaExceeded` |
 | `broker_handle_publish_with_null_registered_queue_is_safe` | publish facade | tolerate null registered queue | register client with null queue and publish routed message | returns `Success` without crash |
 | `broker_handle_subscribe_returns_suback_and_delivers_retained` | subscribe facade | subscribe to filter with retained message present | retained on matching topic + SUBSCRIBE QoS1 | SUBACK GrantedQoS1 and retained message delivered |

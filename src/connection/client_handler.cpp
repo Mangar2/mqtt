@@ -128,6 +128,36 @@ void submit_close(JobScheduler &scheduler, int fd) {
                                  .payload = CloseJobPayload{.immediate = false}});
 }
 
+bool append_to_stream_buffer(ConnectionSession &session,
+                             std::span<const uint8_t> bytes, Broker &broker,
+                             int fd) {
+  const StreamBufferAppendResult append_result =
+      session.stream_buffer().append(bytes);
+  if (append_result == StreamBufferAppendResult::kOk) {
+    return true;
+  }
+
+  TRACE_GUARD(&broker.structured_tracer(), TraceLevel::Info, "connection") {
+    TraceEvent event;
+    event.level = TraceLevel::Info;
+    event.module = "connection";
+    event.info = "stream_buffer_overflow";
+    event.data.emplace_back("fd", std::to_string(fd));
+    event.data.emplace_back("attempted", std::to_string(bytes.size()));
+    event.data.emplace_back("buffered", std::to_string(session.stream_buffer().size()));
+    broker.structured_tracer().emit(event);
+  }
+
+  session.disconnect_state().clean_disconnect = true;
+  session.disconnect_state().reason_code = ReasonCode::QuotaExceeded;
+  if (session.phase() == ConnectionSession::Phase::Connected) {
+    session.pending_write_frames().push_back(
+        encode_disconnect_packet(ReasonCode::QuotaExceeded));
+    session.set_phase(ConnectionSession::Phase::Closing);
+  }
+  return false;
+}
+
 bool prepare_session_takeover_close(ConnectionSession &session) {
   if (session.consume_session_takeover_request()) {
     session.disconnect_state().clean_disconnect = true;
@@ -347,8 +377,13 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
       }
 
       if (!ws_chunk.data.empty()) {
-        session.stream_buffer().append(
-            std::span<const uint8_t>(ws_chunk.data.data(), ws_chunk.data.size()));
+        if (!append_to_stream_buffer(
+                session,
+                std::span<const uint8_t>(ws_chunk.data.data(), ws_chunk.data.size()),
+                broker, fd)) {
+          close_after_flush = true;
+          break;
+        }
         total_read += ws_chunk.data.size();
       }
 
@@ -376,8 +411,12 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
         peer_closed = true;
         break;
       }
-      session.stream_buffer().append(
-          std::span<const uint8_t>(read_chunk.data(), bytes_read));
+      if (!append_to_stream_buffer(
+              session, std::span<const uint8_t>(read_chunk.data(), bytes_read),
+              broker, fd)) {
+        close_after_flush = true;
+        break;
+      }
       total_read += bytes_read;
       continue;
     }

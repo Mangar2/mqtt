@@ -129,7 +129,15 @@ BrokerConfig make_test_config() {
 }
 
 std::filesystem::path make_temp_dir() {
-  auto dir = std::filesystem::temp_directory_path() / "broker_test_data";
+  static std::atomic<uint64_t> temp_dir_counter{0U};
+  const uint64_t counter_value = temp_dir_counter.fetch_add(1U);
+  const auto now_ticks = std::chrono::steady_clock::now().time_since_epoch().count();
+  const auto thread_hash =
+      std::hash<std::thread::id>{}(std::this_thread::get_id());
+  auto dir = std::filesystem::temp_directory_path() /
+             ("broker_test_data_" + std::to_string(now_ticks) + "_" +
+              std::to_string(counter_value) + "_" +
+              std::to_string(thread_hash));
   std::filesystem::create_directories(dir);
   return dir;
 }
@@ -1449,14 +1457,14 @@ TEST_CASE("broker_handle_publish_maps_online_queue_full_to_quota_exceeded",
   subscribe_packet.packet_id = 21U;
   subscribe_packet.filters.push_back(
       SubscribeFilter{.topic_filter = Utf8String{"queue/full"},
-                      .options = SubscribeOptions{.max_qos = QoS::AtMostOnce,
+              .options = SubscribeOptions{.max_qos = QoS::AtLeastOnce,
                                                   .no_local = false,
                                                   .retain_as_published = false,
                                                   .retain_handling = 0U}});
   const SubackPacket suback =
       broker.handle_subscribe("queue_full_sub", subscribe_packet);
   REQUIRE(suback.reason_codes.size() == 1U);
-  REQUIRE(suback.reason_codes[0] == ReasonCode::Success);
+  REQUIRE(is_success(suback.reason_codes[0]));
 
   Message blocker_message;
   blocker_message.topic = Utf8String{"blocker"};
@@ -1466,7 +1474,9 @@ TEST_CASE("broker_handle_publish_maps_online_queue_full_to_quota_exceeded",
   Message message;
   message.topic = Utf8String{"queue/full"};
   message.payload = BinaryData{{0xABU}};
-  message.qos = QoS::AtMostOnce;
+  // Queue-full is mapped to QuotaExceeded for QoS 1/2 publish handling.
+  // QoS 0 is intentionally dropped silently.
+  message.qos = QoS::AtLeastOnce;
   TopicAliasTable alias_table(10U);
 
   const ReasonCode reason_code =

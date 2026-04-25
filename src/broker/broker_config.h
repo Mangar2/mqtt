@@ -62,6 +62,8 @@ struct PasswordCredentialConfig {
  * - `max_queued_messages` must be in [1, 100 000].
  * - `write_queue_max_bytes` must be in
  *   [1, `k_write_queue_max_bytes_hard_limit`].
+ * - `stream_buffer_max_bytes` must be in
+ *   [1, `k_stream_buffer_max_bytes_hard_limit`].
  */
 struct BrokerConfig {
   /// Default per-connection write queue capacity in bytes.
@@ -70,6 +72,12 @@ struct BrokerConfig {
   /// Hard upper bound for per-connection write queue capacity from config.
   static constexpr uint32_t k_write_queue_max_bytes_hard_limit =
       4U * 1024U * 1024U;
+    /// Default per-connection inbound stream-buffer hard cap in bytes.
+    static constexpr uint32_t k_stream_buffer_max_bytes_default =
+      1U * 1024U * 1024U;
+    /// Hard upper bound for per-connection inbound stream-buffer hard cap.
+    static constexpr uint32_t k_stream_buffer_max_bytes_hard_limit =
+      64U * 1024U * 1024U;
   /// Default maximum length per structured trace text field.
   static constexpr uint32_t k_trace_text_max_length_default = 2024U;
   /// Hard upper bound for structured trace text field length from config.
@@ -109,6 +117,10 @@ struct BrokerConfig {
   /// Per-connection write queue capacity in bytes.
   /// Allowed range: [1, k_write_queue_max_bytes_hard_limit].
   uint32_t write_queue_max_bytes = k_write_queue_max_bytes_default;
+
+  /// Per-connection inbound stream-buffer hard cap in bytes.
+  /// Allowed range: [1, k_stream_buffer_max_bytes_hard_limit].
+  uint32_t stream_buffer_max_bytes = k_stream_buffer_max_bytes_default;
 
   /// Timeout in seconds before an outbound QoS 1/2 exchange is eligible for
   /// retransmission.
