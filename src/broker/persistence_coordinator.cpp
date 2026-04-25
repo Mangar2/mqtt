@@ -58,14 +58,12 @@ void PersistenceCoordinator::flush(SessionPersistence &session_persistence,
 
     if (include_inflight_states) {
       std::vector<InflightPersistence::ClientEntry> inflight_entries;
-      for (const auto &session_state : sessions) {
-        const auto client_entries =
-            inflight_store.entries_for(session_state.client_id.value);
-        for (const auto &entry : client_entries) {
-          inflight_entries.push_back(
-              {.client_id = session_state.client_id.value, .entry = entry});
-        }
-      }
+      inflight_store.snapshot_each_session(
+          [&inflight_entries](std::string_view client_id,
+                              const InflightEntry &entry) {
+            inflight_entries.push_back(
+                {.client_id = std::string(client_id), .entry = entry});
+          });
       inflight_persistence.save_all(inflight_entries);
     }
 

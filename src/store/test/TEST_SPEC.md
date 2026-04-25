@@ -71,14 +71,25 @@ All tests are tagged `[store]`.
 |-----------|---------|----------|-------|----------|
 | `create_entry_and_size` | create | Add one entry | client_id="c1", packet_id=1, dir=Outbound | size_for("c1") == 1 |
 | `create_multiple_entries` | multi create | Add two entries for same session | pkt 1 and pkt 2 | size_for("c1") == 2 |
-| `entries_for_returns_all` | entries_for | Retrieve entries | 2 entries stored | vector of size 2 |
-| `entries_for_unknown_client` | entries_for empty | Query unknown client | never-added client | empty vector |
+| `for_each_returns_all` | for_each | Iterate entries | 2 entries stored | collected vector has size 2 |
+| `for_each_unknown_client` | for_each empty | Query unknown client | never-added client | collected vector empty |
 | `update_changes_state` | update | Advance handshake state | create entry, call update | entry state updated |
 | `update_unknown_throws` | update error | Update non-existent entry | packet_id not in store | StoreException(PacketIdNotFound) |
 | `remove_entry_decrements_size` | remove | Remove known entry | create then remove | size_for("c1") == 0 |
 | `inflight_remove_unknown_is_noop` | remove noop | Remove entry not present | unknown packet_id | no exception |
-| `remove_last_entry_removes_session_bucket` | remove last | Remove only entry | create one, remove it | entries_for returns empty |
+| `remove_last_entry_removes_session_bucket` | remove last | Remove only entry | create one, remove it | for_each returns empty |
 | `is_packet_id_in_use_true` | registry true | Entry exists | packet_id=1 present | true |
 | `is_packet_id_in_use_false` | registry false | Entry absent | packet_id=99 not stored | false |
 | `is_packet_id_in_use_direction_mismatch` | registry dir | Same packet_id, different direction | Outbound stored, query Inbound | false |
-| `entries_for_does_not_include_other_clients` | isolation | Two clients | c1 and c2 entries | entries_for("c1") has only c1's entries |
+| `for_each_does_not_include_other_clients` | isolation | Two clients | c1 and c2 entries | for_each("c1") sees only c1 entries |
+| `create_duplicate_packet_id_throws` | duplicate create | Same client/direction/packet twice | two create calls with packet_id=9 | StoreException(PacketIdAlreadyInUse) |
+| `create_packet_id_zero_throws` | invalid id | packet_id zero rejected | create with packet_id=0 | StoreException(InvalidPacketId) |
+| `drop_session_removes_all_entries` | bulk drop | Remove entire session state | inbound+outbound entries then drop_session | size_for("c1") and total_size() are 0 |
+| `create_same_packet_id_in_both_directions_allowed` | direction independence | Same packet id in inbound and outbound | packet_id=11 in both directions | both entries exist and are in use |
+| `update_wrong_direction_throws_when_entry_exists_other_direction` | update direction mismatch | Update existing packet id with wrong direction | only inbound exists, update outbound | StoreException(PacketIdNotFound) |
+| `with_entry_unknown_returns_false_and_does_not_invoke_visitor` | with_entry miss | Query unknown client and entry | missing client/packet | returns false, visitor not called |
+| `with_entry_existing_returns_true_and_visits` | with_entry hit | Query existing outbound entry | packet_id=21 | returns true and provides stored state |
+| `for_each_direction_filters_correctly` | direction iteration | Iterate one direction only | mixed inbound/outbound in same session | each direction iterator returns only its own entries |
+| `snapshot_each_session_visits_all_clients_and_directions` | persistence snapshot | Collect all entries through snapshot API | two clients, three mixed-direction entries | visitor sees all three entries |
+| `total_size_tracks_create_remove_and_drop` | total counter | Total size follows mutations | create three, remove one, drop one session | total_size transitions 3 -> 2 -> 1 |
+| `drop_session_unknown_is_noop` | drop noop | Drop missing session | one existing session, drop unknown | state unchanged |

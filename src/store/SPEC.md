@@ -69,14 +69,26 @@ session-expiry calculations.
 Keyed by `client_id + direction`. Entries are uniquely identified by
 `(client_id, packet_id, direction)`.
 
+Implementation shape: sharded session index (`64` shards by default),
+per-session mutex, and two per-session chunked tables (`Outbound` and
+`Inbound`). Packet IDs map directly to fixed slots in lazily allocated chunks,
+so create/update/remove/lookup are O(1) for a concrete `(client_id,
+packet_id, direction)`.
+
 | Method | Description |
 |--------|-------------|
-| `create(client_id, entry)` | Add a new inflight entry (4.4.1). |
+| `create(client_id, InflightEntry&&)` | Add a new inflight entry by move (4.4.1). |
+| `create(client_id, const InflightEntry&)` | Compatibility overload; copies then delegates to move overload. |
 | `update(client_id, packet_id, direction, new_state)` | Advance the state of an existing entry; throws `StoreException(PacketIdNotFound)` if not found (4.4.2). |
 | `remove(client_id, packet_id, direction)` | Remove a completed entry; no-op if not found (4.4.3). |
-| `entries_for(client_id)` | Return a copy of all inflight entries for the session (4.4.4). |
+| `with_entry(client_id, packet_id, direction, visitor)` | Visit one entry when present; returns false if absent. |
+| `for_each(client_id, direction, visitor)` | Iterate all live entries for one direction without producing vector copies. |
+| `for_each(client_id, visitor)` | Iterate all live entries of both directions for one session. |
+| `snapshot_each_session(visitor)` | Iterate all live entries across all sessions for persistence snapshots. |
 | `is_packet_id_in_use(client_id, packet_id, direction)` | Check whether a packet ID is currently registered (4.4.5). |
 | `size_for(client_id)` | Number of inflight entries for the given session. |
+| `total_size()` | Approximate total inflight entries across all sessions (atomic counter). |
+| `drop_session(client_id)` | Remove all inflight entries for one session and delete its slot from the sharded index. |
 
 Thread safety: `InflightStore` public methods are internally synchronized.
 
@@ -88,4 +100,6 @@ state violations:
 | Error | Thrown by |
 |-------|-----------|
 | `SessionAlreadyExists` | `SessionStore::create` when the client ID is already present. |
+| `InvalidPacketId` | `InflightStore::create` when `packet_id == 0`. |
+| `PacketIdAlreadyInUse` | `InflightStore::create` when `(client_id, packet_id, direction)` already exists. |
 | `PacketIdNotFound` | `InflightStore::update` when no matching entry exists. |

@@ -112,10 +112,10 @@ AuthResult ClientSession::on_auth(const AuthPacket &auth_packet) {
 }
 
 void ClientSession::mark_session_resumed() noexcept {
-  const std::vector<InflightEntry> entries = inflight_store_.entries_for(client_id_);
-  for (const InflightEntry &entry : entries) {
+  inflight_store_.for_each(client_id_,
+                           [this](const InflightEntry &entry) {
     (void)packet_id_manager_.register_existing(entry.packet_id, entry.direction);
-  }
+  });
 
   replay_pending_inflight_ = true;
 }
@@ -198,13 +198,22 @@ std::vector<WriteBuffer> ClientSession::drain_outbound() {
 void ClientSession::append_retransmission_frames(
     std::vector<WriteBuffer> &frames) {
   const auto now = std::chrono::steady_clock::now();
-  const std::vector<InflightEntry> entries =
-      inflight_store_.entries_for(client_id_);
+  std::vector<uint16_t> outbound_packet_ids;
+  inflight_store_.for_each(
+      client_id_, InflightDirection::Outbound,
+      [&outbound_packet_ids](const InflightEntry &entry) {
+        outbound_packet_ids.push_back(entry.packet_id);
+      });
 
-  for (const InflightEntry &entry : entries) {
-    if (entry.direction != InflightDirection::Outbound) {
+  for (const uint16_t packet_id : outbound_packet_ids) {
+    InflightEntry entry;
+    const bool found = inflight_store_.with_entry(
+        client_id_, packet_id, InflightDirection::Outbound,
+        [&entry](const InflightEntry &stored_entry) { entry = stored_entry; });
+    if (!found) {
       continue;
     }
+
     const bool timeout_elapsed = (now - entry.timestamp) >= retransmit_timeout_;
     if (!replay_pending_inflight_ && !timeout_elapsed) {
       continue;
@@ -303,18 +312,16 @@ ClientSession::next_outbound_retransmit_deadline() const {
     return std::chrono::steady_clock::now();
   }
 
-  const std::vector<InflightEntry> entries = inflight_store_.entries_for(client_id_);
   std::optional<std::chrono::steady_clock::time_point> next_deadline;
-  for (const InflightEntry &entry : entries) {
-    if (entry.direction != InflightDirection::Outbound) {
-      continue;
-    }
-
-    const auto candidate_deadline = entry.timestamp + retransmit_timeout_;
-    if (!next_deadline.has_value() || candidate_deadline < *next_deadline) {
-      next_deadline = candidate_deadline;
-    }
-  }
+  inflight_store_.for_each(
+      client_id_, InflightDirection::Outbound,
+      [this, &next_deadline](const InflightEntry &entry) {
+        const auto candidate_deadline = entry.timestamp + retransmit_timeout_;
+        if (!next_deadline.has_value() ||
+            candidate_deadline < *next_deadline) {
+          next_deadline = candidate_deadline;
+        }
+      });
   return next_deadline;
 }
 

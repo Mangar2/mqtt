@@ -1,6 +1,5 @@
 #include "qos/qos1_state_machine.h"
 
-#include <algorithm>
 #include <chrono>
 #include <format>
 
@@ -46,7 +45,7 @@ PublishPacket Qos1StateMachine::initiate_publish(const Message &msg) {
 
   const uint16_t pid = id_mgr_.allocate();
 
-  const InflightEntry entry{
+  InflightEntry entry{
       .packet_id = pid,
       .message = msg,
       .qos = QoS::AtLeastOnce,
@@ -54,7 +53,7 @@ PublishPacket Qos1StateMachine::initiate_publish(const Message &msg) {
       .direction = InflightDirection::Outbound,
       .timestamp = std::chrono::steady_clock::now(),
   };
-  store_.create(client_id_, entry);
+  store_.create(client_id_, std::move(entry));
 
   return PublishPacket{
       .dup = false,
@@ -81,36 +80,37 @@ void Qos1StateMachine::on_puback_received(const PubackPacket &pkt) {
 // Retransmission (5.2.3)
 
 PublishPacket Qos1StateMachine::retransmit(uint16_t packet_id) {
-  const auto all_entries = store_.entries_for(client_id_);
-  const auto iter =
-      std::ranges::find_if(all_entries, [packet_id](const InflightEntry &ent) {
-        return ent.packet_id == packet_id &&
-               ent.direction == InflightDirection::Outbound;
-      });
+  InflightEntry original_entry;
+  const bool found = store_.with_entry(
+      client_id_, packet_id, InflightDirection::Outbound,
+      [&original_entry](const InflightEntry &entry) { original_entry = entry; });
 
-  if (iter == all_entries.end()) {
+  if (!found) {
     throw QosException(
         QosError::UnexpectedPacketId,
         std::format("retransmit: no outbound entry for packet_id={}",
                     packet_id));
   }
 
-  const InflightEntry &orig = *iter;
-
   // Refresh the transmission timestamp.
-  InflightEntry updated = orig;
-  updated.timestamp = std::chrono::steady_clock::now();
+  original_entry.timestamp = std::chrono::steady_clock::now();
   store_.remove(client_id_, packet_id, InflightDirection::Outbound);
-  store_.create(client_id_, updated);
+  store_.create(client_id_, std::move(original_entry));
+
+  InflightEntry refreshed_entry;
+  (void)store_.with_entry(client_id_, packet_id, InflightDirection::Outbound,
+                          [&refreshed_entry](const InflightEntry &entry) {
+                            refreshed_entry = entry;
+                          });
 
   return PublishPacket{
       .dup = true,
       .qos = QoS::AtLeastOnce,
-      .retain = orig.message.retain,
-      .topic = orig.message.topic,
+      .retain = refreshed_entry.message.retain,
+      .topic = refreshed_entry.message.topic,
       .packet_id = packet_id,
-      .payload = orig.message.payload,
-      .properties = orig.message.properties,
+      .payload = refreshed_entry.message.payload,
+      .properties = refreshed_entry.message.properties,
   };
 }
 

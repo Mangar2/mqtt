@@ -2,8 +2,10 @@
 
 #include <chrono>
 #include <cstdint>
+#include <string_view>
 #include <thread>
 #include <variant>
+#include <vector>
 
 #include "data_model/message/message.h"
 #include "data_model/packet/publish_packets.h"
@@ -67,6 +69,24 @@ PubcompPacket make_pubcomp(uint16_t pid) {
   PubcompPacket pkt{};
   pkt.packet_id = pid;
   return pkt;
+}
+
+std::vector<InflightEntry> collect_entries(InflightStore &store,
+                                           std::string_view client_id) {
+  std::vector<InflightEntry> entries;
+  store.for_each(client_id,
+                 [&entries](const InflightEntry &entry) { entries.push_back(entry); });
+  return entries;
+}
+
+std::chrono::steady_clock::time_point outbound_timestamp(
+    InflightStore &store, std::string_view client_id, uint16_t packet_id) {
+  std::chrono::steady_clock::time_point timestamp{};
+  const bool found = store.with_entry(
+      client_id, packet_id, InflightDirection::Outbound,
+      [&timestamp](const InflightEntry &entry) { timestamp = entry.timestamp; });
+  CHECK(found);
+  return timestamp;
 }
 
 } // anonymous namespace
@@ -231,7 +251,7 @@ TEST_CASE("initiate_publish_creates_inflight_entry", "[qos1]") {
 
   const PublishPacket pkt =
       machine.initiate_publish(make_message(QoS::AtLeastOnce));
-  const auto entries = store.entries_for("client1");
+  const auto entries = collect_entries(store, "client1");
   REQUIRE(entries.size() == 1);
   CHECK(entries[0].state == InflightState::WaitingForPuback);
   CHECK(entries[0].direction == InflightDirection::Outbound);
@@ -275,7 +295,7 @@ TEST_CASE("on_puback_received_removes_entry", "[qos1]") {
 
   machine.on_puback_received(make_puback(pid));
 
-  CHECK(store.entries_for("client1").empty());
+  CHECK(collect_entries(store, "client1").empty());
   CHECK_FALSE(mgr.is_in_use(pid, InflightDirection::Outbound));
 }
 
@@ -318,12 +338,12 @@ TEST_CASE("retransmit_updates_timestamp", "[qos1]") {
   const PublishPacket pkt =
       machine.initiate_publish(make_message(QoS::AtLeastOnce));
   const uint16_t pid = pkt.packet_id.value();
-  const auto old_ts = store.entries_for("client1")[0].timestamp;
+  const auto old_ts = outbound_timestamp(store, "client1", pid);
 
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
   (void)machine.retransmit(pid);
 
-  const auto new_ts = store.entries_for("client1")[0].timestamp;
+  const auto new_ts = outbound_timestamp(store, "client1", pid);
   CHECK(new_ts > old_ts);
 }
 
@@ -354,7 +374,7 @@ TEST_CASE("inbound_publish_creates_entry_and_returns_pubrec", "[qos2]") {
   CHECK(result.pubrec.packet_id == 5);
   CHECK_FALSE(result.is_duplicate);
 
-  const auto entries = store.entries_for("client1");
+  const auto entries = collect_entries(store, "client1");
   REQUIRE(entries.size() == 1);
   CHECK(entries[0].state == InflightState::WaitingForPubrel);
   CHECK(entries[0].direction == InflightDirection::Inbound);
@@ -372,7 +392,7 @@ TEST_CASE("inbound_publish_duplicate_detected", "[qos2]") {
   CHECK(dup_result.is_duplicate);
   CHECK(dup_result.pubrec.packet_id == 5);
   // No second entry created.
-  CHECK(store.entries_for("client1").size() == 1);
+  CHECK(collect_entries(store, "client1").size() == 1);
 }
 
 TEST_CASE("inbound_publish_invalid_qos_throws", "[qos2]") {
@@ -413,7 +433,7 @@ TEST_CASE("on_pubrel_returns_pubcomp", "[qos2]") {
   const PubcompPacket comp = machine.on_pubrel_received(make_pubrel(5));
 
   CHECK(comp.packet_id == 5);
-  CHECK(store.entries_for("client1").empty());
+  CHECK(collect_entries(store, "client1").empty());
   CHECK_FALSE(mgr.is_in_use(5, InflightDirection::Inbound));
 }
 
@@ -428,7 +448,7 @@ TEST_CASE("on_pubrel_duplicate_after_completion_returns_pubcomp", "[qos2]") {
 
   CHECK(first.packet_id == 5);
   CHECK(second.packet_id == 5);
-  CHECK(store.entries_for("client1").empty());
+  CHECK(collect_entries(store, "client1").empty());
 }
 
 TEST_CASE("on_pubrel_unknown_id_throws", "[qos2]") {
@@ -457,7 +477,7 @@ TEST_CASE("outbound_initiate_publish_creates_entry", "[qos2]") {
   CHECK(pkt.qos == QoS::ExactlyOnce);
   CHECK(pkt.topic == msg.topic);
 
-  const auto entries = store.entries_for("client1");
+  const auto entries = collect_entries(store, "client1");
   REQUIRE(entries.size() == 1);
   CHECK(entries[0].state == InflightState::WaitingForPubrec);
   CHECK(entries[0].direction == InflightDirection::Outbound);
@@ -486,7 +506,7 @@ TEST_CASE("on_pubrec_advances_state_and_returns_pubrel", "[qos2]") {
   const PubrelPacket rel = machine.on_pubrec_received(make_pubrec(pid));
   CHECK(rel.packet_id == pid);
 
-  const auto entries = store.entries_for("client1");
+  const auto entries = collect_entries(store, "client1");
   REQUIRE(entries.size() == 1);
   CHECK(entries[0].state == InflightState::WaitingForPubcomp);
 }
@@ -531,7 +551,7 @@ TEST_CASE("on_pubcomp_removes_entry", "[qos2]") {
   (void)machine.on_pubrec_received(make_pubrec(pid));
   machine.on_pubcomp_received(make_pubcomp(pid));
 
-  CHECK(store.entries_for("client1").empty());
+  CHECK(collect_entries(store, "client1").empty());
   CHECK_FALSE(mgr.is_in_use(pid, InflightDirection::Outbound));
 }
 
@@ -589,12 +609,12 @@ TEST_CASE("retransmit_updates_timestamp", "[qos2]") {
   const PublishPacket pub =
       machine.initiate_publish(make_message(QoS::ExactlyOnce));
   const uint16_t pid = pub.packet_id.value();
-  const auto old_ts = store.entries_for("client1")[0].timestamp;
+  const auto old_ts = outbound_timestamp(store, "client1", pid);
 
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
   (void)machine.retransmit(pid);
 
-  const auto new_ts = store.entries_for("client1")[0].timestamp;
+  const auto new_ts = outbound_timestamp(store, "client1", pid);
   CHECK(new_ts > old_ts);
 }
 

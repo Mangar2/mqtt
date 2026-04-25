@@ -7,11 +7,21 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <string_view>
+#include <array>
+#include <atomic>
+#include <optional>
 #include <unordered_map>
 #include <vector>
+
+#include <chrono>
+
+#include "store/store_error.h"
 
 #include "data_model/session/inflight_direction.h"
 #include "data_model/session/inflight_entry.h"
@@ -38,7 +48,17 @@ public:
    * @param entry     Entry to store; `entry.packet_id` must be non-zero and
    *                  unique within `(client_id, entry.direction)`.
    */
-  void create(std::string_view client_id, const InflightEntry &entry);
+  void create(std::string_view client_id, InflightEntry &&entry);
+
+  /**
+   * @brief Compatibility overload for existing call sites.
+   * @param client_id Identifier of the owning session.
+   * @param entry Entry to store by copy.
+   */
+  void create(std::string_view client_id, const InflightEntry &entry) {
+    InflightEntry copied_entry = entry;
+    create(client_id, std::move(copied_entry));
+  }
 
   /**
    * @brief Advance the handshake state of an existing entry (4.4.2).
@@ -62,16 +82,70 @@ public:
    * @param direction Direction of the exchange.
    */
   void remove(std::string_view client_id, uint16_t packet_id,
-              InflightDirection direction);
+              InflightDirection direction) noexcept;
 
   /**
-   * @brief Return a copy of all inflight entries for a session (4.4.4).
+   * @brief Visit a single entry when present.
    *
-   * @param client_id Identifier of the session to query.
-   * @return Vector of all `InflightEntry` values; empty if the session has
-   * none.
+   * @tparam Visitor Callable receiving `const InflightEntry&`.
+   * @param client_id Identifier of the session.
+   * @param packet_id Packet Identifier to visit.
+   * @param direction Direction of the exchange.
+   * @param visit Callback invoked once when the entry exists.
+   * @return `true` when the entry was found.
    */
-  [[nodiscard]] std::vector<InflightEntry> entries_for(std::string_view client_id) const;
+  template <class Visitor>
+  bool with_entry(std::string_view client_id, uint16_t packet_id,
+                  InflightDirection direction, Visitor &&visit) const {
+    const std::function<void(const InflightEntry &)> callback =
+        [&visit](const InflightEntry &entry) { std::invoke(visit, entry); };
+    return with_entry_impl(client_id, packet_id, direction, callback);
+  }
+
+  /**
+   * @brief Iterate all live entries of one direction for a session.
+   *
+   * @tparam Visitor Callable receiving `const InflightEntry&`.
+   * @param client_id Identifier of the session.
+   * @param direction Direction to iterate.
+   * @param visit Callback invoked for each live entry.
+   */
+  template <class Visitor>
+  void for_each(std::string_view client_id, InflightDirection direction,
+                Visitor &&visit) const {
+    const std::function<void(const InflightEntry &)> callback =
+        [&visit](const InflightEntry &entry) { std::invoke(visit, entry); };
+    for_each_direction_impl(client_id, direction, callback);
+  }
+
+  /**
+   * @brief Iterate all live entries of both directions for a session.
+   *
+   * @tparam Visitor Callable receiving `const InflightEntry&`.
+   * @param client_id Identifier of the session.
+   * @param visit Callback invoked for each live entry.
+   */
+  template <class Visitor>
+  void for_each(std::string_view client_id, Visitor &&visit) const {
+    const std::function<void(const InflightEntry &)> callback =
+        [&visit](const InflightEntry &entry) { std::invoke(visit, entry); };
+    for_each_all_impl(client_id, callback);
+  }
+
+  /**
+   * @brief Iterate all entries across all sessions for persistence snapshots.
+   *
+   * @tparam Visitor Callable receiving `(std::string_view, const
+   * InflightEntry&)`.
+   * @param visit Callback invoked once per live entry.
+   */
+  template <class Visitor> void snapshot_each_session(Visitor &&visit) const {
+    const std::function<void(std::string_view, const InflightEntry &)> callback =
+        [&visit](std::string_view client_id, const InflightEntry &entry) {
+          std::invoke(visit, client_id, entry);
+        };
+    snapshot_each_session_impl(callback);
+  }
 
   /**
    * @brief Check whether a packet ID is currently registered (4.4.5).
@@ -98,24 +172,97 @@ public:
    */
   [[nodiscard]] std::size_t total_size() const noexcept;
 
-private:
-  /// Guards all accesses to @ref entries_.
-  mutable std::mutex mutex_;
-
-  /// Per-session list of in-flight entries.
-  std::unordered_map<std::string, std::vector<InflightEntry>> entries_;
-
   /**
-   * @brief Find an entry by packet_id and direction within a session's list.
-   *
-   * @param list      Reference to the per-session entry vector.
-   * @param packet_id Packet Identifier to find.
-   * @param direction Direction to match.
-   * @return Iterator to the matching element, or `list.end()` if not found.
+   * @brief Drop all inflight entries for a session.
+   * @param client_id Identifier of the session to clear.
    */
-  [[nodiscard]] static std::vector<InflightEntry>::iterator
-  find_entry(std::vector<InflightEntry> &list, uint16_t packet_id,
-             InflightDirection direction) noexcept;
+  void drop_session(std::string_view client_id) noexcept;
+
+private:
+  static constexpr std::size_t k_shard_count_ = 64U;
+  static constexpr std::size_t k_slots_per_chunk_ = 64U;
+  static constexpr std::size_t k_chunk_count_ = 65536U / k_slots_per_chunk_;
+  static constexpr std::size_t k_free_list_max_ = 2U;
+
+  struct Chunk {
+    uint64_t occupancy_bitmap{0ULL};
+    uint16_t live_slot_count{0U};
+    uint16_t base_packet_id{0U};
+    std::array<std::optional<InflightEntry>, k_slots_per_chunk_> slots{};
+  };
+
+  class InflightTable {
+  public:
+    void create(InflightEntry &&entry);
+    [[nodiscard]] bool update_state(uint16_t packet_id, InflightState new_state);
+    [[nodiscard]] bool remove(uint16_t packet_id) noexcept;
+    [[nodiscard]] bool is_packet_id_in_use(uint16_t packet_id) const noexcept;
+    [[nodiscard]] bool with_entry(
+        uint16_t packet_id,
+        const std::function<void(const InflightEntry &)> &visit) const;
+    void for_each(const std::function<void(const InflightEntry &)> &visit) const;
+    [[nodiscard]] std::size_t size() const noexcept;
+    [[nodiscard]] std::size_t clear() noexcept;
+
+  private:
+    [[nodiscard]] static std::pair<std::size_t, std::size_t>
+    chunk_and_slot_indices(uint16_t packet_id);
+    [[nodiscard]] static uint64_t slot_mask(std::size_t slot_index) noexcept;
+    void ensure_chunk(std::size_t chunk_index);
+    void recycle_chunk(std::size_t chunk_index) noexcept;
+    void link_active_chunk(std::size_t chunk_index) noexcept;
+    void unlink_active_chunk(std::size_t chunk_index) noexcept;
+
+    std::array<std::unique_ptr<Chunk>, k_chunk_count_> chunks_{};
+    std::array<int32_t, k_chunk_count_> next_active_chunk_indices_{};
+    std::array<int32_t, k_chunk_count_> prev_active_chunk_indices_{};
+    int32_t first_active_chunk_index_{-1};
+    int32_t last_active_chunk_index_{-1};
+    std::vector<std::unique_ptr<Chunk>> free_chunks_{};
+    std::size_t active_count_{0U};
+  };
+
+  struct SessionSlot {
+    mutable std::mutex session_entry_mutex;
+    InflightTable outbound_table;
+    InflightTable inbound_table;
+
+    [[nodiscard]] InflightTable &table_for(InflightDirection direction) noexcept;
+    [[nodiscard]] const InflightTable &
+    table_for(InflightDirection direction) const noexcept;
+    [[nodiscard]] std::size_t size() const noexcept;
+    [[nodiscard]] bool empty() const noexcept;
+    [[nodiscard]] std::size_t clear() noexcept;
+  };
+
+  struct Shard {
+    mutable std::shared_mutex shard_mutex;
+    std::unordered_map<std::string, std::shared_ptr<SessionSlot>> sessions;
+  };
+
+  [[nodiscard]] static std::size_t
+  shard_index_for(std::string_view client_id) noexcept;
+  [[nodiscard]] std::shared_ptr<SessionSlot>
+  get_or_create_session(std::string_view client_id);
+  [[nodiscard]] std::shared_ptr<SessionSlot>
+  find_session(std::string_view client_id) const;
+
+  [[nodiscard]] bool with_entry_impl(
+      std::string_view client_id, uint16_t packet_id,
+      InflightDirection direction,
+      const std::function<void(const InflightEntry &)> &visit) const;
+  void for_each_direction_impl(
+      std::string_view client_id, InflightDirection direction,
+      const std::function<void(const InflightEntry &)> &visit) const;
+  void for_each_all_impl(
+      std::string_view client_id,
+      const std::function<void(const InflightEntry &)> &visit) const;
+  void snapshot_each_session_impl(
+      const std::function<void(std::string_view, const InflightEntry &)> &
+          visit) const;
+
+  mutable std::array<Shard, k_shard_count_> session_shards_{};
+  std::atomic<std::size_t> total_size_{0U};
 };
 
 } // namespace mqtt

@@ -16,6 +16,8 @@ namespace mqtt {
  */
 enum class StoreError : uint8_t {
   SessionAlreadyExists, ///< create() called for a client_id already present.
+  InvalidPacketId, ///< create() called with packet_id=0.
+  PacketIdAlreadyInUse, ///< create() called for a live packet_id/direction.
   PacketIdNotFound, ///< update() called for a packet_id/direction not in the
                     ///< store.
 };

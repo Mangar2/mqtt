@@ -298,10 +298,7 @@ InflightStore &SessionManager::inflight_store() noexcept {
 
 void SessionManager::remove_session_data(std::string_view client_id) {
   // Remove all inflight entries for the session.
-  const auto entries = inflight_store_.entries_for(client_id);
-  for (const auto &entry : entries) {
-    inflight_store_.remove(client_id, entry.packet_id, entry.direction);
-  }
+  inflight_store_.drop_session(client_id);
 
   // Remove all subscriptions.
   subscription_store_.remove_session(client_id);
