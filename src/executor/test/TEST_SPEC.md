@@ -36,6 +36,7 @@ Catch2 tag: `[executor]`.
 | `submit_for_busy_connection_buffers_in_backlog` | Further submit for same active fd is buffered |
 | `mark_done_returns_next_backlog_job_when_pending` | `mark_done(fd)` returns next buffered job |
 | `mark_done_returns_nullopt_when_no_backlog` | `mark_done(fd)` returns nullopt when no buffered work remains |
+| `mark_done_returns_nullopt_for_unknown_fd` | `mark_done(fd)` returns nullopt for unknown/non-tracked fd |
 | `at_most_one_active_job_per_fd_under_concurrent_submit` | Under concurrent submit/consume, active parallel jobs per fd never exceed 1 |
 
 ## worker_pool_test.cpp

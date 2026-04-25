@@ -44,6 +44,9 @@
 | `process_drain_job_websocket_frame_path_and_write_error` | WS frame append + write error close path | websocket session with pending frame and invalid socket | entry is finalized and removed |
 | `process_decode_job_keep_alive_timeout_enters_closing_and_drain` | Keep-alive timeout decode branch | connected session with expired keep-alive timer | session enters closing phase with `KeepAliveTimeout` reason |
 | `process_drain_job_takeover_due_closes_connection` | Session takeover branch in drain | session with pending takeover request | session is moved to closing with `SessionTakenOver`; close finalization may already be done or remain pending |
+| `process_decode_job_returns_when_decode_guard_is_busy` | Decode guard contention branch | connection session where decode guard already acquired | decode job returns without scheduling additional work |
+| `process_decode_job_stream_buffer_overflow_sets_quota_disconnect` | Inbound stream-buffer hard-cap overflow | connected session with tiny `stream_buffer_max_bytes` + oversized inbound read | disconnect state is set to `QuotaExceeded` and session enters closing phase |
+| `process_decode_job_read_error_submits_close` | Read error branch in decode loop | non-websocket session on invalid socket handle | close job is submitted and connection can be finalized |
 
 ## ConnectionStateMachine (7.1)
 

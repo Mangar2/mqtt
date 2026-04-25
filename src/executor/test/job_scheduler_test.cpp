@@ -68,6 +68,13 @@ TEST_CASE("mark_done_returns_nullopt_when_no_backlog", "[executor]") {
   CHECK_FALSE(scheduler.mark_done(33).has_value());
 }
 
+TEST_CASE("mark_done_returns_nullopt_for_unknown_fd", "[executor]") {
+  JobQueue queue;
+  JobScheduler scheduler(queue);
+
+  CHECK_FALSE(scheduler.mark_done(9999).has_value());
+}
+
 TEST_CASE("at_most_one_active_job_per_fd_under_concurrent_submit", "[executor]") {
   JobQueue queue;
   JobScheduler scheduler(queue);

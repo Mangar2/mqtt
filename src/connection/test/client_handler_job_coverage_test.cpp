@@ -643,3 +643,139 @@ TEST_CASE("process_drain_job_takeover_due_closes_connection", "[connection]") {
   broker.shutdown();
 #endif
 }
+
+TEST_CASE("process_decode_job_returns_when_decode_guard_is_busy", "[connection]") {
+#ifdef _WIN32
+  SUCCEED("socketpair-based coverage test is POSIX-only");
+#else
+  const BrokerConfig config = make_config();
+  Broker broker(config);
+  broker.startup();
+
+  IoReactor reactor;
+  reactor.start();
+  JobQueue queue;
+  JobScheduler scheduler(queue);
+  ConnectionTable table;
+
+  const auto socket_pair = make_connected_socket_pair();
+  const SocketHandle accepted_socket = socket_pair.first;
+  const SocketHandle client_socket = socket_pair.second;
+  REQUIRE(set_nonblocking(accepted_socket) == IoResult::Ok);
+
+  auto connection = std::make_unique<TcpConnection>(accepted_socket);
+  auto session = std::make_unique<ConnectionSession>(std::move(connection),
+                                                     nullptr, false, config);
+  const int connection_fd = static_cast<int>(accepted_socket);
+  REQUIRE(table.add(connection_fd, ConnectionSlot(accepted_socket),
+                    std::move(session)));
+
+  ConnectionTable::Entry *entry = table.find(connection_fd);
+  REQUIRE(entry != nullptr);
+  REQUIRE(entry->session != nullptr);
+  REQUIRE(entry->session->try_begin_decode());
+
+  client_handler::process_decode_job(connection_fd, table, reactor, scheduler,
+                                     broker);
+  CHECK(queue.size() == 0U);
+
+  entry->session->end_decode();
+  client_handler::process_close_job(connection_fd, table, reactor, broker);
+  close_socket_handle(client_socket);
+  reactor.stop();
+  broker.shutdown();
+#endif
+}
+
+TEST_CASE("process_decode_job_stream_buffer_overflow_sets_quota_disconnect",
+          "[connection]") {
+#ifdef _WIN32
+  SUCCEED("socketpair-based coverage test is POSIX-only");
+#else
+  BrokerConfig config = make_config();
+  config.stream_buffer_max_bytes = 8U;
+  Broker broker(config);
+  broker.startup();
+
+  IoReactor reactor;
+  reactor.start();
+  JobQueue queue;
+  JobScheduler scheduler(queue);
+  ConnectionTable table;
+
+  const auto socket_pair = make_connected_socket_pair();
+  const SocketHandle accepted_socket = socket_pair.first;
+  const SocketHandle client_socket = socket_pair.second;
+  REQUIRE(set_nonblocking(accepted_socket) == IoResult::Ok);
+
+  auto connection = std::make_unique<TcpConnection>(accepted_socket);
+  auto session = std::make_unique<ConnectionSession>(std::move(connection),
+                                                     nullptr, false, config);
+  session->set_phase(ConnectionSession::Phase::Connected);
+  session->connect_result().client_id = "overflow-client";
+
+  const int connection_fd = static_cast<int>(accepted_socket);
+  REQUIRE(table.add(connection_fd, ConnectionSlot(accepted_socket),
+                    std::move(session)));
+
+  const std::array<uint8_t, 16> raw_bytes{
+      0x30U, 0x01U, 0xFFU, 0x30U, 0x01U, 0xEEU, 0x30U, 0x01U,
+      0xDDU, 0x30U, 0x01U, 0xCCU, 0x30U, 0x01U, 0xBBU, 0x30U};
+  const int write_result = ::send(static_cast<int>(client_socket), raw_bytes.data(),
+                                  raw_bytes.size(), 0);
+  REQUIRE(write_result >= 0);
+
+  client_handler::process_decode_job(connection_fd, table, reactor, scheduler,
+                                     broker);
+
+  ConnectionTable::Entry *entry = table.find(connection_fd);
+  REQUIRE(entry != nullptr);
+  REQUIRE(entry->session != nullptr);
+  CHECK(entry->session->disconnect_state().clean_disconnect);
+  CHECK(entry->session->disconnect_state().reason_code ==
+        ReasonCode::QuotaExceeded);
+  CHECK(entry->session->phase() == ConnectionSession::Phase::Closing);
+
+  client_handler::process_close_job(connection_fd, table, reactor, broker);
+  close_socket_handle(client_socket);
+  reactor.stop();
+  broker.shutdown();
+#endif
+}
+
+TEST_CASE("process_decode_job_read_error_submits_close", "[connection]") {
+  const BrokerConfig config = make_config();
+  Broker broker(config);
+  broker.startup();
+
+  IoReactor reactor;
+  reactor.start();
+  JobQueue queue;
+  JobScheduler scheduler(queue);
+  ConnectionTable table;
+
+  auto connection = std::make_unique<TcpConnection>(k_invalid_socket);
+  auto session = std::make_unique<ConnectionSession>(std::move(connection),
+                                                     nullptr, false, config);
+  const int connection_fd = static_cast<int>(k_invalid_socket);
+  REQUIRE(table.add(connection_fd, ConnectionSlot(k_invalid_socket),
+                    std::move(session)));
+
+  client_handler::process_decode_job(connection_fd, table, reactor, scheduler,
+                                     broker);
+
+  bool close_job_seen = false;
+  const std::size_t pending_jobs = queue.size();
+  for (std::size_t index = 0; index < pending_jobs; ++index) {
+    const auto maybe_job = queue.pop_blocking();
+    REQUIRE(maybe_job.has_value());
+    if (maybe_job->type == JobType::Close) {
+      close_job_seen = true;
+    }
+  }
+  CHECK(close_job_seen);
+
+  client_handler::process_close_job(connection_fd, table, reactor, broker);
+  reactor.stop();
+  broker.shutdown();
+}
