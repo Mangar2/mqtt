@@ -128,12 +128,14 @@ class MqttClient:
         protocol: int | None = None,
         transport: str = "tcp",
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        max_inflight_messages: int | None = None,
     ) -> None:
         self._ensure_dependency_available()
         self._client_id = client_id
         self._protocol = mqtt.MQTTv5 if protocol is None else protocol
         self._transport = transport
         self._timeout_seconds = timeout_seconds
+        self._max_inflight_messages = max_inflight_messages
 
         self._client: mqtt.Client | None = None
         self._connack_event = Event()
@@ -333,6 +335,16 @@ class MqttClient:
         except Exception:
             pass
 
+        queue_size_rc = int(getattr(mqtt, "MQTT_ERR_QUEUE_SIZE", 15))
+        if publish_rc == queue_size_rc:
+            queue_info = self._collect_client_queue_diagnostics()
+            error_parts.append(
+                "queue_full_origin=publisher-client-outgoing-queue"
+                f" out_messages={queue_info['out_messages']}"
+                f" max_queued_messages={queue_info['max_queued_messages']}"
+                f" max_inflight_messages={queue_info['max_inflight_messages']}"
+            )
+
         disconnect_event = self._disconnect_result
         if disconnect_event is None:
             # If publish raced with socket close, the disconnect callback may
@@ -368,6 +380,78 @@ class MqttClient:
             disconnect_fragment = f"{disconnect_fragment} ({reason_text})"
         error_parts.append(disconnect_fragment)
         return "; ".join(error_parts)
+
+    def _collect_client_queue_diagnostics(self) -> dict[str, int]:
+        client = self._client
+        if client is None:
+            return {
+                "out_messages": -1,
+                "max_queued_messages": -1,
+                "max_inflight_messages": -1,
+            }
+
+        out_messages_value = getattr(client, "_out_messages", ())
+        try:
+            out_messages_count = int(len(out_messages_value))
+        except Exception:
+            out_messages_count = -1
+
+        try:
+            max_queued_messages = int(getattr(client, "_max_queued_messages", -1))
+        except Exception:
+            max_queued_messages = -1
+
+        try:
+            max_inflight_messages = int(getattr(client, "_max_inflight_messages", -1))
+        except Exception:
+            max_inflight_messages = -1
+
+        return {
+            "out_messages": out_messages_count,
+            "max_queued_messages": max_queued_messages,
+            "max_inflight_messages": max_inflight_messages,
+        }
+
+    def runtime_diagnostics(self) -> dict[str, int | bool | str]:
+        client = self._client
+        connected = bool(client is not None and client.is_connected())
+
+        disconnect_source = "none"
+        disconnect_reason = -1
+        disconnect_from_broker = False
+        disconnect_event = self._disconnect_result
+        if disconnect_event is not None:
+            disconnect_reason = int(disconnect_event.reason_code)
+            disconnect_from_broker = bool(disconnect_event.from_broker)
+            if disconnect_event.from_broker is True:
+                disconnect_source = "broker"
+            elif disconnect_event.from_broker is False:
+                disconnect_source = "local"
+            else:
+                disconnect_source = "unknown"
+
+        queue_info = self._collect_client_queue_diagnostics()
+
+        inbound_queue_depth = -1
+        try:
+            inbound_queue_depth = int(self._inbound_messages.qsize())
+        except Exception:
+            inbound_queue_depth = -1
+
+        with self._mid_lock:
+            published_mid_cache = int(len(self._published_mids))
+
+        return {
+            "connected": connected,
+            "disconnect_source": disconnect_source,
+            "disconnect_reason": disconnect_reason,
+            "disconnect_from_broker": disconnect_from_broker,
+            "inbound_queue_depth": inbound_queue_depth,
+            "published_mid_cache": published_mid_cache,
+            "out_messages": int(queue_info["out_messages"]),
+            "max_queued_messages": int(queue_info["max_queued_messages"]),
+            "max_inflight_messages": int(queue_info["max_inflight_messages"]),
+        }
 
     def drain_published_mids(self, limit: int | None = None) -> dict[int, int]:
         """Return currently completed publish mids and reason codes without blocking."""
@@ -504,6 +588,9 @@ class MqttClient:
                 protocol=self._protocol,
                 transport=self._transport,
             )
+
+        if self._max_inflight_messages is not None:
+            self._client.max_inflight_messages_set(int(self._max_inflight_messages))
 
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect

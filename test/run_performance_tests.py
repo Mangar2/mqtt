@@ -8,6 +8,7 @@ All scenario logic is defined directly here.
 """
 
 import argparse
+import contextlib
 import concurrent.futures
 import errno
 import hashlib
@@ -39,6 +40,7 @@ TARGET_PORT_ENV = "MQTT_INTEGRATION_TARGET_PORT"
 TARGET_WS_PORT_ENV = "MQTT_INTEGRATION_TARGET_WS_PORT"
 
 DEFAULT_REMOTE_WS_PORT = 8083
+PERFORMANCE_CLIENT_MAX_INFLIGHT = 50
 
 
 @dataclass(frozen=True)
@@ -678,6 +680,51 @@ def _safe_rate(work_units: float, elapsed_seconds: float) -> float:
     return float(work_units) / max(1e-6, float(elapsed_seconds))
 
 
+def _format_p02_publish_abort_summary(
+    error: RuntimeError,
+    *,
+    publisher: MqttClient,
+    publisher_index: int,
+    publisher_clients_total: int,
+    publisher_sent_count: int,
+    publisher_rate_cap_per_second: int,
+    subscriber: MqttClient,
+    sent_total: int,
+    ack_total: int,
+    received_total: int,
+    pending_publish_count: int,
+    current_rate: float,
+) -> str:
+    error_text = str(error)
+    publisher_diag = publisher.runtime_diagnostics()
+    subscriber_diag = subscriber.runtime_diagnostics()
+
+    queue_hint = "unknown"
+    if "rc=15" in error_text:
+        queue_hint = "publisher-client-outgoing-queue"
+
+    return (
+        "p02_publish_abort"
+        f" queue_hint={queue_hint}"
+        f" error={_compact(error_text)}"
+        f" pub_index={publisher_index + 1}/{publisher_clients_total}"
+        f" pub_client_sent={publisher_sent_count}"
+        f" pub_client_rate_cap_per_s={publisher_rate_cap_per_second}"
+        f" pub_connected={int(bool(publisher_diag.get('connected', False)))}"
+        f" pub_disconnect_source={publisher_diag.get('disconnect_source', 'none')}"
+        f" pub_disconnect_reason={int(publisher_diag.get('disconnect_reason', -1))}"
+        f" pub_out_messages={int(publisher_diag.get('out_messages', -1))}"
+        f" pub_max_queued={int(publisher_diag.get('max_queued_messages', -1))}"
+        f" pub_max_inflight={int(publisher_diag.get('max_inflight_messages', -1))}"
+        f" sub_connected={int(bool(subscriber_diag.get('connected', False)))}"
+        f" sub_inbound_queue={int(subscriber_diag.get('inbound_queue_depth', -1))}"
+        f" stats_sent={sent_total} stats_acked={ack_total}"
+        f" stats_received={received_total}"
+        f" stats_pending_publish_mids={pending_publish_count}"
+        f" stats_current_rate={current_rate:.2f}/s"
+    )
+
+
 def _drain_matching_messages(
     subscriber: MqttClient,
     expected_prefix: str,
@@ -943,7 +990,10 @@ def _scenario_s01(config: RunnerConfig) -> ScenarioOutcome:
 
 
 def _connect_client(config: RunnerConfig, prefix: str, timeout: float | None = None, clean_start: bool = True, client_id: str = "", properties=None):
-    client = MqttClient(timeout_seconds=timeout or config.timeout_seconds)
+    client = MqttClient(
+        timeout_seconds=timeout or config.timeout_seconds,
+        max_inflight_messages=PERFORMANCE_CLIENT_MAX_INFLIGHT,
+    )
     result = client.connect(
         config.host,
         config.port,
@@ -1125,8 +1175,20 @@ def _scenario_p02(config: RunnerConfig) -> ScenarioOutcome:
     rate_step_per_level = (ramp_end_rate - ramp_start_rate) / float(ramp_step_count)
     overload_deficit_threshold = 0.30
     report_interval_seconds = 10.0
+    max_messages_per_publisher_per_second = 2000
     topic = f"perf/p02/{_unique_suffix()}"
     step = _scenario_step_logger("P02")
+
+    planned_sent = int(
+        sum(
+            (
+                ramp_start_rate + (rate_step_per_level * float(level_index))
+            )
+            * rate_step_seconds
+            for level_index in range(ramp_step_count)
+        )
+        + (ramp_end_rate * hold_duration_seconds)
+    )
 
     def _mmss(seconds_value: float) -> str:
         total_seconds = max(0, int(round(seconds_value)))
@@ -1138,22 +1200,40 @@ def _scenario_p02(config: RunnerConfig) -> ScenarioOutcome:
         f"duration={duration_seconds:.0f}s ramp={ramp_start_rate:.0f}->{ramp_end_rate:.0f}/s "
         f"ramp_step={rate_step_seconds:.0f}s hold={hold_duration_seconds:.0f}s report={report_interval_seconds:.0f}s"
     )
+    step(
+        f"publish-sharding dynamic_clients=1..N max_rate_per_client={max_messages_per_publisher_per_second}/s "
+        f"planned_sent={planned_sent}"
+    )
 
     sent_total = 0
     ack_total = 0
     received_total = 0
     ramp_stopped = False
     ramp_stopped_at_rate = 0.0
-    pending_publish_mids: set[int] = set()
+    pending_publish_mids: set[tuple[int, int]] = set()
+    publisher_sent_counts = [0]
+    next_publisher_index = 0
 
     with _connect_client(config, "p02-sub", timeout=max(config.timeout_seconds, 20.0)) as subscriber:
         subscriber.subscribe(topic, qos=1)
-        with _connect_client(config, "p02-pub", timeout=max(config.timeout_seconds, 20.0)) as publisher:
+        with contextlib.ExitStack() as publisher_stack:
+            publishers = [
+                publisher_stack.enter_context(
+                    _connect_client(
+                        config,
+                        "p02-pub",
+                        timeout=max(config.timeout_seconds, 20.0),
+                        client_id=f"p02-pub-0-{_unique_suffix()}",
+                    )
+                )
+            ]
+
             started = time.monotonic()
             ended = started + duration_seconds
             block_start = started
             block_end = min(ended, block_start + report_interval_seconds)
             block_sent = 0
+            block_acked = 0
             block_received = 0
             current_rate = ramp_start_rate
             current_interval = 1.0 / current_rate
@@ -1165,26 +1245,69 @@ def _scenario_p02(config: RunnerConfig) -> ScenarioOutcome:
                 required_sent_until_now = int(math.floor((block_elapsed / current_interval) + 1e-9))
                 messages_to_send_now = max(0, required_sent_until_now - block_sent)
 
-                for _ in range(messages_to_send_now):
-                    publish_mid = int(
-                        publisher.publish(
-                            topic,
-                            f"p02:{sequence}".encode("utf-8"),
-                            qos=1,
-                            wait_for_qos1_publish=False,
+                active_publisher_clients = max(
+                    1,
+                    int(math.ceil(float(current_rate) / float(max_messages_per_publisher_per_second))),
+                )
+                while len(publishers) < active_publisher_clients:
+                    new_index = len(publishers)
+                    new_publisher = publisher_stack.enter_context(
+                        _connect_client(
+                            config,
+                            "p02-pub",
+                            timeout=max(config.timeout_seconds, 20.0),
+                            client_id=f"p02-pub-{new_index}-{_unique_suffix()}",
                         )
                     )
-                    pending_publish_mids.add(publish_mid)
+                    publishers.append(new_publisher)
+                    publisher_sent_counts.append(0)
+
+                for _ in range(messages_to_send_now):
+                    chosen_publisher_index = next_publisher_index % active_publisher_clients
+                    next_publisher_index = (next_publisher_index + 1) % active_publisher_clients
+
+                    publisher = publishers[chosen_publisher_index]
+                    try:
+                        publish_mid = int(
+                            publisher.publish(
+                                topic,
+                                f"p02:{sequence}".encode("utf-8"),
+                                qos=1,
+                                wait_for_qos1_publish=False,
+                            )
+                        )
+                    except RuntimeError as runtime_error:
+                        raise RuntimeError(
+                            _format_p02_publish_abort_summary(
+                                runtime_error,
+                                publisher=publisher,
+                                publisher_index=chosen_publisher_index,
+                                publisher_clients_total=len(publishers),
+                                publisher_sent_count=publisher_sent_counts[chosen_publisher_index],
+                                publisher_rate_cap_per_second=max_messages_per_publisher_per_second,
+                                subscriber=subscriber,
+                                sent_total=sent_total,
+                                ack_total=ack_total,
+                                received_total=received_total,
+                                pending_publish_count=len(pending_publish_mids),
+                                current_rate=current_rate,
+                            )
+                        ) from runtime_error
+                    pending_publish_mids.add((chosen_publisher_index, publish_mid))
                     sent_total += 1
                     block_sent += 1
+                    publisher_sent_counts[chosen_publisher_index] += 1
                     sequence += 1
 
-                completed_mids = publisher.drain_published_mids(limit=65536)
-                if completed_mids:
+                for publisher_index, publisher in enumerate(publishers):
+                    completed_mids = publisher.drain_published_mids(limit=65536)
+                    if not completed_mids:
+                        continue
                     for mid_value, reason_value in completed_mids.items():
-                        pending_publish_mids.discard(mid_value)
+                        pending_publish_mids.discard((publisher_index, mid_value))
                         if reason_value in (0x00, 0x10):
                             ack_total += 1
+                            block_acked += 1
 
                 drained = subscriber.drain_available_messages(limit=4096)
                 if drained:
@@ -1195,11 +1318,11 @@ def _scenario_p02(config: RunnerConfig) -> ScenarioOutcome:
                 now = time.monotonic()
                 while now >= block_end and block_start < ended:
                     interval_elapsed = max(1e-6, block_end - block_start)
-                    send_rate = _safe_rate(float(block_sent), interval_elapsed)
+                    broker_rate = _safe_rate(float(block_acked), interval_elapsed)
                     receive_rate = _safe_rate(float(block_received), interval_elapsed)
                     stamp = _mmss(block_end - started)
                     step(
-                        f"{stamp:>5} send: {block_sent:>5d} {send_rate:>6.1f}/s "
+                        f"{stamp:>5} broker: {block_acked:>5d} {broker_rate:>6.1f}/s "
                         f"recv: {block_received:>5d} {receive_rate:>6.1f}/s"
                     )
 
@@ -1217,6 +1340,7 @@ def _scenario_p02(config: RunnerConfig) -> ScenarioOutcome:
                             current_interval = 1.0 / current_rate
 
                     block_sent = 0
+                    block_acked = 0
                     block_received = 0
                     block_start = block_end
                     block_end = min(ended, block_start + report_interval_seconds)
@@ -1226,10 +1350,12 @@ def _scenario_p02(config: RunnerConfig) -> ScenarioOutcome:
 
             flush_deadline = time.monotonic() + 1.0
             while time.monotonic() < flush_deadline:
-                completed_mids = publisher.drain_published_mids(limit=65536)
-                if completed_mids:
+                for publisher_index, publisher in enumerate(publishers):
+                    completed_mids = publisher.drain_published_mids(limit=65536)
+                    if not completed_mids:
+                        continue
                     for mid_value, reason_value in completed_mids.items():
-                        pending_publish_mids.discard(mid_value)
+                        pending_publish_mids.discard((publisher_index, mid_value))
                         if reason_value in (0x00, 0x10):
                             ack_total += 1
 
@@ -1240,43 +1366,34 @@ def _scenario_p02(config: RunnerConfig) -> ScenarioOutcome:
                 received_total += len(drained)
 
             elapsed = max(1e-6, time.monotonic() - started)
-
-    planned_sent = int(
-        sum(
-            (
-                ramp_start_rate + (rate_step_per_level * float(level_index))
-            )
-            * rate_step_seconds
-            for level_index in range(ramp_step_count)
-        )
-        + (ramp_end_rate * hold_duration_seconds)
-    )
     send_rate_total = _safe_rate(float(sent_total), elapsed)
     recv_rate_total = _safe_rate(float(received_total), elapsed)
     ack_rate_total = _safe_rate(float(ack_total), elapsed)
-    delivery_ratio_total = (float(received_total) / float(sent_total)) if sent_total > 0 else 0.0
+    delivery_ratio_total = (float(received_total) / float(ack_total)) if ack_total > 0 else 0.0
     ack_ratio_total = (float(ack_total) / float(sent_total)) if sent_total > 0 else 0.0
 
     success = delivery_ratio_total >= 0.99 and ack_ratio_total >= 0.99
     counters = {
         "planned_sent": planned_sent,
-        "sent": sent_total,
-        "acked": ack_total,
+        "publisher_clients_used": len(publishers),
+        "max_messages_per_publisher_per_second": max_messages_per_publisher_per_second,
+        "broker_sent": ack_total,
         "received": received_total,
-        "missing": max(0, sent_total - received_total),
+        "missing": max(0, ack_total - received_total),
         "unacked": max(0, sent_total - ack_total),
         "pending_publish_mids": len(pending_publish_mids),
         "ramp_stopped": int(ramp_stopped),
         "ramp_stopped_at_rate": ramp_stopped_at_rate,
     }
     summary = (
-        f"duration={elapsed:.3f}s planned_sent={planned_sent} sent={sent_total} acked={ack_total} received={received_total} "
-        f"send_rate={send_rate_total:.2f}/s ack_rate={ack_rate_total:.2f}/s recv_rate={recv_rate_total:.2f}/s "
+        f"duration={elapsed:.3f}s planned_sent={planned_sent} pub_clients={len(publishers)} cap_per_client_rate={max_messages_per_publisher_per_second}/s "
+        f"broker_sent={ack_total} received={received_total} "
+        f"broker_rate={ack_rate_total:.2f}/s recv_rate={recv_rate_total:.2f}/s "
         f"ack_ratio={ack_ratio_total:.4f} delivery_ratio={delivery_ratio_total:.4f} ramp_stopped={ramp_stopped}"
     )
     final_stamp = _mmss(elapsed)
     step(
-        f"{final_stamp:>5} send: {sent_total:>5d} {send_rate_total:>6.1f}/s "
+        f"{final_stamp:>5} broker: {ack_total:>5d} {ack_rate_total:>6.1f}/s "
         f"recv: {received_total:>5d} {recv_rate_total:>6.1f}/s"
     )
     return ScenarioOutcome(

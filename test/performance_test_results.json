@@ -1,8 +1,8 @@
 {
-  "run_started_at": "2026-04-25T16:50:42+00:00",
-  "run_finished_at": "2026-04-25T16:52:43+00:00",
+  "run_started_at": "2026-04-25T19:24:55+00:00",
+  "run_finished_at": "2026-04-25T19:24:55+00:00",
   "arguments": {
-    "host": "raspberrypi",
+    "host": "qapla",
     "port": 1883,
     "ws_port": null,
     "timeout": 8.0,
@@ -14,7 +14,7 @@
     ]
   },
   "resolved_target": {
-    "host": "192.168.0.182",
+    "host": "192.168.0.150",
     "port": 1883,
     "ws_port": 8083,
     "timeout_seconds": 8.0,
@@ -38,23 +38,13 @@
       "scenario_id": "P02",
       "run_index": 1,
       "title": "qos1-message-rate-ramp",
-      "status": "DEVIATION",
-      "duration_seconds": 121.372114542,
-      "throughput_per_second": 134.22433821366457,
-      "summary": "duration=121.006s planned_sent=140500 sent=25521 acked=16243 received=16242 send_rate=210.91/s ack_rate=134.23/s recv_rate=134.22/s ack_ratio=0.6365 delivery_ratio=0.6364 ramp_stopped=True",
-      "counters": {
-        "planned_sent": 140500,
-        "sent": 25521,
-        "acked": 16243,
-        "received": 16242,
-        "missing": 9279,
-        "unacked": 9278,
-        "pending_publish_mids": 9278,
-        "ramp_stopped": 1,
-        "ramp_stopped_at_rate": 231.11111111111111
-      },
-      "started_at": "2026-04-25T16:50:42+00:00",
-      "finished_at": "2026-04-25T16:52:43+00:00"
+      "status": "ABORTED",
+      "duration_seconds": 0.0,
+      "throughput_per_second": null,
+      "summary": "target 192.168.0.150:1883 refused connection",
+      "counters": {},
+      "started_at": "2026-04-25T19:24:55+00:00",
+      "finished_at": "2026-04-25T19:24:55+00:00"
     }
   ]
 }
