@@ -19,7 +19,8 @@ Skills only here:
 /unit-test: unit testing
 /integration-test: integration testing
 /code-create: workflow coding
-/github-pr: GitHub branches and Pull Requests 
+/github-pr: GitHub branches and Pull Requests
+/bug-fixing: bug reproduction analysis and fix workflow
 
 ## Project Plan
 
