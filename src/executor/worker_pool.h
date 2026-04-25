@@ -113,6 +113,7 @@ private:
   const std::size_t max_threads_;
   JobQueue job_queue_;
   JobScheduler job_scheduler_;
+  StructuredTracer *tracer_{nullptr};
 
   mutable std::mutex mutex_;
   std::vector<std::thread> worker_threads_;

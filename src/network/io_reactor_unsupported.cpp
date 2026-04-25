@@ -7,7 +7,7 @@
 
 namespace mqtt {
 
-IoReactor::IoReactor() = default;
+IoReactor::IoReactor(StructuredTracer *tracer) : tracer_(tracer) {}
 
 IoReactor::~IoReactor() { stop(); }
 

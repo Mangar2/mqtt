@@ -72,7 +72,7 @@ void ConnectionManager::start() {
     worker_pool_->start(worker_min_threads_);
     broker_.set_job_scheduler(&worker_pool_->job_scheduler());
 
-    io_reactor_ = std::make_unique<IoReactor>();
+    io_reactor_ = std::make_unique<IoReactor>(&broker_.structured_tracer());
     io_reactor_->start();
 
     if (mqtt_port_ != 0U) {

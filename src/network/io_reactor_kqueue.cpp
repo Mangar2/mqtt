@@ -99,7 +99,7 @@ make_delete_changes(const int socket_fd) {
 
 } // namespace
 
-IoReactor::IoReactor() = default;
+IoReactor::IoReactor(StructuredTracer *tracer) : tracer_(tracer) {}
 
 IoReactor::~IoReactor() { stop(); }
 

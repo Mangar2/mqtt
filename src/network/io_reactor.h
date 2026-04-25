@@ -11,6 +11,8 @@
 #include <thread>
 #include <unordered_map>
 
+#include "monitoring/structured_tracer.h"
+
 namespace mqtt {
 
 /**
@@ -36,8 +38,9 @@ public:
 
   /**
    * @brief Construct stopped reactor instance.
+   * @param tracer Optional structured tracer for diagnostics.
    */
-  IoReactor();
+  explicit IoReactor(StructuredTracer *tracer = nullptr);
   /**
    * @brief Destroy reactor and stop event thread.
    */
@@ -90,6 +93,7 @@ private:
   struct CallbackEntry {
     bool is_listener{false};
     bool write_armed{false};
+    bool read_disarmed{false};
     AcceptCallback accept_callback;
     ReadCallback read_callback;
     WriteCallback write_callback;
@@ -100,6 +104,7 @@ private:
    */
   void run_loop() noexcept;
 
+  [[maybe_unused]] StructuredTracer *tracer_{nullptr};
   std::atomic<bool> running_{false};
   int backend_fd_{-1};
   int wake_read_fd_{-1};

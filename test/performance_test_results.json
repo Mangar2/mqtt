@@ -1,13 +1,13 @@
 {
-  "run_started_at": "2026-04-25T05:53:17+00:00",
-  "run_finished_at": "2026-04-25T05:53:55+00:00",
+  "run_started_at": "2026-04-25T08:42:33+00:00",
+  "run_finished_at": "2026-04-25T08:44:35+00:00",
   "arguments": {
     "host": "raspberrypi",
     "port": 1883,
     "ws_port": null,
     "timeout": 8.0,
     "duration": 120.0,
-    "size": "small",
+    "size": "middle",
     "repeat": 1,
     "filter": [
       "P01"
@@ -18,7 +18,7 @@
     "port": 1883,
     "ws_port": 8083,
     "timeout_seconds": 8.0,
-    "size_profile": "small",
+    "size_profile": "middle",
     "duration_seconds": 120.0
   },
   "selected_scenarios": [
@@ -39,12 +39,12 @@
       "run_index": 1,
       "title": "qos0-message-rate-ramp",
       "status": "ABORTED",
-      "duration_seconds": 38.573322208,
+      "duration_seconds": 122.20733545799999,
       "throughput_per_second": null,
-      "summary": "",
+      "summary": "publish failed with rc=4",
       "counters": {},
-      "started_at": "2026-04-25T05:53:17+00:00",
-      "finished_at": "2026-04-25T05:53:55+00:00"
+      "started_at": "2026-04-25T08:42:33+00:00",
+      "finished_at": "2026-04-25T08:44:35+00:00"
     }
   ]
 }

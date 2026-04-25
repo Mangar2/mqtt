@@ -264,12 +264,21 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
                         JobScheduler &scheduler, Broker &broker) {
   ConnectionTable::Entry *entry = table.find(fd);
   if (entry == nullptr || entry->session == nullptr) {
+    reactor.unregister(fd);
     return;
   }
 
   ConnectionSession &session = *entry->session;
   DecodeGuard decode_guard(session);
   if (!decode_guard.active()) {
+    TRACE_GUARD(&broker.structured_tracer(), TraceLevel::Trace, "connection") {
+      TraceEvent event;
+      event.level = TraceLevel::Trace;
+      event.module = "connection";
+      event.info = "decode_guard_busy";
+      event.data.emplace_back("fd", std::to_string(fd));
+      broker.structured_tracer().emit(event);
+    }
     return;
   }
 
@@ -381,8 +390,27 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
       break;
     }
 
+    TRACE_GUARD(&broker.structured_tracer(), TraceLevel::Info, "connection") {
+      TraceEvent event;
+      event.level = TraceLevel::Info;
+      event.module = "connection";
+      event.info = "decode_read_error";
+      event.data.emplace_back("fd", std::to_string(fd));
+      broker.structured_tracer().emit(event);
+    }
     submit_close(scheduler, fd);
     return;
+  }
+
+  TRACE_GUARD(&broker.structured_tracer(), TraceLevel::Trace, "connection") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "connection";
+    event.info = "decode_phase_read_done";
+    event.data.emplace_back("fd", std::to_string(fd));
+    event.data.emplace_back("total_read", std::to_string(total_read));
+    event.data.emplace_back("peer_closed", peer_closed ? "true" : "false");
+    broker.structured_tracer().emit(event);
   }
 
   std::size_t packets_processed = 0U;
@@ -397,6 +425,17 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
       break;
     }
     ++packets_processed;
+  }
+
+  TRACE_GUARD(&broker.structured_tracer(), TraceLevel::Trace, "connection") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "connection";
+    event.info = "decode_phase_packets_done";
+    event.data.emplace_back("fd", std::to_string(fd));
+    event.data.emplace_back("packets", std::to_string(packets_processed));
+    event.data.emplace_back("close_after_flush", close_after_flush ? "true" : "false");
+    broker.structured_tracer().emit(event);
   }
 
   const bool packet_budget_exhausted =
@@ -446,6 +485,18 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
   }
 
   drain_outbound_to_write_buffer(session, broker);
+
+  TRACE_GUARD(&broker.structured_tracer(), TraceLevel::Trace, "connection") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "connection";
+    event.info = "decode_phase_drain_done";
+    event.data.emplace_back("fd", std::to_string(fd));
+    event.data.emplace_back("write_buf", std::to_string(slot.write_size()));
+    event.data.emplace_back("close_after_flush", close_after_flush ? "true" : "false");
+    broker.structured_tracer().emit(event);
+  }
+
   if (!move_pending_frames_to_slot(session, slot)) {
     submit_close(scheduler, fd);
     return;
@@ -512,6 +563,14 @@ void process_drain_job(int fd, ConnectionTable &table, IoReactor &reactor,
 
 void process_close_job(int fd, ConnectionTable &table, IoReactor &reactor,
                        Broker &broker) {
+  TRACE_GUARD(&broker.structured_tracer(), TraceLevel::Info, "connection") {
+    TraceEvent event;
+    event.level = TraceLevel::Info;
+    event.module = "connection";
+    event.info = "close_job_start";
+    event.data.emplace_back("fd", std::to_string(fd));
+    broker.structured_tracer().emit(event);
+  }
   ConnectionTable::Entry *entry = table.find(fd);
   if (entry == nullptr || entry->session == nullptr) {
     reactor.unregister(fd);
@@ -522,6 +581,14 @@ void process_close_job(int fd, ConnectionTable &table, IoReactor &reactor,
   ConnectionSession &session = *entry->session;
   finalize_close(session, broker);
   session.connection().close();
+  TRACE_GUARD(&broker.structured_tracer(), TraceLevel::Info, "connection") {
+    TraceEvent event;
+    event.level = TraceLevel::Info;
+    event.module = "connection";
+    event.info = "close_job_unregister";
+    event.data.emplace_back("fd", std::to_string(fd));
+    broker.structured_tracer().emit(event);
+  }
   reactor.unregister(fd);
   (void)table.remove(fd);
 }

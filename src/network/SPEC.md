@@ -194,6 +194,11 @@ Platform mapping:
 - Windows: `io_reactor_win32.cpp`
 - Other platforms: `io_reactor_unsupported.cpp`
 
+Diagnostics note:
+- `IoReactor` stores an optional `StructuredTracer*` for backend-specific
+  diagnostics. On backends that currently do not emit trace records from the
+  reactor path, this member is intentionally declared with `[[maybe_unused]]`.
+
 Locking:
 - one internal `std::mutex` for registration mutations
 - callback dispatch runs on the reactor thread

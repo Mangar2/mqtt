@@ -56,6 +56,18 @@ void JobScheduler::submit(ConnectionJob job) {
     return;
   }
 
+  TRACE_GUARD(tracer_, TraceLevel::Trace, "executor") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "executor";
+    event.info = "scheduler_submit_active";
+    event.data.emplace_back("connection_fd", std::to_string(job.connection_fd));
+    event.data.emplace_back("job_type", std::string(job_type_name(job.type)));
+    event.data.emplace_back("active_type",
+        std::string(job_type_name(state.active_type.value_or(JobType::Accept))));
+    event.data.emplace_back("backlog_size", std::to_string(state.backlog.size()));
+    tracer_->emit(event);
+  }
   if (is_suspicious_backlog_type(job.type)) {
     // Note: we deliberately do NOT drop when active_type == job.type. A Decode
     // or Drain handler may need to self-reschedule (read/packet/write budget
@@ -64,6 +76,18 @@ void JobScheduler::submit(ConnectionJob job) {
     // data accidentally arrives. The backlog_contains_type guard still
     // coalesces concurrent reactor events into a single follow-up job.
     if (backlog_contains_type(state.backlog, job.type)) {
+      TRACE_GUARD(tracer_, TraceLevel::Trace, "executor") {
+        TraceEvent event;
+        event.level = TraceLevel::Trace;
+        event.module = "executor";
+        event.info = "scheduler_job_dropped";
+        event.data.emplace_back("connection_fd", std::to_string(job.connection_fd));
+        event.data.emplace_back("job_type", std::string(job_type_name(job.type)));
+        event.data.emplace_back("active_type",
+            std::string(job_type_name(state.active_type.value_or(JobType::Accept))));
+        event.data.emplace_back("backlog_size", std::to_string(state.backlog.size()));
+        tracer_->emit(event);
+      }
       return;
     }
   }
@@ -94,10 +118,27 @@ std::optional<ConnectionJob> JobScheduler::mark_done(int connection_fd) {
   std::lock_guard<std::mutex> lock_guard(mutex_);
   const auto state_iter = states_.find(connection_fd);
   if (state_iter == states_.end()) {
+    TRACE_GUARD(tracer_, TraceLevel::Info, "executor") {
+      TraceEvent event;
+      event.level = TraceLevel::Info;
+      event.module = "executor";
+      event.info = "mark_done_unknown_fd";
+      event.data.emplace_back("connection_fd", std::to_string(connection_fd));
+      tracer_->emit(event);
+    }
     return std::nullopt;
   }
 
   ScheduleState &state = state_iter->second;
+  TRACE_GUARD(tracer_, TraceLevel::Trace, "executor") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "executor";
+    event.info = "mark_done";
+    event.data.emplace_back("connection_fd", std::to_string(connection_fd));
+    event.data.emplace_back("backlog_size", std::to_string(state.backlog.size()));
+    tracer_->emit(event);
+  }
   if (state.backlog.empty()) {
     state.active_type.reset();
     states_.erase(state_iter);

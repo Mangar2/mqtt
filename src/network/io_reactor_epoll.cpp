@@ -2,6 +2,7 @@
 
 #include "network/io_reactor.h"
 
+#include "monitoring/structured_tracer.h"
 #include <sys/epoll.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -73,7 +74,7 @@ void drain_wake_pipe(int wake_read_fd) noexcept {
 
 } // namespace
 
-IoReactor::IoReactor() = default;
+IoReactor::IoReactor(StructuredTracer *tracer) : tracer_(tracer) {}
 
 IoReactor::~IoReactor() { stop(); }
 
@@ -191,7 +192,7 @@ void IoReactor::arm_write(int socket_fd) {
   }
 
   epoll_event event{};
-  event.events = EPOLLIN | EPOLLRDHUP | EPOLLOUT;
+  event.events = iter->second.read_disarmed ? EPOLLOUT : (EPOLLIN | EPOLLRDHUP | EPOLLOUT);
   event.data.fd = socket_fd;
   (void)::epoll_ctl(backend_fd_, EPOLL_CTL_MOD, socket_fd, &event);
   iter->second.write_armed = true;
@@ -206,7 +207,7 @@ void IoReactor::disarm_write(int socket_fd) {
   }
 
   epoll_event event{};
-  event.events = EPOLLIN | EPOLLRDHUP;
+  event.events = iter->second.read_disarmed ? 0U : (EPOLLIN | EPOLLRDHUP);
   event.data.fd = socket_fd;
   (void)::epoll_ctl(backend_fd_, EPOLL_CTL_MOD, socket_fd, &event);
   iter->second.write_armed = false;
@@ -262,11 +263,50 @@ void IoReactor::run_loop() noexcept {
         continue;
       }
 
+      TRACE_GUARD(tracer_, TraceLevel::Trace, "connection") {
+        std::string flags;
+        if ((event_flags & EPOLLIN)    != 0U) flags += "IN,";
+        if ((event_flags & EPOLLOUT)   != 0U) flags += "OUT,";
+        if ((event_flags & EPOLLRDHUP) != 0U) flags += "RDHUP,";
+        if ((event_flags & EPOLLHUP)   != 0U) flags += "HUP,";
+        if ((event_flags & EPOLLERR)   != 0U) flags += "ERR,";
+        if (!flags.empty() && flags.back() == ',') flags.pop_back();
+        TraceEvent event;
+        event.level = TraceLevel::Trace;
+        event.module = "connection";
+        event.info = "reactor_event";
+        event.data.emplace_back("fd", std::to_string(socket_fd));
+        event.data.emplace_back("flags", flags);
+        tracer_->emit(event);
+      }
+
       if (((event_flags & (EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR)) != 0U) &&
           read_callback) {
+        if ((event_flags & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) != 0U) {
+          // Peer closed or error: disarm read to prevent level-triggered spin.
+          // write_armed state is preserved; arm_write/disarm_write will
+          // respect read_disarmed and never re-add EPOLLIN.
+          std::lock_guard<std::mutex> lock_guard(mutation_mutex_);
+          auto it = callbacks_.find(socket_fd);
+          if (it != callbacks_.end() && !it->second.read_disarmed) {
+            it->second.read_disarmed = true;
+            epoll_event ev{};
+            ev.data.fd = socket_fd;
+            ev.events = it->second.write_armed ? EPOLLOUT : 0U;
+            (void)::epoll_ctl(backend_fd_, EPOLL_CTL_MOD, socket_fd, &ev);
+          }
+        }
         read_callback(socket_fd);
       }
       if ((event_flags & EPOLLOUT) != 0U && write_callback) {
+        TRACE_GUARD(tracer_, TraceLevel::Trace, "connection") {
+          TraceEvent event;
+          event.level = TraceLevel::Trace;
+          event.module = "connection";
+          event.info = "reactor_epollout";
+          event.data.emplace_back("fd", std::to_string(socket_fd));
+          tracer_->emit(event);
+        }
         write_callback(socket_fd);
       }
     }

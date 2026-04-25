@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "executor/pool_scaling_policy.h"
+#include "monitoring/structured_tracer.h"
 
 namespace mqtt {
 
@@ -33,7 +34,8 @@ WorkerPool::WorkerPool(JobHandler job_handler, std::size_t max_threads,
     : job_handler_(std::move(job_handler)),
       max_threads_(max_threads == 0U ? compute_default_max_threads()
                                      : max_threads),
-      job_scheduler_(job_queue_, tracer) {
+      job_scheduler_(job_queue_, tracer),
+      tracer_(tracer) {
   if (!job_handler_) {
     throw std::invalid_argument("WorkerPool requires a valid job handler");
   }
@@ -137,6 +139,18 @@ void WorkerPool::worker_loop() {
     }
 
     BusyCounterGuard busy_guard(busy_count_);
+    TRACE_GUARD(tracer_, TraceLevel::Trace, "executor") {
+      TraceEvent event;
+      event.level = TraceLevel::Trace;
+      event.module = "executor";
+      event.info = "worker_job_pop";
+      event.data.emplace_back("connection_fd", std::to_string(job->connection_fd));
+      event.data.emplace_back("job_type",
+          job->type == JobType::Decode ? "Decode" :
+          job->type == JobType::Drain  ? "Drain"  :
+          job->type == JobType::Close  ? "Close"  : "Accept");
+      tracer_->emit(event);
+    }
     job_handler_(*job);
 
     std::optional<ConnectionJob> deferred = job_scheduler_.mark_done(job->connection_fd);
