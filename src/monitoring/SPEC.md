@@ -120,11 +120,26 @@ A value of `0` disables `$SYS` publication entirely.
 ### Trace event format (26.1)
 
 - Exactly one JSON object per line.
-- Mandatory fields: `timestamp`, `level`, `module`, `info`.
+- Mandatory fields: `timestamp`, `level`, `module`, `info`, `theme_count`, `theme_rate_per_second`.
 - Optional fields: `detail`, `data`.
 
 `data` is encoded as an object of string key/value pairs and is primarily used
 for trace-level diagnostics.
+
+`theme_count` is the total number of emitted trace records with the same
+`info` theme name since process start.
+
+`theme_rate_per_second` is a per-theme approximation based on two 1-second
+window start points tracked per `info` theme:
+
+- `t1`: start of older window with saved counter `count(t1)`.
+- `t2`: start of newer window with saved counter `count(t2)`.
+- First event for a theme sets `t1 = now`.
+- If at least 1 second elapsed since `t1`, a subsequent event sets `t2 = now`.
+- If `t2` exists and at least 1 second elapsed since `t2`, a subsequent event
+  shifts windows: `t1 = t2`, `t2 = now`.
+- Output rate formula: `(count(t2) - count(t1)) / (t2 - t1)`.
+- Before `t2` exists, `theme_rate_per_second` is `0.0`.
 
 ### Trace levels and filtering (26.2, 26.3)
 

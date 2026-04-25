@@ -7,11 +7,13 @@
 
 #include <chrono>
 #include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <ostream>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -132,6 +134,16 @@ public:
   void emit(const TraceEvent &event);
 
 private:
+  struct TraceThemeStats {
+    std::uint64_t total_count{0U};
+    bool has_t1{false};
+    std::chrono::system_clock::time_point t1{};
+    std::uint64_t count_t1{0U};
+    bool has_t2{false};
+    std::chrono::system_clock::time_point t2{};
+    std::uint64_t count_t2{0U};
+  };
+
   [[nodiscard]] bool should_emit_unlocked(TraceLevel level,
                                           std::string_view module_name) const noexcept;
 
@@ -148,6 +160,7 @@ private:
   std::atomic<TraceLevel> global_level_{TraceLevel::Warning};
   std::atomic<std::size_t> max_text_length_{2024U};
   std::unordered_set<std::string> trace_modules_;
+  std::unordered_map<std::string, TraceThemeStats> trace_theme_stats_;
   mutable std::mutex mutex_;
 };
 

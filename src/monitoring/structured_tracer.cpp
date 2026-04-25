@@ -60,6 +60,48 @@ namespace {
   return truncated;
 }
 
+void update_trace_theme_window(auto &stats,
+                               std::chrono::system_clock::time_point now) {
+  ++stats.total_count;
+
+  if (!stats.has_t1) {
+    stats.has_t1 = true;
+    stats.t1 = now;
+    stats.count_t1 = stats.total_count;
+    return;
+  }
+
+  if (!stats.has_t2) {
+    if ((now - stats.t1) >= std::chrono::seconds(1)) {
+      stats.has_t2 = true;
+      stats.t2 = now;
+      stats.count_t2 = stats.total_count;
+    }
+    return;
+  }
+
+  if ((now - stats.t2) >= std::chrono::seconds(1)) {
+    stats.t1 = stats.t2;
+    stats.count_t1 = stats.count_t2;
+    stats.t2 = now;
+    stats.count_t2 = stats.total_count;
+  }
+}
+
+[[nodiscard]] double traces_per_second(const auto &stats) {
+  if (!stats.has_t2) {
+    return 0.0;
+  }
+
+  const std::chrono::duration<double> period = stats.t2 - stats.t1;
+  if (period.count() <= 0.0) {
+    return 0.0;
+  }
+
+  const std::uint64_t delta_count = stats.count_t2 - stats.count_t1;
+  return static_cast<double>(delta_count) / period.count();
+}
+
 } // namespace
 
 StructuredTracer::StructuredTracer(std::ostream &output_stream)
@@ -127,6 +169,8 @@ void StructuredTracer::emit(const TraceEvent &event) {
     std::ostream &output_stream = *output_stream_;
     const std::size_t max_text_length =
         max_text_length_.load(std::memory_order_relaxed);
+    TraceThemeStats &theme_stats = trace_theme_stats_[event.info];
+    update_trace_theme_window(theme_stats, event.timestamp);
     const std::string module_text =
         truncate_text(event.module, max_text_length);
     const std::string info_text = truncate_text(event.info, max_text_length);
@@ -143,6 +187,15 @@ void StructuredTracer::emit(const TraceEvent &event) {
 
     output_stream << ",\"info\":";
     write_json_string(output_stream, info_text);
+
+    output_stream << ",\"theme_count\":" << theme_stats.total_count;
+
+    const std::ios::fmtflags previous_flags = output_stream.flags();
+    const std::streamsize previous_precision = output_stream.precision();
+    output_stream << ",\"theme_rate_per_second\":" << std::fixed
+                  << std::setprecision(3) << traces_per_second(theme_stats);
+    output_stream.flags(previous_flags);
+    output_stream.precision(previous_precision);
 
     if (event.detail.has_value()) {
       output_stream << ",\"detail\":";

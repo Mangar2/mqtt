@@ -314,6 +314,29 @@ private:
   std::string captured_text_;
 };
 
+[[nodiscard]] std::vector<std::string> split_non_empty_lines(
+    std::string_view multiline_text) {
+  std::vector<std::string> lines;
+  std::size_t line_start = 0U;
+  while (line_start < multiline_text.size()) {
+    const std::size_t line_end = multiline_text.find('\n', line_start);
+    if (line_end == std::string_view::npos) {
+      const std::string_view line = multiline_text.substr(line_start);
+      if (!line.empty()) {
+        lines.emplace_back(line);
+      }
+      break;
+    }
+
+    const std::string_view line = multiline_text.substr(line_start, line_end - line_start);
+    if (!line.empty()) {
+      lines.emplace_back(line);
+    }
+    line_start = line_end + 1U;
+  }
+  return lines;
+}
+
 } // namespace
 
 TEST_CASE("tracer_emits_json_line_with_mandatory_fields", "[monitoring]") {
@@ -333,6 +356,8 @@ TEST_CASE("tracer_emits_json_line_with_mandatory_fields", "[monitoring]") {
   CHECK(line.find("\"level\":\"info\"") != std::string::npos);
   CHECK(line.find("\"module\":\"connection\"") != std::string::npos);
   CHECK(line.find("\"info\":\"connect_received\"") != std::string::npos);
+  CHECK(line.find("\"theme_count\":1") != std::string::npos);
+  CHECK(line.find("\"theme_rate_per_second\":0.000") != std::string::npos);
   CHECK(line.find('\n') != std::string::npos);
 }
 
@@ -396,6 +421,40 @@ TEST_CASE("tracer_none_disables_all_output", "[monitoring]") {
   event.info = "should_not_emit";
   tracer.emit(event);
   CHECK(output_stream.str().empty());
+}
+
+TEST_CASE("tracer_emits_theme_count_and_rate_per_second", "[monitoring]") {
+  std::ostringstream output_stream;
+  StructuredTracer tracer(output_stream);
+  tracer.set_global_level(TraceLevel::Info);
+
+  const auto base_time = std::chrono::system_clock::now();
+
+  TraceEvent event;
+  event.level = TraceLevel::Info;
+  event.module = "connection";
+  event.info = "decode_packet_end";
+
+  event.timestamp = base_time;
+  tracer.emit(event);
+
+  event.timestamp = base_time + 2s;
+  tracer.emit(event);
+
+  event.timestamp = base_time + 4s;
+  tracer.emit(event);
+
+  const std::vector<std::string> lines = split_non_empty_lines(output_stream.str());
+  REQUIRE(lines.size() == 3U);
+
+  CHECK(lines[0].find("\"theme_count\":1") != std::string::npos);
+  CHECK(lines[0].find("\"theme_rate_per_second\":0.000") != std::string::npos);
+
+  CHECK(lines[1].find("\"theme_count\":2") != std::string::npos);
+  CHECK(lines[1].find("\"theme_rate_per_second\":0.500") != std::string::npos);
+
+  CHECK(lines[2].find("\"theme_count\":3") != std::string::npos);
+  CHECK(lines[2].find("\"theme_rate_per_second\":0.500") != std::string::npos);
 }
 
 TEST_CASE("tracer_serialization_failure_falls_back_to_minimal_record",
