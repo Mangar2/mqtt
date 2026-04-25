@@ -1,6 +1,6 @@
 {
-  "run_started_at": "2026-04-24T19:14:10+00:00",
-  "run_finished_at": "2026-04-24T19:16:12+00:00",
+  "run_started_at": "2026-04-24T19:23:28+00:00",
+  "run_finished_at": "2026-04-24T19:25:29+00:00",
   "arguments": {
     "host": "raspberrypi",
     "port": 1883,
@@ -10,7 +10,7 @@
     "size": "small",
     "repeat": 1,
     "filter": [
-      "P02"
+      "P01"
     ]
   },
   "resolved_target": {
@@ -23,38 +23,35 @@
   },
   "selected_scenarios": [
     {
-      "stage_id": 12,
-      "scenario_id": "P02",
-      "title": "qos1-message-rate-ramp",
-      "purpose": "QoS1 throughput with PUBACK latency",
-      "success_limit": ">=99% delivered and >=99% PUBACK in hold",
+      "stage_id": 11,
+      "scenario_id": "P01",
+      "title": "qos0-message-rate-ramp",
+      "purpose": "QoS0 throughput with increasing message rate",
+      "success_limit": ">=99% delivered in hold phase",
       "work_units": 1.0,
       "work_unit_label": "msg"
     }
   ],
   "results": [
     {
-      "stage_id": 12,
-      "scenario_id": "P02",
+      "stage_id": 11,
+      "scenario_id": "P01",
       "run_index": 1,
-      "title": "qos1-message-rate-ramp",
-      "status": "DEVIATION",
-      "duration_seconds": 121.057581167,
-      "throughput_per_second": 736.2497060343777,
-      "summary": "duration=121.004s planned_sent=140500 sent=125016 acked=89089 received=89089 send_rate=1033.16/s ack_rate=736.25/s recv_rate=736.25/s ack_ratio=0.7126 delivery_ratio=0.7126 ramp_stopped=True",
+      "title": "qos0-message-rate-ramp",
+      "status": "PASS",
+      "duration_seconds": 121.084533584,
+      "throughput_per_second": 1198.2633635507723,
+      "summary": "duration=121.004s planned_sent=145000 sent=144995 received=144995 send_rate=1198.26/s recv_rate=1198.26/s delivery_ratio=1.0000 ramp_stopped=False",
       "counters": {
-        "planned_sent": 140500,
-        "sent": 125016,
-        "acked": 89089,
-        "received": 89089,
-        "missing": 35927,
-        "unacked": 35927,
-        "pending_publish_mids": 35927,
-        "ramp_stopped": 1,
-        "ramp_stopped_at_rate": 1557.7777777777778
+        "planned_sent": 145000,
+        "sent": 144995,
+        "received": 144995,
+        "missing": 0,
+        "ramp_stopped": 0,
+        "ramp_stopped_at_rate": 0.0
       },
-      "started_at": "2026-04-24T19:14:10+00:00",
-      "finished_at": "2026-04-24T19:16:12+00:00"
+      "started_at": "2026-04-24T19:23:28+00:00",
+      "finished_at": "2026-04-24T19:25:29+00:00"
     }
   ]
 }

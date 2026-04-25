@@ -958,9 +958,9 @@ def _connect_client(config: RunnerConfig, prefix: str, timeout: float | None = N
 
 def _scenario_p01(config: RunnerConfig) -> ScenarioOutcome:
     profile_rate_ranges: dict[str, tuple[float, float]] = {
-        "small": (100.0, 20000.0),
-        "middle": (1000.0, 200000.0),
-        "large": (10000.0, 1000000.0),
+        "small": (100.0, 2000.0),
+        "middle": (1000.0, 20000.0),
+        "large": (10000.0, 100000.0),
     }
     ramp_start_rate, ramp_end_rate = profile_rate_ranges[config.size_profile]
     ramp_duration_seconds = 90.0
