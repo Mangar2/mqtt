@@ -234,6 +234,23 @@ void ConnectionManager::run_keepalive_watchdog() {
       }
     }
 
+    if (!due_decode_fds.empty()) {
+      TRACE_GUARD(&broker_.structured_tracer(), TraceLevel::Info, "connection") {
+        std::string fd_list;
+        for (int connection_fd : due_decode_fds) {
+          if (!fd_list.empty()) { fd_list += ','; }
+          fd_list += std::to_string(connection_fd);
+        }
+        TraceEvent event;
+        event.level = TraceLevel::Info;
+        event.module = "connection";
+        event.info = "watchdog_due_decode";
+        event.data.emplace_back("due_count", std::to_string(due_decode_fds.size()));
+        event.data.emplace_back("fds", fd_list);
+        broker_.structured_tracer().emit(event);
+      }
+    }
+
     TRACE_GUARD(&broker_.structured_tracer(), TraceLevel::Trace, "connection") {
       const auto ms_until_deadline =
           next_deadline == std::chrono::steady_clock::time_point::max()

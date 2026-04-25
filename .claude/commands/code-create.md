@@ -106,11 +106,19 @@ Before writing any code, create or update a `SPEC.md` in the target directory.
 - The code must match `SPEC.md` — it is the implementation guide.
 - `src/SPEC.md` is the top-level index of all modules. Whenever a new module or sub-module directory is added (or an existing one is extended), update the relevant row in `src/SPEC.md` as part of the same commit. Never leave `src/SPEC.md` out of date.
 
-## Documentation and code stay in sync
+## Documentation and code stay in sync — NO EXCEPTIONS
+
+SPEC.md is documentation, not a plan. It must always reflect the current state of the code.
+
+**Every code change — no matter how small — requires updating SPEC.md in the same step.**
+This includes: modifying existing behaviour, adding or removing methods, changing locking strategy,
+renaming symbols, changing thread safety guarantees, changing error handling, or any other
+observable behaviour difference. There is no exception to this rule.
 
 - When new insights contradict `SPEC.md`: update `SPEC.md` first, then continue.
 - Before a new feature: update `SPEC.md` first, then implement.
-- Never let code and documentation diverge.
+- After any code change: verify every affected `SPEC.md` is accurate before marking the task done.
+- Never let code and documentation diverge — a SPEC.md that does not match the code is a bug.
 - Any change to configuration capabilities (new/removed/renamed keys, defaults,
   value ranges, CLI flags, precedence rules, behavior) must update
   `README.md` in the same change.
@@ -186,8 +194,10 @@ python test/run_coverage.py summary must show Tests N slash N OK. New tests must
 6 Test coverage at least 80 percent
 python test/run_coverage.py summary must show Threshold MET and all production files at least 80 percent for Regions Functions Lines. This blocks commit.
 
-7 SPEC.md current
-Every touched directory has accurate SPEC.md.
+7 SPEC.md current — MANDATORY, NO EXCEPTIONS
+Every directory whose code was touched has an accurate, up-to-date SPEC.md.
+SPEC.md must reflect the code as it actually is after the change — not as it was planned or as it was before.
+A completion checklist that passes with an outdated SPEC.md is invalid. This item blocks commit without exception.
 
 8 TEST_SPEC.md current
 Every test in code has matching entry. Removed tests removed from spec.

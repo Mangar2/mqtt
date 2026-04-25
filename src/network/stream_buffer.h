@@ -79,6 +79,8 @@ public:
    */
   [[nodiscard]] bool is_empty() const noexcept;
 
+  [[nodiscard]] std::size_t size() const noexcept;
+
 private:
   /**
    * @brief Compute the total wire size of the front packet.

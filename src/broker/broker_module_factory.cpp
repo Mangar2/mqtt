@@ -192,8 +192,14 @@ void BrokerModuleFactory::create(
               tracer_ptr->get()->emit(event);
             }
           }
-          throw MessageRouterException(MessageRouterError::QueueFull,
-                                       "online outbound queue capacity exceeded");
+          // QoS 0: silent drop. No PUBACK is sent for QoS 0 anyway, so
+          // throwing an exception here only wastes CPU via stack unwinding.
+          // QoS 1/2: throw so the caller can send an error PUBACK/PUBREC.
+          if (message.qos != QoS::AtMostOnce) {
+            throw MessageRouterException(MessageRouterError::QueueFull,
+                                         "online outbound queue capacity exceeded");
+          }
+          return;
         }
         if (wake_outbound_callback) {
           wake_outbound_callback(client_id);

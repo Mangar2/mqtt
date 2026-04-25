@@ -243,7 +243,12 @@ void process_accept_job(const AcceptJobPayload &payload, ConnectionTable &table,
                                        .connection_fd = active_fd,
                                        .payload = DecodeJobPayload{}});
       },
-      [&scheduler](int active_fd) {
+      [&scheduler, &reactor](int active_fd) {
+        // Disarm write before submitting DrainJob to prevent the IoReactor
+        // thread from spinning on level-triggered EPOLLOUT. The DrainJob
+        // re-arms via arm_write() if the write buffer still has data after
+        // draining.
+        reactor.disarm_write(active_fd);
         scheduler.submit(ConnectionJob{.type = JobType::Drain,
                                        .connection_fd = active_fd,
                                        .payload = DrainJobPayload{}});
@@ -413,6 +418,20 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
     scheduler.submit(ConnectionJob{.type = JobType::Decode,
                                    .connection_fd = fd,
                                    .payload = DecodeJobPayload{}});
+  }
+
+  if (total_read == 0U && packets_processed == 0U && !peer_closed && !close_after_flush) {
+    TRACE_GUARD(&broker.structured_tracer(), TraceLevel::Info, "connection") {
+      TraceEvent event;
+      event.level = TraceLevel::Info;
+      event.module = "connection";
+      event.info = "decode_job_idle";
+      event.data.emplace_back("fd", std::to_string(fd));
+      event.data.emplace_back("stream_buf",
+          std::to_string(session.stream_buffer().size()));
+      event.data.emplace_back("write_buf", std::to_string(slot.write_size()));
+      broker.structured_tracer().emit(event);
+    }
   }
 
   // Only treat peer_closed as a definitive close-after-flush signal once the

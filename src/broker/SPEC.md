@@ -16,7 +16,7 @@ Depends on: all previous modules (1–14), plus shared-state coordination for Mo
 - Perform ordered startup and ordered shutdown.
 - Track active connections so the message router can deliver to online clients.
 - Delegate connect/disconnect/publish/subscribe/tick workflows to dedicated facade classes.
-- Keep thread safety through per-component locks (registry + each facade), not a broker-wide mutex.
+- Keep thread safety through per-component locks inside shared objects (stores, registries), not a broker-wide mutex and not per-facade mutexes.
 - Provide a high-level connect facade that returns full handshake outcome data.
 - Keep broker as thin startup/shutdown + delegation layer.
 
@@ -264,14 +264,21 @@ Callers should poll `Broker::shutdown_requested()` in their main loop and call
 
 #### Concurrency layer (17 + threading step 03)
 
-- `Broker` does not own a global broker mutex anymore.
-- Thread safety is partitioned:
+- `Broker` does not own a global broker mutex.
+- **Facades have no internal mutex.** A per-facade mutex would be meaningless
+  because the objects a facade operates on (e.g. `MessageRouter`,
+  `SubscriptionStore`, `SessionStore`) are shared across multiple facades.
+  Locking inside the facade would not protect those shared objects from
+  concurrent access by other facades. Instead, each shared object owns its
+  own internal lock and is responsible for its own thread safety.
+- Thread safety is therefore partitioned at the shared-object level:
   - `ActiveConnectionRegistry` owns map synchronization.
   - `EnhancedAuthRegistry` owns enhanced-auth state synchronization.
-  - `ConnectFacade`, `DisconnectFacade`, `PublishFacade`, `SubscribeFacade`,
-    and `TickHandler` each own a dedicated mutex for their workflow-critical
-    sequences.
-- Public `Broker` methods delegate to the respective facade.
+  - `SubscriptionStore`, `SessionStore`, `InflightStore`, `RetainedMessageStore`
+    each own their own internal lock.
+  - `OutboundQueue` (per client) owns its own mutex.
+- Public `Broker` methods delegate to the respective facade without acquiring
+  any broker-level or facade-level lock.
 
 #### Connect facade (18)
 
@@ -305,14 +312,16 @@ Callers should poll `Broker::shutdown_requested()` in their main loop and call
 - `SubscriptionOrchestrator` owns durable subscription snapshot
    synchronization for non-shared SUBSCRIBE/UNSUBSCRIBE outcomes.
 - `handle_subscribe()` and `handle_unsubscribe()` in `Broker` delegate to
-   `SubscriptionOrchestrator` under the broker mutex.
-- `handle_publish()` wraps inbound publish routing and statistics increments under
-   the broker mutex and returns MQTT reason codes for inbound QoS acknowledgements:
-   `Success`, `NoMatchingSubscribers`, or `NotAuthorized`.
+   `SubscriptionOrchestrator` without a broker-level lock; thread safety is
+   provided by the stores and orchestrator internally.
+- `handle_publish()` wraps inbound publish routing and statistics increments
+   without a broker-level lock and returns MQTT reason codes for inbound QoS
+   acknowledgements: `Success`, `NoMatchingSubscribers`, or `NotAuthorized`.
 
 #### Housekeeping tick (22)
 
-- `tick()` runs all periodic broker housekeeping under the broker mutex:
+- `tick()` runs all periodic broker housekeeping (no broker-level lock; each
+   called component is internally thread-safe):
    - `WillPublisher::publish_due(now)` to emit delayed wills whose timers elapsed.
    - `SessionManager::cleanup_expired(now)` to remove expired sessions.
    - For each expired client ID, `WillPublisher::on_session_expired(client_id)`.
@@ -350,7 +359,9 @@ Supported runtime topics:
 ## Constraints
 
 - `startup()` / `shutdown()` should still be orchestrated from a single thread.
-- Shared mutable runtime state is protected by component-local mutexes.
+- Shared mutable runtime state is protected by mutexes owned inside each
+  shared object (store, registry, queue). Facades and `Broker` itself hold
+  no mutexes.
 - Module accessors must not be called before `startup()`.
 - `SessionPersistence`, `RetainedMessagePersistence`, and
    `InflightPersistence` are constructed during `startup()`; listener sockets

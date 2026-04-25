@@ -74,4 +74,6 @@ std::vector<uint8_t> StreamBuffer::consume_packet() {
 
 bool StreamBuffer::is_empty() const noexcept { return buffer_.empty(); }
 
+std::size_t StreamBuffer::size() const noexcept { return buffer_.size(); }
+
 } // namespace mqtt
