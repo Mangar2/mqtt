@@ -242,6 +242,23 @@ Security notice:
 - More than 1000 unit tests.
 - More than 300 Python integration tests.
 
+## Integration test runner
+
+Run integration tests with:
+
+```bash
+python3 test/run_integration_tests.py [options]
+```
+
+Useful selection options:
+
+- `--filter <selector>`: run tests matching exact name or path prefix (repeatable).
+- `--from_test <selector>`: start at the first test matching the selector.
+- `--to_test <selector>`: end at the last test matching the selector.
+
+`--from_test` and `--to_test` define an inclusive range in the internal test order.
+They cannot be combined with `--filter` or `--only-failed`.
+
 ## Implementation notes
 
 - The codebase is generated almost entirely with AI support.

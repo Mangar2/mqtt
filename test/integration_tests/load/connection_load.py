@@ -16,8 +16,8 @@ _BROKER_MANAGED_ENV = "MQTT_INTEGRATION_BROKER_MANAGED"
 _REMOTE_RTT_BUDGET_SECONDS = 0.05
 
 
-def _progress(message: str) -> None:
-    print(f"[18.1.2] {message}", flush=True)
+def _progress(prefix: str, message: str) -> None:
+    print(f"[{prefix}] {message}", flush=True)
 
 
 def _load_helper(module_name: str):
@@ -175,6 +175,7 @@ def _execute_connection_load(
     progress_enabled: bool = True,
 ) -> tuple[bool, str]:
     _try_raise_nofile_limit(total_connections + 128)
+    progress_prefix = f"load_{total_connections}"
     open_sockets: list[socket.socket] = []
     success_count = 0
     rejection_codes: list[int] = []
@@ -236,6 +237,7 @@ def _execute_connection_load(
 
             if progress_enabled and (((index + 1) % progress_interval) == 0 or (index + 1) == total_connections):
                 _progress(
+                    progress_prefix,
                     "connection-progress "
                     f"{index + 1}/{total_connections} "
                     f"success={success_count} "
@@ -352,6 +354,7 @@ def _execute_message_load_stage(
                 assert_reason_code(publish_reason, 0x00)
                 if progress_enabled and (((message_index + 1) % publish_progress_interval) == 0 or (message_index + 1) == message_count):
                     _progress(
+                        stage_label,
                         f"message-publish-progress {stage_label} "
                         f"{message_index + 1}/{message_count}"
                     )
@@ -363,6 +366,7 @@ def _execute_message_load_stage(
             )
             if progress_enabled:
                 _progress(
+                    stage_label,
                     f"message-collect-start {stage_label} "
                     f"expect={message_count} timeout={collect_timeout_seconds:.2f}s"
                 )
@@ -411,6 +415,7 @@ def _execute_subscription_load_stage(
             assert_reason_code(suback_codes[0], 0x00)
             if progress_enabled and (((topic_index + 1) % subscribe_progress_interval) == 0 or (topic_index + 1) == subscription_count):
                 _progress(
+                    stage_label,
                     f"subscription-subscribe-progress {stage_label} "
                     f"{topic_index + 1}/{subscription_count}"
                 )
@@ -426,6 +431,7 @@ def _execute_subscription_load_stage(
             assert_reason_code(publish_reason, 0x00)
             if progress_enabled and (((topic_index + 1) % publish_progress_interval) == 0 or (topic_index + 1) == subscription_count):
                 _progress(
+                    stage_label,
                     f"subscription-publish-progress {stage_label} "
                     f"{topic_index + 1}/{subscription_count}"
                 )
@@ -437,6 +443,7 @@ def _execute_subscription_load_stage(
         )
         if progress_enabled:
             _progress(
+                stage_label,
                 f"subscription-collect-start {stage_label} "
                 f"expect={subscription_count} timeout={collect_timeout_seconds:.2f}s"
             )

@@ -866,6 +866,7 @@ def _13_3_16_subscribe_worker(
     max_subs: int,
     timeout_seconds: float,
     result_list: list,
+    stop_event,
 ) -> None:
     """Subscribe up to max_subs topics; record (reason, index) if 0x97 or error is received."""
     try:
@@ -873,21 +874,28 @@ def _13_3_16_subscribe_worker(
             connack = client.connect(host, port, client_id=_unique_client_id(f"13-3-16-w{client_index}"), clean_start=True)
             if connack.reason_code != 0x00:
                 result_list.append(("connack_failed", client_index, 0, connack.reason_code))
+                stop_event.set()
                 return
             for index in range(1, max_subs + 1):
+                if stop_event.is_set():
+                    return
                 suback_codes = client.subscribe(f"{base}/c{client_index}/{index}", qos=0)
                 if not suback_codes:
                     result_list.append(("missing_suback", client_index, index, 0))
+                    stop_event.set()
                     return
                 reason = int(suback_codes[0])
                 if reason == 0x97:
                     result_list.append(("quota_exceeded", client_index, index, reason))
+                    stop_event.set()
                     return
                 if reason >= 0x80:
                     result_list.append(("unexpected_error", client_index, index, reason))
+                    stop_event.set()
                     return
     except Exception as exc:
         result_list.append(("exception", client_index, 0, str(exc)))
+        stop_event.set()
 
 
 def run_13_3_16_quota_exceeded_97(config) -> tuple[bool, str]:
@@ -902,18 +910,33 @@ def run_13_3_16_quota_exceeded_97(config) -> tuple[bool, str]:
 
         base = _unique_topic("13-3-16")
         results: list = []
+        stop_event = threading.Event()
         threads = [
             threading.Thread(
                 target=_13_3_16_subscribe_worker,
-                args=(host, port, i, base, _SUBS_PER_CLIENT, config.timeout_seconds, results),
-                daemon=True,
+                args=(host, port, i, base, _SUBS_PER_CLIENT, config.timeout_seconds, results, stop_event),
             )
             for i in range(_NUM_CLIENTS)
         ]
         for t in threads:
             t.start()
+
+        join_deadline = time.monotonic() + max(30.0, config.timeout_seconds * 4)
         for t in threads:
-            t.join(timeout=config.timeout_seconds * 2)
+            remaining = join_deadline - time.monotonic()
+            if remaining <= 0.0:
+                break
+            t.join(timeout=remaining)
+
+        if any(t.is_alive() for t in threads):
+            stop_event.set()
+            for t in threads:
+                if t.is_alive():
+                    t.join(timeout=max(2.0, config.timeout_seconds))
+
+        alive_workers = sum(1 for t in threads if t.is_alive())
+        if alive_workers > 0:
+            return False, f"13.3.16 failed: {alive_workers} worker threads did not terminate"
 
         for kind, client_index, index, value in results:
             if kind == "quota_exceeded":
