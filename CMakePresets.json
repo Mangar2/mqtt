@@ -64,65 +64,6 @@
     },
 
     {
-      "name":          "arm-base",
-      "hidden":        true,
-      "inherits":      "base",
-      "toolchainFile": "${sourceDir}/cmake/toolchains/arm-linux-gnueabihf.cmake",
-      "cacheVariables": {
-        "BUILD_TESTING": "OFF"
-      }
-    },
-
-    {
-      "name":          "armv6-base",
-      "hidden":        true,
-      "inherits":      "base",
-      "toolchainFile": "${sourceDir}/cmake/toolchains/armv6-linux-gnueabihf.cmake",
-      "environment": {
-        "ARM_SYSROOT": "${sourceDir}/.sysroots/rpi-armv6-trixie"
-      },
-      "cacheVariables": {
-        "BUILD_TESTING": "OFF"
-      }
-    },
-
-    {
-      "name":        "arm-debug",
-      "displayName": "Debug (Raspberry Pi Zero 2 – ARM 32-bit)",
-      "inherits":    "arm-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
-    },
-
-    {
-      "name":        "arm-release",
-      "displayName": "Release (Raspberry Pi Zero 2 – ARM 32-bit)",
-      "inherits":    "arm-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
-    },
-
-    {
-      "name":        "armv6-debug",
-      "displayName": "Debug (Raspberry Pi Zero/1 – ARMv6 32-bit)",
-      "inherits":    "armv6-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
-    },
-
-    {
-      "name":        "armv6-release",
-      "displayName": "Release (Raspberry Pi Zero/1 – ARMv6 32-bit)",
-      "inherits":    "armv6-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
-    },
-
-    {
       "name":          "armv6-zig-base",
       "hidden":        true,
       "inherits":      "base",
@@ -156,10 +97,6 @@
     { "name": "release",        "displayName": "Build Release (host)",                "configurePreset": "release"        },
     { "name": "debug-sanitize", "displayName": "Build Debug + Sanitizers (host)",     "configurePreset": "debug-sanitize" },
     { "name": "test-coverage",  "displayName": "Build Tests + Coverage (host)",       "configurePreset": "test-coverage"  },
-    { "name": "arm-debug",      "displayName": "Build Debug (ARM 32-bit)",            "configurePreset": "arm-debug"      },
-    { "name": "arm-release",    "displayName": "Build Release (ARM 32-bit)",          "configurePreset": "arm-release"    },
-    { "name": "armv6-debug",       "displayName": "Build Debug (ARMv6 32-bit)",         "configurePreset": "armv6-debug"      },
-    { "name": "armv6-release",     "displayName": "Build Release (ARMv6 32-bit)",       "configurePreset": "armv6-release"    },
     { "name": "armv6-zig-debug",   "displayName": "Build Debug (ARMv6, Zig)",           "configurePreset": "armv6-zig-debug"  },
     { "name": "armv6-zig-release", "displayName": "Build Release (ARMv6, Zig)",         "configurePreset": "armv6-zig-release" }
   ],

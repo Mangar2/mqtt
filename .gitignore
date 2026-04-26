@@ -32,7 +32,6 @@ _deps/
 # IDE – VS Code
 .vscode/*
 !.vscode/settings.json
-!.vscode/c_cpp_properties.json
 .VSCodeCounter/
 
 # IDE – JetBrains / CLion

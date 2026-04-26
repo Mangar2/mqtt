@@ -47,28 +47,16 @@ explicit `-S/-B` configure commands instead of presets.
 
 ### ARM cross-compilation (Raspberry Pi)
 
-Cross-compilation presets exist for:
+Cross-compilation presets exist for Raspberry Pi Zero / Pi 1 (ARMv6) using Zig:
 
-- Raspberry Pi Zero / Pi 1 (ARMv6): `armv6-debug`, `armv6-release`
-- Raspberry Pi Zero 2 (ARMv7 32-bit userspace): `arm-debug`, `arm-release`
+- `armv6-zig-debug`
+- `armv6-zig-release`
 
-Cross-compilation is performed on a **Linux host** using Clang's built-in
-`--target` support. No separate clang binary is needed, but the ARM sysroot
-and linker stubs must be present:
-
-```sh
-sudo apt-get install \
-    binutils-arm-linux-gnueabihf \
-    gcc-arm-linux-gnueabihf \
-    libstdc++-12-dev-armhf-cross
-```
-
-To use a custom sysroot, set the `ARM_SYSROOT` environment variable before
-configuring:
+This path does not require an external ARM sysroot.
+Install Zig on the build host:
 
 ```sh
-export ARM_SYSROOT=/path/to/your/sysroot
-cmake --preset armv6-release
+brew install zig
 ```
 
 On macOS, native cross-linking for GNU/Linux ARM is usually not available out
@@ -83,10 +71,8 @@ of the box. Recommended approach: run the cross-build inside a Linux container
 cmake --preset debug          # Debug build for the host platform
 cmake --preset release        # Release build for the host platform
 cmake --preset debug-sanitize # Debug + AddressSanitizer + UBSan
-cmake --preset armv6-debug    # Debug cross-compile for Raspberry Pi Zero / Pi 1
-cmake --preset armv6-release  # Release cross-compile for Raspberry Pi Zero / Pi 1
-cmake --preset arm-debug      # Debug cross-compile for Raspberry Pi Zero 2
-cmake --preset arm-release    # Release cross-compile for Raspberry Pi Zero 2
+cmake --preset armv6-zig-debug    # Debug cross-compile for Raspberry Pi Zero / Pi 1
+cmake --preset armv6-zig-release  # Release cross-compile for Raspberry Pi Zero / Pi 1
 ```
 
 ### Compile
@@ -94,8 +80,7 @@ cmake --preset arm-release    # Release cross-compile for Raspberry Pi Zero 2
 ```sh
 cmake --build --preset debug
 cmake --build --preset release
-cmake --build --preset armv6-release
-cmake --build --preset arm-release
+cmake --build --preset armv6-zig-release
 ```
 
 Build artefacts are placed in `build/<preset-name>/`.
@@ -212,7 +197,7 @@ max_theme_events_per_window = 5
 mqtt/
 ├ cmake/
 │   └ toolchains/
-│       └ arm-linux-gnueabihf.cmake   # ARM cross-compilation toolchain
+│       └ armv6-zig.cmake             # ARMv6 Zig cross-compilation toolchain
 ├ src/
 │   └ main.cpp
 ├ spec/
