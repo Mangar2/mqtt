@@ -14,8 +14,12 @@ A fully specification-compliant MQTT 5.0 broker written in C++20.
 # Run with config file
 ./build/release/mqtt-broker path/to/broker.ini
 
+# Run with mosquitto-style config argument
+./build/release/mqtt-broker -c path/to/broker.ini
+
 # Run with config file and CLI trace overrides
 ./build/release/mqtt-broker path/to/broker.ini \
+    --port=1884 \
     --trace-level=info \
     --trace-module=broker \
     --trace-module=connection
@@ -25,7 +29,7 @@ Startup precedence is deterministic:
 
 1. Built-in defaults
 2. INI config file
-3. CLI trace overrides (`--trace-level`, `--trace-module`)
+3. CLI overrides (`--port`, `--trace-level`, `--trace-module`)
 
 Any unknown CLI flag causes startup failure.
 
@@ -98,19 +102,27 @@ Build artefacts are placed in `build/<preset-name>/`.
 
 ## CLI options
 
-The broker supports a positional config path plus tracing flags:
+The broker supports a positional config path and mosquitto-style options:
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
 | `<config-path>` | positional path | none | Optional path to an INI config file. Must be the first argument when used. |
-| `--help` | flag | off | Prints CLI usage and exits successfully without starting the broker. |
+| `-c <path>`, `--config-file <path>`, `--config-file=<path>` | flag | none | Loads config from file (alternative to positional `<config-path>`). |
+| `-h`, `--help` | flag | off | Prints CLI usage and exits successfully without starting the broker. |
+| `-d`, `--daemon` | flag | off | Runs broker in background on POSIX systems. |
+| `-p <0..65535>`, `--port <0..65535>`, `--port=<0..65535>` | flag | from config/default | Overrides MQTT listener port (`network.mqtt_port`). Repeatable, last value wins. |
+| `-q`, `--quiet` | flag | off | Disables structured tracing output (`trace level = none`). Overrides `--verbose`. |
+| `-v`, `--verbose` | flag | off | Enables most detailed structured tracing (`trace level = trace`). |
+| `--test-config` | flag | off | Validates config file and exits without starting broker. Requires `<config-path>` or `-c/--config-file`. |
 | `--trace-level=<none\|error\|warning\|info\|trace>` | flag | from config/default | Overrides tracing global level. |
-| `--trace-module=<module>` | repeatable flag | from config/default | Overrides tracing module list. Repeat flag for multiple modules. |
+| `--trace-level <none\|error\|warning\|info\|trace>` | flag | from config/default | Same as `--trace-level=...`. |
+| `--trace-module=<module>`, `--trace-module <module>` | repeatable flag | from config/default | Overrides tracing module list. Repeat flag for multiple modules. |
 
 Notes:
 
 - If at least one `--trace-module` is present, the module list is rebuilt from CLI values.
 - If no config path is provided, the broker starts from built-in defaults.
+- `<config-path>` and `-c/--config-file` must not be used together.
 - Any unrecognized flag prints an error and exits with failure.
 
 ## INI configuration
@@ -212,11 +224,28 @@ mqtt/
 
 ## Limitations
 
+Security notice:
+
+- This broker is not security-hardened and does not meet production security standards.
+- Use it only in a trusted and isolated home/lab environment.
+
 | Feature | Status | Notes |
 |---------|--------|-------|
 | **TLS / MQTTS** (port 8883) | Not implemented | Module 14.1 requires an external TLS library (OpenSSL, mbedTLS, etc.). Use a reverse proxy (nginx, HAProxy, stunnel) to terminate TLS in front of the broker. |
 | **WSS** (WebSocket over TLS) | Not implemented | Depends on TLS — same note as above. |
+| **MQTT protocol downgrade** | Not supported | MQTT 5 only. MQTT 3.1.1/3.1 downgrade or compatibility mode is intentionally not provided. |
 | WebSocket / WS (plain) | Implemented | Module 14.2 — no external dependencies. |
+
+## Feature highlights
+
+- MQTT 5 protocol support is implemented to the best of current project knowledge.
+- More than 1000 unit tests.
+- More than 300 Python integration tests.
+
+## Implementation notes
+
+- The codebase is generated almost entirely with AI support.
+- Project guidance and guardrails are documented in the skill files inside the repository.
 
 ## License
 

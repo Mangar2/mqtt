@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 from queue import Empty, Queue
 import re
+import socket
 from threading import Event, Lock
 import time
 from typing import Any
@@ -131,6 +132,9 @@ class MqttClient:
         transport: str = "tcp",
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         max_inflight_messages: int | None = None,
+        socket_send_buffer_bytes: int | None = None,
+        socket_receive_buffer_bytes: int | None = None,
+        socket_tcp_nodelay: bool | None = None,
     ) -> None:
         self._ensure_dependency_available()
         self._client_id = client_id
@@ -138,6 +142,9 @@ class MqttClient:
         self._transport = transport
         self._timeout_seconds = timeout_seconds
         self._max_inflight_messages = max_inflight_messages
+        self._socket_send_buffer_bytes = socket_send_buffer_bytes
+        self._socket_receive_buffer_bytes = socket_receive_buffer_bytes
+        self._socket_tcp_nodelay = socket_tcp_nodelay
 
         self._client: mqtt.Client | None = None
         self._connack_event = Event()
@@ -601,6 +608,7 @@ class MqttClient:
         self._client.on_unsubscribe = self._on_unsubscribe
         self._client.on_message = self._on_message
         self._client.on_log = self._on_log
+        self._client.on_socket_open = self._on_socket_open
 
     def _require_client(self) -> mqtt.Client:
         if self._client is None:
@@ -743,6 +751,32 @@ class MqttClient:
         reason_code_int = int(getattr(reason_code, "value", reason_code))
         with self._mid_lock:
             self._published_mids[mid] = reason_code_int
+
+    def _on_socket_open(self, _client: mqtt.Client, _userdata: Any, sock: Any) -> None:
+        if sock is None:
+            return
+
+        if self._socket_send_buffer_bytes is not None and int(self._socket_send_buffer_bytes) > 0:
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(self._socket_send_buffer_bytes))
+            except OSError:
+                pass
+
+        if self._socket_receive_buffer_bytes is not None and int(self._socket_receive_buffer_bytes) > 0:
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(self._socket_receive_buffer_bytes))
+            except OSError:
+                pass
+
+        if self._socket_tcp_nodelay is not None and hasattr(socket, "TCP_NODELAY"):
+            try:
+                sock.setsockopt(
+                    socket.IPPROTO_TCP,
+                    socket.TCP_NODELAY,
+                    1 if bool(self._socket_tcp_nodelay) else 0,
+                )
+            except OSError:
+                pass
 
     def _on_subscribe(
         self,
