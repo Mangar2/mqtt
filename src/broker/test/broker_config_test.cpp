@@ -39,7 +39,7 @@ TEST_CASE("parse_minimal_valid_config", "[broker]") {
   CHECK(cfg.session_expiry_max == 0U);
   CHECK(cfg.topic_alias_maximum == 10U);
   CHECK(cfg.max_queued_messages == 100U);
-    CHECK(cfg.write_queue_max_bytes ==
+  CHECK(cfg.write_queue_max_bytes ==
       BrokerConfig::k_write_queue_max_bytes_default);
   CHECK(cfg.stream_buffer_max_bytes ==
         BrokerConfig::k_stream_buffer_max_bytes_default);
@@ -48,7 +48,7 @@ TEST_CASE("parse_minimal_valid_config", "[broker]") {
   CHECK(cfg.persistence_mode == PersistenceMode::Full);
   CHECK(cfg.trace_max_text_length ==
         BrokerConfig::k_trace_text_max_length_default);
-    CHECK(cfg.trace_theme_max_events_per_window ==
+  CHECK(cfg.trace_theme_max_events_per_window ==
       BrokerConfig::k_trace_theme_max_events_default);
 }
 
@@ -180,6 +180,14 @@ TEST_CASE("parse_tracing_max_theme_events_per_window_zero_throws", "[broker]") {
   CHECK_THROWS_AS(ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
                                       "[tracing]\n"
                                       "max_theme_events_per_window = 0\n"),
+                  BrokerException);
+}
+
+TEST_CASE("parse_tracing_max_theme_events_per_window_too_high_throws", "[broker]") {
+  CHECK_THROWS_AS(ConfigLoader::parse(
+                      "[network]\nmqtt_port = 1883\n"
+                      "[tracing]\n"
+                      "max_theme_events_per_window = 1048577\n"),
                   BrokerException);
 }
 
