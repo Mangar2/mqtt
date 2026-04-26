@@ -1,6 +1,7 @@
 # Project Instructions
 
-Never create python virtual environments
+Never call configure_python_environment. Never modify environments.
+Use only existing system python use "python" for windows and python3 for linux or mac-os
 All files code comments and documentation in **English**
 Respond user language they write
 

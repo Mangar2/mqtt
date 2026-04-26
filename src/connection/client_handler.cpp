@@ -90,19 +90,34 @@ bool move_pending_frames_to_slot(ConnectionSession &session, ConnectionSlot &slo
 struct WriteDrainResult {
   bool success{false};
   bool write_budget_exhausted{false};
+  bool would_block{false};
+  std::size_t total_written{0U};
+  std::size_t write_size_before{0U};
+  std::size_t write_size_after{0U};
 };
 
 WriteDrainResult drain_socket_write_buffer(ConnectionSlot &slot,
                                            std::size_t write_budget_bytes) {
+  const std::size_t write_size_before = slot.write_size();
   std::size_t total_written = 0U;
   while (slot.write_size() > 0U) {
     if (total_written >= write_budget_bytes) {
-      return WriteDrainResult{.success = true, .write_budget_exhausted = true};
+      return WriteDrainResult{.success = true,
+                              .write_budget_exhausted = true,
+                              .would_block = false,
+                              .total_written = total_written,
+                              .write_size_before = write_size_before,
+                              .write_size_after = slot.write_size()};
     }
 
     const std::span<const uint8_t> chunk = slot.write_contiguous_bytes();
     if (chunk.empty()) {
-      return WriteDrainResult{.success = true, .write_budget_exhausted = false};
+      return WriteDrainResult{.success = true,
+                              .write_budget_exhausted = false,
+                              .would_block = false,
+                              .total_written = total_written,
+                              .write_size_before = write_size_before,
+                              .write_size_after = slot.write_size()};
     }
 
     std::size_t bytes_written = 0U;
@@ -110,18 +125,37 @@ WriteDrainResult drain_socket_write_buffer(ConnectionSlot &slot,
     if (write_result == IoResult::Ok) {
       if (bytes_written == 0U) {
         return WriteDrainResult{.success = false,
-                                .write_budget_exhausted = false};
+                                .write_budget_exhausted = false,
+                                .would_block = false,
+                                .total_written = total_written,
+                                .write_size_before = write_size_before,
+                                .write_size_after = slot.write_size()};
       }
       (void)slot.pop_write_bytes(bytes_written);
       total_written += bytes_written;
       continue;
     }
     if (write_result == IoResult::WouldBlock) {
-      return WriteDrainResult{.success = true, .write_budget_exhausted = false};
+      return WriteDrainResult{.success = true,
+                              .write_budget_exhausted = false,
+                              .would_block = true,
+                              .total_written = total_written,
+                              .write_size_before = write_size_before,
+                              .write_size_after = slot.write_size()};
     }
-    return WriteDrainResult{.success = false, .write_budget_exhausted = false};
+    return WriteDrainResult{.success = false,
+                            .write_budget_exhausted = false,
+                            .would_block = false,
+                            .total_written = total_written,
+                            .write_size_before = write_size_before,
+                            .write_size_after = slot.write_size()};
   }
-  return WriteDrainResult{.success = true, .write_budget_exhausted = false};
+  return WriteDrainResult{.success = true,
+                          .write_budget_exhausted = false,
+                          .would_block = false,
+                          .total_written = total_written,
+                          .write_size_before = write_size_before,
+                          .write_size_after = slot.write_size()};
 }
 
 void submit_close(JobScheduler &scheduler, int fd) {
@@ -580,6 +614,29 @@ void process_drain_job(int fd, ConnectionTable &table, IoReactor &reactor,
 
   const WriteDrainResult write_drain_result =
       drain_socket_write_buffer(slot, k_drain_write_budget_bytes);
+
+  TRACE_GUARD(&broker.structured_tracer(), TraceLevel::Trace, "connection") {
+    TraceEvent event;
+    event.level = TraceLevel::Trace;
+    event.module = "connection";
+    event.info = "drain_write_result";
+    event.data.emplace_back("fd", std::to_string(fd));
+    event.data.emplace_back("success",
+                            write_drain_result.success ? "true" : "false");
+    event.data.emplace_back("would_block",
+                            write_drain_result.would_block ? "true" : "false");
+    event.data.emplace_back("write_budget_exhausted",
+                            write_drain_result.write_budget_exhausted ? "true"
+                                                                      : "false");
+    event.data.emplace_back("total_written",
+                            std::to_string(write_drain_result.total_written));
+    event.data.emplace_back("write_size_before",
+                            std::to_string(write_drain_result.write_size_before));
+    event.data.emplace_back("write_size_after",
+                            std::to_string(write_drain_result.write_size_after));
+    broker.structured_tracer().emit(event);
+  }
+
   if (!write_drain_result.success) {
     process_close_job(fd, table, reactor, broker);
     return;
