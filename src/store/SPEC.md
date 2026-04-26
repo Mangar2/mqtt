@@ -11,7 +11,7 @@ Depends on modules 1 (Data Models) and 3 (Topic Engine).
 | `subscription_store.h` / `subscription_store.cpp`  | 4.1  | In-memory subscription store; wraps `SubscriptionTrie` + `TopicMatcher` |
 | `retained_message_store.h` / `retained_message_store.cpp` | 4.2 | In-memory map of retained messages keyed by topic name |
 | `session_store.h` / `session_store.cpp`            | 4.3  | In-memory map of `SessionState` records keyed by client ID |
-| `inflight_store.h` / `inflight_store.cpp`          | 4.4  | Per-session arrays of `InflightEntry`; tracks in-use packet IDs |
+| `inflight_store.h` / `inflight_store.cpp`          | 4.4  | Per-session hash tables of `InflightEntry`; tracks in-use packet IDs and due outbound retransmits |
 
 ## SubscriptionStore (4.1)
 
@@ -72,6 +72,9 @@ Keyed by `client_id + direction`. Entries are uniquely identified by
 Implementation shape: sharded session index (`64` shards by default),
 per-session mutex, and two per-session hash tables (`Outbound` and
 `Inbound`) implemented as `std::unordered_map<uint16_t, InflightEntry>`.
+The outbound table also maintains a dirty retransmit index (min-heap of
+`timestamp + packet_id + generation`) to fetch due retransmissions without
+iterating all outbound entries.
 
 For a concrete `(client_id, packet_id, direction)` lookup path, typical
 complexity for create/update/remove/lookup is average O(1). Rehash events or
@@ -87,6 +90,7 @@ adversarial hash collision patterns can degrade to O(n) worst-case behavior.
 | `for_each(client_id, direction, visitor)` | Iterate all live entries for one direction without producing vector copies. |
 | `for_each(client_id, visitor)` | Iterate all live entries of both directions for one session. |
 | `snapshot_each_session(visitor)` | Iterate all live entries across all sessions for persistence snapshots. |
+| `due_outbound_packet_ids(client_id, cutoff)` | Return outbound packet IDs whose stored timestamp is <= `cutoff` using dirty-index lazy stale-discard. |
 | `is_packet_id_in_use(client_id, packet_id, direction)` | Check whether a packet ID is currently registered (4.4.5). |
 | `size_for(client_id)` | Number of inflight entries for the given session. |
 | `total_size()` | Approximate total inflight entries across all sessions (atomic counter). |

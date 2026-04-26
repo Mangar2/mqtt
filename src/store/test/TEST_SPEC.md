@@ -93,3 +93,5 @@ All tests are tagged `[store]`.
 | `snapshot_each_session_visits_all_clients_and_directions` | persistence snapshot | Collect all entries through snapshot API | two clients, three mixed-direction entries | visitor sees all three entries |
 | `total_size_tracks_create_remove_and_drop` | total counter | Total size follows mutations | create three, remove one, drop one session | total_size transitions 3 -> 2 -> 1 |
 | `drop_session_unknown_is_noop` | drop noop | Drop missing session | one existing session, drop unknown | state unchanged |
+| `due_outbound_packet_ids_returns_only_due_outbound` | retransmit due filter | Return only due outbound packet IDs | due outbound + non-due outbound + old inbound | result contains only due outbound packet |
+| `due_outbound_packet_ids_skips_removed_stale_candidates` | retransmit dirty index | Removed outbound packet should not be returned from stale index entry | create old outbound, remove it, query due list | result is empty |

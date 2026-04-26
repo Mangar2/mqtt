@@ -198,12 +198,12 @@ std::vector<WriteBuffer> ClientSession::drain_outbound() {
 void ClientSession::append_retransmission_frames(
     std::vector<WriteBuffer> &frames) {
   const auto now = std::chrono::steady_clock::now();
-  std::vector<uint16_t> outbound_packet_ids;
-  inflight_store_.for_each(
-      client_id_, InflightDirection::Outbound,
-      [&outbound_packet_ids](const InflightEntry &entry) {
-        outbound_packet_ids.push_back(entry.packet_id);
-      });
+  const std::chrono::steady_clock::time_point cutoff =
+      replay_pending_inflight_
+          ? std::chrono::steady_clock::time_point::max()
+          : (now - retransmit_timeout_);
+  std::vector<uint16_t> outbound_packet_ids =
+      inflight_store_.due_outbound_packet_ids(client_id_, cutoff);
 
   for (const uint16_t packet_id : outbound_packet_ids) {
     InflightEntry entry;
@@ -211,11 +211,6 @@ void ClientSession::append_retransmission_frames(
         client_id_, packet_id, InflightDirection::Outbound,
         [&entry](const InflightEntry &stored_entry) { entry = stored_entry; });
     if (!found) {
-      continue;
-    }
-
-    const bool timeout_elapsed = (now - entry.timestamp) >= retransmit_timeout_;
-    if (!replay_pending_inflight_ && !timeout_elapsed) {
       continue;
     }
 

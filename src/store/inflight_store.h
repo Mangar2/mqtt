@@ -16,6 +16,9 @@
 #include <atomic>
 #include <unordered_map>
 #include <array>
+#include <chrono>
+#include <queue>
+#include <vector>
 
 #include "store/store_error.h"
 
@@ -169,6 +172,17 @@ public:
   [[nodiscard]] std::size_t total_size() const noexcept;
 
   /**
+   * @brief Return outbound packet ids due for retransmission at/before cutoff.
+   *
+   * @param client_id Identifier of the session.
+   * @param cutoff Retransmission cutoff timestamp.
+   * @return Packet ids whose stored timestamp is `<= cutoff`.
+   */
+  [[nodiscard]] std::vector<uint16_t>
+  due_outbound_packet_ids(std::string_view client_id,
+                          std::chrono::steady_clock::time_point cutoff);
+
+  /**
    * @brief Drop all inflight entries for a session.
    * @param client_id Identifier of the session to clear.
    */
@@ -186,13 +200,40 @@ private:
     [[nodiscard]] bool with_entry(
         uint16_t packet_id,
         const std::function<void(const InflightEntry &)> &visit) const;
+    [[nodiscard]] std::vector<uint16_t>
+    due_packet_ids(std::chrono::steady_clock::time_point cutoff);
     void for_each(const std::function<void(const InflightEntry &)> &visit) const;
     [[nodiscard]] std::size_t size() const noexcept;
     [[nodiscard]] std::size_t clear() noexcept;
 
   private:
+    struct RetransmitCandidate {
+      std::chrono::steady_clock::time_point timestamp;
+      uint16_t packet_id;
+      uint64_t generation;
+    };
+
+    struct RetransmitCandidateCompare {
+      [[nodiscard]] bool operator()(const RetransmitCandidate &left,
+                                    const RetransmitCandidate &right) const noexcept {
+        if (left.timestamp != right.timestamp) {
+          return left.timestamp > right.timestamp;
+        }
+        if (left.packet_id != right.packet_id) {
+          return left.packet_id > right.packet_id;
+        }
+        return left.generation > right.generation;
+      }
+    };
+
     static constexpr std::size_t k_default_bucket_reserve_ = 32U;
     std::unordered_map<uint16_t, InflightEntry> entries_{};
+    std::unordered_map<uint16_t, uint64_t> retransmit_generation_by_packet_{};
+    std::priority_queue<RetransmitCandidate,
+                        std::vector<RetransmitCandidate>,
+                        RetransmitCandidateCompare>
+        retransmit_queue_{};
+    uint64_t next_retransmit_generation_{0U};
   };
 
   struct SessionSlot {

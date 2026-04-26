@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -333,4 +334,45 @@ TEST_CASE("drop_session_unknown_is_noop", "[store]") {
 
   CHECK(store.total_size() == 1U);
   CHECK(store.size_for("c1") == 1U);
+}
+
+TEST_CASE("due_outbound_packet_ids_returns_only_due_outbound", "[store]") {
+  InflightStore store;
+  const auto now = std::chrono::steady_clock::now();
+
+  InflightEntry due_outbound =
+      make_entry(71U, InflightDirection::Outbound, InflightState::WaitingForPuback);
+  due_outbound.timestamp = now - std::chrono::seconds(15);
+  InflightEntry not_due_outbound =
+      make_entry(72U, InflightDirection::Outbound, InflightState::WaitingForPuback);
+  not_due_outbound.timestamp = now - std::chrono::seconds(1);
+  InflightEntry old_inbound =
+      make_entry(73U, InflightDirection::Inbound, InflightState::WaitingForPubrel);
+  old_inbound.timestamp = now - std::chrono::seconds(30);
+
+  store.create("c1", std::move(due_outbound));
+  store.create("c1", std::move(not_due_outbound));
+  store.create("c1", std::move(old_inbound));
+
+  const auto due_packet_ids =
+      store.due_outbound_packet_ids("c1", now - std::chrono::seconds(10));
+
+  REQUIRE(due_packet_ids.size() == 1U);
+  CHECK(due_packet_ids.front() == 71U);
+}
+
+TEST_CASE("due_outbound_packet_ids_skips_removed_stale_candidates", "[store]") {
+  InflightStore store;
+  const auto now = std::chrono::steady_clock::now();
+
+  InflightEntry entry =
+      make_entry(81U, InflightDirection::Outbound, InflightState::WaitingForPuback);
+  entry.timestamp = now - std::chrono::seconds(20);
+  store.create("c1", std::move(entry));
+  store.remove("c1", 81U, InflightDirection::Outbound);
+
+  const auto due_packet_ids =
+      store.due_outbound_packet_ids("c1", now - std::chrono::seconds(10));
+
+  CHECK(due_packet_ids.empty());
 }

@@ -1,6 +1,6 @@
 {
-  "run_started_at": "2026-04-25T20:48:59+00:00",
-  "run_finished_at": "2026-04-25T20:51:00+00:00",
+  "run_started_at": "2026-04-26T05:23:50+00:00",
+  "run_finished_at": "2026-04-26T05:25:51+00:00",
   "arguments": {
     "host": "qapla",
     "port": 1883,
@@ -39,23 +39,23 @@
       "run_index": 1,
       "title": "qos1-message-rate-ramp",
       "status": "DEVIATION",
-      "duration_seconds": 121.053088667,
-      "throughput_per_second": 5472.154626700601,
-      "summary": "duration=121.001s planned_sent=1405000 pub_clients=7 cap_per_client_rate=2000/s broker_sent=563224 received=662135 broker_rate=4654.71/s recv_rate=5472.15/s ack_ratio=0.4942 delivery_ratio=1.1756 ramp_stopped=True",
+      "duration_seconds": 121.037041584,
+      "throughput_per_second": 5368.654159345846,
+      "summary": "duration=121.006s planned_sent=1405000 pub_clients=7 cap_per_client_rate=2000/s broker_sent=553114 received=649638 broker_rate=4570.97/s recv_rate=5368.65/s ack_ratio=0.4853 delivery_ratio=1.1745 ramp_stopped=True",
       "counters": {
         "planned_sent": 1405000,
         "publisher_clients_used": 7,
         "max_messages_per_publisher_per_second": 2000,
-        "broker_sent": 563224,
-        "received": 662135,
+        "broker_sent": 553114,
+        "received": 649638,
         "missing": 0,
-        "unacked": 576394,
+        "unacked": 586529,
         "pending_publish_mids": 0,
         "ramp_stopped": 1,
         "ramp_stopped_at_rate": 13366.666666666668
       },
-      "started_at": "2026-04-25T20:48:59+00:00",
-      "finished_at": "2026-04-25T20:51:00+00:00"
+      "started_at": "2026-04-26T05:23:50+00:00",
+      "finished_at": "2026-04-26T05:25:51+00:00"
     }
   ]
 }

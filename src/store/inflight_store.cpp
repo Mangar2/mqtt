@@ -18,11 +18,20 @@ void InflightStore::InflightTable::create(InflightEntry &&entry) {
 
   const uint16_t packet_id = entry.packet_id;
   const auto [iter, inserted] = entries_.try_emplace(packet_id, std::move(entry));
-  (void)iter;
   if (!inserted) {
     throw StoreException(StoreError::PacketIdAlreadyInUse,
                          std::format("inflight packet_id already in use: {}",
                                      packet_id));
+  }
+
+  const InflightEntry &stored_entry = iter->second;
+  if (stored_entry.direction == InflightDirection::Outbound) {
+    const uint64_t generation = ++next_retransmit_generation_;
+    retransmit_generation_by_packet_[packet_id] = generation;
+    retransmit_queue_.push(
+        {.timestamp = stored_entry.timestamp,
+         .packet_id = packet_id,
+         .generation = generation});
   }
 }
 
@@ -37,7 +46,16 @@ bool InflightStore::InflightTable::update_state(uint16_t packet_id,
 }
 
 bool InflightStore::InflightTable::remove(uint16_t packet_id) noexcept {
-  return entries_.erase(packet_id) != 0U;
+  const auto entry_iter = entries_.find(packet_id);
+  if (entry_iter == entries_.end()) {
+    return false;
+  }
+
+  if (entry_iter->second.direction == InflightDirection::Outbound) {
+    retransmit_generation_by_packet_.erase(packet_id);
+  }
+  entries_.erase(entry_iter);
+  return true;
 }
 
 bool InflightStore::InflightTable::is_packet_id_in_use(uint16_t packet_id) const noexcept {
@@ -56,6 +74,38 @@ bool InflightStore::InflightTable::with_entry(
   return true;
 }
 
+std::vector<uint16_t>
+InflightStore::InflightTable::due_packet_ids(
+  std::chrono::steady_clock::time_point cutoff) {
+  std::vector<uint16_t> due_packet_ids;
+
+  while (!retransmit_queue_.empty()) {
+    const RetransmitCandidate candidate = retransmit_queue_.top();
+    if (candidate.timestamp > cutoff) {
+      break;
+    }
+    retransmit_queue_.pop();
+
+    const auto generation_iter =
+        retransmit_generation_by_packet_.find(candidate.packet_id);
+    if (generation_iter == retransmit_generation_by_packet_.end() ||
+        generation_iter->second != candidate.generation) {
+      continue;
+    }
+
+    const auto entry_iter = entries_.find(candidate.packet_id);
+    if (entry_iter == entries_.end() ||
+        entry_iter->second.direction != InflightDirection::Outbound ||
+        entry_iter->second.timestamp != candidate.timestamp) {
+      continue;
+    }
+
+    due_packet_ids.push_back(candidate.packet_id);
+  }
+
+  return due_packet_ids;
+}
+
 void InflightStore::InflightTable::for_each(
     const std::function<void(const InflightEntry &)> &visit) const {
   for (const auto &entry_record : entries_) {
@@ -70,6 +120,8 @@ std::size_t InflightStore::InflightTable::size() const noexcept {
 std::size_t InflightStore::InflightTable::clear() noexcept {
   const std::size_t removed_entries = entries_.size();
   entries_.clear();
+  retransmit_generation_by_packet_.clear();
+  retransmit_queue_ = decltype(retransmit_queue_){};
   return removed_entries;
 }
 
@@ -290,6 +342,19 @@ std::size_t InflightStore::size_for(std::string_view client_id) const noexcept {
 
 std::size_t InflightStore::total_size() const noexcept {
   return total_size_.load(std::memory_order_relaxed);
+}
+
+std::vector<uint16_t>
+InflightStore::due_outbound_packet_ids(
+    std::string_view client_id,
+  std::chrono::steady_clock::time_point cutoff) {
+  const std::shared_ptr<SessionSlot> session = find_session(client_id);
+  if (!session) {
+    return {};
+  }
+
+  const std::lock_guard<std::mutex> session_lock(session->session_entry_mutex);
+  return session->outbound_table.due_packet_ids(cutoff);
 }
 
 void InflightStore::drop_session(std::string_view client_id) noexcept {
