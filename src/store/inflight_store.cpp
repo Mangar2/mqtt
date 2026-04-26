@@ -1,256 +1,75 @@
 #include "store/inflight_store.h"
 
-#include <bit>
 #include <format>
 #include <utility>
 #include <vector>
 
 namespace mqtt {
 
-namespace {
-
-constexpr int32_t k_no_active_chunk = -1;
-
-} // namespace
-
-std::pair<std::size_t, std::size_t>
-InflightStore::InflightTable::chunk_and_slot_indices(uint16_t packet_id) {
-  if (packet_id == 0U) {
+void InflightStore::InflightTable::create(InflightEntry &&entry) {
+  if (entry.packet_id == 0U) {
     throw StoreException(StoreError::InvalidPacketId,
                          "inflight create with packet_id=0");
   }
 
-  const std::size_t packet_offset = static_cast<std::size_t>(packet_id - 1U);
-  const std::size_t chunk_index = packet_offset / k_slots_per_chunk_;
-  const std::size_t slot_index = packet_offset % k_slots_per_chunk_;
-  return {chunk_index, slot_index};
-}
-
-uint64_t InflightStore::InflightTable::slot_mask(std::size_t slot_index) noexcept {
-  return 1ULL << slot_index;
-}
-
-void InflightStore::InflightTable::ensure_chunk(std::size_t chunk_index) {
-  if (chunks_[chunk_index]) {
-    return;
+  if (entries_.empty()) {
+    entries_.reserve(k_default_bucket_reserve_);
   }
 
-  if (!free_chunks_.empty()) {
-    chunks_[chunk_index] = std::move(free_chunks_.back());
-    free_chunks_.pop_back();
-  } else {
-    chunks_[chunk_index] = std::make_unique<Chunk>();
-  }
-
-  Chunk &chunk = *chunks_[chunk_index];
-  chunk.occupancy_bitmap = 0ULL;
-  chunk.live_slot_count = 0U;
-  chunk.base_packet_id = static_cast<uint16_t>(chunk_index * k_slots_per_chunk_ + 1U);
-  for (auto &slot_entry : chunk.slots) {
-    slot_entry.reset();
-  }
-}
-
-void InflightStore::InflightTable::recycle_chunk(std::size_t chunk_index) noexcept {
-  std::unique_ptr<Chunk> chunk = std::move(chunks_[chunk_index]);
-  if (!chunk) {
-    return;
-  }
-
-  chunk->occupancy_bitmap = 0ULL;
-  chunk->live_slot_count = 0U;
-  chunk->base_packet_id = 0U;
-  for (auto &slot_entry : chunk->slots) {
-    slot_entry.reset();
-  }
-
-  if (free_chunks_.size() < k_free_list_max_) {
-    free_chunks_.push_back(std::move(chunk));
-  }
-}
-
-void InflightStore::InflightTable::link_active_chunk(std::size_t chunk_index) noexcept {
-  const int32_t linked_chunk_index = static_cast<int32_t>(chunk_index);
-  const int32_t old_tail_index = last_active_chunk_index_;
-  prev_active_chunk_indices_[chunk_index] = old_tail_index;
-  next_active_chunk_indices_[chunk_index] = k_no_active_chunk;
-
-  if (old_tail_index == k_no_active_chunk) {
-    first_active_chunk_index_ = linked_chunk_index;
-  } else {
-    next_active_chunk_indices_[static_cast<std::size_t>(old_tail_index)] =
-        linked_chunk_index;
-  }
-  last_active_chunk_index_ = linked_chunk_index;
-}
-
-void InflightStore::InflightTable::unlink_active_chunk(std::size_t chunk_index) noexcept {
-  const int32_t previous_chunk_index = prev_active_chunk_indices_[chunk_index];
-  const int32_t next_chunk_index = next_active_chunk_indices_[chunk_index];
-
-  if (previous_chunk_index == k_no_active_chunk) {
-    first_active_chunk_index_ = next_chunk_index;
-  } else {
-    next_active_chunk_indices_[static_cast<std::size_t>(previous_chunk_index)] =
-        next_chunk_index;
-  }
-
-  if (next_chunk_index == k_no_active_chunk) {
-    last_active_chunk_index_ = previous_chunk_index;
-  } else {
-    prev_active_chunk_indices_[static_cast<std::size_t>(next_chunk_index)] =
-        previous_chunk_index;
-  }
-
-  prev_active_chunk_indices_[chunk_index] = k_no_active_chunk;
-  next_active_chunk_indices_[chunk_index] = k_no_active_chunk;
-}
-
-void InflightStore::InflightTable::create(InflightEntry &&entry) {
-  const auto [chunk_index, slot_index] = chunk_and_slot_indices(entry.packet_id);
-  ensure_chunk(chunk_index);
-
-  Chunk &chunk = *chunks_[chunk_index];
-  const uint64_t occupancy_mask = slot_mask(slot_index);
-  if ((chunk.occupancy_bitmap & occupancy_mask) != 0ULL) {
+  const uint16_t packet_id = entry.packet_id;
+  const auto [iter, inserted] = entries_.try_emplace(packet_id, std::move(entry));
+  (void)iter;
+  if (!inserted) {
     throw StoreException(StoreError::PacketIdAlreadyInUse,
                          std::format("inflight packet_id already in use: {}",
-                                     entry.packet_id));
+                                     packet_id));
   }
-
-  chunk.slots[slot_index].emplace(std::move(entry));
-  chunk.occupancy_bitmap |= occupancy_mask;
-  if (chunk.live_slot_count == 0U) {
-    link_active_chunk(chunk_index);
-  }
-  chunk.live_slot_count = static_cast<uint16_t>(chunk.live_slot_count + 1U);
-  active_count_ += 1U;
 }
 
 bool InflightStore::InflightTable::update_state(uint16_t packet_id,
                                                 InflightState new_state) {
-  const auto [chunk_index, slot_index] = chunk_and_slot_indices(packet_id);
-  const std::unique_ptr<Chunk> &chunk_ptr = chunks_[chunk_index];
-  if (!chunk_ptr) {
+  const auto entry_iter = entries_.find(packet_id);
+  if (entry_iter == entries_.end()) {
     return false;
   }
-
-  const uint64_t occupancy_mask = slot_mask(slot_index);
-  Chunk &chunk = *chunk_ptr;
-  if ((chunk.occupancy_bitmap & occupancy_mask) == 0ULL) {
-    return false;
-  }
-
-  chunk.slots[slot_index]->state = new_state;
+  entry_iter->second.state = new_state;
   return true;
 }
 
 bool InflightStore::InflightTable::remove(uint16_t packet_id) noexcept {
-  if (packet_id == 0U) {
-    return false;
-  }
-
-  const std::size_t packet_offset = static_cast<std::size_t>(packet_id - 1U);
-  const std::size_t chunk_index = packet_offset / k_slots_per_chunk_;
-  const std::size_t slot_index = packet_offset % k_slots_per_chunk_;
-  const std::unique_ptr<Chunk> &chunk_ptr = chunks_[chunk_index];
-  if (!chunk_ptr) {
-    return false;
-  }
-
-  const uint64_t occupancy_mask = slot_mask(slot_index);
-  Chunk &chunk = *chunk_ptr;
-  if ((chunk.occupancy_bitmap & occupancy_mask) == 0ULL) {
-    return false;
-  }
-
-  chunk.slots[slot_index].reset();
-  chunk.occupancy_bitmap &= ~occupancy_mask;
-  chunk.live_slot_count = static_cast<uint16_t>(chunk.live_slot_count - 1U);
-  active_count_ -= 1U;
-  if (chunk.live_slot_count == 0U) {
-    unlink_active_chunk(chunk_index);
-    recycle_chunk(chunk_index);
-  }
-
-  return true;
+  return entries_.erase(packet_id) != 0U;
 }
 
 bool InflightStore::InflightTable::is_packet_id_in_use(uint16_t packet_id) const noexcept {
-  if (packet_id == 0U) {
-    return false;
-  }
-
-  const std::size_t packet_offset = static_cast<std::size_t>(packet_id - 1U);
-  const std::size_t chunk_index = packet_offset / k_slots_per_chunk_;
-  const std::size_t slot_index = packet_offset % k_slots_per_chunk_;
-  const std::unique_ptr<Chunk> &chunk_ptr = chunks_[chunk_index];
-  if (!chunk_ptr) {
-    return false;
-  }
-
-  return (chunk_ptr->occupancy_bitmap & slot_mask(slot_index)) != 0ULL;
+  return entries_.contains(packet_id);
 }
 
 bool InflightStore::InflightTable::with_entry(
     uint16_t packet_id,
     const std::function<void(const InflightEntry &)> &visit) const {
-  if (packet_id == 0U) {
+  const auto entry_iter = entries_.find(packet_id);
+  if (entry_iter == entries_.end()) {
     return false;
   }
 
-  const std::size_t packet_offset = static_cast<std::size_t>(packet_id - 1U);
-  const std::size_t chunk_index = packet_offset / k_slots_per_chunk_;
-  const std::size_t slot_index = packet_offset % k_slots_per_chunk_;
-  const std::unique_ptr<Chunk> &chunk_ptr = chunks_[chunk_index];
-  if (!chunk_ptr) {
-    return false;
-  }
-
-  const uint64_t occupancy_mask = slot_mask(slot_index);
-  const Chunk &chunk = *chunk_ptr;
-  if ((chunk.occupancy_bitmap & occupancy_mask) == 0ULL) {
-    return false;
-  }
-
-  visit(*chunk.slots[slot_index]);
+  visit(entry_iter->second);
   return true;
 }
 
 void InflightStore::InflightTable::for_each(
     const std::function<void(const InflightEntry &)> &visit) const {
-  int32_t active_chunk_index = first_active_chunk_index_;
-  while (active_chunk_index != k_no_active_chunk) {
-    const std::size_t chunk_index = static_cast<std::size_t>(active_chunk_index);
-    const Chunk &chunk = *chunks_[chunk_index];
-    uint64_t remaining_bits = chunk.occupancy_bitmap;
-    while (remaining_bits != 0ULL) {
-      const std::size_t slot_index =
-          static_cast<std::size_t>(std::countr_zero(remaining_bits));
-      visit(*chunk.slots[slot_index]);
-      remaining_bits &= (remaining_bits - 1ULL);
-    }
-    active_chunk_index = next_active_chunk_indices_[chunk_index];
+  for (const auto &entry_record : entries_) {
+    visit(entry_record.second);
   }
 }
 
 std::size_t InflightStore::InflightTable::size() const noexcept {
-  return active_count_;
+  return entries_.size();
 }
 
 std::size_t InflightStore::InflightTable::clear() noexcept {
-  const std::size_t removed_entries = active_count_;
-  for (std::size_t chunk_index = 0U; chunk_index < k_chunk_count_; ++chunk_index) {
-    if (chunks_[chunk_index]) {
-      recycle_chunk(chunk_index);
-    }
-    prev_active_chunk_indices_[chunk_index] = k_no_active_chunk;
-    next_active_chunk_indices_[chunk_index] = k_no_active_chunk;
-  }
-
-  first_active_chunk_index_ = k_no_active_chunk;
-  last_active_chunk_index_ = k_no_active_chunk;
-  active_count_ = 0U;
+  const std::size_t removed_entries = entries_.size();
+  entries_.clear();
   return removed_entries;
 }
 

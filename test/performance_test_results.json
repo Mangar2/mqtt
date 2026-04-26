@@ -1,13 +1,13 @@
 {
-  "run_started_at": "2026-04-25T19:24:55+00:00",
-  "run_finished_at": "2026-04-25T19:24:55+00:00",
+  "run_started_at": "2026-04-25T20:48:59+00:00",
+  "run_finished_at": "2026-04-25T20:51:00+00:00",
   "arguments": {
     "host": "qapla",
     "port": 1883,
     "ws_port": null,
     "timeout": 8.0,
     "duration": 120.0,
-    "size": "small",
+    "size": "middle",
     "repeat": 1,
     "filter": [
       "P02"
@@ -18,7 +18,7 @@
     "port": 1883,
     "ws_port": 8083,
     "timeout_seconds": 8.0,
-    "size_profile": "small",
+    "size_profile": "middle",
     "duration_seconds": 120.0
   },
   "selected_scenarios": [
@@ -38,13 +38,24 @@
       "scenario_id": "P02",
       "run_index": 1,
       "title": "qos1-message-rate-ramp",
-      "status": "ABORTED",
-      "duration_seconds": 0.0,
-      "throughput_per_second": null,
-      "summary": "target 192.168.0.150:1883 refused connection",
-      "counters": {},
-      "started_at": "2026-04-25T19:24:55+00:00",
-      "finished_at": "2026-04-25T19:24:55+00:00"
+      "status": "DEVIATION",
+      "duration_seconds": 121.053088667,
+      "throughput_per_second": 5472.154626700601,
+      "summary": "duration=121.001s planned_sent=1405000 pub_clients=7 cap_per_client_rate=2000/s broker_sent=563224 received=662135 broker_rate=4654.71/s recv_rate=5472.15/s ack_ratio=0.4942 delivery_ratio=1.1756 ramp_stopped=True",
+      "counters": {
+        "planned_sent": 1405000,
+        "publisher_clients_used": 7,
+        "max_messages_per_publisher_per_second": 2000,
+        "broker_sent": 563224,
+        "received": 662135,
+        "missing": 0,
+        "unacked": 576394,
+        "pending_publish_mids": 0,
+        "ramp_stopped": 1,
+        "ramp_stopped_at_rate": 13366.666666666668
+      },
+      "started_at": "2026-04-25T20:48:59+00:00",
+      "finished_at": "2026-04-25T20:51:00+00:00"
     }
   ]
 }

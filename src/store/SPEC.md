@@ -70,10 +70,12 @@ Keyed by `client_id + direction`. Entries are uniquely identified by
 `(client_id, packet_id, direction)`.
 
 Implementation shape: sharded session index (`64` shards by default),
-per-session mutex, and two per-session chunked tables (`Outbound` and
-`Inbound`). Packet IDs map directly to fixed slots in lazily allocated chunks,
-so create/update/remove/lookup are O(1) for a concrete `(client_id,
-packet_id, direction)`.
+per-session mutex, and two per-session hash tables (`Outbound` and
+`Inbound`) implemented as `std::unordered_map<uint16_t, InflightEntry>`.
+
+For a concrete `(client_id, packet_id, direction)` lookup path, typical
+complexity for create/update/remove/lookup is average O(1). Rehash events or
+adversarial hash collision patterns can degrade to O(n) worst-case behavior.
 
 | Method | Description |
 |--------|-------------|

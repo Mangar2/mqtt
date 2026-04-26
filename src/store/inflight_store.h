@@ -13,13 +13,9 @@
 #include <shared_mutex>
 #include <string>
 #include <string_view>
-#include <array>
 #include <atomic>
-#include <optional>
 #include <unordered_map>
-#include <vector>
-
-#include <chrono>
+#include <array>
 
 #include "store/store_error.h"
 
@@ -180,16 +176,6 @@ public:
 
 private:
   static constexpr std::size_t k_shard_count_ = 64U;
-  static constexpr std::size_t k_slots_per_chunk_ = 64U;
-  static constexpr std::size_t k_chunk_count_ = 65536U / k_slots_per_chunk_;
-  static constexpr std::size_t k_free_list_max_ = 2U;
-
-  struct Chunk {
-    uint64_t occupancy_bitmap{0ULL};
-    uint16_t live_slot_count{0U};
-    uint16_t base_packet_id{0U};
-    std::array<std::optional<InflightEntry>, k_slots_per_chunk_> slots{};
-  };
 
   class InflightTable {
   public:
@@ -205,21 +191,8 @@ private:
     [[nodiscard]] std::size_t clear() noexcept;
 
   private:
-    [[nodiscard]] static std::pair<std::size_t, std::size_t>
-    chunk_and_slot_indices(uint16_t packet_id);
-    [[nodiscard]] static uint64_t slot_mask(std::size_t slot_index) noexcept;
-    void ensure_chunk(std::size_t chunk_index);
-    void recycle_chunk(std::size_t chunk_index) noexcept;
-    void link_active_chunk(std::size_t chunk_index) noexcept;
-    void unlink_active_chunk(std::size_t chunk_index) noexcept;
-
-    std::array<std::unique_ptr<Chunk>, k_chunk_count_> chunks_{};
-    std::array<int32_t, k_chunk_count_> next_active_chunk_indices_{};
-    std::array<int32_t, k_chunk_count_> prev_active_chunk_indices_{};
-    int32_t first_active_chunk_index_{-1};
-    int32_t last_active_chunk_index_{-1};
-    std::vector<std::unique_ptr<Chunk>> free_chunks_{};
-    std::size_t active_count_{0U};
+    static constexpr std::size_t k_default_bucket_reserve_ = 32U;
+    std::unordered_map<uint16_t, InflightEntry> entries_{};
   };
 
   struct SessionSlot {
