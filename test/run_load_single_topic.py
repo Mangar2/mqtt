@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-"""Single-topic load runner for mqtt-broker.
+"""Single-topic load runner for yahabroker.
 
 Provides focused load cases that isolate one behavior at a time with shared
 global rate/duration parameters.
@@ -217,7 +217,7 @@ TEST_CASES: dict[str, TestCase] = {
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run single-topic mqtt-broker load tests with shared rate/duration parameters.",
+        description="Run single-topic yahabroker load tests with shared rate/duration parameters.",
     )
     parser.add_argument(
         "--case",

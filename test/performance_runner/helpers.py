@@ -868,7 +868,7 @@ def _scenario_definitions() -> tuple[ScenarioDef, ...]:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run mqtt-broker performance scenarios")
+    parser = argparse.ArgumentParser(description="Run yahabroker performance scenarios")
     parser.add_argument("--host", default="127.0.0.1", help="Broker hostname (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=1883, help="Broker TCP port (default: 1883)")
     parser.add_argument("--ws-port", type=int, default=None, help="Broker WebSocket port")

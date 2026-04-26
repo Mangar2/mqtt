@@ -1,4 +1,4 @@
-# mqtt-broker
+# yahabroker
 
 A fully specification-compliant MQTT 5.0 broker written in C++20.
 
@@ -6,19 +6,19 @@ A fully specification-compliant MQTT 5.0 broker written in C++20.
 
 ```sh
 # Run with defaults
-./build/release/mqtt-broker
+./build/release/yahabroker
 
 # Show CLI help
-./build/release/mqtt-broker --help
+./build/release/yahabroker --help
 
 # Run with config file
-./build/release/mqtt-broker path/to/broker.ini
+./build/release/yahabroker path/to/broker.ini
 
 # Run with mosquitto-style config argument
-./build/release/mqtt-broker -c path/to/broker.ini
+./build/release/yahabroker -c path/to/broker.ini
 
 # Run with config file and CLI trace overrides
-./build/release/mqtt-broker path/to/broker.ini \
+./build/release/yahabroker path/to/broker.ini \
     --port=1884 \
     --trace-level=info \
     --trace-module=broker \

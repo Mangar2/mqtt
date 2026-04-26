@@ -212,9 +212,9 @@ def capture_remote_cpu_snapshot(remote_path: str) -> None:
     remote_command = (
         "set -eu; "
         f"SNAP={shlex.quote(remote_path)}; "
-        "PID=$(pgrep -n -x mqtt-broker || true); "
+        "PID=$(pgrep -n -x yahabroker || true); "
         "if [ -z \"$PID\" ]; then "
-        "  { date -Is; echo \"mqtt-broker pid not found\"; } > \"$SNAP\"; "
+        "  { date -Is; echo \"yahabroker pid not found\"; } > \"$SNAP\"; "
         "else "
         "  { date -Is; echo \"pid=$PID\"; top -H -b -n 1 -p \"$PID\"; } > \"$SNAP\"; "
         "fi"

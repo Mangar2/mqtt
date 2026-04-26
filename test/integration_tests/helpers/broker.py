@@ -16,7 +16,7 @@ from typing import Any
 HELPER_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = HELPER_DIR.parents[2]
 RELEASE_DIR = PROJECT_ROOT / "build" / "release"
-BROKER_BINARY = RELEASE_DIR / ("mqtt-broker.exe" if os.name == "nt" else "mqtt-broker")
+BROKER_BINARY = RELEASE_DIR / ("yahabroker.exe" if os.name == "nt" else "yahabroker")
 
 _DEFAULT_WAIT_TIMEOUT_SECONDS = 8.0
 _DEFAULT_HOST = "127.0.0.1"
@@ -203,8 +203,8 @@ def start_broker(config_overrides: dict[str, Any] | None = None) -> subprocess.P
 
     _run_or_raise(["cmake", "--preset", "release"], "cmake configure (release)")
     _run_or_raise(
-        ["cmake", "--build", "--preset", "release", "--target", "mqtt-broker"],
-        "cmake build (mqtt-broker)",
+        ["cmake", "--build", "--preset", "release", "--target", "yahabroker"],
+        "cmake build (yahabroker)",
     )
 
     if not BROKER_BINARY.exists():

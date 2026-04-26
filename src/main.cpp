@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -22,6 +23,16 @@
 
 namespace {
 constexpr std::string_view k_version = "0.1.0";
+
+[[nodiscard]] std::int64_t current_epoch_seconds() {
+  return std::chrono::duration_cast<std::chrono::seconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count();
+}
+
+void print_lifecycle_log(std::string_view message) {
+  std::cout << current_epoch_seconds() << ": " << message << '\n';
+}
 
 struct CliOptions {
   bool show_help = false;
@@ -377,7 +388,7 @@ void apply_cli_overrides(const CliOptions &options, mqtt::BrokerConfig &config) 
 int main(int argc, char *argv[]) {
   if (has_help_flag(argc, argv)) {
     const std::string_view executable_name =
-        argc > 0 ? std::string_view(argv[0]) : "mqtt-broker";
+        argc > 0 ? std::string_view(argv[0]) : "yahabroker";
     print_help(executable_name);
     return EXIT_SUCCESS;
   }
@@ -390,7 +401,8 @@ int main(int argc, char *argv[]) {
   }
 
   if (!cli_options.quiet) {
-    std::cout << "mqtt-broker " << k_version << '\n';
+    print_lifecycle_log(std::string("yahabroker version ") +
+                        std::string(k_version) + " starting");
   }
 
   // Precedence is deterministic: defaults < config file < CLI.
@@ -398,6 +410,10 @@ int main(int argc, char *argv[]) {
   if (cli_options.config_path.has_value()) {
     try {
       config = mqtt::ConfigLoader::load(*cli_options.config_path);
+      if (!cli_options.quiet) {
+        print_lifecycle_log(std::string("Config loaded from ") +
+                            cli_options.config_path->string() + ".");
+      }
     } catch (const mqtt::BrokerException &exc) {
       std::cerr << "Configuration error: " << exc.what() << '\n';
       return EXIT_FAILURE;
@@ -425,6 +441,11 @@ int main(int argc, char *argv[]) {
 
   mqtt::Broker::install_signal_handlers();
 
+  if (!cli_options.quiet) {
+    print_lifecycle_log(std::string("Opening ipv4 listen socket on port ") +
+                        std::to_string(config.mqtt_port) + ".");
+  }
+
   mqtt::Broker broker(config);
   try {
     broker.startup();
@@ -434,11 +455,8 @@ int main(int argc, char *argv[]) {
   }
 
   if (!cli_options.quiet) {
-    std::cout << "Broker running on MQTT port " << config.mqtt_port;
-    if (config.ws_port != 0U) {
-      std::cout << ", WebSocket port " << config.ws_port;
-    }
-    std::cout << '\n';
+    print_lifecycle_log(std::string("yahabroker version ") +
+                        std::string(k_version) + " running");
   }
 
   // Main loop — poll for shutdown signal and tick monitoring.
@@ -449,9 +467,11 @@ int main(int argc, char *argv[]) {
         std::chrono::milliseconds(config.tick_interval_ms));
   }
 
-  broker.shutdown();
   if (!cli_options.quiet) {
-    std::cout << "Broker stopped.\n";
+    std::cout << '\n';
+    print_lifecycle_log(std::string("yahabroker version ") +
+                        std::string(k_version) + " terminating");
   }
+  broker.shutdown();
   return EXIT_SUCCESS;
 }

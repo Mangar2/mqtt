@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-"""Portable integration test runner for mqtt-broker using mqttx.
+"""Portable integration test runner for yahabroker using mqttx.
 
 Features:
 - Hierarchical test names (for example: connect/anonymous).
@@ -35,7 +35,7 @@ from typing import Callable
 TEST_DIR = Path(__file__).parent.resolve()
 PROJECT_ROOT = TEST_DIR.parent
 RELEASE_DIR = PROJECT_ROOT / "build" / "release"
-BROKER_BINARY = RELEASE_DIR / ("mqtt-broker.exe" if sys.platform == "win32" else "mqtt-broker")
+BROKER_BINARY = RELEASE_DIR / ("yahabroker.exe" if sys.platform == "win32" else "yahabroker")
 DEFAULT_RESULTS_FILE = TEST_DIR / "integration_test_results.json"
 INTEGRATION_TESTS_DIR = TEST_DIR / "integration_tests"
 DEFAULT_BROKER_TEMPLATE_FILE = TEST_DIR / "broker.ws.ini"
@@ -180,7 +180,7 @@ def _ensure_broker_running(
 
     setup_messages.append("Broker not reachable, building release broker binary")
     _run_or_raise(["cmake", "--preset", "release"], "cmake configure (release)")
-    _run_or_raise(["cmake", "--build", "--preset", "release", "--target", "mqtt-broker"], "cmake build (mqtt-broker)")
+    _run_or_raise(["cmake", "--build", "--preset", "release", "--target", "yahabroker"], "cmake build (yahabroker)")
 
     if not BROKER_BINARY.exists():
         raise RuntimeError(f"Expected broker binary not found at {BROKER_BINARY}")
@@ -387,6 +387,45 @@ def _select_by_filters(tests: list[TestCase], filters: list[str]) -> list[TestCa
     ]
 
 
+def _matching_test_indices(tests: list[TestCase], selector: str) -> list[int]:
+    return [index for index, test in enumerate(tests) if _matches_filter(test.name, selector)]
+
+
+def _select_by_range(
+    tests: list[TestCase],
+    from_selector: str | None,
+    to_selector: str | None,
+) -> tuple[list[TestCase], str | None, str | None]:
+    if from_selector is None and to_selector is None:
+        return list(tests), None, None
+
+    start_index = 0
+    end_index = len(tests) - 1
+
+    resolved_from_name: str | None = None
+    if from_selector is not None:
+        from_matches = _matching_test_indices(tests, from_selector)
+        if not from_matches:
+            raise ValueError(f"--from_test did not match any test: {from_selector}")
+        start_index = min(from_matches)
+        resolved_from_name = tests[start_index].name
+
+    resolved_to_name: str | None = None
+    if to_selector is not None:
+        to_matches = _matching_test_indices(tests, to_selector)
+        if not to_matches:
+            raise ValueError(f"--to_test did not match any test: {to_selector}")
+        end_index = max(to_matches)
+        resolved_to_name = tests[end_index].name
+
+    if start_index > end_index:
+        raise ValueError(
+            "Invalid range: --from_test resolves after --to_test in test order"
+        )
+
+    return tests[start_index : end_index + 1], resolved_from_name, resolved_to_name
+
+
 def _load_test_module(module_path: Path):
     digest = hashlib.sha1(str(module_path).encode("utf-8")).hexdigest()[:12]
     module_name = f"integration_test_{digest}"
@@ -523,7 +562,7 @@ def _discover_tests() -> list[TestCase]:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run mqtt-broker integration tests via mqttx")
+    parser = argparse.ArgumentParser(description="Run yahabroker integration tests via mqttx")
     parser.add_argument("--host", default="127.0.0.1", help="Broker hostname (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=1883, help="Broker TCP port (default: 1883)")
     parser.add_argument(
@@ -551,6 +590,22 @@ def _parse_args() -> argparse.Namespace:
         action="append",
         default=[],
         help="Run tests matching exact name or path prefix (repeatable)",
+    )
+    parser.add_argument(
+        "--from_test",
+        default=None,
+        help=(
+            "Run from this test selector (exact name or path prefix), inclusive; "
+            "when selector matches multiple tests, first match is used"
+        ),
+    )
+    parser.add_argument(
+        "--to_test",
+        default=None,
+        help=(
+            "Run until this test selector (exact name or path prefix), inclusive; "
+            "when selector matches multiple tests, last match is used"
+        ),
     )
     parser.add_argument(
         "--only-failed",
@@ -619,6 +674,14 @@ def main() -> int:
     state = _load_state(results_path)
     existing_results = state.get("results", {})
 
+    range_mode_active = args.from_test is not None or args.to_test is not None
+    if range_mode_active and args.filter:
+        print("[FAILED] --from_test/--to_test cannot be combined with --filter")
+        return 1
+    if range_mode_active and args.only_failed:
+        print("[FAILED] --from_test/--to_test cannot be combined with --only-failed")
+        return 1
+
     if args.only_failed:
         failed_names = {
             name
@@ -629,6 +692,23 @@ def main() -> int:
         if not selected_tests:
             print("No failed or flaky tests to re-run.")
             return 0
+    elif range_mode_active:
+        try:
+            selected_tests, resolved_from_name, resolved_to_name = _select_by_range(
+                all_tests,
+                args.from_test,
+                args.to_test,
+            )
+        except ValueError as error:
+            print(f"[FAILED] {error}")
+            return 1
+
+        resolved_from_display = resolved_from_name or all_tests[0].name
+        resolved_to_display = resolved_to_name or all_tests[-1].name
+        print(
+            "[SETUP] Selected range (inclusive): "
+            f"{resolved_from_display} .. {resolved_to_display}"
+        )
     else:
         selected_tests = _select_by_filters(all_tests, args.filter)
 

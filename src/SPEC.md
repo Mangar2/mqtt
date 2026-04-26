@@ -190,4 +190,4 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 
 | File       | Contents |
 |------------|----------|
-| `main.cpp` | Application entry point (broker startup) with CLI parsing (`<config-path>`, `-c/--config-file`, `-d/--daemon`, `-p/--port`, `-q/--quiet`, `-v/--verbose`, `--test-config`, `--trace-level`, `--trace-module`, `--help`) and deterministic precedence defaults < INI < CLI overrides |
+| `main.cpp` | Application entry point (broker startup) with CLI parsing (`<config-path>`, `-c/--config-file`, `-d/--daemon`, `-p/--port`, `-q/--quiet`, `-v/--verbose`, `--test-config`, `--trace-level`, `--trace-module`, `--help`), deterministic precedence defaults < INI < CLI overrides, and mosquitto-style lifecycle logs (`starting`, optional `Config loaded`, `Opening ipv4 listen socket`, `running`, `terminating`) with Unix epoch timestamps when not in quiet mode |

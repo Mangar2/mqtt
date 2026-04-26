@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 """
-Build, test and coverage script for the mqtt-broker project.
+Build, test and coverage script for the yahabroker project.
 
 Usage
 -----
@@ -37,8 +37,8 @@ TEST_DIR     = Path(__file__).parent.resolve()
 PROJECT_ROOT = TEST_DIR.parent
 DEBUG_DIR    = PROJECT_ROOT / "build" / "debug"
 COV_DIR      = PROJECT_ROOT / "build" / "test-coverage"   # cmake preset output (fixed)
-DEBUG_BINARY = DEBUG_DIR / ("mqtt-broker-tests.exe" if sys.platform == "win32" else "mqtt-broker-tests")
-COV_BINARY   = COV_DIR  / ("mqtt-broker-tests.exe" if sys.platform == "win32" else "mqtt-broker-tests")
+DEBUG_BINARY = DEBUG_DIR / ("yahabroker-tests.exe" if sys.platform == "win32" else "yahabroker-tests")
+COV_BINARY   = COV_DIR  / ("yahabroker-tests.exe" if sys.platform == "win32" else "yahabroker-tests")
 PROFDATA     = TEST_DIR / "coverage.profdata"
 PROFRAW_GLOB = "coverage-*.profraw"
 COVERAGE_ARTIFACTS_DIR = TEST_DIR / "coverage"

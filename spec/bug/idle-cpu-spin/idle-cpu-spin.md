@@ -133,7 +133,7 @@ Runner behavior (hard coded):
 1. build and deploy broker via `test/deploypi.py`
 2. run broker on `pi@raspberrypi` in `/home/pi/mqtt/idle-cpu-spin`
 3. execute a short P01-like QoS0 load with fixed `4000 msg/s`
-4. after load, execute `top -H -b -n 1 -p $(pgrep -n -x mqtt-broker)` on Raspberry Pi
+4. after load, execute `top -H -b -n 1 -p $(pgrep -n -x yahabroker)` on Raspberry Pi
 5. store artifacts on Raspberry Pi (not on macOS)
 
 Remote artifact files:

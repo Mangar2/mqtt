@@ -41,14 +41,14 @@ the glob patterns and link structure are compatible. Never guess.
 Current build structure (verified in CMakeLists.txt):
 
 Glob src/*.cpp excluding /test/ and main.cpp
-Target mqtt-broker and mqtt-broker-tests
+Target yahabroker and yahabroker-tests
 Notes MQTT_LIB_SOURCES feeds both
 
 Glob src/*_test.cpp any depth
-Target mqtt-broker-tests only
+Target yahabroker-tests only
 
 Glob src/main.cpp
-Target mqtt-broker only
+Target yahabroker only
 Notes excluded from tests via list FILTER main.cpp
 
 Both targets share `src/` on their include path, so headers are included as

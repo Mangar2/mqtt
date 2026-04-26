@@ -59,7 +59,7 @@ python test/run_coverage.py --scope src/<module>/
 ### Run a specific module's tests only (by Catch2 tag)
 
 ```sh
-.\build\debug\mqtt-broker-tests.exe [subscription_trie]
+.\build\debug\yahabroker-tests.exe [subscription_trie]
 ```
 
 ## Writing tests

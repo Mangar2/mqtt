@@ -35,14 +35,14 @@ Scope for this capture:
 Required broker start (with full trace coverage in one run):
 
 - Run this directly on qapla shell (not via deploy helper).
-- Binary path is fixed: `./build/release/mqtt-broker`.
+- Binary path is fixed: `./build/release/yahabroker`.
 - Config path is fixed: `test/broker.ws.ini`.
 - Trace must be written to a dedicated file in the broker working directory: `./broker-p02-analysis.trace`.
 - Mandatory command style for this bug: provide only the pure broker process invocation.
 - Forbidden in the broker command: `cd`, `pkill`, `mkdir`, `nohup`, ssh wrappers, or chained shell control operators.
 
 ```sh
-./build/release/mqtt-broker test/broker.ws.ini \
+./build/release/yahabroker test/broker.ws.ini \
 	--trace-level=trace \
 	--trace-module=broker \
 	--trace-module=connection \

@@ -466,8 +466,8 @@ If any of these greps finds something, the step is not done.
 
 ### Manual verification
 
-- macOS: `ps -M $(pgrep mqtt-broker) | wc -l` while running 18.1.2.
-- Linux Pi: `ls /proc/$(pgrep mqtt-broker)/task | wc -l`.
+- macOS: `ps -M $(pgrep yahabroker) | wc -l` while running 18.1.2.
+- Linux Pi: `ls /proc/$(pgrep yahabroker)/task | wc -l`.
 - TSAN debug build: smoke test 200 clients, no warnings.
 
 ---

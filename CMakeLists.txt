@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(mqtt-broker
+project(yahabroker
     VERSION 0.1.0
     DESCRIPTION "MQTT 5.0 Broker"
     LANGUAGES CXX
@@ -83,15 +83,15 @@ else()
 endif()
 
 #  Main executable 
-add_executable(mqtt-broker ${MQTT_ALL_SOURCES})
+add_executable(yahabroker ${MQTT_ALL_SOURCES})
 
-target_compile_options(mqtt-broker PRIVATE ${MQTT_COMPILE_OPTIONS})
-target_link_options(mqtt-broker    PRIVATE ${MQTT_LINK_OPTIONS})
-target_include_directories(mqtt-broker PRIVATE src)
-target_compile_definitions(mqtt-broker PRIVATE
+target_compile_options(yahabroker PRIVATE ${MQTT_COMPILE_OPTIONS})
+target_link_options(yahabroker    PRIVATE ${MQTT_LINK_OPTIONS})
+target_include_directories(yahabroker PRIVATE src)
+target_compile_definitions(yahabroker PRIVATE
     $<$<BOOL:${MQTT_TRACING_DISABLED}>:MQTT_TRACING_DISABLED>)
 if(WIN32)
-    target_link_libraries(mqtt-broker PRIVATE ws2_32)
+    target_link_libraries(yahabroker PRIVATE ws2_32)
 endif()
 
 #  Unit tests 
@@ -114,28 +114,28 @@ if(BUILD_TESTING)
     set(MQTT_LIB_SOURCES ${MQTT_ALL_SOURCES})
     list(FILTER MQTT_LIB_SOURCES EXCLUDE REGEX "/main\\.cpp$")
 
-    add_executable(mqtt-broker-tests
+    add_executable(yahabroker-tests
         ${MQTT_PLACEHOLDER}
         ${MQTT_TEST_SOURCES}
         ${MQTT_LIB_SOURCES}
     )
 
-    target_compile_options(mqtt-broker-tests PRIVATE ${MQTT_COMPILE_OPTIONS})
-    target_link_options(mqtt-broker-tests    PRIVATE ${MQTT_LINK_OPTIONS})
-    target_compile_definitions(mqtt-broker-tests PRIVATE
+    target_compile_options(yahabroker-tests PRIVATE ${MQTT_COMPILE_OPTIONS})
+    target_link_options(yahabroker-tests    PRIVATE ${MQTT_LINK_OPTIONS})
+    target_compile_definitions(yahabroker-tests PRIVATE
         $<$<BOOL:${MQTT_TRACING_DISABLED}>:MQTT_TRACING_DISABLED>)
-    target_link_libraries(mqtt-broker-tests  PRIVATE Catch2::Catch2WithMain)
-    target_include_directories(mqtt-broker-tests PRIVATE src)
+    target_link_libraries(yahabroker-tests  PRIVATE Catch2::Catch2WithMain)
+    target_include_directories(yahabroker-tests PRIVATE src)
     if(WIN32)
-        target_link_libraries(mqtt-broker-tests PRIVATE ws2_32)
+        target_link_libraries(yahabroker-tests PRIVATE ws2_32)
     endif()
 
     include(Catch)
-    catch_discover_tests(mqtt-broker-tests)
+    catch_discover_tests(yahabroker-tests)
 endif()
 
 #  Install 
 include(GNUInstallDirs)
-install(TARGETS mqtt-broker
+install(TARGETS yahabroker
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )

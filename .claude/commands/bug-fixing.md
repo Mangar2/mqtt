@@ -49,7 +49,7 @@ Caveman rules. AI only. No deviation. No skipping steps.
 - may run read-only diagnostics to gather facts:
   - `ssh <host> top -H -p <pid>` thread level cpu usage
   - `ssh <host> top -H` find broker pid
-  - `ps -eLf | grep mqtt-broker` thread list
+  - `ps -eLf | grep yahabroker` thread list
   - `cat /proc/<pid>/status` `/proc/<pid>/stack` `/proc/<pid>/task/<tid>/stack`
   - `ss -tnp` socket state
   - tail existing log file if available

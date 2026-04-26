@@ -17,7 +17,7 @@ import shlex
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ARMV6_PRESET = "armv6-zig-release"
-DEFAULT_TARGET = "mqtt-broker"
+DEFAULT_TARGET = "yahabroker"
 DEFAULT_REMOTE_HOST = "pi@raspberrypi"
 DEFAULT_REMOTE_DIR = "~/mqtt"
 DEFAULT_REMOTE_PORT = 1883
@@ -88,7 +88,7 @@ def stop_remote_broker(remote_host: str) -> None:
             "-o",
             "BatchMode=yes",
             remote_host,
-            "pkill -x mqtt-broker >/dev/null 2>&1 || true",
+            "pkill -x yahabroker >/dev/null 2>&1 || true",
         ],
         label="stop remote broker",
     )
@@ -111,19 +111,19 @@ def start_remote_broker(remote_host: str, remote_dir: str,
     start_script = (
         f"cd {remote_shell_dir(remote_dir)} && "
         "if command -v setsid >/dev/null 2>&1; then "
-        "setsid -f ./mqtt-broker "
+        "setsid -f ./yahabroker "
         f"{shlex.quote(remote_config)} "
         f"{trace_level_argument} "
         f"{trace_module_arguments} "
         "> broker.log 2>&1 < /dev/null; "
         "else "
-        "nohup ./mqtt-broker "
+        "nohup ./yahabroker "
         f"{shlex.quote(remote_config)} "
         f"{trace_level_argument} "
         f"{trace_module_arguments} "
         "> broker.log 2>&1 < /dev/null & "
         "fi; "
-        "pgrep -n -x mqtt-broker > broker.pid || true"
+        "pgrep -n -x yahabroker > broker.pid || true"
     )
     run_or_fail(
         ["ssh", "-n", "-o", "BatchMode=yes", remote_host, start_script],
@@ -147,12 +147,12 @@ def sha256_file(file_path: Path) -> str:
 def read_remote_binary_sha256(remote_host: str, remote_dir: str) -> str | None:
     remote_command = (
         f"cd {remote_shell_dir(remote_dir)} && "
-        "if [ ! -f mqtt-broker ]; then "
+        "if [ ! -f yahabroker ]; then "
         "echo MISSING; "
         "elif command -v sha256sum >/dev/null 2>&1; then "
-        "sha256sum mqtt-broker | awk '{print $1}'; "
+        "sha256sum yahabroker | awk '{print $1}'; "
         "elif command -v shasum >/dev/null 2>&1; then "
-        "shasum -a 256 mqtt-broker | awk '{print $1}'; "
+        "shasum -a 256 yahabroker | awk '{print $1}'; "
         "else "
         "echo NOHASH; "
         "fi"
@@ -217,7 +217,7 @@ def main() -> int:
     parser.add_argument(
         "--binary",
         default="",
-        help="Explicit local binary path (default: build/<preset>/mqtt-broker)",
+        help="Explicit local binary path (default: build/<preset>/yahabroker)",
     )
     parser.add_argument(
         "--remote-host",
@@ -297,7 +297,7 @@ def main() -> int:
         binary_path = (
             Path(args.binary).expanduser()
             if args.binary
-            else (PROJECT_ROOT / "build" / ARMV6_PRESET / "mqtt-broker")
+            else (PROJECT_ROOT / "build" / ARMV6_PRESET / "yahabroker")
         )
         if not binary_path.exists():
             raise RuntimeError(f"build finished but binary not found: {binary_path}")
@@ -321,7 +321,7 @@ def main() -> int:
         )
 
         if should_copy_binary:
-            remote_temp = f"{args.remote_dir}/mqtt-broker.new"
+            remote_temp = f"{args.remote_dir}/yahabroker.new"
             run_or_fail(
                 [
                     "scp",
@@ -340,9 +340,9 @@ def main() -> int:
                     "BatchMode=yes",
                     args.remote_host,
                     f"cd {remote_shell_dir(args.remote_dir)} && "
-                    + shell_join(["mv", "mqtt-broker.new", "mqtt-broker"])
+                    + shell_join(["mv", "yahabroker.new", "yahabroker"])
                     + " && "
-                    + shell_join(["chmod", "+x", "mqtt-broker"]),
+                    + shell_join(["chmod", "+x", "yahabroker"]),
                 ],
                 label="activate binary",
             )
