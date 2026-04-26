@@ -85,6 +85,12 @@ Connection handling is now split into stateless worker-job handlers:
 - `process_drain_job(...)`: drains queued outbound frames into slot write-buffer and drives non-blocking write progress.
 - `process_close_job(...)`: finalizes broker bookkeeping, unregisters reactor fd, closes socket, removes table entry.
 
+Write-path diagnostics:
+- `process_drain_job(...)` emits trace event `drain_write_result` with
+	`success`, `would_block`, `write_budget_exhausted`, `total_written`,
+	`write_size_before`, and `write_size_after` to make write progression and
+	`WouldBlock` behavior observable during throughput investigations.
+
 Step helpers (`decode_step`, `handshake_step`, `runtime_step`, `outbound_drain_step`, `close_step`) process one bounded unit of work each; no blocking runtime while-loops remain in this module.
 
 Decode job runtime budget is bounded by both byte budget and packet budget. The packet budget is sized to keep fairness while preventing artificial throughput throttling on ACK-heavy QoS traffic.

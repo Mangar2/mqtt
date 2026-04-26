@@ -1,6 +1,8 @@
 # Project Instructions
 
-Never create python virtual environments
+Never call configure_python_environment. Never modify environments.
+Use only existing system python use "python" for windows and python3 for linux or mac-os
+It is strictly forbidden to create or extend code files of any type longer than 1000 lines  
 All files code comments and documentation in **English**
 Respond user language they write
 

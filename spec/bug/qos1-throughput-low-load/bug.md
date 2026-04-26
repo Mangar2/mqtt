@@ -200,23 +200,71 @@ Zusaetzlicher bereits beobachteter Referenzlauf:
 - CPU measurement basis is not yet captured in testcase artifact (total/system/thread-level, sampling interval).
 - Exact acceptance threshold for throughput-proof run is not yet fixed in code (using 4000 msg/s as requested target).
 
-## resolution
 
-Status: CLOSED
+## protocol update 2026-04-26
 
-Confirmed root cause:
+New validation runs with scaled P02 clients:
 
-- The first limit came from the MQTT client side (`pub_max_inflight`) and insufficient publisher parallelism, not from message loss semantics.
+- Command: `python3 test/run_performance_tests.py --host qapla --filter P02 --size middle`
+- Scenario configuration log: `subscribers=10 dynamic_pub_clients=10..N max_rate_per_client=2000/s`
+- Result: `FAIL (DEVIATION)`
+- Summary values: `sent=1004794`, `received=587698`, `throughput=4856.62 msg/s`, `pub_clients=60`
 
-Implemented fix that removed the first limit:
+- Command: `python3 test/run_performance_tests.py --host localhost --filter P02 --size middle`
+- Scenario configuration log: `subscribers=10 dynamic_pub_clients=10..N max_rate_per_client=2000/s`
+- Result: `FAIL (DEVIATION)`
+- Summary values: `sent=1004536`, `received=556657`, `throughput=4599.78 msg/s`, `pub_clients=60`
 
-- Increased effective inflight window handling in the test path.
-- Parallelized publisher clients dynamically for the offered rate.
+Recorded observations from this comparison:
 
-Observed outcome after fix:
+- Increasing sender and receiver client count by factor 10 did not remove the P02 deviation.
+- The same failure pattern appears on remote host and on localhost.
+- With localhost result in the same range as remote, network bandwidth and network latency are not the primary bottleneck for this bug.
 
-- The original first throughput limit is no longer present under the corrected setup.
+Working assumptions agreed in this analysis iteration:
 
-Follow-up:
+- OS socket transport on one machine has high reserve for this payload size and is not treated as the main limiter.
+- Python client library is assumed to have large remaining headroom (order-of-magnitude reserve) and is not treated as the main limiter in this iteration.
 
-- A new, separate bug was found after this fix and is tracked independently.
+Current primary hypothesis after this update:
+
+- The dominant bottleneck is in broker-internal outbound processing (fan-out write/drain path), especially scheduling/fairness/queue-drain behavior across many active subscriber connections.
+
+## protocol update 2026-04-26 (parallel dual-broker run, halved load)
+
+Testcase adjustments used for this run:
+
+- P02 dual-broker alternation was reverted (single broker per run via `--port`).
+- P02 load was halved for all size profiles.
+	- `small`: `10->2000/s` to `5->1000/s`
+	- `middle`: `100->20000/s` to `50->10000/s`
+	- `large`: `1000->100000/s` to `500->50000/s`
+
+Parallel run A (broker on port 1883):
+
+- Command: `python3 test/run_performance_tests.py --host localhost --port 1883 --filter P02 --size middle`
+- Result: `FAIL (DEVIATION)`
+- Summary values: `sent=702408`, `received=599518`, `throughput=4954.52 msg/s`, `pub_clients=5`
+
+Parallel run B (broker on port 11883):
+
+- Command: `python3 test/run_performance_tests.py --host localhost --port 11883 --filter P02 --size middle`
+- Result: `FAIL (DEVIATION)`
+- Summary values: `sent=702477`, `received=606856`, `throughput=5015.29 msg/s`, `pub_clients=5`
+
+Recorded observations from this parallel comparison:
+
+- Both independent broker instances show nearly identical deviation behavior under the same halved P02 profile.
+- Divergence remains (`sent` noticeably above `received`) on both ports.
+- This behavior is therefore not tied to one specific broker instance or one port.
+
+## protocol update 2026-04-26 (client-side limitation hypothesis)
+
+Additional interpretation agreed after the latest counter-tests:
+
+- A single run that internally distributes pairs across two brokers does not materially improve behavior versus a single run against one broker.
+- Two independent client runs in parallel (one per broker) increase aggregate throughput more clearly.
+
+Working conclusion from these observations:
+
+- The throughput limitation is most likely dominated by the Python client/test-runner side (single-run pacing/drain/scheduling behavior), not by a single broker instance.
