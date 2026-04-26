@@ -57,7 +57,9 @@ private:
 
 constexpr std::size_t k_decode_read_chunk_size = 4096U;
 constexpr std::size_t k_decode_read_budget_bytes = 64U * 1024U;
-constexpr std::size_t k_decode_packet_budget = 32U;
+// Keep decode jobs bounded, but high enough to avoid throttling QoS ACK-heavy
+// traffic through excessive rescheduling under load.
+constexpr std::size_t k_decode_packet_budget = 512U;
 constexpr std::size_t k_drain_write_budget_bytes = 64U * 1024U;
 constexpr auto k_handshake_timeout = std::chrono::seconds(30);
 constexpr auto k_session_takeover_grace = std::chrono::milliseconds(100);

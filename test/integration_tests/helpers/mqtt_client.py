@@ -93,6 +93,7 @@ class ReceivedMessage:
         payload: bytes,
         qos: int,
         retain: bool,
+        dup: bool,
         mid: int,
         properties: Properties | None,
     ) -> None:
@@ -100,6 +101,7 @@ class ReceivedMessage:
         self.payload = payload
         self.qos = qos
         self.retain = retain
+        self.dup = dup
         self.mid = mid
         self.properties = properties
 
@@ -777,6 +779,7 @@ class MqttClient:
                 payload=bytes(message.payload),
                 qos=message.qos,
                 retain=bool(message.retain),
+                dup=bool(getattr(message, "dup", False)),
                 mid=message.mid,
                 properties=getattr(message, "properties", None),
             )

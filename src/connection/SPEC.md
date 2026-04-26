@@ -87,6 +87,8 @@ Connection handling is now split into stateless worker-job handlers:
 
 Step helpers (`decode_step`, `handshake_step`, `runtime_step`, `outbound_drain_step`, `close_step`) process one bounded unit of work each; no blocking runtime while-loops remain in this module.
 
+Decode job runtime budget is bounded by both byte budget and packet budget. The packet budget is sized to keep fairness while preventing artificial throughput throttling on ACK-heavy QoS traffic.
+
 ---
 
 ## 23 ConnectionManager

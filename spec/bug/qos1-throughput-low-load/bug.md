@@ -1,5 +1,19 @@
 # Bug: qos1-throughput-low-load
 
+## active bug focus
+
+- This bug is about broker send throughput in QoS1 publish fan-out.
+- Exact symptom to fix: after an initial good phase, broker send path becomes slower than broker receive path, so in P02 `sent` and `recv` diverge over time.
+- Primary verification signal: in the P02 timeline output, `sent` per line should stay approximately equal to `recv` per line until scenario end.
+- Queue-full effects are a consequence to analyze only in relation to this throughput divergence, not a separate bug target.
+
+## test prerequisite
+
+- Before any fix verification with `python3 test/run_performance_tests.py --host qapla --filter P02 --size middle`:
+	1. Rebuild broker binary with current code.
+	2. Deploy/restart broker on target host.
+- Running the performance script against a stale broker process does not validate the current fix.
+
 ## user report
 
 aber davon abgesehen. Wir haben zwei fehler. Einen kennen wir: der broker schafft trotz niedriger last keinen vernünftigen durchsatz bei QoS1 meldungen 4000 Meldungen pro sekunde sollte er schaffen schon bei 231 kommt er nicht mehr mit. 2. Das ist nur ein fehler verdacht - nicht alle QoS1 meldungen kommen an, es werden meldungen verschluckt. Beide fehler sind zu behandeln und in einem sicheren testfall nachzustellen der den fehler konkret beweist und direkt und einduetig als ergebnis ausgibt.
