@@ -208,6 +208,8 @@ void ConfigLoader::apply_key(const std::string &section, const std::string &key,
       cfg.trace_modules = parse_csv_modules(value);
     } else if (key == "max_text_length") {
       cfg.trace_max_text_length = parse_uint32(value);
+    } else if (key == "max_theme_events_per_window") {
+      cfg.trace_theme_max_events_per_window = parse_uint32(value);
     }
   } else if (section == "monitoring") {
     if (key == "sys_topic_interval") {
@@ -256,6 +258,15 @@ void ConfigLoader::validate(const BrokerConfig &cfg) {
             std::to_string(BrokerConfig::k_trace_text_max_length_hard_limit) +
             "]");
   }
+        if (cfg.trace_theme_max_events_per_window < 1U ||
+          cfg.trace_theme_max_events_per_window >
+            BrokerConfig::k_trace_theme_max_events_hard_limit) {
+        throw BrokerException(
+          BrokerError::InvalidConfig,
+          "tracing.max_theme_events_per_window must be in [1, " +
+            std::to_string(BrokerConfig::k_trace_theme_max_events_hard_limit) +
+            "]");
+        }
   if (cfg.qos_retransmit_timeout_seconds < 1U) {
     throw BrokerException(BrokerError::InvalidConfig,
                           "qos_retransmit_timeout_seconds must be at least 1");

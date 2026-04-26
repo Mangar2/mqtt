@@ -141,6 +141,15 @@ window start points tracked per `info` theme:
 - Output rate formula: `(count(t2) - count(t1)) / (t2 - t1)`.
 - Before `t2` exists, `theme_rate_per_second` is `0.0`.
 
+Per-theme output cap per measurement window:
+
+- Tracer emits at most `N` records per `info` theme within one measurement window.
+- Measurement window length is 1 second.
+- Default `N` is `5` and is configurable via `[tracing] max_theme_events_per_window`.
+- When a new measurement window starts, the per-theme emitted-count resets.
+- The counter used for `theme_count` and `theme_rate_per_second` still tracks created
+  records for that theme, including records suppressed by this output cap.
+
 ### Trace levels and filtering (26.2, 26.3)
 
 - Supported levels: `none`, `error`, `warning`, `info`, `trace`.

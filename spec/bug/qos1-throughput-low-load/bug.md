@@ -14,6 +14,65 @@
 	2. Deploy/restart broker on target host.
 - Running the performance script against a stale broker process does not validate the current fix.
 
+## one-pass analysis capture (full trace set)
+
+Goal:
+
+- Capture enough runtime evidence in one expensive run to isolate why broker send throughput falls behind receive throughput in P02.
+
+Scope for this capture:
+
+- QoS1 publish receive path, broker route/deliver path, outbound drain/write scheduling path.
+
+Required broker start (with full trace coverage in one run):
+
+- Run this directly on qapla shell (not via deploy helper).
+- Binary path is fixed: `./build/release/mqtt-broker`.
+- Config path is fixed: `test/broker.ws.ini`.
+- Trace must be written to a dedicated file in the broker working directory: `./broker-p02-analysis.trace`.
+- Mandatory command style for this bug: provide only the pure broker process invocation.
+- Forbidden in the broker command: `cd`, `pkill`, `mkdir`, `nohup`, ssh wrappers, or chained shell control operators.
+
+```sh
+./build/release/mqtt-broker test/broker.ws.ini \
+	--trace-level=trace \
+	--trace-module=broker \
+	--trace-module=connection \
+	--trace-module=executor \
+	--trace-module=message_router \
+	--trace-module=session_manager \
+	--trace-module=subscription_manager \
+	--trace-module=transport \
+	> ./broker-p02-analysis.trace 2>&1
+```
+
+Reproduction command (unchanged verification path):
+
+```sh
+python3 test/run_performance_tests.py --host qapla --filter P02 --size middle
+```
+
+Copy trace artifact from qapla to local bug directory after run:
+
+```sh
+mkdir -p spec/bug/qos1-throughput-low-load/artifacts
+scp -o BatchMode=yes \
+	mangar@qapla:/home/mangar/mqtt/broker-p02-analysis.trace \
+	spec/bug/qos1-throughput-low-load/artifacts/
+```
+
+Optional copy of the exact runner summary used for correlation:
+
+```sh
+cp test/performance_test_results.json \
+	spec/bug/qos1-throughput-low-load/artifacts/performance_test_results.p02.json
+```
+
+Note:
+
+- This section is the default analysis procedure for this bug. Reuse it for future analysis iterations to avoid incomplete trace capture.
+- Command quality rule for this bug: never provide wrapper or orchestration commands when asked for broker invocation; return only the direct broker process call with explicit trace output file.
+
 ## user report
 
 aber davon abgesehen. Wir haben zwei fehler. Einen kennen wir: der broker schafft trotz niedriger last keinen vernünftigen durchsatz bei QoS1 meldungen 4000 Meldungen pro sekunde sollte er schaffen schon bei 231 kommt er nicht mehr mit. 2. Das ist nur ein fehler verdacht - nicht alle QoS1 meldungen kommen an, es werden meldungen verschluckt. Beide fehler sind zu behandeln und in einem sicheren testfall nachzustellen der den fehler konkret beweist und direkt und einduetig als ergebnis ausgibt.

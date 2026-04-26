@@ -48,6 +48,8 @@ TEST_CASE("parse_minimal_valid_config", "[broker]") {
   CHECK(cfg.persistence_mode == PersistenceMode::Full);
   CHECK(cfg.trace_max_text_length ==
         BrokerConfig::k_trace_text_max_length_default);
+    CHECK(cfg.trace_theme_max_events_per_window ==
+      BrokerConfig::k_trace_theme_max_events_default);
 }
 
 TEST_CASE("parse_all_network_keys", "[broker]") {
@@ -149,13 +151,15 @@ TEST_CASE("parse_tracing_section_global_level_and_modules", "[broker]") {
                                        "[tracing]\n"
                                        "global_level = info\n"
                                        "trace_modules = broker, connection\n"
-                                       "max_text_length = 4096\n");
+                                       "max_text_length = 4096\n"
+                                       "max_theme_events_per_window = 9\n");
 
   CHECK(cfg.trace_global_level == TraceLevel::Info);
   REQUIRE(cfg.trace_modules.size() == 2U);
   CHECK(cfg.trace_modules.at(0U) == "broker");
   CHECK(cfg.trace_modules.at(1U) == "connection");
   CHECK(cfg.trace_max_text_length == 4096U);
+  CHECK(cfg.trace_theme_max_events_per_window == 9U);
 }
 
 TEST_CASE("parse_tracing_invalid_level_throws", "[broker]") {
@@ -169,6 +173,13 @@ TEST_CASE("parse_tracing_max_text_length_zero_throws", "[broker]") {
   CHECK_THROWS_AS(ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
                                       "[tracing]\n"
                                       "max_text_length = 0\n"),
+                  BrokerException);
+}
+
+TEST_CASE("parse_tracing_max_theme_events_per_window_zero_throws", "[broker]") {
+  CHECK_THROWS_AS(ConfigLoader::parse("[network]\nmqtt_port = 1883\n"
+                                      "[tracing]\n"
+                                      "max_theme_events_per_window = 0\n"),
                   BrokerException);
 }
 

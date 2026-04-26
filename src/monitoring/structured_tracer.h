@@ -115,6 +115,21 @@ public:
   [[nodiscard]] std::size_t max_text_length() const noexcept;
 
   /**
+   * @brief Set maximum emitted records per trace theme and measurement window.
+   * @param max_events_per_theme_interval Maximum emitted records per theme
+   *        within one measurement window.
+   */
+  void set_max_events_per_theme_interval(
+      std::size_t max_events_per_theme_interval) noexcept;
+
+  /**
+   * @brief Return maximum emitted records per trace theme and measurement
+   *        window.
+   * @return Maximum emitted records per theme per window.
+   */
+  [[nodiscard]] std::size_t max_events_per_theme_interval() const noexcept;
+
+  /**
    * @brief Return whether the event would pass current filtering.
    *
    * @param level Event level.
@@ -136,6 +151,9 @@ public:
 private:
   struct TraceThemeStats {
     std::uint64_t total_count{0U};
+    bool has_window_start{false};
+    std::chrono::system_clock::time_point window_start{};
+    std::size_t emitted_in_window{0U};
     bool has_t1{false};
     std::chrono::system_clock::time_point t1{};
     std::uint64_t count_t1{0U};
@@ -156,9 +174,15 @@ private:
    */
   static void write_fallback_serialization_error(std::ostream &output_stream) noexcept;
 
+  static bool try_acquire_theme_emit_slot(
+      TraceThemeStats &theme_stats,
+      std::chrono::system_clock::time_point now,
+      std::size_t max_events_per_theme_interval) noexcept;
+
   std::ostream *output_stream_;
   std::atomic<TraceLevel> global_level_{TraceLevel::Warning};
   std::atomic<std::size_t> max_text_length_{2024U};
+  std::atomic<std::size_t> max_events_per_theme_interval_{5U};
   std::unordered_set<std::string> trace_modules_;
   std::unordered_map<std::string, TraceThemeStats> trace_theme_stats_;
   mutable std::mutex mutex_;

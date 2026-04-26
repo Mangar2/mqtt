@@ -457,6 +457,73 @@ TEST_CASE("tracer_emits_theme_count_and_rate_per_second", "[monitoring]") {
   CHECK(lines[2].find("\"theme_rate_per_second\":0.500") != std::string::npos);
 }
 
+TEST_CASE("tracer_limits_emits_per_theme_per_window", "[monitoring]") {
+  std::ostringstream output_stream;
+  StructuredTracer tracer(output_stream);
+  tracer.set_global_level(TraceLevel::Info);
+  tracer.set_max_events_per_theme_interval(2U);
+
+  const auto base_time = std::chrono::system_clock::now();
+
+  TraceEvent event;
+  event.level = TraceLevel::Info;
+  event.module = "connection";
+  event.info = "decode_packet_end";
+
+  event.timestamp = base_time;
+  tracer.emit(event);
+
+  event.timestamp = base_time + 100ms;
+  tracer.emit(event);
+
+  // Same measurement window: should be suppressed by limit.
+  event.timestamp = base_time + 200ms;
+  tracer.emit(event);
+
+  const std::vector<std::string> lines = split_non_empty_lines(output_stream.str());
+  REQUIRE(lines.size() == 2U);
+  CHECK(lines[0].find("\"theme_count\":1") != std::string::npos);
+  CHECK(lines[1].find("\"theme_count\":2") != std::string::npos);
+}
+
+TEST_CASE("tracer_resets_theme_limit_on_next_window", "[monitoring]") {
+  std::ostringstream output_stream;
+  StructuredTracer tracer(output_stream);
+  tracer.set_global_level(TraceLevel::Info);
+  tracer.set_max_events_per_theme_interval(2U);
+
+  const auto base_time = std::chrono::system_clock::now();
+
+  TraceEvent event;
+  event.level = TraceLevel::Info;
+  event.module = "connection";
+  event.info = "decode_packet_end";
+
+  event.timestamp = base_time;
+  tracer.emit(event);
+
+  event.timestamp = base_time + 100ms;
+  tracer.emit(event);
+
+  // Suppressed in first window.
+  event.timestamp = base_time + 200ms;
+  tracer.emit(event);
+
+  // New window starts after >= 1 second and allows emits again.
+  event.timestamp = base_time + 1500ms;
+  tracer.emit(event);
+
+  event.timestamp = base_time + 1600ms;
+  tracer.emit(event);
+
+  const std::vector<std::string> lines = split_non_empty_lines(output_stream.str());
+  REQUIRE(lines.size() == 4U);
+  CHECK(lines[0].find("\"theme_count\":1") != std::string::npos);
+  CHECK(lines[1].find("\"theme_count\":2") != std::string::npos);
+  CHECK(lines[2].find("\"theme_count\":4") != std::string::npos);
+  CHECK(lines[3].find("\"theme_count\":5") != std::string::npos);
+}
+
 TEST_CASE("tracer_serialization_failure_falls_back_to_minimal_record",
           "[monitoring]") {
   FailOnceStringBuffer fail_once_buffer;

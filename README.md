@@ -147,6 +147,7 @@ Notes:
 | `persistence` | `dir` | path string | `./data` | any path | Snapshot directory path. |
 | `tracing` | `global_level` | enum | `warning` | `none/error/warning/info/trace` | Global structured tracing threshold. |
 | `tracing` | `trace_modules` | csv string | empty | comma-separated module names | Module-level trace override list. |
+| `tracing` | `max_theme_events_per_window` | uint32 | `5` | `1..1048576` | Maximum emitted records per trace `info` theme per 1-second measurement window. |
 
 Validation rules:
 
@@ -190,6 +191,7 @@ dir = ./data
 [tracing]
 global_level = warning
 trace_modules = broker,connection
+max_theme_events_per_window = 5
 ```
 
 ## Project layout

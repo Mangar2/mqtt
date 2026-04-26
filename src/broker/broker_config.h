@@ -82,6 +82,10 @@ struct BrokerConfig {
   static constexpr uint32_t k_trace_text_max_length_default = 2024U;
   /// Hard upper bound for structured trace text field length from config.
   static constexpr uint32_t k_trace_text_max_length_hard_limit = 1U * 1024U * 1024U;
+  /// Default maximum emitted records per trace theme per measurement window.
+  static constexpr uint32_t k_trace_theme_max_events_default = 5U;
+  /// Hard upper bound for per-theme per-window trace emission cap.
+  static constexpr uint32_t k_trace_theme_max_events_hard_limit = 1U * 1024U * 1024U;
 
   //  15.1.2  Port configuration
 
@@ -162,6 +166,9 @@ struct BrokerConfig {
 
   /// Maximum UTF-8 byte length per structured trace text field.
   uint32_t trace_max_text_length = k_trace_text_max_length_default;
+
+  /// Maximum emitted records per trace theme per measurement window.
+  uint32_t trace_theme_max_events_per_window = k_trace_theme_max_events_default;
 };
 
 } // namespace mqtt

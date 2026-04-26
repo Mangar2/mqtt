@@ -210,6 +210,8 @@ void BrokerModuleFactory::create(
     structured_tracer->set_global_level(config.trace_global_level);
     structured_tracer->set_trace_modules(config.trace_modules);
     structured_tracer->set_max_text_length(config.trace_max_text_length);
+    structured_tracer->set_max_events_per_theme_interval(
+      config.trace_theme_max_events_per_window);
 
     message_router = std::make_unique<MessageRouter>(
       *publish_processor, *offline_queue, *shared_dispatcher,

@@ -75,6 +75,7 @@ All parameters are optional; absent ones keep their default value.
 | `[persistence]` | `dir`               | string   | `./data`| Directory for persistence snapshot files. |
 | `[tracing]`   | `global_level`      | enum     | `warning` | Global structured trace level (`none|error|warning|info|trace`). |
 | `[tracing]`   | `trace_modules`     | csv      | `""` | Comma-separated modules with trace override enabled. |
+| `[tracing]`   | `max_theme_events_per_window` | uint32 | `5` | Maximum emitted records per trace `info` theme per 1-second measurement window. |
 
 ### Validation rules
 
@@ -90,6 +91,7 @@ All parameters are optional; absent ones keep their default value.
 - `stream_buffer_max_bytes`: `1–67 108 864` (hard upper bound for inbound
    per-connection buffering).
 - `session_expiry_max`: `0–4 294 967 295` (any uint32 value; `0` = no hard cap).
+- `tracing.max_theme_events_per_window`: `1–1 048 576`.
 
 ---
 
@@ -131,6 +133,7 @@ struct BrokerConfig {
     std::filesystem::path persistence_dir = "./data";
    TraceLevel trace_global_level  = TraceLevel::Warning;
    std::vector<std::string> trace_modules;
+   uint32_t trace_theme_max_events_per_window = 5;
 };
 ```
 

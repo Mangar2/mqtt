@@ -150,6 +150,18 @@ std::size_t StructuredTracer::max_text_length() const noexcept {
   return max_text_length_.load(std::memory_order_relaxed);
 }
 
+void StructuredTracer::set_max_events_per_theme_interval(
+    std::size_t max_events_per_theme_interval) noexcept {
+  const std::size_t clamped_value =
+      (max_events_per_theme_interval == 0U) ? 1U : max_events_per_theme_interval;
+  max_events_per_theme_interval_.store(clamped_value,
+                                       std::memory_order_relaxed);
+}
+
+std::size_t StructuredTracer::max_events_per_theme_interval() const noexcept {
+  return max_events_per_theme_interval_.load(std::memory_order_relaxed);
+}
+
 bool StructuredTracer::should_emit(TraceLevel level,
                                    std::string_view module_name) const noexcept {
   return should_emit_unlocked(level, module_name);
@@ -169,8 +181,14 @@ void StructuredTracer::emit(const TraceEvent &event) {
     std::ostream &output_stream = *output_stream_;
     const std::size_t max_text_length =
         max_text_length_.load(std::memory_order_relaxed);
+    const std::size_t max_events_per_theme_interval =
+        max_events_per_theme_interval_.load(std::memory_order_relaxed);
     TraceThemeStats &theme_stats = trace_theme_stats_[event.info];
     update_trace_theme_window(theme_stats, event.timestamp);
+    if (!try_acquire_theme_emit_slot(theme_stats, event.timestamp,
+                                     max_events_per_theme_interval)) {
+      return;
+    }
     const std::string module_text =
         truncate_text(event.module, max_text_length);
     const std::string info_text = truncate_text(event.info, max_text_length);
@@ -296,6 +314,24 @@ void StructuredTracer::write_fallback_serialization_error(
   } catch (...) {
     // Best-effort fallback only.
   }
+}
+
+bool StructuredTracer::try_acquire_theme_emit_slot(
+    TraceThemeStats &theme_stats, std::chrono::system_clock::time_point now,
+    std::size_t max_events_per_theme_interval) noexcept {
+  if (!theme_stats.has_window_start ||
+      (now - theme_stats.window_start) >= std::chrono::seconds(1)) {
+    theme_stats.has_window_start = true;
+    theme_stats.window_start = now;
+    theme_stats.emitted_in_window = 0U;
+  }
+
+  if (theme_stats.emitted_in_window >= max_events_per_theme_interval) {
+    return false;
+  }
+
+  ++theme_stats.emitted_in_window;
+  return true;
 }
 
 } // namespace mqtt
