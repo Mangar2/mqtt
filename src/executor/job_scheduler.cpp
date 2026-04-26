@@ -27,16 +27,6 @@ bool is_suspicious_backlog_type(JobType job_type) {
   return job_type == JobType::Decode || job_type == JobType::Drain;
 }
 
-bool backlog_contains_type(const std::deque<ConnectionJob> &backlog,
-                          JobType job_type) {
-  for (const ConnectionJob &queued_job : backlog) {
-    if (queued_job.type == job_type) {
-      return true;
-    }
-  }
-  return false;
-}
-
 } // namespace
 
 JobScheduler::JobScheduler(JobQueue &job_queue,
@@ -66,47 +56,53 @@ void JobScheduler::submit(ConnectionJob job) {
     event.data.emplace_back("backlog_size", std::to_string(state.backlog.size()));
     tracer_->emit(event);
   }
+
   if (is_suspicious_backlog_type(job.type)) {
-    // Note: we deliberately do NOT drop when active_type == job.type. A Decode
-    // or Drain handler may need to self-reschedule (read/packet/write budget
-    // exhausted under load). Because the reactor is edge-triggered, dropping
-    // the resubmit would strand pending bytes in the stream buffer until new
-    // data accidentally arrives. The backlog_contains_type guard still
-    // coalesces concurrent reactor events into a single follow-up job.
-    if (backlog_contains_type(state.backlog, job.type)) {
+    const int connection_fd = job.connection_fd;
+    const JobType submitted_type = job.type;
+    const bool had_pending = job.type == JobType::Decode
+                                 ? state.pending_decode_job.has_value()
+                                 : state.pending_drain_job.has_value();
+
+    if (job.type == JobType::Decode) {
+      state.pending_decode_job = std::move(job);
+    } else {
+      state.pending_drain_job = std::move(job);
+    }
+
+    if (had_pending) {
       TRACE_GUARD(tracer_, TraceLevel::Trace, "executor") {
         TraceEvent event;
         event.level = TraceLevel::Trace;
         event.module = "executor";
         event.info = "scheduler_job_dropped";
-        event.data.emplace_back("connection_fd", std::to_string(job.connection_fd));
-        event.data.emplace_back("job_type", std::string(job_type_name(job.type)));
+        event.data.emplace_back("connection_fd", std::to_string(connection_fd));
+        event.data.emplace_back("job_type", std::string(job_type_name(submitted_type)));
         event.data.emplace_back("active_type",
             std::string(job_type_name(state.active_type.value_or(JobType::Accept))));
         event.data.emplace_back("backlog_size", std::to_string(state.backlog.size()));
+        event.data.emplace_back("coalesced", "true");
         tracer_->emit(event);
       }
-      return;
     }
-  }
-
-  if (is_suspicious_backlog_type(job.type)) {
 #ifndef MQTT_TRACING_DISABLED
     TRACE_GUARD(tracer_, TraceLevel::Trace, "executor") {
       TraceEvent event;
       event.level = TraceLevel::Trace;
       event.module = "executor";
       event.info = "scheduler_backlog_enqueue";
-      event.data.emplace_back("connection_fd", std::to_string(job.connection_fd));
-      event.data.emplace_back("job_type", std::string(job_type_name(job.type)));
+        event.data.emplace_back("connection_fd", std::to_string(connection_fd));
+        event.data.emplace_back("job_type", std::string(job_type_name(submitted_type)));
       event.data.emplace_back(
           "active_type",
           std::string(job_type_name(state.active_type.value_or(JobType::Accept))));
-      event.data.emplace_back("backlog_size_before",
-                              std::to_string(state.backlog.size()));
+      event.data.emplace_back("backlog_size_before", std::to_string(state.backlog.size()));
+      event.data.emplace_back("pending_decode", state.pending_decode_job.has_value() ? "true" : "false");
+      event.data.emplace_back("pending_drain", state.pending_drain_job.has_value() ? "true" : "false");
       tracer_->emit(event);
     }
 #endif
+    return;
   }
 
   state.backlog.push_back(std::move(job));
@@ -135,8 +131,42 @@ std::optional<ConnectionJob> JobScheduler::mark_done(int connection_fd) {
     event.info = "mark_done";
     event.data.emplace_back("connection_fd", std::to_string(connection_fd));
     event.data.emplace_back("backlog_size", std::to_string(state.backlog.size()));
+    event.data.emplace_back("pending_decode", state.pending_decode_job.has_value() ? "true" : "false");
+    event.data.emplace_back("pending_drain", state.pending_drain_job.has_value() ? "true" : "false");
     tracer_->emit(event);
   }
+
+  if (state.pending_decode_job.has_value() && state.pending_drain_job.has_value()) {
+    if (state.prefer_drain_next) {
+      std::optional<ConnectionJob> pending_job = std::move(state.pending_drain_job);
+      state.pending_drain_job.reset();
+      state.prefer_drain_next = false;
+      state.active_type = pending_job->type;
+      return pending_job;
+    }
+    std::optional<ConnectionJob> pending_job = std::move(state.pending_decode_job);
+    state.pending_decode_job.reset();
+    state.prefer_drain_next = true;
+    state.active_type = pending_job->type;
+    return pending_job;
+  }
+
+  if (state.pending_drain_job.has_value()) {
+    std::optional<ConnectionJob> pending_job = std::move(state.pending_drain_job);
+    state.pending_drain_job.reset();
+    state.prefer_drain_next = false;
+    state.active_type = pending_job->type;
+    return pending_job;
+  }
+
+  if (state.pending_decode_job.has_value()) {
+    std::optional<ConnectionJob> pending_job = std::move(state.pending_decode_job);
+    state.pending_decode_job.reset();
+    state.prefer_drain_next = true;
+    state.active_type = pending_job->type;
+    return pending_job;
+  }
+
   if (state.backlog.empty()) {
     state.active_type.reset();
     states_.erase(state_iter);

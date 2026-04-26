@@ -55,6 +55,9 @@ private:
   struct ScheduleState {
     bool active{false};
     std::optional<JobType> active_type;
+    std::optional<ConnectionJob> pending_decode_job;
+    std::optional<ConnectionJob> pending_drain_job;
+    bool prefer_drain_next{true};
     std::deque<ConnectionJob> backlog;
   };
 

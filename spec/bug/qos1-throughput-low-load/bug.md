@@ -5,7 +5,15 @@
 - This bug is about broker send throughput in QoS1 publish fan-out.
 - Exact symptom to fix: after an initial good phase, broker send path becomes slower than broker receive path, so in P02 `sent` and `recv` diverge over time.
 - Primary verification signal: in the P02 timeline output, `sent` per line should stay approximately equal to `recv` per line until scenario end.
-- Queue-full effects are a consequence to analyze only in relation to this throughput divergence, not a separate bug target.
+- Queue-full effects are a consequence to analyze only in relation to this throughput divergence, not a separate bug target; the analysis must explicitly explain why the outbound queue fills in the first place.
+
+Hard prohibition for all further work on this bug:
+
+- Absolute focus: explain only why outbound writing/draining is too slow although machine load is low.
+- Forbidden: any analysis, hypothesis, or code search outside this exact topic.
+- Forbidden: discussing queue limits, config defaults, trace-volume tuning, or any other side topic as primary cause.
+- Forbidden: expanding scope to unrelated protocol areas (QoS0/QoS2/retained/will/persistence/auth).
+- Every step must answer only this question: why does the write/drain path not keep up with inbound publish rate?
 
 ## test prerequisite
 
@@ -57,7 +65,7 @@ Copy trace artifact from qapla to local bug directory after run:
 ```sh
 mkdir -p spec/bug/qos1-throughput-low-load/artifacts
 scp -o BatchMode=yes \
-	mangar@qapla:/home/mangar/mqtt/broker-p02-analysis.trace \
+	mangar@qapla:/home/mangar/dev/mqtt/broker-p02-analysis.trace \
 	spec/bug/qos1-throughput-low-load/artifacts/
 ```
 
@@ -179,6 +187,7 @@ Zusaetzlicher bereits beobachteter Referenzlauf:
 - QoS0 and QoS2 scenarios
 - retained, will, persistence behavior
 - protocol features outside QoS1 publish/ack/deliver path
+- any analysis not directly tied to outbound write/drain under low CPU load
 
 ## confirmed facts
 

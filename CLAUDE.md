@@ -1,7 +1,6 @@
 # Project Instructions
 
-## Language
-
+Never create python virtual environments
 All files code comments and documentation in **English**
 Respond user language they write
 

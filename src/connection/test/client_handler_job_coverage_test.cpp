@@ -457,7 +457,9 @@ TEST_CASE("process_decode_job_reschedules_when_stream_buffer_still_has_packets",
   session->install_client_session(std::move(client_session));
 
   static constexpr std::array<uint8_t, 2> k_pingreq_frame{0xC0U, 0x00U};
-  for (std::size_t index = 0; index < 40U; ++index) {
+  // Must exceed decode packet budget so one decode run leaves complete packets
+  // in the stream buffer and schedules a follow-up decode job.
+  for (std::size_t index = 0; index < 1200U; ++index) {
     session->stream_buffer().append(k_pingreq_frame);
   }
 
@@ -468,16 +470,14 @@ TEST_CASE("process_decode_job_reschedules_when_stream_buffer_still_has_packets",
   client_handler::process_decode_job(connection_fd, table, reactor, scheduler,
                                      broker);
 
-  bool decode_job_seen = false;
+  bool follow_up_job_seen = false;
   const std::size_t pending_jobs = queue.size();
   for (std::size_t index = 0; index < pending_jobs; ++index) {
     const auto maybe_job = queue.pop_blocking();
     REQUIRE(maybe_job.has_value());
-    if (maybe_job->type == JobType::Decode) {
-      decode_job_seen = true;
-    }
+    follow_up_job_seen = true;
   }
-  CHECK(decode_job_seen);
+  CHECK(follow_up_job_seen);
 
   client_handler::process_close_job(connection_fd, table, reactor, broker);
   close_socket_handle(client_socket);

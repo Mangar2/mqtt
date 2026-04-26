@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include <variant>
 #include <vector>
 
 #include "executor/job_scheduler.h"
@@ -73,6 +74,49 @@ TEST_CASE("mark_done_returns_nullopt_for_unknown_fd", "[executor]") {
   JobScheduler scheduler(queue);
 
   CHECK_FALSE(scheduler.mark_done(9999).has_value());
+}
+
+TEST_CASE("busy_connection_keeps_latest_pending_drain_job", "[executor]") {
+  JobQueue queue;
+  JobScheduler scheduler(queue);
+
+  scheduler.submit(ConnectionJob{JobType::Decode, 41, DecodeJobPayload{1U}});
+  scheduler.submit(ConnectionJob{JobType::Drain, 41, DrainJobPayload{2U}});
+  scheduler.submit(ConnectionJob{JobType::Drain, 41, DrainJobPayload{9U}});
+  (void)queue.pop_blocking();
+
+  const auto next = scheduler.mark_done(41);
+  REQUIRE(next.has_value());
+  REQUIRE(next->type == JobType::Drain);
+  const auto *drain_payload = std::get_if<DrainJobPayload>(&next->payload);
+  REQUIRE(drain_payload != nullptr);
+  CHECK(drain_payload->budget_bytes == 9U);
+}
+
+TEST_CASE("mark_done_alternates_between_pending_drain_and_decode", "[executor]") {
+  JobQueue queue;
+  JobScheduler scheduler(queue);
+
+  scheduler.submit(ConnectionJob{JobType::Decode, 52, DecodeJobPayload{1U}});
+  (void)queue.pop_blocking();
+
+  scheduler.submit(ConnectionJob{JobType::Decode, 52, DecodeJobPayload{2U}});
+  scheduler.submit(ConnectionJob{JobType::Drain, 52, DrainJobPayload{3U}});
+
+  const auto first_next = scheduler.mark_done(52);
+  REQUIRE(first_next.has_value());
+  CHECK(first_next->type == JobType::Drain);
+
+  scheduler.submit(ConnectionJob{JobType::Decode, 52, DecodeJobPayload{4U}});
+  scheduler.submit(ConnectionJob{JobType::Drain, 52, DrainJobPayload{5U}});
+
+  const auto second_next = scheduler.mark_done(52);
+  REQUIRE(second_next.has_value());
+  CHECK(second_next->type == JobType::Decode);
+
+  const auto third_next = scheduler.mark_done(52);
+  REQUIRE(third_next.has_value());
+  CHECK(third_next->type == JobType::Drain);
 }
 
 TEST_CASE("at_most_one_active_job_per_fd_under_concurrent_submit", "[executor]") {
