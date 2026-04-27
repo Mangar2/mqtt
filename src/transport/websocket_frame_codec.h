@@ -116,6 +116,12 @@ public:
 private:
     std::vector<uint8_t> buf_;      ///< Accumulated undecoded bytes.
     std::vector<WsFrame> frames_;   ///< Fully decoded frames waiting to be consumed.
+    std::size_t buf_read_pos_{0U};
+    std::size_t frame_read_pos_{0U};
+
+    [[nodiscard]] std::size_t buffered_size_() const noexcept;
+    void compact_buf_if_needed_() noexcept;
+    void compact_frames_if_needed_() noexcept;
 
     /** @brief Attempt to decode as many complete frames from `buf_` as possible. */
     void try_decode_();

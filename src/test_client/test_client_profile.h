@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace mqtt {
@@ -38,6 +39,47 @@ struct TestClientProfile {
 
   std::optional<std::string> username;
   std::optional<std::string> password;
+
+  uint32_t session_expiry_interval_seconds{0U};
+  uint16_t receive_maximum{65535U};
+  uint32_t maximum_packet_size{0U};
+  uint16_t topic_alias_maximum{0U};
+  bool request_response_information{false};
+  bool request_problem_information{true};
+  std::vector<std::pair<std::string, std::string>> connect_user_properties{};
+  std::optional<std::string> authentication_method;
+  std::optional<std::string> authentication_data;
+
+  std::optional<std::string> will_topic;
+  std::string will_payload{};
+  uint8_t will_qos{0U};
+  bool will_retain{false};
+  uint32_t will_delay_interval_seconds{0U};
+  std::optional<uint8_t> will_payload_format_indicator;
+  std::optional<uint32_t> will_message_expiry_interval_seconds;
+  std::optional<std::string> will_content_type;
+  std::optional<std::string> will_response_topic;
+  std::optional<std::string> will_correlation_data;
+  std::vector<std::pair<std::string, std::string>> will_user_properties{};
+
+  std::optional<std::string> publish_topic;
+  uint8_t publish_qos{0U};
+  bool publish_retain{false};
+  bool publish_dup{false};
+  std::optional<std::string> publish_payload;
+  bool publish_payload_stdin{false};
+  bool publish_payload_stdin_multiline{false};
+  std::optional<std::string> publish_payload_file;
+  std::string publish_payload_encoding{"raw"};
+  std::optional<uint8_t> publish_payload_format_indicator;
+  std::optional<uint32_t> publish_message_expiry_interval_seconds;
+  std::optional<uint16_t> publish_topic_alias;
+  std::optional<std::string> publish_response_topic;
+  std::optional<std::string> publish_correlation_data;
+  std::string publish_correlation_data_encoding{"raw"};
+  std::optional<uint32_t> publish_subscription_identifier;
+  std::optional<std::string> publish_content_type;
+  std::vector<std::pair<std::string, std::string>> publish_user_properties{};
 
   uint32_t reconnect_period_ms{1000U};
   uint32_t maximum_reconnect_times{10U};
@@ -75,6 +117,44 @@ void validate_test_client_profile_or_throw(const TestClientProfile &profile);
  * - keep_alive_seconds
  * - username
  * - password
+ * - session_expiry_interval_seconds
+ * - receive_maximum
+ * - maximum_packet_size
+ * - topic_alias_maximum
+ * - request_response_information
+ * - request_problem_information
+ * - connect_user_property (repeatable key=value)
+ * - authentication_method
+ * - authentication_data
+ * - will_topic
+ * - will_payload
+ * - will_qos
+ * - will_retain
+ * - will_delay_interval_seconds
+ * - will_payload_format_indicator
+ * - will_message_expiry_interval_seconds
+ * - will_content_type
+ * - will_response_topic
+ * - will_correlation_data
+ * - will_user_property (repeatable key=value)
+ * - publish_topic
+ * - publish_qos
+ * - publish_retain
+ * - publish_dup
+ * - publish_payload
+ * - publish_payload_stdin
+ * - publish_payload_stdin_multiline
+ * - publish_payload_file
+ * - publish_payload_encoding
+ * - publish_payload_format_indicator
+ * - publish_message_expiry_interval_seconds
+ * - publish_topic_alias
+ * - publish_response_topic
+ * - publish_correlation_data
+ * - publish_correlation_data_encoding
+ * - publish_subscription_identifier
+ * - publish_content_type
+ * - publish_user_property (repeatable key=value)
  * - reconnect_period_ms
  * - maximum_reconnect_times
  *

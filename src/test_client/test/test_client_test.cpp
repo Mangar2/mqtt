@@ -175,6 +175,184 @@ TEST_CASE("test_client_profile_transport_helpers_cover_all_variants",
   CHECK_FALSE(transport_from_string("invalid").has_value());
 }
 
+TEST_CASE("test_client_profile_step28_step29_roundtrip_preserves_extended_fields",
+          "[test_client][profile]") {
+  TestClientProfile profile;
+  profile.host = "127.0.0.1";
+  profile.port = 1883U;
+  profile.client_id = "step29-client";
+  profile.session_expiry_interval_seconds = 111U;
+  profile.receive_maximum = 222U;
+  profile.maximum_packet_size = 4096U;
+  profile.topic_alias_maximum = 12U;
+  profile.request_response_information = true;
+  profile.request_problem_information = false;
+  profile.connect_user_properties.emplace_back("k1", "v1");
+  profile.authentication_method = std::string{"SCRAM-SHA-256"};
+  profile.authentication_data = std::string{"token"};
+
+  profile.will_topic = std::string{"will/topic"};
+  profile.will_payload = "will-payload";
+  profile.will_qos = 2U;
+  profile.will_retain = true;
+  profile.will_delay_interval_seconds = 45U;
+  profile.will_payload_format_indicator = static_cast<uint8_t>(1U);
+  profile.will_message_expiry_interval_seconds = 300U;
+  profile.will_content_type = std::string{"application/json"};
+  profile.will_response_topic = std::string{"response/topic"};
+  profile.will_correlation_data = std::string{"0102"};
+  profile.will_user_properties.emplace_back("wk", "wv");
+
+  profile.publish_topic = std::string{"publish/topic"};
+  profile.publish_qos = 1U;
+  profile.publish_retain = true;
+  profile.publish_dup = true;
+  profile.publish_payload = std::string{"48656c6c6f"};
+  profile.publish_payload_encoding = "hex";
+  profile.publish_payload_format_indicator = static_cast<uint8_t>(1U);
+  profile.publish_message_expiry_interval_seconds = 60U;
+  profile.publish_topic_alias = 7U;
+  profile.publish_response_topic = std::string{"reply/topic"};
+  profile.publish_correlation_data = std::string{"dGVzdA=="};
+  profile.publish_correlation_data_encoding = "base64";
+  profile.publish_subscription_identifier = 9U;
+  profile.publish_content_type = std::string{"text/plain"};
+  profile.publish_user_properties.emplace_back("pk", "pv");
+
+  const std::string path = "test-client-profile-step29-roundtrip.ini";
+  save_test_client_profile_to_file(path, profile);
+
+  const TestClientProfile loaded_profile =
+      load_test_client_profile_from_file(path);
+
+  CHECK(loaded_profile.session_expiry_interval_seconds == 111U);
+  CHECK(loaded_profile.receive_maximum == 222U);
+  CHECK(loaded_profile.maximum_packet_size == 4096U);
+  CHECK(loaded_profile.topic_alias_maximum == 12U);
+  CHECK(loaded_profile.request_response_information);
+  CHECK_FALSE(loaded_profile.request_problem_information);
+  REQUIRE(loaded_profile.connect_user_properties.size() == 1U);
+  CHECK(loaded_profile.connect_user_properties[0].first == "k1");
+  CHECK(loaded_profile.connect_user_properties[0].second == "v1");
+  REQUIRE(loaded_profile.authentication_method.has_value());
+  CHECK(*loaded_profile.authentication_method == "SCRAM-SHA-256");
+  REQUIRE(loaded_profile.authentication_data.has_value());
+  CHECK(*loaded_profile.authentication_data == "token");
+
+  REQUIRE(loaded_profile.will_topic.has_value());
+  CHECK(*loaded_profile.will_topic == "will/topic");
+  CHECK(loaded_profile.will_qos == 2U);
+  CHECK(loaded_profile.will_retain);
+  CHECK(loaded_profile.will_delay_interval_seconds == 45U);
+  REQUIRE(loaded_profile.will_payload_format_indicator.has_value());
+  CHECK(*loaded_profile.will_payload_format_indicator == 1U);
+  REQUIRE(loaded_profile.will_message_expiry_interval_seconds.has_value());
+  CHECK(*loaded_profile.will_message_expiry_interval_seconds == 300U);
+  REQUIRE(loaded_profile.will_content_type.has_value());
+  CHECK(*loaded_profile.will_content_type == "application/json");
+  REQUIRE(loaded_profile.will_response_topic.has_value());
+  CHECK(*loaded_profile.will_response_topic == "response/topic");
+  REQUIRE(loaded_profile.will_correlation_data.has_value());
+  CHECK(*loaded_profile.will_correlation_data == "0102");
+  REQUIRE(loaded_profile.will_user_properties.size() == 1U);
+  CHECK(loaded_profile.will_user_properties[0].first == "wk");
+  CHECK(loaded_profile.will_user_properties[0].second == "wv");
+
+  REQUIRE(loaded_profile.publish_topic.has_value());
+  CHECK(*loaded_profile.publish_topic == "publish/topic");
+  CHECK(loaded_profile.publish_qos == 1U);
+  CHECK(loaded_profile.publish_retain);
+  CHECK(loaded_profile.publish_dup);
+  REQUIRE(loaded_profile.publish_payload.has_value());
+  CHECK(*loaded_profile.publish_payload == "48656c6c6f");
+  CHECK(loaded_profile.publish_payload_encoding == "hex");
+  REQUIRE(loaded_profile.publish_payload_format_indicator.has_value());
+  CHECK(*loaded_profile.publish_payload_format_indicator == 1U);
+  REQUIRE(loaded_profile.publish_message_expiry_interval_seconds.has_value());
+  CHECK(*loaded_profile.publish_message_expiry_interval_seconds == 60U);
+  REQUIRE(loaded_profile.publish_topic_alias.has_value());
+  CHECK(*loaded_profile.publish_topic_alias == 7U);
+  REQUIRE(loaded_profile.publish_response_topic.has_value());
+  CHECK(*loaded_profile.publish_response_topic == "reply/topic");
+  REQUIRE(loaded_profile.publish_correlation_data.has_value());
+  CHECK(*loaded_profile.publish_correlation_data == "dGVzdA==");
+  CHECK(loaded_profile.publish_correlation_data_encoding == "base64");
+  REQUIRE(loaded_profile.publish_subscription_identifier.has_value());
+  CHECK(*loaded_profile.publish_subscription_identifier == 9U);
+  REQUIRE(loaded_profile.publish_content_type.has_value());
+  CHECK(*loaded_profile.publish_content_type == "text/plain");
+  REQUIRE(loaded_profile.publish_user_properties.size() == 1U);
+  CHECK(loaded_profile.publish_user_properties[0].first == "pk");
+  CHECK(loaded_profile.publish_user_properties[0].second == "pv");
+}
+
+TEST_CASE("test_client_profile_step28_step29_validation_rejects_invalid_combinations",
+          "[test_client][profile]") {
+  TestClientProfile profile;
+
+  profile.maximum_packet_size = 10U;
+  CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
+                  std::invalid_argument);
+
+  profile = TestClientProfile{};
+  profile.receive_maximum = 0U;
+  CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
+                  std::invalid_argument);
+
+  profile = TestClientProfile{};
+  profile.authentication_data = std::string{"token"};
+  CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
+                  std::invalid_argument);
+
+  profile = TestClientProfile{};
+  profile.will_payload = "payload";
+  CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
+                  std::invalid_argument);
+
+  profile = TestClientProfile{};
+  profile.will_topic = std::string{"topic"};
+  profile.will_qos = 3U;
+  CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
+                  std::invalid_argument);
+
+  profile = TestClientProfile{};
+  profile.publish_payload = std::string{"test"};
+  profile.publish_payload_stdin = true;
+  CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
+                  std::invalid_argument);
+
+  profile = TestClientProfile{};
+  profile.publish_payload_encoding = "unsupported";
+  CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
+                  std::invalid_argument);
+
+  profile = TestClientProfile{};
+  profile.publish_correlation_data_encoding = "unsupported";
+  CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
+                  std::invalid_argument);
+
+  profile = TestClientProfile{};
+  profile.publish_qos = 0U;
+  profile.publish_dup = true;
+  CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
+                  std::invalid_argument);
+
+  profile = TestClientProfile{};
+  profile.publish_payload_format_indicator = static_cast<uint8_t>(2U);
+  CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
+                  std::invalid_argument);
+
+  profile = TestClientProfile{};
+  profile.publish_topic_alias = 0U;
+  CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
+                  std::invalid_argument);
+
+  profile = TestClientProfile{};
+  profile.publish_subscription_identifier = 0U;
+  CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
+                  std::invalid_argument);
+}
+
 TEST_CASE("test_client_cli_connect_parses_profile_and_overrides",
           "[test_client][cli]") {
   const char *argv[] = {"yahatestclient",      "connect",          "--profile",
@@ -292,6 +470,107 @@ TEST_CASE("test_client_cli_help_and_error_paths", "[test_client][cli]") {
   const std::string help_text = test_client_help_text();
   CHECK(help_text.find("yahatestclient") != std::string::npos);
   CHECK(help_text.find("save-profile") != std::string::npos);
+  CHECK(help_text.find("publish") != std::string::npos);
+}
+
+TEST_CASE("test_client_cli_publish_parses_step29_options", "[test_client][cli]") {
+  const char *argv[] = {
+      "yahatestclient",
+      "publish",
+      "--topic",
+      "topic/a",
+      "--qos",
+      "2",
+      "--retain",
+      "true",
+      "--dup",
+      "true",
+      "--payload",
+      "48656c6c6f",
+      "--payload-encoding",
+      "hex",
+      "--payload-format-indicator",
+      "1",
+      "--message-expiry-interval-seconds",
+      "20",
+      "--topic-alias",
+      "3",
+      "--response-topic",
+      "reply/a",
+      "--correlation-data",
+      "dGVzdA==",
+      "--correlation-data-encoding",
+      "base64",
+      "--subscription-identifier",
+      "7",
+      "--content-type",
+      "text/plain",
+      "--publish-user-property",
+      "name=value",
+  };
+
+  const TestClientCliOptions options = parse_test_client_cli(32, argv);
+  CHECK(options.command == TestClientCommand::Publish);
+  REQUIRE(options.overrides.size() == 15U);
+  CHECK(options.overrides[0].first == "publish_topic");
+  CHECK(options.overrides[0].second == "topic/a");
+  CHECK(options.overrides[14].first == "publish_user_property");
+  CHECK(options.overrides[14].second == "name=value");
+}
+
+TEST_CASE("test_client_cli_connect_parses_step28_options", "[test_client][cli]") {
+  const char *argv[] = {
+      "yahatestclient",
+      "connect",
+      "--session-expiry-interval-seconds",
+      "30",
+      "--receive-maximum",
+      "50",
+      "--maximum-packet-size",
+      "1000",
+      "--topic-alias-maximum",
+      "9",
+      "--request-response-information",
+      "true",
+      "--request-problem-information",
+      "false",
+      "--connect-user-property",
+      "k=v",
+      "--authentication-method",
+      "SCRAM",
+      "--authentication-data",
+      "abc",
+      "--will-topic",
+      "will/t",
+      "--will-payload",
+      "bye",
+      "--will-qos",
+      "1",
+      "--will-retain",
+      "true",
+      "--will-delay-interval-seconds",
+      "5",
+      "--will-payload-format-indicator",
+      "1",
+      "--will-message-expiry-interval-seconds",
+      "25",
+      "--will-content-type",
+      "application/json",
+      "--will-response-topic",
+      "resp/t",
+      "--will-correlation-data",
+      "0102",
+      "--will-user-property",
+      "wk=wv",
+  };
+
+  const TestClientCliOptions options = parse_test_client_cli(42, argv);
+  CHECK(options.command == TestClientCommand::Connect);
+  REQUIRE(options.overrides.size() == 20U);
+  CHECK(options.overrides[0].first == "session_expiry_interval_seconds");
+  CHECK(options.overrides[0].second == "30");
+  CHECK(options.overrides[19].first == "will_user_property");
+  CHECK(options.overrides[19].second == "wk=wv");
 }
 
 } // namespace mqtt

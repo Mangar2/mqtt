@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
-#include <sstream>
+#include <limits>
 #include <stdexcept>
 
 namespace mqtt {
@@ -63,6 +63,85 @@ namespace {
   return static_cast<uint32_t>(parsed_value);
 }
 
+[[nodiscard]] uint16_t parse_u16(std::string_view text,
+                                 std::string_view key_name) {
+  const uint32_t parsed_value = parse_uint32(text, key_name);
+  if (parsed_value > std::numeric_limits<uint16_t>::max()) {
+    throw std::invalid_argument("Numeric value out of range for key '" +
+                                std::string(key_name) + "': " +
+                                std::string(text));
+  }
+  return static_cast<uint16_t>(parsed_value);
+}
+
+[[nodiscard]] uint8_t parse_u8(std::string_view text,
+                               std::string_view key_name) {
+  const uint32_t parsed_value = parse_uint32(text, key_name);
+  if (parsed_value > std::numeric_limits<uint8_t>::max()) {
+    throw std::invalid_argument("Numeric value out of range for key '" +
+                                std::string(key_name) + "': " +
+                                std::string(text));
+  }
+  return static_cast<uint8_t>(parsed_value);
+}
+
+[[nodiscard]] std::pair<std::string, std::string>
+parse_user_property(std::string_view value, std::string_view key_name) {
+  const std::size_t equal_index = value.find('=');
+  if (equal_index == std::string_view::npos) {
+    throw std::invalid_argument("Invalid user property for key '" +
+                                std::string(key_name) +
+                                "' (expected name=value)");
+  }
+
+  const std::string property_name = trim_copy(std::string(value.substr(0U, equal_index)));
+  const std::string property_value =
+      trim_copy(std::string(value.substr(equal_index + 1U)));
+  if (property_name.empty()) {
+    throw std::invalid_argument("User property name must not be empty for key '" +
+                                std::string(key_name) + "'");
+  }
+  if (property_value.empty()) {
+    throw std::invalid_argument("User property value must not be empty for key '" +
+                                std::string(key_name) + "'");
+  }
+
+  return std::make_pair(property_name, property_value);
+}
+
+[[nodiscard]] bool is_payload_encoding_supported(const std::string_view encoding) {
+  return encoding == "raw" || encoding == "json" || encoding == "hex" ||
+         encoding == "base64" || encoding == "binary" ||
+         encoding == "protobuf" || encoding == "avro";
+}
+
+[[nodiscard]] bool
+is_correlation_encoding_supported(const std::string_view encoding) {
+  return encoding == "raw" || encoding == "hex" || encoding == "base64";
+}
+
+void validate_user_properties_or_throw(
+    const std::vector<std::pair<std::string, std::string>> &properties,
+    const std::string_view key_name) {
+  for (const auto &property_entry : properties) {
+    if (property_entry.first.empty() || property_entry.second.empty()) {
+      throw std::invalid_argument("Profile " + std::string(key_name) +
+                                  " entries must use non-empty name/value");
+    }
+  }
+}
+
+[[nodiscard]] bool has_any_will_fields(const TestClientProfile &profile) {
+  return !profile.will_payload.empty() || profile.will_qos != 0U ||
+         profile.will_retain || profile.will_delay_interval_seconds != 0U ||
+         profile.will_payload_format_indicator.has_value() ||
+         profile.will_message_expiry_interval_seconds.has_value() ||
+         profile.will_content_type.has_value() ||
+         profile.will_response_topic.has_value() ||
+         profile.will_correlation_data.has_value() ||
+         !profile.will_user_properties.empty();
+}
+
 } // namespace
 
 std::string to_string(const TestClientTransport transport) {
@@ -118,6 +197,116 @@ void validate_test_client_profile_or_throw(const TestClientProfile &profile) {
   if (profile.password.has_value() && profile.password->empty()) {
     throw std::invalid_argument("Profile password must not be empty when set");
   }
+  if (profile.maximum_packet_size > 0U &&
+      profile.maximum_packet_size < 16U) {
+    throw std::invalid_argument(
+        "Profile maximum_packet_size must be zero or at least 16");
+  }
+  if (profile.receive_maximum == 0U) {
+    throw std::invalid_argument("Profile receive_maximum must be greater than zero");
+  }
+
+  validate_user_properties_or_throw(profile.connect_user_properties,
+                                    "connect_user_properties");
+
+  if (profile.authentication_method.has_value() &&
+      profile.authentication_method->empty()) {
+    throw std::invalid_argument(
+        "Profile authentication_method must not be empty when set");
+  }
+  if (profile.authentication_data.has_value() &&
+      !profile.authentication_method.has_value()) {
+    throw std::invalid_argument(
+        "Profile authentication_data requires authentication_method");
+  }
+
+  if (profile.will_topic.has_value()) {
+    if (profile.will_topic->empty()) {
+      throw std::invalid_argument("Profile will_topic must not be empty when set");
+    }
+    if (profile.will_qos > 2U) {
+      throw std::invalid_argument("Profile will_qos must be in range 0..2");
+    }
+  } else if (has_any_will_fields(profile)) {
+    throw std::invalid_argument(
+        "Profile will_* options require will_topic to be set");
+  }
+
+  if (profile.will_payload_format_indicator.has_value() &&
+      *profile.will_payload_format_indicator > 1U) {
+    throw std::invalid_argument(
+        "Profile will_payload_format_indicator must be 0 or 1");
+  }
+  if (profile.will_content_type.has_value() && profile.will_content_type->empty()) {
+    throw std::invalid_argument(
+        "Profile will_content_type must not be empty when set");
+  }
+  if (profile.will_response_topic.has_value() &&
+      profile.will_response_topic->empty()) {
+    throw std::invalid_argument(
+        "Profile will_response_topic must not be empty when set");
+  }
+  validate_user_properties_or_throw(profile.will_user_properties,
+                                    "will_user_properties");
+
+  if (profile.publish_topic.has_value() && profile.publish_topic->empty()) {
+    throw std::invalid_argument(
+        "Profile publish_topic must not be empty when set");
+  }
+  if (profile.publish_qos > 2U) {
+    throw std::invalid_argument("Profile publish_qos must be in range 0..2");
+  }
+  if (profile.publish_dup && profile.publish_qos == 0U) {
+    throw std::invalid_argument("Profile publish_dup requires publish_qos > 0");
+  }
+
+  const uint8_t payload_source_count =
+      static_cast<uint8_t>(profile.publish_payload.has_value() ? 1U : 0U) +
+      static_cast<uint8_t>(profile.publish_payload_stdin ? 1U : 0U) +
+      static_cast<uint8_t>(profile.publish_payload_stdin_multiline ? 1U : 0U) +
+      static_cast<uint8_t>(profile.publish_payload_file.has_value() ? 1U : 0U);
+  if (payload_source_count > 1U) {
+    throw std::invalid_argument(
+        "Profile publish payload source is ambiguous; choose exactly one of publish_payload, publish_payload_stdin, publish_payload_stdin_multiline, publish_payload_file");
+  }
+
+  if (!is_payload_encoding_supported(profile.publish_payload_encoding)) {
+    throw std::invalid_argument(
+        "Profile publish_payload_encoding is unsupported");
+  }
+  if (!is_correlation_encoding_supported(
+          profile.publish_correlation_data_encoding)) {
+    throw std::invalid_argument(
+        "Profile publish_correlation_data_encoding is unsupported");
+  }
+
+  if (profile.publish_payload_format_indicator.has_value() &&
+      *profile.publish_payload_format_indicator > 1U) {
+    throw std::invalid_argument(
+        "Profile publish_payload_format_indicator must be 0 or 1");
+  }
+  if (profile.publish_topic_alias.has_value() &&
+      *profile.publish_topic_alias == 0U) {
+    throw std::invalid_argument("Profile publish_topic_alias must be > 0");
+  }
+  if (profile.publish_response_topic.has_value() &&
+      profile.publish_response_topic->empty()) {
+    throw std::invalid_argument(
+        "Profile publish_response_topic must not be empty when set");
+  }
+  if (profile.publish_content_type.has_value() &&
+      profile.publish_content_type->empty()) {
+    throw std::invalid_argument(
+        "Profile publish_content_type must not be empty when set");
+  }
+  if (profile.publish_subscription_identifier.has_value() &&
+      *profile.publish_subscription_identifier == 0U) {
+    throw std::invalid_argument(
+        "Profile publish_subscription_identifier must be > 0");
+  }
+
+  validate_user_properties_or_throw(profile.publish_user_properties,
+                                    "publish_user_properties");
 }
 
 void apply_profile_override(TestClientProfile &profile, const std::string_view key,
@@ -184,6 +373,159 @@ void apply_profile_override(TestClientProfile &profile, const std::string_view k
     profile.maximum_reconnect_times = parse_uint32(value, key);
     return;
   }
+  if (key == "session_expiry_interval_seconds") {
+    profile.session_expiry_interval_seconds = parse_uint32(value, key);
+    return;
+  }
+  if (key == "receive_maximum") {
+    profile.receive_maximum = parse_u16(value, key);
+    return;
+  }
+  if (key == "maximum_packet_size") {
+    profile.maximum_packet_size = parse_uint32(value, key);
+    return;
+  }
+  if (key == "topic_alias_maximum") {
+    profile.topic_alias_maximum = parse_u16(value, key);
+    return;
+  }
+  if (key == "request_response_information") {
+    profile.request_response_information = parse_bool(value, key);
+    return;
+  }
+  if (key == "request_problem_information") {
+    profile.request_problem_information = parse_bool(value, key);
+    return;
+  }
+  if (key == "connect_user_property") {
+    profile.connect_user_properties.push_back(
+        parse_user_property(value, key));
+    return;
+  }
+  if (key == "authentication_method") {
+    profile.authentication_method = std::string(value);
+    return;
+  }
+  if (key == "authentication_data") {
+    profile.authentication_data = std::string(value);
+    return;
+  }
+  if (key == "will_topic") {
+    profile.will_topic = std::string(value);
+    return;
+  }
+  if (key == "will_payload") {
+    profile.will_payload = std::string(value);
+    return;
+  }
+  if (key == "will_qos") {
+    profile.will_qos = parse_u8(value, key);
+    return;
+  }
+  if (key == "will_retain") {
+    profile.will_retain = parse_bool(value, key);
+    return;
+  }
+  if (key == "will_delay_interval_seconds") {
+    profile.will_delay_interval_seconds = parse_uint32(value, key);
+    return;
+  }
+  if (key == "will_payload_format_indicator") {
+    profile.will_payload_format_indicator = parse_u8(value, key);
+    return;
+  }
+  if (key == "will_message_expiry_interval_seconds") {
+    profile.will_message_expiry_interval_seconds = parse_uint32(value, key);
+    return;
+  }
+  if (key == "will_content_type") {
+    profile.will_content_type = std::string(value);
+    return;
+  }
+  if (key == "will_response_topic") {
+    profile.will_response_topic = std::string(value);
+    return;
+  }
+  if (key == "will_correlation_data") {
+    profile.will_correlation_data = std::string(value);
+    return;
+  }
+  if (key == "will_user_property") {
+    profile.will_user_properties.push_back(parse_user_property(value, key));
+    return;
+  }
+  if (key == "publish_topic") {
+    profile.publish_topic = std::string(value);
+    return;
+  }
+  if (key == "publish_qos") {
+    profile.publish_qos = parse_u8(value, key);
+    return;
+  }
+  if (key == "publish_retain") {
+    profile.publish_retain = parse_bool(value, key);
+    return;
+  }
+  if (key == "publish_dup") {
+    profile.publish_dup = parse_bool(value, key);
+    return;
+  }
+  if (key == "publish_payload") {
+    profile.publish_payload = std::string(value);
+    return;
+  }
+  if (key == "publish_payload_stdin") {
+    profile.publish_payload_stdin = parse_bool(value, key);
+    return;
+  }
+  if (key == "publish_payload_stdin_multiline") {
+    profile.publish_payload_stdin_multiline = parse_bool(value, key);
+    return;
+  }
+  if (key == "publish_payload_file") {
+    profile.publish_payload_file = std::string(value);
+    return;
+  }
+  if (key == "publish_payload_encoding") {
+    profile.publish_payload_encoding = std::string(value);
+    return;
+  }
+  if (key == "publish_payload_format_indicator") {
+    profile.publish_payload_format_indicator = parse_u8(value, key);
+    return;
+  }
+  if (key == "publish_message_expiry_interval_seconds") {
+    profile.publish_message_expiry_interval_seconds = parse_uint32(value, key);
+    return;
+  }
+  if (key == "publish_topic_alias") {
+    profile.publish_topic_alias = parse_u16(value, key);
+    return;
+  }
+  if (key == "publish_response_topic") {
+    profile.publish_response_topic = std::string(value);
+    return;
+  }
+  if (key == "publish_correlation_data") {
+    profile.publish_correlation_data = std::string(value);
+    return;
+  }
+  if (key == "publish_correlation_data_encoding") {
+    profile.publish_correlation_data_encoding = std::string(value);
+    return;
+  }
+  if (key == "publish_subscription_identifier") {
+    profile.publish_subscription_identifier = parse_uint32(value, key);
+    return;
+  }
+  if (key == "publish_content_type") {
+    profile.publish_content_type = std::string(value);
+    return;
+  }
+  if (key == "publish_user_property") {
+    profile.publish_user_properties.push_back(parse_user_property(value, key));
+    return;
+  }
 
   throw std::invalid_argument("Unknown profile key: " + std::string(key));
 }
@@ -197,6 +539,9 @@ TestClientProfile load_test_client_profile_from_file(const std::string &path) {
 
   TestClientProfile loaded_profile;
   loaded_profile.ws_headers.clear();
+  loaded_profile.connect_user_properties.clear();
+  loaded_profile.will_user_properties.clear();
+  loaded_profile.publish_user_properties.clear();
 
   std::string line;
   uint32_t line_number = 0U;
@@ -265,6 +610,126 @@ void save_test_client_profile_to_file(const std::string &path,
                 << '\n';
   output_stream << "maximum_reconnect_times=" << profile.maximum_reconnect_times
                 << '\n';
+
+  output_stream << "session_expiry_interval_seconds="
+                << profile.session_expiry_interval_seconds << '\n';
+  output_stream << "receive_maximum=" << profile.receive_maximum << '\n';
+  output_stream << "maximum_packet_size=" << profile.maximum_packet_size
+                << '\n';
+  output_stream << "topic_alias_maximum=" << profile.topic_alias_maximum
+                << '\n';
+  output_stream << "request_response_information="
+                << (profile.request_response_information ? "true" : "false")
+                << '\n';
+  output_stream << "request_problem_information="
+                << (profile.request_problem_information ? "true" : "false")
+                << '\n';
+  for (const auto &entry : profile.connect_user_properties) {
+    output_stream << "connect_user_property=" << entry.first << '=' << entry.second
+                  << '\n';
+  }
+  if (profile.authentication_method.has_value()) {
+    output_stream << "authentication_method=" << *profile.authentication_method
+                  << '\n';
+  }
+  if (profile.authentication_data.has_value()) {
+    output_stream << "authentication_data=" << *profile.authentication_data
+                  << '\n';
+  }
+
+  if (profile.will_topic.has_value()) {
+    output_stream << "will_topic=" << *profile.will_topic << '\n';
+  }
+  output_stream << "will_payload=" << profile.will_payload << '\n';
+  output_stream << "will_qos=" << static_cast<uint32_t>(profile.will_qos)
+                << '\n';
+  output_stream << "will_retain=" << (profile.will_retain ? "true" : "false")
+                << '\n';
+  output_stream << "will_delay_interval_seconds="
+                << profile.will_delay_interval_seconds << '\n';
+  if (profile.will_payload_format_indicator.has_value()) {
+    output_stream << "will_payload_format_indicator="
+                  << static_cast<uint32_t>(*profile.will_payload_format_indicator)
+                  << '\n';
+  }
+  if (profile.will_message_expiry_interval_seconds.has_value()) {
+    output_stream << "will_message_expiry_interval_seconds="
+                  << *profile.will_message_expiry_interval_seconds << '\n';
+  }
+  if (profile.will_content_type.has_value()) {
+    output_stream << "will_content_type=" << *profile.will_content_type << '\n';
+  }
+  if (profile.will_response_topic.has_value()) {
+    output_stream << "will_response_topic=" << *profile.will_response_topic
+                  << '\n';
+  }
+  if (profile.will_correlation_data.has_value()) {
+    output_stream << "will_correlation_data=" << *profile.will_correlation_data
+                  << '\n';
+  }
+  for (const auto &entry : profile.will_user_properties) {
+    output_stream << "will_user_property=" << entry.first << '=' << entry.second
+                  << '\n';
+  }
+
+  if (profile.publish_topic.has_value()) {
+    output_stream << "publish_topic=" << *profile.publish_topic << '\n';
+  }
+  output_stream << "publish_qos=" << static_cast<uint32_t>(profile.publish_qos)
+                << '\n';
+  output_stream << "publish_retain="
+                << (profile.publish_retain ? "true" : "false") << '\n';
+  output_stream << "publish_dup=" << (profile.publish_dup ? "true" : "false")
+                << '\n';
+  if (profile.publish_payload.has_value()) {
+    output_stream << "publish_payload=" << *profile.publish_payload << '\n';
+  }
+  output_stream << "publish_payload_stdin="
+                << (profile.publish_payload_stdin ? "true" : "false") << '\n';
+  output_stream << "publish_payload_stdin_multiline="
+                << (profile.publish_payload_stdin_multiline ? "true" : "false")
+                << '\n';
+  if (profile.publish_payload_file.has_value()) {
+    output_stream << "publish_payload_file=" << *profile.publish_payload_file
+                  << '\n';
+  }
+  output_stream << "publish_payload_encoding=" << profile.publish_payload_encoding
+                << '\n';
+  if (profile.publish_payload_format_indicator.has_value()) {
+    output_stream << "publish_payload_format_indicator="
+                  << static_cast<uint32_t>(*profile.publish_payload_format_indicator)
+                  << '\n';
+  }
+  if (profile.publish_message_expiry_interval_seconds.has_value()) {
+    output_stream << "publish_message_expiry_interval_seconds="
+                  << *profile.publish_message_expiry_interval_seconds << '\n';
+  }
+  if (profile.publish_topic_alias.has_value()) {
+    output_stream << "publish_topic_alias=" << *profile.publish_topic_alias
+                  << '\n';
+  }
+  if (profile.publish_response_topic.has_value()) {
+    output_stream << "publish_response_topic=" << *profile.publish_response_topic
+                  << '\n';
+  }
+  if (profile.publish_correlation_data.has_value()) {
+    output_stream << "publish_correlation_data="
+                  << *profile.publish_correlation_data << '\n';
+  }
+  output_stream << "publish_correlation_data_encoding="
+                << profile.publish_correlation_data_encoding << '\n';
+  if (profile.publish_subscription_identifier.has_value()) {
+    output_stream << "publish_subscription_identifier="
+                  << *profile.publish_subscription_identifier << '\n';
+  }
+  if (profile.publish_content_type.has_value()) {
+    output_stream << "publish_content_type=" << *profile.publish_content_type
+                  << '\n';
+  }
+  for (const auto &entry : profile.publish_user_properties) {
+    output_stream << "publish_user_property=" << entry.first << '='
+                  << entry.second << '\n';
+  }
 
   if (!output_stream.good()) {
     throw std::runtime_error("Failed to write complete profile file: " + path);

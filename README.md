@@ -39,6 +39,15 @@ A fully specification-compliant MQTT 5.0 broker written in C++20.
 ./build/release/yahatestclient connect \
     --profile ./test-client.profile \
     --keep-alive-seconds 30
+
+# Publish one message with MQTT 5 property options
+./build/release/yahatestclient publish \
+    --profile ./test-client.profile \
+    --topic demo/step29 \
+    --qos 1 \
+    --payload "hello" \
+    --payload-encoding raw \
+    --content-type text/plain
 ```
 
 Startup precedence is deterministic:
@@ -261,7 +270,7 @@ Key fields:
 `SyncClient` and `AsyncClient` can be constructed directly from `ClientConfig`.
 No-timeout operation overloads use the configured timeout defaults.
 
-## Test Client Shell (Step 27)
+## Test Client Shell (Steps 27-29)
 
 The repository now builds a standalone test-client executable:
 
@@ -273,6 +282,7 @@ The repository now builds a standalone test-client executable:
 Supported subcommands:
 
 - `connect` — connect and keep the session open until signal (`Ctrl+C`)
+- `publish` — connect, publish one message, wait for QoS completion, exit
 - `save-profile` — save reusable profile file
 - `show-profile` — print effective profile after load+override merge
 
@@ -288,6 +298,13 @@ Supported profile keys:
 - `ws_path`, repeatable `ws_header`
 - `client_id`, `clean_start`, `keep_alive_seconds`
 - `username`, `password`
+- `session_expiry_interval_seconds`, `receive_maximum`, `maximum_packet_size`, `topic_alias_maximum`
+- `request_response_information`, `request_problem_information`, repeatable `connect_user_property`
+- `authentication_method`, `authentication_data`
+- will options: `will_topic`, `will_payload`, `will_qos`, `will_retain`, `will_delay_interval_seconds`, `will_payload_format_indicator`, `will_message_expiry_interval_seconds`, `will_content_type`, `will_response_topic`, `will_correlation_data`, repeatable `will_user_property`
+- publish options: `publish_topic`, `publish_qos`, `publish_retain`, `publish_dup`, `publish_payload`, `publish_payload_stdin`, `publish_payload_stdin_multiline`, `publish_payload_file`
+- publish encoding options: `publish_payload_encoding` (`raw|json|hex|base64|binary|protobuf|avro`), `publish_correlation_data_encoding` (`raw|hex|base64`)
+- publish MQTT 5 property options: `publish_payload_format_indicator`, `publish_message_expiry_interval_seconds`, `publish_topic_alias`, `publish_response_topic`, `publish_correlation_data`, `publish_subscription_identifier`, `publish_content_type`, repeatable `publish_user_property`
 - `reconnect_period_ms`, `maximum_reconnect_times`
 
 ## Integration test runner

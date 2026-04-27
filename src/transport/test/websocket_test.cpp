@@ -349,6 +349,32 @@ TEST_CASE("frame_decode_multiple_frames", "[transport]") {
   CHECK(codec.consume_frame().payload == pay2);
 }
 
+TEST_CASE("frame_decode_many_frames_fifo_order", "[transport]") {
+  WebSocketFrameCodec codec;
+
+  std::vector<std::vector<uint8_t>> expected_payloads;
+  expected_payloads.reserve(256U);
+
+  std::vector<uint8_t> combined;
+  for (std::size_t idx = 0U; idx < 256U; ++idx) {
+    std::vector<uint8_t> payload = {
+        static_cast<uint8_t>(idx & 0xFFU),
+        static_cast<uint8_t>((idx * 3U) & 0xFFU),
+    };
+    expected_payloads.push_back(payload);
+
+    const auto frame = make_unmasked_binary_frame(payload);
+    combined.insert(combined.end(), frame.begin(), frame.end());
+  }
+
+  codec.append(combined);
+  for (const auto &expected : expected_payloads) {
+    REQUIRE(codec.has_frame());
+    CHECK(codec.consume_frame().payload == expected);
+  }
+  CHECK(!codec.has_frame());
+}
+
 TEST_CASE("frame_decode_ping_opcode", "[transport]") {
   WebSocketFrameCodec codec;
   const std::vector<uint8_t> ping_payload = {0x70U, 0x69U, 0x6EU,

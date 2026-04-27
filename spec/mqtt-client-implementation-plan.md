@@ -1081,6 +1081,26 @@ content type, response topic, correlation data, and will user properties).
 **Result:** The test client can establish protocol-rich MQTT 5 sessions that exercise broker behavior
 across advanced CONNECT and Last Will negotiation paths, not only minimal handshake paths.
 
+**Implementation status (2026-04-27): Completed (Step 28 connect envelope implemented)**
+
+Implemented Step 28 in test-client shell:
+- `src/test_client/test_client_profile.h/.cpp`
+	- adds persistent keys and validation for CONNECT property controls,
+		enhanced authentication options, and full Last Will configuration.
+- `src/test_client/test_client_cli.cpp`
+	- adds CLI flags for session/receive/packet-size/topic-alias controls,
+		response/problem-info toggles, connect user properties, auth method/data,
+		and will option set.
+- `src/test_client_main.cpp`
+	- builds CONNECT packet with additional MQTT 5 properties and optional will
+		property block before negotiation (mqtt and ws paths).
+
+Verification:
+- `src/test_client/test/TEST_SPEC.md`
+- `src/test_client/test/test_client_test.cpp`
+	- covers extended profile roundtrip and validation for Step 28 fields,
+	- covers CLI parsing paths for Step 28 options.
+
 ---
 
 ### Step 29 – Command-Line Publish Matrix
@@ -1093,6 +1113,26 @@ interoperability checks, including JSON, hex, base64, binary, protobuf, and avro
 
 **Result:** Single-message publish behavior can be validated end-to-end for wire flags, properties,
 payload sources, and payload encodings, with deterministic success/failure exit signaling per QoS path.
+
+**Implementation status (2026-04-27): Completed (Step 29 publish command implemented)**
+
+Implemented Step 29 in test-client shell:
+- `src/test_client/test_client_profile.h/.cpp`
+	- adds publish command profile keys for topic/QoS/retain/dup,
+		payload source modes, payload/correlation encodings, and PUBLISH
+		property options.
+- `src/test_client/test_client_cli.cpp`
+	- adds `publish` command and corresponding CLI flags.
+- `src/test_client_main.cpp`
+	- connects using existing transport envelope, sends one PUBLISH,
+		waits for QoS completion (`PUBACK` or `PUBREC`/`PUBCOMP`), and exits with
+		clear success/failure behavior.
+
+Verification:
+- `src/test_client/test/TEST_SPEC.md`
+- `src/test_client/test/test_client_test.cpp`
+	- covers `publish` CLI parsing and extended profile persistence/validation
+		used by publish matrix flows.
 
 ---
 

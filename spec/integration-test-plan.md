@@ -176,6 +176,11 @@ Broker process management for tests that need restart/reconfigure.
 - 2.6.3 UNSUBACK Packet ID matches UNSUBSCRIBE Packet ID
 - 2.6.4 Unsubscribe from multiple filters in single packet → per-filter reason codes
 
+### 2.7 Local Test Client Publish (No Subscribe Dependency)
+- 2.7.1 Local `yahatestclient publish` QoS 0 with inline payload succeeds against integration-test broker when no subscriber exists
+- 2.7.2 Local `yahatestclient publish` QoS 1 with MQTT 5 PUBLISH properties succeeds against integration-test broker when no subscriber exists
+- 2.7.3 Local `yahatestclient publish` QoS 2 with multiline-stdin payload succeeds against integration-test broker when no subscriber exists
+
 ---
 
 ## 3. Topic Matching

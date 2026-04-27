@@ -1,8 +1,11 @@
 #include "transport/websocket_frame_codec.h"
 
+#include <algorithm>
 #include <array>
+#include <cstring>
 #include <cstdint>
 #include <limits>
+#include <span>
 #include <stdexcept>
 
 #include "transport/transport_error.h"
@@ -30,7 +33,7 @@ struct FrameHeader {
 /// Try to parse the header fields from the front of `buf`.
 /// Returns false (not enough data) or throws on protocol violations.
 /// On success fills `out` and returns true.
-bool parse_header(const std::vector<uint8_t> &buf, FrameHeader &out) {
+bool parse_header(std::span<const std::uint8_t> buf, FrameHeader &out) {
   if (buf.size() < 2U) {
     return false;
   }
@@ -97,28 +100,42 @@ bool parse_header(const std::vector<uint8_t> &buf, FrameHeader &out) {
 // Decode pipeline
 
 void WebSocketFrameCodec::append(std::span<const uint8_t> data) {
+  if (data.empty()) {
+    return;
+  }
+
+  constexpr std::size_t k_max_buffered_bytes =
+      static_cast<std::size_t>(k_max_payload) + 14U;
+  compact_buf_if_needed_();
+  if (data.size() > (k_max_buffered_bytes - buffered_size_())) {
+    throw TransportException{TransportError::FrameTooLarge,
+                             "WebSocket buffered bytes exceed maximum"};
+  }
+
   buf_.insert(buf_.end(), data.begin(), data.end());
   try_decode_();
 }
 
 bool WebSocketFrameCodec::has_frame() const noexcept {
-  return !frames_.empty();
+  return frame_read_pos_ < frames_.size();
 }
 
 WsFrame WebSocketFrameCodec::consume_frame() {
-  if (frames_.empty()) {
+  if (!has_frame()) {
     throw std::logic_error(
         "WebSocketFrameCodec::consume_frame called with no frames available");
   }
-  WsFrame frm = std::move(frames_.front());
-  frames_.erase(frames_.begin());
+  WsFrame frm = std::move(frames_[frame_read_pos_]);
+  ++frame_read_pos_;
+  compact_frames_if_needed_();
   return frm;
 }
 
 void WebSocketFrameCodec::try_decode_() {
   while (true) {
+    const auto readable = std::span<const uint8_t>(buf_).subspan(buf_read_pos_);
     FrameHeader hdr{};
-    if (!parse_header(buf_, hdr)) {
+    if (!parse_header(readable, hdr)) {
       break;
     }
 
@@ -126,7 +143,7 @@ void WebSocketFrameCodec::try_decode_() {
     const std::size_t total_size =
         hdr.header_size + mask_size + hdr.payload_len;
 
-    if (buf_.size() < total_size) {
+    if (readable.size() < total_size) {
       break;
     }
 
@@ -137,24 +154,73 @@ void WebSocketFrameCodec::try_decode_() {
 
     if (hdr.masked) {
       const std::array<std::uint8_t, 4> mask_key = {
-          buf_[hdr.header_size], buf_[hdr.header_size + 1U],
-          buf_[hdr.header_size + 2U], buf_[hdr.header_size + 3U]};
+          readable[hdr.header_size], readable[hdr.header_size + 1U],
+          readable[hdr.header_size + 2U], readable[hdr.header_size + 3U]};
       for (std::size_t idx = 0U; idx < hdr.payload_len; ++idx) {
         frm.payload[idx] =
-            buf_[hdr.header_size + 4U + idx] ^ mask_key[idx % 4U];
+            readable[hdr.header_size + 4U + idx] ^ mask_key[idx % 4U];
       }
     } else {
-      const auto src_begin =
-          buf_.begin() + static_cast<std::ptrdiff_t>(hdr.header_size);
-      std::copy(src_begin,
-                src_begin + static_cast<std::ptrdiff_t>(hdr.payload_len),
+      std::copy(readable.begin() + static_cast<std::ptrdiff_t>(hdr.header_size),
+                readable.begin() + static_cast<std::ptrdiff_t>(hdr.header_size + hdr.payload_len),
                 frm.payload.begin());
     }
 
     frames_.push_back(std::move(frm));
-    buf_.erase(buf_.begin(),
-               buf_.begin() + static_cast<std::ptrdiff_t>(total_size));
+    buf_read_pos_ += total_size;
   }
+
+  compact_buf_if_needed_();
+}
+
+std::size_t WebSocketFrameCodec::buffered_size_() const noexcept {
+  return buf_.size() - buf_read_pos_;
+}
+
+void WebSocketFrameCodec::compact_buf_if_needed_() noexcept {
+  if (buf_read_pos_ == 0U) {
+    return;
+  }
+
+  if (buf_read_pos_ >= buf_.size()) {
+    buf_.clear();
+    buf_read_pos_ = 0U;
+    return;
+  }
+
+  constexpr std::size_t k_compact_threshold_bytes = 64U * 1024U;
+  if (buf_read_pos_ < k_compact_threshold_bytes &&
+      (buf_read_pos_ * 2U) < buf_.size()) {
+    return;
+  }
+
+  const std::size_t unread_size = buf_.size() - buf_read_pos_;
+  std::memmove(buf_.data(), buf_.data() + buf_read_pos_, unread_size);
+  buf_.resize(unread_size);
+  buf_read_pos_ = 0U;
+}
+
+void WebSocketFrameCodec::compact_frames_if_needed_() noexcept {
+  if (frame_read_pos_ == 0U) {
+    return;
+  }
+
+  if (frame_read_pos_ >= frames_.size()) {
+    frames_.clear();
+    frame_read_pos_ = 0U;
+    return;
+  }
+
+  constexpr std::size_t k_compact_threshold_frames = 64U;
+  if (frame_read_pos_ < k_compact_threshold_frames &&
+      (frame_read_pos_ * 2U) < frames_.size()) {
+    return;
+  }
+
+  std::move(frames_.begin() + static_cast<std::ptrdiff_t>(frame_read_pos_),
+            frames_.end(), frames_.begin());
+  frames_.resize(frames_.size() - frame_read_pos_);
+  frame_read_pos_ = 0U;
 }
 
 //

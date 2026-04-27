@@ -1,4 +1,4 @@
-# test_client — Step 27 Test Client Shell
+# test_client — Step 27-29 Test Client Shell
 
 ## Purpose
 
@@ -6,15 +6,24 @@ Provide a standalone executable shell for the MQTT 5.0 client test tooling.
 This module owns profile persistence, command-line parsing, and connection-shell
 orchestration for broker-supported transports (`mqtt`, `ws`) without TLS.
 
-## Scope (Step 27)
+## Scope (Step 27-29)
 
 - Persistent connection profiles with deterministic load/save behavior.
 - Command-line subcommands for `connect`, `save-profile`, `show-profile`.
+- One-shot `publish` command with QoS-aware ACK completion flow.
 - Effective-profile composition: defaults + optional profile file + CLI overrides.
 - Validation of profile constraints before execution.
 - Connection shell that negotiates MQTT CONNECT and keeps the session open until
   process signal (`SIGINT`/`SIGTERM`) with keep-alive pings.
 - Reconnect retry loop driven by profile settings.
+- Step 28 MQTT 5 CONNECT completeness: session/receive/packet-size/topic-alias
+  properties, response/problem info flags, connect user properties, optional
+  enhanced authentication properties, and full Last-Will property set.
+- Step 29 publish matrix: payload source modes (inline/stdin/multiline/file),
+  payload encodings (`raw`, `json`, `hex`, `base64`, `binary`, `protobuf`,
+  `avro`), and MQTT 5 PUBLISH properties (format indicator, expiry, alias,
+  response topic, correlation data, subscription identifier, content type,
+  user properties).
 
 ## Public API
 
@@ -35,6 +44,24 @@ Profile keys:
 - `ws_path`, repeatable `ws_header`
 - `client_id`, `clean_start`, `keep_alive_seconds`
 - `username`, `password`
+- `session_expiry_interval_seconds`, `receive_maximum`, `maximum_packet_size`,
+  `topic_alias_maximum`
+- `request_response_information`, `request_problem_information`
+- repeatable `connect_user_property`, `authentication_method`,
+  `authentication_data`
+- will keys: `will_topic`, `will_payload`, `will_qos`, `will_retain`,
+  `will_delay_interval_seconds`, `will_payload_format_indicator`,
+  `will_message_expiry_interval_seconds`, `will_content_type`,
+  `will_response_topic`, `will_correlation_data`, repeatable
+  `will_user_property`
+- publish keys: `publish_topic`, `publish_qos`, `publish_retain`, `publish_dup`,
+  `publish_payload`, `publish_payload_stdin`,
+  `publish_payload_stdin_multiline`, `publish_payload_file`,
+  `publish_payload_encoding`, `publish_payload_format_indicator`,
+  `publish_message_expiry_interval_seconds`, `publish_topic_alias`,
+  `publish_response_topic`, `publish_correlation_data`,
+  `publish_correlation_data_encoding`, `publish_subscription_identifier`,
+  `publish_content_type`, repeatable `publish_user_property`
 - `reconnect_period_ms`, `maximum_reconnect_times`
 
 ### `test_client_cli.h`
@@ -52,6 +79,9 @@ Behavior:
 
 - `connect`: applies profile, connects with MQTT 5.0 handshake, keeps session
   open, and disconnects on signal.
+- `publish`: applies profile, connects, publishes one message with selected
+  QoS/payload/property matrix, waits for QoS completion (`PUBACK` /
+  `PUBREC`→`PUBREL`→`PUBCOMP`), then disconnects.
 - `save-profile`: writes deterministic key/value profile file.
 - `show-profile`: prints effective profile (password redacted).
 
