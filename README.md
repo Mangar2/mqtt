@@ -227,6 +227,24 @@ Security notice:
 - More than 1000 unit tests.
 - More than 300 Python integration tests.
 
+## Client Library Configuration (Step 25)
+
+The public client API (`src/client_api`) provides a unified `ClientConfig`
+object for all tunable client-side settings.
+
+Key fields:
+
+- Broker target: `broker_host`, `broker_port`, `transport` (`Tcp`/`WebSocket`)
+- Identity and auth: `client_id`, optional username/password credentials
+- CONNECT behaviour: `clean_start`, `keep_alive_seconds`,
+    `session_expiry_interval_seconds`, `receive_maximum`, `topic_alias_maximum`
+- Reconnect policy: `reconnect_backoff`
+- Timeouts: per-operation defaults (`connect/publish/subscribe/unsubscribe/
+    disconnect`)
+
+`SyncClient` and `AsyncClient` can be constructed directly from `ClientConfig`.
+No-timeout operation overloads use the configured timeout defaults.
+
 ## Integration test runner
 
 Run integration tests with:

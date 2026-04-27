@@ -77,6 +77,12 @@ public:
       ReconnectBackoffPolicy reconnect_backoff = ReconnectBackoffPolicy{});
 
   /**
+   * @brief Construct asynchronous client facade from unified configuration.
+   * @param client_config Public client configuration.
+   */
+  explicit AsyncClient(ClientConfig client_config);
+
+  /**
    * @brief Join internal dispatch thread and stop processing queued operations.
    */
   ~AsyncClient();
@@ -104,7 +110,13 @@ public:
    */
   void async_connect(const ConnectPacket &connect_packet,
                      ConnectCompletion completion,
-                     uint32_t timeout_ms = 5000U);
+                     uint32_t timeout_ms = 0U);
+
+  /**
+   * @brief Enqueue non-blocking connect operation using configured defaults.
+   * @param completion Completion callback.
+   */
+  void async_connect(ConnectCompletion completion);
 
   /**
    * @brief Enqueue non-blocking publish operation.
@@ -113,7 +125,7 @@ public:
    * @param timeout_ms Operation timeout in milliseconds.
    */
   void async_publish(const Message &message, PublishCompletion completion,
-                     uint32_t timeout_ms = 5000U);
+                     uint32_t timeout_ms = 0U);
 
   /**
    * @brief Enqueue non-blocking subscribe operation.
@@ -123,7 +135,7 @@ public:
    */
   void async_subscribe(const std::vector<AsyncSubscribeRequest> &requests,
                        SubscribeCompletion completion,
-                       uint32_t timeout_ms = 5000U);
+                       uint32_t timeout_ms = 0U);
 
   /**
    * @brief Enqueue non-blocking unsubscribe operation.
@@ -133,7 +145,7 @@ public:
    */
   void async_unsubscribe(const std::vector<std::string> &topic_filters,
                          UnsubscribeCompletion completion,
-                         uint32_t timeout_ms = 5000U);
+                         uint32_t timeout_ms = 0U);
 
   /**
    * @brief Enqueue non-blocking disconnect operation.
@@ -155,6 +167,11 @@ public:
    * @brief Return whether a topic filter is active.
    */
   [[nodiscard]] bool has_subscription(std::string_view topic_filter) const;
+
+  /**
+   * @brief Return a copy of the current client configuration.
+   */
+  [[nodiscard]] ClientConfig client_config() const;
 
 private:
   using DispatchTask = std::function<void()>;

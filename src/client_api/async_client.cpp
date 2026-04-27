@@ -6,7 +6,11 @@ namespace mqtt {
 
 AsyncClient::AsyncClient(std::string client_id,
                          ReconnectBackoffPolicy reconnect_backoff)
-    : sync_client_(std::move(client_id), reconnect_backoff),
+  : AsyncClient(ClientConfig{.client_id = std::move(client_id),
+                 .reconnect_backoff = reconnect_backoff}) {}
+
+AsyncClient::AsyncClient(ClientConfig client_config)
+  : sync_client_(std::move(client_config)),
       dispatch_thread_([this]() { run_dispatch_loop(); }) {}
 
 AsyncClient::~AsyncClient() {
@@ -39,7 +43,34 @@ void AsyncClient::async_connect(const ConnectPacket &connect_packet,
       std::optional<ConnectionNegotiationResult> connect_result;
       {
         std::lock_guard<std::mutex> state_guard(state_mutex_);
-        connect_result = sync_client_.connect(connect_packet, timeout_ms);
+        const uint32_t effective_timeout_ms =
+            timeout_ms == 0U
+                ? sync_client_.client_config().operation_timeouts.connect_ms
+                : timeout_ms;
+        connect_result = sync_client_.connect(connect_packet, effective_timeout_ms);
+      }
+      if (completion) {
+        completion(connect_result, std::nullopt);
+      }
+    } catch (const ClientException &exception) {
+      if (completion) {
+        completion(std::nullopt, to_async_error(exception));
+      }
+    } catch (const std::exception &exception) {
+      if (completion) {
+        completion(std::nullopt, to_async_error(exception));
+      }
+    }
+  });
+}
+
+void AsyncClient::async_connect(ConnectCompletion completion) {
+  enqueue_task([this, completion = std::move(completion)]() mutable {
+    try {
+      std::optional<ConnectionNegotiationResult> connect_result;
+      {
+        std::lock_guard<std::mutex> state_guard(state_mutex_);
+        connect_result = sync_client_.connect();
       }
       if (completion) {
         completion(connect_result, std::nullopt);
@@ -65,7 +96,11 @@ void AsyncClient::async_publish(const Message &message,
       std::optional<ReasonCode> publish_result;
       {
         std::lock_guard<std::mutex> state_guard(state_mutex_);
-        publish_result = sync_client_.publish(message, timeout_ms);
+        const uint32_t effective_timeout_ms =
+            timeout_ms == 0U
+                ? sync_client_.client_config().operation_timeouts.publish_ms
+                : timeout_ms;
+        publish_result = sync_client_.publish(message, effective_timeout_ms);
       }
       if (completion) {
         completion(publish_result, std::nullopt);
@@ -105,7 +140,12 @@ void AsyncClient::async_subscribe(
       std::optional<std::vector<ReasonCode>> subscribe_result;
       {
         std::lock_guard<std::mutex> state_guard(state_mutex_);
-        subscribe_result = sync_client_.subscribe(subscribe_requests, timeout_ms);
+        const uint32_t effective_timeout_ms =
+            timeout_ms == 0U
+                ? sync_client_.client_config().operation_timeouts.subscribe_ms
+                : timeout_ms;
+        subscribe_result =
+            sync_client_.subscribe(subscribe_requests, effective_timeout_ms);
       }
       if (completion) {
         completion(subscribe_result, std::nullopt);
@@ -131,7 +171,12 @@ void AsyncClient::async_unsubscribe(const std::vector<std::string> &topic_filter
       std::optional<std::vector<ReasonCode>> unsubscribe_result;
       {
         std::lock_guard<std::mutex> state_guard(state_mutex_);
-        unsubscribe_result = sync_client_.unsubscribe(topic_filters, timeout_ms);
+        const uint32_t effective_timeout_ms =
+            timeout_ms == 0U
+                ? sync_client_.client_config().operation_timeouts.unsubscribe_ms
+                : timeout_ms;
+        unsubscribe_result =
+            sync_client_.unsubscribe(topic_filters, effective_timeout_ms);
       }
       if (completion) {
         completion(unsubscribe_result, std::nullopt);
@@ -170,6 +215,11 @@ bool AsyncClient::is_connected() const {
 bool AsyncClient::has_subscription(std::string_view topic_filter) const {
   std::lock_guard<std::mutex> state_guard(state_mutex_);
   return sync_client_.has_subscription(topic_filter);
+}
+
+ClientConfig AsyncClient::client_config() const {
+  std::lock_guard<std::mutex> state_guard(state_mutex_);
+  return sync_client_.client_config();
 }
 
 void AsyncClient::enqueue_task(DispatchTask task) {

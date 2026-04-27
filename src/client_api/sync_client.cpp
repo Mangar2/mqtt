@@ -6,18 +6,30 @@ namespace mqtt {
 
 SyncClient::SyncClient(std::string client_id,
                        ReconnectBackoffPolicy reconnect_backoff)
-    : client_id_(std::move(client_id)),
+    : SyncClient(ClientConfig{.client_id = std::move(client_id),
+                              .reconnect_backoff = reconnect_backoff}) {}
+
+SyncClient::SyncClient(ClientConfig client_config)
+    : client_config_(std::move(client_config)),
+      client_id_(client_config_.client_id),
       subscription_manager_(client_id_),
       session_state_keeper_(client_id_, 0U),
-      reconnect_controller_(reconnect_backoff) {
-  if (client_id_.empty()) {
-    throw ClientException(ClientError::InvalidPacket,
-                          "sync client requires non-empty client id");
-  }
+      reconnect_controller_(client_config_.reconnect_backoff) {
+  validate_client_config_or_throw(client_config_);
 }
 
 void SyncClient::set_callbacks(SyncClientCallbacks callbacks) noexcept {
   callbacks_ = std::move(callbacks);
+}
+
+ConnectionNegotiationResult SyncClient::connect() {
+  return connect(build_connect_packet(client_config_),
+                 client_config_.operation_timeouts.connect_ms);
+}
+
+ConnectionNegotiationResult
+SyncClient::connect(const ConnectPacket &connect_packet) {
+  return connect(connect_packet, client_config_.operation_timeouts.connect_ms);
 }
 
 ConnectionNegotiationResult SyncClient::connect(const ConnectPacket &connect_packet,
@@ -97,6 +109,10 @@ ReasonCode SyncClient::publish(const Message &message, uint32_t timeout_ms) {
   return pubcomp_result.reason_code;
 }
 
+ReasonCode SyncClient::publish(const Message &message) {
+  return publish(message, client_config_.operation_timeouts.publish_ms);
+}
+
 std::vector<ReasonCode> SyncClient::subscribe(
     const std::vector<ClientSubscriptionManager::SubscribeRequest> &requests,
     uint32_t timeout_ms) {
@@ -130,6 +146,11 @@ std::vector<ReasonCode> SyncClient::subscribe(
   }
 
   return ack_result.reason_codes;
+}
+
+std::vector<ReasonCode> SyncClient::subscribe(
+    const std::vector<ClientSubscriptionManager::SubscribeRequest> &requests) {
+  return subscribe(requests, client_config_.operation_timeouts.subscribe_ms);
 }
 
 std::vector<ReasonCode>
@@ -167,6 +188,12 @@ SyncClient::unsubscribe(const std::vector<std::string> &topic_filters,
   return ack_result.reason_codes;
 }
 
+std::vector<ReasonCode>
+SyncClient::unsubscribe(const std::vector<std::string> &topic_filters) {
+  return unsubscribe(topic_filters,
+                     client_config_.operation_timeouts.unsubscribe_ms);
+}
+
 void SyncClient::disconnect(ReasonCode reason_code) {
   if (!connected_) {
     reconnect_controller_.on_connection_lost(ReconnectTrigger::UserInitiated);
@@ -189,6 +216,10 @@ bool SyncClient::is_connected() const noexcept { return connected_; }
 
 bool SyncClient::has_subscription(std::string_view topic_filter) const noexcept {
   return subscription_manager_.has_subscription(topic_filter);
+}
+
+const ClientConfig &SyncClient::client_config() const noexcept {
+  return client_config_;
 }
 
 std::size_t

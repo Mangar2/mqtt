@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -351,6 +352,162 @@ TEST_CASE(
   REQUIRE(wait_until_true(callback_condition, callback_mutex, completion_called));
   REQUIRE(publish_error.has_value());
   CHECK(publish_error->error_code == ClientError::ProtocolError);
+}
+
+TEST_CASE("async_client_connect_runtime_error_maps_to_async_protocol_error",
+          "[client_api][async]") {
+  AsyncClient client("async-client");
+
+  SyncClientCallbacks callbacks;
+  callbacks.connect_and_negotiate =
+      [](const ConnectPacket &, uint32_t) -> ConnectionNegotiationResult {
+    throw std::runtime_error("unexpected connect failure");
+  };
+  client.set_sync_callbacks(std::move(callbacks));
+
+  std::mutex callback_mutex;
+  std::condition_variable callback_condition;
+  bool completion_called = false;
+  std::optional<AsyncOperationError> connect_error;
+
+  client.async_connect(
+      make_connect_packet(),
+      [&callback_mutex, &callback_condition, &completion_called,
+       &connect_error](const std::optional<ConnectionNegotiationResult> &result,
+                       const std::optional<AsyncOperationError> &operation_error) {
+        CHECK_FALSE(result.has_value());
+        REQUIRE(operation_error.has_value());
+        {
+          std::lock_guard<std::mutex> callback_guard(callback_mutex);
+          completion_called = true;
+          connect_error = operation_error;
+        }
+        callback_condition.notify_one();
+      });
+
+  REQUIRE(wait_until_true(callback_condition, callback_mutex, completion_called));
+  REQUIRE(connect_error.has_value());
+  CHECK(connect_error->error_code == ClientError::ProtocolError);
+}
+
+TEST_CASE("async_client_subscribe_without_connect_returns_async_error",
+          "[client_api][async]") {
+  AsyncClient client("async-client");
+
+  std::mutex callback_mutex;
+  std::condition_variable callback_condition;
+  bool completion_called = false;
+  std::optional<AsyncOperationError> subscribe_error;
+
+  const AsyncSubscribeRequest subscribe_request{
+      .topic_filter = "sensor/not-connected",
+      .requested_qos = QoS::AtLeastOnce,
+      .options = {}};
+  client.async_subscribe(
+      {subscribe_request},
+      [&callback_mutex, &callback_condition, &completion_called,
+       &subscribe_error](
+          const std::optional<std::vector<ReasonCode>> &result,
+          const std::optional<AsyncOperationError> &operation_error) {
+        CHECK_FALSE(result.has_value());
+        REQUIRE(operation_error.has_value());
+        {
+          std::lock_guard<std::mutex> callback_guard(callback_mutex);
+          completion_called = true;
+          subscribe_error = operation_error;
+        }
+        callback_condition.notify_one();
+      });
+
+  REQUIRE(wait_until_true(callback_condition, callback_mutex, completion_called));
+  REQUIRE(subscribe_error.has_value());
+  CHECK(subscribe_error->error_code == ClientError::ProtocolError);
+}
+
+TEST_CASE("async_client_unsubscribe_without_connect_returns_async_error",
+          "[client_api][async]") {
+  AsyncClient client("async-client");
+
+  std::mutex callback_mutex;
+  std::condition_variable callback_condition;
+  bool completion_called = false;
+  std::optional<AsyncOperationError> unsubscribe_error;
+
+  client.async_unsubscribe(
+      {"sensor/not-connected"},
+      [&callback_mutex, &callback_condition, &completion_called,
+       &unsubscribe_error](
+          const std::optional<std::vector<ReasonCode>> &result,
+          const std::optional<AsyncOperationError> &operation_error) {
+        CHECK_FALSE(result.has_value());
+        REQUIRE(operation_error.has_value());
+        {
+          std::lock_guard<std::mutex> callback_guard(callback_mutex);
+          completion_called = true;
+          unsubscribe_error = operation_error;
+        }
+        callback_condition.notify_one();
+      });
+
+  REQUIRE(wait_until_true(callback_condition, callback_mutex, completion_called));
+  REQUIRE(unsubscribe_error.has_value());
+  CHECK(unsubscribe_error->error_code == ClientError::ProtocolError);
+}
+
+TEST_CASE("async_client_disconnect_is_enqueued_and_prevents_later_publish",
+          "[client_api][async]") {
+  AsyncClient client("async-client");
+
+  std::size_t publish_send_count = 0U;
+  SyncClientCallbacks callbacks;
+  callbacks.connect_and_negotiate = [](const ConnectPacket &, uint32_t) {
+    return make_connect_result();
+  };
+  callbacks.send_publish = [&publish_send_count](const PublishPacket &) {
+    ++publish_send_count;
+  };
+  client.set_sync_callbacks(std::move(callbacks));
+
+  std::mutex callback_mutex;
+  std::condition_variable callback_condition;
+  bool connect_called = false;
+  bool publish_called = false;
+  std::optional<AsyncOperationError> publish_error;
+
+  client.async_connect(
+      make_connect_packet(),
+      [&callback_mutex, &callback_condition,
+       &connect_called](const std::optional<ConnectionNegotiationResult> &,
+                        const std::optional<AsyncOperationError> &) {
+        {
+          std::lock_guard<std::mutex> callback_guard(callback_mutex);
+          connect_called = true;
+        }
+        callback_condition.notify_one();
+      });
+  REQUIRE(wait_until_true(callback_condition, callback_mutex, connect_called));
+
+  client.async_disconnect(ReasonCode::Success);
+  client.async_publish(
+      make_message("topic/disconnected", QoS::AtMostOnce),
+      [&callback_mutex, &callback_condition, &publish_called,
+       &publish_error](const std::optional<ReasonCode> &result,
+                       const std::optional<AsyncOperationError> &operation_error) {
+        CHECK_FALSE(result.has_value());
+        REQUIRE(operation_error.has_value());
+        {
+          std::lock_guard<std::mutex> callback_guard(callback_mutex);
+          publish_called = true;
+          publish_error = operation_error;
+        }
+        callback_condition.notify_one();
+      });
+
+  REQUIRE(wait_until_true(callback_condition, callback_mutex, publish_called));
+  REQUIRE(publish_error.has_value());
+  CHECK(publish_error->error_code == ClientError::ProtocolError);
+  CHECK_FALSE(client.is_connected());
+  CHECK(publish_send_count == 0U);
 }
 
 } // namespace mqtt

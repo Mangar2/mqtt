@@ -1,4 +1,4 @@
-# client_api/test — Unit tests for synchronous client API (Step 23)
+# client_api/test — Unit tests for public client API (Steps 23, 24, 25)
 
 ## SyncClient
 
@@ -25,3 +25,17 @@
 | `async_client_subscribe_then_inbound_publish_calls_message_handler` | `[client_api][async]` | Subscribed inbound publish is forwarded to registered message handler on dispatch thread. |
 | `async_client_unsubscribe_reports_error_result_without_state_regression` | `[client_api][async]` | Unsubscribe completion returns broker error reason while keeping active subscription state. |
 | `async_client_publish_without_connect_maps_client_exception_to_async_error` | `[client_api][async]` | Operation failure returns `AsyncOperationError` payload instead of throwing. |
+| `async_client_connect_runtime_error_maps_to_async_protocol_error` | `[client_api][async]` | Unexpected non-client exception in connect callback is mapped to protocol-classified async error payload. |
+| `async_client_subscribe_without_connect_returns_async_error` | `[client_api][async]` | Non-blocking subscribe reports disconnected-state error via completion callback. |
+| `async_client_unsubscribe_without_connect_returns_async_error` | `[client_api][async]` | Non-blocking unsubscribe reports disconnected-state error via completion callback. |
+| `async_client_disconnect_is_enqueued_and_prevents_later_publish` | `[client_api][async]` | Enqueued disconnect transitions client to disconnected state before a later queued publish executes. |
+
+## ClientConfig (Step 25)
+
+| Test case | Tag | Description |
+|-----------|-----|-------------|
+| `client_config_defaults_are_sensible` | `[client_api][config]` | Default configuration values provide valid host, port, client id, and operation timeouts. |
+| `client_config_validate_rejects_invalid_values` | `[client_api][config]` | Validation rejects empty host/client id, invalid credentials, zero port, zero receive maximum, and zero operation timeout values. |
+| `client_config_build_connect_packet_maps_credentials_and_properties` | `[client_api][config]` | Connect packet builder maps clean-start, keep-alive, credentials, and CONNECT properties from configuration. |
+| `sync_client_constructed_from_config_uses_configured_connect_defaults` | `[client_api][config]` | SyncClient created from ClientConfig builds CONNECT packet and uses configured default connect timeout. |
+| `async_client_default_overloads_use_configured_timeouts` | `[client_api][config]` | AsyncClient no-timeout overloads use ClientConfig default operation timeouts for enqueue execution. |

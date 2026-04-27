@@ -913,6 +913,35 @@ per-operation timeout. Sensible defaults are provided for every parameter.
 **Result:** There is one authoritative place for all library settings. A minimal use case requires
 only host and port; advanced use cases can tune every parameter without touching library internals.
 
+**Implementation status (2026-04-27): Completed (client-side module implemented)**
+
+Implemented unified client configuration object:
+- `src/client_api/client_config.h/.cpp`
+	- defines `ClientConfig` for transport target, credentials, CONNECT behavior,
+	  reconnect policy, and per-operation timeouts,
+	- provides defaults for all configuration fields,
+	- validates configuration via `validate_client_config_or_throw(...)`,
+	- builds CONNECT packet model via `build_connect_packet(...)`.
+
+Integrated config object into public facades:
+- `src/client_api/sync_client.h/.cpp`
+	- supports construction from `ClientConfig`,
+	- adds no-timeout overloads that use configured operation timeouts,
+	- adds `connect()` overload using configured CONNECT model,
+	- exposes current config through `client_config()`.
+- `src/client_api/async_client.h/.cpp`
+	- supports construction from `ClientConfig`,
+	- adds no-timeout async overloads using configured operation timeouts,
+	- adds `async_connect(...)` overload using configured CONNECT model,
+	- exposes current config via thread-safe copy.
+
+Verification:
+- `src/client_api/test/TEST_SPEC.md`
+- `src/client_api/test/client_config_test.cpp`
+	- default value sanity and validation checks,
+	- CONNECT packet mapping from config,
+	- sync/async facade default-timeout integration.
+
 ---
 
 ### Step 26 – Error Model
