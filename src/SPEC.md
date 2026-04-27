@@ -25,6 +25,7 @@ Details for each module live in the `SPEC.md` files within the respective subdir
 | `subscription_manager/` | 19 | Subscription orchestration module — validates SUBSCRIBE/UNSUBSCRIBE options, parses shared filters, coordinates ACL checks, updates subscription store/shared dispatcher, and builds SUBACK/UNSUBACK reason results. |
 | `outbound_queue/`   | 20       | Outbound Message Queue — thread-safe per-client FIFO of `Message` objects. Decouples publishing thread from receiving client's QoS state. Depends on `data_model/`. |
 | `client_session/`   | 21       | Client Session Context — per-client packet handlers and local state bundle (`PacketIdManager`, QoS 1/2 state machines, keep-alive, receive-maximum, aliases, enhanced auth, outbound drain). Depends on `codec/`, `qos/`, `connection/`, `outbound_queue/`. |
+| `client/`           | mqtt-client steps 16-19 | Client-side components for outbound operation: active keep-alive manager, outbound topic-alias manager, CONNECT/CONNACK connection negotiator, and session-state keeper for reconnect restore. Depends on `codec/`, `data_model/`, `network/`, `store/`. |
 
 ## `data_model/` sub-modules
 

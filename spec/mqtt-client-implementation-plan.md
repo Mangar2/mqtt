@@ -580,35 +580,26 @@ the connection is considered lost and a failure is signalled to the session laye
 **Result:** Idle connections are kept alive according to the negotiated interval. Silent TCP failures
 are detected promptly without relying on the operating system's TCP timeout, which can take minutes.
 
-**Implementation status (2026-04-27): Partially completed via existing connection/session infrastructure**
+**Implementation status (2026-04-27): Completed (client-side module implemented)**
 
-Existing reusable keep-alive building blocks:
-- `src/connection/keep_alive_timer.h/.cpp`
-	- timer with MQTT-compliant deadline tracking (`1.5 * keep_alive`)
-	- `reset()`, `is_expired()`, `deadline()`, and disabled mode for keep_alive `0`
-- `src/client_session/client_session.h`
-	- per-session ownership of `KeepAliveTimer`
-- `src/connection/runtime_step.cpp`
-	- resets timer on every received runtime packet
-	- handles inbound `PINGREQ` by sending `PINGRESP`
-- `src/connection/client_handler.cpp`
-	- checks keep-alive deadline and triggers `DISCONNECT(KeepAliveTimeout)` on expiry
-- `src/connection/connection_manager.cpp`
-	- watchdog schedules deadline-driven decode checks (includes keep-alive deadlines)
+Implemented client-side keep-alive manager:
+- `src/client/keep_alive_manager.h/.cpp`
+	- active idle polling that emits `SendPingreq` after keep-alive interval
+	- explicit wait state for `PINGRESP` with timeout transition (`Timeout`)
+	- traffic hooks (`note_activity`, `on_pingresp`) to refresh/clear state
+	- helper to generate wire-ready MQTT `PINGREQ` frame
 
-Existing verification:
-- `src/connection/test/TEST_SPEC.md`
-	- KeepAliveTimer unit cases (enabled/disabled/deadline behavior)
-	- handler timeout path (`client_handler_keep_alive_timeout_emits_disconnect`)
+Existing related reusable components:
+- `src/codec/packet/control_codec.h/.cpp` (PINGREQ/PINGRESP encode/decode)
+- `src/connection/keep_alive_timer.h/.cpp` (broker-side timeout enforcement)
 
-Gap for full client Step 16 completion:
-- no dedicated client-side idle manager that actively sends `PINGREQ` when outbound session traffic is idle
-- no explicit client-side `PINGRESP` wait-deadline/timeout state machine yet
-- current runtime dispatch is broker-oriented; inbound `PINGRESP` is not part of a client keep-alive completion path
-
-Notes:
-- Server-side keep-alive timeout enforcement is implemented and tested.
-- For a full outbound MQTT client engine, an active ping cycle (`PINGREQ` on idle + `PINGRESP` deadline supervision) remains to be added.
+Verification:
+- `src/client/test/TEST_SPEC.md`
+- `src/client/test/client_test.cpp`
+	- disabled-mode behavior,
+	- ping emission after idle,
+	- timeout when `PINGRESP` is missing,
+	- `PINGRESP` state-clear behavior.
 
 ---
 
@@ -621,6 +612,27 @@ reported in CONNACK.
 
 **Result:** High-frequency publishes to the same topic are sent with a compact numeric alias.
 Wire overhead is reduced automatically for repeated topics without any change in the caller's API.
+
+**Implementation status (2026-04-27): Completed (client-side module implemented)**
+
+Implemented outbound alias manager:
+- `src/client/outbound_topic_alias_manager.h/.cpp`
+	- first publish assigns alias and keeps topic
+	- repeated publish reuses alias and compacts packet by clearing topic string
+	- enforces configured alias maximum and bounded active mapping set
+	- supports mapping reset on connection lifecycle reset
+
+Existing related reusable components:
+- `src/data_model/property/property_id.h` (`TopicAlias` / `TopicAliasMaximum`)
+- `src/connection/topic_alias_table.h/.cpp` (existing alias table primitives)
+
+Verification:
+- `src/client/test/TEST_SPEC.md`
+- `src/client/test/client_test.cpp`
+	- disabled mode,
+	- first publish assignment,
+	- repeated publish compaction,
+	- invalid empty-topic rejection path.
 
 ---
 
@@ -636,6 +648,29 @@ Failure reason codes are translated into meaningful error values.
 the session was resumed from a previous connection or created fresh, and receives the broker's
 negotiated limits (receive maximum, topic alias maximum, assigned client ID).
 
+**Implementation status (2026-04-27): Completed (client-side module implemented)**
+
+Implemented client-side connection negotiator:
+- `src/client/connection_negotiator.h/.cpp`
+	- `dial_tcp(host, port)` for outbound TCP dial
+	- `negotiate(connection, connect_packet, timeout)` to send CONNECT and wait for first response
+	- validates first response is CONNACK
+	- maps error CONNACK reason codes to typed client exception (`NegotiationRejected`)
+	- extracts negotiated values (`session_present`, `ReceiveMaximum`, `TopicAliasMaximum`, optional `ServerKeepAlive`, optional assigned client ID)
+
+Existing related reusable components:
+- `src/codec/packet/connect_codec.h/.cpp`
+- `src/codec/packet_reader/packet_reader.h/.cpp`
+- `src/network/stream_buffer.h/.cpp`
+
+Verification:
+- `src/client/test/TEST_SPEC.md`
+- `src/client/test/client_test.cpp`
+	- successful CONNACK negotiation path,
+	- rejected CONNACK mapping,
+	- non-CONNACK protocol error handling,
+	- invalid-host dial failure path.
+
 ---
 
 ### Step 19 – Session State Keeper
@@ -648,6 +683,30 @@ and replay inflight messages.
 **Result:** A persistent session survives connection drops without the caller having to re-subscribe
 or re-publish anything. QoS 1 and QoS 2 messages that were in flight at the time of the disconnect
 are automatically retransmitted after reconnect.
+
+**Implementation status (2026-04-27): Completed (client-side module implemented)**
+
+Implemented client-side session-state keeper:
+- `src/client/session_state_keeper.h/.cpp`
+	- stores active subscriptions (upsert/remove/clear)
+	- stores session expiry interval
+	- stores/captures outbound inflight entries for replay
+	- builds reconnect restore plan depending on `clean_start`
+	- supports full snapshot export/import with client-id consistency guard
+
+Existing related reusable components:
+- `src/data_model/session/session_state.h`
+- `src/data_model/session/inflight_entry.h`
+- `src/store/inflight_store.h`
+
+Verification:
+- `src/client/test/TEST_SPEC.md`
+- `src/client/test/client_test.cpp`
+	- subscription state upsert/remove/clear behavior,
+	- restore-plan behavior for `clean_start=true/false`,
+	- outbound inflight filtering and deterministic ordering,
+	- capture from shared inflight store,
+	- snapshot roundtrip and mismatch-guard behavior.
 
 ---
 
