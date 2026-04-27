@@ -27,3 +27,15 @@
 | `test_client_cli_publish_parses_step29_options` | `[test_client][cli]` | `publish` command parses topic/QoS/payload modes and MQTT 5 PUBLISH property flags. |
 | `test_client_cli_connect_parses_step28_options` | `[test_client][cli]` | `connect` command parses MQTT 5 CONNECT property and will-option flags. |
 | `test_client_cli_subscribe_parses_step30_options` | `[test_client][cli]` | `subscribe` command parses subscription entries, MQTT 5 subscribe properties, and output pipeline flags. |
+| `test_client_cli_scenario_parses_step31_options` | `[test_client][cli]` | `scenario` command parses selected built-in scenario name and common overrides. |
+| `test_client_cli_scenario_requires_selector` | `[test_client][cli]` | `scenario` command rejects calls without `--scenario` or `--list-scenarios`. |
+
+## Scenario Runner
+
+| Test case | Tag | Description |
+|-----------|-----|-------------|
+| `test_client_scenario_catalog_lists_step31_builtins` | `[test_client][scenario]` | Built-in scenario catalog lists the expected Step 31 scenario names. |
+| `test_client_scenario_command_list_mode_succeeds` | `[test_client][scenario]` | Scenario command prints catalog in list mode and exits successfully. |
+| `test_client_scenario_command_unknown_name_fails_fast` | `[test_client][scenario]` | Unknown scenario names fail with explicit argument error. |
+| `test_client_scenario_command_executes_qos1_scenario_successfully` | `[test_client][scenario]` | QoS1 built-in scenario executes full step chain and returns success with a mock executable. |
+| `test_client_scenario_command_propagates_step_failures` | `[test_client][scenario]` | Step execution failure in built-in scenarios returns non-zero exit code. |

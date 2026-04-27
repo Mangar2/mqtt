@@ -35,6 +35,15 @@ void parse_common_options(TestClientCliOptions &options, const int argc,
       ++index;
       continue;
     }
+    if (option_name == "--scenario") {
+      options.scenario_name = require_value(index, argc, argv, "--scenario");
+      ++index;
+      continue;
+    }
+    if (option_name == "--list-scenarios") {
+      options.list_scenarios = true;
+      continue;
+    }
 
     auto add_override = [&options, &index, argc,
                          argv](const std::string &key_name,
@@ -337,6 +346,16 @@ TestClientCliOptions parse_test_client_cli(const int argc, const char *argv[]) {
     return options;
   }
 
+  if (command_name == "scenario") {
+    options.command = TestClientCommand::Scenario;
+    parse_common_options(options, argc, argv, 2);
+    if (!options.list_scenarios && options.scenario_name.empty()) {
+      throw std::invalid_argument(
+          "scenario command requires --scenario <name> or --list-scenarios");
+    }
+    return options;
+  }
+
   if (command_name == "save-profile") {
     options.command = TestClientCommand::SaveProfile;
     parse_common_options(options, argc, argv, 2);
@@ -364,6 +383,7 @@ std::string test_client_help_text() {
       "  connect        Connect using profile + CLI overrides and keep session open\n"
       "  publish        Connect, publish one message, wait for QoS ACK flow, exit\n"
       "  subscribe      Connect, subscribe, stream matching publishes, and optionally exit on message limit\n"
+      "  scenario       Run built-in scripted scenario or list available scenarios\n"
       "  save-profile   Write profile file from defaults/profile/overrides\n"
       "  show-profile   Print effective profile\n"
       "  help           Show this help\n\n"
@@ -430,6 +450,9 @@ std::string test_client_help_text() {
       "  --output-format <template>\n"
       "  --message-limit <count>\n"
       "  --wait-timeout-ms <milliseconds>\n\n"
+      "scenario options:\n"
+      "  --scenario <name>\n"
+      "  --list-scenarios\n\n"
       "save-profile options:\n"
       "  --output <file>\n";
 }

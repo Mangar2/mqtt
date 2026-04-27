@@ -20,6 +20,7 @@ enum class TestClientCommand : uint8_t {
   Connect,
   Publish,
   Subscribe,
+  Scenario,
   SaveProfile,
   ShowProfile,
 };
@@ -31,6 +32,8 @@ struct TestClientCliOptions {
   TestClientCommand command{TestClientCommand::Help};
   std::string profile_path{};
   std::string output_path{};
+  std::string scenario_name{};
+  bool list_scenarios{false};
   std::vector<std::pair<std::string, std::string>> overrides{};
 };
 

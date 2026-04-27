@@ -48,6 +48,14 @@ A fully specification-compliant MQTT 5.0 broker written in C++20.
     --payload "hello" \
     --payload-encoding raw \
     --content-type text/plain
+
+# List built-in Step 31 scenarios
+./build/release/yahatestclient scenario --list-scenarios
+
+# Run one built-in Step 31 scenario
+./build/release/yahatestclient scenario \
+    --scenario qos1_subscribe_publish_unsubscribe \
+    --profile ./test-client.profile
 ```
 
 Startup precedence is deterministic:
@@ -270,7 +278,7 @@ Key fields:
 `SyncClient` and `AsyncClient` can be constructed directly from `ClientConfig`.
 No-timeout operation overloads use the configured timeout defaults.
 
-## Test Client Shell (Steps 27-30)
+## Test Client Shell (Steps 27-31)
 
 The repository now builds a standalone test-client executable:
 
@@ -284,6 +292,7 @@ Supported subcommands:
 - `connect` — connect and keep the session open until signal (`Ctrl+C`)
 - `publish` — connect, publish one message, wait for QoS completion, exit
 - `subscribe` — connect, subscribe with MQTT 5 options, print/save incoming messages
+- `scenario` — list built-in scenarios or run one scripted scenario with step-level status output
 - `save-profile` — save reusable profile file
 - `show-profile` — print effective profile after load+override merge
 
@@ -308,6 +317,7 @@ Supported profile keys:
 - publish MQTT 5 property options: `publish_payload_format_indicator`, `publish_message_expiry_interval_seconds`, `publish_topic_alias`, `publish_response_topic`, `publish_correlation_data`, `publish_subscription_identifier`, `publish_content_type`, repeatable `publish_user_property`
 - subscribe options: repeatable `subscribe_entry` (`filter|qos|no_local|retain_as_published|retain_handling`), `subscribe_identifier`, repeatable `subscribe_user_property`
 - subscriber output options: `subscribe_clean_output`, `subscribe_verbose_packets`, `subscribe_output_file`, `subscribe_output_append`, `subscribe_output_delimiter`, `subscribe_output_format`, `subscribe_message_limit`, `subscribe_wait_timeout_ms`
+- scenario options: `--scenario <name>`, `--list-scenarios`
 - `reconnect_period_ms`, `maximum_reconnect_times`
 
 ## Integration test runner

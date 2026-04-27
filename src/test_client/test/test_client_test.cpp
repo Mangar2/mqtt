@@ -675,4 +675,21 @@ TEST_CASE("test_client_cli_subscribe_parses_step30_options", "[test_client][cli]
   CHECK(options.overrides[10].second == "1500");
 }
 
+TEST_CASE("test_client_cli_scenario_parses_step31_options",
+          "[test_client][cli]") {
+  const char *argv[] = {"yahatestclient", "scenario", "--scenario",
+                        "qos1_subscribe_publish_unsubscribe", "--host",
+                        "127.0.0.1"};
+
+  const TestClientCliOptions options = parse_test_client_cli(6, argv);
+  CHECK(options.command == TestClientCommand::Scenario);
+  CHECK(options.scenario_name == "qos1_subscribe_publish_unsubscribe");
+  CHECK_FALSE(options.list_scenarios);
+}
+
+TEST_CASE("test_client_cli_scenario_requires_selector", "[test_client][cli]") {
+  const char *argv[] = {"yahatestclient", "scenario"};
+  CHECK_THROWS_AS(parse_test_client_cli(2, argv), std::invalid_argument);
+}
+
 } // namespace mqtt

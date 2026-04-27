@@ -29,6 +29,7 @@
 #include "network/tcp_connection.h"
 #include "test_client/test_client_cli.h"
 #include "test_client/test_client_profile.h"
+#include "test_client/test_client_scenario_runner.h"
 #include "transport/websocket_frame_codec.h"
 
 namespace mqtt {
@@ -1229,7 +1230,6 @@ void print_profile_to_stdout(const TestClientProfile &profile) {
   std::cout << "reconnect_period_ms=" << profile.reconnect_period_ms << '\n';
   std::cout << "maximum_reconnect_times=" << profile.maximum_reconnect_times
             << '\n';
-
   std::cout << "session_expiry_interval_seconds="
             << profile.session_expiry_interval_seconds << '\n';
   std::cout << "receive_maximum=" << profile.receive_maximum << '\n';
@@ -1252,7 +1252,6 @@ void print_profile_to_stdout(const TestClientProfile &profile) {
   if (profile.authentication_data.has_value()) {
     std::cout << "authentication_data=<redacted>" << '\n';
   }
-
   if (profile.will_topic.has_value()) {
     std::cout << "will_topic=" << *profile.will_topic << '\n';
   }
@@ -1284,7 +1283,6 @@ void print_profile_to_stdout(const TestClientProfile &profile) {
     std::cout << "will_user_property=" << entry.first << '=' << entry.second
               << '\n';
   }
-
   if (profile.publish_topic.has_value()) {
     std::cout << "publish_topic=" << *profile.publish_topic << '\n';
   }
@@ -1341,7 +1339,6 @@ void print_profile_to_stdout(const TestClientProfile &profile) {
     std::cout << "publish_user_property=" << entry.first << '=' << entry.second
               << '\n';
   }
-
   for (const std::string &entry : profile.subscribe_entries) {
     std::cout << "subscribe_entry=" << entry << '\n';
   }
@@ -1388,29 +1385,26 @@ int main(const int argc, const char *argv[]) {
       std::cout << mqtt::test_client_help_text();
       return 0;
     }
-
     const mqtt::TestClientProfile profile = mqtt::build_effective_profile(options);
-
     if (options.command == mqtt::TestClientCommand::ShowProfile) {
       mqtt::print_profile_to_stdout(profile);
       return 0;
     }
-
     if (options.command == mqtt::TestClientCommand::SaveProfile) {
       mqtt::save_test_client_profile_to_file(options.output_path, profile);
       std::cout << "Saved profile to " << options.output_path << '\n';
       return 0;
     }
-
+    if (options.command == mqtt::TestClientCommand::Scenario) {
+      return mqtt::run_test_client_scenario_command(options, profile, argv[0]);
+    }
     if (options.command == mqtt::TestClientCommand::Publish) {
       return mqtt::run_publish_command(profile);
     }
-
     if (options.command == mqtt::TestClientCommand::Subscribe) {
       mqtt::install_signal_handlers();
       return mqtt::run_subscribe_command(profile);
     }
-
     mqtt::install_signal_handlers();
     return mqtt::run_connect_command_with_retries(profile);
   } catch (const std::exception &exception) {

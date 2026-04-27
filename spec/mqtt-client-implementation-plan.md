@@ -1185,6 +1185,29 @@ topic-alias usage, and session-expiry behavior.
 **Result:** Repeatable end-to-end validation is available as executable scenario assets that are easy
 to discover, run, and integrate into existing integration pipelines.
 
+**Implementation status (2026-04-27): Completed (Step 31 scenario runner + catalog implemented)**
+
+Implemented Step 31 in test-client shell:
+- `src/test_client/test_client_cli.h/.cpp`
+	- adds `scenario` command parsing and Step 31 selectors
+	  (`--scenario`, `--list-scenarios`).
+- `src/test_client/test_client_scenario_runner.h/.cpp`
+	- adds built-in scenario catalog API,
+	- executes scripted scenario step chains with per-step pass/fail logging,
+	- returns non-zero on first failed step,
+	- supports catalog-list mode for discoverability.
+- `src/test_client_main.cpp`
+	- dispatches `scenario` command execution through the new runner module.
+
+Verification:
+- `src/test_client/test/TEST_SPEC.md`
+- `src/test_client/test/test_client_test.cpp`
+	- covers Step 31 CLI parsing and validation.
+- `src/test_client/test/test_client_scenario_runner_test.cpp`
+	- covers scenario catalog listing,
+	- covers unknown-scenario rejection,
+	- covers successful and failing scenario execution paths with mock executables.
+
 ---
 
 ### Step 32 – Benchmark and Simulation Load Modes
