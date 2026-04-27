@@ -11,13 +11,16 @@
 #include "client/connection_negotiator.h"
 #include "client/keep_alive_manager.h"
 #include "client/outbound_topic_alias_manager.h"
+#include "client/publish_pipeline.h"
 #include "client/session_state_keeper.h"
 #include "client/subscription_manager.h"
 #include "codec/packet/connect_codec.h"
 #include "codec/packet/control_codec.h"
+#include "codec/packet/publish_codec.h"
 #include "data_model/packet/connect_packet.h"
 #include "data_model/packet/publish_packets.h"
 #include "data_model/property/property_id.h"
+#include "data_model/message/message.h"
 #include "data_model/session/inflight_direction.h"
 #include "data_model/session/inflight_state.h"
 #include "data_model/subscription/subscription.h"
@@ -49,6 +52,16 @@ namespace {
   publish_packet.topic = Utf8String{std::move(topic_name)};
   publish_packet.payload = BinaryData{{0x10U, 0x20U}};
   return publish_packet;
+}
+
+[[nodiscard]] Message make_message(std::string topic_name, QoS qos,
+                                   bool retain = false) {
+  Message message;
+  message.topic = Utf8String{std::move(topic_name)};
+  message.payload = BinaryData{{0x44U, 0x55U}};
+  message.qos = qos;
+  message.retain = retain;
+  return message;
 }
 
 [[nodiscard]] Subscription make_subscription(std::string topic_filter, QoS qos) {
@@ -514,6 +527,131 @@ TEST_CASE("session_state_keeper_snapshot_roundtrip_and_mismatch_guard",
     CHECK_THROWS_AS(manager.dispatch_inbound_publish(invalid_publish),
             ClientException);
   }
+
+    TEST_CASE("publish_pipeline_qos0_completes_immediately", "[client][publish]") {
+      ClientPublishPipeline pipeline;
+
+      const Message outbound_message = make_message("publish/qos0", QoS::AtMostOnce);
+      const ClientPublishPipeline::PublishStartResult start_result =
+        pipeline.begin_publish(outbound_message);
+
+      CHECK(start_result.completed);
+      CHECK_FALSE(start_result.packet_id.has_value());
+      CHECK(start_result.publish_packet.topic.value == "publish/qos0");
+      CHECK(start_result.publish_packet.qos == QoS::AtMostOnce);
+      CHECK(pipeline.pending_count() == 0U);
+
+      const WriteBuffer publish_frame =
+        ClientPublishPipeline::encode_publish_frame(start_result.publish_packet);
+      CHECK_FALSE(publish_frame.empty());
+    }
+
+    TEST_CASE("publish_pipeline_qos1_assigns_packet_id_and_completes_on_puback",
+          "[client][publish]") {
+      ClientPublishPipeline pipeline;
+
+      const ClientPublishPipeline::PublishStartResult start_result =
+        pipeline.begin_publish(make_message("publish/qos1", QoS::AtLeastOnce));
+      REQUIRE_FALSE(start_result.completed);
+      REQUIRE(start_result.packet_id.has_value());
+      CHECK(pipeline.has_pending(*start_result.packet_id));
+
+      const WriteBuffer publish_frame =
+        ClientPublishPipeline::encode_publish_frame(start_result.publish_packet);
+      CHECK_FALSE(publish_frame.empty());
+
+      PubackPacket puback_packet;
+      puback_packet.packet_id = *start_result.packet_id;
+      puback_packet.reason_code = ReasonCode::Success;
+
+      const ClientPublishPipeline::PublishAckResult ack_result =
+        pipeline.on_puback(puback_packet);
+      CHECK(ack_result.completed);
+      CHECK_FALSE(ack_result.send_pubrel);
+      CHECK_FALSE(ack_result.pubrel_packet.has_value());
+      CHECK(ack_result.reason_code == ReasonCode::Success);
+      CHECK_FALSE(pipeline.has_pending(*start_result.packet_id));
+    }
+
+    TEST_CASE(
+      "publish_pipeline_qos2_pubrec_success_emits_pubrel_then_pubcomp_completes",
+      "[client][publish]") {
+      ClientPublishPipeline pipeline;
+
+      const ClientPublishPipeline::PublishStartResult start_result =
+        pipeline.begin_publish(make_message("publish/qos2", QoS::ExactlyOnce));
+      REQUIRE(start_result.packet_id.has_value());
+
+      PubrecPacket pubrec_packet;
+      pubrec_packet.packet_id = *start_result.packet_id;
+      pubrec_packet.reason_code = ReasonCode::Success;
+
+      const ClientPublishPipeline::PublishAckResult pubrec_result =
+        pipeline.on_pubrec(pubrec_packet);
+      CHECK_FALSE(pubrec_result.completed);
+      CHECK(pubrec_result.send_pubrel);
+      REQUIRE(pubrec_result.pubrel_packet.has_value());
+      CHECK(pubrec_result.pubrel_packet->packet_id == *start_result.packet_id);
+      CHECK(pipeline.has_pending(*start_result.packet_id));
+
+      const WriteBuffer pubrel_frame =
+        ClientPublishPipeline::encode_pubrel_frame(*pubrec_result.pubrel_packet);
+      CHECK_FALSE(pubrel_frame.empty());
+
+      PubcompPacket pubcomp_packet;
+      pubcomp_packet.packet_id = *start_result.packet_id;
+      pubcomp_packet.reason_code = ReasonCode::Success;
+
+      const ClientPublishPipeline::PublishAckResult pubcomp_result =
+        pipeline.on_pubcomp(pubcomp_packet);
+      CHECK(pubcomp_result.completed);
+      CHECK_FALSE(pubcomp_result.send_pubrel);
+      CHECK_FALSE(pipeline.has_pending(*start_result.packet_id));
+    }
+
+    TEST_CASE("publish_pipeline_qos2_pubrec_error_completes_without_pubrel",
+          "[client][publish]") {
+      ClientPublishPipeline pipeline;
+
+      const ClientPublishPipeline::PublishStartResult start_result =
+        pipeline.begin_publish(make_message("publish/qos2/error", QoS::ExactlyOnce));
+      REQUIRE(start_result.packet_id.has_value());
+
+      PubrecPacket pubrec_packet;
+      pubrec_packet.packet_id = *start_result.packet_id;
+      pubrec_packet.reason_code = ReasonCode::NotAuthorized;
+
+      const ClientPublishPipeline::PublishAckResult ack_result =
+        pipeline.on_pubrec(pubrec_packet);
+      CHECK(ack_result.completed);
+      CHECK_FALSE(ack_result.send_pubrel);
+      CHECK_FALSE(ack_result.pubrel_packet.has_value());
+      CHECK(ack_result.reason_code == ReasonCode::NotAuthorized);
+      CHECK_FALSE(pipeline.has_pending(*start_result.packet_id));
+    }
+
+    TEST_CASE("publish_pipeline_unknown_packet_id_and_wrong_stage_throws",
+          "[client][publish]") {
+      ClientPublishPipeline pipeline;
+
+      CHECK_THROWS_AS(pipeline.on_puback(PubackPacket{.packet_id = 1234U}),
+              ClientException);
+
+      const ClientPublishPipeline::PublishStartResult start_result =
+        pipeline.begin_publish(make_message("publish/wrong-stage", QoS::ExactlyOnce));
+      REQUIRE(start_result.packet_id.has_value());
+
+      CHECK_THROWS_AS(
+        pipeline.on_puback(PubackPacket{.packet_id = *start_result.packet_id}),
+        ClientException);
+    }
+
+    TEST_CASE("publish_pipeline_rejects_invalid_topic", "[client][publish]") {
+      ClientPublishPipeline pipeline;
+      CHECK_THROWS_AS(
+        pipeline.begin_publish(make_message("invalid/#/topic", QoS::AtLeastOnce)),
+        ClientException);
+    }
 
 #if !defined(_WIN32)
 

@@ -759,6 +759,33 @@ and forgotten immediately.
 identifier assignment, and acknowledgement waiting are handled internally. The caller is notified
 when the delivery guarantee implied by the chosen QoS level has been met.
 
+**Implementation status (2026-04-27): Completed (client-side module implemented)**
+
+Implemented client-side publish pipeline:
+- `src/client/publish_pipeline.h/.cpp`
+	- validates outbound topic names,
+	- builds outbound `PUBLISH` packets from caller messages,
+	- assigns packet identifiers for QoS 1 and QoS 2,
+	- tracks pending QoS handshakes by packet-id,
+	- finalizes QoS 1 on `PUBACK`,
+	- advances QoS 2 on `PUBREC` and emits outbound `PUBREL`,
+	- finalizes QoS 2 on `PUBCOMP`.
+
+Existing related reusable components:
+- `src/qos/packet_id_manager.h/.cpp`
+- `src/data_model/session/inflight_entry.h`
+- `src/codec/packet/publish_codec.h/.cpp`
+- `src/topic/topic_validator.h/.cpp`
+
+Verification:
+- `src/client/test/TEST_SPEC.md`
+- `src/client/test/client_test.cpp`
+	- qos0 immediate completion,
+	- qos1 packet-id assignment and `PUBACK` completion,
+	- qos2 `PUBREC` to `PUBREL` progression and `PUBCOMP` completion,
+	- unknown packet-id and wrong-stage ACK error handling,
+	- invalid topic validation handling.
+
 ---
 
 ### Step 22 – Reconnect Controller

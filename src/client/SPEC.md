@@ -1,4 +1,4 @@
-# client — Client-side MQTT components (Steps 16, 17, 18, 19, 20)
+# client — Client-side MQTT components (Steps 16, 17, 18, 19, 20, 21)
 
 Reusable client-only building blocks for outbound broker connections.
 Depends on `data_model/`, `codec/`, and `network/`.
@@ -7,12 +7,13 @@ Depends on `data_model/`, `codec/`, and `network/`.
 
 | File | Plan ref | Description |
 |------|----------|-------------|
-| `client_error.h` | 16-20 | `ClientError` enum and `ClientException` |
+| `client_error.h` | 16-21 | `ClientError` enum and `ClientException` |
 | `keep_alive_manager.h/.cpp` | 16 | Active keep-alive poller (`PINGREQ` scheduling + `PINGRESP` timeout detection) |
 | `outbound_topic_alias_manager.h/.cpp` | 17 | Outbound topic-alias assignment/reuse for PUBLISH packets |
 | `connection_negotiator.h/.cpp` | 18 | Outbound TCP dial + CONNECT/CONNACK handshake negotiation |
 | `session_state_keeper.h/.cpp` | 19 | Client-side session-state keeper (subscriptions, session expiry, outbound inflight replay snapshot) |
 | `subscription_manager.h/.cpp` | 20 | Client-side SUBSCRIBE/UNSUBSCRIBE manager with ACK correlation and inbound callback dispatch |
+| `publish_pipeline.h/.cpp` | 21 | Client-side outbound publish pipeline with packet-id assignment and QoS ACK progression |
 
 ## KeepAliveManager (Step 16)
 
@@ -98,3 +99,23 @@ Behavior guarantees:
 - topic filter/topic name validation failures are mapped to `InvalidPacket`,
 - callbacks are stored per topic filter and replaced on re-subscribe,
 - `clear()` removes active and pending state.
+
+## ClientPublishPipeline (Step 21)
+
+`ClientPublishPipeline` orchestrates client-side outbound publish progression:
+
+- `begin_publish(...)` validates topic, builds outbound `PublishPacket`, and
+  assigns packet-id for QoS 1/2.
+- QoS 0 publishes are marked completed immediately without pending tracking.
+- `on_puback(...)` finalizes QoS 1 publishes.
+- `on_pubrec(...)` advances QoS 2 state and emits outbound `PUBREL` for
+  successful `PUBREC`.
+- `on_pubcomp(...)` finalizes QoS 2 publishes.
+- frame helpers provide wire-ready `PUBLISH` and `PUBREL` bytes.
+
+Behavior guarantees:
+
+- unknown packet-id ACKs are rejected with `ProtocolError`,
+- wrong ACK type for current QoS state is rejected with `ProtocolError`,
+- invalid topic names are rejected with `InvalidPacket`,
+- pending packet IDs are released on terminal QoS ACK stages.

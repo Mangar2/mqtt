@@ -55,3 +55,14 @@
 | `subscription_manager_suback_unknown_packet_id_throws` | `[client][subscription]` | Unknown SUBACK packet id is rejected as protocol error. |
 | `subscription_manager_reason_count_mismatch_throws` | `[client][subscription]` | ACK reason code count mismatch against pending request throws protocol error. |
 | `subscription_manager_validates_filters_and_topic_name` | `[client][subscription]` | Invalid subscribe/unsubscribe filters and invalid inbound publish topic are rejected. |
+
+## ClientPublishPipeline (Step 21)
+
+| Test case | Tag | Description |
+|-----------|-----|-------------|
+| `publish_pipeline_qos0_completes_immediately` | `[client][publish]` | QoS0 publish creates packet without packet-id and is completed immediately. |
+| `publish_pipeline_qos1_assigns_packet_id_and_completes_on_puback` | `[client][publish]` | QoS1 publish allocates packet-id, tracks pending state, and completes on PUBACK. |
+| `publish_pipeline_qos2_pubrec_success_emits_pubrel_then_pubcomp_completes` | `[client][publish]` | QoS2 publish transitions on PUBREC success, emits PUBREL, and completes on PUBCOMP. |
+| `publish_pipeline_qos2_pubrec_error_completes_without_pubrel` | `[client][publish]` | Error PUBREC finalizes QoS2 flow without PUBREL emission. |
+| `publish_pipeline_unknown_packet_id_and_wrong_stage_throws` | `[client][publish]` | Unknown ACK packet-id and wrong ACK stage are rejected as protocol errors. |
+| `publish_pipeline_rejects_invalid_topic` | `[client][publish]` | Invalid outbound topic name is rejected before packet creation. |
