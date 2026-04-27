@@ -438,12 +438,15 @@ def _load_test_module(module_path: Path):
 
 
 def _test_sort_key(test: TestCase) -> tuple:
+    # Keep client-shell end-to-end tests grouped at the end of the full suite.
+    is_client_shell_test = "test_client_shell" in test.name
+
     number_match = REQUIREMENT_NUMBER_PREFIX.match(test.description)
     if number_match:
         number_parts = tuple(int(part) for part in number_match.group(1).split("."))
-        return (0, number_parts, test.name)
+        return (1 if is_client_shell_test else 0, 0, number_parts, test.name)
 
-    return (1, test.name)
+    return (1 if is_client_shell_test else 0, 1, test.name)
 
 
 def _requirement_number_from_description(description: str) -> str | None:
@@ -480,6 +483,13 @@ def _positive_int(raw_value: str) -> int:
 def _normalize_status_details(status_text: str, details: str, description: str) -> tuple[str, str]:
     requirement_number = _requirement_number_from_description(description)
     if requirement_number is None:
+        return status_text, details
+
+    if status_text == "success":
+        if not details:
+            return status_text, f"{requirement_number} success"
+        if not details.startswith(f"{requirement_number} "):
+            return status_text, f"{requirement_number} {details}"
         return status_text, details
 
     if status_text == "skipped":
@@ -776,16 +786,19 @@ def main() -> int:
     skipped = 0
     success = 0
     try:
-        for test in selected_tests:
+        for test_index, test in enumerate(selected_tests, start=1):
             run_outcomes: list[dict[str, str]] = []
             for run_index in range(args.repeat):
                 status_text, details = _run_single_test_case(test, config)
                 run_outcomes.append({"status": status_text, "details": details})
 
                 if args.repeat == 1:
-                    print(f"[{status_text.upper()}] {test.name}")
+                    print(f"[{status_text.upper()}] [{test_index}/{len(selected_tests)}] {test.name}")
                 else:
-                    print(f"[{status_text.upper()}] {test.name} ({run_index + 1}/{args.repeat})")
+                    print(
+                        f"[{status_text.upper()}] [{test_index}/{len(selected_tests)}] "
+                        f"{test.name} ({run_index + 1}/{args.repeat})"
+                    )
                 if details:
                     print(f"  {details}")
 
@@ -800,7 +813,7 @@ def main() -> int:
                 success += 1
 
             if args.repeat > 1:
-                print(f"[FINAL:{final_status.upper()}] {test.name}")
+                print(f"[FINAL:{final_status.upper()}] [{test_index}/{len(selected_tests)}] {test.name}")
                 if final_details:
                     print(f"  {final_details}")
 

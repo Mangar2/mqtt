@@ -1147,6 +1147,30 @@ for scripting and post-processing.
 **Result:** Incoming broker traffic can be observed and captured in both human-readable and
 automation-friendly forms while exercising full MQTT 5 subscription-option behavior.
 
+**Implementation status (2026-04-27): Completed (Step 30 subscribe command + output pipeline implemented)**
+
+Implemented Step 30 in test-client shell:
+- `src/test_client/test_client_profile.h/.cpp`
+	- adds subscribe profile keys for per-subscription option entries,
+		subscribe properties, and output-pipeline controls.
+- `src/test_client/test_client_cli.h/.cpp`
+	- adds `subscribe` command and corresponding CLI flags.
+- `src/test_client_main.cpp`
+	- sends SUBSCRIBE with MQTT 5 properties,
+	- validates SUBACK outcomes,
+	- streams inbound PUBLISH packets through configurable output modes,
+	- acknowledges inbound QoS 1/2 publish flows.
+
+Verification:
+- `src/test_client/test/TEST_SPEC.md`
+- `src/test_client/test/test_client_test.cpp`
+	- covers subscribe profile persistence/validation,
+	- covers subscribe CLI parsing.
+- `test/integration_client_shell_cases.py`
+- `test/integration_tests/client/test_client_shell.py`
+	- covers local test-client publish-only cases and subscribe+publish roundtrip
+		cases via consolidated client-shell integration test suite.
+
 ---
 
 ### Step 31 – Scenario Runner and Discoverable Scenario Catalog

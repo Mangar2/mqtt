@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <string>
@@ -8,6 +9,18 @@
 #include "test_client/test_client_profile.h"
 
 namespace mqtt {
+
+namespace {
+
+std::string test_profile_ini_path(const std::string &file_name) {
+  const std::filesystem::path base_directory =
+      std::filesystem::path("test") / "tmp" / "test_client_profile";
+  std::error_code error_code;
+  std::filesystem::create_directories(base_directory, error_code);
+  return (base_directory / file_name).string();
+}
+
+} // namespace
 
 TEST_CASE("test_client_profile_defaults_validate", "[test_client][profile]") {
   const TestClientProfile default_profile;
@@ -30,7 +43,8 @@ TEST_CASE("test_client_profile_save_and_load_roundtrip_preserves_values",
   profile.reconnect_period_ms = 2500U;
   profile.maximum_reconnect_times = 7U;
 
-  const std::string path = "test-client-profile-roundtrip.ini";
+  const std::string path =
+      test_profile_ini_path("test-client-profile-roundtrip.ini");
   save_test_client_profile_to_file(path, profile);
 
   const TestClientProfile loaded_profile =
@@ -56,7 +70,8 @@ TEST_CASE("test_client_profile_save_and_load_roundtrip_preserves_values",
 
 TEST_CASE("test_client_profile_load_rejects_unknown_key",
           "[test_client][profile]") {
-  const std::string path = "test-client-profile-invalid.ini";
+  const std::string path =
+      test_profile_ini_path("test-client-profile-invalid.ini");
   std::ofstream file(path, std::ios::trunc);
   REQUIRE(file.is_open());
   file << "host=127.0.0.1\n";
@@ -129,7 +144,8 @@ TEST_CASE("test_client_profile_validation_and_override_error_paths",
   CHECK_THROWS_AS(apply_profile_override(override_profile, "transport", "invalid"),
                   std::invalid_argument);
 
-  const std::string missing_value_path = "test-client-profile-missing-value.ini";
+  const std::string missing_value_path =
+      test_profile_ini_path("test-client-profile-missing-value.ini");
   {
     std::ofstream file(missing_value_path, std::ios::trunc);
     REQUIRE(file.is_open());
@@ -139,7 +155,8 @@ TEST_CASE("test_client_profile_validation_and_override_error_paths",
   CHECK_THROWS_AS(load_test_client_profile_from_file(missing_value_path),
                   std::invalid_argument);
 
-  const std::string invalid_line_path = "test-client-profile-invalid-line.ini";
+  const std::string invalid_line_path =
+      test_profile_ini_path("test-client-profile-invalid-line.ini");
   {
     std::ofstream file(invalid_line_path, std::ios::trunc);
     REQUIRE(file.is_open());
@@ -149,7 +166,8 @@ TEST_CASE("test_client_profile_validation_and_override_error_paths",
   CHECK_THROWS_AS(load_test_client_profile_from_file(invalid_line_path),
                   std::invalid_argument);
 
-  const std::string empty_key_path = "test-client-profile-empty-key.ini";
+  const std::string empty_key_path =
+      test_profile_ini_path("test-client-profile-empty-key.ini");
   {
     std::ofstream file(empty_key_path, std::ios::trunc);
     REQUIRE(file.is_open());
@@ -218,8 +236,20 @@ TEST_CASE("test_client_profile_step28_step29_roundtrip_preserves_extended_fields
   profile.publish_subscription_identifier = 9U;
   profile.publish_content_type = std::string{"text/plain"};
   profile.publish_user_properties.emplace_back("pk", "pv");
+  profile.subscribe_entries.push_back("sensor/+/temp|1|false|false|0");
+  profile.subscribe_identifier = 17U;
+  profile.subscribe_user_properties.emplace_back("sk", "sv");
+  profile.subscribe_clean_output = true;
+  profile.subscribe_verbose_packets = true;
+  profile.subscribe_output_file = std::string{"subscribe.out"};
+  profile.subscribe_output_append = true;
+  profile.subscribe_output_delimiter = "\\n---\\n";
+  profile.subscribe_output_format = std::string{"{topic}:{payload}"};
+  profile.subscribe_message_limit = 3U;
+  profile.subscribe_wait_timeout_ms = 2500U;
 
-  const std::string path = "test-client-profile-step29-roundtrip.ini";
+  const std::string path =
+      test_profile_ini_path("test-client-profile-step29-roundtrip.ini");
   save_test_client_profile_to_file(path, profile);
 
   const TestClientProfile loaded_profile =
@@ -284,6 +314,24 @@ TEST_CASE("test_client_profile_step28_step29_roundtrip_preserves_extended_fields
   REQUIRE(loaded_profile.publish_user_properties.size() == 1U);
   CHECK(loaded_profile.publish_user_properties[0].first == "pk");
   CHECK(loaded_profile.publish_user_properties[0].second == "pv");
+
+  REQUIRE(loaded_profile.subscribe_entries.size() == 1U);
+  CHECK(loaded_profile.subscribe_entries[0] == "sensor/+/temp|1|false|false|0");
+  REQUIRE(loaded_profile.subscribe_identifier.has_value());
+  CHECK(*loaded_profile.subscribe_identifier == 17U);
+  REQUIRE(loaded_profile.subscribe_user_properties.size() == 1U);
+  CHECK(loaded_profile.subscribe_user_properties[0].first == "sk");
+  CHECK(loaded_profile.subscribe_user_properties[0].second == "sv");
+  CHECK(loaded_profile.subscribe_clean_output);
+  CHECK(loaded_profile.subscribe_verbose_packets);
+  REQUIRE(loaded_profile.subscribe_output_file.has_value());
+  CHECK(*loaded_profile.subscribe_output_file == "subscribe.out");
+  CHECK(loaded_profile.subscribe_output_append);
+  CHECK(loaded_profile.subscribe_output_delimiter == "\\n---\\n");
+  REQUIRE(loaded_profile.subscribe_output_format.has_value());
+  CHECK(*loaded_profile.subscribe_output_format == "{topic}:{payload}");
+  CHECK(loaded_profile.subscribe_message_limit == 3U);
+  CHECK(loaded_profile.subscribe_wait_timeout_ms == 2500U);
 }
 
 TEST_CASE("test_client_profile_step28_step29_validation_rejects_invalid_combinations",
@@ -349,6 +397,26 @@ TEST_CASE("test_client_profile_step28_step29_validation_rejects_invalid_combinat
 
   profile = TestClientProfile{};
   profile.publish_subscription_identifier = 0U;
+  CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
+                  std::invalid_argument);
+
+  profile = TestClientProfile{};
+  profile.subscribe_entries.push_back("topic-only");
+  CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
+                  std::invalid_argument);
+
+  profile = TestClientProfile{};
+  profile.subscribe_entries.push_back("sensor/1|3|false|false|0");
+  CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
+                  std::invalid_argument);
+
+  profile = TestClientProfile{};
+  profile.subscribe_output_append = true;
+  CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
+                  std::invalid_argument);
+
+  profile = TestClientProfile{};
+  profile.subscribe_identifier = 0U;
   CHECK_THROWS_AS(validate_test_client_profile_or_throw(profile),
                   std::invalid_argument);
 }
@@ -571,6 +639,40 @@ TEST_CASE("test_client_cli_connect_parses_step28_options", "[test_client][cli]")
   CHECK(options.overrides[0].second == "30");
   CHECK(options.overrides[19].first == "will_user_property");
   CHECK(options.overrides[19].second == "wk=wv");
+}
+
+TEST_CASE("test_client_cli_subscribe_parses_step30_options", "[test_client][cli]") {
+  const char *argv[] = {
+      "yahatestclient",
+      "subscribe",
+      "--subscription",
+      "sensor/+/temp|1|false|true|2",
+      "--subscribe-identifier",
+      "42",
+      "--subscribe-user-property",
+      "name=value",
+      "--clean-output",
+      "--verbose-packets",
+      "--output-file",
+      "sub.log",
+      "--append-output",
+      "--output-delimiter",
+      "\\\\n",
+      "--output-format",
+      "{topic}:{payload}",
+      "--message-limit",
+      "3",
+      "--wait-timeout-ms",
+      "1500",
+  };
+
+  const TestClientCliOptions options = parse_test_client_cli(21, argv);
+  CHECK(options.command == TestClientCommand::Subscribe);
+  REQUIRE(options.overrides.size() == 11U);
+  CHECK(options.overrides[0].first == "subscribe_entry");
+  CHECK(options.overrides[0].second == "sensor/+/temp|1|false|true|2");
+  CHECK(options.overrides[10].first == "subscribe_wait_timeout_ms");
+  CHECK(options.overrides[10].second == "1500");
 }
 
 } // namespace mqtt

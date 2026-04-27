@@ -127,11 +127,6 @@ Broker process management for tests that need restart/reconfigure.
 - 1.8.3 Malformed packet → DISCONNECT 0x81, connection closed
 - 1.8.4 Abrupt TCP close → broker detects connection loss
 
-### 1.9 Local Test Client Shell
-- 1.9.1 Local `yahatestclient connect` establishes MQTT 5.0 session to integration-test broker and stays connected until signal-driven shutdown
-
----
-
 ## 2. Publish & Subscribe — Core
 
 ### 2.1 QoS 0 — At Most Once
@@ -175,13 +170,6 @@ Broker process management for tests that need restart/reconfigure.
 - 2.6.2 Unsubscribe from non-existent subscription → UNSUBACK with 0x11 (No subscription existed)
 - 2.6.3 UNSUBACK Packet ID matches UNSUBSCRIBE Packet ID
 - 2.6.4 Unsubscribe from multiple filters in single packet → per-filter reason codes
-
-### 2.7 Local Test Client Publish (No Subscribe Dependency)
-- 2.7.1 Local `yahatestclient publish` QoS 0 with inline payload succeeds against integration-test broker when no subscriber exists
-- 2.7.2 Local `yahatestclient publish` QoS 1 with MQTT 5 PUBLISH properties succeeds against integration-test broker when no subscriber exists
-- 2.7.3 Local `yahatestclient publish` QoS 2 with multiline-stdin payload succeeds against integration-test broker when no subscriber exists
-
----
 
 ## 3. Topic Matching
 
@@ -596,3 +584,19 @@ Broker process management for tests that need restart/reconfigure.
 - 20.2.5 Payload with zero length → delivered correctly (valid empty payload)
 - 20.2.6 PUBLISH to "/" (single-separator topic) → valid, delivered to subscribers of "/"
 - 20.2.7 Subscribe to "/" → receives messages published to "/"
+
+---
+
+## 21. Local Test Client Shell
+
+### 21.1 Connect
+- 21.1.1 Local `yahatestclient connect` establishes MQTT 5.0 session to integration-test broker and stays connected until signal-driven shutdown
+
+### 21.2 Publish (No Subscribe Dependency)
+- 21.2.1 Local `yahatestclient publish` QoS 0 with inline payload succeeds against integration-test broker when no subscriber exists
+- 21.2.2 Local `yahatestclient publish` QoS 1 with MQTT 5 PUBLISH properties succeeds against integration-test broker when no subscriber exists
+- 21.2.3 Local `yahatestclient publish` QoS 2 with multiline-stdin payload succeeds against integration-test broker when no subscriber exists
+
+### 21.3 Subscribe + Publish Roundtrip
+- 21.3.1 Local `yahatestclient subscribe` with clean-output receives QoS 0 publish from local `yahatestclient publish`
+- 21.3.2 Local `yahatestclient subscribe` with output-file template receives QoS 1 publish and persists formatted topic/payload line

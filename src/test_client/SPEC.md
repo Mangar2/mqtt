@@ -1,4 +1,4 @@
-# test_client — Step 27-29 Test Client Shell
+# test_client — Step 27-30 Test Client Shell
 
 ## Purpose
 
@@ -6,11 +6,14 @@ Provide a standalone executable shell for the MQTT 5.0 client test tooling.
 This module owns profile persistence, command-line parsing, and connection-shell
 orchestration for broker-supported transports (`mqtt`, `ws`) without TLS.
 
-## Scope (Step 27-29)
+## Scope (Step 27-30)
 
 - Persistent connection profiles with deterministic load/save behavior.
-- Command-line subcommands for `connect`, `save-profile`, `show-profile`.
+- Command-line subcommands for `connect`, `publish`, `subscribe`,
+  `save-profile`, and `show-profile`.
 - One-shot `publish` command with QoS-aware ACK completion flow.
+- Long-running `subscribe` command with per-subscription MQTT 5 options and
+  automation-oriented output pipeline controls.
 - Effective-profile composition: defaults + optional profile file + CLI overrides.
 - Validation of profile constraints before execution.
 - Connection shell that negotiates MQTT CONNECT and keeps the session open until
@@ -24,6 +27,11 @@ orchestration for broker-supported transports (`mqtt`, `ws`) without TLS.
   `avro`), and MQTT 5 PUBLISH properties (format indicator, expiry, alias,
   response topic, correlation data, subscription identifier, content type,
   user properties).
+- Step 30 subscribe matrix: one-or-many subscription entries with per-entry
+  QoS/no-local/retain-as-published/retain-handling options, MQTT 5 subscribe
+  properties (subscription identifier and user properties), and output modes
+  (`clean`, template format, delimiter, optional append/truncate file sink,
+  verbose packet log) with optional message-limit/timeout controls.
 
 ## Public API
 
@@ -62,6 +70,13 @@ Profile keys:
   `publish_response_topic`, `publish_correlation_data`,
   `publish_correlation_data_encoding`, `publish_subscription_identifier`,
   `publish_content_type`, repeatable `publish_user_property`
+- subscribe keys: repeatable `subscribe_entry`
+  (`filter|qos|no_local|retain_as_published|retain_handling`),
+  `subscribe_identifier`, repeatable `subscribe_user_property`,
+  `subscribe_clean_output`, `subscribe_verbose_packets`,
+  `subscribe_output_file`, `subscribe_output_append`,
+  `subscribe_output_delimiter`, `subscribe_output_format`,
+  `subscribe_message_limit`, `subscribe_wait_timeout_ms`
 - `reconnect_period_ms`, `maximum_reconnect_times`
 
 ### `test_client_cli.h`
@@ -82,6 +97,10 @@ Behavior:
 - `publish`: applies profile, connects, publishes one message with selected
   QoS/payload/property matrix, waits for QoS completion (`PUBACK` /
   `PUBREC`→`PUBREL`→`PUBCOMP`), then disconnects.
+- `subscribe`: applies profile, connects, subscribes using one or more
+  subscription entries, emits received publishes through the configured output
+  pipeline, acknowledges inbound QoS 1/2 handshakes, and exits on signal or
+  optional message-limit condition.
 - `save-profile`: writes deterministic key/value profile file.
 - `show-profile`: prints effective profile (password redacted).
 

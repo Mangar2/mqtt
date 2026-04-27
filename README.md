@@ -270,7 +270,7 @@ Key fields:
 `SyncClient` and `AsyncClient` can be constructed directly from `ClientConfig`.
 No-timeout operation overloads use the configured timeout defaults.
 
-## Test Client Shell (Steps 27-29)
+## Test Client Shell (Steps 27-30)
 
 The repository now builds a standalone test-client executable:
 
@@ -283,6 +283,7 @@ Supported subcommands:
 
 - `connect` — connect and keep the session open until signal (`Ctrl+C`)
 - `publish` — connect, publish one message, wait for QoS completion, exit
+- `subscribe` — connect, subscribe with MQTT 5 options, print/save incoming messages
 - `save-profile` — save reusable profile file
 - `show-profile` — print effective profile after load+override merge
 
@@ -305,6 +306,8 @@ Supported profile keys:
 - publish options: `publish_topic`, `publish_qos`, `publish_retain`, `publish_dup`, `publish_payload`, `publish_payload_stdin`, `publish_payload_stdin_multiline`, `publish_payload_file`
 - publish encoding options: `publish_payload_encoding` (`raw|json|hex|base64|binary|protobuf|avro`), `publish_correlation_data_encoding` (`raw|hex|base64`)
 - publish MQTT 5 property options: `publish_payload_format_indicator`, `publish_message_expiry_interval_seconds`, `publish_topic_alias`, `publish_response_topic`, `publish_correlation_data`, `publish_subscription_identifier`, `publish_content_type`, repeatable `publish_user_property`
+- subscribe options: repeatable `subscribe_entry` (`filter|qos|no_local|retain_as_published|retain_handling`), `subscribe_identifier`, repeatable `subscribe_user_property`
+- subscriber output options: `subscribe_clean_output`, `subscribe_verbose_packets`, `subscribe_output_file`, `subscribe_output_append`, `subscribe_output_delimiter`, `subscribe_output_format`, `subscribe_message_limit`, `subscribe_wait_timeout_ms`
 - `reconnect_period_ms`, `maximum_reconnect_times`
 
 ## Integration test runner

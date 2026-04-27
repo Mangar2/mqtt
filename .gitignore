@@ -15,6 +15,10 @@ test/coverage.profdata
 test/run.log
 test/integration_test_results.json
 test/integration_test_results.*.json
+test/tmp/
+
+# Temporary local test profile artifacts
+test-client-profile-*.ini
 
 # CMake generated
 CMakeCache.txt

@@ -254,6 +254,50 @@ void parse_common_options(TestClientCliOptions &options, const int argc,
       add_override("publish_user_property", "--publish-user-property");
       continue;
     }
+    if (option_name == "--subscription") {
+      add_override("subscribe_entry", "--subscription");
+      continue;
+    }
+    if (option_name == "--subscribe-identifier") {
+      add_override("subscribe_identifier", "--subscribe-identifier");
+      continue;
+    }
+    if (option_name == "--subscribe-user-property") {
+      add_override("subscribe_user_property", "--subscribe-user-property");
+      continue;
+    }
+    if (option_name == "--clean-output") {
+      options.overrides.emplace_back("subscribe_clean_output", "true");
+      continue;
+    }
+    if (option_name == "--verbose-packets") {
+      options.overrides.emplace_back("subscribe_verbose_packets", "true");
+      continue;
+    }
+    if (option_name == "--output-file") {
+      add_override("subscribe_output_file", "--output-file");
+      continue;
+    }
+    if (option_name == "--append-output") {
+      options.overrides.emplace_back("subscribe_output_append", "true");
+      continue;
+    }
+    if (option_name == "--output-delimiter") {
+      add_override("subscribe_output_delimiter", "--output-delimiter");
+      continue;
+    }
+    if (option_name == "--output-format") {
+      add_override("subscribe_output_format", "--output-format");
+      continue;
+    }
+    if (option_name == "--message-limit") {
+      add_override("subscribe_message_limit", "--message-limit");
+      continue;
+    }
+    if (option_name == "--wait-timeout-ms") {
+      add_override("subscribe_wait_timeout_ms", "--wait-timeout-ms");
+      continue;
+    }
 
     throw std::invalid_argument("Unknown option: " + option_name);
   }
@@ -287,6 +331,12 @@ TestClientCliOptions parse_test_client_cli(const int argc, const char *argv[]) {
     return options;
   }
 
+  if (command_name == "subscribe") {
+    options.command = TestClientCommand::Subscribe;
+    parse_common_options(options, argc, argv, 2);
+    return options;
+  }
+
   if (command_name == "save-profile") {
     options.command = TestClientCommand::SaveProfile;
     parse_common_options(options, argc, argv, 2);
@@ -313,6 +363,7 @@ std::string test_client_help_text() {
       "Commands:\n"
       "  connect        Connect using profile + CLI overrides and keep session open\n"
       "  publish        Connect, publish one message, wait for QoS ACK flow, exit\n"
+      "  subscribe      Connect, subscribe, stream matching publishes, and optionally exit on message limit\n"
       "  save-profile   Write profile file from defaults/profile/overrides\n"
       "  show-profile   Print effective profile\n"
       "  help           Show this help\n\n"
@@ -367,7 +418,18 @@ std::string test_client_help_text() {
       "  --correlation-data-encoding <raw|hex|base64>\n"
       "  --subscription-identifier <value>\n"
       "  --content-type <text>\n"
-      "  --publish-user-property <name=value>   (repeatable)\n\n"
+      "  --publish-user-property <name=value>   (repeatable)\n"
+      "  --subscription <filter|qos|no_local|retain_as_published|retain_handling> (repeatable)\n"
+      "  --subscribe-identifier <value>\n"
+      "  --subscribe-user-property <name=value> (repeatable)\n"
+      "  --clean-output\n"
+      "  --verbose-packets\n"
+      "  --output-file <path>\n"
+      "  --append-output\n"
+      "  --output-delimiter <text>\n"
+      "  --output-format <template>\n"
+      "  --message-limit <count>\n"
+      "  --wait-timeout-ms <milliseconds>\n\n"
       "save-profile options:\n"
       "  --output <file>\n";
 }

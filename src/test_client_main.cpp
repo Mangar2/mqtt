@@ -22,6 +22,7 @@
 #include "codec/packet/connect_codec.h"
 #include "codec/packet/control_codec.h"
 #include "codec/packet/publish_codec.h"
+#include "codec/packet/subscribe_codec.h"
 #include "codec/packet_reader/packet_reader.h"
 #include "data_model/property/property_id.h"
 #include "network/stream_buffer.h"
@@ -445,6 +446,179 @@ build_publish_packet_from_profile_or_throw(const TestClientProfile &profile) {
   }
 
   return publish_packet;
+}
+
+[[nodiscard]] bool parse_bool_literal_or_throw(const std::string_view value,
+                                               const std::string_view field) {
+  if (value == "true" || value == "1" || value == "yes") {
+    return true;
+  }
+  if (value == "false" || value == "0" || value == "no") {
+    return false;
+  }
+  throw std::invalid_argument("Invalid boolean in " + std::string(field));
+}
+
+[[nodiscard]] SubscribeFilter
+parse_subscribe_entry_or_throw(const std::string &entry_text) {
+  std::array<std::string, 5U> fields{};
+  std::size_t field_index = 0U;
+  std::size_t offset = 0U;
+
+  while (field_index < fields.size()) {
+    const std::size_t separator_index = entry_text.find('|', offset);
+    if (separator_index == std::string::npos) {
+      fields[field_index++] = entry_text.substr(offset);
+      offset = entry_text.size();
+      break;
+    }
+    fields[field_index++] = entry_text.substr(offset, separator_index - offset);
+    offset = separator_index + 1U;
+  }
+
+  if (field_index != fields.size() || offset < entry_text.size()) {
+    throw std::invalid_argument(
+        "--subscription requires filter|qos|no_local|retain_as_published|retain_handling");
+  }
+
+  if (fields[0].empty()) {
+    throw std::invalid_argument("--subscription requires non-empty topic filter");
+  }
+
+  const uint32_t qos_u32 = static_cast<uint32_t>(std::stoul(fields[1]));
+  if (qos_u32 > 2U) {
+    throw std::invalid_argument("--subscription qos must be in range 0..2");
+  }
+
+  const uint32_t retain_handling_u32 =
+      static_cast<uint32_t>(std::stoul(fields[4]));
+  if (retain_handling_u32 > 2U) {
+    throw std::invalid_argument(
+        "--subscription retain_handling must be in range 0..2");
+  }
+
+  SubscribeFilter filter;
+  filter.topic_filter = Utf8String{fields[0]};
+  filter.options.max_qos = qos_from_u8_or_throw(static_cast<uint8_t>(qos_u32),
+                                                 "subscription.qos");
+  filter.options.no_local =
+      parse_bool_literal_or_throw(fields[2], "subscription.no_local");
+  filter.options.retain_as_published = parse_bool_literal_or_throw(
+      fields[3], "subscription.retain_as_published");
+  filter.options.retain_handling = static_cast<uint8_t>(retain_handling_u32);
+  return filter;
+}
+
+[[nodiscard]] SubscribePacket
+build_subscribe_packet_from_profile_or_throw(const TestClientProfile &profile) {
+  if (profile.subscribe_entries.empty()) {
+    throw std::invalid_argument(
+        "subscribe command requires at least one --subscription entry");
+  }
+
+  SubscribePacket subscribe_packet;
+  subscribe_packet.packet_id = 1U;
+
+  for (const std::string &entry : profile.subscribe_entries) {
+    subscribe_packet.filters.push_back(parse_subscribe_entry_or_throw(entry));
+  }
+
+  if (profile.subscribe_identifier.has_value()) {
+    subscribe_packet.properties.push_back(
+        Property{.id = PropertyId::SubscriptionIdentifier,
+                 .value = VariableByteInteger{*profile.subscribe_identifier}});
+  }
+  for (const auto &entry : profile.subscribe_user_properties) {
+    subscribe_packet.properties.push_back(
+        Property{.id = PropertyId::UserProperty,
+                 .value = Utf8StringPair{.name = Utf8String{entry.first},
+                                         .value = Utf8String{entry.second}}});
+  }
+
+  return subscribe_packet;
+}
+
+[[nodiscard]] std::string payload_to_text(const BinaryData &payload) {
+  return std::string(payload.data.begin(), payload.data.end());
+}
+
+void replace_all(std::string &text, const std::string_view needle,
+                 const std::string_view replacement) {
+  std::size_t search_index = 0U;
+  while (true) {
+    const std::size_t found_index = text.find(needle, search_index);
+    if (found_index == std::string::npos) {
+      return;
+    }
+    text.replace(found_index, needle.size(), replacement);
+    search_index = found_index + replacement.size();
+  }
+}
+
+[[nodiscard]] std::string
+format_subscribe_output_line(const PublishPacket &publish_packet,
+                             const TestClientProfile &profile) {
+  const std::string payload_text = payload_to_text(publish_packet.payload);
+  if (profile.subscribe_clean_output) {
+    return payload_text;
+  }
+
+  if (profile.subscribe_output_format.has_value()) {
+    std::string formatted = *profile.subscribe_output_format;
+    replace_all(formatted, "{topic}", publish_packet.topic.value);
+    replace_all(formatted, "{payload}", payload_text);
+    replace_all(formatted, "{qos}",
+                std::to_string(static_cast<uint32_t>(publish_packet.qos)));
+    replace_all(formatted, "{retain}",
+                publish_packet.retain ? "true" : "false");
+    replace_all(formatted, "{dup}", publish_packet.dup ? "true" : "false");
+    return formatted;
+  }
+
+  return "topic=" + publish_packet.topic.value + " payload=" + payload_text;
+}
+
+[[nodiscard]] std::string decode_escaped_text(const std::string_view text) {
+  std::string decoded;
+  decoded.reserve(text.size());
+
+  for (std::size_t index = 0U; index < text.size(); ++index) {
+    const char character = text[index];
+    if (character != '\\' || (index + 1U) >= text.size()) {
+      decoded.push_back(character);
+      continue;
+    }
+
+    const char escaped = text[++index];
+    if (escaped == 'n') {
+      decoded.push_back('\n');
+    } else if (escaped == 'r') {
+      decoded.push_back('\r');
+    } else if (escaped == 't') {
+      decoded.push_back('\t');
+    } else if (escaped == '\\') {
+      decoded.push_back('\\');
+    } else {
+      decoded.push_back('\\');
+      decoded.push_back(escaped);
+    }
+  }
+
+  return decoded;
+}
+
+void write_subscribe_output_line(const std::string &line,
+                                 const TestClientProfile &profile,
+                                 std::ofstream *output_file_stream) {
+  const std::string delimiter =
+      decode_escaped_text(profile.subscribe_output_delimiter);
+  std::cout << line << delimiter;
+  std::cout.flush();
+
+  if (output_file_stream != nullptr) {
+    *output_file_stream << line << delimiter;
+    output_file_stream->flush();
+  }
 }
 
 [[nodiscard]] std::vector<uint8_t>
@@ -882,6 +1056,158 @@ int run_publish_command(const TestClientProfile &profile) {
   return 0;
 }
 
+int run_subscribe_command(const TestClientProfile &profile) {
+  const ConnectPacket connect_packet = build_connect_packet_from_profile(profile);
+  const SubscribePacket subscribe_packet =
+      build_subscribe_packet_from_profile_or_throw(profile);
+
+  std::ofstream output_file_stream;
+  if (profile.subscribe_output_file.has_value()) {
+    const auto open_mode = profile.subscribe_output_append
+                               ? (std::ios::out | std::ios::app)
+                               : (std::ios::out | std::ios::trunc);
+    output_file_stream.open(*profile.subscribe_output_file, open_mode);
+    if (!output_file_stream.is_open()) {
+      throw std::runtime_error("Failed to open subscribe output file: " +
+                               *profile.subscribe_output_file);
+    }
+  }
+
+  TcpConnection connection =
+      ConnectionNegotiator::dial_tcp(profile.host, profile.port);
+  StreamBuffer mqtt_stream_buffer;
+  WebSocketFrameCodec ws_frame_codec;
+
+  if (profile.transport == TestClientTransport::Mqtt) {
+    (void)ConnectionNegotiator::negotiate(connection, connect_packet, 5000U);
+  } else {
+    perform_ws_upgrade(connection, profile);
+    negotiate_mqtt_connect_over_ws(connection, connect_packet);
+  }
+
+  WriteBuffer subscribe_frame;
+  encode_subscribe(subscribe_frame, subscribe_packet);
+  write_transport_packet_or_throw(connection, profile.transport, subscribe_frame);
+
+  const AnyPacket suback_any = read_next_transport_packet_or_throw(
+      connection, profile.transport, mqtt_stream_buffer, ws_frame_codec, 5000U);
+  if (!std::holds_alternative<SubackPacket>(suback_any)) {
+    throw ClientException(ClientError::ProtocolError,
+                          "Expected SUBACK after SUBSCRIBE");
+  }
+
+  const SubackPacket &suback_packet = std::get<SubackPacket>(suback_any);
+  if (suback_packet.packet_id != subscribe_packet.packet_id) {
+    throw ClientException(ClientError::ProtocolError,
+                          "SUBACK packet id mismatch");
+  }
+  for (const ReasonCode reason_code : suback_packet.reason_codes) {
+    if (is_error(reason_code)) {
+      throw ClientException(ClientError::ProtocolError,
+                            "SUBACK returned error reason", reason_code);
+    }
+  }
+
+  if (profile.subscribe_verbose_packets) {
+    std::cout << "SUBACK received for " << subscribe_packet.filters.size()
+              << " subscription(s)" << '\n';
+  }
+
+  uint32_t received_message_count = 0U;
+  const uint32_t read_timeout_ms =
+      profile.subscribe_wait_timeout_ms > 0U ? profile.subscribe_wait_timeout_ms
+                                             : 1000U;
+
+  while (!g_stop_requested.load()) {
+    AnyPacket any_packet;
+    try {
+      any_packet = read_next_transport_packet_or_throw(
+          connection, profile.transport, mqtt_stream_buffer, ws_frame_codec,
+          read_timeout_ms);
+    } catch (const ClientException &exception) {
+      if (exception.error() == ClientError::Timeout) {
+        if (profile.subscribe_wait_timeout_ms > 0U &&
+            profile.subscribe_message_limit > 0U) {
+          throw;
+        }
+        continue;
+      }
+      throw;
+    }
+
+    if (std::holds_alternative<PublishPacket>(any_packet)) {
+      const PublishPacket &publish_packet = std::get<PublishPacket>(any_packet);
+      const std::string output_line =
+          format_subscribe_output_line(publish_packet, profile);
+      write_subscribe_output_line(
+          output_line, profile,
+          output_file_stream.is_open() ? &output_file_stream : nullptr);
+      ++received_message_count;
+
+      if (publish_packet.qos == QoS::AtLeastOnce) {
+        if (!publish_packet.packet_id.has_value()) {
+          throw ClientException(ClientError::ProtocolError,
+                                "QoS1 publish missing packet id");
+        }
+        WriteBuffer puback_frame;
+        PubackPacket puback_packet;
+        puback_packet.packet_id = *publish_packet.packet_id;
+        puback_packet.reason_code = ReasonCode::Success;
+        encode_puback(puback_frame, puback_packet);
+        write_transport_packet_or_throw(connection, profile.transport,
+                                        puback_frame);
+      } else if (publish_packet.qos == QoS::ExactlyOnce) {
+        if (!publish_packet.packet_id.has_value()) {
+          throw ClientException(ClientError::ProtocolError,
+                                "QoS2 publish missing packet id");
+        }
+        WriteBuffer pubrec_frame;
+        PubrecPacket pubrec_packet;
+        pubrec_packet.packet_id = *publish_packet.packet_id;
+        pubrec_packet.reason_code = ReasonCode::Success;
+        encode_pubrec(pubrec_frame, pubrec_packet);
+        write_transport_packet_or_throw(connection, profile.transport,
+                                        pubrec_frame);
+      }
+
+      if (profile.subscribe_message_limit > 0U &&
+          received_message_count >= profile.subscribe_message_limit) {
+        break;
+      }
+      continue;
+    }
+
+    if (std::holds_alternative<PubrelPacket>(any_packet)) {
+      const PubrelPacket &pubrel_packet = std::get<PubrelPacket>(any_packet);
+      WriteBuffer pubcomp_frame;
+      PubcompPacket pubcomp_packet;
+      pubcomp_packet.packet_id = pubrel_packet.packet_id;
+      pubcomp_packet.reason_code = ReasonCode::Success;
+      encode_pubcomp(pubcomp_frame, pubcomp_packet);
+      write_transport_packet_or_throw(connection, profile.transport,
+                                      pubcomp_frame);
+      continue;
+    }
+
+    if (std::holds_alternative<DisconnectPacket>(any_packet)) {
+      const DisconnectPacket &disconnect_packet =
+          std::get<DisconnectPacket>(any_packet);
+      throw ClientException(ClientError::ProtocolError,
+                            "Broker sent DISCONNECT during subscribe",
+                            disconnect_packet.reason_code);
+    }
+  }
+
+  send_disconnect_best_effort(connection, profile.transport);
+  connection.close();
+
+  if (profile.subscribe_verbose_packets) {
+    std::cout << "Subscribe finished after " << received_message_count
+              << " message(s)" << '\n';
+  }
+  return 0;
+}
+
 void print_profile_to_stdout(const TestClientProfile &profile) {
   std::cout << "host=" << profile.host << '\n';
   std::cout << "port=" << profile.port << '\n';
@@ -1015,6 +1341,39 @@ void print_profile_to_stdout(const TestClientProfile &profile) {
     std::cout << "publish_user_property=" << entry.first << '=' << entry.second
               << '\n';
   }
+
+  for (const std::string &entry : profile.subscribe_entries) {
+    std::cout << "subscribe_entry=" << entry << '\n';
+  }
+  if (profile.subscribe_identifier.has_value()) {
+    std::cout << "subscribe_identifier=" << *profile.subscribe_identifier
+              << '\n';
+  }
+  for (const auto &entry : profile.subscribe_user_properties) {
+    std::cout << "subscribe_user_property=" << entry.first << '='
+              << entry.second << '\n';
+  }
+  std::cout << "subscribe_clean_output="
+            << (profile.subscribe_clean_output ? "true" : "false") << '\n';
+  std::cout << "subscribe_verbose_packets="
+            << (profile.subscribe_verbose_packets ? "true" : "false")
+            << '\n';
+  if (profile.subscribe_output_file.has_value()) {
+    std::cout << "subscribe_output_file=" << *profile.subscribe_output_file
+              << '\n';
+  }
+  std::cout << "subscribe_output_append="
+            << (profile.subscribe_output_append ? "true" : "false") << '\n';
+  std::cout << "subscribe_output_delimiter=" << profile.subscribe_output_delimiter
+            << '\n';
+  if (profile.subscribe_output_format.has_value()) {
+    std::cout << "subscribe_output_format=" << *profile.subscribe_output_format
+              << '\n';
+  }
+  std::cout << "subscribe_message_limit=" << profile.subscribe_message_limit
+            << '\n';
+  std::cout << "subscribe_wait_timeout_ms=" << profile.subscribe_wait_timeout_ms
+            << '\n';
 }
 
 } // namespace
@@ -1045,6 +1404,11 @@ int main(const int argc, const char *argv[]) {
 
     if (options.command == mqtt::TestClientCommand::Publish) {
       return mqtt::run_publish_command(profile);
+    }
+
+    if (options.command == mqtt::TestClientCommand::Subscribe) {
+      mqtt::install_signal_handlers();
+      return mqtt::run_subscribe_command(profile);
     }
 
     mqtt::install_signal_handlers();

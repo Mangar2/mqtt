@@ -142,6 +142,60 @@ void validate_user_properties_or_throw(
          !profile.will_user_properties.empty();
 }
 
+void validate_subscribe_entry_or_throw(const std::string &entry) {
+  std::size_t offset = 0U;
+  const auto next_field = [&entry, &offset]() -> std::optional<std::string_view> {
+    if (offset > entry.size()) {
+      return std::nullopt;
+    }
+    const std::size_t separator_index = entry.find('|', offset);
+    if (separator_index == std::string::npos) {
+      const std::string_view tail(entry.data() + offset, entry.size() - offset);
+      offset = entry.size() + 1U;
+      return tail;
+    }
+
+    const std::string_view field(entry.data() + offset,
+                                 separator_index - offset);
+    offset = separator_index + 1U;
+    return field;
+  };
+
+  const auto topic_filter = next_field();
+  const auto qos_field = next_field();
+  const auto no_local_field = next_field();
+  const auto retain_as_published_field = next_field();
+  const auto retain_handling_field = next_field();
+  const auto extra_field = next_field();
+
+  if (!topic_filter.has_value() || !qos_field.has_value() ||
+      !no_local_field.has_value() || !retain_as_published_field.has_value() ||
+      !retain_handling_field.has_value() || extra_field.has_value()) {
+    throw std::invalid_argument(
+        "Profile subscribe_entry must use format filter|qos|no_local|retain_as_published|retain_handling");
+  }
+
+  if (trim_copy(std::string(*topic_filter)).empty()) {
+    throw std::invalid_argument("Profile subscribe_entry requires non-empty filter");
+  }
+
+  const uint8_t qos_value = parse_u8(*qos_field, "subscribe_entry.qos");
+  if (qos_value > 2U) {
+    throw std::invalid_argument("Profile subscribe_entry.qos must be in range 0..2");
+  }
+
+  (void)parse_bool(*no_local_field, "subscribe_entry.no_local");
+  (void)parse_bool(*retain_as_published_field,
+                   "subscribe_entry.retain_as_published");
+
+  const uint8_t retain_handling_value =
+      parse_u8(*retain_handling_field, "subscribe_entry.retain_handling");
+  if (retain_handling_value > 2U) {
+    throw std::invalid_argument(
+        "Profile subscribe_entry.retain_handling must be in range 0..2");
+  }
+}
+
 } // namespace
 
 std::string to_string(const TestClientTransport transport) {
@@ -307,6 +361,35 @@ void validate_test_client_profile_or_throw(const TestClientProfile &profile) {
 
   validate_user_properties_or_throw(profile.publish_user_properties,
                                     "publish_user_properties");
+
+  for (const std::string &subscribe_entry : profile.subscribe_entries) {
+    validate_subscribe_entry_or_throw(subscribe_entry);
+  }
+  if (profile.subscribe_identifier.has_value() &&
+      *profile.subscribe_identifier == 0U) {
+    throw std::invalid_argument("Profile subscribe_identifier must be > 0");
+  }
+  validate_user_properties_or_throw(profile.subscribe_user_properties,
+                                    "subscribe_user_properties");
+  if (profile.subscribe_output_append &&
+      !profile.subscribe_output_file.has_value()) {
+    throw std::invalid_argument(
+        "Profile subscribe_output_append requires subscribe_output_file");
+  }
+  if (profile.subscribe_output_file.has_value() &&
+      profile.subscribe_output_file->empty()) {
+    throw std::invalid_argument(
+        "Profile subscribe_output_file must not be empty when set");
+  }
+  if (profile.subscribe_output_delimiter.empty()) {
+    throw std::invalid_argument(
+        "Profile subscribe_output_delimiter must not be empty");
+  }
+  if (profile.subscribe_output_format.has_value() &&
+      profile.subscribe_output_format->empty()) {
+    throw std::invalid_argument(
+        "Profile subscribe_output_format must not be empty when set");
+  }
 }
 
 void apply_profile_override(TestClientProfile &profile, const std::string_view key,
@@ -526,6 +609,50 @@ void apply_profile_override(TestClientProfile &profile, const std::string_view k
     profile.publish_user_properties.push_back(parse_user_property(value, key));
     return;
   }
+  if (key == "subscribe_entry") {
+    profile.subscribe_entries.push_back(std::string(value));
+    return;
+  }
+  if (key == "subscribe_identifier") {
+    profile.subscribe_identifier = parse_uint32(value, key);
+    return;
+  }
+  if (key == "subscribe_user_property") {
+    profile.subscribe_user_properties.push_back(parse_user_property(value, key));
+    return;
+  }
+  if (key == "subscribe_clean_output") {
+    profile.subscribe_clean_output = parse_bool(value, key);
+    return;
+  }
+  if (key == "subscribe_verbose_packets") {
+    profile.subscribe_verbose_packets = parse_bool(value, key);
+    return;
+  }
+  if (key == "subscribe_output_file") {
+    profile.subscribe_output_file = std::string(value);
+    return;
+  }
+  if (key == "subscribe_output_append") {
+    profile.subscribe_output_append = parse_bool(value, key);
+    return;
+  }
+  if (key == "subscribe_output_delimiter") {
+    profile.subscribe_output_delimiter = std::string(value);
+    return;
+  }
+  if (key == "subscribe_output_format") {
+    profile.subscribe_output_format = std::string(value);
+    return;
+  }
+  if (key == "subscribe_message_limit") {
+    profile.subscribe_message_limit = parse_uint32(value, key);
+    return;
+  }
+  if (key == "subscribe_wait_timeout_ms") {
+    profile.subscribe_wait_timeout_ms = parse_uint32(value, key);
+    return;
+  }
 
   throw std::invalid_argument("Unknown profile key: " + std::string(key));
 }
@@ -542,6 +669,8 @@ TestClientProfile load_test_client_profile_from_file(const std::string &path) {
   loaded_profile.connect_user_properties.clear();
   loaded_profile.will_user_properties.clear();
   loaded_profile.publish_user_properties.clear();
+  loaded_profile.subscribe_entries.clear();
+  loaded_profile.subscribe_user_properties.clear();
 
   std::string line;
   uint32_t line_number = 0U;
@@ -730,6 +859,41 @@ void save_test_client_profile_to_file(const std::string &path,
     output_stream << "publish_user_property=" << entry.first << '='
                   << entry.second << '\n';
   }
+
+  for (const std::string &entry : profile.subscribe_entries) {
+    output_stream << "subscribe_entry=" << entry << '\n';
+  }
+  if (profile.subscribe_identifier.has_value()) {
+    output_stream << "subscribe_identifier=" << *profile.subscribe_identifier
+                  << '\n';
+  }
+  for (const auto &entry : profile.subscribe_user_properties) {
+    output_stream << "subscribe_user_property=" << entry.first << '='
+                  << entry.second << '\n';
+  }
+  output_stream << "subscribe_clean_output="
+                << (profile.subscribe_clean_output ? "true" : "false")
+                << '\n';
+  output_stream << "subscribe_verbose_packets="
+                << (profile.subscribe_verbose_packets ? "true" : "false")
+                << '\n';
+  if (profile.subscribe_output_file.has_value()) {
+    output_stream << "subscribe_output_file=" << *profile.subscribe_output_file
+                  << '\n';
+  }
+  output_stream << "subscribe_output_append="
+                << (profile.subscribe_output_append ? "true" : "false")
+                << '\n';
+  output_stream << "subscribe_output_delimiter="
+                << profile.subscribe_output_delimiter << '\n';
+  if (profile.subscribe_output_format.has_value()) {
+    output_stream << "subscribe_output_format="
+                  << *profile.subscribe_output_format << '\n';
+  }
+  output_stream << "subscribe_message_limit=" << profile.subscribe_message_limit
+                << '\n';
+  output_stream << "subscribe_wait_timeout_ms="
+                << profile.subscribe_wait_timeout_ms << '\n';
 
   if (!output_stream.good()) {
     throw std::runtime_error("Failed to write complete profile file: " + path);

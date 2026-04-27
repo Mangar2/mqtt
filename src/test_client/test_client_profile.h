@@ -81,6 +81,18 @@ struct TestClientProfile {
   std::optional<std::string> publish_content_type;
   std::vector<std::pair<std::string, std::string>> publish_user_properties{};
 
+  std::vector<std::string> subscribe_entries{};
+  std::optional<uint32_t> subscribe_identifier;
+  std::vector<std::pair<std::string, std::string>> subscribe_user_properties{};
+  bool subscribe_clean_output{false};
+  bool subscribe_verbose_packets{false};
+  std::optional<std::string> subscribe_output_file;
+  bool subscribe_output_append{false};
+  std::string subscribe_output_delimiter{"\\n"};
+  std::optional<std::string> subscribe_output_format;
+  uint32_t subscribe_message_limit{0U};
+  uint32_t subscribe_wait_timeout_ms{0U};
+
   uint32_t reconnect_period_ms{1000U};
   uint32_t maximum_reconnect_times{10U};
 };
@@ -155,6 +167,17 @@ void validate_test_client_profile_or_throw(const TestClientProfile &profile);
  * - publish_subscription_identifier
  * - publish_content_type
  * - publish_user_property (repeatable key=value)
+ * - subscribe_entry (repeatable: filter|qos|no_local|retain_as_published|retain_handling)
+ * - subscribe_identifier
+ * - subscribe_user_property (repeatable key=value)
+ * - subscribe_clean_output
+ * - subscribe_verbose_packets
+ * - subscribe_output_file
+ * - subscribe_output_append
+ * - subscribe_output_delimiter
+ * - subscribe_output_format
+ * - subscribe_message_limit
+ * - subscribe_wait_timeout_ms
  * - reconnect_period_ms
  * - maximum_reconnect_times
  *

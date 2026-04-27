@@ -1,4 +1,4 @@
-# test_client/test — Unit tests for Step 27-29 shell
+# test_client/test — Unit tests for Step 27-30 shell
 
 ## Profile Model
 
@@ -12,6 +12,7 @@
 | `test_client_profile_transport_helpers_cover_all_variants` | `[test_client][profile]` | Transport string conversion/parsing covers mqtt/ws and invalid input branch. |
 | `test_client_profile_step28_step29_roundtrip_preserves_extended_fields` | `[test_client][profile]` | Extended CONNECT and PUBLISH profile fields for Step 28/29 are persisted and loaded without loss. |
 | `test_client_profile_step28_step29_validation_rejects_invalid_combinations` | `[test_client][profile]` | Validation rejects invalid QoS ranges, missing will topic for will properties, unsupported encodings, and ambiguous publish payload sources. |
+| `test_client_profile_step30_subscribe_fields_roundtrip_and_validation` | `[test_client][profile]` | Subscribe profile fields (subscription entries, output pipeline controls, identifiers, user properties) are persisted and validation rejects invalid combinations/encodings. |
 
 ## CLI Parsing
 
@@ -25,3 +26,4 @@
 | `test_client_cli_help_and_error_paths` | `[test_client][cli]` | Help mode, unknown command, and missing option values follow expected parser behavior. |
 | `test_client_cli_publish_parses_step29_options` | `[test_client][cli]` | `publish` command parses topic/QoS/payload modes and MQTT 5 PUBLISH property flags. |
 | `test_client_cli_connect_parses_step28_options` | `[test_client][cli]` | `connect` command parses MQTT 5 CONNECT property and will-option flags. |
+| `test_client_cli_subscribe_parses_step30_options` | `[test_client][cli]` | `subscribe` command parses subscription entries, MQTT 5 subscribe properties, and output pipeline flags. |

@@ -19,6 +19,7 @@ enum class TestClientCommand : uint8_t {
   Help,
   Connect,
   Publish,
+  Subscribe,
   SaveProfile,
   ShowProfile,
 };
