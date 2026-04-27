@@ -66,3 +66,14 @@
 | `publish_pipeline_qos2_pubrec_error_completes_without_pubrel` | `[client][publish]` | Error PUBREC finalizes QoS2 flow without PUBREL emission. |
 | `publish_pipeline_unknown_packet_id_and_wrong_stage_throws` | `[client][publish]` | Unknown ACK packet-id and wrong ACK stage are rejected as protocol errors. |
 | `publish_pipeline_rejects_invalid_topic` | `[client][publish]` | Invalid outbound topic name is rejected before packet creation. |
+
+## ReconnectController (Step 22)
+
+| Test case | Tag | Description |
+|-----------|-----|-------------|
+| `reconnect_controller_transport_disconnect_attempts_and_recovers` | `[client][reconnect]` | Transport drop schedules reconnect and successful attempt returns to connected state. |
+| `reconnect_controller_failure_backoff_progression_and_cap` | `[client][reconnect]` | Failed attempts increase delay by multiplier and clamp at max delay. |
+| `reconnect_controller_keepalive_timeout_trigger_behaves_like_transport_drop` | `[client][reconnect]` | Keep-alive timeout enters retry state and reconnects through normal flow. |
+| `reconnect_controller_user_disconnect_disables_auto_reconnect` | `[client][reconnect]` | User-initiated disconnect disables retry attempts. |
+| `reconnect_controller_success_invokes_restore_callbacks_and_resets_counters` | `[client][reconnect]` | Successful reconnect calls restore callbacks and resets failure counters and backoff. |
+| `reconnect_controller_missing_negotiate_callback_records_error` | `[client][reconnect]` | Missing negotiate callback yields failed attempt with diagnostic error and next retry schedule. |

@@ -1,4 +1,4 @@
-# client — Client-side MQTT components (Steps 16, 17, 18, 19, 20, 21)
+# client — Client-side MQTT components (Steps 16, 17, 18, 19, 20, 21, 22)
 
 Reusable client-only building blocks for outbound broker connections.
 Depends on `data_model/`, `codec/`, and `network/`.
@@ -7,13 +7,14 @@ Depends on `data_model/`, `codec/`, and `network/`.
 
 | File | Plan ref | Description |
 |------|----------|-------------|
-| `client_error.h` | 16-21 | `ClientError` enum and `ClientException` |
+| `client_error.h` | 16-22 | `ClientError` enum and `ClientException` |
 | `keep_alive_manager.h/.cpp` | 16 | Active keep-alive poller (`PINGREQ` scheduling + `PINGRESP` timeout detection) |
 | `outbound_topic_alias_manager.h/.cpp` | 17 | Outbound topic-alias assignment/reuse for PUBLISH packets |
 | `connection_negotiator.h/.cpp` | 18 | Outbound TCP dial + CONNECT/CONNACK handshake negotiation |
 | `session_state_keeper.h/.cpp` | 19 | Client-side session-state keeper (subscriptions, session expiry, outbound inflight replay snapshot) |
 | `subscription_manager.h/.cpp` | 20 | Client-side SUBSCRIBE/UNSUBSCRIBE manager with ACK correlation and inbound callback dispatch |
 | `publish_pipeline.h/.cpp` | 21 | Client-side outbound publish pipeline with packet-id assignment and QoS ACK progression |
+| `reconnect_controller.h/.cpp` | 22 | Client-side reconnect controller with backoff scheduling and restore callbacks |
 
 ## KeepAliveManager (Step 16)
 
@@ -119,3 +120,21 @@ Behavior guarantees:
 - wrong ACK type for current QoS state is rejected with `ProtocolError`,
 - invalid topic names are rejected with `InvalidPacket`,
 - pending packet IDs are released on terminal QoS ACK stages.
+
+## ReconnectController (Step 22)
+
+`ReconnectController` manages automatic reconnect attempts after disconnect:
+
+- reacts to transport and keep-alive disconnect triggers,
+- applies configurable retry backoff (`initial_delay`, `max_delay`,
+  `multiplier`),
+- executes reconnect negotiation callback,
+- invokes session and QoS restore callbacks after successful reconnect,
+- suppresses auto reconnect for user-initiated disconnects.
+
+Behavior guarantees:
+
+- reconnect attempts start only when retry deadline is reached,
+- failed attempts schedule the next retry with bounded backoff,
+- successful reconnect resets delay and failed-attempt counters,
+- latest reconnect error message remains queryable for diagnostics.

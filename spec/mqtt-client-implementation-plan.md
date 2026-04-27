@@ -800,6 +800,30 @@ to restore the previous state.
 The caller's message callbacks and subscriptions remain active across reconnects. The back-off
 strategy prevents the client from flooding the broker during outages.
 
+**Implementation status (2026-04-27): Completed (client-side module implemented)**
+
+Implemented client-side reconnect controller:
+- `src/client/reconnect_controller.h/.cpp`
+	- accepts disconnect triggers (`TransportError`, `KeepAliveTimeout`, `UserInitiated`),
+	- schedules reconnect attempts using configurable backoff policy,
+	- executes negotiation callback for reconnect attempts,
+	- invokes session and QoS restore callbacks after successful reconnect,
+	- exposes reconnect state, retry deadline, and last error for diagnostics.
+
+Existing related reusable components:
+- `src/client/connection_negotiator.h/.cpp`
+- `src/client/session_state_keeper.h/.cpp`
+- `src/client/publish_pipeline.h/.cpp`
+
+Verification:
+- `src/client/test/TEST_SPEC.md`
+- `src/client/test/reconnect_controller_test.cpp`
+	- transport and keep-alive trigger handling,
+	- bounded backoff progression across failures,
+	- successful reconnect reset behavior,
+	- restore callback invocation,
+	- user-initiated disconnect suppression.
+
 ---
 
 ## Phase 6 – Client Library Public API
@@ -812,6 +836,32 @@ The interface hides all internal state machines, engines, and threading from the
 
 **Result:** Any application can use the library without knowledge of MQTT internals. Simple use
 cases require no concurrency management on the caller's side.
+
+**Implementation status (2026-04-27): Completed (client-side module implemented)**
+
+Implemented synchronous client interface facade:
+- `src/client_api/sync_client.h/.cpp`
+	- exposes blocking operations: `connect`, `publish`, `subscribe`,
+	  `unsubscribe`, `disconnect`,
+	- composes lower-level client components (`ClientPublishPipeline`,
+	  `ClientSubscriptionManager`, `ClientSessionStateKeeper`,
+	  `ReconnectController`),
+	- forwards per-operation timeout values to integration wait callbacks,
+	- performs QoS-aware publish completion path (QoS0/1/2),
+	- enforces connected-state preconditions for blocking operations.
+
+Existing related reusable components:
+- `src/client/publish_pipeline.h/.cpp`
+- `src/client/subscription_manager.h/.cpp`
+- `src/client/reconnect_controller.h/.cpp`
+
+Verification:
+- `src/client_api/test/TEST_SPEC.md`
+- `src/client_api/test/sync_client_test.cpp`
+	- connect state transition and timeout forwarding,
+	- QoS0 and QoS2 blocking publish paths,
+	- subscribe/unsubscribe blocking roundtrip behavior,
+	- missing callback and disconnected-state error handling.
 
 ---
 
