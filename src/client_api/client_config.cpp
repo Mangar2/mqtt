@@ -10,15 +10,22 @@ namespace {
 
 void validate_non_empty(std::string_view value, std::string_view field_name) {
   if (value.empty()) {
-    throw ClientException(ClientError::InvalidPacket,
-                          std::string(field_name) + " must not be empty");
+    throw ClientApiException(
+        ClientApiError{.category = ClientApiErrorCategory::Configuration,
+                       .message = std::string(field_name) + " must not be empty",
+                       .reason_code = std::nullopt,
+                       .source_error = ClientError::InvalidPacket});
   }
 }
 
 void validate_timeout(uint32_t timeout_ms, std::string_view field_name) {
   if (timeout_ms == 0U) {
-    throw ClientException(ClientError::Timeout,
-                          std::string(field_name) + " must be greater than zero");
+    throw ClientApiException(
+        ClientApiError{.category = ClientApiErrorCategory::Configuration,
+                       .message =
+                           std::string(field_name) + " must be greater than zero",
+                       .reason_code = std::nullopt,
+                       .source_error = ClientError::Timeout});
   }
 }
 
@@ -39,25 +46,37 @@ void validate_client_config_or_throw(const ClientConfig &client_config) {
   validate_non_empty(client_config.client_id, "client_id");
 
   if (client_config.broker_port == 0U) {
-    throw ClientException(ClientError::InvalidPacket,
-                          "broker_port must be greater than zero");
+    throw ClientApiException(
+        ClientApiError{.category = ClientApiErrorCategory::Configuration,
+                       .message = "broker_port must be greater than zero",
+                       .reason_code = std::nullopt,
+                       .source_error = ClientError::InvalidPacket});
   }
 
   if (!client_config.credentials.username.has_value() &&
       client_config.credentials.password.has_value()) {
-    throw ClientException(ClientError::InvalidPacket,
-                          "password requires username");
+    throw ClientApiException(
+      ClientApiError{.category = ClientApiErrorCategory::Configuration,
+               .message = "password requires username",
+               .reason_code = std::nullopt,
+               .source_error = ClientError::InvalidPacket});
   }
 
   if (client_config.credentials.username.has_value() &&
       client_config.credentials.username->empty()) {
-    throw ClientException(ClientError::InvalidPacket,
-                          "username must not be empty when configured");
+    throw ClientApiException(
+      ClientApiError{.category = ClientApiErrorCategory::Configuration,
+               .message = "username must not be empty when configured",
+               .reason_code = std::nullopt,
+               .source_error = ClientError::InvalidPacket});
   }
 
   if (client_config.receive_maximum == 0U) {
-    throw ClientException(ClientError::InvalidPacket,
-                          "receive_maximum must be greater than zero");
+    throw ClientApiException(
+        ClientApiError{.category = ClientApiErrorCategory::Configuration,
+                       .message = "receive_maximum must be greater than zero",
+                       .reason_code = std::nullopt,
+                       .source_error = ClientError::InvalidPacket});
   }
 
   validate_timeout(client_config.operation_timeouts.connect_ms,

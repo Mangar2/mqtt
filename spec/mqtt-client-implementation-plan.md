@@ -953,6 +953,34 @@ Every public function returns or signals an error of this type consistently.
 **Result:** Callers always receive a structured, named error rather than a raw integer or an
 unhandled exception. Error handling patterns are the same for every library function.
 
+**Implementation status (2026-04-27): Completed (client-side module implemented)**
+
+Implemented unified public client error model:
+- `src/client_api/client_api_error.h/.cpp`
+	- defines `ClientApiError` payload, `ClientApiErrorCategory`, and
+	  `ClientApiException`,
+	- maps internal `ClientException` values to public categories,
+	- classifies broker reason codes into authentication/authorization/
+	  protocol/broker categories,
+	- maps generic standard exceptions to unknown-category public errors.
+
+Integrated unified error signaling into public facades:
+- `src/client_api/sync_client.h/.cpp`
+	- all public operation failures are signaled through `ClientApiException`,
+	- broker-reported ACK/CONNACK error reason codes are converted to
+	  `ClientApiException` with populated reason code.
+- `src/client_api/async_client.h/.cpp`
+	- completion error payload uses unified `ClientApiError` type,
+	- synchronous facade exceptions are forwarded consistently through callback
+	  payload.
+
+Verification:
+- `src/client_api/test/TEST_SPEC.md`
+- `src/client_api/test/client_api_error_test.cpp`
+	- category mapping for internal and broker errors,
+	- unknown-category mapping for generic exceptions,
+	- end-to-end sync facade error signaling behavior.
+
 ---
 
 ## Phase 7 – Test Client

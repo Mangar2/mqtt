@@ -268,7 +268,7 @@ TEST_CASE(
   bool connect_done = false;
   bool subscribe_done = false;
   bool unsubscribe_done = false;
-  std::optional<std::vector<ReasonCode>> unsubscribe_reasons;
+  std::optional<AsyncOperationError> unsubscribe_error;
 
   client.async_connect(
       make_connect_packet(),
@@ -304,23 +304,24 @@ TEST_CASE(
   client.async_unsubscribe(
       {"blocked/topic"},
       [&completion_mutex, &completion_condition, &unsubscribe_done,
-       &unsubscribe_reasons](
+       &unsubscribe_error](
           const std::optional<std::vector<ReasonCode>> &result,
           const std::optional<AsyncOperationError> &operation_error) {
-        CHECK(result.has_value());
-        CHECK_FALSE(operation_error.has_value());
+        CHECK_FALSE(result.has_value());
+        REQUIRE(operation_error.has_value());
         {
           std::lock_guard<std::mutex> completion_guard(completion_mutex);
           unsubscribe_done = true;
-          unsubscribe_reasons = result;
+          unsubscribe_error = operation_error;
         }
         completion_condition.notify_one();
       });
 
   REQUIRE(wait_until_true(completion_condition, completion_mutex, unsubscribe_done));
-  REQUIRE(unsubscribe_reasons.has_value());
-  REQUIRE(unsubscribe_reasons->size() == 1U);
-  CHECK(unsubscribe_reasons->front() == ReasonCode::NotAuthorized);
+  REQUIRE(unsubscribe_error.has_value());
+  CHECK(unsubscribe_error->category == ClientApiErrorCategory::Authorization);
+  REQUIRE(unsubscribe_error->reason_code.has_value());
+  CHECK(*unsubscribe_error->reason_code == ReasonCode::NotAuthorized);
   CHECK(client.has_subscription("blocked/topic"));
 }
 
@@ -351,7 +352,7 @@ TEST_CASE(
 
   REQUIRE(wait_until_true(callback_condition, callback_mutex, completion_called));
   REQUIRE(publish_error.has_value());
-  CHECK(publish_error->error_code == ClientError::ProtocolError);
+  CHECK(publish_error->category == ClientApiErrorCategory::Protocol);
 }
 
 TEST_CASE("async_client_connect_runtime_error_maps_to_async_protocol_error",
@@ -387,7 +388,7 @@ TEST_CASE("async_client_connect_runtime_error_maps_to_async_protocol_error",
 
   REQUIRE(wait_until_true(callback_condition, callback_mutex, completion_called));
   REQUIRE(connect_error.has_value());
-  CHECK(connect_error->error_code == ClientError::ProtocolError);
+  CHECK(connect_error->category == ClientApiErrorCategory::Unknown);
 }
 
 TEST_CASE("async_client_subscribe_without_connect_returns_async_error",
@@ -421,7 +422,7 @@ TEST_CASE("async_client_subscribe_without_connect_returns_async_error",
 
   REQUIRE(wait_until_true(callback_condition, callback_mutex, completion_called));
   REQUIRE(subscribe_error.has_value());
-  CHECK(subscribe_error->error_code == ClientError::ProtocolError);
+  CHECK(subscribe_error->category == ClientApiErrorCategory::Protocol);
 }
 
 TEST_CASE("async_client_unsubscribe_without_connect_returns_async_error",
@@ -451,7 +452,7 @@ TEST_CASE("async_client_unsubscribe_without_connect_returns_async_error",
 
   REQUIRE(wait_until_true(callback_condition, callback_mutex, completion_called));
   REQUIRE(unsubscribe_error.has_value());
-  CHECK(unsubscribe_error->error_code == ClientError::ProtocolError);
+  CHECK(unsubscribe_error->category == ClientApiErrorCategory::Protocol);
 }
 
 TEST_CASE("async_client_disconnect_is_enqueued_and_prevents_later_publish",
@@ -505,9 +506,420 @@ TEST_CASE("async_client_disconnect_is_enqueued_and_prevents_later_publish",
 
   REQUIRE(wait_until_true(callback_condition, callback_mutex, publish_called));
   REQUIRE(publish_error.has_value());
-  CHECK(publish_error->error_code == ClientError::ProtocolError);
+  CHECK(publish_error->category == ClientApiErrorCategory::Protocol);
   CHECK_FALSE(client.is_connected());
   CHECK(publish_send_count == 0U);
+}
+
+TEST_CASE("async_client_default_connect_without_callbacks_reports_error",
+          "[client_api][async]") {
+  AsyncClient client("async-client");
+
+  std::mutex callback_mutex;
+  std::condition_variable callback_condition;
+  bool completion_called = false;
+  std::optional<AsyncOperationError> connect_error;
+
+  client.async_connect(
+      [&callback_mutex, &callback_condition, &completion_called,
+       &connect_error](const std::optional<ConnectionNegotiationResult> &result,
+                       const std::optional<AsyncOperationError> &operation_error) {
+        CHECK_FALSE(result.has_value());
+        REQUIRE(operation_error.has_value());
+        {
+          std::lock_guard<std::mutex> callback_guard(callback_mutex);
+          completion_called = true;
+          connect_error = operation_error;
+        }
+        callback_condition.notify_one();
+      });
+
+  REQUIRE(wait_until_true(callback_condition, callback_mutex, completion_called));
+  REQUIRE(connect_error.has_value());
+  CHECK(connect_error->category == ClientApiErrorCategory::Protocol);
+}
+
+TEST_CASE(
+    "async_client_default_connect_completion_throwing_client_exception_is_converted_to_error_callback",
+    "[client_api][async]") {
+  AsyncClient client("async-client");
+
+  SyncClientCallbacks callbacks;
+  callbacks.connect_and_negotiate = [](const ConnectPacket &, uint32_t) {
+    return make_connect_result();
+  };
+  client.set_sync_callbacks(std::move(callbacks));
+
+  std::mutex callback_mutex;
+  std::condition_variable callback_condition;
+  bool completion_done = false;
+  bool first_success_invocation = true;
+  std::optional<AsyncOperationError> completion_error;
+
+  client.async_connect(
+      [&callback_mutex, &callback_condition, &completion_done,
+       &first_success_invocation,
+       &completion_error](
+          const std::optional<ConnectionNegotiationResult> &result,
+          const std::optional<AsyncOperationError> &operation_error) {
+        if (result.has_value() && first_success_invocation) {
+          first_success_invocation = false;
+          throw ClientException(ClientError::Timeout,
+                                "forced completion client exception");
+        }
+
+        if (operation_error.has_value()) {
+          std::lock_guard<std::mutex> callback_guard(callback_mutex);
+          completion_done = true;
+          completion_error = operation_error;
+          callback_condition.notify_one();
+        }
+      });
+
+  REQUIRE(wait_until_true(callback_condition, callback_mutex, completion_done));
+  REQUIRE(completion_error.has_value());
+  CHECK(completion_error->category == ClientApiErrorCategory::Timeout);
+}
+
+TEST_CASE(
+    "async_client_default_connect_completion_throwing_std_exception_is_converted_to_error_callback",
+    "[client_api][async]") {
+  AsyncClient client("async-client");
+
+  SyncClientCallbacks callbacks;
+  callbacks.connect_and_negotiate = [](const ConnectPacket &, uint32_t) {
+    return make_connect_result();
+  };
+  client.set_sync_callbacks(std::move(callbacks));
+
+  std::mutex callback_mutex;
+  std::condition_variable callback_condition;
+  bool completion_done = false;
+  bool first_success_invocation = true;
+  std::optional<AsyncOperationError> completion_error;
+
+  client.async_connect(
+      [&callback_mutex, &callback_condition, &completion_done,
+       &first_success_invocation,
+       &completion_error](
+          const std::optional<ConnectionNegotiationResult> &result,
+          const std::optional<AsyncOperationError> &operation_error) {
+        if (result.has_value() && first_success_invocation) {
+          first_success_invocation = false;
+          throw std::runtime_error("forced completion std exception");
+        }
+
+        if (operation_error.has_value()) {
+          std::lock_guard<std::mutex> callback_guard(callback_mutex);
+          completion_done = true;
+          completion_error = operation_error;
+          callback_condition.notify_one();
+        }
+      });
+
+  REQUIRE(wait_until_true(callback_condition, callback_mutex, completion_done));
+  REQUIRE(completion_error.has_value());
+  CHECK(completion_error->category == ClientApiErrorCategory::Unknown);
+}
+
+TEST_CASE(
+    "async_client_publish_completion_throwing_client_exception_is_converted_to_error_callback",
+    "[client_api][async]") {
+  AsyncClient client("async-client");
+
+  SyncClientCallbacks callbacks;
+  callbacks.connect_and_negotiate = [](const ConnectPacket &, uint32_t) {
+    return make_connect_result();
+  };
+  callbacks.send_publish = [](const PublishPacket &) {};
+  client.set_sync_callbacks(std::move(callbacks));
+
+  std::mutex connect_mutex;
+  std::condition_variable connect_condition;
+  bool connect_done = false;
+  client.async_connect(
+      make_connect_packet(),
+      [&connect_mutex, &connect_condition,
+       &connect_done](const std::optional<ConnectionNegotiationResult> &,
+                      const std::optional<AsyncOperationError> &) {
+        {
+          std::lock_guard<std::mutex> connect_guard(connect_mutex);
+          connect_done = true;
+        }
+        connect_condition.notify_one();
+      });
+  REQUIRE(wait_until_true(connect_condition, connect_mutex, connect_done));
+
+  std::mutex callback_mutex;
+  std::condition_variable callback_condition;
+  bool completion_done = false;
+  bool first_success_invocation = true;
+  std::optional<AsyncOperationError> completion_error;
+
+  client.async_publish(
+      make_message("topic/throw/publish", QoS::AtMostOnce),
+      [&callback_mutex, &callback_condition, &completion_done,
+       &first_success_invocation,
+       &completion_error](const std::optional<ReasonCode> &result,
+                          const std::optional<AsyncOperationError> &operation_error) {
+        if (result.has_value() && first_success_invocation) {
+          first_success_invocation = false;
+          throw ClientException(ClientError::Timeout,
+                                "forced publish completion client exception");
+        }
+
+        if (operation_error.has_value()) {
+          std::lock_guard<std::mutex> callback_guard(callback_mutex);
+          completion_done = true;
+          completion_error = operation_error;
+          callback_condition.notify_one();
+        }
+      });
+
+  REQUIRE(wait_until_true(callback_condition, callback_mutex, completion_done));
+  REQUIRE(completion_error.has_value());
+  CHECK(completion_error->category == ClientApiErrorCategory::Timeout);
+}
+
+TEST_CASE(
+    "async_client_subscribe_completion_throwing_std_exception_is_converted_to_error_callback",
+    "[client_api][async]") {
+  AsyncClient client("async-client");
+
+  SyncClientCallbacks callbacks;
+  callbacks.connect_and_negotiate = [](const ConnectPacket &, uint32_t) {
+    return make_connect_result();
+  };
+  callbacks.send_subscribe = [](const SubscribePacket &) {};
+  callbacks.wait_suback = [](uint16_t packet_identifier, uint32_t) {
+    return SubackPacket{.packet_id = packet_identifier,
+                        .properties = {},
+                        .reason_codes = {ReasonCode::GrantedQoS1}};
+  };
+  client.set_sync_callbacks(std::move(callbacks));
+
+  std::mutex connect_mutex;
+  std::condition_variable connect_condition;
+  bool connect_done = false;
+  client.async_connect(
+      make_connect_packet(),
+      [&connect_mutex, &connect_condition,
+       &connect_done](const std::optional<ConnectionNegotiationResult> &,
+                      const std::optional<AsyncOperationError> &) {
+        {
+          std::lock_guard<std::mutex> connect_guard(connect_mutex);
+          connect_done = true;
+        }
+        connect_condition.notify_one();
+      });
+  REQUIRE(wait_until_true(connect_condition, connect_mutex, connect_done));
+
+  std::mutex callback_mutex;
+  std::condition_variable callback_condition;
+  bool completion_done = false;
+  bool first_success_invocation = true;
+  std::optional<AsyncOperationError> completion_error;
+
+  const AsyncSubscribeRequest subscribe_request{
+      .topic_filter = "topic/throw/subscribe",
+      .requested_qos = QoS::AtLeastOnce,
+      .options = {}};
+  client.async_subscribe(
+      {subscribe_request},
+      [&callback_mutex, &callback_condition, &completion_done,
+       &first_success_invocation,
+       &completion_error](
+          const std::optional<std::vector<ReasonCode>> &result,
+          const std::optional<AsyncOperationError> &operation_error) {
+        if (result.has_value() && first_success_invocation) {
+          first_success_invocation = false;
+          throw std::runtime_error(
+              "forced subscribe completion std exception");
+        }
+
+        if (operation_error.has_value()) {
+          std::lock_guard<std::mutex> callback_guard(callback_mutex);
+          completion_done = true;
+          completion_error = operation_error;
+          callback_condition.notify_one();
+        }
+      });
+
+  REQUIRE(wait_until_true(callback_condition, callback_mutex, completion_done));
+  REQUIRE(completion_error.has_value());
+  CHECK(completion_error->category == ClientApiErrorCategory::Unknown);
+}
+
+TEST_CASE(
+    "async_client_unsubscribe_completion_throwing_client_exception_is_converted_to_error_callback",
+    "[client_api][async]") {
+  AsyncClient client("async-client");
+
+  SyncClientCallbacks callbacks;
+  callbacks.connect_and_negotiate = [](const ConnectPacket &, uint32_t) {
+    return make_connect_result();
+  };
+  callbacks.send_subscribe = [](const SubscribePacket &) {};
+  callbacks.wait_suback = [](uint16_t packet_identifier, uint32_t) {
+    return SubackPacket{.packet_id = packet_identifier,
+                        .properties = {},
+                        .reason_codes = {ReasonCode::GrantedQoS1}};
+  };
+  callbacks.send_unsubscribe = [](const UnsubscribePacket &) {};
+  callbacks.wait_unsuback = [](uint16_t packet_identifier, uint32_t) {
+    return UnsubackPacket{.packet_id = packet_identifier,
+                          .properties = {},
+                          .reason_codes = {ReasonCode::Success}};
+  };
+  client.set_sync_callbacks(std::move(callbacks));
+
+  std::mutex completion_mutex;
+  std::condition_variable completion_condition;
+  bool connect_done = false;
+  bool subscribe_done = false;
+  client.async_connect(
+      make_connect_packet(),
+      [&completion_mutex, &completion_condition,
+       &connect_done](const std::optional<ConnectionNegotiationResult> &,
+                      const std::optional<AsyncOperationError> &) {
+        {
+          std::lock_guard<std::mutex> completion_guard(completion_mutex);
+          connect_done = true;
+        }
+        completion_condition.notify_one();
+      });
+  REQUIRE(wait_until_true(completion_condition, completion_mutex, connect_done));
+
+  const AsyncSubscribeRequest subscribe_request{
+      .topic_filter = "topic/throw/unsubscribe",
+      .requested_qos = QoS::AtLeastOnce,
+      .options = {}};
+  client.async_subscribe(
+      {subscribe_request},
+      [&completion_mutex, &completion_condition, &subscribe_done](
+          const std::optional<std::vector<ReasonCode>> &,
+          const std::optional<AsyncOperationError> &) {
+        {
+          std::lock_guard<std::mutex> completion_guard(completion_mutex);
+          subscribe_done = true;
+        }
+        completion_condition.notify_one();
+      });
+  REQUIRE(wait_until_true(completion_condition, completion_mutex, subscribe_done));
+
+  bool first_success_invocation = true;
+  bool unsubscribe_done = false;
+  std::optional<AsyncOperationError> unsubscribe_error;
+  client.async_unsubscribe(
+      {"topic/throw/unsubscribe"},
+      [&completion_mutex, &completion_condition, &first_success_invocation,
+       &unsubscribe_done,
+       &unsubscribe_error](
+          const std::optional<std::vector<ReasonCode>> &result,
+          const std::optional<AsyncOperationError> &operation_error) {
+        if (result.has_value() && first_success_invocation) {
+          first_success_invocation = false;
+          throw ClientException(ClientError::Timeout,
+                                "forced unsubscribe completion client exception");
+        }
+
+        if (operation_error.has_value()) {
+          std::lock_guard<std::mutex> completion_guard(completion_mutex);
+          unsubscribe_done = true;
+          unsubscribe_error = operation_error;
+          completion_condition.notify_one();
+        }
+      });
+
+  REQUIRE(
+      wait_until_true(completion_condition, completion_mutex, unsubscribe_done));
+  REQUIRE(unsubscribe_error.has_value());
+  CHECK(unsubscribe_error->category == ClientApiErrorCategory::Timeout);
+}
+
+TEST_CASE(
+    "async_client_completion_throwing_client_exception_is_converted_to_error_callback",
+    "[client_api][async]") {
+  AsyncClient client("async-client");
+
+  SyncClientCallbacks callbacks;
+  callbacks.connect_and_negotiate = [](const ConnectPacket &, uint32_t) {
+    return make_connect_result();
+  };
+  client.set_sync_callbacks(std::move(callbacks));
+
+  std::mutex callback_mutex;
+  std::condition_variable callback_condition;
+  bool completion_done = false;
+  bool first_success_invocation = true;
+  std::optional<AsyncOperationError> completion_error;
+
+  client.async_connect(
+      make_connect_packet(),
+      [&callback_mutex, &callback_condition, &completion_done,
+       &first_success_invocation,
+       &completion_error](
+          const std::optional<ConnectionNegotiationResult> &result,
+          const std::optional<AsyncOperationError> &operation_error) {
+        if (result.has_value() && first_success_invocation) {
+          first_success_invocation = false;
+          throw ClientException(ClientError::Timeout,
+                                "forced completion client exception");
+        }
+
+        if (operation_error.has_value()) {
+          std::lock_guard<std::mutex> callback_guard(callback_mutex);
+          completion_done = true;
+          completion_error = operation_error;
+          callback_condition.notify_one();
+        }
+      });
+
+  REQUIRE(wait_until_true(callback_condition, callback_mutex, completion_done));
+  REQUIRE(completion_error.has_value());
+  CHECK(completion_error->category == ClientApiErrorCategory::Timeout);
+}
+
+TEST_CASE(
+    "async_client_completion_throwing_std_exception_is_converted_to_error_callback",
+    "[client_api][async]") {
+  AsyncClient client("async-client");
+
+  SyncClientCallbacks callbacks;
+  callbacks.connect_and_negotiate = [](const ConnectPacket &, uint32_t) {
+    return make_connect_result();
+  };
+  client.set_sync_callbacks(std::move(callbacks));
+
+  std::mutex callback_mutex;
+  std::condition_variable callback_condition;
+  bool completion_done = false;
+  bool first_success_invocation = true;
+  std::optional<AsyncOperationError> completion_error;
+
+  client.async_connect(
+      make_connect_packet(),
+      [&callback_mutex, &callback_condition, &completion_done,
+       &first_success_invocation,
+       &completion_error](
+          const std::optional<ConnectionNegotiationResult> &result,
+          const std::optional<AsyncOperationError> &operation_error) {
+        if (result.has_value() && first_success_invocation) {
+          first_success_invocation = false;
+          throw std::runtime_error("forced completion std exception");
+        }
+
+        if (operation_error.has_value()) {
+          std::lock_guard<std::mutex> callback_guard(callback_mutex);
+          completion_done = true;
+          completion_error = operation_error;
+          callback_condition.notify_one();
+        }
+      });
+
+  REQUIRE(wait_until_true(callback_condition, callback_mutex, completion_done));
+  REQUIRE(completion_error.has_value());
+  CHECK(completion_error->category == ClientApiErrorCategory::Unknown);
 }
 
 } // namespace mqtt

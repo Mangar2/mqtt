@@ -9,7 +9,7 @@
 #include <optional>
 #include <string>
 
-#include "client/client_error.h"
+#include "client_api/client_api_error.h"
 #include "client/reconnect_controller.h"
 #include "data_model/packet/connect_packet.h"
 
@@ -74,7 +74,7 @@ default_port_for_transport(ClientTransportType transport) noexcept;
 /**
  * @brief Validate configuration and throw on invalid values.
  * @param client_config Configuration to validate.
- * @throws ClientException when required fields or ranges are invalid.
+ * @throws ClientApiException when required fields or ranges are invalid.
  */
 void validate_client_config_or_throw(const ClientConfig &client_config);
 
@@ -82,7 +82,7 @@ void validate_client_config_or_throw(const ClientConfig &client_config);
  * @brief Build CONNECT packet model from configuration fields.
  * @param client_config Source configuration.
  * @return CONNECT packet payload model.
- * @throws ClientException when configuration is invalid.
+ * @throws ClientApiException when configuration is invalid.
  */
 [[nodiscard]] ConnectPacket
 build_connect_packet(const ClientConfig &client_config);

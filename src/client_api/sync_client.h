@@ -12,8 +12,9 @@
 #include <string_view>
 #include <vector>
 
-#include "client/client_error.h"
 #include "client_api/client_config.h"
+#include "client_api/client_api_error.h"
+#include "client/client_error.h"
 #include "client/publish_pipeline.h"
 #include "client/session_state_keeper.h"
 #include "client/subscription_manager.h"
@@ -93,7 +94,7 @@ public:
    * @param connect_packet CONNECT packet model.
    * @param timeout_ms Operation timeout in milliseconds.
    * @return Negotiated connection result from CONNACK.
-   * @throws ClientException when callback is missing or negotiation fails.
+  * @throws ClientApiException when callback is missing or negotiation fails.
    */
   [[nodiscard]] ConnectionNegotiationResult connect(
       const ConnectPacket &connect_packet, uint32_t timeout_ms);
@@ -110,7 +111,7 @@ public:
    * @param message Outbound message model.
    * @param timeout_ms Operation timeout in milliseconds.
    * @return Final MQTT reason code for the publish exchange.
-   * @throws ClientException on connection/callback/protocol errors.
+  * @throws ClientApiException on connection/callback/protocol errors.
    */
   [[nodiscard]] ReasonCode publish(const Message &message,
                      uint32_t timeout_ms);
@@ -128,7 +129,7 @@ public:
    * @param requests Subscription requests with callbacks.
    * @param timeout_ms Operation timeout in milliseconds.
    * @return Reason codes from SUBACK in request order.
-   * @throws ClientException on connection/callback/protocol errors.
+  * @throws ClientApiException on connection/callback/protocol errors.
    */
   [[nodiscard]] std::vector<ReasonCode> subscribe(
       const std::vector<ClientSubscriptionManager::SubscribeRequest> &requests,
@@ -147,7 +148,7 @@ public:
    * @param topic_filters Filters to unsubscribe.
    * @param timeout_ms Operation timeout in milliseconds.
    * @return Reason codes from UNSUBACK in request order.
-   * @throws ClientException on connection/callback/protocol errors.
+  * @throws ClientApiException on connection/callback/protocol errors.
    */
   [[nodiscard]] std::vector<ReasonCode>
   unsubscribe(const std::vector<std::string> &topic_filters,
@@ -156,7 +157,7 @@ public:
   /**
    * @brief Perform blocking DISCONNECT operation.
    * @param reason_code Disconnect reason code.
-   * @throws ClientException when callback transport send fails.
+  * @throws ClientApiException when callback transport send fails.
    */
   void disconnect(ReasonCode reason_code = ReasonCode::Success);
 

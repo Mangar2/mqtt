@@ -1,4 +1,4 @@
-# client_api — Public client interfaces (Steps 23, 24, 25)
+# client_api — Public client interfaces (Steps 23, 24, 25, 26)
 
 Blocking and non-blocking public client facades that wrap lower-level client
 components.
@@ -11,6 +11,32 @@ Depends on `client/` and `data_model/`.
 | `sync_client.h/.cpp` | 23 | Blocking `connect/publish/subscribe/unsubscribe/disconnect` interface with timeout-aware callback integration |
 | `async_client.h/.cpp` | 24 | Non-blocking callback interface with one internal dispatch thread for completions and inbound messages |
 | `client_config.h/.cpp` | 25 | Unified client configuration object with defaults, validation, and CONNECT packet builder |
+| `client_api_error.h/.cpp` | 26 | Unified public error payload and exception mapping from internal client errors, broker reason codes, and generic exceptions |
+
+## ClientApiError
+
+`ClientApiError` is the unified public error payload for all `client_api/`
+operations.
+
+Categories:
+
+- `Network` (dial/read/write/connect failures),
+- `Protocol` (invalid packet/flow violations),
+- `Authentication` (username/password/auth-method rejections),
+- `Authorization` (broker denies requested action),
+- `Broker` (other broker-reported error reason codes),
+- `Timeout` (operation timeout),
+- `Configuration` (invalid client configuration values),
+- `Unknown` (unexpected non-client exceptions).
+
+Error signaling model:
+
+- synchronous API signals errors via `ClientApiException`,
+- asynchronous API signals errors via completion callback payload
+  (`AsyncOperationError`, alias of `ClientApiError`),
+- broker error reason codes are classified and mapped into the same model,
+- internal `ClientException` objects are mapped to `ClientApiError` at the
+  public API boundary.
 
 ## ClientConfig
 
@@ -52,7 +78,7 @@ Callback integration model:
 - transport/network integration is injected through `SyncClientCallbacks`,
 - caller-supplied timeout overloads are available for each blocking operation,
 - no-timeout overloads use `ClientConfig` per-operation timeout defaults,
-- missing mandatory callback for an operation raises `ClientException`.
+- missing mandatory callback for an operation raises `ClientApiException`.
 
 State model:
 
@@ -61,6 +87,8 @@ State model:
 - subscription state is managed by `ClientSubscriptionManager`,
 - outbound QoS state is managed by `ClientPublishPipeline`,
 - reconnect disable-on-user-disconnect uses `ReconnectController`.
+- broker-reported error reason codes are signaled as `ClientApiException` with
+  populated `reason_code`.
 
 ## AsyncClient
 
@@ -81,7 +109,8 @@ Callback and threading model:
 - completion callbacks run on this same dispatch thread,
 - inbound publish packets are fed via `on_inbound_publish(...)`,
 - subscribed message delivery is forwarded to one registered message handler,
-- callback errors are propagated as `AsyncOperationError` payloads.
+- callback errors are propagated as `AsyncOperationError` payloads (same
+  `ClientApiError` structure used by synchronous exceptions).
 
 Integration model:
 

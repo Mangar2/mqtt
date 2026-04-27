@@ -164,9 +164,9 @@ TEST_CASE("sync_client_publish_qos1_requires_puback_callback",
 
   try {
     (void)client.publish(make_message("topic/qos1", QoS::AtLeastOnce), 1000U);
-    FAIL("expected ClientException");
-  } catch (const ClientException &exception) {
-    CHECK(exception.error() == ClientError::Timeout);
+    FAIL("expected ClientApiException");
+  } catch (const ClientApiException &exception) {
+    CHECK(exception.error().category == ClientApiErrorCategory::Timeout);
   }
 }
 
@@ -175,24 +175,24 @@ TEST_CASE("sync_client_operations_require_connected_state",
   SyncClient client("sync-client");
 
   CHECK_THROWS_AS(client.publish(make_message("topic", QoS::AtMostOnce)),
-                  ClientException);
+                  ClientApiException);
 
   ClientSubscriptionManager::SubscribeRequest subscribe_request;
   subscribe_request.topic_filter = "sensor/#";
   subscribe_request.requested_qos = QoS::AtMostOnce;
   subscribe_request.callback = [](const PublishPacket &) {};
 
-  CHECK_THROWS_AS(client.subscribe({subscribe_request}), ClientException);
-  CHECK_THROWS_AS(client.unsubscribe({"sensor/#"}), ClientException);
+  CHECK_THROWS_AS(client.subscribe({subscribe_request}), ClientApiException);
+  CHECK_THROWS_AS(client.unsubscribe({"sensor/#"}), ClientApiException);
 }
 
 TEST_CASE("sync_client_rejects_empty_client_id", "[client_api][sync]") {
-  CHECK_THROWS_AS(SyncClient(""), ClientException);
+  CHECK_THROWS_AS(SyncClient(""), ClientApiException);
 }
 
 TEST_CASE("sync_client_connect_requires_connect_callback", "[client_api][sync]") {
   SyncClient client("sync-client");
-  CHECK_THROWS_AS(client.connect(make_connect_packet(), 100U), ClientException);
+  CHECK_THROWS_AS(client.connect(make_connect_packet(), 100U), ClientApiException);
 }
 
 TEST_CASE("sync_client_publish_qos2_error_pubrec_finishes_without_pubrel",
@@ -223,9 +223,15 @@ TEST_CASE("sync_client_publish_qos2_error_pubrec_finishes_without_pubrel",
   client.set_callbacks(std::move(callbacks));
   (void)client.connect(make_connect_packet());
 
-  const ReasonCode reason_code =
-      client.publish(make_message("topic/qos2/error", QoS::ExactlyOnce), 1000U);
-  CHECK(reason_code == ReasonCode::NotAuthorized);
+  try {
+    (void)client.publish(make_message("topic/qos2/error", QoS::ExactlyOnce),
+                         1000U);
+    FAIL("expected ClientApiException");
+  } catch (const ClientApiException &exception) {
+    CHECK(exception.error().category == ClientApiErrorCategory::Authorization);
+    REQUIRE(exception.error().reason_code.has_value());
+    CHECK(*exception.error().reason_code == ReasonCode::NotAuthorized);
+  }
   CHECK(pubrel_send_count == 0U);
   CHECK(pubcomp_wait_count == 0U);
 }
@@ -259,16 +265,24 @@ TEST_CASE(
   subscribe_request.requested_qos = QoS::AtLeastOnce;
   subscribe_request.callback = [](const PublishPacket &) {};
 
-  const std::vector<ReasonCode> subscribe_reasons =
-      client.subscribe({subscribe_request}, 500U);
-  REQUIRE(subscribe_reasons.size() == 1U);
-  CHECK(subscribe_reasons.front() == ReasonCode::NotAuthorized);
+  try {
+    (void)client.subscribe({subscribe_request}, 500U);
+    FAIL("expected ClientApiException");
+  } catch (const ClientApiException &exception) {
+    CHECK(exception.error().category == ClientApiErrorCategory::Authorization);
+    REQUIRE(exception.error().reason_code.has_value());
+    CHECK(*exception.error().reason_code == ReasonCode::NotAuthorized);
+  }
   CHECK_FALSE(client.has_subscription("sensor/rejected"));
 
-  const std::vector<ReasonCode> unsubscribe_reasons =
-      client.unsubscribe({"sensor/rejected"}, 500U);
-  REQUIRE(unsubscribe_reasons.size() == 1U);
-  CHECK(unsubscribe_reasons.front() == ReasonCode::NotAuthorized);
+  try {
+    (void)client.unsubscribe({"sensor/rejected"}, 500U);
+    FAIL("expected ClientApiException");
+  } catch (const ClientApiException &exception) {
+    CHECK(exception.error().category == ClientApiErrorCategory::Authorization);
+    REQUIRE(exception.error().reason_code.has_value());
+    CHECK(*exception.error().reason_code == ReasonCode::NotAuthorized);
+  }
   CHECK_FALSE(client.has_subscription("sensor/rejected"));
 }
 

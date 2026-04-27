@@ -16,7 +16,6 @@
 #include <thread>
 #include <vector>
 
-#include "client/client_error.h"
 #include "client/subscription_manager.h"
 #include "client_api/sync_client.h"
 #include "data_model/message/message.h"
@@ -25,14 +24,7 @@
 
 namespace mqtt {
 
-/**
- * @brief Callback-friendly error payload used by AsyncClient completion handlers.
- */
-struct AsyncOperationError {
-  ClientError error_code{ClientError::ProtocolError};
-  std::string message;
-  std::optional<ReasonCode> reason_code;
-};
+using AsyncOperationError = ClientApiError;
 
 /**
  * @brief Subscribe request for AsyncClient (message handler is registered globally).

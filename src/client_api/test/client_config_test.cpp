@@ -66,33 +66,33 @@ TEST_CASE("client_config_validate_rejects_invalid_values",
   ClientConfig empty_host_config;
   empty_host_config.broker_host.clear();
   CHECK_THROWS_AS(validate_client_config_or_throw(empty_host_config),
-                  ClientException);
+                  ClientApiException);
 
   ClientConfig empty_client_identifier_config;
   empty_client_identifier_config.client_id.clear();
   CHECK_THROWS_AS(validate_client_config_or_throw(empty_client_identifier_config),
-                  ClientException);
+                  ClientApiException);
 
   ClientConfig zero_port_config;
   zero_port_config.broker_port = 0U;
   CHECK_THROWS_AS(validate_client_config_or_throw(zero_port_config),
-                  ClientException);
+                  ClientApiException);
 
   ClientConfig password_without_username_config;
   password_without_username_config.credentials.password = "secret";
   CHECK_THROWS_AS(
       validate_client_config_or_throw(password_without_username_config),
-      ClientException);
+      ClientApiException);
 
   ClientConfig zero_receive_maximum_config;
   zero_receive_maximum_config.receive_maximum = 0U;
   CHECK_THROWS_AS(validate_client_config_or_throw(zero_receive_maximum_config),
-                  ClientException);
+                  ClientApiException);
 
   ClientConfig zero_timeout_config;
   zero_timeout_config.operation_timeouts.publish_ms = 0U;
   CHECK_THROWS_AS(validate_client_config_or_throw(zero_timeout_config),
-                  ClientException);
+                  ClientApiException);
 }
 
 TEST_CASE("client_config_build_connect_packet_maps_credentials_and_properties",

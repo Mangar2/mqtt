@@ -52,6 +52,10 @@ void AsyncClient::async_connect(const ConnectPacket &connect_packet,
       if (completion) {
         completion(connect_result, std::nullopt);
       }
+    } catch (const ClientApiException &exception) {
+      if (completion) {
+        completion(std::nullopt, exception.error());
+      }
     } catch (const ClientException &exception) {
       if (completion) {
         completion(std::nullopt, to_async_error(exception));
@@ -74,6 +78,10 @@ void AsyncClient::async_connect(ConnectCompletion completion) {
       }
       if (completion) {
         completion(connect_result, std::nullopt);
+      }
+    } catch (const ClientApiException &exception) {
+      if (completion) {
+        completion(std::nullopt, exception.error());
       }
     } catch (const ClientException &exception) {
       if (completion) {
@@ -104,6 +112,10 @@ void AsyncClient::async_publish(const Message &message,
       }
       if (completion) {
         completion(publish_result, std::nullopt);
+      }
+    } catch (const ClientApiException &exception) {
+      if (completion) {
+        completion(std::nullopt, exception.error());
       }
     } catch (const ClientException &exception) {
       if (completion) {
@@ -150,6 +162,10 @@ void AsyncClient::async_subscribe(
       if (completion) {
         completion(subscribe_result, std::nullopt);
       }
+    } catch (const ClientApiException &exception) {
+      if (completion) {
+        completion(std::nullopt, exception.error());
+      }
     } catch (const ClientException &exception) {
       if (completion) {
         completion(std::nullopt, to_async_error(exception));
@@ -180,6 +196,10 @@ void AsyncClient::async_unsubscribe(const std::vector<std::string> &topic_filter
       }
       if (completion) {
         completion(unsubscribe_result, std::nullopt);
+      }
+    } catch (const ClientApiException &exception) {
+      if (completion) {
+        completion(std::nullopt, exception.error());
       }
     } catch (const ClientException &exception) {
       if (completion) {
@@ -269,19 +289,11 @@ void AsyncClient::invoke_message_handler(const PublishPacket &publish_packet) {
 }
 
 AsyncOperationError AsyncClient::to_async_error(const ClientException &exception) {
-  AsyncOperationError error;
-  error.error_code = exception.error();
-  error.message = exception.what();
-  error.reason_code = exception.reason_code();
-  return error;
+  return client_api_error_from_client_exception(exception);
 }
 
 AsyncOperationError AsyncClient::to_async_error(const std::exception &exception) {
-  AsyncOperationError error;
-  error.error_code = ClientError::ProtocolError;
-  error.message = exception.what();
-  error.reason_code = std::nullopt;
-  return error;
+  return client_api_error_from_std_exception(exception);
 }
 
 } // namespace mqtt
