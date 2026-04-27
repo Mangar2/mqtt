@@ -103,4 +103,74 @@ TEST_CASE("test_client_scenario_command_propagates_step_failures",
         1);
 }
 
+TEST_CASE("test_client_scenario_command_runs_step32_mass_connect_mode",
+          "[test_client][scenario]") {
+  const std::filesystem::path script_path =
+      make_temp_script_path("scenario_step32_mass_connect", true);
+
+  TestClientCliOptions options;
+  options.command = TestClientCommand::Scenario;
+  options.load_mode = "mass-connect";
+  options.load_connection_count = 3U;
+  options.load_connect_interval_ms = 0U;
+  options.load_publish_limit = 3U;
+  options.load_topic_template = "step32/{index}";
+  options.load_client_template = "step32-client-{index}";
+
+  const TestClientProfile profile;
+  CHECK(run_test_client_scenario_command(options, profile, script_path.string()) ==
+        0);
+}
+
+TEST_CASE("test_client_scenario_command_rejects_unknown_step32_mode",
+          "[test_client][scenario]") {
+  const std::filesystem::path script_path =
+      make_temp_script_path("scenario_step32_invalid_mode", true);
+
+  TestClientCliOptions options;
+  options.command = TestClientCommand::Scenario;
+  options.load_mode = "unsupported-mode";
+
+  const TestClientProfile profile;
+  CHECK(run_test_client_scenario_command(options, profile, script_path.string()) ==
+        1);
+}
+
+TEST_CASE("test_client_scenario_command_runs_step32_publish_rate_mode",
+          "[test_client][scenario]") {
+  const std::filesystem::path script_path =
+      make_temp_script_path("scenario_step32_publish_rate", true);
+
+  TestClientCliOptions options;
+  options.command = TestClientCommand::Scenario;
+  options.load_mode = "publish-rate";
+  options.load_connection_count = 1U;
+  options.load_publish_limit = 2U;
+  options.load_message_interval_ms = 0U;
+  options.load_topic_template = "step32-rate/{index}";
+  options.load_client_template = "step32-rate-client-{index}";
+
+  const TestClientProfile profile;
+  CHECK(run_test_client_scenario_command(options, profile, script_path.string()) ==
+        0);
+}
+
+TEST_CASE("test_client_scenario_command_runs_step32_multi_subscribe_mode",
+          "[test_client][scenario]") {
+  const std::filesystem::path script_path =
+      make_temp_script_path("scenario_step32_multi_subscribe", true);
+
+  TestClientCliOptions options;
+  options.command = TestClientCommand::Scenario;
+  options.load_mode = "multi-subscribe";
+  options.load_connection_count = 1U;
+  options.load_publish_limit = 1U;
+  options.load_topic_template = "step32-sub/{index}";
+  options.load_client_template = "step32-sub-client-{index}";
+
+  const TestClientProfile profile;
+  CHECK(run_test_client_scenario_command(options, profile, script_path.string()) ==
+        0);
+}
+
 } // namespace mqtt

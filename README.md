@@ -56,6 +56,17 @@ A fully specification-compliant MQTT 5.0 broker written in C++20.
 ./build/release/yahatestclient scenario \
     --scenario qos1_subscribe_publish_unsubscribe \
     --profile ./test-client.profile
+
+# Run Step 32 publish-rate load mode with JSON metrics output
+./build/release/yahatestclient scenario \
+    --load-mode publish-rate \
+    --connection-count 20 \
+    --message-interval-ms 10 \
+    --publish-limit 500 \
+    --topic-template bench/topic/{index} \
+    --client-template bench-client-{index} \
+    --metrics-json \
+    --profile ./test-client.profile
 ```
 
 Startup precedence is deterministic:
@@ -278,7 +289,7 @@ Key fields:
 `SyncClient` and `AsyncClient` can be constructed directly from `ClientConfig`.
 No-timeout operation overloads use the configured timeout defaults.
 
-## Test Client Shell (Steps 27-31)
+## Test Client Shell (Steps 27-32)
 
 The repository now builds a standalone test-client executable:
 
@@ -292,7 +303,7 @@ Supported subcommands:
 - `connect` — connect and keep the session open until signal (`Ctrl+C`)
 - `publish` — connect, publish one message, wait for QoS completion, exit
 - `subscribe` — connect, subscribe with MQTT 5 options, print/save incoming messages
-- `scenario` — list built-in scenarios or run one scripted scenario with step-level status output
+- `scenario` — list built-in scenarios, run Step 31 scripted scenarios, or run Step 32 load modes with metrics output
 - `save-profile` — save reusable profile file
 - `show-profile` — print effective profile after load+override merge
 
@@ -317,7 +328,8 @@ Supported profile keys:
 - publish MQTT 5 property options: `publish_payload_format_indicator`, `publish_message_expiry_interval_seconds`, `publish_topic_alias`, `publish_response_topic`, `publish_correlation_data`, `publish_subscription_identifier`, `publish_content_type`, repeatable `publish_user_property`
 - subscribe options: repeatable `subscribe_entry` (`filter|qos|no_local|retain_as_published|retain_handling`), `subscribe_identifier`, repeatable `subscribe_user_property`
 - subscriber output options: `subscribe_clean_output`, `subscribe_verbose_packets`, `subscribe_output_file`, `subscribe_output_append`, `subscribe_output_delimiter`, `subscribe_output_format`, `subscribe_message_limit`, `subscribe_wait_timeout_ms`
-- scenario options: `--scenario <name>`, `--list-scenarios`
+- scenario options: `--scenario <name>`, `--list-scenarios`, `--load-mode <mass-connect|publish-rate|multi-subscribe>`
+- Step 32 load controls: `--connection-count`, `--connect-interval-ms`, `--message-interval-ms`, `--publish-limit`, `--topic-template`, `--client-template`, `--metrics-json`
 - `reconnect_period_ms`, `maximum_reconnect_times`
 
 ## Integration test runner

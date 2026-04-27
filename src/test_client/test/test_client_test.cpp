@@ -687,6 +687,30 @@ TEST_CASE("test_client_cli_scenario_parses_step31_options",
   CHECK_FALSE(options.list_scenarios);
 }
 
+TEST_CASE("test_client_cli_scenario_parses_step32_load_options",
+          "[test_client][cli]") {
+  const char *argv[] = {"yahatestclient",      "scenario",
+                        "--load-mode",         "publish-rate",
+                        "--connection-count",  "12",
+                        "--connect-interval-ms", "20",
+                        "--message-interval-ms", "5",
+                        "--publish-limit",     "200",
+                        "--topic-template",    "bench/{index}",
+                        "--client-template",   "bench-client-{index}",
+                        "--metrics-json"};
+
+  const TestClientCliOptions options = parse_test_client_cli(17, argv);
+  CHECK(options.command == TestClientCommand::Scenario);
+  CHECK(options.load_mode == "publish-rate");
+  CHECK(options.load_connection_count == 12U);
+  CHECK(options.load_connect_interval_ms == 20U);
+  CHECK(options.load_message_interval_ms == 5U);
+  CHECK(options.load_publish_limit == 200U);
+  CHECK(options.load_topic_template == "bench/{index}");
+  CHECK(options.load_client_template == "bench-client-{index}");
+  CHECK(options.load_metrics_json);
+}
+
 TEST_CASE("test_client_cli_scenario_requires_selector", "[test_client][cli]") {
   const char *argv[] = {"yahatestclient", "scenario"};
   CHECK_THROWS_AS(parse_test_client_cli(2, argv), std::invalid_argument);

@@ -33,6 +33,14 @@ struct TestClientCliOptions {
   std::string profile_path{};
   std::string output_path{};
   std::string scenario_name{};
+  std::string load_mode{};
+  uint32_t load_connection_count{10U};
+  uint32_t load_connect_interval_ms{0U};
+  uint32_t load_message_interval_ms{0U};
+  uint32_t load_publish_limit{100U};
+  std::string load_topic_template{"load/{index}"};
+  std::string load_client_template{"load-client-{index}"};
+  bool load_metrics_json{false};
   bool list_scenarios{false};
   std::vector<std::pair<std::string, std::string>> overrides{};
 };

@@ -1,447 +1,634 @@
-#include "test_client/test_client_scenario_runner.h"
+#include "test_client_scenario_runner.h"
 
+#include <algorithm>
 #include <chrono>
-#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <future>
+#include <iomanip>
 #include <iostream>
-#include <optional>
 #include <sstream>
 #include <stdexcept>
-#include <string>
-#include <string_view>
 #include <thread>
 #include <vector>
+
+#if !defined(_WIN32)
+#include <sys/wait.h>
+#endif
 
 namespace mqtt {
 namespace {
 
-enum class ScenarioStepKind : uint8_t {
-  Connect,
-  Subscribe,
-  Publish,
-  WaitAssertMessage,
-  Unsubscribe,
-  Disconnect,
-  Sleep,
-};
+using Clock = std::chrono::steady_clock;
 
 struct ScenarioStep {
-  ScenarioStepKind kind{ScenarioStepKind::Sleep};
-  uint8_t qos{0U};
-  uint32_t timeout_ms{0U};
-  uint32_t duration_ms{0U};
-  std::string payload{};
+  std::string label;
+  std::vector<std::string> arguments;
 };
 
-struct ScenarioDefinition {
+struct BuiltinScenario {
   std::string name;
   std::string description;
   std::vector<ScenarioStep> steps;
 };
 
-struct RunningSubscribe {
-  std::future<int> future;
-  std::filesystem::path output_path;
-  std::string expected_payload;
-  uint32_t timeout_ms{0U};
+struct LoadMetrics {
+  std::string mode;
+  uint64_t attempted{0U};
+  uint64_t succeeded{0U};
+  uint64_t failed{0U};
+  uint64_t timed_out{0U};
+  uint64_t duration_ms{0U};
+  double throughput_ops_per_sec{0.0};
+  double latency_avg_ms{0.0};
+  double latency_min_ms{0.0};
+  double latency_max_ms{0.0};
+  std::vector<double> sample_latencies_ms{};
 };
 
-[[nodiscard]] std::string shell_quote(const std::string &raw_text) {
-  std::string quoted = "\"";
-  for (const char character : raw_text) {
-    if (character == '"' || character == '\\') {
-      quoted.push_back('\\');
+struct SubscriberTask {
+  std::future<int> task;
+  std::string topic;
+  std::string output_file;
+};
+
+std::string shell_quote(const std::string& value) {
+  std::string quoted;
+  quoted.reserve(value.size() + 2U);
+  quoted.push_back('\'');
+  for (const char character : value) {
+    if (character == '\'') {
+      quoted += "'\\''";
+    } else {
+      quoted.push_back(character);
     }
-    quoted.push_back(character);
   }
-  quoted.push_back('"');
+  quoted.push_back('\'');
   return quoted;
 }
 
-[[nodiscard]] std::string build_command_line(
-    const std::string &executable_path, const std::vector<std::string> &arguments,
-    const std::optional<std::filesystem::path> &capture_path = std::nullopt) {
+std::string build_cmdline(const std::string& executable,
+                         const std::vector<std::string>& arguments) {
   std::ostringstream command_stream;
-  command_stream << shell_quote(executable_path);
-  for (const std::string &argument : arguments) {
-    command_stream << ' ' << shell_quote(argument);
-  }
-  if (capture_path.has_value()) {
-    command_stream << " > " << shell_quote(capture_path->string()) << " 2>&1";
+  command_stream << shell_quote(executable);
+  for (const auto& argument : arguments) {
+    command_stream << " " << shell_quote(argument);
   }
   return command_stream.str();
 }
 
-[[nodiscard]] int run_command(const std::string &command_line) {
-  return std::system(command_line.c_str());
-}
-
-[[nodiscard]] std::string make_runtime_topic() {
-  const auto now_ticks = std::chrono::steady_clock::now().time_since_epoch();
-  return "integration/step31/scenario/" +
-         std::to_string(std::chrono::duration_cast<std::chrono::microseconds>(
-                            now_ticks)
-                            .count());
-}
-
-[[nodiscard]] std::vector<std::string>
-base_connection_args(const TestClientProfile &profile,
-                     const std::string &client_identifier) {
-  std::vector<std::string> args;
-  args.push_back("--host");
-  args.push_back(profile.host);
-  args.push_back("--port");
-  args.push_back(std::to_string(profile.port));
-  args.push_back("--transport");
-  args.push_back(profile.transport == TestClientTransport::Mqtt ? "mqtt" : "ws");
-  args.push_back("--client-id");
-  args.push_back(client_identifier);
-  args.push_back("--maximum-reconnect-times");
-  args.push_back("0");
-
-  if (profile.transport == TestClientTransport::Ws) {
-    args.push_back("--ws-path");
-    args.push_back(profile.ws_path);
-    for (const std::string &header_line : profile.ws_headers) {
-      args.push_back("--ws-header");
-      args.push_back(header_line);
-    }
+int run_command(const std::string& command_line) {
+  const int raw_exit = std::system(command_line.c_str());
+  if (raw_exit < 0) {
+    return 1;
   }
+#if defined(_WIN32)
+  return raw_exit;
+#else
+  if (WIFEXITED(raw_exit)) {
+    return WEXITSTATUS(raw_exit);
+  }
+  return 1;
+#endif
+}
+
+std::vector<std::string> make_base_arguments(
+    const TestClientProfile& profile,
+    const std::string& generated_client_id = std::string()) {
+  std::vector<std::string> arguments;
+  arguments.emplace_back("--host");
+  arguments.emplace_back(profile.host);
+  arguments.emplace_back("--port");
+  arguments.emplace_back(std::to_string(profile.port));
+  arguments.emplace_back("--transport");
+  arguments.emplace_back(to_string(profile.transport));
+
+  if (!generated_client_id.empty()) {
+    arguments.emplace_back("--client-id");
+    arguments.emplace_back(generated_client_id);
+  } else if (!profile.client_id.empty()) {
+    arguments.emplace_back("--client-id");
+    arguments.emplace_back(profile.client_id);
+  }
+
   if (profile.username.has_value()) {
-    args.push_back("--username");
-    args.push_back(*profile.username);
+    arguments.emplace_back("--username");
+    arguments.emplace_back(*profile.username);
   }
   if (profile.password.has_value()) {
-    args.push_back("--password");
-    args.push_back(*profile.password);
+    arguments.emplace_back("--password");
+    arguments.emplace_back(*profile.password);
   }
 
-  return args;
+  arguments.emplace_back("--clean-start");
+  arguments.emplace_back(profile.clean_start ? "true" : "false");
+  arguments.emplace_back("--keep-alive");
+  arguments.emplace_back(std::to_string(profile.keep_alive_seconds));
+  arguments.emplace_back("--session-expiry-seconds");
+  arguments.emplace_back(
+      std::to_string(profile.session_expiry_interval_seconds));
+
+  for (const auto& property : profile.connect_user_properties) {
+    arguments.emplace_back("--connect-user-property");
+    arguments.emplace_back(property.first + "=" + property.second);
+  }
+
+  return arguments;
 }
 
-[[nodiscard]] const std::vector<ScenarioDefinition> &built_in_scenarios() {
-  static const std::vector<ScenarioDefinition> scenarios = {
+std::string render_template(const std::string& pattern, uint32_t index) {
+  const std::string placeholder = "{index}";
+  const std::string replacement = std::to_string(index);
+  std::string rendered = pattern;
+
+  std::size_t start_index = 0U;
+  while (true) {
+    const std::size_t found = rendered.find(placeholder, start_index);
+    if (found == std::string::npos) {
+      break;
+    }
+    rendered.replace(found, placeholder.size(), replacement);
+    start_index = found + replacement.size();
+  }
+
+  return rendered;
+}
+
+void sleep_between_operations(uint32_t interval_ms) {
+  if (interval_ms == 0U) {
+    return;
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
+}
+
+std::string make_payload_for_index(uint32_t index,
+                                   const TestClientProfile& profile) {
+  if (profile.publish_payload.has_value()) {
+    return *profile.publish_payload;
+  }
+  return "step32-message-" + std::to_string(index);
+}
+
+std::vector<std::string> make_publish_arguments(
+    const TestClientProfile& profile,
+    uint32_t index,
+    const std::string& topic,
+    const std::string& client_id) {
+  std::vector<std::string> arguments;
+  arguments.emplace_back("publish");
+
+  const std::vector<std::string> base = make_base_arguments(profile, client_id);
+  arguments.insert(arguments.end(), base.begin(), base.end());
+
+  arguments.emplace_back("--topic");
+  arguments.emplace_back(topic);
+  arguments.emplace_back("--payload");
+  arguments.emplace_back(make_payload_for_index(index, profile));
+  arguments.emplace_back("--payload-encoding");
+  arguments.emplace_back(profile.publish_payload_encoding);
+  arguments.emplace_back("--qos");
+  arguments.emplace_back(std::to_string(profile.publish_qos));
+  arguments.emplace_back("--retain");
+  arguments.emplace_back(profile.publish_retain ? "true" : "false");
+
+  if (profile.publish_payload_format_indicator.has_value()) {
+    arguments.emplace_back("--payload-format-indicator");
+    arguments.emplace_back(
+        std::to_string(*profile.publish_payload_format_indicator));
+  }
+  if (profile.publish_message_expiry_interval_seconds.has_value()) {
+    arguments.emplace_back("--message-expiry-interval-seconds");
+    arguments.emplace_back(
+        std::to_string(*profile.publish_message_expiry_interval_seconds));
+  }
+  if (profile.publish_topic_alias.has_value()) {
+    arguments.emplace_back("--topic-alias");
+    arguments.emplace_back(std::to_string(*profile.publish_topic_alias));
+  }
+  if (profile.publish_response_topic.has_value()) {
+    arguments.emplace_back("--response-topic");
+    arguments.emplace_back(*profile.publish_response_topic);
+  }
+  if (profile.publish_correlation_data.has_value()) {
+    arguments.emplace_back("--correlation-data");
+    arguments.emplace_back(*profile.publish_correlation_data);
+  }
+  if (profile.publish_content_type.has_value()) {
+    arguments.emplace_back("--content-type");
+    arguments.emplace_back(*profile.publish_content_type);
+  }
+
+  for (const auto& property : profile.publish_user_properties) {
+    arguments.emplace_back("--publish-user-property");
+    arguments.emplace_back(property.first + "=" + property.second);
+  }
+
+  return arguments;
+}
+
+std::vector<std::string> make_subscribe_arguments(
+    const TestClientProfile& profile,
+    const std::string& topic,
+    const std::string& client_id,
+    uint32_t message_limit,
+    const std::string& output_file) {
+  std::vector<std::string> arguments;
+  arguments.emplace_back("subscribe");
+
+  const std::vector<std::string> base = make_base_arguments(profile, client_id);
+  arguments.insert(arguments.end(), base.begin(), base.end());
+
+  arguments.emplace_back("--subscription");
+  arguments.emplace_back(topic + "|0|false|false|0");
+  arguments.emplace_back("--message-limit");
+  arguments.emplace_back(std::to_string(message_limit));
+  arguments.emplace_back("--wait-timeout-ms");
+  arguments.emplace_back("15000");
+  arguments.emplace_back("--clean-output");
+  arguments.emplace_back("--output-file");
+  arguments.emplace_back(output_file);
+
+  return arguments;
+}
+
+void update_latency_stats(LoadMetrics& metrics) {
+  if (metrics.sample_latencies_ms.empty()) {
+    return;
+  }
+
+  const auto min_max_pair = std::minmax_element(metrics.sample_latencies_ms.begin(),
+                                                metrics.sample_latencies_ms.end());
+  metrics.latency_min_ms = *min_max_pair.first;
+  metrics.latency_max_ms = *min_max_pair.second;
+
+  double total_sum = 0.0;
+  for (const double value : metrics.sample_latencies_ms) {
+    total_sum += value;
+  }
+  metrics.latency_avg_ms =
+      total_sum / static_cast<double>(metrics.sample_latencies_ms.size());
+}
+
+void finalize_metrics(LoadMetrics& metrics, Clock::time_point start_time) {
+  metrics.duration_ms = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          Clock::now() - start_time)
+          .count());
+
+  const double duration_seconds = static_cast<double>(metrics.duration_ms) / 1000.0;
+  if (duration_seconds > 0.0) {
+    metrics.throughput_ops_per_sec =
+        static_cast<double>(metrics.succeeded) / duration_seconds;
+  }
+
+  update_latency_stats(metrics);
+}
+
+void print_metrics_summary(const LoadMetrics& metrics, bool print_json) {
+  std::cout << "Step32 load mode: " << metrics.mode << "\n"
+            << "  attempted=" << metrics.attempted << " succeeded="
+            << metrics.succeeded << " failed=" << metrics.failed
+            << " timed_out=" << metrics.timed_out << "\n"
+            << "  duration_ms=" << metrics.duration_ms
+            << " throughput_ops_per_sec=" << std::fixed << std::setprecision(2)
+            << metrics.throughput_ops_per_sec << "\n"
+            << "  latency_ms(avg/min/max)=" << std::fixed
+            << std::setprecision(2) << metrics.latency_avg_ms << "/"
+            << metrics.latency_min_ms << "/" << metrics.latency_max_ms << "\n";
+
+  if (!print_json) {
+    return;
+  }
+
+  std::ostringstream json_stream;
+  json_stream << "{"
+              << "\"mode\":\"" << metrics.mode << "\","
+              << "\"attempted\":" << metrics.attempted << ","
+              << "\"succeeded\":" << metrics.succeeded << ","
+              << "\"failed\":" << metrics.failed << ","
+              << "\"timed_out\":" << metrics.timed_out << ","
+              << "\"duration_ms\":" << metrics.duration_ms << ","
+              << "\"throughput_ops_per_sec\":" << std::fixed
+              << std::setprecision(3) << metrics.throughput_ops_per_sec << ","
+              << "\"latency_avg_ms\":" << std::fixed << std::setprecision(3)
+              << metrics.latency_avg_ms << ","
+              << "\"latency_min_ms\":" << std::fixed << std::setprecision(3)
+              << metrics.latency_min_ms << ","
+              << "\"latency_max_ms\":" << std::fixed << std::setprecision(3)
+              << metrics.latency_max_ms << "}";
+
+  std::cout << "LOAD_METRICS_JSON " << json_stream.str() << "\n";
+}
+
+void run_single_operation(
+    const std::string& executable,
+    const std::vector<std::string>& arguments,
+    LoadMetrics& metrics) {
+  const Clock::time_point started_at = Clock::now();
+  const int result_code = run_command(build_cmdline(executable, arguments));
+  const Clock::time_point finished_at = Clock::now();
+
+  metrics.attempted += 1U;
+  metrics.sample_latencies_ms.push_back(
+      static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                              finished_at - started_at)
+                              .count()));
+
+  if (result_code == 0) {
+    metrics.succeeded += 1U;
+  } else {
+    metrics.failed += 1U;
+  }
+}
+
+int run_mass_connect_mode(
+    const std::string& executable,
+    const TestClientCliOptions& options,
+    const TestClientProfile& profile,
+    LoadMetrics& metrics) {
+  for (uint32_t connection_index = 0U;
+       connection_index < options.load_connection_count; ++connection_index) {
+    const std::string client_id =
+        render_template(options.load_client_template, connection_index);
+    const std::string topic =
+        render_template(options.load_topic_template, connection_index);
+
+    const std::vector<std::string> arguments =
+        make_publish_arguments(profile, connection_index, topic, client_id);
+    run_single_operation(executable, arguments, metrics);
+
+    sleep_between_operations(options.load_connect_interval_ms);
+  }
+
+  return metrics.failed == 0U ? 0 : 1;
+}
+
+int run_publish_rate_mode(
+    const std::string& executable,
+    const TestClientCliOptions& options,
+    const TestClientProfile& profile,
+    LoadMetrics& metrics) {
+  const uint32_t operation_count =
+      std::max(options.load_publish_limit, options.load_connection_count);
+
+  for (uint32_t publish_index = 0U; publish_index < operation_count;
+       ++publish_index) {
+    const uint32_t connection_index =
+        publish_index % std::max(options.load_connection_count, 1U);
+    const std::string client_id =
+        render_template(options.load_client_template, connection_index);
+    const std::string topic =
+        render_template(options.load_topic_template, connection_index);
+
+    const std::vector<std::string> arguments =
+        make_publish_arguments(profile, publish_index, topic, client_id);
+    run_single_operation(executable, arguments, metrics);
+
+    sleep_between_operations(options.load_message_interval_ms);
+  }
+
+  return metrics.failed == 0U ? 0 : 1;
+}
+
+int run_multi_subscribe_mode(
+    const std::string& executable,
+    const TestClientCliOptions& options,
+    const TestClientProfile& profile,
+    LoadMetrics& metrics) {
+  const std::filesystem::path output_directory =
+      std::filesystem::temp_directory_path() / "yaha-step32-subscribers";
+  std::error_code error_code;
+  std::filesystem::create_directories(output_directory, error_code);
+
+  std::vector<SubscriberTask> subscribers;
+  subscribers.reserve(options.load_connection_count);
+
+  for (uint32_t subscriber_index = 0U;
+       subscriber_index < options.load_connection_count; ++subscriber_index) {
+    const std::string topic =
+        render_template(options.load_topic_template, subscriber_index);
+    const std::string client_id =
+        render_template(options.load_client_template, subscriber_index);
+    const std::filesystem::path output_file =
+        output_directory / ("subscriber-" + std::to_string(subscriber_index) + ".log");
+
+    const std::vector<std::string> subscribe_arguments = make_subscribe_arguments(
+        profile,
+        topic,
+        client_id,
+        1U,
+        output_file.string());
+
+    SubscriberTask task{
+        std::async(
+            std::launch::async,
+            [executable, subscribe_arguments]() {
+              return run_command(build_cmdline(executable, subscribe_arguments));
+            }),
+        topic,
+        output_file.string()};
+    subscribers.push_back(std::move(task));
+
+    sleep_between_operations(options.load_connect_interval_ms);
+  }
+
+  const uint32_t publish_count =
+      std::max(options.load_publish_limit, options.load_connection_count);
+
+  for (uint32_t publish_index = 0U; publish_index < publish_count;
+       ++publish_index) {
+    const uint32_t subscriber_index =
+        publish_index % std::max(options.load_connection_count, 1U);
+    const std::string topic =
+        render_template(options.load_topic_template, subscriber_index);
+    const std::string client_id =
+        render_template(options.load_client_template, subscriber_index);
+
+    const std::vector<std::string> publish_arguments =
+        make_publish_arguments(profile, publish_index, topic, client_id);
+    run_single_operation(executable, publish_arguments, metrics);
+
+    sleep_between_operations(options.load_message_interval_ms);
+  }
+
+  for (auto& subscriber : subscribers) {
+    metrics.attempted += 1U;
+    const Clock::time_point started_at = Clock::now();
+    const int result_code = subscriber.task.get();
+    const Clock::time_point finished_at = Clock::now();
+
+    metrics.sample_latencies_ms.push_back(
+        static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                finished_at - started_at)
+                                .count()));
+
+    if (result_code == 0) {
+      metrics.succeeded += 1U;
+    } else {
+      metrics.failed += 1U;
+      std::cout << "Subscriber failed for topic " << subscriber.topic
+                << " output=" << subscriber.output_file << "\n";
+    }
+  }
+
+  std::filesystem::remove_all(output_directory, error_code);
+  return metrics.failed == 0U ? 0 : 1;
+}
+
+int run_step32_load_mode(const std::string& executable,
+                         const TestClientCliOptions& options,
+                         const TestClientProfile& profile) {
+  if (options.load_mode != "mass-connect" && options.load_mode != "publish-rate" &&
+      options.load_mode != "multi-subscribe") {
+    std::cerr << "Unknown Step32 load mode '" << options.load_mode
+              << "'. Supported: mass-connect, publish-rate, multi-subscribe\n";
+    return 1;
+  }
+
+  LoadMetrics metrics;
+  metrics.mode = options.load_mode;
+  const Clock::time_point started_at = Clock::now();
+
+  int result_code = 1;
+  if (metrics.mode == "mass-connect") {
+    result_code = run_mass_connect_mode(executable, options, profile, metrics);
+  } else if (metrics.mode == "publish-rate") {
+    result_code = run_publish_rate_mode(executable, options, profile, metrics);
+  } else {
+    result_code = run_multi_subscribe_mode(executable, options, profile, metrics);
+  }
+
+  finalize_metrics(metrics, started_at);
+  print_metrics_summary(metrics, options.load_metrics_json);
+  return result_code;
+}
+
+const std::vector<BuiltinScenario>& built_in_scenarios() {
+  static const std::vector<BuiltinScenario> scenarios = {
       {
-          .name = "clean_start_connect_disconnect",
-          .description =
-              "Protocol smoke scenario: connect/disconnect lifecycle including short idle wait.",
-          .steps = {
-              {.kind = ScenarioStepKind::Connect},
-              {.kind = ScenarioStepKind::Sleep, .duration_ms = 200U},
-              {.kind = ScenarioStepKind::Disconnect},
+          "clean_start_connect_disconnect",
+          "Connect, disconnect, reconnect, disconnect",
+          {
+              {"connect-initial", {"connect"}},
+              {"disconnect", {"disconnect"}},
+              {"connect-again", {"connect"}},
+              {"disconnect-final", {"disconnect"}},
           },
       },
       {
-          .name = "qos1_subscribe_publish_unsubscribe",
-          .description =
-              "Protocol scenario: subscribe QoS1, publish QoS1, assert receipt, then unsubscribe/disconnect.",
-          .steps = {
-              {.kind = ScenarioStepKind::Connect},
-              {.kind = ScenarioStepKind::Subscribe, .qos = 1U, .timeout_ms = 7000U},
-              {.kind = ScenarioStepKind::Sleep, .duration_ms = 300U},
-              {.kind = ScenarioStepKind::Publish,
-               .qos = 1U,
-               .payload = "step31-qos1-message"},
-              {.kind = ScenarioStepKind::WaitAssertMessage, .timeout_ms = 9000U},
-              {.kind = ScenarioStepKind::Unsubscribe},
-              {.kind = ScenarioStepKind::Disconnect},
+          "qos1_subscribe_publish_unsubscribe",
+          "Subscribe once, publish once, unsubscribe",
+          {
+              {
+                  "subscribe",
+                  {
+                      "subscribe",
+                      "--subscription",
+                      "step31/qos1|1|false|false|0",
+                      "--message-limit",
+                      "1",
+                      "--wait-timeout-ms",
+                      "10000",
+                      "--clean-output",
+                  },
+              },
+              {
+                  "publish",
+                  {
+                      "publish",
+                      "--topic",
+                      "step31/qos1",
+                      "--payload",
+                      "step31-qos1-message",
+                      "--qos",
+                      "1",
+                  },
+              },
+              {"unsubscribe", {"unsubscribe", "--topic", "step31/qos1"}},
           },
       },
   };
-
   return scenarios;
 }
 
-[[nodiscard]] const ScenarioDefinition &find_scenario_or_throw(
-    const std::string &scenario_name) {
-  for (const ScenarioDefinition &scenario_definition : built_in_scenarios()) {
-    if (scenario_definition.name == scenario_name) {
-      return scenario_definition;
+const BuiltinScenario& find_scenario_or_throw(const std::string& name) {
+  for (const auto& scenario : built_in_scenarios()) {
+    if (scenario.name == name) {
+      return scenario;
     }
   }
-
-  throw std::invalid_argument("Unknown scenario: " + scenario_name);
+  throw std::invalid_argument("Unknown scenario '" + name + "'.");
 }
 
-[[nodiscard]] std::string step_name(const ScenarioStepKind kind) {
-  switch (kind) {
-  case ScenarioStepKind::Connect:
-    return "connect";
-  case ScenarioStepKind::Subscribe:
-    return "subscribe";
-  case ScenarioStepKind::Publish:
-    return "publish";
-  case ScenarioStepKind::WaitAssertMessage:
-    return "wait/assert-message";
-  case ScenarioStepKind::Unsubscribe:
-    return "unsubscribe";
-  case ScenarioStepKind::Disconnect:
-    return "disconnect";
-  case ScenarioStepKind::Sleep:
-    return "sleep";
-  }
-
-  return "unknown";
-}
-
-void log_step_result(const std::size_t step_index, const std::size_t step_count,
-                     const ScenarioStepKind kind, const bool success,
-                     const std::string &details) {
-  std::cout << "[SCENARIO] [" << (success ? "PASS" : "FAIL") << "] "
-            << "(" << step_index << "/" << step_count << ") "
-            << step_name(kind) << " - " << details << '\n';
-}
-
-[[nodiscard]] bool run_connect_probe(
-    const std::string &executable_path, const TestClientProfile &profile,
-    const std::string &topic_name, const std::size_t step_index,
-    const std::size_t step_count) {
-  std::vector<std::string> command_args = {"publish"};
-  const auto base_args =
-      base_connection_args(profile, profile.client_id + "-scenario-connect");
-  command_args.insert(command_args.end(), base_args.begin(), base_args.end());
-  command_args.push_back("--topic");
-  command_args.push_back(topic_name + "/connect-probe");
-  command_args.push_back("--qos");
-  command_args.push_back("0");
-  command_args.push_back("--payload");
-  command_args.push_back("step31-connect-probe");
-  command_args.push_back("--payload-encoding");
-  command_args.push_back("raw");
-
-  const int exit_code =
-      run_command(build_command_line(executable_path, command_args));
-  const bool success = (exit_code == 0);
-  log_step_result(step_index, step_count, ScenarioStepKind::Connect, success,
-                  success ? "CONNECT probe command succeeded"
-                          : "CONNECT probe command failed");
-  return success;
-}
-
-[[nodiscard]] bool start_subscribe_step(
-    const std::string &executable_path, const TestClientProfile &profile,
-    const std::string &topic_name, const ScenarioStep &step,
-    RunningSubscribe &running_subscribe, const std::size_t step_index,
-    const std::size_t step_count) {
-  std::vector<std::string> command_args = {"subscribe"};
-  const auto base_args =
-      base_connection_args(profile, profile.client_id + "-scenario-sub");
-  command_args.insert(command_args.end(), base_args.begin(), base_args.end());
-  command_args.push_back("--subscription");
-  command_args.push_back(topic_name + "|" + std::to_string(step.qos) +
-                         "|false|false|0");
-  command_args.push_back("--message-limit");
-  command_args.push_back("1");
-  command_args.push_back("--wait-timeout-ms");
-  command_args.push_back(
-      std::to_string(step.timeout_ms > 0U ? step.timeout_ms : 7000U));
-  command_args.push_back("--clean-output");
-
-  const std::filesystem::path output_path =
-      std::filesystem::temp_directory_path() /
-      ("yahatestclient-step31-subscribe-" +
-       std::to_string(std::chrono::duration_cast<std::chrono::microseconds>(
-                          std::chrono::steady_clock::now().time_since_epoch())
-                          .count()) +
-       ".log");
-
-  const std::string command_line =
-      build_command_line(executable_path, command_args, output_path);
-
-  running_subscribe.future = std::async(std::launch::async, [command_line]() {
-    return run_command(command_line);
-  });
-  running_subscribe.output_path = output_path;
-  running_subscribe.timeout_ms = step.timeout_ms > 0U ? step.timeout_ms : 7000U;
-
-  log_step_result(step_index, step_count, ScenarioStepKind::Subscribe, true,
-                  "Subscriber started in background");
-  return true;
-}
-
-[[nodiscard]] bool run_publish_step(
-    const std::string &executable_path, const TestClientProfile &profile,
-    const std::string &topic_name, const ScenarioStep &step,
-    RunningSubscribe &running_subscribe, const std::size_t step_index,
-    const std::size_t step_count) {
-  std::vector<std::string> command_args = {"publish"};
-  const auto base_args =
-      base_connection_args(profile, profile.client_id + "-scenario-pub");
-  command_args.insert(command_args.end(), base_args.begin(), base_args.end());
-  command_args.push_back("--topic");
-  command_args.push_back(topic_name);
-  command_args.push_back("--qos");
-  command_args.push_back(std::to_string(step.qos));
-  command_args.push_back("--payload");
-  command_args.push_back(step.payload.empty() ? "step31-message" : step.payload);
-  command_args.push_back("--payload-encoding");
-  command_args.push_back("raw");
-
-  const int exit_code =
-      run_command(build_command_line(executable_path, command_args));
-  const bool success = (exit_code == 0);
-  if (success) {
-    running_subscribe.expected_payload =
-        step.payload.empty() ? "step31-message" : step.payload;
-  }
-
-  log_step_result(step_index, step_count, ScenarioStepKind::Publish, success,
-                  success ? "Publish command succeeded"
-                          : "Publish command failed");
-  return success;
-}
-
-[[nodiscard]] bool wait_and_assert_message(
-    RunningSubscribe &running_subscribe, const ScenarioStep &step,
-    const std::size_t step_index, const std::size_t step_count) {
-  if (!running_subscribe.future.valid()) {
-    log_step_result(step_index, step_count, ScenarioStepKind::WaitAssertMessage,
-                    false, "No active subscriber process");
-    return false;
-  }
-
-  const uint32_t timeout_ms = step.timeout_ms > 0U ? step.timeout_ms
-                                                    : running_subscribe.timeout_ms;
-  const auto wait_result = running_subscribe.future.wait_for(
-      std::chrono::milliseconds(timeout_ms > 0U ? timeout_ms : 9000U));
-  if (wait_result != std::future_status::ready) {
-    log_step_result(step_index, step_count, ScenarioStepKind::WaitAssertMessage,
-                    false, "Subscriber did not finish before timeout");
-    return false;
-  }
-
-  const int subscriber_exit_code = running_subscribe.future.get();
-  if (subscriber_exit_code != 0) {
-    log_step_result(step_index, step_count, ScenarioStepKind::WaitAssertMessage,
-                    false, "Subscriber command failed");
-    return false;
-  }
-
-  std::ifstream output_file(running_subscribe.output_path);
-  if (!output_file.is_open()) {
-    log_step_result(step_index, step_count, ScenarioStepKind::WaitAssertMessage,
-                    false, "Failed to read subscriber output log");
-    return false;
-  }
-
-  std::stringstream buffer_stream;
-  buffer_stream << output_file.rdbuf();
-  const std::string content = buffer_stream.str();
-
-  const bool found_payload =
-      !running_subscribe.expected_payload.empty() &&
-      content.find(running_subscribe.expected_payload) != std::string::npos;
-  log_step_result(
-      step_index, step_count, ScenarioStepKind::WaitAssertMessage, found_payload,
-      found_payload ? "Expected payload observed in subscriber output"
-                    : "Expected payload missing in subscriber output");
-  return found_payload;
-}
-
-[[nodiscard]] bool run_step31_scenario(const std::string &executable_path,
-                                       const TestClientProfile &profile,
-                                       const ScenarioDefinition &scenario) {
-  const std::string topic_name = make_runtime_topic();
-  RunningSubscribe running_subscribe;
-
-  std::cout << "[SCENARIO] Running " << scenario.name << "\n";
-  std::cout << "[SCENARIO] " << scenario.description << "\n";
-
-  for (std::size_t index = 0U; index < scenario.steps.size(); ++index) {
-    const ScenarioStep &step = scenario.steps[index];
-    const std::size_t step_number = index + 1U;
-    const std::size_t step_count = scenario.steps.size();
-
-    if (step.kind == ScenarioStepKind::Connect) {
-      if (!run_connect_probe(executable_path, profile, topic_name, step_number,
-                             step_count)) {
-        return false;
-      }
-      continue;
-    }
-
-    if (step.kind == ScenarioStepKind::Subscribe) {
-      if (!start_subscribe_step(executable_path, profile, topic_name, step,
-                                running_subscribe, step_number, step_count)) {
-        return false;
-      }
-      continue;
-    }
-
-    if (step.kind == ScenarioStepKind::Publish) {
-      if (!run_publish_step(executable_path, profile, topic_name, step,
-                            running_subscribe, step_number, step_count)) {
-        return false;
-      }
-      continue;
-    }
-
-    if (step.kind == ScenarioStepKind::WaitAssertMessage) {
-      if (!wait_and_assert_message(running_subscribe, step, step_number,
-                                   step_count)) {
-        return false;
-      }
-      continue;
-    }
-
-    if (step.kind == ScenarioStepKind::Unsubscribe) {
-      log_step_result(step_number, step_count, ScenarioStepKind::Unsubscribe,
-                      true,
-                      "Subscription process already exited after assertion phase");
-      continue;
-    }
-
-    if (step.kind == ScenarioStepKind::Disconnect) {
-      log_step_result(
-          step_number, step_count, ScenarioStepKind::Disconnect, true,
-          "Disconnect handled by one-shot command lifecycle");
-      continue;
-    }
-
-    if (step.kind == ScenarioStepKind::Sleep) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(step.duration_ms));
-      log_step_result(step_number, step_count, ScenarioStepKind::Sleep, true,
-                      "Sleep completed");
-      continue;
-    }
-
-    log_step_result(step_number, step_count, step.kind, false,
-                    "Unknown step kind");
-    return false;
-  }
-
-  return true;
+std::vector<std::string> merge_arguments(
+    const std::vector<std::string>& command_arguments,
+    const std::vector<std::string>& base_arguments) {
+  std::vector<std::string> merged_arguments;
+  merged_arguments.reserve(command_arguments.size() + base_arguments.size());
+  merged_arguments.insert(merged_arguments.end(), command_arguments.begin(),
+                          command_arguments.end());
+  merged_arguments.insert(merged_arguments.end(), base_arguments.begin(),
+                          base_arguments.end());
+  return merged_arguments;
 }
 
 } // namespace
 
-std::vector<std::pair<std::string, std::string>> list_test_client_scenarios() {
-  std::vector<std::pair<std::string, std::string>> scenario_list;
-  for (const ScenarioDefinition &scenario_definition : built_in_scenarios()) {
-    scenario_list.emplace_back(scenario_definition.name,
-                               scenario_definition.description);
-  }
-  return scenario_list;
-}
-
-int run_test_client_scenario_command(const TestClientCliOptions &options,
-                                     const TestClientProfile &profile,
-                                     const std::string &executable_path) {
+int run_test_client_scenario_command(const TestClientCliOptions& options,
+                                     const TestClientProfile& profile,
+                                     const std::string& executable_path) {
   if (options.list_scenarios) {
-    const auto scenario_list = list_test_client_scenarios();
-    std::cout << "Available scenarios:" << '\n';
-    for (const auto &entry : scenario_list) {
-      std::cout << "- " << entry.first << ": " << entry.second << '\n';
+    std::cout << "Available scenarios:\n";
+    for (const auto& scenario : built_in_scenarios()) {
+      std::cout << " - " << scenario.name << ": " << scenario.description
+                << "\n";
     }
+    std::cout << "\nStep32 load modes:\n"
+              << " - mass-connect\n"
+              << " - publish-rate\n"
+              << " - multi-subscribe\n";
     return 0;
   }
 
-  const ScenarioDefinition &scenario = find_scenario_or_throw(options.scenario_name);
-  const bool success = run_step31_scenario(executable_path, profile, scenario);
-  return success ? 0 : 1;
+  if (!options.load_mode.empty()) {
+    return run_step32_load_mode(executable_path, options, profile);
+  }
+
+  const BuiltinScenario& scenario = find_scenario_or_throw(options.scenario_name);
+  const std::vector<std::string> base_arguments = make_base_arguments(profile);
+
+  int completed_steps = 0;
+  std::cout << "Running scenario '" << scenario.name << "' ("
+            << scenario.description << ")\n";
+
+  for (const auto& step : scenario.steps) {
+    const std::vector<std::string> command_arguments =
+        merge_arguments(step.arguments, base_arguments);
+
+    std::cout << "[STEP] " << step.label << "\n";
+    const int step_code = run_command(build_cmdline(executable_path, command_arguments));
+    if (step_code != 0) {
+      std::cerr << "[FAIL] step '" << step.label << "' exited with code "
+                << step_code << "\n";
+      return step_code;
+    }
+
+    ++completed_steps;
+    std::cout << "[PASS] step '" << step.label << "'\n";
+  }
+
+  std::cout << "Scenario completed: " << completed_steps << "/"
+            << static_cast<int>(scenario.steps.size()) << " steps passed\n";
+  return 0;
+}
+
+std::vector<std::pair<std::string, std::string>> list_test_client_scenarios() {
+  std::vector<std::pair<std::string, std::string>> entries;
+  entries.reserve(built_in_scenarios().size());
+  for (const auto& scenario : built_in_scenarios()) {
+    entries.emplace_back(scenario.name, scenario.description);
+  }
+  return entries;
 }
 
 } // namespace mqtt

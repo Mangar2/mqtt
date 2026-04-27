@@ -1,4 +1,4 @@
-# test_client — Step 27-31 Test Client Shell
+# test_client — Step 27-32 Test Client Shell
 
 ## Purpose
 
@@ -6,7 +6,7 @@ Provide a standalone executable shell for the MQTT 5.0 client test tooling.
 This module owns profile persistence, command-line parsing, and connection-shell
 orchestration for broker-supported transports (`mqtt`, `ws`) without TLS.
 
-## Scope (Step 27-31)
+## Scope (Step 27-32)
 
 - Persistent connection profiles with deterministic load/save behavior.
 - Command-line subcommands for `connect`, `publish`, `subscribe`,
@@ -35,6 +35,10 @@ orchestration for broker-supported transports (`mqtt`, `ws`) without TLS.
 - Step 31 scripted scenario workflows: built-in scenario catalog discovery,
   scenario selection, step-by-step pass/fail logging, and non-zero process exit
   when any scenario step fails.
+- Step 32 load modes: `mass-connect`, `publish-rate`, and
+  `multi-subscribe` with configurable connection count, connect/message
+  interval, publish limit, topic/client templates, and optional JSON metrics
+  output for automation tooling.
 
 ## Public API
 
@@ -121,8 +125,9 @@ Behavior:
   pipeline, acknowledges inbound QoS 1/2 handshakes, and exits on signal or
   optional message-limit condition.
 - `scenario`: runs a selected built-in scenario with step-by-step status lines
-  and non-zero exit on the first failed step; `--list-scenarios` prints the
-  built-in scenario catalog.
+  and non-zero exit on the first failed step, or runs a Step 32 load mode;
+  `--list-scenarios` prints the built-in scenario catalog and available
+  load modes.
 - `save-profile`: writes deterministic key/value profile file.
 - `show-profile`: prints effective profile (password redacted).
 

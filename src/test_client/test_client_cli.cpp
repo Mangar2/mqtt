@@ -44,6 +44,57 @@ void parse_common_options(TestClientCliOptions &options, const int argc,
       options.list_scenarios = true;
       continue;
     }
+    if (option_name == "--load-mode") {
+      options.load_mode = require_value(index, argc, argv, "--load-mode");
+      ++index;
+      continue;
+    }
+    if (option_name == "--connection-count") {
+      const std::string value =
+          require_value(index, argc, argv, "--connection-count");
+      options.load_connection_count = static_cast<uint32_t>(std::stoul(value));
+      ++index;
+      continue;
+    }
+    if (option_name == "--connect-interval-ms") {
+      const std::string value =
+          require_value(index, argc, argv, "--connect-interval-ms");
+      options.load_connect_interval_ms =
+          static_cast<uint32_t>(std::stoul(value));
+      ++index;
+      continue;
+    }
+    if (option_name == "--message-interval-ms") {
+      const std::string value =
+          require_value(index, argc, argv, "--message-interval-ms");
+      options.load_message_interval_ms =
+          static_cast<uint32_t>(std::stoul(value));
+      ++index;
+      continue;
+    }
+    if (option_name == "--publish-limit") {
+      const std::string value =
+          require_value(index, argc, argv, "--publish-limit");
+      options.load_publish_limit = static_cast<uint32_t>(std::stoul(value));
+      ++index;
+      continue;
+    }
+    if (option_name == "--topic-template") {
+      options.load_topic_template =
+          require_value(index, argc, argv, "--topic-template");
+      ++index;
+      continue;
+    }
+    if (option_name == "--client-template") {
+      options.load_client_template =
+          require_value(index, argc, argv, "--client-template");
+      ++index;
+      continue;
+    }
+    if (option_name == "--metrics-json") {
+      options.load_metrics_json = true;
+      continue;
+    }
 
     auto add_override = [&options, &index, argc,
                          argv](const std::string &key_name,
@@ -544,9 +595,10 @@ TestClientCliOptions parse_test_client_cli(const int argc, const char *argv[]) {
   if (command_name == "scenario") {
     options.command = TestClientCommand::Scenario;
     parse_common_options(options, argc, argv, 2);
-    if (!options.list_scenarios && options.scenario_name.empty()) {
+    if (!options.list_scenarios && options.scenario_name.empty() &&
+        options.load_mode.empty()) {
       throw std::invalid_argument(
-          "scenario command requires --scenario <name> or --list-scenarios");
+          "scenario command requires --scenario <name>, --load-mode <name>, or --list-scenarios");
     }
     return options;
   }
@@ -658,6 +710,15 @@ std::string test_client_help_text() {
       "scenario options:\n"
       "  --scenario <name>\n"
       "  --list-scenarios\n\n"
+      "step32 load-mode options:\n"
+      "  --load-mode <mass-connect|publish-rate|multi-subscribe>\n"
+      "  --connection-count <count>\n"
+      "  --connect-interval-ms <milliseconds>\n"
+      "  --message-interval-ms <milliseconds>\n"
+      "  --publish-limit <count>\n"
+      "  --topic-template <template-with-{index}>\n"
+      "  --client-template <template-with-{index}>\n"
+      "  --metrics-json\n\n"
       "save-profile options:\n"
       "  --output <file>\n";
 }

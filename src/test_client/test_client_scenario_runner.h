@@ -21,7 +21,7 @@ namespace mqtt {
 list_test_client_scenarios();
 
 /**
- * @brief Execute Step 31 scenario command.
+ * @brief Execute Step 31 scenario command or Step 32 load mode.
  * @param options Parsed CLI options.
  * @param profile Effective profile after merge and validation.
  * @param executable_path Executable path used to spawn sub-commands.

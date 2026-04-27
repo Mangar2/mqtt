@@ -1221,6 +1221,41 @@ machine-consumable format aligned with current performance-test tooling.
 **Result:** The test client can stress realistic broker paths at scale and generate comparable,
 repeatable performance evidence using the same MQTT features exercised in functional scenarios.
 
+**Implementation status (2026-04-27): Completed (Step 32 load modes + metrics implemented)**
+
+Implemented Step 32 in test-client shell:
+- `src/test_client/test_client_cli.h/.cpp`
+	- adds Step 32 selector and tuning flags for `scenario` command:
+	  - `--load-mode <mass-connect|publish-rate|multi-subscribe>`
+	  - `--connection-count <count>`
+	  - `--connect-interval-ms <milliseconds>`
+	  - `--message-interval-ms <milliseconds>`
+	  - `--publish-limit <count>`
+	  - `--topic-template <template-with-{index}>`
+	  - `--client-template <template-with-{index}>`
+	  - `--metrics-json`
+	- updates selector validation so `scenario` accepts one of:
+	  `--scenario`, `--load-mode`, `--list-scenarios`.
+- `src/test_client/test_client_scenario_runner.h/.cpp`
+	- keeps Step 31 scripted scenarios,
+	- adds Step 32 runtime modes:
+	  - `mass-connect`: repeated connect/publish operations over generated client/topic pairs,
+	  - `publish-rate`: high-rate publish loop with interval control,
+	  - `multi-subscribe`: concurrent subscriber tasks + coordinated publish fanout,
+	- adds metrics aggregation:
+	  attempted/succeeded/failed/timed_out, duration, throughput, latency min/avg/max,
+	- prints machine-consumable output line with `LOAD_METRICS_JSON {...}` when enabled.
+
+Verification:
+- `src/test_client/test/test_client_test.cpp`
+	- covers Step 32 CLI option parsing for load-mode flags.
+- `src/test_client/test/test_client_scenario_runner_test.cpp`
+	- covers `mass-connect`, `publish-rate`, and `multi-subscribe` success paths,
+	- covers unknown load-mode rejection path.
+- Full project verification:
+	- `python3 test/run_coverage.py`
+	- `1226/1226` tests passed, coverage threshold met.
+
 ---
 
 ## Dependency Order Summary

@@ -1,4 +1,4 @@
-# test_client/test — Unit tests for Step 27-30 shell
+# test_client/test — Unit tests for Step 27-32 shell
 
 ## Profile Model
 
@@ -28,7 +28,8 @@
 | `test_client_cli_connect_parses_step28_options` | `[test_client][cli]` | `connect` command parses MQTT 5 CONNECT property and will-option flags. |
 | `test_client_cli_subscribe_parses_step30_options` | `[test_client][cli]` | `subscribe` command parses subscription entries, MQTT 5 subscribe properties, and output pipeline flags. |
 | `test_client_cli_scenario_parses_step31_options` | `[test_client][cli]` | `scenario` command parses selected built-in scenario name and common overrides. |
-| `test_client_cli_scenario_requires_selector` | `[test_client][cli]` | `scenario` command rejects calls without `--scenario` or `--list-scenarios`. |
+| `test_client_cli_scenario_parses_step32_load_options` | `[test_client][cli]` | `scenario` command parses Step 32 load-mode selector and tuning flags. |
+| `test_client_cli_scenario_requires_selector` | `[test_client][cli]` | `scenario` command rejects calls without `--scenario`, `--load-mode`, or `--list-scenarios`. |
 | `test_client_cli_publish_command_alias_pub_is_supported` | `[test_client][cli]` | `pub` command alias maps to publish flow and parses core short publish flags. |
 | `test_client_cli_mqttx_publish_input_aliases_are_supported` | `[test_client][cli]` | mqttx-style publish payload/property aliases (`-s`, `-M`, `--file-read`, `-f`, `-pf`, `-e`, `-ta`, `-rt`, `-cd`, `-up`, `-si`, `-ct`) map to profile overrides. |
 | `test_client_cli_mqttx_connection_aliases_are_supported` | `[test_client][cli]` | mqttx-style host/port/client/auth/connect-property aliases map to supported test-client options. |
@@ -44,3 +45,7 @@
 | `test_client_scenario_command_unknown_name_fails_fast` | `[test_client][scenario]` | Unknown scenario names fail with explicit argument error. |
 | `test_client_scenario_command_executes_qos1_scenario_successfully` | `[test_client][scenario]` | QoS1 built-in scenario executes full step chain and returns success with a mock executable. |
 | `test_client_scenario_command_propagates_step_failures` | `[test_client][scenario]` | Step execution failure in built-in scenarios returns non-zero exit code. |
+| `test_client_scenario_command_runs_step32_mass_connect_mode` | `[test_client][scenario]` | Step 32 `mass-connect` mode executes generated load operations successfully with a mock executable. |
+| `test_client_scenario_command_runs_step32_publish_rate_mode` | `[test_client][scenario]` | Step 32 `publish-rate` mode executes burst publish loop successfully with a mock executable. |
+| `test_client_scenario_command_runs_step32_multi_subscribe_mode` | `[test_client][scenario]` | Step 32 `multi-subscribe` mode executes concurrent subscriber/publisher workflow successfully with a mock executable. |
+| `test_client_scenario_command_rejects_unknown_step32_mode` | `[test_client][scenario]` | Step 32 runner rejects unsupported load-mode names with non-zero result. |
