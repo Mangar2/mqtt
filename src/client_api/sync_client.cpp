@@ -191,6 +191,11 @@ bool SyncClient::has_subscription(std::string_view topic_filter) const noexcept 
   return subscription_manager_.has_subscription(topic_filter);
 }
 
+std::size_t
+SyncClient::dispatch_inbound_publish(const PublishPacket &publish_packet) const {
+  return subscription_manager_.dispatch_inbound_publish(publish_packet);
+}
+
 void SyncClient::require_connected() const {
   if (!connected_) {
     throw ClientException(ClientError::ProtocolError,

@@ -875,6 +875,32 @@ avoid concurrency issues for the caller.
 **Result:** The library can be embedded in event-driven applications where blocking is not acceptable.
 Callers choose between the blocking and the callback interface independently for each operation.
 
+**Implementation status (2026-04-27): Completed (client-side module implemented)**
+
+Implemented asynchronous callback interface facade:
+- `src/client_api/async_client.h/.cpp`
+	- exposes non-blocking operations: `async_connect`, `async_publish`,
+	  `async_subscribe`, `async_unsubscribe`, `async_disconnect`,
+	- wraps existing synchronous facade (`SyncClient`) and reuses transport
+	  integration callbacks,
+	- enqueues operations to one internal dispatch thread,
+	- invokes completion callbacks and inbound message handler on that same
+	  dispatch thread,
+	- maps operation failures to `AsyncOperationError` callback payloads.
+
+Related sync-facade extension:
+- `src/client_api/sync_client.h/.cpp`
+	- added `dispatch_inbound_publish(...)` to forward inbound publish packets
+	  to active subscription callbacks.
+
+Verification:
+- `src/client_api/test/TEST_SPEC.md`
+- `src/client_api/test/async_client_test.cpp`
+	- callback-thread execution and non-blocking completion,
+	- publish and subscribe/unsubscribe completion flows,
+	- inbound publish forwarding through registered message handler,
+	- completion error payload mapping.
+
 ---
 
 ### Step 25 – Configuration Object

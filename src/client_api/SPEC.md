@@ -1,6 +1,7 @@
-# client_api — Synchronous client interface (Step 23)
+# client_api — Public client interfaces (Steps 23, 24)
 
-Blocking public client facade that wraps lower-level client components.
+Blocking and non-blocking public client facades that wrap lower-level client
+components.
 Depends on `client/` and `data_model/`.
 
 ## Files
@@ -8,6 +9,7 @@ Depends on `client/` and `data_model/`.
 | File | Plan ref | Description |
 |------|----------|-------------|
 | `sync_client.h/.cpp` | 23 | Blocking `connect/publish/subscribe/unsubscribe/disconnect` interface with timeout-aware callback integration |
+| `async_client.h/.cpp` | 24 | Non-blocking callback interface with one internal dispatch thread for completions and inbound messages |
 
 ## SyncClient
 
@@ -37,3 +39,29 @@ State model:
 - subscription state is managed by `ClientSubscriptionManager`,
 - outbound QoS state is managed by `ClientPublishPipeline`,
 - reconnect disable-on-user-disconnect uses `ReconnectController`.
+
+## AsyncClient
+
+`AsyncClient` exposes non-blocking variants for connect, publish, subscribe,
+unsubscribe, and disconnect:
+
+- `async_connect(...)` enqueues a connect task and reports completion callback,
+- `async_publish(...)` enqueues a publish task and reports final reason code,
+- `async_subscribe(...)` enqueues subscribe and reports SUBACK reason list,
+- `async_unsubscribe(...)` enqueues unsubscribe and reports UNSUBACK reasons,
+- `async_disconnect(...)` enqueues disconnect without blocking caller.
+
+Callback and threading model:
+
+- all operations are queued and executed by one internal dispatch thread,
+- completion callbacks run on this same dispatch thread,
+- inbound publish packets are fed via `on_inbound_publish(...)`,
+- subscribed message delivery is forwarded to one registered message handler,
+- callback errors are propagated as `AsyncOperationError` payloads.
+
+Integration model:
+
+- transport and protocol callbacks are still supplied through
+  `SyncClientCallbacks`, reused by wrapped `SyncClient`,
+- asynchronous subscribe requests keep topic filters and options but use the
+  global message handler for inbound delivery.

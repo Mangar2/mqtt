@@ -128,6 +128,14 @@ public:
    */
   [[nodiscard]] bool has_subscription(std::string_view topic_filter) const noexcept;
 
+  /**
+   * @brief Dispatch one inbound publish packet to active subscription callbacks.
+   * @param publish_packet Inbound packet from transport integration.
+   * @return Number of invoked subscription callbacks.
+   */
+  [[nodiscard]] std::size_t
+  dispatch_inbound_publish(const PublishPacket &publish_packet) const;
+
 private:
   void require_connected() const;
   static void require_callback(bool has_callback, std::string_view operation,
