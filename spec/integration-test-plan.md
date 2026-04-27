@@ -127,6 +127,9 @@ Broker process management for tests that need restart/reconfigure.
 - 1.8.3 Malformed packet → DISCONNECT 0x81, connection closed
 - 1.8.4 Abrupt TCP close → broker detects connection loss
 
+### 1.9 Local Test Client Shell
+- 1.9.1 Local `yahatestclient connect` establishes MQTT 5.0 session to integration-test broker and stays connected until signal-driven shutdown
+
 ---
 
 ## 2. Publish & Subscribe — Core

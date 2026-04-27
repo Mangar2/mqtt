@@ -43,6 +43,7 @@ set(MQTT_LINK_OPTIONS
 file(GLOB_RECURSE MQTT_ALL_SOURCES  CONFIGURE_DEPENDS "src/*.cpp")
 file(GLOB_RECURSE MQTT_TEST_SOURCES CONFIGURE_DEPENDS "src/*_test.cpp")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/test/")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/test_client_main\\.cpp$")
 
 if(WIN32)
     list(FILTER MQTT_ALL_SOURCES  EXCLUDE REGEX "_posix\\.cpp$")
@@ -94,6 +95,24 @@ if(WIN32)
     target_link_libraries(yahabroker PRIVATE ws2_32)
 endif()
 
+#  Step 27 test-client shell executable
+set(MQTT_LIBRARY_SOURCES ${MQTT_ALL_SOURCES})
+list(FILTER MQTT_LIBRARY_SOURCES EXCLUDE REGEX "/main\\.cpp$")
+
+add_executable(yahatestclient
+    src/test_client_main.cpp
+    ${MQTT_LIBRARY_SOURCES}
+)
+
+target_compile_options(yahatestclient PRIVATE ${MQTT_COMPILE_OPTIONS})
+target_link_options(yahatestclient    PRIVATE ${MQTT_LINK_OPTIONS})
+target_include_directories(yahatestclient PRIVATE src)
+target_compile_definitions(yahatestclient PRIVATE
+    $<$<BOOL:${MQTT_TRACING_DISABLED}>:MQTT_TRACING_DISABLED>)
+if(WIN32)
+    target_link_libraries(yahatestclient PRIVATE ws2_32)
+endif()
+
 #  Unit tests 
 include(CTest)
 
@@ -137,5 +156,6 @@ endif()
 #  Install 
 include(GNUInstallDirs)
 install(TARGETS yahabroker
+    yahatestclient
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )

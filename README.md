@@ -23,6 +23,22 @@ A fully specification-compliant MQTT 5.0 broker written in C++20.
     --trace-level=info \
     --trace-module=broker \
     --trace-module=connection
+
+# Run the Step 27 test-client shell
+./build/release/yahatestclient --help
+
+# Save a reusable connection profile
+./build/release/yahatestclient save-profile \
+    --output ./test-client.profile \
+    --host 127.0.0.1 \
+    --port 1883 \
+    --transport mqtt \
+    --client-id shell-client
+
+# Connect using profile + overrides and keep session open until Ctrl+C
+./build/release/yahatestclient connect \
+    --profile ./test-client.profile \
+    --keep-alive-seconds 30
 ```
 
 Startup precedence is deterministic:
@@ -244,6 +260,35 @@ Key fields:
 
 `SyncClient` and `AsyncClient` can be constructed directly from `ClientConfig`.
 No-timeout operation overloads use the configured timeout defaults.
+
+## Test Client Shell (Step 27)
+
+The repository now builds a standalone test-client executable:
+
+- Binary: `yahatestclient`
+- Scope: MQTT 5.0 only
+- Transports: `mqtt` and `ws` only
+- TLS: intentionally unsupported (`mqtts`/`wss` not available)
+
+Supported subcommands:
+
+- `connect` — connect and keep the session open until signal (`Ctrl+C`)
+- `save-profile` — save reusable profile file
+- `show-profile` — print effective profile after load+override merge
+
+Profile precedence is deterministic:
+
+1. Built-in defaults
+2. Loaded profile (`--profile`)
+3. CLI overrides
+
+Supported profile keys:
+
+- `host`, `port`, `transport`
+- `ws_path`, repeatable `ws_header`
+- `client_id`, `clean_start`, `keep_alive_seconds`
+- `username`, `password`
+- `reconnect_period_ms`, `maximum_reconnect_times`
 
 ## Integration test runner
 

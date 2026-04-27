@@ -985,75 +985,154 @@ Verification:
 
 ## Phase 7 – Test Client
 
-### Step 27 – Test Client Shell
+### Test Client Requirements (derived from mqttx CLI capabilities)
 
-Build a standalone executable that loads a broker address from a configuration file or command-line
-arguments, connects using the client library, and holds the connection open until told to exit via
-a signal or command.
+The test client should cover MQTT-focused capabilities that are available in
+`mqttx` command-line usage and are relevant for broker validation workflows.
+The following requirements intentionally exclude non-MQTT utility features
+such as update checking.
 
-**Result:** A runnable binary exists that can establish and maintain a connection to the broker.
-This executable is the foundation for all subsequent test client features.
+- Support connection profiles for MQTT 5.0 only, including host, port,
+	client ID, clean start/session behavior, keep alive, username, and password.
+- Support only the broker transport variants `mqtt` and `ws`, including
+	WebSocket path and optional WebSocket headers.
+- No TLS support is required for the test client (no `mqtts`, no `wss`,
+	no certificate/key/CA/ALPN options).
+- Support reconnect policy controls: reconnect period and maximum reconnect
+	attempts.
+- Support MQTT 5 CONNECT properties and behavior controls, including session
+	expiry interval, receive maximum, maximum packet size, topic alias maximum,
+	response-information request, problem-information request toggle, and CONNECT
+	user properties.
+- Support MQTT 5 enhanced authentication method selection.
+- Support Last Will configuration: topic, payload, QoS, retain, delay interval,
+	payload format indicator, message expiry interval, content type, response
+	topic, correlation data, and will user properties.
+- Support one-shot publish operations with topic, payload, QoS, retain, DUP,
+	and payload input modes (literal payload, stdin, multiline stdin, file input).
+- Support publish message encodings and schema-based payload input paths needed
+	for interoperability checks (for example JSON/hex/base64/binary, protobuf,
+	and avro usage modes).
+- Support MQTT 5 PUBLISH properties: payload format indicator, message expiry,
+	topic alias, response topic, correlation data, user properties, subscription
+	identifier, and content type.
+- Support subscribe operations for one or more topics with per-subscription QoS
+	and MQTT 5 subscription options (`no local`, `retain as published`,
+	`retain handling`, subscription identifiers, user properties).
+- Support subscriber output modes suitable for automation: verbose packet output,
+	clean output mode, message formatting options, file append/save options, and
+	configurable delimiters.
+- Support benchmark-style test execution modes aligned with MQTT workflows:
+	mass connection creation, high-rate publish runs, and multi-client subscribe
+	runs.
+- Support simulation/load scenarios with configurable connection count,
+	connect interval, message interval, publish limit, variable-based topic/client
+	templates, and QoS/retain/message-property controls.
+- Support discovery of available built-in scenarios (equivalent to listing
+	predefined simulation scenarios).
+- Support loading and saving reusable command options/configuration profiles to
+	improve reproducibility of manual and CI-driven test runs.
+
+### Step 27 – Test Client Core, Connection Profiles, and Persistence
+
+Build a standalone executable with subcommands that can load and save reusable option profiles from
+configuration files and command-line arguments. The connection model is explicitly limited to MQTT 5.0
+and broker-supported transports `mqtt` and `ws` (including WebSocket path and optional headers), with
+no TLS features. The base connection profile includes host, port, client identifier, clean-start/session
+behavior, keep-alive, username/password, and reconnect policy controls (retry period and maximum retry
+count).
+
+**Result:** A runnable test-client foundation exists that consistently reproduces connection setups,
+matches the broker capability envelope (MQTT 5.0 + `mqtt`/`ws` only), and can be reused reliably in
+manual and CI workflows.
+
+**Implementation status (2026-04-27): Completed (Step 27 shell implemented)**
+
+Implemented Step 27 shell module and executable:
+- `src/test_client/test_client_profile.h/.cpp`
+	- persistent profile model, key/value load/save, profile validation, and
+		typed override application.
+- `src/test_client/test_client_cli.h/.cpp`
+	- CLI parser for `connect`, `save-profile`, and `show-profile`.
+- `src/test_client_main.cpp`
+	- standalone `yahatestclient` entry point, profile merge pipeline,
+		connection-session orchestration, retry loop, and signal-controlled run
+		mode.
+- `CMakeLists.txt`
+	- adds `yahatestclient` executable target and installation rule.
+
+Verification:
+- `src/test_client/test/TEST_SPEC.md`
+- `src/test_client/test/test_client_test.cpp`
+	- profile validation and persistence roundtrips,
+	- profile parse error paths,
+	- CLI command parsing and error handling.
 
 ---
 
-### Step 28 – Command-Line Publish
+### Step 28 – MQTT 5 CONNECT Feature Completeness
 
-Add a publish command to the test client that accepts topic, payload, QoS level, retain flag, and
-optional MQTT properties as command-line arguments, publishes one message, waits for the delivery
-confirmation appropriate to the chosen QoS, and exits with a code that reflects success or failure.
+Extend connect handling to support MQTT 5-specific CONNECT configuration in full detail: session-expiry
+interval, receive maximum, maximum packet size, topic-alias maximum, response-information request,
+problem-information toggle, CONNECT user properties, enhanced authentication method, and full Last Will
+configuration (topic, payload, QoS, retain, delay interval, payload format indicator, expiry interval,
+content type, response topic, correlation data, and will user properties).
 
-**Result:** Any single MQTT publish scenario can be triggered from the command line. Broker behavior
-for individual publish packets can be observed and verified interactively or in scripts.
-
----
-
-### Step 29 – Command-Line Subscribe
-
-Add a subscribe command that accepts one or more topic filters with optional QoS and subscription
-options, subscribes to those filters, and prints each received message to the console with its
-topic, payload, QoS level, retain flag, and properties. The command runs until interrupted.
-
-**Result:** Incoming message delivery from the broker can be watched in real time. Retained message
-replay, QoS downgrade by the broker, and subscription option handling are all directly observable.
+**Result:** The test client can establish protocol-rich MQTT 5 sessions that exercise broker behavior
+across advanced CONNECT and Last Will negotiation paths, not only minimal handshake paths.
 
 ---
 
-### Step 30 – Scenario Runner
+### Step 29 – Command-Line Publish Matrix
 
-Add a scripted execution mode that reads a sequence of operations from a plain text file. Supported
-operations include: connect, subscribe, publish, wait for a message matching a pattern, assert
-a specific message content, unsubscribe, disconnect, and sleep for a duration. Each step is logged
-with a pass or fail result. The runner exits with a non-zero code if any step fails.
+Implement a publish command that supports topic, QoS, retain, DUP, and all required MQTT 5 PUBLISH
+properties (payload format indicator, message expiry, topic alias, response topic, correlation data,
+user properties, subscription identifier, content type). Payload input modes include direct CLI payload,
+stdin, multiline stdin, and file-based input. Add payload-encoding/schema options required for
+interoperability checks, including JSON, hex, base64, binary, protobuf, and avro-driven flows.
 
-**Result:** Repeatable, automated end-to-end test scenarios can be scripted without writing code.
-The test client produces output that can be parsed by the existing integration test runner. Scenarios
-can be added or modified without recompiling anything.
-
----
-
-### Step 31 – Built-In Protocol Test Scenarios
-
-Write a set of scenario files exercising the broker's core protocol behavior: clean-start session
-creation and fresh state, persistent session resume with subscription restoration, QoS 0 fire-and-
-forget delivery, QoS 1 at-least-once with acknowledgement, QoS 2 exactly-once four-step handshake,
-retained message storage and replay on subscribe, last-will delivery on abrupt disconnect,
-keep-alive timeout detection, topic alias negotiation, and session expiry after disconnect.
-
-**Result:** The broker's fundamental protocol compliance can be verified end-to-end with a single
-command per scenario. The scenario files serve as executable documentation of the expected broker
-behavior and complement the existing unit and integration tests.
+**Result:** Single-message publish behavior can be validated end-to-end for wire flags, properties,
+payload sources, and payload encodings, with deterministic success/failure exit signaling per QoS path.
 
 ---
 
-### Step 32 – Multi-Connection Load Scenarios
+### Step 30 – Command-Line Subscribe and Output Pipeline
 
-Add a load mode that spawns a configurable number of publisher and subscriber connections concurrently,
-runs for a specified duration, and reports message throughput per second, round-trip latency
-(publish to receive), and the count of any delivery failures or timeouts.
+Implement subscribe command support for one or multiple topic filters with per-subscription QoS and
+MQTT 5 subscription options (`no local`, `retain as published`, `retain handling`, subscription
+identifiers, user properties). The output pipeline supports default and clean output modes, verbose
+packet-level output, message formatting controls, file append/save sinks, and configurable delimiters
+for scripting and post-processing.
 
-**Result:** The broker's performance under concurrent client load can be measured directly with the
-test client using the same transport and protocol paths as real clients. Results can be compared to
-the performance benchmarks produced by the existing performance test runner.
+**Result:** Incoming broker traffic can be observed and captured in both human-readable and
+automation-friendly forms while exercising full MQTT 5 subscription-option behavior.
+
+---
+
+### Step 31 – Scenario Runner and Discoverable Scenario Catalog
+
+Provide a scripted scenario runner that executes operation sequences (connect, subscribe, publish,
+wait/assert message, unsubscribe, disconnect, sleep) with step-level pass/fail logging and non-zero
+exit on failure. Add a discoverable built-in scenario catalog command so predefined protocol and
+workload scenarios can be listed and selected directly. Built-in protocol scenarios cover clean start,
+session resume, QoS 0/1/2 flows, retained replay, last-will behavior, keep-alive timeout handling,
+topic-alias usage, and session-expiry behavior.
+
+**Result:** Repeatable end-to-end validation is available as executable scenario assets that are easy
+to discover, run, and integrate into existing integration pipelines.
+
+---
+
+### Step 32 – Benchmark and Simulation Load Modes
+
+Implement load-oriented modes for (1) mass connection creation, (2) high-rate publish throughput, and
+(3) multi-client subscribe behavior, plus simulation scenarios with configurable connection count,
+connect interval, message interval, publish limit, variable-driven topic/client templates, QoS/retain,
+and MQTT 5 message-property controls. Report throughput, latency, and failure/timeout counters in a
+machine-consumable format aligned with current performance-test tooling.
+
+**Result:** The test client can stress realistic broker paths at scale and generate comparable,
+repeatable performance evidence using the same MQTT features exercised in functional scenarios.
 
 ---
 
