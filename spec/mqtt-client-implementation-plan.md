@@ -1,0 +1,829 @@
+# MQTT 5.0 Client – Implementation Plan
+
+Step-by-step roadmap for building an MQTT 5.0 client library that is compatible with the existing broker,
+followed by a test client built on top of that library.
+Each step is independently implementable and produces a well-defined result.
+
+---
+
+## Phase 1 – Primitives and Shared Data Types
+
+### Step 1 – MQTT Primitive Type Helpers
+
+Implement helpers that convert between the basic on-wire byte formats defined by the MQTT 5.0 specification
+and native language types: variable-length integer, two-byte integer, four-byte integer, UTF-8 string,
+UTF-8 string pair, and binary data.
+
+**Result:** Every other component in the library has a single, tested utility layer for reading and writing
+raw MQTT wire types. No component needs to handle byte arithmetic itself.
+
+**Implementation status (2026-04-27): Completed via existing broker codec (no extra facade layer required)**
+
+Existing reusable primitives:
+- `src/data_model/types/variable_byte_integer.h`: `mqtt::VariableByteInteger`
+- `src/data_model/types/integers.h`: `mqtt::TwoByteInteger`, `mqtt::FourByteInteger`
+- `src/data_model/types/utf8_string.h`: `mqtt::Utf8String`, `mqtt::Utf8StringPair`
+- `src/data_model/types/binary_data.h`: `mqtt::BinaryData`
+
+Existing reusable primitive wire helpers (already in server code):
+- `src/codec/primitive/primitive_codec.h`
+	- Encode: `encode_byte`, `encode_variable_byte_integer`, `encode_two_byte_integer`, `encode_four_byte_integer`, `encode_utf8_string`, `encode_utf8_string_pair`, `encode_binary_data`
+	- Decode: `decode_byte`, `decode_variable_byte_integer`, `decode_two_byte_integer`, `decode_four_byte_integer`, `decode_utf8_string`, `decode_utf8_string_pair`, `decode_binary_data`
+
+Verification:
+- Existing primitive unit tests remain valid in `src/codec/primitive/test/primitive_codec_test.cpp`.
+- No additional wrapper-specific tests are required because client and server both use the same existing primitive helpers directly.
+
+---
+
+### Step 2 – Reason Code Registry
+
+Define all 39 MQTT 5.0 reason codes as named constants together with a human-readable description and a
+classification of success or error.
+
+**Result:** Any component can refer to reason codes by name. Callers can check whether an outcome is a
+success or an error without interpreting raw numeric values.
+
+**Implementation status (2026-04-27): Completed via existing broker data model (no extra client-specific layer required)**
+
+Existing reusable reason-code types and helpers:
+- `src/data_model/reason_code/reason_code.h`
+	- `mqtt::ReasonCode` (all 39 distinct MQTT 5.0 reason-code wire values)
+	- `mqtt::k_normal_disconnection`, `mqtt::k_granted_qos0` (spec aliases)
+	- `mqtt::is_success(ReasonCode)`, `mqtt::is_error(ReasonCode)` (success/error classification)
+	- `mqtt::qos_to_granted_reason(QoS)` (SUBACK granted-QoS mapping helper)
+
+Existing verification:
+- `src/data_model/reason_code/test/reason_code_test.cpp`
+	- verifies representative wire values, alias mapping, success/error boundary behavior, and QoS-to-reason mapping.
+
+Notes:
+- Human-readable naming is already provided by the `ReasonCode` enumerator names and their API documentation in `reason_code.h`.
+- No additional wrapper or duplicate registry is required for client usage; client and server can reuse the same reason-code model directly.
+
+---
+
+### Step 3 – Property Definitions
+
+Define all 27 MQTT 5.0 property identifiers with their associated data types and the list of packet types
+where each property is permitted.
+
+**Result:** Properties can be referenced by name throughout the library. Incorrect use of a property
+in a packet type where it is not allowed can be detected early, before bytes are sent on the wire.
+
+**Implementation status (2026-04-27): Completed via existing broker data model (no extra client-specific layer required)**
+
+Existing reusable property definitions:
+- `src/data_model/property/property_id.h`
+	- `mqtt::PropertyId` with all 27 MQTT 5.0 property identifiers.
+- `src/data_model/property/property.h`
+	- `mqtt::PropertyValue` (`std::variant` of all MQTT property wire data types)
+	- `mqtt::Property` (ID + typed value)
+
+Existing reusable property maps and validation primitives:
+- `src/data_model/property/property_maps.h`
+	- `mqtt::PropertyDataType`
+	- `mqtt::property_data_type(PropertyId)` for ID-to-data-type mapping
+	- `mqtt::is_property_allowed(PropertyId, PacketType)` for allowed packet-context mapping (including `PacketType::Will`)
+
+Existing verification:
+- `src/data_model/property/test/property_test.cpp`
+	- verifies representative `PropertyId` wire values,
+	- verifies property-to-data-type mapping,
+	- verifies property-to-packet-type allow/deny mapping paths.
+
+Notes:
+- Step 3 data definitions and allow-lists are already present and directly reusable for both client and server.
+- No additional wrapper or duplicate property registry is required for client usage.
+
+---
+
+### Step 4 – Packet Data Structures
+
+Define plain data structures for all 15 MQTT packet types: CONNECT, CONNACK, PUBLISH, PUBACK, PUBREC,
+PUBREL, PUBCOMP, SUBSCRIBE, SUBACK, UNSUBSCRIBE, UNSUBACK, PINGREQ, PINGRESP, DISCONNECT, and AUTH.
+Each structure holds exactly the fields the specification defines for that packet.
+
+**Result:** Every component shares the same in-memory representation of MQTT packets. There is no
+duplication of field definitions anywhere in the codebase.
+
+**Implementation status (2026-04-27): Completed via existing broker data model (no extra client-specific layer required)**
+
+Existing reusable packet type and packet structures:
+- `src/data_model/packet/packet_type.h`
+	- `mqtt::PacketType` for all MQTT control packet types (`Connect`..`Auth`) plus internal `Will` context marker.
+- `src/data_model/packet/connect_packet.h`
+	- `mqtt::WillData`
+	- `mqtt::ConnectPacket` (CONNECT)
+	- `mqtt::ConnackPacket` (CONNACK)
+- `src/data_model/packet/publish_packets.h`
+	- `mqtt::PublishPacket` (PUBLISH)
+	- `mqtt::PubackPacket` (PUBACK)
+	- `mqtt::PubrecPacket` (PUBREC)
+	- `mqtt::PubrelPacket` (PUBREL)
+	- `mqtt::PubcompPacket` (PUBCOMP)
+- `src/data_model/packet/subscribe_packets.h`
+	- `mqtt::SubscribeOptions`, `mqtt::SubscribeFilter`
+	- `mqtt::SubscribePacket` (SUBSCRIBE)
+	- `mqtt::SubackPacket` (SUBACK)
+	- `mqtt::UnsubscribePacket` (UNSUBSCRIBE)
+	- `mqtt::UnsubackPacket` (UNSUBACK)
+	- helper: `subscription_identifier_from(const SubscribePacket&)`
+- `src/data_model/packet/control_packets.h`
+	- `mqtt::PingreqPacket` (PINGREQ)
+	- `mqtt::PingrespPacket` (PINGRESP)
+	- `mqtt::DisconnectPacket` (DISCONNECT)
+	- `mqtt::AuthPacket` (AUTH)
+
+Existing verification:
+- `src/data_model/packet/test/packet_test.cpp`
+	- verifies default state and equality behavior for the packet structs,
+	- verifies representative field behavior (e.g. optional IDs / helper extraction).
+
+Notes:
+- Step 4 packet data structures are already present and directly reusable for both client and server.
+- No additional wrapper or duplicate packet model layer is required for client usage.
+
+---
+
+## Phase 2 – Protocol Codec
+
+### Step 5 – Primitive Encoders and Decoders
+
+Implement encode and decode functions for every basic MQTT wire type defined in Step 1: write a value
+to a byte buffer and read a value from a byte buffer at a given position.
+
+**Result:** The raw byte-level translation between native types and MQTT wire format is fully covered.
+All higher-level codec components build on these functions.
+
+**Implementation status (2026-04-27): Completed via existing broker codec module (no extra client-specific layer required)**
+
+Existing reusable primitive codec API:
+- `src/codec/primitive/primitive_codec.h`
+	- Encoding: `encode_byte`, `encode_variable_byte_integer`, `encode_two_byte_integer`, `encode_four_byte_integer`, `encode_utf8_string`, `encode_utf8_string_pair`, `encode_binary_data`
+	- Decoding: `decode_byte`, `decode_variable_byte_integer`, `decode_two_byte_integer`, `decode_four_byte_integer`, `decode_utf8_string`, `decode_utf8_string_pair`, `decode_binary_data`
+
+Data model types used directly by the primitive codec:
+- `src/data_model/types/variable_byte_integer.h`
+- `src/data_model/types/integers.h`
+- `src/data_model/types/utf8_string.h`
+- `src/data_model/types/binary_data.h`
+
+Existing verification:
+- `src/codec/primitive/test/TEST_SPEC.md`
+- `src/codec/primitive/test/primitive_codec_test.cpp`
+	- covers encode/decode behavior and roundtrips for byte, VBI, two-byte integer, four-byte integer, UTF-8 string, UTF-8 string pair, and binary data,
+	- covers error paths (buffer too short, malformed UTF-8, VBI overflow, string length limits).
+
+Notes:
+- Step 5 functionality is already implemented and reused by broker packet/property codecs.
+- No additional wrapper or duplicate primitive codec layer is required for client usage.
+
+---
+
+### Step 6 – Properties Codec
+
+Implement encoding of a property list to bytes and decoding of a byte sequence back to a property list.
+Include validation that each property has the correct data type and appears only in packet types
+where it is allowed, and that no property is present more than once unless the specification explicitly permits it.
+
+**Result:** The properties section of any MQTT packet can be serialized and deserialized correctly.
+Invalid property usage is rejected before bytes leave the application.
+
+**Implementation status (2026-04-27): Completed via existing broker codec module (no extra client-specific layer required)**
+
+Existing reusable properties codec API:
+- `src/codec/properties/properties_codec.h`
+	- `encode_properties(WriteBuffer&, const std::vector<Property>&, PacketType)`
+	- `decode_properties(ReadBuffer&, PacketType)`
+
+Existing validation behavior in implementation:
+- `src/codec/properties/properties_codec.cpp`
+	- property value type validation (`PropertyTypeMismatch`)
+	- property allowed-in-packet validation (`PropertyNotAllowed`)
+	- duplicate detection for non-repeatable properties (`DuplicateProperty`)
+	- unknown property-ID rejection during decode (`InvalidPropertyId`)
+
+Dependencies reused directly:
+- `src/data_model/property/property.h`
+- `src/data_model/property/property_id.h`
+- `src/data_model/property/property_maps.h`
+- `src/codec/primitive/primitive_codec.h`
+
+Existing verification:
+- `src/codec/properties/test/TEST_SPEC.md`
+- `src/codec/properties/test/properties_codec_test.cpp`
+	- covers encode/decode for all supported property wire types,
+	- covers packet-context allow/deny behavior,
+	- covers duplicate/non-duplicate rules (including repeatable `UserProperty`),
+	- covers decode invalid/truncated input and roundtrip behavior.
+
+Notes:
+- Step 6 functionality is already implemented and used by packet codecs.
+- No additional wrapper or duplicate properties codec layer is required for client usage.
+
+---
+
+### Step 7 – Fixed Header and Remaining Length Codec
+
+Implement encoding and decoding of the MQTT fixed header: the packet type byte with its flags and the
+variable-length remaining-length field that follows it.
+
+**Result:** Packet framing is available for all packet types. Every encoder and decoder can prepend or
+parse a correct fixed header.
+
+**Implementation status (2026-04-27): Completed via existing broker codec module (no extra client-specific layer required)**
+
+Existing reusable fixed-header data model and codec API:
+- `src/codec/fixed_header/fixed_header.h`
+	- `mqtt::FixedHeader` (`PacketType`, flags, remaining_length)
+- `src/codec/fixed_header/fixed_header_codec.h`
+	- `encode_fixed_header(WriteBuffer&, const FixedHeader&)`
+	- `decode_fixed_header(ReadBuffer&)`
+
+Existing behavior and validation in implementation:
+- `src/codec/fixed_header/fixed_header_codec.cpp`
+	- encode/decode of first fixed-header byte (`type << 4 | flags`)
+	- encode/decode of Remaining Length via MQTT VBI
+	- packet-type validation (`InvalidPacketType` for reserved type nibble 0)
+	- per-packet fixed-flag validation (`InvalidFlags` for invalid reserved flags)
+
+Dependencies reused directly:
+- `src/data_model/packet/packet_type.h`
+- `src/codec/primitive/primitive_codec.h`
+
+Existing verification:
+- `src/codec/fixed_header/test/TEST_SPEC.md`
+- `src/codec/fixed_header/test/fixed_header_codec_test.cpp`
+	- covers single- and multi-byte Remaining Length paths,
+	- covers required flag combinations for packet types,
+	- covers malformed input/error behavior and roundtrip behavior.
+
+Notes:
+- Step 7 framing functionality is already implemented and used by packet codecs and stream framing logic.
+- No additional wrapper or duplicate fixed-header codec layer is required for client usage.
+
+---
+
+### Step 8 – Outbound Packet Encoders
+
+Implement one encoder per packet type that the client sends: CONNECT, PUBLISH, PUBACK, PUBREC, PUBREL,
+PUBCOMP, SUBSCRIBE, UNSUBSCRIBE, PINGREQ, DISCONNECT, and AUTH. Each encoder takes the corresponding
+data structure from Step 4 and produces a complete byte sequence ready to be sent over the network.
+
+**Result:** The client can produce valid wire-format bytes for every outbound packet type the
+MQTT 5.0 specification defines for clients.
+
+**Implementation status (2026-04-27): Completed via existing broker codec module (no extra client-specific layer required)**
+
+Existing reusable outbound packet encoders:
+- `src/codec/packet/connect_codec.h`
+	- `encode_connect` (CONNECT)
+- `src/codec/packet/publish_codec.h`
+	- `encode_publish` (PUBLISH)
+	- `encode_puback`, `encode_pubrec`, `encode_pubrel`, `encode_pubcomp`
+- `src/codec/packet/subscribe_codec.h`
+	- `encode_subscribe` (SUBSCRIBE)
+	- `encode_unsubscribe` (UNSUBSCRIBE)
+- `src/codec/packet/control_codec.h`
+	- `encode_pingreq` (PINGREQ)
+	- `encode_disconnect` (DISCONNECT)
+	- `encode_auth` (AUTH)
+
+Existing verification:
+- `src/codec/packet/test/TEST_SPEC.md`
+- `src/codec/packet/test/connect_codec_test.cpp`
+- `src/codec/packet/test/publish_codec_test.cpp`
+- `src/codec/packet/test/subscribe_codec_test.cpp`
+- `src/codec/packet/test/control_codec_test.cpp`
+	- includes roundtrip and error-path coverage for outbound encoder behavior.
+
+Notes:
+- Step 8 outbound packet encoders are already implemented and used by broker-side flows.
+- No additional wrapper or duplicate outbound codec layer is required for client usage.
+
+---
+
+### Step 9 – Inbound Packet Decoders
+
+Implement one decoder per packet type that the broker sends to a client: CONNACK, PUBLISH, PUBACK,
+PUBREC, PUBREL, PUBCOMP, SUBACK, UNSUBACK, PINGRESP, DISCONNECT, and AUTH. Each decoder takes a
+byte buffer and produces the corresponding data structure from Step 4.
+
+**Result:** Every packet type the broker can send is converted to a typed in-memory structure.
+The rest of the library never has to parse raw bytes.
+
+**Implementation status (2026-04-27): Completed via existing broker codec module (no extra client-specific layer required)**
+
+Existing reusable inbound packet decoders (broker -> client subset):
+- `src/codec/packet/connect_codec.h`
+	- `decode_connack` (CONNACK)
+- `src/codec/packet/publish_codec.h`
+	- `decode_publish` (PUBLISH)
+	- `decode_puback`, `decode_pubrec`, `decode_pubrel`, `decode_pubcomp`
+- `src/codec/packet/subscribe_codec.h`
+	- `decode_suback` (SUBACK)
+	- `decode_unsuback` (UNSUBACK)
+- `src/codec/packet/control_codec.h`
+	- `decode_pingresp` (PINGRESP)
+	- `decode_disconnect` (DISCONNECT)
+	- `decode_auth` (AUTH)
+
+Existing verification:
+- `src/codec/packet/test/TEST_SPEC.md`
+- `src/codec/packet/test/connect_codec_test.cpp`
+- `src/codec/packet/test/publish_codec_test.cpp`
+- `src/codec/packet/test/subscribe_codec_test.cpp`
+- `src/codec/packet/test/control_codec_test.cpp`
+	- includes decode success/error coverage for all broker-to-client packet types listed in Step 9.
+
+Notes:
+- Step 9 inbound packet decoders are already implemented and used in packet-reading/dispatch paths.
+- No additional wrapper or duplicate inbound codec layer is required for client usage.
+
+---
+
+### Step 10 – Stream Framer
+
+Implement a component that accepts an incoming byte stream and detects where each complete MQTT packet
+starts and ends, using the fixed header and remaining length field. Incomplete packets are buffered
+until the missing bytes arrive; complete packets are handed off immediately.
+
+**Result:** The network layer can deliver partial reads to this component without any packet being
+lost or incorrectly split. The decoder layer always receives exactly one complete packet at a time.
+
+**Implementation status (2026-04-27): Completed via existing network layer stream framer (no extra client-specific layer required)**
+
+Existing reusable stream-framing component:
+- `src/network/stream_buffer.h`
+	- `mqtt::StreamBuffer` with byte-stream accumulation and complete-packet extraction
+	- `append(std::span<const uint8_t>)`
+	- `has_complete_packet()`
+	- `consume_packet()`
+
+Existing framing behavior in implementation:
+- `src/network/stream_buffer.cpp`
+	- parses MQTT Remaining Length (VBI) from the fixed header
+	- computes total packet size from fixed-header bytes + remaining length
+	- buffers incomplete packets until enough bytes arrive
+	- returns exactly one complete packet per `consume_packet()` call
+	- supports fragmented delivery and chunk-boundary splits
+
+Existing verification:
+- `src/network/test/network_test.cpp`
+	- covers single/multi-byte Remaining Length parsing,
+	- covers fragmented delivery and multi-packet coalescing,
+	- covers zero-length payload packets and malformed/incomplete scenarios,
+	- covers bounded-buffer behavior and repeated consume cycles.
+
+Notes:
+- Step 10 stream framing functionality is already implemented in the network module and used by connection processing paths.
+- No additional wrapper or duplicate stream framer layer is required for client usage.
+
+---
+
+## Phase 3 – Network Transport
+
+### Step 11 – Plain TCP Connection
+
+Implement the ability to open a TCP connection to a given host and port, send a byte buffer, receive
+bytes into a buffer, and close the connection cleanly. No MQTT logic lives here.
+
+**Result:** Raw bytes can be exchanged with the broker over a plain TCP socket. The transport layer
+is a self-contained unit that higher layers depend on but do not need to understand.
+
+**Implementation status (2026-04-27): Partially completed via existing network layer primitives**
+
+Existing reusable TCP transport primitives:
+- `src/network/tcp_connection.h`
+	- `mqtt::TcpConnection` for connected-socket I/O (`read`, `write`, `close`, timeout support)
+- `src/network/network_error.h`
+	- network error taxonomy for transport failures
+
+Existing verification:
+- `src/network/test/network_test.cpp`
+	- covers connection read/write/close behavior and EOF/timeout related paths.
+
+Gap for full client Step 11 completion:
+- There is no dedicated client-side connector abstraction yet that takes `host + port` and establishes outbound TCP directly as a reusable API (current code mainly wraps already-connected sockets and server-side accept/listen flow).
+
+Notes:
+- Core I/O behavior for a plain TCP transport is present and reusable.
+- A thin client dial/connect component can be added later to complete Step 11 as a client-facing API.
+
+---
+
+### Step 12 – WebSocket Transport
+
+Extend the transport layer to support WebSocket connections. This includes performing the HTTP/1.1
+upgrade handshake and wrapping each outbound MQTT byte sequence in a WebSocket frame. Inbound frames
+are stripped of their WebSocket framing before the bytes are passed up to the stream framer.
+The interface exposed to the rest of the library is identical to the plain TCP connection.
+
+**Result:** The client can connect to the broker's WebSocket endpoint. All higher-level components
+work without modification regardless of whether the underlying transport is plain TCP or WebSocket.
+
+**Implementation status (2026-04-27): Partially completed via existing WebSocket transport components**
+
+Existing reusable WebSocket transport components:
+- `src/transport/websocket_handshake.h/.cpp`
+	- server-side HTTP upgrade request parsing and 101 response generation
+- `src/transport/websocket_frame_codec.h/.cpp`
+	- WebSocket frame encode/decode for MQTT binary payload transport
+- `src/transport/websocket_transport.h/.cpp`
+	- composed transport over `TcpConnection` with WS framing and control-frame handling
+
+Existing verification:
+- `src/transport/test/TEST_SPEC.md`
+- `src/transport/test/websocket_test.cpp`
+	- covers handshake, frame codec behavior, and composed transport runtime behavior.
+
+Gap for full client Step 12 completion:
+- Current handshake implementation is server-side (expects incoming upgrade request, returns 101 response).
+- A dedicated client-side WebSocket initiator (send upgrade request, validate 101 response, then run MQTT-over-WS stream) is still required for a full outbound client transport.
+
+Notes:
+- Framing and runtime WS transport logic are already present and can be reused heavily.
+- A client-specific handshake initiator layer is the main remaining piece for Step 12 completion.
+
+---
+
+## Phase 4 – MQTT Protocol Engine
+
+### Step 13 – Packet Identifier Manager
+
+Implement a component that allocates and releases 16-bit packet identifiers for outbound flows
+and tracks which identifiers are currently in use for inbound flows. The inbound and outbound
+identifier spaces are kept separate.
+
+**Result:** QoS 1 and QoS 2 messages can each be assigned a unique identifier without collisions.
+The manager ensures that identifiers are never reused while a previous operation with the same
+identifier is still pending.
+
+**Implementation status (2026-04-27): Completed via existing QoS module (no extra client-specific layer required)**
+
+Existing reusable packet-identifier manager:
+- `src/qos/packet_id_manager.h/.cpp`
+	- `PacketIdManager::allocate()` for outbound ID allocation in range 1..65535 with wraparound scan
+	- `PacketIdManager::try_register_inbound(id)` for inbound duplicate detection tracking
+	- `PacketIdManager::release(id, dir)` and `is_in_use(id, dir)`
+	- separate inbound/outbound ID spaces via `InflightDirection`
+	- `register_existing(id, dir)` for session-resume/persisted inflight restoration paths
+
+Dependencies reused directly:
+- `src/data_model/session/inflight_direction.h`
+- `src/qos/qos_error.h`
+
+Existing verification:
+- `src/qos/test/TEST_SPEC.md`
+- `src/qos/test/qos_test.cpp`
+	- covers allocation range, sequential allocation, wraparound behavior, exhaustion error,
+	- covers release/reuse and in-use queries,
+	- covers inbound duplicate registration and separation of inbound/outbound spaces.
+
+Notes:
+- Step 13 functionality is already implemented and used by QoS 1 and QoS 2 state machines.
+- No additional wrapper or duplicate packet-id manager layer is required for client usage.
+
+---
+
+### Step 14 – QoS 1 Engine
+
+Implement the QoS 1 state machine for both directions. For outbound messages: send PUBLISH, wait
+for PUBACK, and mark the message as complete. For inbound messages: receive PUBLISH and send PUBACK.
+Pending outbound messages survive a connection drop and are retransmitted on reconnect with the
+DUP flag set.
+
+**Result:** Messages with QoS 1 are delivered at-least-once in both directions. The caller submits
+a message and is notified when the broker has acknowledged it; retransmission happens automatically.
+
+**Implementation status (2026-04-27): Completed via existing QoS module (no extra client-specific layer required)**
+
+Existing reusable QoS 1 state machine:
+- `src/qos/qos1_state_machine.h/.cpp`
+	- inbound path: `on_publish_received(pkt)` validates QoS1 PUBLISH and returns PUBACK
+	- outbound path: `initiate_publish(msg)` creates outbound inflight entry and returns initial PUBLISH
+	- acknowledgement path: `on_puback_received(pkt)` completes exchange and releases Packet ID
+	- reconnect/retry path: `retransmit(packet_id)` rebuilds PUBLISH with `dup=true` and refreshes timestamp
+
+Dependencies reused directly:
+- `src/qos/packet_id_manager.h/.cpp`
+- `src/store/inflight_store.h`
+- `src/data_model/session/inflight_state.h`
+- `src/data_model/session/inflight_direction.h`
+
+Existing verification:
+- `src/qos/test/TEST_SPEC.md`
+- `src/qos/test/qos_test.cpp`
+	- covers inbound PUBACK generation and invalid packet rejection,
+	- covers outbound initiation and inflight entry creation,
+	- covers PUBACK completion/release behavior,
+	- covers retransmit with DUP flag and timestamp refresh.
+
+Notes:
+- Step 14 behavior is already implemented for both directions.
+- Pending outbound QoS 1 operations are represented in `InflightStore` and can be retransmitted via `retransmit(...)` after reconnect orchestration.
+
+---
+
+### Step 15 – QoS 2 Engine
+
+Implement the QoS 2 state machine for both directions. The four-step handshake
+(PUBLISH → PUBREC → PUBREL → PUBCOMP) is tracked for every in-flight message. Duplicate inbound
+PUBLISH packets are detected and suppressed. Pending operations survive a connection drop and
+resume from their last confirmed phase on reconnect.
+
+**Result:** Messages with QoS 2 are delivered exactly-once in both directions. The caller submits
+a message and is notified only after the complete four-step cycle has finished.
+
+**Implementation status (2026-04-27): Completed via existing QoS module (no extra client-specific layer required)**
+
+Existing reusable QoS 2 state machine:
+- `src/qos/qos2_state_machine.h/.cpp`
+	- inbound handshake: `on_publish_received(pkt)` -> PUBREC with duplicate detection
+	- inbound completion: `on_pubrel_received(pkt)` -> PUBCOMP and inbound state cleanup
+	- outbound handshake start: `initiate_publish(msg)` -> PUBLISH with new Packet ID
+	- outbound phase advance: `on_pubrec_received(pkt)` -> PUBREL
+	- outbound completion: `on_pubcomp_received(pkt)` -> inflight removal + Packet ID release
+	- reconnect/retry path: `retransmit(packet_id)` returns DUP PUBLISH or PUBREL by phase
+
+Duplicate suppression behavior:
+- inbound duplicate PUBLISH detection uses `PacketIdManager::try_register_inbound(...)`
+- duplicate PUBREL after completion is handled idempotently (PUBCOMP resent)
+
+Dependencies reused directly:
+- `src/qos/packet_id_manager.h/.cpp`
+- `src/store/inflight_store.h`
+- `src/data_model/session/inflight_state.h`
+- `src/data_model/session/inflight_direction.h`
+
+Existing verification:
+- `src/qos/test/TEST_SPEC.md`
+- `src/qos/test/qos_test.cpp`
+	- covers full inbound and outbound QoS 2 transitions,
+	- covers duplicate detection and idempotent duplicate-phase handling,
+	- covers retransmission behavior for both handshake phases,
+	- covers completion and unknown-packet-id error paths.
+
+Notes:
+- Step 15 behavior is already implemented for both directions including duplicate handling.
+- Pending QoS 2 operations are represented in `InflightStore` and can resume from stored phase via `retransmit(...)` once reconnect orchestration is active.
+
+---
+
+### Step 16 – Keep-Alive Manager
+
+Implement a timer-based component that sends a PINGREQ whenever the connection has been idle for
+the negotiated keep-alive interval. If no PINGRESP is received within a configurable deadline,
+the connection is considered lost and a failure is signalled to the session layer.
+
+**Result:** Idle connections are kept alive according to the negotiated interval. Silent TCP failures
+are detected promptly without relying on the operating system's TCP timeout, which can take minutes.
+
+**Implementation status (2026-04-27): Partially completed via existing connection/session infrastructure**
+
+Existing reusable keep-alive building blocks:
+- `src/connection/keep_alive_timer.h/.cpp`
+	- timer with MQTT-compliant deadline tracking (`1.5 * keep_alive`)
+	- `reset()`, `is_expired()`, `deadline()`, and disabled mode for keep_alive `0`
+- `src/client_session/client_session.h`
+	- per-session ownership of `KeepAliveTimer`
+- `src/connection/runtime_step.cpp`
+	- resets timer on every received runtime packet
+	- handles inbound `PINGREQ` by sending `PINGRESP`
+- `src/connection/client_handler.cpp`
+	- checks keep-alive deadline and triggers `DISCONNECT(KeepAliveTimeout)` on expiry
+- `src/connection/connection_manager.cpp`
+	- watchdog schedules deadline-driven decode checks (includes keep-alive deadlines)
+
+Existing verification:
+- `src/connection/test/TEST_SPEC.md`
+	- KeepAliveTimer unit cases (enabled/disabled/deadline behavior)
+	- handler timeout path (`client_handler_keep_alive_timeout_emits_disconnect`)
+
+Gap for full client Step 16 completion:
+- no dedicated client-side idle manager that actively sends `PINGREQ` when outbound session traffic is idle
+- no explicit client-side `PINGRESP` wait-deadline/timeout state machine yet
+- current runtime dispatch is broker-oriented; inbound `PINGRESP` is not part of a client keep-alive completion path
+
+Notes:
+- Server-side keep-alive timeout enforcement is implemented and tested.
+- For a full outbound MQTT client engine, an active ping cycle (`PINGREQ` on idle + `PINGRESP` deadline supervision) remains to be added.
+
+---
+
+### Step 17 – Topic Alias Manager (outbound)
+
+Implement tracking of the outbound topic-alias-to-topic mapping. On the first PUBLISH to a given
+topic the alias is registered; subsequent publishes to the same topic use the numeric alias instead
+of the full topic string. The number of active aliases never exceeds the broker's Topic Alias Maximum
+reported in CONNACK.
+
+**Result:** High-frequency publishes to the same topic are sent with a compact numeric alias.
+Wire overhead is reduced automatically for repeated topics without any change in the caller's API.
+
+---
+
+## Phase 5 – Client Session Logic
+
+### Step 18 – Connection Negotiator
+
+Implement the component that builds a CONNECT packet from the caller's parameters, sends it to
+the broker, reads the CONNACK response, and returns the negotiated session state to the caller.
+Failure reason codes are translated into meaningful error values.
+
+**Result:** A complete MQTT handshake can be performed with one call. The caller learns whether
+the session was resumed from a previous connection or created fresh, and receives the broker's
+negotiated limits (receive maximum, topic alias maximum, assigned client ID).
+
+---
+
+### Step 19 – Session State Keeper
+
+Implement storage for the client-side session state: the set of active subscriptions with their
+QoS levels, the list of currently inflight messages, and the session expiry interval. When the
+client reconnects with clean-start set to false, the persisted state is used to restore subscriptions
+and replay inflight messages.
+
+**Result:** A persistent session survives connection drops without the caller having to re-subscribe
+or re-publish anything. QoS 1 and QoS 2 messages that were in flight at the time of the disconnect
+are automatically retransmitted after reconnect.
+
+---
+
+### Step 20 – Subscription Manager (client-side)
+
+Implement the component that sends SUBSCRIBE and UNSUBSCRIBE packets, matches the corresponding
+SUBACK and UNSUBACK responses, and maintains a local table of active topic filters paired with
+their message-delivery callbacks. Inbound PUBLISH packets are matched against this table and the
+correct callback is invoked.
+
+**Result:** Callers can subscribe to topics with a single call and receive a confirmation with
+the granted QoS level. Incoming messages are dispatched to the registered handler automatically.
+Subscribing and unsubscribing are managed independently for each topic filter.
+
+---
+
+### Step 21 – Publish Pipeline
+
+Implement the outbound message path: accept a message from the caller, assign a packet identifier
+for QoS 1 and QoS 2, build the PUBLISH packet including any properties, send it over the transport,
+and hand off to the QoS 1 or QoS 2 engine for acknowledgement tracking. QoS 0 messages are sent
+and forgotten immediately.
+
+**Result:** The caller publishes a message with a single call regardless of QoS level. All framing,
+identifier assignment, and acknowledgement waiting are handled internally. The caller is notified
+when the delivery guarantee implied by the chosen QoS level has been met.
+
+---
+
+### Step 22 – Reconnect Controller
+
+Implement a component that monitors the connection state, detects drops (transport errors or
+keep-alive timeout), and automatically re-establishes the connection. A configurable back-off
+strategy controls the delay between attempts. After a successful reconnect the connection negotiator
+(Step 18), the session state keeper (Step 19), and the QoS engines (Steps 14 and 15) are invoked
+to restore the previous state.
+
+**Result:** The client recovers from network interruptions without any action from the caller.
+The caller's message callbacks and subscriptions remain active across reconnects. The back-off
+strategy prevents the client from flooding the broker during outages.
+
+---
+
+## Phase 6 – Client Library Public API
+
+### Step 23 – Synchronous Client Interface
+
+Expose a blocking public interface with the following operations: connect, publish, subscribe,
+unsubscribe, and disconnect. Each call blocks until the operation is complete or a timeout expires.
+The interface hides all internal state machines, engines, and threading from the caller.
+
+**Result:** Any application can use the library without knowledge of MQTT internals. Simple use
+cases require no concurrency management on the caller's side.
+
+---
+
+### Step 24 – Asynchronous / Callback Interface
+
+Extend the public interface with non-blocking variants of connect, publish, subscribe, and
+unsubscribe that accept a completion callback. Inbound messages are delivered via a registered
+message handler callback. All callbacks are invoked from a single internal dispatch thread to
+avoid concurrency issues for the caller.
+
+**Result:** The library can be embedded in event-driven applications where blocking is not acceptable.
+Callers choose between the blocking and the callback interface independently for each operation.
+
+---
+
+### Step 25 – Configuration Object
+
+Define a single configuration structure covering all tunable parameters: broker host and port,
+transport type (TCP or WebSocket), client identifier, credentials, clean-start flag, keep-alive
+interval, session expiry interval, receive maximum, topic alias maximum, reconnect policy, and
+per-operation timeout. Sensible defaults are provided for every parameter.
+
+**Result:** There is one authoritative place for all library settings. A minimal use case requires
+only host and port; advanced use cases can tune every parameter without touching library internals.
+
+---
+
+### Step 26 – Error Model
+
+Define a unified error type that covers: network errors, protocol violations, authentication
+failures, authorization failures, broker-reported reason codes, and operation timeouts.
+Every public function returns or signals an error of this type consistently.
+
+**Result:** Callers always receive a structured, named error rather than a raw integer or an
+unhandled exception. Error handling patterns are the same for every library function.
+
+---
+
+## Phase 7 – Test Client
+
+### Step 27 – Test Client Shell
+
+Build a standalone executable that loads a broker address from a configuration file or command-line
+arguments, connects using the client library, and holds the connection open until told to exit via
+a signal or command.
+
+**Result:** A runnable binary exists that can establish and maintain a connection to the broker.
+This executable is the foundation for all subsequent test client features.
+
+---
+
+### Step 28 – Command-Line Publish
+
+Add a publish command to the test client that accepts topic, payload, QoS level, retain flag, and
+optional MQTT properties as command-line arguments, publishes one message, waits for the delivery
+confirmation appropriate to the chosen QoS, and exits with a code that reflects success or failure.
+
+**Result:** Any single MQTT publish scenario can be triggered from the command line. Broker behavior
+for individual publish packets can be observed and verified interactively or in scripts.
+
+---
+
+### Step 29 – Command-Line Subscribe
+
+Add a subscribe command that accepts one or more topic filters with optional QoS and subscription
+options, subscribes to those filters, and prints each received message to the console with its
+topic, payload, QoS level, retain flag, and properties. The command runs until interrupted.
+
+**Result:** Incoming message delivery from the broker can be watched in real time. Retained message
+replay, QoS downgrade by the broker, and subscription option handling are all directly observable.
+
+---
+
+### Step 30 – Scenario Runner
+
+Add a scripted execution mode that reads a sequence of operations from a plain text file. Supported
+operations include: connect, subscribe, publish, wait for a message matching a pattern, assert
+a specific message content, unsubscribe, disconnect, and sleep for a duration. Each step is logged
+with a pass or fail result. The runner exits with a non-zero code if any step fails.
+
+**Result:** Repeatable, automated end-to-end test scenarios can be scripted without writing code.
+The test client produces output that can be parsed by the existing integration test runner. Scenarios
+can be added or modified without recompiling anything.
+
+---
+
+### Step 31 – Built-In Protocol Test Scenarios
+
+Write a set of scenario files exercising the broker's core protocol behavior: clean-start session
+creation and fresh state, persistent session resume with subscription restoration, QoS 0 fire-and-
+forget delivery, QoS 1 at-least-once with acknowledgement, QoS 2 exactly-once four-step handshake,
+retained message storage and replay on subscribe, last-will delivery on abrupt disconnect,
+keep-alive timeout detection, topic alias negotiation, and session expiry after disconnect.
+
+**Result:** The broker's fundamental protocol compliance can be verified end-to-end with a single
+command per scenario. The scenario files serve as executable documentation of the expected broker
+behavior and complement the existing unit and integration tests.
+
+---
+
+### Step 32 – Multi-Connection Load Scenarios
+
+Add a load mode that spawns a configurable number of publisher and subscriber connections concurrently,
+runs for a specified duration, and reports message throughput per second, round-trip latency
+(publish to receive), and the count of any delivery failures or timeouts.
+
+**Result:** The broker's performance under concurrent client load can be measured directly with the
+test client using the same transport and protocol paths as real clients. Results can be compared to
+the performance benchmarks produced by the existing performance test runner.
+
+---
+
+## Dependency Order Summary
+
+| Phase | Steps | Depends on |
+|-------|-------|------------|
+| 1 – Primitives | 1–4 | nothing |
+| 2 – Codec | 5–10 | Phase 1 |
+| 3 – Transport | 11–12 | Phase 1 |
+| 4 – Protocol Engine | 13–17 | Phase 2, Phase 3 |
+| 5 – Session Logic | 18–22 | Phase 4 |
+| 6 – Public API | 23–26 | Phase 5 |
+| 7 – Test Client | 27–32 | Phase 6 |
+
+Each step within a phase may be implemented in any order unless a later step in the same phase
+explicitly uses the result of an earlier one.
