@@ -53,6 +53,197 @@ void parse_common_options(TestClientCliOptions &options, const int argc,
       ++index;
     };
 
+    // mqttx compatibility aliases (supported subset)
+    if (option_name == "-t") {
+      add_override("publish_topic", "-t");
+      continue;
+    }
+    if (option_name == "-m" || option_name == "--message") {
+      add_override("publish_payload", option_name);
+      continue;
+    }
+    if (option_name == "-q") {
+      add_override("publish_qos", "-q");
+      continue;
+    }
+    if (option_name == "-r") {
+      options.overrides.emplace_back("publish_retain", "true");
+      continue;
+    }
+    if (option_name == "-d") {
+      options.overrides.emplace_back("publish_dup", "true");
+      continue;
+    }
+    if (option_name == "-s" || option_name == "--stdin") {
+      options.overrides.emplace_back("publish_payload_stdin", "true");
+      continue;
+    }
+    if (option_name == "-M" || option_name == "--multiline") {
+      options.overrides.emplace_back("publish_payload_stdin_multiline", "true");
+      continue;
+    }
+    if (option_name == "--file-read") {
+      add_override("publish_payload_file", "--file-read");
+      continue;
+    }
+    if (option_name == "-pf" || option_name == "--payload-format-indicator") {
+      add_override("publish_payload_format_indicator", option_name);
+      continue;
+    }
+    if (option_name == "-e") {
+      add_override("publish_message_expiry_interval_seconds", "-e");
+      continue;
+    }
+    if (option_name == "-ta") {
+      add_override("publish_topic_alias", "-ta");
+      continue;
+    }
+    if (option_name == "-rt") {
+      add_override("publish_response_topic", "-rt");
+      continue;
+    }
+    if (option_name == "-cd") {
+      add_override("publish_correlation_data", "-cd");
+      continue;
+    }
+    if (option_name == "-up" || option_name == "--user-properties") {
+      add_override("publish_user_property", option_name);
+      continue;
+    }
+    if (option_name == "-si") {
+      add_override("publish_subscription_identifier", "-si");
+      continue;
+    }
+    if (option_name == "-ct") {
+      add_override("publish_content_type", "-ct");
+      continue;
+    }
+    if (option_name == "-f" || option_name == "--format") {
+      add_override("publish_payload_encoding", option_name);
+      continue;
+    }
+    if (option_name == "-h" || option_name == "--hostname") {
+      add_override("host", option_name);
+      continue;
+    }
+    if (option_name == "-p") {
+      add_override("port", "-p");
+      continue;
+    }
+    if (option_name == "-i") {
+      add_override("client_id", "-i");
+      continue;
+    }
+    if (option_name == "--no-clean") {
+      options.overrides.emplace_back("clean_start", "false");
+      continue;
+    }
+    if (option_name == "-k" || option_name == "--keepalive") {
+      add_override("keep_alive_seconds", option_name);
+      continue;
+    }
+    if (option_name == "-u") {
+      add_override("username", "-u");
+      continue;
+    }
+    if (option_name == "-P") {
+      add_override("password", "-P");
+      continue;
+    }
+    if (option_name == "-l" || option_name == "--protocol") {
+      add_override("transport", option_name);
+      continue;
+    }
+    if (option_name == "--path") {
+      add_override("ws_path", "--path");
+      continue;
+    }
+    if (option_name == "-wh" || option_name == "--ws-headers") {
+      add_override("ws_header", option_name);
+      continue;
+    }
+    if (option_name == "-rp" || option_name == "--reconnect-period") {
+      add_override("reconnect_period_ms", option_name);
+      continue;
+    }
+    if (option_name == "-se") {
+      add_override("session_expiry_interval_seconds", "-se");
+      continue;
+    }
+    if (option_name == "--rcv-max") {
+      add_override("receive_maximum", "--rcv-max");
+      continue;
+    }
+    if (option_name == "--req-response-info") {
+      options.overrides.emplace_back("request_response_information", "true");
+      continue;
+    }
+    if (option_name == "--no-req-problem-info") {
+      options.overrides.emplace_back("request_problem_information", "false");
+      continue;
+    }
+    if (option_name == "-Cup" || option_name == "--conn-user-properties") {
+      add_override("connect_user_property", option_name);
+      continue;
+    }
+    if (option_name == "-Wt") {
+      add_override("will_topic", "-Wt");
+      continue;
+    }
+    if (option_name == "-Wm") {
+      add_override("will_payload", "-Wm");
+      continue;
+    }
+    if (option_name == "-Wq") {
+      add_override("will_qos", "-Wq");
+      continue;
+    }
+    if (option_name == "-Wr") {
+      options.overrides.emplace_back("will_retain", "true");
+      continue;
+    }
+    if (option_name == "-Wd") {
+      add_override("will_delay_interval_seconds", "-Wd");
+      continue;
+    }
+    if (option_name == "-Wpf") {
+      add_override("will_payload_format_indicator", "-Wpf");
+      continue;
+    }
+    if (option_name == "-We") {
+      add_override("will_message_expiry_interval_seconds", "-We");
+      continue;
+    }
+    if (option_name == "-Wct") {
+      add_override("will_content_type", "-Wct");
+      continue;
+    }
+    if (option_name == "-Wrt") {
+      add_override("will_response_topic", "-Wrt");
+      continue;
+    }
+    if (option_name == "-Wcd") {
+      add_override("will_correlation_data", "-Wcd");
+      continue;
+    }
+    if (option_name == "-Wup") {
+      add_override("will_user_property", "-Wup");
+      continue;
+    }
+    if (option_name == "-am") {
+      add_override("authentication_method", "-am");
+      continue;
+    }
+    if (option_name == "-V" || option_name == "--mqtt-version") {
+      const std::string value = require_value(index, argc, argv, option_name);
+      if (value != "5" && value != "5.0") {
+        throw std::invalid_argument(
+            "Only MQTT version 5.0 is supported by yahatestclient");
+      }
+      ++index;
+      continue;
+    }
+
     if (option_name == "--host") {
       add_override("host", "--host");
       continue;
@@ -334,8 +525,12 @@ TestClientCliOptions parse_test_client_cli(const int argc, const char *argv[]) {
     return options;
   }
 
-  if (command_name == "publish") {
+  if (command_name == "publish" || command_name == "pub") {
     options.command = TestClientCommand::Publish;
+    if (argc == 3 && std::string(argv[2]) == "--help") {
+      options.command = TestClientCommand::Help;
+      return options;
+    }
     parse_common_options(options, argc, argv, 2);
     return options;
   }
@@ -381,7 +576,7 @@ std::string test_client_help_text() {
       "  yahatestclient <command> [options]\n\n"
       "Commands:\n"
       "  connect        Connect using profile + CLI overrides and keep session open\n"
-      "  publish        Connect, publish one message, wait for QoS ACK flow, exit\n"
+      "  publish|pub    Connect, publish one message, wait for QoS ACK flow, exit\n"
       "  subscribe      Connect, subscribe, stream matching publishes, and optionally exit on message limit\n"
       "  scenario       Run built-in scripted scenario or list available scenarios\n"
       "  save-profile   Write profile file from defaults/profile/overrides\n"
@@ -450,6 +645,16 @@ std::string test_client_help_text() {
       "  --output-format <template>\n"
       "  --message-limit <count>\n"
       "  --wait-timeout-ms <milliseconds>\n\n"
+      "mqttx compatibility aliases (supported subset):\n"
+      "  command: pub\n"
+      "  publish: -t -m --message -q -r -d -s --stdin -M --multiline\n"
+      "           --file-read -pf -e -ta -rt -cd -up --user-properties\n"
+      "           -si -ct -f --format\n"
+      "  connection: -h --hostname -p -i --no-clean -k --keepalive -u -P\n"
+      "              -l --protocol --path -wh --ws-headers -rp --reconnect-period\n"
+      "              -se --rcv-max --req-response-info --no-req-problem-info\n"
+      "              -Cup --conn-user-properties -am -V --mqtt-version\n"
+      "  will: -Wt -Wm -Wq -Wr -Wd -Wpf -We -Wct -Wrt -Wcd -Wup\n\n"
       "scenario options:\n"
       "  --scenario <name>\n"
       "  --list-scenarios\n\n"

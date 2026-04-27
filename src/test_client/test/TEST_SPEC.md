@@ -29,6 +29,11 @@
 | `test_client_cli_subscribe_parses_step30_options` | `[test_client][cli]` | `subscribe` command parses subscription entries, MQTT 5 subscribe properties, and output pipeline flags. |
 | `test_client_cli_scenario_parses_step31_options` | `[test_client][cli]` | `scenario` command parses selected built-in scenario name and common overrides. |
 | `test_client_cli_scenario_requires_selector` | `[test_client][cli]` | `scenario` command rejects calls without `--scenario` or `--list-scenarios`. |
+| `test_client_cli_publish_command_alias_pub_is_supported` | `[test_client][cli]` | `pub` command alias maps to publish flow and parses core short publish flags. |
+| `test_client_cli_mqttx_publish_input_aliases_are_supported` | `[test_client][cli]` | mqttx-style publish payload/property aliases (`-s`, `-M`, `--file-read`, `-f`, `-pf`, `-e`, `-ta`, `-rt`, `-cd`, `-up`, `-si`, `-ct`) map to profile overrides. |
+| `test_client_cli_mqttx_connection_aliases_are_supported` | `[test_client][cli]` | mqttx-style host/port/client/auth/connect-property aliases map to supported test-client options. |
+| `test_client_cli_mqttx_will_aliases_are_supported` | `[test_client][cli]` | mqttx-style will aliases (`-Wt`..`-Wup`) map to supported will profile overrides. |
+| `test_client_cli_mqttx_version_alias_rejects_non_v5` | `[test_client][cli]` | mqttx version alias accepts only MQTT 5.0 and rejects unsupported versions. |
 
 ## Scenario Runner
 

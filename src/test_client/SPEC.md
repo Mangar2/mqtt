@@ -89,6 +89,17 @@ Profile keys:
 - `parse_test_client_cli(int argc, const char* argv[])`
 - `test_client_help_text()`
 
+Compatibility behavior:
+
+- `publish` command accepts alias `pub`.
+- Supported mqttx-style aliases are accepted for implemented capabilities,
+  including short publish flags (`-t`, `-m`, `-q`, `-r`, `-d`, `-s`, `-M`),
+  publish MQTT 5 properties (`-pf`, `-e`, `-ta`, `-rt`, `-cd`, `-up`, `-si`,
+  `-ct`), connection aliases (`-h`, `-p`, `-i`, `--no-clean`, `-k`, `-u`,
+  `-P`, `-l`, `--path`, `-wh`, `-rp`, `-se`, `--rcv-max`, `--req-response-info`,
+  `--no-req-problem-info`, `-Cup`, `-am`), and will aliases (`-Wt`..`-Wup`).
+- `-V/--mqtt-version` is accepted only for `5` or `5.0`.
+
 ### `test_client_scenario_runner.h`
 
 - `list_test_client_scenarios()`
