@@ -1,4 +1,4 @@
-# client — Client-side MQTT components (Steps 16, 17, 18, 19)
+# client — Client-side MQTT components (Steps 16, 17, 18, 19, 20)
 
 Reusable client-only building blocks for outbound broker connections.
 Depends on `data_model/`, `codec/`, and `network/`.
@@ -7,11 +7,12 @@ Depends on `data_model/`, `codec/`, and `network/`.
 
 | File | Plan ref | Description |
 |------|----------|-------------|
-| `client_error.h` | 16-19 | `ClientError` enum and `ClientException` |
+| `client_error.h` | 16-20 | `ClientError` enum and `ClientException` |
 | `keep_alive_manager.h/.cpp` | 16 | Active keep-alive poller (`PINGREQ` scheduling + `PINGRESP` timeout detection) |
 | `outbound_topic_alias_manager.h/.cpp` | 17 | Outbound topic-alias assignment/reuse for PUBLISH packets |
 | `connection_negotiator.h/.cpp` | 18 | Outbound TCP dial + CONNECT/CONNACK handshake negotiation |
 | `session_state_keeper.h/.cpp` | 19 | Client-side session-state keeper (subscriptions, session expiry, outbound inflight replay snapshot) |
+| `subscription_manager.h/.cpp` | 20 | Client-side SUBSCRIBE/UNSUBSCRIBE manager with ACK correlation and inbound callback dispatch |
 
 ## KeepAliveManager (Step 16)
 
@@ -75,3 +76,25 @@ Behavior guarantees:
 - outbound inflight replay list is kept in deterministic order
   (timestamp, then packet_id),
 - snapshot client ID mismatch is rejected.
+
+## ClientSubscriptionManager (Step 20)
+
+`ClientSubscriptionManager` orchestrates client-side subscription lifecycle:
+
+- `begin_subscribe(...)` creates a SUBSCRIBE packet with packet-id tracking and
+  stores pending callback bindings.
+- `on_suback(...)` matches SUBACK by packet-id, activates accepted
+  subscriptions, and keeps rejected filters inactive.
+- `begin_unsubscribe(...)` creates an UNSUBSCRIBE packet with packet-id
+  tracking.
+- `on_unsuback(...)` matches UNSUBACK by packet-id and removes successful
+  filters from local active state.
+- `dispatch_inbound_publish(...)` validates the topic name, matches active
+  filters with topic wildcard rules, and invokes matching callbacks.
+
+Behavior guarantees:
+
+- unknown packet-id ACKs are rejected with `ProtocolError`,
+- topic filter/topic name validation failures are mapped to `InvalidPacket`,
+- callbacks are stored per topic filter and replaced on re-subscribe,
+- `clear()` removes active and pending state.

@@ -721,6 +721,31 @@ correct callback is invoked.
 the granted QoS level. Incoming messages are dispatched to the registered handler automatically.
 Subscribing and unsubscribing are managed independently for each topic filter.
 
+**Implementation status (2026-04-27): Completed (client-side module implemented)**
+
+Implemented client-side subscription manager:
+- `src/client/subscription_manager.h/.cpp`
+	- builds outbound `SUBSCRIBE` and `UNSUBSCRIBE` packets with packet-id allocation,
+	- tracks pending operations and correlates `SUBACK` / `UNSUBACK`,
+	- maintains active topic-filter callback table,
+	- activates accepted subscriptions from `SUBACK` reason codes,
+	- removes successful unsubscriptions from `UNSUBACK` reason codes,
+	- dispatches inbound `PUBLISH` packets to matching callbacks via topic matcher.
+
+Existing related reusable components:
+- `src/data_model/packet/subscribe_packets.h`
+- `src/topic/subscription_trie.h`
+- `src/topic/topic_matcher.h`
+- `src/topic/topic_validator.h`
+
+Verification:
+- `src/client/test/TEST_SPEC.md`
+- `src/client/test/client_test.cpp`
+	- subscribe/unsubscribe packet build and ack correlation,
+	- ack mismatch/unknown-packet-id error paths,
+	- inbound publish callback dispatch with wildcard filter matching,
+	- invalid filter/topic validation handling.
+
 ---
 
 ### Step 21 – Publish Pipeline

@@ -12,6 +12,7 @@
 #include "client/keep_alive_manager.h"
 #include "client/outbound_topic_alias_manager.h"
 #include "client/session_state_keeper.h"
+#include "client/subscription_manager.h"
 #include "codec/packet/connect_codec.h"
 #include "codec/packet/control_codec.h"
 #include "data_model/packet/connect_packet.h"
@@ -371,6 +372,148 @@ TEST_CASE("session_state_keeper_snapshot_roundtrip_and_mismatch_guard",
   CHECK_THROWS_AS(restored_keeper.apply_snapshot(mismatched_snapshot),
                   ClientException);
 }
+
+  TEST_CASE(
+    "subscription_manager_begin_subscribe_builds_packet_and_activates_on_suback",
+    "[client][subscription]") {
+    ClientSubscriptionManager manager("client-subscription");
+    std::size_t callback_invocations = 0U;
+
+    ClientSubscriptionManager::SubscribeRequest subscribe_request;
+    subscribe_request.topic_filter = "sensors/room1";
+    subscribe_request.requested_qos = QoS::AtLeastOnce;
+    subscribe_request.callback =
+      [&callback_invocations](const PublishPacket &) { ++callback_invocations; };
+
+    const ClientSubscriptionManager::SubscribeOperation subscribe_operation =
+      manager.begin_subscribe({subscribe_request});
+    REQUIRE(subscribe_operation.packet_id != 0U);
+    REQUIRE(subscribe_operation.packet.packet_id == subscribe_operation.packet_id);
+    REQUIRE(subscribe_operation.packet.filters.size() == 1U);
+
+    SubackPacket suback_packet;
+    suback_packet.packet_id = subscribe_operation.packet_id;
+    suback_packet.reason_codes = {ReasonCode::GrantedQoS1};
+    const ClientSubscriptionManager::AckResult suback_result =
+      manager.on_suback(suback_packet);
+    REQUIRE(suback_result.reason_codes.size() == 1U);
+    CHECK(suback_result.reason_codes.front() == ReasonCode::GrantedQoS1);
+    CHECK(manager.has_subscription("sensors/room1"));
+
+    const PublishPacket inbound_publish = make_publish_packet("sensors/room1");
+    CHECK(manager.dispatch_inbound_publish(inbound_publish) == 1U);
+    CHECK(callback_invocations == 1U);
+  }
+
+  TEST_CASE("subscription_manager_suback_reject_keeps_filter_inactive",
+        "[client][subscription]") {
+    ClientSubscriptionManager manager("client-subscription");
+    std::size_t callback_invocations = 0U;
+
+    ClientSubscriptionManager::SubscribeRequest subscribe_request;
+    subscribe_request.topic_filter = "sensors/rejected";
+    subscribe_request.requested_qos = QoS::AtLeastOnce;
+    subscribe_request.callback =
+      [&callback_invocations](const PublishPacket &) { ++callback_invocations; };
+
+    const ClientSubscriptionManager::SubscribeOperation subscribe_operation =
+      manager.begin_subscribe({subscribe_request});
+
+    SubackPacket suback_packet;
+    suback_packet.packet_id = subscribe_operation.packet_id;
+    suback_packet.reason_codes = {ReasonCode::NotAuthorized};
+    (void)manager.on_suback(suback_packet);
+
+    CHECK_FALSE(manager.has_subscription("sensors/rejected"));
+    CHECK(manager.dispatch_inbound_publish(make_publish_packet("sensors/rejected")) ==
+      0U);
+    CHECK(callback_invocations == 0U);
+  }
+
+  TEST_CASE("subscription_manager_begin_unsubscribe_and_unsuback_remove_filter",
+        "[client][subscription]") {
+    ClientSubscriptionManager manager("client-subscription");
+    std::size_t callback_invocations = 0U;
+
+    ClientSubscriptionManager::SubscribeRequest subscribe_request;
+    subscribe_request.topic_filter = "devices/+/status";
+    subscribe_request.requested_qos = QoS::AtMostOnce;
+    subscribe_request.callback =
+      [&callback_invocations](const PublishPacket &) { ++callback_invocations; };
+
+    const ClientSubscriptionManager::SubscribeOperation subscribe_operation =
+      manager.begin_subscribe({subscribe_request});
+      const ClientSubscriptionManager::AckResult subscribe_ack_result =
+        manager.on_suback(SubackPacket{.packet_id = subscribe_operation.packet_id,
+                       .properties = {},
+                       .reason_codes = {ReasonCode::Success}});
+      CHECK(subscribe_ack_result.packet_id == subscribe_operation.packet_id);
+
+    CHECK(manager.has_subscription("devices/+/status"));
+    CHECK(manager.dispatch_inbound_publish(make_publish_packet("devices/a/status")) ==
+      1U);
+    CHECK(callback_invocations == 1U);
+
+    const ClientSubscriptionManager::UnsubscribeOperation unsubscribe_operation =
+      manager.begin_unsubscribe({"devices/+/status"});
+      const ClientSubscriptionManager::AckResult unsubscribe_ack_result =
+        manager.on_unsuback(UnsubackPacket{.packet_id = unsubscribe_operation.packet_id,
+                         .properties = {},
+                         .reason_codes = {ReasonCode::Success}});
+      CHECK(unsubscribe_ack_result.packet_id == unsubscribe_operation.packet_id);
+
+    CHECK_FALSE(manager.has_subscription("devices/+/status"));
+    CHECK(manager.dispatch_inbound_publish(make_publish_packet("devices/b/status")) ==
+      0U);
+    CHECK(callback_invocations == 1U);
+  }
+
+  TEST_CASE("subscription_manager_suback_unknown_packet_id_throws",
+        "[client][subscription]") {
+    ClientSubscriptionManager manager("client-subscription");
+
+    SubackPacket suback_packet;
+    suback_packet.packet_id = 65535U;
+    suback_packet.reason_codes = {ReasonCode::Success};
+    CHECK_THROWS_AS(manager.on_suback(suback_packet), ClientException);
+  }
+
+  TEST_CASE("subscription_manager_reason_count_mismatch_throws",
+        "[client][subscription]") {
+    ClientSubscriptionManager manager("client-subscription");
+
+    ClientSubscriptionManager::SubscribeRequest first_request;
+    first_request.topic_filter = "devices/one";
+    first_request.callback = [](const PublishPacket &) {};
+
+    ClientSubscriptionManager::SubscribeRequest second_request;
+    second_request.topic_filter = "devices/two";
+    second_request.callback = [](const PublishPacket &) {};
+
+    const ClientSubscriptionManager::SubscribeOperation subscribe_operation =
+      manager.begin_subscribe({first_request, second_request});
+
+    SubackPacket suback_packet;
+    suback_packet.packet_id = subscribe_operation.packet_id;
+    suback_packet.reason_codes = {ReasonCode::Success};
+    CHECK_THROWS_AS(manager.on_suback(suback_packet), ClientException);
+  }
+
+  TEST_CASE("subscription_manager_validates_filters_and_topic_name",
+        "[client][subscription]") {
+    ClientSubscriptionManager manager("client-subscription");
+
+    ClientSubscriptionManager::SubscribeRequest invalid_request;
+    invalid_request.topic_filter = "invalid#filter";
+    invalid_request.callback = [](const PublishPacket &) {};
+    CHECK_THROWS_AS(manager.begin_subscribe({invalid_request}), ClientException);
+    CHECK_THROWS_AS(manager.begin_unsubscribe({"invalid#filter"}),
+            ClientException);
+
+    PublishPacket invalid_publish = make_publish_packet("topic/#");
+    CHECK_THROWS_AS(manager.dispatch_inbound_publish(invalid_publish),
+            ClientException);
+  }
 
 #if !defined(_WIN32)
 

@@ -44,3 +44,14 @@
 | `session_state_keeper_set_outbound_inflight_filters_and_sorts` | `[client][state_keeper]` | Keeps only outbound non-zero packet IDs and sorts by timestamp then packet_id. |
 | `session_state_keeper_capture_outbound_inflight_from_store` | `[client][state_keeper]` | Captures only outbound entries for owning client from `InflightStore`. |
 | `session_state_keeper_snapshot_roundtrip_and_mismatch_guard` | `[client][state_keeper]` | Snapshot apply roundtrip works for same client_id and throws for mismatched client_id. |
+
+## ClientSubscriptionManager (Step 20)
+
+| Test case | Tag | Description |
+|-----------|-----|-------------|
+| `subscription_manager_begin_subscribe_builds_packet_and_activates_on_suback` | `[client][subscription]` | SUBSCRIBE packet gets packet id and accepted SUBACK activates filter callback. |
+| `subscription_manager_suback_reject_keeps_filter_inactive` | `[client][subscription]` | Error SUBACK reason does not activate local subscription callback. |
+| `subscription_manager_begin_unsubscribe_and_unsuback_remove_filter` | `[client][subscription]` | UNSUBSCRIBE/UNSUBACK flow removes previously active filter on success. |
+| `subscription_manager_suback_unknown_packet_id_throws` | `[client][subscription]` | Unknown SUBACK packet id is rejected as protocol error. |
+| `subscription_manager_reason_count_mismatch_throws` | `[client][subscription]` | ACK reason code count mismatch against pending request throws protocol error. |
+| `subscription_manager_validates_filters_and_topic_name` | `[client][subscription]` | Invalid subscribe/unsubscribe filters and invalid inbound publish topic are rejected. |
