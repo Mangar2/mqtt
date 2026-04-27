@@ -444,6 +444,10 @@ int main(int argc, char *argv[]) {
   if (!cli_options.quiet) {
     print_lifecycle_log(std::string("Opening ipv4 listen socket on port ") +
                         std::to_string(config.mqtt_port) + ".");
+    if (config.ws_port != 0U) {
+      print_lifecycle_log(std::string("Opening websocket listen socket on port ") +
+                          std::to_string(config.ws_port) + ".");
+    }
   }
 
   mqtt::Broker broker(config);

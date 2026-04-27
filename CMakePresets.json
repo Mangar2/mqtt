@@ -89,6 +89,34 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+
+    {
+      "name":          "armv7-zig-base",
+      "hidden":        true,
+      "inherits":      "base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/armv7-zig.cmake",
+      "cacheVariables": {
+        "BUILD_TESTING": "OFF"
+      }
+    },
+
+    {
+      "name":        "armv7-zig-debug",
+      "displayName": "Debug (Raspberry Pi Zero 2 – ARMv7, Zig, no sysroot)",
+      "inherits":    "armv7-zig-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+
+    {
+      "name":        "armv7-zig-release",
+      "displayName": "Release (Raspberry Pi Zero 2 – ARMv7, Zig, no sysroot)",
+      "inherits":    "armv7-zig-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
 
@@ -98,7 +126,9 @@
     { "name": "debug-sanitize", "displayName": "Build Debug + Sanitizers (host)",     "configurePreset": "debug-sanitize" },
     { "name": "test-coverage",  "displayName": "Build Tests + Coverage (host)",       "configurePreset": "test-coverage"  },
     { "name": "armv6-zig-debug",   "displayName": "Build Debug (ARMv6, Zig)",           "configurePreset": "armv6-zig-debug"  },
-    { "name": "armv6-zig-release", "displayName": "Build Release (ARMv6, Zig)",         "configurePreset": "armv6-zig-release" }
+    { "name": "armv6-zig-release", "displayName": "Build Release (ARMv6, Zig)",         "configurePreset": "armv6-zig-release" },
+    { "name": "armv7-zig-debug",   "displayName": "Build Debug (ARMv7, Zig)",           "configurePreset": "armv7-zig-debug"  },
+    { "name": "armv7-zig-release", "displayName": "Build Release (ARMv7, Zig)",         "configurePreset": "armv7-zig-release" }
   ],
 
   "testPresets": [

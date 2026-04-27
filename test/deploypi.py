@@ -16,7 +16,7 @@ import shlex
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-ARMV6_PRESET = "armv6-zig-release"
+DEFAULT_PRESET = "armv6-zig-release"
 DEFAULT_TARGET = "yahabroker"
 DEFAULT_REMOTE_HOST = "pi@raspberrypi"
 DEFAULT_REMOTE_DIR = "~/mqtt"
@@ -45,6 +45,13 @@ def run_or_fail(command: list[str], *, label: str) -> None:
 
 def shell_join(parts: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in parts)
+
+
+def normalize_remote_host(remote_host: str) -> str:
+    """Ensure remote_host has user@ prefix (default: pi@)."""
+    if "@" not in remote_host:
+        return f"pi@{remote_host}"
+    return remote_host
 
 
 def split_remote_host(remote_host: str) -> str:
@@ -211,7 +218,12 @@ def follow_remote_log(remote_host: str, remote_dir: str, lines: int) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Build armv6 broker with Zig and copy binary to Raspberry Pi."
+        description="Build broker with Zig and copy binary to Raspberry Pi."
+    )
+    parser.add_argument(
+        "--preset",
+        default=DEFAULT_PRESET,
+        help="CMake preset (e.g. armv6-zig-release, armv7-zig-release)",
     )
     parser.add_argument("--target", default=DEFAULT_TARGET, help="CMake build target")
     parser.add_argument(
@@ -280,6 +292,7 @@ def main() -> int:
         help="Number of log lines used by --show-log or as initial lines for --follow-log",
     )
     args = parser.parse_args()
+    args.remote_host = normalize_remote_host(args.remote_host)
 
     try:
         require_tool("cmake")
@@ -288,16 +301,16 @@ def main() -> int:
         if args.log_lines <= 0:
             raise RuntimeError("--log-lines must be > 0")
 
-        build_mode = configure_if_needed(ARMV6_PRESET)
+        build_mode = configure_if_needed(args.preset)
         run_or_fail(
-            ["cmake", "--build", "--preset", ARMV6_PRESET, "--target", args.target],
+            ["cmake", "--build", "--preset", args.preset, "--target", args.target],
             label="build",
         )
 
         binary_path = (
             Path(args.binary).expanduser()
             if args.binary
-            else (PROJECT_ROOT / "build" / ARMV6_PRESET / "yahabroker")
+            else (PROJECT_ROOT / "build" / args.preset / "yahabroker")
         )
         if not binary_path.exists():
             raise RuntimeError(f"build finished but binary not found: {binary_path}")
@@ -367,6 +380,7 @@ def main() -> int:
             f" port={args.remote_port}"
             f" config={args.remote_config}"
             f" target={args.target}"
+            f" preset={args.preset}"
             f" trace_level={args.trace_level or '<config>'}"
         )
 
