@@ -46,6 +46,12 @@ orchestration for broker-supported transports (`mqtt`, `ws`) without TLS.
   `multi-subscribe` with configurable connection count, connect/message
   interval, publish limit, topic/client templates, and optional JSON metrics
   output for automation tooling.
+- Step 32 `publish-rate` uses persistent benchmark connections; `--count`
+  controls pool size, `--interval` controls connection setup spacing,
+  `--message-interval` controls per-publish delay, and `--limit 0` enables
+  unlimited publish loop behavior.
+- Step 32 bench publish applies `--split` payload tokenization and
+  `-S/--payload-size` payload generation semantics.
 
 ## Public API
 
@@ -116,6 +122,8 @@ Compatibility behavior:
   to `maximum_reconnect_times`.
 - mqttx-compatible command paths explicitly reject recognized-but-unimplemented
   `--debug`, `--save-options`, and `--load-options` with argument errors.
+- Bench `-v/--verbose` enables verbose bench traces and does not imply
+  metrics-json output.
 - mqttx top-level commands `conn`, `sub`, `simulate`, `ls`, `init`, and
   `check` are recognized as compatibility stubs: `--help` succeeds and
   non-help execution returns a not-implemented argument error.

@@ -42,6 +42,9 @@
 | `test_client_cli_wp2_reconnect_alias_maximun_is_supported` | `[test_client][cli]` | mqttx simulate alias spelling `--maximun-reconnect-times` is accepted in mqttx-compatible pub/bench flows and mapped to reconnect override. |
 | `test_client_cli_wp2_pub_rejects_not_implemented_debug_save_load_options` | `[test_client][cli]` | mqttx pub compatibility path rejects recognized but not implemented `--debug`, `--save-options`, and `--load-options` with argument errors. |
 | `test_client_cli_wp2_bench_rejects_not_implemented_debug_save_load_options` | `[test_client][cli]` | mqttx bench compatibility path rejects recognized but not implemented `--debug`, `--save-options`, and `--load-options` with argument errors. |
+| `test_client_cli_wp3_bench_verbose_is_not_metrics_json` | `[test_client][cli]` | Bench `-v/--verbose` enables verbose bench output semantics without implicitly enabling metrics-json output. |
+| `test_client_cli_wp3_bench_split_and_payload_size_are_parsed` | `[test_client][cli]` | Bench publish parser stores `--split` delimiter and `-S/--payload-size` for runtime payload generation behavior. |
+| `test_client_cli_wp3_bench_limit_zero_is_parsed` | `[test_client][cli]` | Bench publish parser preserves `-L/--limit 0` as unlimited-mode signal instead of remapping to bounded operation count. |
 
 ## Scenario Runner
 

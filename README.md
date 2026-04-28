@@ -319,6 +319,17 @@ WP2 shared connection semantics for mqttx-compatible paths:
 - Compatibility alias spelling `--maximun-reconnect-times` is accepted and mapped to `maximum_reconnect_times`.
 - Recognized but currently out-of-scope options in mqttx-compatible paths are rejected explicitly: `--debug`, `--save-options`, `--load-options`.
 
+WP3 bench runtime semantics (`bench pub`):
+
+- Persistent benchmark connections are used (no reconnect-per-message loop).
+- `--count` controls persistent connection pool size.
+- `--interval` controls spacing while establishing benchmark connections.
+- `--message-interval` controls spacing between publish operations.
+- `--limit 0` means unlimited publish loop.
+- `--split [delimiter]` splits configured payload into publish sequence tokens.
+- `-S`, `--payload-size` generates fixed-size payload per publish operation.
+- `-v`, `--verbose` enables bench operation traces and does not imply metrics-json output.
+
 Profile precedence is deterministic:
 
 1. Built-in defaults

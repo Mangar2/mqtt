@@ -281,4 +281,42 @@ TEST_CASE("test_client_cli_wp2_bench_rejects_not_implemented_debug_save_load_opt
   }
 }
 
+TEST_CASE("test_client_cli_wp3_bench_verbose_is_not_metrics_json",
+          "[test_client][cli]") {
+  const char *argv[] = {"yahatestclient", "bench", "pub", "-t", "topic/%i",
+                        "-m",             "hello", "-v", "-c", "1", "-L", "2"};
+
+  const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+  CHECK(options.command == TestClientCommand::Scenario);
+  CHECK(options.load_mode == "publish-rate");
+  CHECK(options.load_verbose);
+  CHECK_FALSE(options.load_metrics_json);
+}
+
+TEST_CASE("test_client_cli_wp3_bench_split_and_payload_size_are_parsed",
+          "[test_client][cli]") {
+  const char *argv[] = {"yahatestclient", "bench", "pub", "-t", "topic/%i",
+                        "-m",             "a|bb|ccc", "--split", "|",
+                        "-S",             "8", "-c", "1", "-L", "3"};
+
+  const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+  CHECK(options.command == TestClientCommand::Scenario);
+  CHECK(options.load_mode == "publish-rate");
+  CHECK(options.load_split_enabled);
+  CHECK(options.load_split_delimiter == "|");
+  CHECK(options.load_payload_size == 8U);
+}
+
+TEST_CASE("test_client_cli_wp3_bench_limit_zero_is_parsed",
+          "[test_client][cli]") {
+  const char *argv[] = {"yahatestclient", "bench", "pub", "-t", "topic/%i",
+                        "-m",             "hello", "-c", "2", "-L", "0"};
+
+  const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+  CHECK(options.command == TestClientCommand::Scenario);
+  CHECK(options.load_mode == "publish-rate");
+  CHECK(options.load_connection_count == 2U);
+  CHECK(options.load_publish_limit == 0U);
+}
+
 } // namespace mqtt

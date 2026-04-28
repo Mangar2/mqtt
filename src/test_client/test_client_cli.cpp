@@ -209,7 +209,7 @@ void parse_bench_options(TestClientCliOptions &options,
       continue;
     }
     if (option_name == "-v" || option_name == "--verbose") {
-      options.load_metrics_json = true;
+      options.load_verbose = true;
       continue;
     }
     if (option_name == "-h" || option_name == "--hostname") {
@@ -347,14 +347,18 @@ void parse_bench_options(TestClientCliOptions &options,
     }
     if (option_name == "--split") {
       require_mode(option_name, is_bench_pub);
+      options.load_split_enabled = true;
+      options.load_split_delimiter = ",";
       if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
+        options.load_split_delimiter = argv[index + 1];
         ++index;
       }
       continue;
     }
     if (option_name == "-S" || option_name == "--payload-size") {
       require_mode(option_name, is_bench_pub);
-      (void)require_value(index, argc, argv, option_name);
+      options.load_payload_size =
+          static_cast<uint32_t>(std::stoul(require_value(index, argc, argv, option_name)));
       ++index;
       continue;
     }
@@ -1462,8 +1466,11 @@ std::string test_client_help_text() {
       "  bench sub  [options]\n"
       "  bench options: -c --count -i --interval -im --message-interval\n"
       "                 -L --limit -t --topic -I --client-id -v --verbose\n"
+      "                 --split [delimiter] -S --payload-size\n"
       "                 plus mqttx pub/connection/will aliases above\n"
       "  templates: mqttx %i is supported and mapped to internal index placeholders\n"
+      "  bench pub: uses persistent connections; --count controls connection pool size\n"
+      "            and --limit 0 means unlimited publish loop\n"
       "  secure options (TLS/mqtts/wss) are intentionally unsupported\n\n"
       "scenario options:\n"
       "  --scenario <name>\n"

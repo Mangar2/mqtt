@@ -42,6 +42,10 @@ struct TestClientCliOptions {
   uint32_t load_parallelism{32U};
   std::string load_topic_template{"load/{index}"};
   std::string load_client_template{"load-client-{index}"};
+  bool load_verbose{false};
+  bool load_split_enabled{false};
+  std::string load_split_delimiter{","};
+  uint32_t load_payload_size{0U};
   bool load_metrics_json{false};
   bool list_scenarios{false};
   std::vector<std::pair<std::string, std::string>> overrides{};

@@ -868,6 +868,152 @@ def run_test_client_shell_wp2_reconnect_alias_precedence(config) -> tuple[bool, 
     return True, "WP2 reconnect alias and precedence checks succeeded"
 
 
+def run_test_client_shell_wp3_bench_persistent_connections_and_split(config) -> tuple[bool, str]:
+    timeout_seconds = max(8.0, config.timeout_seconds * 2.0)
+    unique = uuid.uuid4().hex
+    returncode, stdout_text, stderr_text = _run_cli_command(
+        [
+            "bench",
+            "pub",
+            "-h",
+            config.host,
+            "-p",
+            str(config.port),
+            "-t",
+            f"integration/wp3/persistent/{unique}/%i",
+            "-m",
+            "one|two|three",
+            "--split",
+            "|",
+            "-c",
+            "2",
+            "-i",
+            "2",
+            "-im",
+            "1",
+            "-L",
+            "3",
+            "-v",
+            "--maximum-reconnect-times",
+            "0",
+        ],
+        timeout_seconds,
+    )
+
+    merged = "\n".join(
+        chunk for chunk in [stdout_text.strip(), stderr_text.strip()] if chunk
+    ).strip()
+    if returncode != 0:
+        return False, (
+            "wp3 persistent/split bench run failed: "
+            f"exit={returncode}, output={merged or 'no output'}"
+        )
+
+    if "WP3 persistent bench connections established=2" not in stdout_text:
+        return False, "missing persistent connection establishment trace"
+    if "attempted=3 succeeded=3" not in stdout_text:
+        return False, "unexpected summary counters for finite limit"
+    if "payload='one'" not in stdout_text:
+        return False, "split payload token 'one' missing"
+    if "payload='two'" not in stdout_text:
+        return False, "split payload token 'two' missing"
+    if "payload='three'" not in stdout_text:
+        return False, "split payload token 'three' missing"
+
+    return True, "WP3 persistent connection and split payload checks succeeded"
+
+
+def run_test_client_shell_wp3_bench_payload_size_semantics(config) -> tuple[bool, str]:
+    timeout_seconds = max(8.0, config.timeout_seconds * 2.0)
+    unique = uuid.uuid4().hex
+    returncode, stdout_text, stderr_text = _run_cli_command(
+        [
+            "bench",
+            "pub",
+            "-h",
+            config.host,
+            "-p",
+            str(config.port),
+            "-t",
+            f"integration/wp3/payload-size/{unique}/%i",
+            "-m",
+            "alpha|beta",
+            "--split",
+            "|",
+            "-S",
+            "5",
+            "-c",
+            "1",
+            "-L",
+            "2",
+            "-v",
+            "--maximum-reconnect-times",
+            "0",
+        ],
+        timeout_seconds,
+    )
+
+    merged = "\n".join(
+        chunk for chunk in [stdout_text.strip(), stderr_text.strip()] if chunk
+    ).strip()
+    if returncode != 0:
+        return False, (
+            "wp3 payload-size bench run failed: "
+            f"exit={returncode}, output={merged or 'no output'}"
+        )
+
+    if "payload_size=5" not in stdout_text:
+        return False, "payload-size trace missing"
+    if "payload='xxxxx'" not in stdout_text:
+        return False, "payload-size generation trace missing expected payload"
+
+    return True, "WP3 payload-size semantics checks succeeded"
+
+
+def run_test_client_shell_wp3_bench_limit_zero_unlimited(config) -> tuple[bool, str]:
+    binary_path = _build_yahatestclient()
+    if binary_path is None:
+        return False, "yahatestclient binary not found and build failed"
+
+    unique = uuid.uuid4().hex
+    command = [
+        str(binary_path),
+        "bench",
+        "pub",
+        "-h",
+        config.host,
+        "-p",
+        str(config.port),
+        "-t",
+        f"integration/wp3/unlimited/{unique}/%i",
+        "-m",
+        "payload",
+        "-c",
+        "1",
+        "-im",
+        "1",
+        "-L",
+        "0",
+        "--maximum-reconnect-times",
+        "0",
+    ]
+
+    try:
+        subprocess.run(
+            command,
+            cwd=_project_root(),
+            capture_output=True,
+            text=True,
+            timeout=max(1.5, config.timeout_seconds / 2.0),
+            check=False,
+        )
+        return False, "bench pub with --limit 0 exited unexpectedly (expected unlimited run)"
+    except subprocess.TimeoutExpired:
+        return True, "WP3 limit=0 unlimited-run semantics check succeeded"
+    except Exception as error:  # pylint: disable=broad-except
+        return False, f"wp3 limit=0 check failed: {error}"
+
+
 TEST_CASES = [
     {
         "name": "test-client-shell/test_client_shell_wp1_command_help_discoverability",
@@ -898,6 +1044,21 @@ TEST_CASES = [
         "name": "test-client-shell/test_client_shell_wp2_reconnect_alias_precedence",
         "description": "21.0.6 Local yahatestclient accepts mqttx maximun reconnect alias spelling and preserves last-option precedence",
         "run": run_test_client_shell_wp2_reconnect_alias_precedence,
+    },
+    {
+        "name": "test-client-shell/test_client_shell_wp3_bench_persistent_connections_and_split",
+        "description": "21.0.7 Local yahatestclient bench pub uses persistent connections and applies split payload semantics",
+        "run": run_test_client_shell_wp3_bench_persistent_connections_and_split,
+    },
+    {
+        "name": "test-client-shell/test_client_shell_wp3_bench_payload_size_semantics",
+        "description": "21.0.8 Local yahatestclient bench pub applies payload-size generation semantics",
+        "run": run_test_client_shell_wp3_bench_payload_size_semantics,
+    },
+    {
+        "name": "test-client-shell/test_client_shell_wp3_bench_limit_zero_unlimited",
+        "description": "21.0.9 Local yahatestclient bench pub keeps running for limit zero (unlimited mode)",
+        "run": run_test_client_shell_wp3_bench_limit_zero_unlimited,
     },
     {
         "name": "connect/test_client_shell_connect",

@@ -65,6 +65,13 @@ struct SubscriberTask {
   std::string output_file;
 };
 
+struct PersistentPublisherConnection {
+  std::string client_id;
+  std::string topic;
+  TcpConnection connection;
+  StreamBuffer stream_buffer;
+};
+
 std::string shell_quote(const std::string& value) {
   std::string quoted;
   quoted.reserve(value.size() + 2U);
@@ -180,6 +187,45 @@ std::string make_payload_for_index(uint32_t index,
     return *profile.publish_payload;
   }
   return "step32-message-" + std::to_string(index);
+}
+
+std::vector<std::string> split_payload_variants(
+    const std::string& base_payload,
+    const TestClientCliOptions& options) {
+  if (!options.load_split_enabled || options.load_split_delimiter.empty()) {
+    return {base_payload};
+  }
+
+  std::vector<std::string> variants;
+  std::size_t cursor = 0U;
+  while (true) {
+    const std::size_t found =
+        base_payload.find(options.load_split_delimiter, cursor);
+    if (found == std::string::npos) {
+      variants.push_back(base_payload.substr(cursor));
+      break;
+    }
+    variants.push_back(base_payload.substr(cursor, found - cursor));
+    cursor = found + options.load_split_delimiter.size();
+  }
+
+  if (variants.empty()) {
+    variants.push_back(base_payload);
+  }
+  return variants;
+}
+
+std::string make_bench_payload_for_index(uint32_t publish_index,
+                                         const TestClientCliOptions& options,
+                                         const TestClientProfile& profile,
+                                         const std::vector<std::string>& split_variants) {
+  if (options.load_payload_size > 0U) {
+    return std::string(options.load_payload_size, 'x');
+  }
+  if (!split_variants.empty()) {
+    return split_variants[publish_index % split_variants.size()];
+  }
+  return make_payload_for_index(publish_index, profile);
 }
 
 ClientConfig make_client_config_for_operation(const TestClientProfile& profile,
@@ -407,6 +453,125 @@ int execute_publish_operation_direct(const TestClientProfile& profile,
   }
 
   return 1;
+}
+
+PersistentPublisherConnection connect_persistent_publisher_or_throw(
+    const TestClientProfile& profile,
+    const std::string& client_id,
+    const std::string& topic) {
+  TcpConnection connection =
+      ConnectionNegotiator::dial_tcp(profile.host, profile.port);
+  const ClientConfig config = make_client_config_for_operation(profile, client_id);
+  const ConnectPacket connect_packet = build_connect_packet(config);
+  (void)ConnectionNegotiator::negotiate(connection, connect_packet, 5000U);
+
+  PersistentPublisherConnection publisher_connection{
+      client_id,
+      topic,
+      std::move(connection),
+      StreamBuffer{}};
+  return publisher_connection;
+}
+
+int publish_once_on_persistent_connection(PersistentPublisherConnection& connection_state,
+                                          const TestClientProfile& profile,
+                                          const std::string& payload) {
+  PublishPacket publish_packet;
+  publish_packet.topic = Utf8String{connection_state.topic};
+  publish_packet.qos = qos_from_u8_or_throw(profile.publish_qos);
+  publish_packet.retain = profile.publish_retain;
+  publish_packet.dup = false;
+  publish_packet.payload = BinaryData::from_string(payload);
+  if (publish_packet.qos != QoS::AtMostOnce) {
+    publish_packet.packet_id = next_packet_id();
+  }
+
+  WriteBuffer publish_frame;
+  encode_publish(publish_frame, publish_packet);
+  if (!connection_state.connection.write(
+          std::span<const uint8_t>(publish_frame.data(), publish_frame.size()))) {
+    return 1;
+  }
+
+  if (publish_packet.qos == QoS::AtLeastOnce) {
+    const uint16_t expected_packet_id = *publish_packet.packet_id;
+    while (true) {
+      const AnyPacket packet = read_next_mqtt_packet_or_throw(
+          connection_state.connection, connection_state.stream_buffer, 5000U);
+      if (std::holds_alternative<PubackPacket>(packet)) {
+        const PubackPacket& puback_packet = std::get<PubackPacket>(packet);
+        if (puback_packet.packet_id == expected_packet_id &&
+            !is_error(puback_packet.reason_code)) {
+          break;
+        }
+        if (puback_packet.packet_id == expected_packet_id &&
+            is_error(puback_packet.reason_code)) {
+          return 1;
+        }
+      }
+      if (std::holds_alternative<DisconnectPacket>(packet)) {
+        return 1;
+      }
+    }
+  } else if (publish_packet.qos == QoS::ExactlyOnce) {
+    const uint16_t expected_packet_id = *publish_packet.packet_id;
+    while (true) {
+      const AnyPacket packet = read_next_mqtt_packet_or_throw(
+          connection_state.connection, connection_state.stream_buffer, 5000U);
+      if (!std::holds_alternative<PubrecPacket>(packet)) {
+        if (std::holds_alternative<DisconnectPacket>(packet)) {
+          return 1;
+        }
+        continue;
+      }
+
+      const PubrecPacket& pubrec_packet = std::get<PubrecPacket>(packet);
+      if (pubrec_packet.packet_id != expected_packet_id) {
+        continue;
+      }
+      if (is_error(pubrec_packet.reason_code)) {
+        return 1;
+      }
+
+      WriteBuffer pubrel_frame;
+      PubrelPacket pubrel_packet;
+      pubrel_packet.packet_id = expected_packet_id;
+      encode_pubrel(pubrel_frame, pubrel_packet);
+      if (!connection_state.connection.write(
+              std::span<const uint8_t>(pubrel_frame.data(), pubrel_frame.size()))) {
+        return 1;
+      }
+      break;
+    }
+
+    while (true) {
+      const AnyPacket packet = read_next_mqtt_packet_or_throw(
+          connection_state.connection, connection_state.stream_buffer, 5000U);
+      if (std::holds_alternative<PubcompPacket>(packet)) {
+        const PubcompPacket& pubcomp_packet = std::get<PubcompPacket>(packet);
+        if (pubcomp_packet.packet_id == expected_packet_id &&
+            !is_error(pubcomp_packet.reason_code)) {
+          break;
+        }
+        if (pubcomp_packet.packet_id == expected_packet_id &&
+            is_error(pubcomp_packet.reason_code)) {
+          return 1;
+        }
+      }
+      if (std::holds_alternative<DisconnectPacket>(packet)) {
+        return 1;
+      }
+    }
+  }
+
+  return 0;
+}
+
+void close_persistent_publishers(std::vector<PersistentPublisherConnection>& connections) {
+  for (PersistentPublisherConnection& connection_state : connections) {
+    send_disconnect_best_effort(connection_state.connection);
+    connection_state.connection.close();
+  }
 }
 
 int execute_subscribe_once_direct(const TestClientProfile& profile,
@@ -647,25 +812,87 @@ int run_publish_rate_mode(
     const TestClientCliOptions& options,
     const TestClientProfile& profile,
     LoadMetrics& metrics) {
-  const uint32_t operation_count =
-      std::max(options.load_publish_limit, options.load_connection_count);
+  const uint32_t connection_count = std::max(1U, options.load_connection_count);
+  std::vector<PersistentPublisherConnection> connections;
+  connections.reserve(connection_count);
 
-  return run_parallel_operations(
-      operation_count,
-      options.load_parallelism,
-      options.load_message_interval_ms,
-      metrics,
-      [&](uint32_t publish_index) {
-    const uint32_t connection_index =
-        publish_index % std::max(options.load_connection_count, 1U);
+  for (uint32_t connection_index = 0U;
+       connection_index < connection_count; ++connection_index) {
     const std::string client_id =
         render_template(options.load_client_template, connection_index);
     const std::string topic =
         render_template(options.load_topic_template, connection_index);
-    const std::string payload = make_payload_for_index(publish_index, profile);
 
-    return execute_publish_operation_direct(profile, client_id, topic, payload);
-      });
+    bool connected = false;
+    for (uint32_t attempt_index = 0U;
+         attempt_index <= profile.maximum_reconnect_times; ++attempt_index) {
+      try {
+        connections.push_back(
+            connect_persistent_publisher_or_throw(profile, client_id, topic));
+        connected = true;
+        break;
+      } catch (const std::exception&) {
+      }
+
+      if (attempt_index == profile.maximum_reconnect_times) {
+        break;
+      }
+      sleep_between_operations(profile.reconnect_period_ms);
+    }
+
+    if (!connected) {
+      close_persistent_publishers(connections);
+      return 1;
+    }
+    sleep_between_operations(options.load_connect_interval_ms);
+  }
+
+  if (options.load_verbose) {
+    std::cout << "WP3 persistent bench connections established="
+              << connections.size() << "\n";
+  }
+
+  const std::string base_payload = make_payload_for_index(0U, profile);
+  const std::vector<std::string> split_variants =
+      split_payload_variants(base_payload, options);
+  std::mutex metrics_mutex;
+
+  uint32_t publish_index = 0U;
+  while (options.load_publish_limit == 0U || publish_index < options.load_publish_limit) {
+    const uint32_t connection_index =
+        publish_index % static_cast<uint32_t>(connections.size());
+    PersistentPublisherConnection& connection_state = connections[connection_index];
+    const std::string payload =
+        make_bench_payload_for_index(publish_index, options, profile, split_variants);
+
+    const Clock::time_point started_at = Clock::now();
+    const int result_code = publish_once_on_persistent_connection(connection_state,
+                                                                  profile,
+                                                                  payload);
+    const Clock::time_point finished_at = Clock::now();
+    record_load_result(metrics, metrics_mutex, started_at, finished_at,
+                       result_code);
+
+    if (options.load_verbose) {
+      std::cout << "WP3 bench-pub op=" << (publish_index + 1U)
+                << " connection=" << connection_index
+                << " payload_size=" << payload.size()
+                << " payload='" << payload << "'"
+                << " result=" << (result_code == 0 ? "ok" : "failed")
+                << "\n";
+    }
+
+    if (result_code != 0) {
+      close_persistent_publishers(connections);
+      return 1;
+    }
+
+    ++publish_index;
+    sleep_between_operations(options.load_message_interval_ms);
+  }
+
+  close_persistent_publishers(connections);
+  return 0;
 }
 
 int run_multi_subscribe_mode(

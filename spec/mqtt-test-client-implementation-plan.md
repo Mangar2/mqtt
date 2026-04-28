@@ -50,7 +50,7 @@ Global connection/session/security options used by `conn`, `pub`, `sub`, `bench 
 - `--alpn <PROTO...>` - not implemented - meaning: ALPN protocol list for TLS handshake.
 - `-rp`, `--reconnect-period <MILLISECONDS>` - wrongly implemented - meaning: parsed, but mqttx-style reconnect behavior is not consistently applied in one-shot `pub` and current bench runtime paths.
 - `--maximum-reconnect-times <NUMBER>` - wrongly implemented - meaning: parsed, but mqttx-style reconnect behavior is not consistently applied in one-shot `pub` and current bench runtime paths.
-- `--maximun-reconnect-times <NUMBER>` (as printed by `mqttx simulate --help`) - not implemented - meaning: mqttx simulate alias/spelling variant for max reconnect attempts.
+- `--maximun-reconnect-times <NUMBER>` (as printed by `mqttx simulate --help`) - implemented - meaning: compatibility alias/spelling variant accepted and mapped to max reconnect attempts.
 - `-se`, `--session-expiry-interval <SECONDS>` - implemented - meaning: session expiry interval.
 - `--rcv-max`, `--receive-maximum <NUMBER>` - implemented - meaning: MQTT 5 receive maximum.
 - `--maximum-packet-size <NUMBER>` - implemented - meaning: maximum packet size client accepts.
@@ -120,12 +120,12 @@ Subscribe-oriented options (`sub`, `bench sub`):
 - `-Ap`, `--avsc-path <PATH>` (`sub`) - not implemented - meaning: AVRO schema path for decoding.
 
 Benchmark-control options:
-- `-c`, `--count <NUMBER>` - wrongly implemented - meaning: should be number of persistent benchmark connections; current implementation uses it mainly as slot/index count while `bench pub` still reconnects per publish operation.
-- `-i`, `--interval <MILLISECONDS>` - wrongly implemented - meaning: parsed for `bench pub`, but publish-rate runtime currently uses message interval, not connect interval semantics.
+- `-c`, `--count <NUMBER>` - implemented - meaning: number of persistent benchmark connections in `bench pub`.
+- `-i`, `--interval <MILLISECONDS>` - implemented - meaning: connect interval between setting up persistent benchmark connections.
 - `-im`, `--message-interval <MILLISECONDS>` (`bench pub`) - implemented - meaning: delay between publish operations.
-- `-L`, `--limit <NUMBER>` (`bench pub`) - wrongly implemented - meaning: in mqttx `0` means unlimited; current implementation maps `0` to a bounded operation count path.
-- `--split [CHARACTER]` (`bench pub`) - wrongly implemented - meaning: currently parsed/consumed but not applied in publish runtime behavior.
-- `-S`, `--payload-size <SIZE>` (`bench pub`) - wrongly implemented - meaning: currently parsed/consumed but not applied in publish runtime behavior.
+- `-L`, `--limit <NUMBER>` (`bench pub`) - implemented - meaning: publish operation limit; `0` means unlimited loop.
+- `--split [CHARACTER]` (`bench pub`) - implemented - meaning: split configured payload by delimiter into publish payload sequence.
+- `-S`, `--payload-size <SIZE>` (`bench pub`) - implemented - meaning: generate payload with configured size for each publish operation.
 
 Simulation-specific options (`simulate`):
 - `-sc`, `--scenario <SCENARIO>` - not implemented - meaning: run built-in simulation scenario name.
@@ -204,6 +204,21 @@ Integration tests required:
 - Compatibility tests for alias spelling and option precedence.
 
 ### WP3 – Bench Runtime Semantic Alignment
+
+Implementation status (2026-04-28): implemented.
+
+Implemented scope:
+- `bench pub` runtime now uses persistent connections instead of reconnect-per-message behavior.
+- `--count` controls persistent connection pool size.
+- `--interval` controls connection setup interval; `--message-interval` controls delay between publish operations.
+- `--limit 0` now runs as unlimited publish loop.
+- `--split` delimiter is applied to payload sequencing.
+- `-S/--payload-size` generates fixed-size payloads in bench publish mode.
+- Bench `-v/--verbose` now enables bench operation traces instead of toggling metrics-json output.
+
+Verification evidence:
+- Unit tests: `test_client_cli_wp3_bench_verbose_is_not_metrics_json`, `test_client_cli_wp3_bench_split_and_payload_size_are_parsed`, `test_client_cli_wp3_bench_limit_zero_is_parsed`.
+- Integration tests: `test-client-shell/test_client_shell_wp3_bench_persistent_connections_and_split`, `test-client-shell/test_client_shell_wp3_bench_payload_size_semantics`, `test-client-shell/test_client_shell_wp3_bench_limit_zero_unlimited`.
 
 Goal:
 - Close the largest semantic gap: `bench` runtime behavior vs mqttx intent.
