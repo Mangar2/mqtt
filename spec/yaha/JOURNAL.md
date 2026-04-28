@@ -48,3 +48,9 @@ No WebSocket support — HTTP only between bridge and devices. Failed delivery i
 
 ### [ARTIFACT] spec/yaha/IMPL-messagestore.md created
 Implementation plan for MessageStore in 10 steps across 4 phases. Phase 1 (steps 1–3) produces the shared foundations reused by all future YAHA MQTT services: Message type, IMqttComponent interface, YahaMqttClient session. Phase 2 (steps 4–7) builds the MessageStore component: message tree, persistence, component logic, HTTP interface. Phase 3 (step 8) composes the executable. Phase 4 (steps 9–10) covers unit and integration verification.
+
+### [MILESTONE] Step 1 complete — Message type implemented and tested
+Created `src/yaha/message/message.h`, `message.cpp`, `test/message_test.cpp`. Value type with `std::variant<std::string, double>`, `Qos` enum, `ReasonEntry` struct, `isOn()`, `addReason()` (prepend, most-recent-first), `clone()`, and `validate()`. 58 assertions, 20 test cases, all pass. Build: zero warnings, zero errors. SPEC.md files created at `src/yaha/` and `src/yaha/message/`; `src/SPEC.md` updated with `yaha/` entry.
+
+### [DECISION] reason chain: prepend (most-recent at index 0)
+Legacy JS code used `Array.push` (most-recent at end). Written spec says "most recent is at the front". C++ implementation follows the spec: `addReason` inserts at `begin()`, so `reason()[0]` is always the newest entry.
