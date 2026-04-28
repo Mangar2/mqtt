@@ -600,3 +600,8 @@ Broker process management for tests that need restart/reconfigure.
 ### 21.3 Subscribe + Publish Roundtrip
 - 21.3.1 Local `yahatestclient subscribe` with clean-output receives QoS 0 publish from local `yahatestclient publish`
 - 21.3.2 Local `yahatestclient subscribe` with output-file template receives QoS 1 publish and persists formatted topic/payload line
+
+### 21.4 Scenario Load Modes (Step 32)
+- 21.4.1 Local `yahatestclient scenario --load-mode mass-connect --metrics-json` succeeds and emits machine-readable metrics
+- 21.4.2 Local `yahatestclient scenario --load-mode publish-rate --metrics-json` succeeds and emits machine-readable metrics
+- 21.4.3 Local `yahatestclient scenario --list-scenarios` lists all Step 32 load modes including `multi-subscribe`

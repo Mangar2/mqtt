@@ -1,5 +1,6 @@
 #include "test_client/test_client_cli.h"
 
+#include <cctype>
 #include <stdexcept>
 #include <string>
 
@@ -17,6 +18,660 @@ namespace {
     throw std::invalid_argument("Missing value for option: " + option_name);
   }
   return std::string(argv[index + 1]);
+}
+
+[[nodiscard]] std::string normalize_mqttx_template(std::string value) {
+  const std::string mqttx_index_token = "%i";
+  const std::string internal_index_token = "{index}";
+
+  std::size_t start = 0U;
+  while (true) {
+    const std::size_t found = value.find(mqttx_index_token, start);
+    if (found == std::string::npos) {
+      break;
+    }
+    value.replace(found, mqttx_index_token.size(), internal_index_token);
+    start = found + internal_index_token.size();
+  }
+  return value;
+}
+
+[[nodiscard]] bool is_secure_protocol(std::string value) {
+  for (char &character : value) {
+    character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+  }
+  return value == "mqtts" || value == "wss";
+}
+
+[[nodiscard]] bool is_compact_qos_option(const std::string &option_name) {
+  return option_name.size() == 3U && option_name[0] == '-' &&
+         option_name[1] == 'q' &&
+         (option_name[2] == '0' || option_name[2] == '1' || option_name[2] == '2');
+}
+
+[[nodiscard]] std::string compact_qos_value(const std::string &option_name) {
+  return std::string(1U, option_name[2]);
+}
+
+[[nodiscard]] bool is_help_flag(const std::string &value) {
+  return value == "--help" || value == "-h";
+}
+
+void parse_bench_options(TestClientCliOptions &options,
+                         const int argc,
+                         const char *argv[],
+                         int start_index) {
+  const bool is_bench_conn = options.load_mode == "mass-connect";
+  const bool is_bench_pub = options.load_mode == "publish-rate";
+  const bool is_bench_sub = options.load_mode == "multi-subscribe";
+
+  auto require_mode = [](const std::string &option_name, const bool allowed) {
+    if (!allowed) {
+      throw std::invalid_argument("Option " + option_name +
+                                  " is not supported for this bench subcommand");
+    }
+  };
+
+  for (int index = start_index; index < argc; ++index) {
+    const std::string option_name = argv[index];
+
+    auto add_override = [&options, &index, argc,
+                         argv](const std::string &key_name,
+                               const std::string &flag_name) {
+      const std::string value = require_value(index, argc, argv, flag_name);
+      options.overrides.emplace_back(key_name, value);
+      ++index;
+    };
+
+    if (option_name == "-c" || option_name == "--count") {
+      options.load_connection_count =
+          static_cast<uint32_t>(std::stoul(require_value(index, argc, argv, option_name)));
+      ++index;
+      continue;
+    }
+    if (option_name == "-i" || option_name == "--interval") {
+      options.load_connect_interval_ms =
+          static_cast<uint32_t>(std::stoul(require_value(index, argc, argv, option_name)));
+      ++index;
+      continue;
+    }
+    if (option_name == "-im" || option_name == "--message-interval") {
+      require_mode(option_name, is_bench_pub);
+      options.load_message_interval_ms =
+          static_cast<uint32_t>(std::stoul(require_value(index, argc, argv, option_name)));
+      ++index;
+      continue;
+    }
+    if (option_name == "-L" || option_name == "--limit") {
+      require_mode(option_name, is_bench_pub);
+      options.load_publish_limit =
+          static_cast<uint32_t>(std::stoul(require_value(index, argc, argv, option_name)));
+      ++index;
+      continue;
+    }
+    if (option_name == "-t" || option_name == "--topic") {
+      require_mode(option_name, is_bench_pub || is_bench_sub);
+      options.load_topic_template =
+          normalize_mqttx_template(require_value(index, argc, argv, option_name));
+      ++index;
+      if (is_bench_pub) {
+        options.overrides.emplace_back("publish_topic", options.load_topic_template);
+      } else {
+        options.overrides.emplace_back("subscribe_entry",
+                                       options.load_topic_template + "|0|false|false|0");
+      }
+      continue;
+    }
+    if (option_name == "-I" || option_name == "--client-id") {
+      const std::string normalized =
+          normalize_mqttx_template(require_value(index, argc, argv, option_name));
+      options.load_client_template = normalized;
+      options.overrides.emplace_back("client_id", normalized);
+      ++index;
+      continue;
+    }
+    if (option_name == "-m" || option_name == "--message") {
+      require_mode(option_name, is_bench_pub);
+      add_override("publish_payload", option_name);
+      continue;
+    }
+    if (option_name == "-q") {
+      require_mode(option_name, is_bench_pub || is_bench_sub);
+      if (is_bench_pub) {
+        add_override("publish_qos", option_name);
+      } else {
+        add_override("publish_qos", option_name);
+      }
+      continue;
+    }
+    if (is_compact_qos_option(option_name)) {
+      require_mode(option_name, is_bench_pub || is_bench_sub);
+      options.overrides.emplace_back("publish_qos", compact_qos_value(option_name));
+      continue;
+    }
+    if (option_name == "-r") {
+      require_mode(option_name, is_bench_pub);
+      options.overrides.emplace_back("publish_retain", "true");
+      continue;
+    }
+    if (option_name == "-d") {
+      require_mode(option_name, is_bench_pub);
+      options.overrides.emplace_back("publish_dup", "true");
+      continue;
+    }
+    if (option_name == "-pf" || option_name == "--payload-format-indicator") {
+      require_mode(option_name, is_bench_pub);
+      add_override("publish_payload_format_indicator", option_name);
+      continue;
+    }
+    if (option_name == "-e" || option_name == "--message-expiry-interval") {
+      require_mode(option_name, is_bench_pub);
+      add_override("publish_message_expiry_interval_seconds", option_name);
+      continue;
+    }
+    if (option_name == "-ta" || option_name == "--topic-alias") {
+      require_mode(option_name, is_bench_pub);
+      add_override("publish_topic_alias", option_name);
+      continue;
+    }
+    if (option_name == "-rt" || option_name == "--response-topic") {
+      require_mode(option_name, is_bench_pub);
+      add_override("publish_response_topic", option_name);
+      continue;
+    }
+    if (option_name == "-cd" || option_name == "--correlation-data") {
+      require_mode(option_name, is_bench_pub);
+      add_override("publish_correlation_data", option_name);
+      continue;
+    }
+    if (option_name == "-up" || option_name == "--user-properties") {
+      if (is_bench_conn) {
+        add_override("connect_user_property", option_name);
+      } else if (is_bench_pub) {
+        add_override("publish_user_property", option_name);
+      } else {
+        add_override("subscribe_user_property", option_name);
+      }
+      continue;
+    }
+    if (option_name == "-si" || option_name == "--subscription-identifier") {
+      require_mode(option_name, is_bench_pub || is_bench_sub);
+      if (is_bench_pub) {
+        add_override("publish_subscription_identifier", option_name);
+      } else {
+        add_override("subscribe_identifier", option_name);
+      }
+      continue;
+    }
+    if (option_name == "-ct" || option_name == "--content-type") {
+      require_mode(option_name, is_bench_pub);
+      add_override("publish_content_type", option_name);
+      continue;
+    }
+    if (option_name == "-v" || option_name == "--verbose") {
+      options.load_metrics_json = true;
+      continue;
+    }
+    if (option_name == "-h" || option_name == "--hostname") {
+      add_override("host", option_name);
+      continue;
+    }
+    if (option_name == "-p" || option_name == "--port") {
+      add_override("port", option_name);
+      continue;
+    }
+    if (option_name == "--no-clean") {
+      options.overrides.emplace_back("clean_start", "false");
+      continue;
+    }
+    if (option_name == "-k" || option_name == "--keepalive") {
+      require_mode(option_name, is_bench_conn || is_bench_pub);
+      add_override("keep_alive_seconds", option_name);
+      continue;
+    }
+    if (option_name == "-u" || option_name == "--username") {
+      add_override("username", option_name);
+      continue;
+    }
+    if (option_name == "-P" || option_name == "--password") {
+      add_override("password", option_name);
+      continue;
+    }
+    if (option_name == "-l" || option_name == "--protocol") {
+      const std::string protocol = require_value(index, argc, argv, option_name);
+      if (is_secure_protocol(protocol)) {
+        throw std::invalid_argument(
+            "Secure transports mqtts/wss are intentionally unsupported");
+      }
+      options.overrides.emplace_back("transport", protocol);
+      ++index;
+      continue;
+    }
+    if (option_name == "--path") {
+      add_override("ws_path", option_name);
+      continue;
+    }
+    if (option_name == "-wh" || option_name == "--ws-headers") {
+      add_override("ws_header", option_name);
+      continue;
+    }
+    if (option_name == "-rp" || option_name == "--reconnect-period") {
+      add_override("reconnect_period_ms", option_name);
+      continue;
+    }
+    if (option_name == "--maximum-reconnect-times") {
+      add_override("maximum_reconnect_times", option_name);
+      continue;
+    }
+    if (option_name == "-se" || option_name == "--session-expiry-interval") {
+      add_override("session_expiry_interval_seconds", option_name);
+      continue;
+    }
+    if (option_name == "--rcv-max" || option_name == "--receive-maximum") {
+      add_override("receive_maximum", option_name);
+      continue;
+    }
+    if (option_name == "--maximum-packet-size") {
+      add_override("maximum_packet_size", option_name);
+      continue;
+    }
+    if (option_name == "--topic-alias-maximum") {
+      add_override("topic_alias_maximum", option_name);
+      continue;
+    }
+    if (option_name == "--req-response-info") {
+      options.overrides.emplace_back("request_response_information", "true");
+      continue;
+    }
+    if (option_name == "--no-req-problem-info") {
+      options.overrides.emplace_back("request_problem_information", "false");
+      continue;
+    }
+    if (option_name == "-Cup" || option_name == "--conn-user-properties") {
+      require_mode(option_name, is_bench_pub || is_bench_sub);
+      add_override("connect_user_property", option_name);
+      continue;
+    }
+    if (option_name == "-Wt" || option_name == "--will-topic") {
+      add_override("will_topic", option_name);
+      continue;
+    }
+    if (option_name == "-Wm" || option_name == "--will-message") {
+      add_override("will_payload", option_name);
+      continue;
+    }
+    if (option_name == "-Wq" || option_name == "--will-qos") {
+      add_override("will_qos", option_name);
+      continue;
+    }
+    if (option_name == "-Wr" || option_name == "--will-retain") {
+      options.overrides.emplace_back("will_retain", "true");
+      continue;
+    }
+    if (option_name == "-Wd" || option_name == "--will-delay-interval") {
+      add_override("will_delay_interval_seconds", option_name);
+      continue;
+    }
+    if (option_name == "-Wpf" || option_name == "--will-payload-format-indicator") {
+      add_override("will_payload_format_indicator", option_name);
+      continue;
+    }
+    if (option_name == "-We" || option_name == "--will-message-expiry-interval") {
+      add_override("will_message_expiry_interval_seconds", option_name);
+      continue;
+    }
+    if (option_name == "-Wct" || option_name == "--will-content-type") {
+      add_override("will_content_type", option_name);
+      continue;
+    }
+    if (option_name == "-Wrt" || option_name == "--will-response-topic") {
+      add_override("will_response_topic", option_name);
+      continue;
+    }
+    if (option_name == "-Wcd" || option_name == "--will-correlation-data") {
+      add_override("will_correlation_data", option_name);
+      continue;
+    }
+    if (option_name == "-Wup" || option_name == "--will-user-properties") {
+      add_override("will_user_property", option_name);
+      continue;
+    }
+    if (option_name == "--file-read") {
+      require_mode(option_name, is_bench_pub);
+      add_override("publish_payload_file", option_name);
+      continue;
+    }
+    if (option_name == "--split") {
+      require_mode(option_name, is_bench_pub);
+      if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
+        ++index;
+      }
+      continue;
+    }
+    if (option_name == "-S" || option_name == "--payload-size") {
+      require_mode(option_name, is_bench_pub);
+      (void)require_value(index, argc, argv, option_name);
+      ++index;
+      continue;
+    }
+    if (option_name == "-V" || option_name == "--mqtt-version") {
+      const std::string value = require_value(index, argc, argv, option_name);
+      if (value != "5" && value != "5.0") {
+        throw std::invalid_argument(
+            "Only MQTT version 5.0 is supported by yahatestclient");
+      }
+      ++index;
+      continue;
+    }
+
+    if (option_name == "-so" || option_name == "--save-options") {
+      if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
+        ++index;
+      }
+      continue;
+    }
+    if (option_name == "-lo" || option_name == "--load-options") {
+      if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
+        ++index;
+      }
+      continue;
+    }
+    if (option_name == "-nl" || option_name == "--no_local" ||
+        option_name == "-rap" || option_name == "--retain-as-published" ||
+        option_name == "-rh" || option_name == "--retain-handling") {
+      require_mode(option_name, is_bench_sub);
+      if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
+        ++index;
+      }
+      continue;
+    }
+
+    if (option_name == "--key" || option_name == "--cert" ||
+        option_name == "--ca" || option_name == "--insecure" ||
+        option_name == "--alpn") {
+      throw std::invalid_argument(
+          "Secure TLS options are intentionally unsupported");
+    }
+
+    throw std::invalid_argument("Unknown option: " + option_name);
+  }
+}
+
+void parse_mqttx_pub_options(TestClientCliOptions &options,
+                             const int argc,
+                             const char *argv[],
+                             int start_index) {
+  for (int index = start_index; index < argc; ++index) {
+    const std::string option_name = argv[index];
+
+    auto add_override = [&options, &index, argc,
+                         argv](const std::string &key_name,
+                               const std::string &flag_name) {
+      const std::string value = require_value(index, argc, argv, flag_name);
+      options.overrides.emplace_back(key_name, value);
+      ++index;
+    };
+
+    if (option_name == "-t" || option_name == "--topic") {
+      add_override("publish_topic", option_name);
+      continue;
+    }
+    if (option_name == "-m" || option_name == "--message") {
+      add_override("publish_payload", option_name);
+      continue;
+    }
+    if (option_name == "-q") {
+      add_override("publish_qos", option_name);
+      continue;
+    }
+    if (is_compact_qos_option(option_name)) {
+      options.overrides.emplace_back("publish_qos", compact_qos_value(option_name));
+      continue;
+    }
+    if (option_name == "-r") {
+      options.overrides.emplace_back("publish_retain", "true");
+      continue;
+    }
+    if (option_name == "-d") {
+      options.overrides.emplace_back("publish_dup", "true");
+      continue;
+    }
+    if (option_name == "-s" || option_name == "--stdin") {
+      options.overrides.emplace_back("publish_payload_stdin", "true");
+      continue;
+    }
+    if (option_name == "-M" || option_name == "--multiline") {
+      options.overrides.emplace_back("publish_payload_stdin_multiline", "true");
+      continue;
+    }
+    if (option_name == "-lm" || option_name == "--line-mode") {
+      options.overrides.emplace_back("publish_payload_stdin", "true");
+      options.overrides.emplace_back("publish_payload_stdin_multiline", "true");
+      continue;
+    }
+    if (option_name == "-pf" || option_name == "--payload-format-indicator") {
+      add_override("publish_payload_format_indicator", option_name);
+      continue;
+    }
+    if (option_name == "-e" || option_name == "--message-expiry-interval") {
+      add_override("publish_message_expiry_interval_seconds", option_name);
+      continue;
+    }
+    if (option_name == "-ta" || option_name == "--topic-alias") {
+      add_override("publish_topic_alias", option_name);
+      continue;
+    }
+    if (option_name == "-rt" || option_name == "--response-topic") {
+      add_override("publish_response_topic", option_name);
+      continue;
+    }
+    if (option_name == "-cd" || option_name == "--correlation-data") {
+      add_override("publish_correlation_data", option_name);
+      continue;
+    }
+    if (option_name == "-up" || option_name == "--user-properties") {
+      add_override("publish_user_property", option_name);
+      continue;
+    }
+    if (option_name == "-si" || option_name == "--subscription-identifier") {
+      add_override("publish_subscription_identifier", option_name);
+      continue;
+    }
+    if (option_name == "-ct" || option_name == "--content-type") {
+      add_override("publish_content_type", option_name);
+      continue;
+    }
+    if (option_name == "-V" || option_name == "--mqtt-version") {
+      const std::string value = require_value(index, argc, argv, option_name);
+      if (value != "5" && value != "5.0") {
+        throw std::invalid_argument(
+            "Only MQTT version 5.0 is supported by yahatestclient");
+      }
+      ++index;
+      continue;
+    }
+    if (option_name == "-h" || option_name == "--hostname") {
+      add_override("host", option_name);
+      continue;
+    }
+    if (option_name == "-p" || option_name == "--port") {
+      add_override("port", option_name);
+      continue;
+    }
+    if (option_name == "-f" || option_name == "--format") {
+      add_override("publish_payload_encoding", option_name);
+      continue;
+    }
+    if (option_name == "-i" || option_name == "--client-id") {
+      add_override("client_id", option_name);
+      continue;
+    }
+    if (option_name == "--no-clean") {
+      options.overrides.emplace_back("clean_start", "false");
+      continue;
+    }
+    if (option_name == "-k" || option_name == "--keepalive") {
+      add_override("keep_alive_seconds", option_name);
+      continue;
+    }
+    if (option_name == "-u" || option_name == "--username") {
+      add_override("username", option_name);
+      continue;
+    }
+    if (option_name == "-P" || option_name == "--password") {
+      add_override("password", option_name);
+      continue;
+    }
+    if (option_name == "-l" || option_name == "--protocol") {
+      const std::string protocol = require_value(index, argc, argv, option_name);
+      if (is_secure_protocol(protocol)) {
+        throw std::invalid_argument(
+            "Secure transports mqtts/wss are intentionally unsupported");
+      }
+      options.overrides.emplace_back("transport", protocol);
+      ++index;
+      continue;
+    }
+    if (option_name == "--path") {
+      add_override("ws_path", option_name);
+      continue;
+    }
+    if (option_name == "-wh" || option_name == "--ws-headers") {
+      add_override("ws_header", option_name);
+      continue;
+    }
+    if (option_name == "-rp" || option_name == "--reconnect-period") {
+      add_override("reconnect_period_ms", option_name);
+      continue;
+    }
+    if (option_name == "--maximum-reconnect-times") {
+      add_override("maximum_reconnect_times", option_name);
+      continue;
+    }
+    if (option_name == "-se" || option_name == "--session-expiry-interval") {
+      add_override("session_expiry_interval_seconds", option_name);
+      continue;
+    }
+    if (option_name == "--rcv-max" || option_name == "--receive-maximum") {
+      add_override("receive_maximum", option_name);
+      continue;
+    }
+    if (option_name == "--maximum-packet-size") {
+      add_override("maximum_packet_size", option_name);
+      continue;
+    }
+    if (option_name == "--topic-alias-maximum") {
+      add_override("topic_alias_maximum", option_name);
+      continue;
+    }
+    if (option_name == "--req-response-info") {
+      options.overrides.emplace_back("request_response_information", "true");
+      continue;
+    }
+    if (option_name == "--no-req-problem-info") {
+      options.overrides.emplace_back("request_problem_information", "false");
+      continue;
+    }
+    if (option_name == "-Cup" || option_name == "--conn-user-properties") {
+      add_override("connect_user_property", option_name);
+      continue;
+    }
+    if (option_name == "-Wt" || option_name == "--will-topic") {
+      add_override("will_topic", option_name);
+      continue;
+    }
+    if (option_name == "-Wm" || option_name == "--will-message") {
+      add_override("will_payload", option_name);
+      continue;
+    }
+    if (option_name == "-Wq" || option_name == "--will-qos") {
+      add_override("will_qos", option_name);
+      continue;
+    }
+    if (option_name == "-Wr" || option_name == "--will-retain") {
+      options.overrides.emplace_back("will_retain", "true");
+      continue;
+    }
+    if (option_name == "-Wd" || option_name == "--will-delay-interval") {
+      add_override("will_delay_interval_seconds", option_name);
+      continue;
+    }
+    if (option_name == "-Wpf" || option_name == "--will-payload-format-indicator") {
+      add_override("will_payload_format_indicator", option_name);
+      continue;
+    }
+    if (option_name == "-We" || option_name == "--will-message-expiry-interval") {
+      add_override("will_message_expiry_interval_seconds", option_name);
+      continue;
+    }
+    if (option_name == "-Wct" || option_name == "--will-content-type") {
+      add_override("will_content_type", option_name);
+      continue;
+    }
+    if (option_name == "-Wrt" || option_name == "--will-response-topic") {
+      add_override("will_response_topic", option_name);
+      continue;
+    }
+    if (option_name == "-Wcd" || option_name == "--will-correlation-data") {
+      add_override("will_correlation_data", option_name);
+      continue;
+    }
+    if (option_name == "-Wup" || option_name == "--will-user-properties") {
+      add_override("will_user_property", option_name);
+      continue;
+    }
+    if (option_name == "-so" || option_name == "--save-options") {
+      if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
+        ++index;
+      }
+      continue;
+    }
+    if (option_name == "-lo" || option_name == "--load-options") {
+      if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
+        ++index;
+      }
+      continue;
+    }
+    if (option_name == "--file-read") {
+      add_override("publish_payload_file", option_name);
+      continue;
+    }
+    if (option_name == "-Pp" || option_name == "--protobuf-path") {
+      (void)require_value(index, argc, argv, option_name);
+      ++index;
+      continue;
+    }
+    if (option_name == "-Pmn" || option_name == "--protobuf-message-name") {
+      (void)require_value(index, argc, argv, option_name);
+      ++index;
+      continue;
+    }
+    if (option_name == "-Ap" || option_name == "--avsc-path") {
+      (void)require_value(index, argc, argv, option_name);
+      ++index;
+      continue;
+    }
+    if (option_name == "-S" || option_name == "--payload-size") {
+      (void)require_value(index, argc, argv, option_name);
+      ++index;
+      continue;
+    }
+    if (option_name == "--debug") {
+      continue;
+    }
+    if (option_name == "--key" || option_name == "--cert" ||
+        option_name == "--ca" || option_name == "--insecure" ||
+        option_name == "--alpn") {
+      throw std::invalid_argument(
+          "Secure TLS options are intentionally unsupported");
+    }
+    if (option_name == "-am" || option_name == "--authentication-method") {
+      add_override("authentication_method", option_name);
+      continue;
+    }
+
+    throw std::invalid_argument("Unknown option: " + option_name);
+  }
 }
 
 void parse_common_options(TestClientCliOptions &options, const int argc,
@@ -76,6 +731,13 @@ void parse_common_options(TestClientCliOptions &options, const int argc,
       const std::string value =
           require_value(index, argc, argv, "--publish-limit");
       options.load_publish_limit = static_cast<uint32_t>(std::stoul(value));
+      ++index;
+      continue;
+    }
+    if (option_name == "--parallelism") {
+      const std::string value =
+          require_value(index, argc, argv, "--parallelism");
+      options.load_parallelism = static_cast<uint32_t>(std::stoul(value));
       ++index;
       continue;
     }
@@ -569,6 +1231,10 @@ TestClientCliOptions parse_test_client_cli(const int argc, const char *argv[]) {
     options.command = TestClientCommand::Help;
     return options;
   }
+  if (command_name == "--version" || command_name == "-v") {
+    options.command = TestClientCommand::Version;
+    return options;
+  }
 
   if (command_name == "connect") {
     options.command = TestClientCommand::Connect;
@@ -576,13 +1242,20 @@ TestClientCliOptions parse_test_client_cli(const int argc, const char *argv[]) {
     return options;
   }
 
-  if (command_name == "publish" || command_name == "pub") {
+  if (command_name == "publish") {
     options.command = TestClientCommand::Publish;
-    if (argc == 3 && std::string(argv[2]) == "--help") {
+    parse_common_options(options, argc, argv, 2);
+    return options;
+  }
+
+  if (command_name == "pub") {
+    options.command = TestClientCommand::Publish;
+    if (argc == 3 &&
+        (std::string(argv[2]) == "--help" || std::string(argv[2]) == "-h")) {
       options.command = TestClientCommand::Help;
       return options;
     }
-    parse_common_options(options, argc, argv, 2);
+    parse_mqttx_pub_options(options, argc, argv, 2);
     return options;
   }
 
@@ -601,6 +1274,45 @@ TestClientCliOptions parse_test_client_cli(const int argc, const char *argv[]) {
           "scenario command requires --scenario <name>, --load-mode <name>, or --list-scenarios");
     }
     return options;
+  }
+
+  if (command_name == "bench") {
+    if (argc == 3 && std::string(argv[2]) == "--help") {
+      options.command = TestClientCommand::Help;
+      return options;
+    }
+    if (argc <= 2) {
+      throw std::invalid_argument("bench command requires subcommand: conn|pub|sub");
+    }
+
+    const std::string bench_subcommand = argv[2];
+    options.command = TestClientCommand::Scenario;
+    if (bench_subcommand == "conn") {
+      options.load_mode = "mass-connect";
+    } else if (bench_subcommand == "pub") {
+      options.load_mode = "publish-rate";
+    } else if (bench_subcommand == "sub") {
+      options.load_mode = "multi-subscribe";
+    } else {
+      throw std::invalid_argument("Unknown bench subcommand: " + bench_subcommand);
+    }
+    if (argc == 4 && std::string(argv[3]) == "--help") {
+      options.command = TestClientCommand::Help;
+      return options;
+    }
+    parse_bench_options(options, argc, argv, 3);
+    return options;
+  }
+
+  if (command_name == "conn" || command_name == "sub" ||
+      command_name == "simulate" || command_name == "ls" ||
+      command_name == "init" || command_name == "check") {
+    if (argc == 2 || (argc == 3 && is_help_flag(argv[2]))) {
+      options.command = TestClientCommand::Help;
+      return options;
+    }
+    throw std::invalid_argument("Command is recognized but not implemented yet: " +
+                                command_name);
   }
 
   if (command_name == "save-profile") {
@@ -626,10 +1338,20 @@ std::string test_client_help_text() {
   return
       "Usage:\n"
       "  yahatestclient <command> [options]\n\n"
+  "Top-level options:\n"
+  "  --help         Show this help\n"
+  "  --version, -v  Show executable version\n\n"
       "Commands:\n"
       "  connect        Connect using profile + CLI overrides and keep session open\n"
       "  publish|pub    Connect, publish one message, wait for QoS ACK flow, exit\n"
       "  subscribe      Connect, subscribe, stream matching publishes, and optionally exit on message limit\n"
+  "  conn           mqttx compatibility command stub (help-only)\n"
+  "  sub            mqttx compatibility command stub (help-only)\n"
+      "  bench          mqttx-compatible load benchmark entrypoint (conn|pub|sub)\n"
+  "  simulate       mqttx compatibility command stub (help-only)\n"
+  "  ls             mqttx compatibility command stub (help-only)\n"
+  "  init           mqttx compatibility command stub (help-only)\n"
+  "  check          mqttx compatibility command stub (help-only)\n"
       "  scenario       Run built-in scripted scenario or list available scenarios\n"
       "  save-profile   Write profile file from defaults/profile/overrides\n"
       "  show-profile   Print effective profile\n"
@@ -707,6 +1429,15 @@ std::string test_client_help_text() {
       "              -se --rcv-max --req-response-info --no-req-problem-info\n"
       "              -Cup --conn-user-properties -am -V --mqtt-version\n"
       "  will: -Wt -Wm -Wq -Wr -Wd -Wpf -We -Wct -Wrt -Wcd -Wup\n\n"
+      "mqttx bench structure (non-TLS):\n"
+      "  bench conn [options]\n"
+      "  bench pub  [options]\n"
+      "  bench sub  [options]\n"
+      "  bench options: -c --count -i --interval -im --message-interval\n"
+      "                 -L --limit -t --topic -I --client-id -v --verbose\n"
+      "                 plus mqttx pub/connection/will aliases above\n"
+      "  templates: mqttx %i is supported and mapped to internal index placeholders\n"
+      "  secure options (TLS/mqtts/wss) are intentionally unsupported\n\n"
       "scenario options:\n"
       "  --scenario <name>\n"
       "  --list-scenarios\n\n"
@@ -716,11 +1447,16 @@ std::string test_client_help_text() {
       "  --connect-interval-ms <milliseconds>\n"
       "  --message-interval-ms <milliseconds>\n"
       "  --publish-limit <count>\n"
+      "  --parallelism <count>\n"
       "  --topic-template <template-with-{index}>\n"
       "  --client-template <template-with-{index}>\n"
       "  --metrics-json\n\n"
       "save-profile options:\n"
       "  --output <file>\n";
+}
+
+std::string test_client_version_text() {
+  return "yahatestclient 0.1.0\n";
 }
 
 } // namespace mqtt

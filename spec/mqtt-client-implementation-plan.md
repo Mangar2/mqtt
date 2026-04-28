@@ -1272,3 +1272,10 @@ Verification:
 
 Each step within a phase may be implemented in any order unless a later step in the same phase
 explicitly uses the result of an earlier one.
+
+---
+
+## Appendix A – MQTTX Option Inventory
+
+The full audit results, status classification, and ordered implementation work-package plan have been moved to:
+- `spec/mqtt-test-client-implementation-plan.md`

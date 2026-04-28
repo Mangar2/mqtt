@@ -103,11 +103,8 @@ TEST_CASE("test_client_scenario_command_propagates_step_failures",
         1);
 }
 
-TEST_CASE("test_client_scenario_command_runs_step32_mass_connect_mode",
+TEST_CASE("test_client_scenario_command_step32_mass_connect_mode_returns_failure_without_broker",
           "[test_client][scenario]") {
-  const std::filesystem::path script_path =
-      make_temp_script_path("scenario_step32_mass_connect", true);
-
   TestClientCliOptions options;
   options.command = TestClientCommand::Scenario;
   options.load_mode = "mass-connect";
@@ -117,9 +114,11 @@ TEST_CASE("test_client_scenario_command_runs_step32_mass_connect_mode",
   options.load_topic_template = "step32/{index}";
   options.load_client_template = "step32-client-{index}";
 
-  const TestClientProfile profile;
-  CHECK(run_test_client_scenario_command(options, profile, script_path.string()) ==
-        0);
+    TestClientProfile profile;
+    profile.host = "127.0.0.1";
+    profile.port = 1U;
+
+    CHECK(run_test_client_scenario_command(options, profile, "ignored") == 1);
 }
 
 TEST_CASE("test_client_scenario_command_rejects_unknown_step32_mode",
@@ -136,11 +135,8 @@ TEST_CASE("test_client_scenario_command_rejects_unknown_step32_mode",
         1);
 }
 
-TEST_CASE("test_client_scenario_command_runs_step32_publish_rate_mode",
+TEST_CASE("test_client_scenario_command_step32_publish_rate_mode_returns_failure_without_broker",
           "[test_client][scenario]") {
-  const std::filesystem::path script_path =
-      make_temp_script_path("scenario_step32_publish_rate", true);
-
   TestClientCliOptions options;
   options.command = TestClientCommand::Scenario;
   options.load_mode = "publish-rate";
@@ -150,16 +146,15 @@ TEST_CASE("test_client_scenario_command_runs_step32_publish_rate_mode",
   options.load_topic_template = "step32-rate/{index}";
   options.load_client_template = "step32-rate-client-{index}";
 
-  const TestClientProfile profile;
-  CHECK(run_test_client_scenario_command(options, profile, script_path.string()) ==
-        0);
+    TestClientProfile profile;
+    profile.host = "127.0.0.1";
+    profile.port = 1U;
+
+    CHECK(run_test_client_scenario_command(options, profile, "ignored") == 1);
 }
 
-TEST_CASE("test_client_scenario_command_runs_step32_multi_subscribe_mode",
+TEST_CASE("test_client_scenario_command_step32_multi_subscribe_mode_returns_failure_without_broker",
           "[test_client][scenario]") {
-  const std::filesystem::path script_path =
-      make_temp_script_path("scenario_step32_multi_subscribe", true);
-
   TestClientCliOptions options;
   options.command = TestClientCommand::Scenario;
   options.load_mode = "multi-subscribe";
@@ -168,9 +163,11 @@ TEST_CASE("test_client_scenario_command_runs_step32_multi_subscribe_mode",
   options.load_topic_template = "step32-sub/{index}";
   options.load_client_template = "step32-sub-client-{index}";
 
-  const TestClientProfile profile;
-  CHECK(run_test_client_scenario_command(options, profile, script_path.string()) ==
-        0);
+    TestClientProfile profile;
+    profile.host = "127.0.0.1";
+    profile.port = 1U;
+
+    CHECK(run_test_client_scenario_command(options, profile, "ignored") == 1);
 }
 
 } // namespace mqtt

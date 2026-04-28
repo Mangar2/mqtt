@@ -1,0 +1,468 @@
+Usage: mqttx [options] [command]
+
+An MQTT client for the command line
+
+Options:
+  -v, --version       output the version number
+  -h, --help          display help for command
+
+Commands:
+  check               Check for updates.
+  init                Initialize the configuration file.
+  conn [options]      Create a connection and connect to MQTT Broker.
+  pub [options]       Publish a message to a topic.
+  sub [options]       Subscribes to one or more topics.
+  bench               MQTT Benchmark in performance testing.
+  simulate [options]  Publish scenario-specific simulation messages at a custom
+                      rate and a number of connections.
+  ls [options]        List information based on the provided options.
+  help [command]      display help for command
+
+Usage: mqttx conn [options]
+
+Create a connection and connect to MQTT Broker.
+
+Options:
+  -V, --mqtt-version <5.0/3.1.1/3.1>                the MQTT version (default: 5)
+  -h, --hostname <HOST>                             the broker host (default: "localhost")
+  -p, --port <PORT>                                 the broker port (default: 1883)
+  -i, --client-id <ID>                              the client id (default: "mqttx_1b68cf60")
+  --no-clean                                        set the clean session flag to false
+  -k, --keepalive <SEC>                             send a ping every SEC seconds (default: 30)
+  -u, --username <USER>                             the username (default: null)
+  -P, --password <PASS>                             the password (default: null)
+  -l, --protocol <PROTO>                            the protocol to use, mqtt, mqtts, ws, or wss (default: "mqtt")
+  --path <PATH>                                     the path of websocket (default: "/mqtt")
+  -wh, --ws-headers <WSHEADERS...>                  headers for WebSocket options (only works with MQTT over WebSocket connections, e.g. -wh "Authorization: Bearer token")
+  --key <PATH>                                      path to the key file
+  --cert <PATH>                                     path to the cert file
+  --ca <PATH>                                       path to the ca certificate
+  --insecure                                        do not verify the server certificate
+  --alpn <PROTO...>                                 set one or multiple ALPN (Application Layer Protocol Negotiation) protocols
+  -rp, --reconnect-period <MILLISECONDS>            interval between two reconnections, disable auto reconnect by setting to 0 (default: 1000)
+  --maximum-reconnect-times <NUMBER>                the maximum reconnect times (default: 10)
+  -se, --session-expiry-interval <SECONDS>          the session expiry interval in seconds
+  --rcv-max, --receive-maximum <NUMBER>             the receive maximum value
+  --maximum-packet-size <NUMBER>                    the maximum packet size the client is willing to accept
+  --topic-alias-maximum <NUMBER>                    the topic alias maximum value
+  --req-response-info                               the client requests response information from the server
+  --no-req-problem-info                             the client requests problem information from the server
+  -up, --user-properties <USERPROPERTIES...>        the user properties of MQTT 5.0 (e.g. -up "name: mqttx cli")
+  -Wt, --will-topic <TOPIC>                         the will topic
+  -Wm, --will-message <BODY>                        the will message
+  -Wq, --will-qos <0/1/2>                           the will qos
+  -Wr, --will-retain                                send a will retained message
+  -Wd, --will-delay-interval <SECONDS>              the will delay interval in seconds
+  -Wpf, --will-payload-format-indicator             will message is UTF-8 encoded character data or not
+  -We, --will-message-expiry-interval <SECONDS>     lifetime of the will message in seconds
+  -Wct, --will-content-type <CONTENTTYPE>           description of the will message’s content
+  -Wrt, --will-response-topic <TOPIC>               topic name for a response message
+  -Wcd, --will-correlation-data <DATA>              correlation data for the response message
+  -Wup, --will-user-properties <USERPROPERTIES...>  the user properties of will message
+  -so, --save-options [PATH]                        save the parameters to the local configuration file, which supports json and yaml format, default path is ./mqttx-cli-options.json
+  -lo, --load-options [PATH]                        load the parameters from the local configuration file, which supports json and yaml format, default path is ./mqttx-cli-options.json
+  --debug                                           enable debug mode for MQTT.js (default: false)
+  -am, --authentication-method <METHOD>             authentication method for MQTT 5.0 enhanced authentication (SCRAM-SHA-1, SCRAM-SHA-256, SCRAM-SHA-512)
+  --help                                            display help for command
+
+Usage: mqttx pub [options]
+
+Publish a message to a topic.
+
+Options:
+  -t, --topic <TOPIC>                               the message topic
+  -m, --message <BODY>                              the message body (default: "Hello From MQTTX CLI")
+  -q, --qos <0/1/2>                                 the QoS of the message (default: 0)
+  -r, --retain                                      send a retained message
+  -d, --dup                                         mark as duplicate flag
+  -s, --stdin                                       read the message body from stdin
+  -M, --multiline                                   read lines from stdin as multiple messages
+  -lm, --line-mode                                  enter interactive mode to send messages line by line (equivalent to -s -M) (default: false)
+  -pf, --payload-format-indicator                   the payload format indicator of the publish message
+  -e, --message-expiry-interval <NUMBER>            the lifetime of the publish message in seconds
+  -ta, --topic-alias <NUMBER>                       value that is used to identify the topic instead of using the topic name
+  -rt, --response-topic <TOPIC>                     string which is used as the topic name for a response message
+  -cd, --correlation-data <DATA>                    used by the sender of the request message to identify which request the response message is for when it is received
+  -up, --user-properties <USERPROPERTIES...>        the user properties of MQTT 5.0 (e.g. -up "name: mqttx cli")
+  -si, --subscription-identifier <NUMBER>           the identifier of the subscription
+  -ct, --content-type <TYPE>                        a description of the content of the publish message
+  -V, --mqtt-version <5.0/3.1.1/3.1>                the MQTT version (default: 5)
+  -h, --hostname <HOST>                             the broker host (default: "localhost")
+  -p, --port <PORT>                                 the broker port (default: 1883)
+  -f, --format <TYPE>                               the format type of the input message, support base64, json, hex, binary, cbor and msgpack
+  -i, --client-id <ID>                              the client id (default: "mqttx_8efff05a")
+  --no-clean                                        set the clean session flag to false
+  -k, --keepalive <SEC>                             send a ping every SEC seconds (default: 30)
+  -u, --username <USER>                             the username (default: null)
+  -P, --password <PASS>                             the password (default: null)
+  -l, --protocol <PROTO>                            the protocol to use, mqtt, mqtts, ws, or wss (default: "mqtt")
+  --path <PATH>                                     the path of websocket (default: "/mqtt")
+  -wh, --ws-headers <WSHEADERS...>                  headers for WebSocket options (only works with MQTT over WebSocket connections, e.g. -wh "Authorization: Bearer token")
+  --key <PATH>                                      path to the key file
+  --cert <PATH>                                     path to the cert file
+  --ca <PATH>                                       path to the ca certificate
+  --insecure                                        do not verify the server certificate
+  --alpn <PROTO...>                                 set one or multiple ALPN (Application Layer Protocol Negotiation) protocols
+  -rp, --reconnect-period <MILLISECONDS>            interval between two reconnections, disable auto reconnect by setting to 0 (default: 1000)
+  --maximum-reconnect-times <NUMBER>                the maximum reconnect times (default: 10)
+  -se, --session-expiry-interval <SECONDS>          the session expiry interval in seconds
+  --rcv-max, --receive-maximum <NUMBER>             the receive maximum value
+  --maximum-packet-size <NUMBER>                    the maximum packet size the client is willing to accept
+  --topic-alias-maximum <NUMBER>                    the topic alias maximum value
+  --req-response-info                               the client requests response information from the server
+  --no-req-problem-info                             the client requests problem information from the server
+  -Cup, --conn-user-properties <USERPROPERTIES...>  the connect user properties of MQTT 5.0 (e.g. -Cup "name: mqttx cli")
+  -Wt, --will-topic <TOPIC>                         the will topic
+  -Wm, --will-message <BODY>                        the will message
+  -Wq, --will-qos <0/1/2>                           the will qos
+  -Wr, --will-retain                                send a will retained message
+  -Wd, --will-delay-interval <SECONDS>              the will delay interval in seconds
+  -Wpf, --will-payload-format-indicator             will message is UTF-8 encoded character data or not
+  -We, --will-message-expiry-interval <SECONDS>     lifetime of the will message in seconds
+  -Wct, --will-content-type <CONTENTTYPE>           description of the will message’s content
+  -Wrt, --will-response-topic <TOPIC>               topic name for a response message
+  -Wcd, --will-correlation-data <DATA>              correlation data for the response message
+  -Wup, --will-user-properties <USERPROPERTIES...>  the user properties of will message
+  -so, --save-options [PATH]                        save the parameters to the local configuration file, which supports json and yaml format, default path is ./mqttx-cli-options.json
+  -lo, --load-options [PATH]                        load the parameters from the local configuration file, which supports json and yaml format, default path is ./mqttx-cli-options.json
+  --file-read <PATH>                                read the message body from the file
+  -Pp, --protobuf-path <PATH>                       the path to the .proto file that defines the message format for Protocol Buffers (protobuf)
+  -Pmn, --protobuf-message-name <NAME>              the name of the protobuf message type (must exist in the .proto file)
+  -Ap, --avsc-path <PATH>                           the path to the .avsc file that defines the avro schema for AVRO encoding
+  -S, --payload-size <SIZE>                         generate a random payload of specified size (e.g., 1KB, 512B, 2MB); ignored if -m, -s, -M, or --file-read is present
+  --debug                                           enable debug mode for MQTT.js (default: false)
+  -am, --authentication-method <METHOD>             authentication method for MQTT 5.0 enhanced authentication (SCRAM-SHA-1, SCRAM-SHA-256, SCRAM-SHA-512)
+  --help                                            display help for command
+
+Usage: mqttx sub [options]
+
+Subscribes to one or more topics.
+
+Options:
+  -t, --topic <TOPIC...>                            the message topic
+  -q, --qos <0/1/2...>                              the QoS of the message
+  -nl, --no_local [FLAG...]                         the no local MQTT 5.0 flag
+  -rap, --retain-as-published [FLAG...]             the retain as published MQTT 5.0 flag
+  -rh, --retain-handling <0/1/2...>                 the retain handling MQTT 5.0
+  -si, --subscription-identifier <NUMBER...>        the identifier of the subscription
+  -up, --user-properties <USERPROPERTIES...>        the user properties of MQTT 5.0 (e.g. -up "name: mqttx cli")
+  -f, --format <TYPE>                               format the message body, support base64, json, hex, binary, cbor and msgpack
+  -v, --verbose                                     turn on verbose mode to display incoming MQTT packets
+  --output-mode <default/clean>                     choose between the default and clean mode, which outputs the complete MQTT packet data, allowing users to pipe the output as they wish (default: "default")
+  -V, --mqtt-version <5.0/3.1.1/3.1>                the MQTT version (default: 5)
+  -h, --hostname <HOST>                             the broker host (default: "localhost")
+  -p, --port <PORT>                                 the broker port (default: 1883)
+  -i, --client-id <ID>                              the client id (default: "mqttx_6636ee69")
+  --no-clean                                        set the clean session flag to false
+  -u, --username <USER>                             the username (default: null)
+  -P, --password <PASS>                             the password (default: null)
+  -l, --protocol <PROTO>                            the protocol to use, mqtt, mqtts, ws, or wss (default: "mqtt")
+  --path <PATH>                                     the path of websocket (default: "/mqtt")
+  -wh, --ws-headers <WSHEADERS...>                  headers for WebSocket options (only works with MQTT over WebSocket connections, e.g. -wh "Authorization: Bearer token")
+  --key <PATH>                                      path to the key file
+  --cert <PATH>                                     path to the cert file
+  --ca <PATH>                                       path to the ca certificate
+  --insecure                                        do not verify the server certificate
+  --alpn <PROTO...>                                 set one or multiple ALPN (Application Layer Protocol Negotiation) protocols
+  -rp, --reconnect-period <MILLISECONDS>            interval between two reconnections, disable auto reconnect by setting to 0 (default: 1000)
+  --maximum-reconnect-times <NUMBER>                the maximum reconnect times (default: 10)
+  -se, --session-expiry-interval <SECONDS>          the session expiry interval in seconds
+  --rcv-max, --receive-maximum <NUMBER>             the receive maximum value
+  --maximum-packet-size <NUMBER>                    the maximum packet size the client is willing to accept
+  --topic-alias-maximum <NUMBER>                    the topic alias maximum value
+  --req-response-info                               the client requests response information from the server
+  --no-req-problem-info                             the client requests problem information from the server
+  -Cup, --conn-user-properties <USERPROPERTIES...>  the connect user properties of MQTT 5.0 (e.g. -Cup "name: mqttx cli")
+  -Wt, --will-topic <TOPIC>                         the will topic
+  -Wm, --will-message <BODY>                        the will message
+  -Wq, --will-qos <0/1/2>                           the will qos
+  -Wr, --will-retain                                send a will retained message
+  -Wd, --will-delay-interval <SECONDS>              the will delay interval in seconds
+  -Wpf, --will-payload-format-indicator             will message is UTF-8 encoded character data or not
+  -We, --will-message-expiry-interval <SECONDS>     lifetime of the will message in seconds
+  -Wct, --will-content-type <CONTENTTYPE>           description of the will message’s content
+  -Wrt, --will-response-topic <TOPIC>               topic name for a response message
+  -Wcd, --will-correlation-data <DATA>              correlation data for the response message
+  -Wup, --will-user-properties <USERPROPERTIES...>  the user properties of will message
+  -so, --save-options [PATH]                        save the parameters to the local configuration file, which supports json and yaml format, default path is ./mqttx-cli-options.json
+  -lo, --load-options [PATH]                        load the parameters from the local configuration file, which supports json and yaml format, default path is ./mqttx-cli-options.json
+  --file-write <PATH>                               append received messages to a specified file
+  --file-save <PATH>                                save each received message to a new file
+  --delimiter [CHARACTER]                           append a delimiter to the end of each message, default is "\n"
+  -Pp, --protobuf-path <PATH>                       the path to the .proto file that defines the message format for Protocol Buffers (protobuf)
+  -Pmn, --protobuf-message-name <NAME>              the name of the protobuf message type (must exist in the .proto file)
+  -Ap, --avsc-path <PATH>                           the path to the .avsc file that defines the avro schema for AVRO decoding
+  --debug                                           enable debug mode for MQTT.js (default: false)
+  -am, --authentication-method <METHOD>             authentication method for MQTT 5.0 enhanced authentication (SCRAM-SHA-1, SCRAM-SHA-256, SCRAM-SHA-512)
+  --help                                            display help for command
+
+Usage: mqttx bench [options] [command]
+
+MQTT Benchmark in performance testing.
+
+Options:
+  -h, --help      display help for command
+
+Commands:
+  conn [options]  Create a custom number of connections.
+  pub [options]   Publish a custom number of messages at a custom rate.
+  sub [options]   Create a custom number of connections then subscribe to one
+                  or multiple topics.
+  help [command]  display help for command
+
+Usage: mqttx bench conn [options]
+
+Create a custom number of connections.
+
+Options:
+  -c, --count <NUMBER>                              the number of connections (default: 1000)
+  -i, --interval <MILLISECONDS>                     interval of connecting to the broker (default: 10)
+  -V, --mqtt-version <5.0/3.1.1/3.1>                the MQTT version (default: 5)
+  -h, --hostname <HOST>                             the broker host (default: "localhost")
+  -p, --port <PORT>                                 the broker port (default: 1883)
+  -I, --client-id <ID>                              the client id, support %i (index) variable (default: "mqttx_5a8aa70a")
+  --no-clean                                        set the clean session flag to false
+  -k, --keepalive <SEC>                             send a ping every SEC seconds (default: 30)
+  -u, --username <USER>                             the username (default: null)
+  -P, --password <PASS>                             the password (default: null)
+  -l, --protocol <PROTO>                            the protocol to use, mqtt, mqtts, ws, or wss (default: "mqtt")
+  --path <PATH>                                     the path of websocket (default: "/mqtt")
+  -wh, --ws-headers <WSHEADERS...>                  headers for WebSocket options (only works with MQTT over WebSocket connections, e.g. -wh "Authorization: Bearer token")
+  --key <PATH>                                      path to the key file
+  --cert <PATH>                                     path to the cert file
+  --ca <PATH>                                       path to the ca certificate
+  --insecure                                        do not verify the server certificate
+  --alpn <PROTO...>                                 set one or multiple ALPN (Application Layer Protocol Negotiation) protocols
+  -rp, --reconnect-period <MILLISECONDS>            interval between two reconnections, disable auto reconnect by setting to 0 (default: 1000)
+  --maximum-reconnect-times <NUMBER>                the maximum reconnect times (default: 10)
+  -se, --session-expiry-interval <SECONDS>          the session expiry interval in seconds
+  --rcv-max, --receive-maximum <NUMBER>             the receive maximum value
+  --maximum-packet-size <NUMBER>                    the maximum packet size the client is willing to accept
+  --topic-alias-maximum <NUMBER>                    the topic alias maximum value
+  --req-response-info                               the client requests response information from the server
+  --no-req-problem-info                             the client requests problem information from the server
+  -up, --user-properties <USERPROPERTIES...>        the user properties of MQTT 5.0 (e.g. -up "name: mqttx cli")
+  -Wt, --will-topic <TOPIC>                         the will topic
+  -Wm, --will-message <BODY>                        the will message
+  -Wq, --will-qos <0/1/2>                           the will qos
+  -Wr, --will-retain                                send a will retained message
+  -Wd, --will-delay-interval <SECONDS>              the will delay interval in seconds
+  -Wpf, --will-payload-format-indicator             will message is UTF-8 encoded character data or not
+  -We, --will-message-expiry-interval <SECONDS>     lifetime of the will message in seconds
+  -Wct, --will-content-type <CONTENTTYPE>           description of the will message’s content
+  -Wrt, --will-response-topic <TOPIC>               topic name for a response message
+  -Wcd, --will-correlation-data <DATA>              correlation data for the response message
+  -Wup, --will-user-properties <USERPROPERTIES...>  the user properties of will message
+  -so, --save-options [PATH]                        save the parameters to the local configuration file, which supports json and yaml format, default path is ./mqttx-cli-options.json
+  -lo, --load-options [PATH]                        load the parameters from the local configuration file, which supports json and yaml format, default path is ./mqttx-cli-options.json
+  -am, --authentication-method <METHOD>             authentication method for MQTT 5.0 enhanced authentication (SCRAM-SHA-1, SCRAM-SHA-256, SCRAM-SHA-512)
+  --help                                            display help for command
+
+Usage: mqttx bench pub [options]
+
+Publish a custom number of messages at a custom rate.
+
+Options:
+  -c, --count <NUMBER>                              the number of connections (default: 1000)
+  -i, --interval <MILLISECONDS>                     interval of connecting to the broker (default: 10)
+  -im, --message-interval <MILLISECONDS>            interval of publishing messages (default: 1000)
+  -L, --limit <NUMBER>                              the maximum number of messages to publish. a value of 0 means no limit on the number of messages (default: 0)
+  -t, --topic <TOPIC>                               the message topic, support %u (username), %c (client id), %i (index) variables
+  -m, --message <BODY>                              the message body (default: "Hello From MQTTX CLI")
+  -q, --qos <0/1/2>                                 the QoS of the message (default: 0)
+  -r, --retain                                      send a retained message
+  -d, --dup                                         mark as duplicate flag
+  -pf, --payload-format-indicator                   the payload format indicator of the publish message
+  -e, --message-expiry-interval <NUMBER>            the lifetime of the publish message in seconds
+  -ta, --topic-alias <NUMBER>                       value that is used to identify the topic instead of using the topic name
+  -rt, --response-topic <TOPIC>                     string which is used as the topic name for a response message
+  -cd, --correlation-data <DATA>                    used by the sender of the request message to identify which request the response message is for when it is received
+  -up, --user-properties <USERPROPERTIES...>        the user properties of MQTT 5.0 (e.g. -up "name: mqttx cli")
+  -si, --subscription-identifier <NUMBER>           the identifier of the subscription
+  -ct, --content-type <TYPE>                        a description of the content of the publish message
+  -v, --verbose                                     print history published total and message rate
+  -V, --mqtt-version <5.0/3.1.1/3.1>                the MQTT version (default: 5)
+  -h, --hostname <HOST>                             the broker host (default: "localhost")
+  -p, --port <PORT>                                 the broker port (default: 1883)
+  -I, --client-id <ID>                              the client id, support %i (index) variable (default: "mqttx_1eb4c15e")
+  --no-clean                                        set the clean session flag to false
+  -k, --keepalive <SEC>                             send a ping every SEC seconds (default: 30)
+  -u, --username <USER>                             the username (default: null)
+  -P, --password <PASS>                             the password (default: null)
+  -l, --protocol <PROTO>                            the protocol to use, mqtt, mqtts, ws, or wss (default: "mqtt")
+  --path <PATH>                                     the path of websocket (default: "/mqtt")
+  -wh, --ws-headers <WSHEADERS...>                  headers for WebSocket options (only works with MQTT over WebSocket connections, e.g. -wh "Authorization: Bearer token")
+  --key <PATH>                                      path to the key file
+  --cert <PATH>                                     path to the cert file
+  --ca <PATH>                                       path to the ca certificate
+  --insecure                                        do not verify the server certificate
+  --alpn <PROTO...>                                 set one or multiple ALPN (Application Layer Protocol Negotiation) protocols
+  -rp, --reconnect-period <MILLISECONDS>            interval between two reconnections, disable auto reconnect by setting to 0 (default: 1000)
+  --maximum-reconnect-times <NUMBER>                the maximum reconnect times (default: 10)
+  -se, --session-expiry-interval <SECONDS>          the session expiry interval in seconds
+  --rcv-max, --receive-maximum <NUMBER>             the receive maximum value
+  --maximum-packet-size <NUMBER>                    the maximum packet size the client is willing to accept
+  --topic-alias-maximum <NUMBER>                    the topic alias maximum value
+  --req-response-info                               the client requests response information from the server
+  --no-req-problem-info                             the client requests problem information from the server
+  -Cup, --conn-user-properties <USERPROPERTIES...>  the connect user properties of MQTT 5.0 (e.g. -up "name: mqttx cli")
+  -Wt, --will-topic <TOPIC>                         the will topic
+  -Wm, --will-message <BODY>                        the will message
+  -Wq, --will-qos <0/1/2>                           the will qos
+  -Wr, --will-retain                                send a will retained message
+  -Wd, --will-delay-interval <SECONDS>              the will delay interval in seconds
+  -Wpf, --will-payload-format-indicator             will message is UTF-8 encoded character data or not
+  -We, --will-message-expiry-interval <SECONDS>     lifetime of the will message in seconds
+  -Wct, --will-content-type <CONTENTTYPE>           description of the will message’s content
+  -Wrt, --will-response-topic <TOPIC>               topic name for a response message
+  -Wcd, --will-correlation-data <DATA>              correlation data for the response message
+  -Wup, --will-user-properties <USERPROPERTIES...>  the user properties of will message
+  -so, --save-options [PATH]                        save the parameters to the local configuration file, which supports json and yaml format, default path is ./mqttx-cli-options.json
+  -lo, --load-options [PATH]                        load the parameters from the local configuration file, which supports json and yaml format, default path is ./mqttx-cli-options.json
+  --file-read <PATH>                                read the message body from the file
+  --split [CHARACTER]                               split the input message in a single file by a specified character, default is "\n"
+  -S, --payload-size <SIZE>                         generate a random payload of specified size (e.g., 1KB, 512B, 2MB); ignored if -m, -s, -M, or --file-read is present
+  -am, --authentication-method <METHOD>             authentication method for MQTT 5.0 enhanced authentication (SCRAM-SHA-1, SCRAM-SHA-256, SCRAM-SHA-512)
+  --help                                            display help for command
+
+Usage: mqttx bench sub [options]
+
+Create a custom number of connections then subscribe to one or multiple topics.
+
+Options:
+  -c, --count <NUMBER>                              the number of connections (default: 1000)
+  -i, --interval <MILLISECONDS>                     interval of connecting to the broker (default: 10)
+  -t, --topic <TOPIC...>                            the message topic, support %u (username), %c (client id), %i (index) variables
+  -q, --qos <0/1/2...>                              the QoS of the message
+  -nl, --no_local [FLAG...]                         the no local MQTT 5.0 flag
+  -rap, --retain-as-published [FLAG...]             the retain as published MQTT 5.0 flag
+  -rh, --retain-handling <0/1/2...>                 the retain handling MQTT 5.0
+  -si, --subscription-identifier <NUMBER...>        the identifier of the subscription
+  -up, --user-properties <USERPROPERTIES...>        the user properties of MQTT 5.0 (e.g. -up "name: mqttx cli")
+  -v, --verbose                                     print history received messages and rate
+  -V, --mqtt-version <5.0/3.1.1/3.1>                the MQTT version (default: 5)
+  -h, --hostname <HOST>                             the broker host (default: "localhost")
+  -p, --port <PORT>                                 the broker port (default: 1883)
+  -I, --client-id <ID>                              the client id, support %i (index) variable (default: "mqttx_62a9e820")
+  --no-clean                                        set the clean session flag to false
+  -u, --username <USER>                             the username (default: null)
+  -P, --password <PASS>                             the password (default: null)
+  -l, --protocol <PROTO>                            the protocol to use, mqtt, mqtts, ws, or wss (default: "mqtt")
+  --path <PATH>                                     the path of websocket (default: "/mqtt")
+  -wh, --ws-headers <WSHEADERS...>                  headers for WebSocket options (only works with MQTT over WebSocket connections, e.g. -wh "Authorization: Bearer token")
+  --key <PATH>                                      path to the key file
+  --cert <PATH>                                     path to the cert file
+  --ca <PATH>                                       path to the ca certificate
+  --insecure                                        do not verify the server certificate
+  --alpn <PROTO...>                                 set one or multiple ALPN (Application Layer Protocol Negotiation) protocols
+  -rp, --reconnect-period <MILLISECONDS>            interval between two reconnections, disable auto reconnect by setting to 0 (default: 1000)
+  --maximum-reconnect-times <NUMBER>                the maximum reconnect times (default: 10)
+  -se, --session-expiry-interval <SECONDS>          the session expiry interval in seconds
+  --rcv-max, --receive-maximum <NUMBER>             the receive maximum value
+  --maximum-packet-size <NUMBER>                    the maximum packet size the client is willing to accept
+  --topic-alias-maximum <NUMBER>                    the topic alias maximum value
+  --req-response-info                               the client requests response information from the server
+  --no-req-problem-info                             the client requests problem information from the server
+  -Cup, --conn-user-properties <USERPROPERTIES...>  the connect user properties of MQTT 5.0 (e.g. -up "name: mqttx cli")
+  -Wt, --will-topic <TOPIC>                         the will topic
+  -Wm, --will-message <BODY>                        the will message
+  -Wq, --will-qos <0/1/2>                           the will qos
+  -Wr, --will-retain                                send a will retained message
+  -Wd, --will-delay-interval <SECONDS>              the will delay interval in seconds
+  -Wpf, --will-payload-format-indicator             will message is UTF-8 encoded character data or not
+  -We, --will-message-expiry-interval <SECONDS>     lifetime of the will message in seconds
+  -Wct, --will-content-type <CONTENTTYPE>           description of the will message’s content
+  -Wrt, --will-response-topic <TOPIC>               topic name for a response message
+  -Wcd, --will-correlation-data <DATA>              correlation data for the response message
+  -Wup, --will-user-properties <USERPROPERTIES...>  the user properties of will message
+  -so, --save-options [PATH]                        save the parameters to the local configuration file, which supports json and yaml format, default path is ./mqttx-cli-options.json
+  -lo, --load-options [PATH]                        load the parameters from the local configuration file, which supports json and yaml format, default path is ./mqttx-cli-options.json
+  -am, --authentication-method <METHOD>             authentication method for MQTT 5.0 enhanced authentication (SCRAM-SHA-1, SCRAM-SHA-256, SCRAM-SHA-512)
+  --help                                            display help for command
+
+Usage: mqttx simulate [options]
+
+Publish scenario-specific simulation messages at a custom rate and a number of connections.
+
+Options:
+  -sc, --scenario <SCENARIO>                        the name of the built-in scenario to execute
+  -f, --file <SCENARIO FILE PATH>                   the path of the custom script file to simulate
+  -c, --count <NUMBER>                              the number of connections (default: 1000)
+  -i, --interval <MILLISECONDS>                     interval of connecting to the broker (default: 10)
+  -im, --message-interval <MILLISECONDS>            interval of publishing messages (default: 1000)
+  -L, --limit <NUMBER>                              the maximum number of messages to publish. a value of 0 means no limit on the number of messages (default: 0)
+  -t, --topic <TOPIC>                               the message topic, support %u (username), %c (client id), %i (index), %sc (scenario) variables (default: "mqttx/simulate/%sc/%c")
+  -q, --qos <0/1/2>                                 the QoS of the message (default: 0)
+  -r, --retain                                      send a retained message
+  -d, --dup                                         mark as duplicate flag
+  -pf, --payload-format-indicator                   the payload format indicator of the publish message
+  -e, --message-expiry-interval <NUMBER>            the lifetime of the publish message in seconds
+  -ta, --topic-alias <NUMBER>                       value that is used to identify the topic instead of using the topic name
+  -rt, --response-topic <TOPIC>                     string which is used as the topic name for a response message
+  -cd, --correlation-data <DATA>                    used by the sender of the request message to identify which request the response message is for when it is received
+  -up, --user-properties <USERPROPERTIES...>        the user properties of MQTT 5.0 (e.g. -up "name: mqttx cli")
+  -si, --subscription-identifier <NUMBER>           the identifier of the subscription
+  -ct, --content-type <TYPE>                        a description of the content of the publish message
+  -v, --verbose                                     print history published total and message rate
+  -V, --mqtt-version <5.0/3.1.1/3.1>                the MQTT version (default: 5)
+  -h, --hostname <HOST>                             the broker host (default: "localhost")
+  -p, --port <PORT>                                 the broker port (default: 1883)
+  -I, --client-id <ID>                              the client id, support %i (index) variable (default: "mqttx_38c75b82")
+  --no-clean                                        set the clean session flag to false
+  -k, --keepalive <SEC>                             send a ping every SEC seconds (default: 30)
+  -u, --username <USER>                             the username (default: null)
+  -P, --password <PASS>                             the password (default: null)
+  -l, --protocol <PROTO>                            the protocol to use, mqtt, mqtts, ws, or wss (default: "mqtt")
+  --path <PATH>                                     the path of websocket (default: "/mqtt")
+  -wh, --ws-headers <WSHEADERS...>                  headers for WebSocket options (only works with MQTT over WebSocket connections, e.g. -wh "Authorization: Bearer token")
+  --key <PATH>                                      path to the key file
+  --cert <PATH>                                     path to the cert file
+  --ca <PATH>                                       path to the ca certificate
+  --insecure                                        do not verify the server certificate
+  --alpn <PROTO...>                                 set one or multiple ALPN (Application Layer Protocol Negotiation) protocols
+  -rp, --reconnect-period <MILLISECONDS>            interval between two reconnections, disable auto reconnect by setting to 0 (default: 1000)
+  --maximun-reconnect-times <NUMBER>                the maximum reconnect times (default: 10)
+  -se, --session-expiry-interval <SECONDS>          the session expiry interval in seconds
+  --rcv-max, --receive-maximum <NUMBER>             the receive maximum value
+  --maximum-packet-size <NUMBER>                    the maximum packet size the client is willing to accept
+  --topic-alias-maximum <NUMBER>                    the topic alias maximum value
+  --req-response-info                               the client requests response information from the server
+  --no-req-problem-info                             the client requests problem information from the server
+  -Cup, --conn-user-properties <USERPROPERTIES...>  the connect user properties of MQTT 5.0 (e.g. -up "name: mqttx cli")
+  -Wt, --will-topic <TOPIC>                         the will topic
+  -Wm, --will-message <BODY>                        the will message
+  -Wq, --will-qos <0/1/2>                           the will qos
+  -Wr, --will-retain                                send a will retained message
+  -Wd, --will-delay-interval <SECONDS>              the will delay interval in seconds
+  -Wpf, --will-payload-format-indicator             will message is UTF-8 encoded character data or not
+  -We, --will-message-expiry-interval <SECONDS>     lifetime of the will message in seconds
+  -Wct, --will-content-type <CONTENTTYPE>           description of the will message’s content
+  -Wrt, --will-response-topic <TOPIC>               topic name for a response message
+  -Wcd, --will-correlation-data <DATA>              correlation data for the response message
+  -Wup, --will-user-properties <USERPROPERTIES...>  the user properties of will message
+  -so, --save-options [PATH]                        save the parameters to the local configuration file, which supports json and yaml format, default path is ./mqttx-cli-options.json
+  -lo, --load-options [PATH]                        load the parameters from the local configuration file, which supports json and yaml format, default path is ./mqttx-cli-options.json
+  -am, --authentication-method <METHOD>             authentication method for MQTT 5.0 enhanced authentication (SCRAM-SHA-1, SCRAM-SHA-256, SCRAM-SHA-512)
+  --help                                            display help for command
+
+Usage: mqttx ls [options]
+
+List information based on the provided options.
+
+Options:
+  -sc, --scenarios  List all built-in scenarios
+  -h, --help        display help for command
+
+Usage: mqttx init [options]
+
+Initialize the configuration file.
+
+Options:
+  -h, --help  display help for command
+
+Usage: mqttx check [options]
+
+Check for updates.
+
+Options:
+  -h, --help  display help for command

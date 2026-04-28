@@ -1,16 +1,29 @@
 #include "test_client_scenario_runner.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <future>
 #include <iomanip>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
 #include <vector>
+
+#include "client/connection_negotiator.h"
+#include "client_api/client_config.h"
+#include "codec/packet/connect_codec.h"
+#include "codec/packet/control_codec.h"
+#include "codec/packet/publish_codec.h"
+#include "codec/packet/subscribe_codec.h"
+#include "codec/packet_reader/packet_reader.h"
+#include "codec/read_buffer.h"
+#include "codec/write_buffer.h"
+#include "network/stream_buffer.h"
 
 #if !defined(_WIN32)
 #include <sys/wait.h>
@@ -122,9 +135,9 @@ std::vector<std::string> make_base_arguments(
 
   arguments.emplace_back("--clean-start");
   arguments.emplace_back(profile.clean_start ? "true" : "false");
-  arguments.emplace_back("--keep-alive");
+  arguments.emplace_back("--keep-alive-seconds");
   arguments.emplace_back(std::to_string(profile.keep_alive_seconds));
-  arguments.emplace_back("--session-expiry-seconds");
+  arguments.emplace_back("--session-expiry-interval-seconds");
   arguments.emplace_back(
       std::to_string(profile.session_expiry_interval_seconds));
 
@@ -169,86 +182,350 @@ std::string make_payload_for_index(uint32_t index,
   return "step32-message-" + std::to_string(index);
 }
 
-std::vector<std::string> make_publish_arguments(
-    const TestClientProfile& profile,
-    uint32_t index,
-    const std::string& topic,
-    const std::string& client_id) {
-  std::vector<std::string> arguments;
-  arguments.emplace_back("publish");
-
-  const std::vector<std::string> base = make_base_arguments(profile, client_id);
-  arguments.insert(arguments.end(), base.begin(), base.end());
-
-  arguments.emplace_back("--topic");
-  arguments.emplace_back(topic);
-  arguments.emplace_back("--payload");
-  arguments.emplace_back(make_payload_for_index(index, profile));
-  arguments.emplace_back("--payload-encoding");
-  arguments.emplace_back(profile.publish_payload_encoding);
-  arguments.emplace_back("--qos");
-  arguments.emplace_back(std::to_string(profile.publish_qos));
-  arguments.emplace_back("--retain");
-  arguments.emplace_back(profile.publish_retain ? "true" : "false");
-
-  if (profile.publish_payload_format_indicator.has_value()) {
-    arguments.emplace_back("--payload-format-indicator");
-    arguments.emplace_back(
-        std::to_string(*profile.publish_payload_format_indicator));
-  }
-  if (profile.publish_message_expiry_interval_seconds.has_value()) {
-    arguments.emplace_back("--message-expiry-interval-seconds");
-    arguments.emplace_back(
-        std::to_string(*profile.publish_message_expiry_interval_seconds));
-  }
-  if (profile.publish_topic_alias.has_value()) {
-    arguments.emplace_back("--topic-alias");
-    arguments.emplace_back(std::to_string(*profile.publish_topic_alias));
-  }
-  if (profile.publish_response_topic.has_value()) {
-    arguments.emplace_back("--response-topic");
-    arguments.emplace_back(*profile.publish_response_topic);
-  }
-  if (profile.publish_correlation_data.has_value()) {
-    arguments.emplace_back("--correlation-data");
-    arguments.emplace_back(*profile.publish_correlation_data);
-  }
-  if (profile.publish_content_type.has_value()) {
-    arguments.emplace_back("--content-type");
-    arguments.emplace_back(*profile.publish_content_type);
+ClientConfig make_client_config_for_operation(const TestClientProfile& profile,
+                                              const std::string& client_id) {
+  if (profile.transport != TestClientTransport::Mqtt) {
+    throw std::invalid_argument(
+        "Step32 load modes currently support only mqtt transport");
   }
 
-  for (const auto& property : profile.publish_user_properties) {
-    arguments.emplace_back("--publish-user-property");
-    arguments.emplace_back(property.first + "=" + property.second);
+  ClientConfig config;
+  config.broker_host = profile.host;
+  config.broker_port = profile.port;
+  config.transport = ClientTransportType::Tcp;
+  config.client_id = client_id;
+  config.clean_start = profile.clean_start;
+  config.keep_alive_seconds = profile.keep_alive_seconds;
+  config.session_expiry_interval_seconds =
+      profile.session_expiry_interval_seconds;
+  config.receive_maximum = profile.receive_maximum;
+  config.topic_alias_maximum = profile.topic_alias_maximum;
+  config.operation_timeouts.connect_ms = 5000U;
+  config.operation_timeouts.publish_ms = 5000U;
+  config.operation_timeouts.subscribe_ms = 5000U;
+  config.operation_timeouts.unsubscribe_ms = 5000U;
+  config.operation_timeouts.disconnect_ms = 5000U;
+
+  if (profile.username.has_value()) {
+    config.credentials.username = profile.username;
+  }
+  if (profile.password.has_value()) {
+    config.credentials.password = profile.password;
   }
 
-  return arguments;
+  validate_client_config_or_throw(config);
+  return config;
 }
 
-std::vector<std::string> make_subscribe_arguments(
-    const TestClientProfile& profile,
-    const std::string& topic,
-    const std::string& client_id,
-    uint32_t message_limit,
-    const std::string& output_file) {
-  std::vector<std::string> arguments;
-  arguments.emplace_back("subscribe");
+uint16_t next_packet_id() {
+  static std::atomic<uint32_t> sequence{1U};
+  const uint32_t raw = sequence.fetch_add(1U);
+  const uint16_t folded = static_cast<uint16_t>((raw % 65535U) + 1U);
+  return folded;
+}
 
-  const std::vector<std::string> base = make_base_arguments(profile, client_id);
-  arguments.insert(arguments.end(), base.begin(), base.end());
+QoS qos_from_u8_or_throw(uint8_t qos_value) {
+  if (qos_value == 0U) {
+    return QoS::AtMostOnce;
+  }
+  if (qos_value == 1U) {
+    return QoS::AtLeastOnce;
+  }
+  if (qos_value == 2U) {
+    return QoS::ExactlyOnce;
+  }
+  throw std::invalid_argument("Invalid publish_qos for Step32 load operation");
+}
 
-  arguments.emplace_back("--subscription");
-  arguments.emplace_back(topic + "|0|false|false|0");
-  arguments.emplace_back("--message-limit");
-  arguments.emplace_back(std::to_string(message_limit));
-  arguments.emplace_back("--wait-timeout-ms");
-  arguments.emplace_back("15000");
-  arguments.emplace_back("--clean-output");
-  arguments.emplace_back("--output-file");
-  arguments.emplace_back(output_file);
+AnyPacket read_next_mqtt_packet_or_throw(TcpConnection& connection,
+                                         StreamBuffer& stream_buffer,
+                                         uint32_t timeout_ms) {
+  connection.set_receive_timeout(timeout_ms);
+  std::array<uint8_t, 2048> read_chunk{};
 
-  return arguments;
+  while (true) {
+    if (stream_buffer.has_complete_packet()) {
+      const std::vector<uint8_t> packet_bytes = stream_buffer.consume_packet();
+      ReadBuffer packet_reader(std::span<const uint8_t>(packet_bytes.data(),
+                                                        packet_bytes.size()));
+      return read_packet(packet_reader);
+    }
+
+    const std::ptrdiff_t bytes_read =
+        connection.read(std::span<uint8_t>(read_chunk.data(), read_chunk.size()));
+    if (bytes_read > 0) {
+      const auto append_result = stream_buffer.append(
+          std::span<const uint8_t>(read_chunk.data(),
+                                   static_cast<std::size_t>(bytes_read)));
+      if (append_result != StreamBufferAppendResult::kOk) {
+        throw ClientException(ClientError::ProtocolError,
+                              "Step32 read buffer overflow while reading packet");
+      }
+      continue;
+    }
+
+    if (bytes_read == 0) {
+      throw ClientException(ClientError::ReadFailed,
+                            "Broker closed socket during Step32 operation");
+    }
+
+    if (connection.last_read_timed_out()) {
+      throw ClientException(ClientError::Timeout,
+                            "Timed out waiting for broker packet");
+    }
+
+    throw ClientException(ClientError::ReadFailed,
+                          "Socket read failed during Step32 operation");
+  }
+}
+
+void send_disconnect_best_effort(TcpConnection& connection) {
+  WriteBuffer disconnect_frame;
+  DisconnectPacket disconnect_packet;
+  disconnect_packet.reason_code = ReasonCode::Success;
+  encode_disconnect(disconnect_frame, disconnect_packet);
+  (void)connection.write(std::span<const uint8_t>(disconnect_frame.data(),
+                                                  disconnect_frame.size()));
+}
+
+int execute_publish_operation_direct(const TestClientProfile& profile,
+                                    const std::string& client_id,
+                                    const std::string& topic,
+                                    const std::string& payload) {
+  try {
+  TcpConnection connection =
+    ConnectionNegotiator::dial_tcp(profile.host, profile.port);
+  StreamBuffer stream_buffer;
+
+    const ClientConfig config = make_client_config_for_operation(profile, client_id);
+    const ConnectPacket connect_packet = build_connect_packet(config);
+    (void)ConnectionNegotiator::negotiate(connection, connect_packet, 5000U);
+
+    PublishPacket publish_packet;
+    publish_packet.topic = Utf8String{topic};
+    publish_packet.qos = qos_from_u8_or_throw(profile.publish_qos);
+    publish_packet.retain = profile.publish_retain;
+    publish_packet.dup = false;
+    publish_packet.payload = BinaryData::from_string(payload);
+    if (publish_packet.qos != QoS::AtMostOnce) {
+      publish_packet.packet_id = next_packet_id();
+    }
+
+    WriteBuffer publish_frame;
+    encode_publish(publish_frame, publish_packet);
+    if (!connection.write(
+            std::span<const uint8_t>(publish_frame.data(), publish_frame.size()))) {
+      return 1;
+    }
+
+    if (publish_packet.qos == QoS::AtLeastOnce) {
+      const uint16_t expected_packet_id = *publish_packet.packet_id;
+      while (true) {
+        const AnyPacket packet =
+            read_next_mqtt_packet_or_throw(connection, stream_buffer, 5000U);
+        if (std::holds_alternative<PubackPacket>(packet)) {
+          const PubackPacket& puback_packet = std::get<PubackPacket>(packet);
+          if (puback_packet.packet_id == expected_packet_id &&
+              !is_error(puback_packet.reason_code)) {
+            break;
+          }
+          if (puback_packet.packet_id == expected_packet_id &&
+              is_error(puback_packet.reason_code)) {
+            return 1;
+          }
+        }
+        if (std::holds_alternative<DisconnectPacket>(packet)) {
+          return 1;
+        }
+      }
+    } else if (publish_packet.qos == QoS::ExactlyOnce) {
+      const uint16_t expected_packet_id = *publish_packet.packet_id;
+      while (true) {
+        const AnyPacket packet =
+            read_next_mqtt_packet_or_throw(connection, stream_buffer, 5000U);
+        if (!std::holds_alternative<PubrecPacket>(packet)) {
+          if (std::holds_alternative<DisconnectPacket>(packet)) {
+            return 1;
+          }
+          continue;
+        }
+
+        const PubrecPacket& pubrec_packet = std::get<PubrecPacket>(packet);
+        if (pubrec_packet.packet_id != expected_packet_id) {
+          continue;
+        }
+        if (is_error(pubrec_packet.reason_code)) {
+          return 1;
+        }
+
+        WriteBuffer pubrel_frame;
+        PubrelPacket pubrel_packet;
+        pubrel_packet.packet_id = expected_packet_id;
+        encode_pubrel(pubrel_frame, pubrel_packet);
+        if (!connection.write(
+                std::span<const uint8_t>(pubrel_frame.data(), pubrel_frame.size()))) {
+          return 1;
+        }
+        break;
+      }
+
+      while (true) {
+        const AnyPacket packet =
+            read_next_mqtt_packet_or_throw(connection, stream_buffer, 5000U);
+        if (std::holds_alternative<PubcompPacket>(packet)) {
+          const PubcompPacket& pubcomp_packet = std::get<PubcompPacket>(packet);
+          if (pubcomp_packet.packet_id == expected_packet_id &&
+              !is_error(pubcomp_packet.reason_code)) {
+            break;
+          }
+          if (pubcomp_packet.packet_id == expected_packet_id &&
+              is_error(pubcomp_packet.reason_code)) {
+            return 1;
+          }
+        }
+        if (std::holds_alternative<DisconnectPacket>(packet)) {
+          return 1;
+        }
+      }
+    }
+
+    send_disconnect_best_effort(connection);
+    connection.close();
+    return 0;
+  } catch (...) {
+    return 1;
+  }
+}
+
+int execute_subscribe_once_direct(const TestClientProfile& profile,
+                                  const std::string& client_id,
+                                  const std::string& topic,
+                                  uint32_t timeout_ms) {
+  try {
+  TcpConnection connection =
+    ConnectionNegotiator::dial_tcp(profile.host, profile.port);
+  StreamBuffer stream_buffer;
+
+    const ClientConfig config = make_client_config_for_operation(profile, client_id);
+    const ConnectPacket connect_packet = build_connect_packet(config);
+    (void)ConnectionNegotiator::negotiate(connection, connect_packet, 5000U);
+
+    SubscribePacket subscribe_packet;
+    subscribe_packet.packet_id = next_packet_id();
+    SubscribeFilter filter;
+    filter.topic_filter = Utf8String{topic};
+    filter.options.max_qos = QoS::AtMostOnce;
+    filter.options.no_local = false;
+    filter.options.retain_as_published = false;
+    filter.options.retain_handling = 0U;
+    subscribe_packet.filters.push_back(filter);
+
+    WriteBuffer subscribe_frame;
+    encode_subscribe(subscribe_frame, subscribe_packet);
+    if (!connection.write(std::span<const uint8_t>(subscribe_frame.data(),
+                                                   subscribe_frame.size()))) {
+      return 1;
+    }
+
+    const AnyPacket suback_packet =
+        read_next_mqtt_packet_or_throw(connection, stream_buffer, 5000U);
+    if (!std::holds_alternative<SubackPacket>(suback_packet)) {
+      return 1;
+    }
+    const SubackPacket& suback = std::get<SubackPacket>(suback_packet);
+    if (suback.packet_id != subscribe_packet.packet_id) {
+      return 1;
+    }
+    for (const ReasonCode reason_code : suback.reason_codes) {
+      if (is_error(reason_code)) {
+        return 1;
+      }
+    }
+
+    while (true) {
+      const AnyPacket packet =
+          read_next_mqtt_packet_or_throw(connection, stream_buffer, timeout_ms);
+      if (std::holds_alternative<PublishPacket>(packet)) {
+        const PublishPacket& publish_packet = std::get<PublishPacket>(packet);
+        if (publish_packet.qos == QoS::AtLeastOnce &&
+            publish_packet.packet_id.has_value()) {
+          WriteBuffer puback_frame;
+          PubackPacket puback_packet;
+          puback_packet.packet_id = *publish_packet.packet_id;
+          puback_packet.reason_code = ReasonCode::Success;
+          encode_puback(puback_frame, puback_packet);
+          (void)connection.write(std::span<const uint8_t>(puback_frame.data(),
+                                                          puback_frame.size()));
+        }
+        break;
+      }
+      if (std::holds_alternative<DisconnectPacket>(packet)) {
+        return 1;
+      }
+    }
+
+    send_disconnect_best_effort(connection);
+    connection.close();
+    return 0;
+  } catch (...) {
+    return 1;
+  }
+}
+
+void record_load_result(LoadMetrics& metrics,
+                        std::mutex& metrics_mutex,
+                        const Clock::time_point started_at,
+                        const Clock::time_point finished_at,
+                        int result_code) {
+  std::lock_guard<std::mutex> lock(metrics_mutex);
+  metrics.attempted += 1U;
+  metrics.sample_latencies_ms.push_back(
+      static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                              finished_at - started_at)
+                              .count()));
+  if (result_code == 0) {
+    metrics.succeeded += 1U;
+  } else {
+    metrics.failed += 1U;
+  }
+}
+
+template <typename OperationFn>
+int run_parallel_operations(uint32_t operation_count,
+                            uint32_t parallelism,
+                            uint32_t interval_ms,
+                            LoadMetrics& metrics,
+                            OperationFn operation_fn) {
+  const uint32_t worker_count =
+      std::max(1U, std::min(parallelism, std::max(1U, operation_count)));
+  std::atomic<uint32_t> next_index{0U};
+  std::mutex metrics_mutex;
+  std::vector<std::future<void>> workers;
+  workers.reserve(worker_count);
+
+  for (uint32_t worker_index = 0U; worker_index < worker_count; ++worker_index) {
+    workers.emplace_back(std::async(std::launch::async, [&]() {
+      while (true) {
+        const uint32_t operation_index = next_index.fetch_add(1U);
+        if (operation_index >= operation_count) {
+          break;
+        }
+
+        const Clock::time_point started_at = Clock::now();
+        const int result_code = operation_fn(operation_index);
+        const Clock::time_point finished_at = Clock::now();
+        record_load_result(metrics, metrics_mutex, started_at, finished_at,
+                           result_code);
+        sleep_between_operations(interval_ms);
+      }
+    }));
+  }
+
+  for (auto& worker : workers) {
+    worker.get();
+  }
+
+  return metrics.failed == 0U ? 0 : 1;
 }
 
 void update_latency_stats(LoadMetrics& metrics) {
@@ -320,78 +597,55 @@ void print_metrics_summary(const LoadMetrics& metrics, bool print_json) {
   std::cout << "LOAD_METRICS_JSON " << json_stream.str() << "\n";
 }
 
-void run_single_operation(
-    const std::string& executable,
-    const std::vector<std::string>& arguments,
-    LoadMetrics& metrics) {
-  const Clock::time_point started_at = Clock::now();
-  const int result_code = run_command(build_cmdline(executable, arguments));
-  const Clock::time_point finished_at = Clock::now();
-
-  metrics.attempted += 1U;
-  metrics.sample_latencies_ms.push_back(
-      static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                              finished_at - started_at)
-                              .count()));
-
-  if (result_code == 0) {
-    metrics.succeeded += 1U;
-  } else {
-    metrics.failed += 1U;
-  }
-}
-
 int run_mass_connect_mode(
-    const std::string& executable,
+    const std::string&,
     const TestClientCliOptions& options,
     const TestClientProfile& profile,
     LoadMetrics& metrics) {
-  for (uint32_t connection_index = 0U;
-       connection_index < options.load_connection_count; ++connection_index) {
+  return run_parallel_operations(
+      options.load_connection_count,
+      options.load_parallelism,
+      options.load_connect_interval_ms,
+      metrics,
+      [&](uint32_t connection_index) {
     const std::string client_id =
         render_template(options.load_client_template, connection_index);
     const std::string topic =
         render_template(options.load_topic_template, connection_index);
+    const std::string payload = make_payload_for_index(connection_index, profile);
 
-    const std::vector<std::string> arguments =
-        make_publish_arguments(profile, connection_index, topic, client_id);
-    run_single_operation(executable, arguments, metrics);
-
-    sleep_between_operations(options.load_connect_interval_ms);
-  }
-
-  return metrics.failed == 0U ? 0 : 1;
+    return execute_publish_operation_direct(profile, client_id, topic, payload);
+      });
 }
 
 int run_publish_rate_mode(
-    const std::string& executable,
+    const std::string&,
     const TestClientCliOptions& options,
     const TestClientProfile& profile,
     LoadMetrics& metrics) {
   const uint32_t operation_count =
       std::max(options.load_publish_limit, options.load_connection_count);
 
-  for (uint32_t publish_index = 0U; publish_index < operation_count;
-       ++publish_index) {
+  return run_parallel_operations(
+      operation_count,
+      options.load_parallelism,
+      options.load_message_interval_ms,
+      metrics,
+      [&](uint32_t publish_index) {
     const uint32_t connection_index =
         publish_index % std::max(options.load_connection_count, 1U);
     const std::string client_id =
         render_template(options.load_client_template, connection_index);
     const std::string topic =
         render_template(options.load_topic_template, connection_index);
+    const std::string payload = make_payload_for_index(publish_index, profile);
 
-    const std::vector<std::string> arguments =
-        make_publish_arguments(profile, publish_index, topic, client_id);
-    run_single_operation(executable, arguments, metrics);
-
-    sleep_between_operations(options.load_message_interval_ms);
-  }
-
-  return metrics.failed == 0U ? 0 : 1;
+    return execute_publish_operation_direct(profile, client_id, topic, payload);
+      });
 }
 
 int run_multi_subscribe_mode(
-    const std::string& executable,
+    const std::string&,
     const TestClientCliOptions& options,
     const TestClientProfile& profile,
     LoadMetrics& metrics) {
@@ -409,22 +663,17 @@ int run_multi_subscribe_mode(
         render_template(options.load_topic_template, subscriber_index);
     const std::string client_id =
         render_template(options.load_client_template, subscriber_index);
-    const std::filesystem::path output_file =
-        output_directory / ("subscriber-" + std::to_string(subscriber_index) + ".log");
-
-    const std::vector<std::string> subscribe_arguments = make_subscribe_arguments(
-        profile,
-        topic,
-        client_id,
-        1U,
-        output_file.string());
+    const std::filesystem::path output_file = output_directory /
+      ("subscriber-" + std::to_string(subscriber_index) + ".log");
 
     SubscriberTask task{
-        std::async(
-            std::launch::async,
-            [executable, subscribe_arguments]() {
-              return run_command(build_cmdline(executable, subscribe_arguments));
-            }),
+      std::async(std::launch::async,
+             [profile, topic, client_id]() {
+             return execute_subscribe_once_direct(profile,
+                               client_id,
+                               topic,
+                               15000U);
+             }),
         topic,
         output_file.string()};
     subscribers.push_back(std::move(task));
@@ -442,11 +691,23 @@ int run_multi_subscribe_mode(
     const std::string topic =
         render_template(options.load_topic_template, subscriber_index);
     const std::string client_id =
-        render_template(options.load_client_template, subscriber_index);
+      render_template(options.load_client_template, subscriber_index) + "-pub";
 
-    const std::vector<std::string> publish_arguments =
-        make_publish_arguments(profile, publish_index, topic, client_id);
-    run_single_operation(executable, publish_arguments, metrics);
+    const std::string payload = make_payload_for_index(publish_index, profile);
+    const Clock::time_point started_at = Clock::now();
+    const int publish_result =
+        execute_publish_operation_direct(profile, client_id, topic, payload);
+    const Clock::time_point finished_at = Clock::now();
+    metrics.attempted += 1U;
+    metrics.sample_latencies_ms.push_back(
+        static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                finished_at - started_at)
+                                .count()));
+    if (publish_result == 0) {
+      metrics.succeeded += 1U;
+    } else {
+      metrics.failed += 1U;
+    }
 
     sleep_between_operations(options.load_message_interval_ms);
   }

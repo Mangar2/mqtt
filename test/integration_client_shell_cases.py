@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import time
@@ -106,6 +107,133 @@ def _run_publish(
         )
 
     return True, merged or "publish command succeeded"
+
+
+def _run_cli_command(args: list[str], timeout_seconds: float) -> tuple[int, str, str]:
+    binary_path = _build_yahatestclient()
+    if binary_path is None:
+        return 127, "", "yahatestclient binary not found and build failed"
+
+    command = [str(binary_path)]
+    command.extend(args)
+    completed = subprocess.run(
+        command,
+        cwd=_project_root(),
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds,
+        check=False,
+    )
+    return completed.returncode, completed.stdout, completed.stderr
+
+
+def _extract_metrics_json(output_text: str) -> tuple[bool, str]:
+    for line in output_text.splitlines():
+        if not line.startswith("LOAD_METRICS_JSON "):
+            continue
+        raw_json = line[len("LOAD_METRICS_JSON ") :].strip()
+        try:
+            parsed = json.loads(raw_json)
+        except json.JSONDecodeError as error:
+            return False, f"invalid LOAD_METRICS_JSON payload: {error}"
+
+        required_keys = {
+            "mode",
+            "attempted",
+            "succeeded",
+            "failed",
+            "timed_out",
+            "duration_ms",
+            "throughput_ops_per_sec",
+            "latency_avg_ms",
+            "latency_min_ms",
+            "latency_max_ms",
+        }
+        missing = sorted(required_keys - set(parsed.keys()))
+        if missing:
+            return False, f"LOAD_METRICS_JSON missing keys: {', '.join(missing)}"
+
+        return True, "LOAD_METRICS_JSON parsed successfully"
+
+    return False, "LOAD_METRICS_JSON line missing in scenario output"
+
+
+def _run_scenario_load_mode(
+    config,
+    *,
+    mode: str,
+    connection_count: int,
+    publish_limit: int,
+    connect_interval_ms: int = 0,
+    message_interval_ms: int = 0,
+) -> tuple[bool, str]:
+    binary_path = _build_yahatestclient()
+    if binary_path is None:
+        return False, "yahatestclient binary not found and build failed"
+
+    unique = uuid.uuid4().hex[:8]
+    command = [
+        str(binary_path),
+        "scenario",
+        "--host",
+        config.host,
+        "--port",
+        str(config.port),
+        "--transport",
+        "mqtt",
+        "--client-id",
+        f"step32-int-{unique}",
+        "--maximum-reconnect-times",
+        "0",
+        "--load-mode",
+        mode,
+        "--connection-count",
+        str(connection_count),
+        "--connect-interval-ms",
+        str(connect_interval_ms),
+        "--message-interval-ms",
+        str(message_interval_ms),
+        "--publish-limit",
+        str(publish_limit),
+        "--topic-template",
+        f"integration/step32/{mode}/{unique}/{{index}}",
+        "--client-template",
+        f"integration-step32-{mode}-{unique}-{{index}}",
+        "--metrics-json",
+    ]
+
+    timeout_seconds = max(6.0, config.timeout_seconds * 3.0)
+    if mode == "multi-subscribe":
+        timeout_seconds = max(timeout_seconds, 25.0)
+
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=_project_root(),
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"scenario load mode {mode} timed out"
+    except Exception as error:  # pylint: disable=broad-except
+        return False, f"scenario load mode {mode} execution failed: {error}"
+
+    merged = "\n".join(
+        chunk for chunk in [completed.stdout.strip(), completed.stderr.strip()] if chunk
+    ).strip()
+    if completed.returncode != 0:
+        return False, (
+            f"scenario load mode {mode} failed: "
+            f"exit={completed.returncode}, output={merged or 'no output'}"
+        )
+
+    parse_ok, parse_details = _extract_metrics_json(completed.stdout)
+    if not parse_ok:
+        return False, f"scenario load mode {mode} missing valid metrics: {parse_details}"
+
+    return True, merged or f"scenario load mode {mode} succeeded"
 
 
 def run_test_client_shell_connect(config) -> tuple[bool, str]:
@@ -385,7 +513,203 @@ def run_test_client_shell_subscribe_qos1_publish_qos1_output_file_roundtrip(conf
     )
 
 
+def run_test_client_shell_scenario_mass_connect_metrics_json(config) -> tuple[bool, str]:
+    return _run_scenario_load_mode(
+        config,
+        mode="mass-connect",
+        connection_count=3,
+        publish_limit=3,
+    )
+
+
+def run_test_client_shell_scenario_publish_rate_metrics_json(config) -> tuple[bool, str]:
+    return _run_scenario_load_mode(
+        config,
+        mode="publish-rate",
+        connection_count=2,
+        publish_limit=6,
+        message_interval_ms=5,
+    )
+
+
+def run_test_client_shell_scenario_list_includes_step32_modes(config) -> tuple[bool, str]:
+    binary_path = _build_yahatestclient()
+    if binary_path is None:
+        return False, "yahatestclient binary not found and build failed"
+
+    command = [
+        str(binary_path),
+        "scenario",
+        "--host",
+        config.host,
+        "--port",
+        str(config.port),
+        "--transport",
+        "mqtt",
+        "--list-scenarios",
+    ]
+
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=_project_root(),
+            capture_output=True,
+            text=True,
+            timeout=max(6.0, config.timeout_seconds * 2.0),
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "scenario --list-scenarios timed out"
+    except Exception as error:  # pylint: disable=broad-except
+        return False, f"scenario --list-scenarios execution failed: {error}"
+
+    merged = "\n".join(
+        chunk for chunk in [completed.stdout.strip(), completed.stderr.strip()] if chunk
+    ).strip()
+    if completed.returncode != 0:
+        return False, (
+            "scenario --list-scenarios failed: "
+            f"exit={completed.returncode}, output={merged or 'no output'}"
+        )
+
+    required_tokens = ["mass-connect", "publish-rate", "multi-subscribe"]
+    missing = [token for token in required_tokens if token not in completed.stdout]
+    if missing:
+        return False, (
+            "scenario catalog missing Step32 load modes: " + ", ".join(missing)
+        )
+
+    return True, merged or "scenario catalog includes Step32 load modes"
+
+
+def run_test_client_shell_wp1_command_help_discoverability(config) -> tuple[bool, str]:
+    help_invocations: list[tuple[str, list[str], list[str]]] = [
+        ("top-level help", ["--help"], ["Usage:", "Commands:"]),
+        ("bench help", ["bench", "--help"], ["bench", "conn", "pub", "sub"]),
+        ("bench conn help", ["bench", "conn", "--help"], ["bench", "conn"]),
+        ("bench pub help", ["bench", "pub", "--help"], ["bench", "pub"]),
+        ("bench sub help", ["bench", "sub", "--help"], ["bench", "sub"]),
+        ("conn help", ["conn", "--help"], ["conn", "help-only"]),
+        ("sub help", ["sub", "--help"], ["sub", "help-only"]),
+        ("simulate help", ["simulate", "--help"], ["simulate", "help-only"]),
+        ("ls help", ["ls", "--help"], ["ls", "help-only"]),
+        ("init help", ["init", "--help"], ["init", "help-only"]),
+        ("check help", ["check", "--help"], ["check", "help-only"]),
+    ]
+
+    timeout_seconds = max(4.0, config.timeout_seconds)
+    for label, argv, required_tokens in help_invocations:
+        try:
+            returncode, stdout_text, stderr_text = _run_cli_command(argv, timeout_seconds)
+        except subprocess.TimeoutExpired:
+            return False, f"{label} timed out"
+        except Exception as error:  # pylint: disable=broad-except
+            return False, f"{label} execution failed: {error}"
+
+        if returncode != 0:
+            merged = "\n".join(
+                chunk for chunk in [stdout_text.strip(), stderr_text.strip()] if chunk
+            ).strip()
+            return False, (
+                f"{label} failed: exit={returncode}, "
+                f"output={merged or 'no output'}"
+            )
+
+        for token in required_tokens:
+            if token not in stdout_text:
+                return False, f"{label} output missing token: {token}"
+
+    return True, "WP1 command help discoverability checks succeeded"
+
+
+def run_test_client_shell_wp1_version_output_contract(config) -> tuple[bool, str]:
+    timeout_seconds = max(4.0, config.timeout_seconds)
+    for argv in (["--version"], ["-v"]):
+        try:
+            returncode, stdout_text, stderr_text = _run_cli_command(argv, timeout_seconds)
+        except subprocess.TimeoutExpired:
+            return False, f"version invocation {' '.join(argv)} timed out"
+        except Exception as error:  # pylint: disable=broad-except
+            return False, f"version invocation {' '.join(argv)} failed: {error}"
+
+        if returncode != 0:
+            merged = "\n".join(
+                chunk for chunk in [stdout_text.strip(), stderr_text.strip()] if chunk
+            ).strip()
+            return False, (
+                f"version invocation {' '.join(argv)} failed: "
+                f"exit={returncode}, output={merged or 'no output'}"
+            )
+
+        if not stdout_text.startswith("yahatestclient "):
+            return False, (
+                f"version output contract broken for {' '.join(argv)}: "
+                f"stdout={stdout_text.strip()!r}"
+            )
+
+    return True, "WP1 version output contract checks succeeded"
+
+
+def run_test_client_shell_wp1_unknown_behavior_parity(config) -> tuple[bool, str]:
+    timeout_seconds = max(4.0, config.timeout_seconds)
+
+    try:
+        unknown_command_code, unknown_command_stdout, unknown_command_stderr = _run_cli_command(
+            ["invalid-command"], timeout_seconds
+        )
+    except subprocess.TimeoutExpired:
+        return False, "unknown-command invocation timed out"
+    except Exception as error:  # pylint: disable=broad-except
+        return False, f"unknown-command invocation failed: {error}"
+
+    if unknown_command_code == 0:
+        return False, "invalid command unexpectedly returned success"
+    unknown_command_text = "\n".join(
+        chunk
+        for chunk in [unknown_command_stdout.strip(), unknown_command_stderr.strip()]
+        if chunk
+    )
+    if "Unknown command:" not in unknown_command_text:
+        return False, "invalid command did not report Unknown command"
+
+    try:
+        unknown_option_code, unknown_option_stdout, unknown_option_stderr = _run_cli_command(
+            ["pub", "--unknown"], timeout_seconds
+        )
+    except subprocess.TimeoutExpired:
+        return False, "unknown-option invocation timed out"
+    except Exception as error:  # pylint: disable=broad-except
+        return False, f"unknown-option invocation failed: {error}"
+
+    if unknown_option_code == 0:
+        return False, "invalid option unexpectedly returned success"
+    unknown_option_text = "\n".join(
+        chunk
+        for chunk in [unknown_option_stdout.strip(), unknown_option_stderr.strip()]
+        if chunk
+    )
+    if "Unknown option:" not in unknown_option_text:
+        return False, "invalid option did not report Unknown option"
+
+    return True, "WP1 unknown command/option behavior checks succeeded"
+
+
 TEST_CASES = [
+    {
+        "name": "test-client-shell/test_client_shell_wp1_command_help_discoverability",
+        "description": "21.0.1 Local yahatestclient command discoverability help flows succeed for WP1 command surface",
+        "run": run_test_client_shell_wp1_command_help_discoverability,
+    },
+    {
+        "name": "test-client-shell/test_client_shell_wp1_version_output_contract",
+        "description": "21.0.2 Local yahatestclient version flags produce stable version output contract",
+        "run": run_test_client_shell_wp1_version_output_contract,
+    },
+    {
+        "name": "test-client-shell/test_client_shell_wp1_unknown_behavior_parity",
+        "description": "21.0.3 Local yahatestclient unknown command and unknown option behavior remains explicit",
+        "run": run_test_client_shell_wp1_unknown_behavior_parity,
+    },
     {
         "name": "connect/test_client_shell_connect",
         "description": "21.1.1 Local yahatestclient connect stays up until signal and exits cleanly",
@@ -415,5 +739,20 @@ TEST_CASES = [
         "name": "subscribe/test_client_shell_subscribe_qos1_publish_qos1_output_file_roundtrip",
         "description": "21.3.2 Local yahatestclient subscribe receives QoS1 publish and writes formatted output file",
         "run": run_test_client_shell_subscribe_qos1_publish_qos1_output_file_roundtrip,
+    },
+    {
+        "name": "scenario/test_client_shell_scenario_mass_connect_metrics_json",
+        "description": "21.4.1 Local yahatestclient scenario mass-connect succeeds and prints machine-readable metrics",
+        "run": run_test_client_shell_scenario_mass_connect_metrics_json,
+    },
+    {
+        "name": "scenario/test_client_shell_scenario_publish_rate_metrics_json",
+        "description": "21.4.2 Local yahatestclient scenario publish-rate succeeds and prints machine-readable metrics",
+        "run": run_test_client_shell_scenario_publish_rate_metrics_json,
+    },
+    {
+        "name": "scenario/test_client_shell_scenario_list_includes_step32_modes",
+        "description": "21.4.3 Local yahatestclient scenario catalog lists all Step32 load modes including multi-subscribe",
+        "run": run_test_client_shell_scenario_list_includes_step32_modes,
     },
 ]

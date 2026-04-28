@@ -90,4 +90,117 @@ TEST_CASE("test_client_cli_mqttx_version_alias_rejects_non_v5",
   CHECK_THROWS_AS(parse_test_client_cli(argc_of(argv), argv), std::invalid_argument);
 }
 
+TEST_CASE("test_client_cli_pub_rejects_non_mqttx_host_flag",
+          "[test_client][cli]") {
+  const char *argv[] = {"yahatestclient", "pub", "-t",     "topic/a",
+                        "-m",             "hello", "--host", "127.0.0.1"};
+
+  CHECK_THROWS_AS(parse_test_client_cli(argc_of(argv), argv), std::invalid_argument);
+}
+
+TEST_CASE("test_client_cli_bench_pub_maps_to_scenario_publish_rate",
+          "[test_client][cli]") {
+  const char *argv[] = {"yahatestclient", "bench", "pub", "-c", "100", "-L",
+                        "200",            "-t",    "x/%i", "-I", "cid-%i"};
+
+  const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+  CHECK(options.command == TestClientCommand::Scenario);
+  CHECK(options.load_mode == "publish-rate");
+  CHECK(options.load_connection_count == 100U);
+  CHECK(options.load_publish_limit == 200U);
+  CHECK(options.load_topic_template == "x/{index}");
+  CHECK(options.load_client_template == "cid-{index}");
+}
+
+TEST_CASE("test_client_cli_bench_conn_rejects_pub_only_flags",
+          "[test_client][cli]") {
+  const char *argv[] = {"yahatestclient", "bench", "conn", "-m", "hello"};
+
+  CHECK_THROWS_AS(parse_test_client_cli(argc_of(argv), argv), std::invalid_argument);
+}
+
+TEST_CASE("test_client_cli_wp1_version_flags_are_supported",
+          "[test_client][cli]") {
+  {
+    const char *argv[] = {"yahatestclient", "--version"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Version);
+  }
+  {
+    const char *argv[] = {"yahatestclient", "-v"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Version);
+  }
+}
+
+TEST_CASE("test_client_cli_wp1_stub_commands_help_flow_is_supported",
+          "[test_client][cli]") {
+  {
+    const char *argv[] = {"yahatestclient", "conn", "--help"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Help);
+  }
+  {
+    const char *argv[] = {"yahatestclient", "sub", "--help"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Help);
+  }
+  {
+    const char *argv[] = {"yahatestclient", "simulate", "--help"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Help);
+  }
+  {
+    const char *argv[] = {"yahatestclient", "ls", "--help"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Help);
+  }
+  {
+    const char *argv[] = {"yahatestclient", "init", "--help"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Help);
+  }
+  {
+    const char *argv[] = {"yahatestclient", "check", "--help"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Help);
+  }
+}
+
+TEST_CASE("test_client_cli_wp1_stub_commands_without_help_fail",
+          "[test_client][cli]") {
+  {
+    const char *argv[] = {"yahatestclient", "conn", "--hostname", "127.0.0.1"};
+    CHECK_THROWS_AS(parse_test_client_cli(argc_of(argv), argv), std::invalid_argument);
+  }
+  {
+    const char *argv[] = {"yahatestclient", "sub", "-t", "a/b"};
+    CHECK_THROWS_AS(parse_test_client_cli(argc_of(argv), argv), std::invalid_argument);
+  }
+}
+
+TEST_CASE("test_client_cli_wp1_bench_help_flows_are_supported",
+          "[test_client][cli]") {
+  {
+    const char *argv[] = {"yahatestclient", "bench", "--help"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Help);
+  }
+  {
+    const char *argv[] = {"yahatestclient", "bench", "conn", "--help"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Help);
+  }
+  {
+    const char *argv[] = {"yahatestclient", "bench", "pub", "--help"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Help);
+  }
+  {
+    const char *argv[] = {"yahatestclient", "bench", "sub", "--help"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Help);
+  }
+}
+
 } // namespace mqtt

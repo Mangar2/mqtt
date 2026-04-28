@@ -35,6 +35,10 @@
 | `test_client_cli_mqttx_connection_aliases_are_supported` | `[test_client][cli]` | mqttx-style host/port/client/auth/connect-property aliases map to supported test-client options. |
 | `test_client_cli_mqttx_will_aliases_are_supported` | `[test_client][cli]` | mqttx-style will aliases (`-Wt`..`-Wup`) map to supported will profile overrides. |
 | `test_client_cli_mqttx_version_alias_rejects_non_v5` | `[test_client][cli]` | mqttx version alias accepts only MQTT 5.0 and rejects unsupported versions. |
+| `test_client_cli_wp1_version_flags_are_supported` | `[test_client][cli]` | Top-level version flags (`--version`, `-v`) are parsed as dedicated version command mode. |
+| `test_client_cli_wp1_stub_commands_help_flow_is_supported` | `[test_client][cli]` | mqttx compatibility stub commands (`conn`, `sub`, `simulate`, `ls`, `init`, `check`) accept `--help` and resolve to help mode. |
+| `test_client_cli_wp1_stub_commands_without_help_fail` | `[test_client][cli]` | mqttx compatibility stub commands reject non-help execution until runtime behavior is implemented. |
+| `test_client_cli_wp1_bench_help_flows_are_supported` | `[test_client][cli]` | Bench entry and bench subcommands accept `--help` and return help mode instead of argument errors. |
 
 ## Scenario Runner
 

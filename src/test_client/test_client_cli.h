@@ -17,6 +17,7 @@ namespace mqtt {
  */
 enum class TestClientCommand : uint8_t {
   Help,
+  Version,
   Connect,
   Publish,
   Subscribe,
@@ -38,6 +39,7 @@ struct TestClientCliOptions {
   uint32_t load_connect_interval_ms{0U};
   uint32_t load_message_interval_ms{0U};
   uint32_t load_publish_limit{100U};
+  uint32_t load_parallelism{32U};
   std::string load_topic_template{"load/{index}"};
   std::string load_client_template{"load-client-{index}"};
   bool load_metrics_json{false};
@@ -56,5 +58,10 @@ struct TestClientCliOptions {
  * @brief Return help text for executable usage.
  */
 [[nodiscard]] std::string test_client_help_text();
+
+/**
+ * @brief Return version text for executable usage.
+ */
+[[nodiscard]] std::string test_client_version_text();
 
 } // namespace mqtt

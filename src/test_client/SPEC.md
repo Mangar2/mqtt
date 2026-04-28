@@ -11,6 +11,9 @@ orchestration for broker-supported transports (`mqtt`, `ws`) without TLS.
 - Persistent connection profiles with deterministic load/save behavior.
 - Command-line subcommands for `connect`, `publish`, `subscribe`,
   `scenario`, `save-profile`, and `show-profile`.
+- Top-level `--help` and `--version` command-surface support.
+- mqttx compatibility command stubs for `conn`, `sub`, `simulate`, `ls`,
+  `init`, and `check` with help/discoverability flow.
 - One-shot `publish` command with QoS-aware ACK completion flow.
 - Long-running `subscribe` command with per-subscription MQTT 5 options and
   automation-oriented output pipeline controls.
@@ -92,10 +95,12 @@ Profile keys:
 - `struct TestClientCliOptions`
 - `parse_test_client_cli(int argc, const char* argv[])`
 - `test_client_help_text()`
+- `test_client_version_text()`
 
 Compatibility behavior:
 
 - `publish` command accepts alias `pub`.
+- Top-level `--version` and `-v` return version output without profile loading.
 - Supported mqttx-style aliases are accepted for implemented capabilities,
   including short publish flags (`-t`, `-m`, `-q`, `-r`, `-d`, `-s`, `-M`),
   publish MQTT 5 properties (`-pf`, `-e`, `-ta`, `-rt`, `-cd`, `-up`, `-si`,
@@ -103,6 +108,11 @@ Compatibility behavior:
   `-P`, `-l`, `--path`, `-wh`, `-rp`, `-se`, `--rcv-max`, `--req-response-info`,
   `--no-req-problem-info`, `-Cup`, `-am`), and will aliases (`-Wt`..`-Wup`).
 - `-V/--mqtt-version` is accepted only for `5` or `5.0`.
+- mqttx top-level commands `conn`, `sub`, `simulate`, `ls`, `init`, and
+  `check` are recognized as compatibility stubs: `--help` succeeds and
+  non-help execution returns a not-implemented argument error.
+- `bench --help` and `bench <subcommand> --help` (`conn|pub|sub`) are
+  accepted and routed to help output.
 
 ### `test_client_scenario_runner.h`
 
@@ -137,6 +147,7 @@ Behavior:
 - Supported transports are `mqtt` and `ws` only.
 - TLS-related options are intentionally unsupported.
 - Unknown profile keys and unknown CLI options are rejected as errors.
+- Unknown commands are rejected with explicit parser errors.
 
 ## Validation
 

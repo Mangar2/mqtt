@@ -1385,6 +1385,10 @@ int main(const int argc, const char *argv[]) {
       std::cout << mqtt::test_client_help_text();
       return 0;
     }
+    if (options.command == mqtt::TestClientCommand::Version) {
+      std::cout << mqtt::test_client_version_text();
+      return 0;
+    }
     const mqtt::TestClientProfile profile = mqtt::build_effective_profile(options);
     if (options.command == mqtt::TestClientCommand::ShowProfile) {
       mqtt::print_profile_to_stdout(profile);

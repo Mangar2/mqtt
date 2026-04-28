@@ -303,9 +303,15 @@ Supported subcommands:
 - `connect` — connect and keep the session open until signal (`Ctrl+C`)
 - `publish` — connect, publish one message, wait for QoS completion, exit
 - `subscribe` — connect, subscribe with MQTT 5 options, print/save incoming messages
+- `conn`, `sub`, `simulate`, `ls`, `init`, `check` — mqttx compatibility command stubs (help/discoverability surface in WP1)
 - `scenario` — list built-in scenarios, run Step 31 scripted scenarios, or run Step 32 load modes with metrics output
 - `save-profile` — save reusable profile file
 - `show-profile` — print effective profile after load+override merge
+
+Top-level options:
+
+- `--help`
+- `--version`, `-v`
 
 Profile precedence is deterministic:
 
