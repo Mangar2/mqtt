@@ -14,6 +14,7 @@ C++20 coding rules for this project.
 - NEVER add NOLINT comments outside test Files
 - use auto
 - Never use mutex only as name for mutexes. Always name a mutex according to the objekt it protects (e.g. message_list_mutex_)
+- minimize includes in headers, include in cpp only, if reasonable
 
 ## Compiler warnings
 

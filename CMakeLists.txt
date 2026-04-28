@@ -113,6 +113,16 @@ if(WIN32)
     target_link_libraries(yahatestclient PRIVATE ws2_32)
 endif()
 
+#  External dependencies (shared by YAHA client executables, not yahabroker)
+include(FetchContent)
+FetchContent_Declare(
+    httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    GIT_TAG        v0.18.7
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(httplib)
+
 #  Unit tests 
 include(CTest)
 

@@ -28,3 +28,23 @@ New skill created to define when and how the AI maintains the journal. Specifies
 
 ### [ARTIFACT] spec/yaha/JOURNAL.md created
 This file. Retroactively populated with all events from the initial session.
+
+## 2026-04-28 (continued)
+
+### [DECISION] HTTP-MQTT bridge as separate executable, not broker feature
+User asked whether the HTTP interface for simple microcontrollers should be built into yahabroker or as a separate program. Decision: separate executable. yahabroker must not carry HTTP protocol logic; the bridge connects to it as a regular MQTT client. Follows YAHA standalone-program pattern. yahabroker has zero knowledge of the bridge.
+
+### [ARTIFACT] spec/yaha/SPEC-http-mqtt-bridge.md created
+Specifies the HTTP-MQTT bridge: HTTP server for microcontroller commands (connect, publish, subscribe, unsubscribe, disconnect, pubrel), HTTP callbacks to devices for message delivery, MQTT client to yahabroker for real MQTT transport, session and queue management, persistence.
+
+### [CORRECTION] SPEC-http-mqtt-bridge.md rewritten: thin bridge, one MQTT connection per device
+Analysis of MqttClient showed it handles reconnect, re-subscribe, and keep-alive automatically. On user direction: bridge delegates all session/QoS/queue/persistence concerns to yahabroker by opening one real MQTT connection per device. Bridge holds only in-memory device registry (clientId, host, port, mqtt instance). No persistence, no session state, no queue management in the bridge itself.
+
+### [DECISION] cpp-httplib added to CMakeLists.txt via FetchContent
+Multiple YAHA client executables (MessageStore, HTTP-MQTT Bridge, others) need an HTTP server/client. yahabroker does not. cpp-httplib (header-only, MIT) added as shared FetchContent dependency. Individual executables add it to their include path; yahabroker is unaffected.
+
+### [DECISION] HTTP-MQTT Bridge: three design decisions closed by user
+No WebSocket support — HTTP only between bridge and devices. Failed delivery is silent: device removed, MQTT connection closed, no separate notification. Authentication by yahabroker only — bridge forwards credentials as-is, performs no validation itself.
+
+### [ARTIFACT] spec/yaha/IMPL-messagestore.md created
+Implementation plan for MessageStore in 10 steps across 4 phases. Phase 1 (steps 1–3) produces the shared foundations reused by all future YAHA MQTT services: Message type, IMqttComponent interface, YahaMqttClient session. Phase 2 (steps 4–7) builds the MessageStore component: message tree, persistence, component logic, HTTP interface. Phase 3 (step 8) composes the executable. Phase 4 (steps 9–10) covers unit and integration verification.
