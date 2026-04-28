@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <stdexcept>
@@ -318,15 +319,47 @@ void validate_test_client_profile_or_throw(const TestClientProfile &profile) {
       static_cast<uint8_t>(profile.publish_payload.has_value() ? 1U : 0U) +
       static_cast<uint8_t>(profile.publish_payload_stdin ? 1U : 0U) +
       static_cast<uint8_t>(profile.publish_payload_stdin_multiline ? 1U : 0U) +
-      static_cast<uint8_t>(profile.publish_payload_file.has_value() ? 1U : 0U);
+      static_cast<uint8_t>(profile.publish_payload_file.has_value() ? 1U : 0U) +
+      static_cast<uint8_t>(profile.publish_payload_size > 0U ? 1U : 0U);
   if (payload_source_count > 1U) {
     throw std::invalid_argument(
-        "Profile publish payload source is ambiguous; choose exactly one of publish_payload, publish_payload_stdin, publish_payload_stdin_multiline, publish_payload_file");
+        "Profile publish payload source is ambiguous; choose exactly one of publish_payload, publish_payload_stdin, publish_payload_stdin_multiline, publish_payload_file, publish_payload_size");
+  }
+
+  if (profile.publish_protobuf_path.has_value() &&
+      profile.publish_protobuf_path->empty()) {
+    throw std::invalid_argument(
+        "Profile publish_protobuf_path must not be empty when set");
+  }
+  if (profile.publish_protobuf_message_name.has_value() &&
+      profile.publish_protobuf_message_name->empty()) {
+    throw std::invalid_argument(
+        "Profile publish_protobuf_message_name must not be empty when set");
+  }
+  if (profile.publish_avsc_path.has_value() &&
+      profile.publish_avsc_path->empty()) {
+    throw std::invalid_argument(
+        "Profile publish_avsc_path must not be empty when set");
   }
 
   if (!is_payload_encoding_supported(profile.publish_payload_encoding)) {
     throw std::invalid_argument(
         "Profile publish_payload_encoding is unsupported");
+  }
+  if (profile.publish_payload_encoding == "protobuf") {
+    if (!profile.publish_protobuf_path.has_value()) {
+      throw std::invalid_argument(
+          "Profile publish_payload_encoding protobuf requires publish_protobuf_path");
+    }
+    if (!profile.publish_protobuf_message_name.has_value()) {
+      throw std::invalid_argument(
+          "Profile publish_payload_encoding protobuf requires publish_protobuf_message_name");
+    }
+  }
+  if (profile.publish_payload_encoding == "avro" &&
+      !profile.publish_avsc_path.has_value()) {
+    throw std::invalid_argument(
+        "Profile publish_payload_encoding avro requires publish_avsc_path");
   }
   if (!is_correlation_encoding_supported(
           profile.publish_correlation_data_encoding)) {
@@ -567,6 +600,22 @@ void apply_profile_override(TestClientProfile &profile, const std::string_view k
   }
   if (key == "publish_payload_file") {
     profile.publish_payload_file = std::string(value);
+    return;
+  }
+  if (key == "publish_protobuf_path") {
+    profile.publish_protobuf_path = std::string(value);
+    return;
+  }
+  if (key == "publish_protobuf_message_name") {
+    profile.publish_protobuf_message_name = std::string(value);
+    return;
+  }
+  if (key == "publish_avsc_path") {
+    profile.publish_avsc_path = std::string(value);
+    return;
+  }
+  if (key == "publish_payload_size") {
+    profile.publish_payload_size = parse_uint32(value, key);
     return;
   }
   if (key == "publish_payload_encoding") {
@@ -822,6 +871,20 @@ void save_test_client_profile_to_file(const std::string &path,
     output_stream << "publish_payload_file=" << *profile.publish_payload_file
                   << '\n';
   }
+  if (profile.publish_protobuf_path.has_value()) {
+    output_stream << "publish_protobuf_path=" << *profile.publish_protobuf_path
+                  << '\n';
+  }
+  if (profile.publish_protobuf_message_name.has_value()) {
+    output_stream << "publish_protobuf_message_name="
+                  << *profile.publish_protobuf_message_name << '\n';
+  }
+  if (profile.publish_avsc_path.has_value()) {
+    output_stream << "publish_avsc_path=" << *profile.publish_avsc_path
+                  << '\n';
+  }
+  output_stream << "publish_payload_size=" << profile.publish_payload_size
+                << '\n';
   output_stream << "publish_payload_encoding=" << profile.publish_payload_encoding
                 << '\n';
   if (profile.publish_payload_format_indicator.has_value()) {

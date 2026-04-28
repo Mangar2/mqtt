@@ -319,4 +319,105 @@ TEST_CASE("test_client_cli_wp3_bench_limit_zero_is_parsed",
   CHECK(options.load_publish_limit == 0U);
 }
 
+TEST_CASE("test_client_cli_wp4_pub_payload_schema_and_size_options_are_parsed",
+          "[test_client][cli]") {
+  const char *argv[] = {"yahatestclient", "pub", "-t", "topic/a", "-m", "hello",
+                        "-f",             "protobuf", "-Pp", "schema.proto",
+                        "-Pmn",           "Envelope", "-S", "16"};
+
+  const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+  CHECK(options.command == TestClientCommand::Publish);
+
+  bool has_schema_path = false;
+  bool has_message_name = false;
+  bool has_payload_size = false;
+  for (const auto &entry : options.overrides) {
+    if (entry.first == "publish_protobuf_path" && entry.second == "schema.proto") {
+      has_schema_path = true;
+    }
+    if (entry.first == "publish_protobuf_message_name" &&
+        entry.second == "Envelope") {
+      has_message_name = true;
+    }
+    if (entry.first == "publish_payload_size" && entry.second == "16") {
+      has_payload_size = true;
+    }
+  }
+
+  CHECK(has_schema_path);
+  CHECK(has_message_name);
+  CHECK(has_payload_size);
+}
+
+TEST_CASE("test_client_cli_wp4_bench_pub_publish_properties_and_schema_flags_are_parsed",
+          "[test_client][cli]") {
+  const char *argv[] = {
+      "yahatestclient", "bench", "pub", "-t", "topic/%i", "-m", "payload",
+      "-d",             "-pf",   "1",   "-e", "12",       "-ta", "5",
+      "-rt",            "reply", "-cd", "abcd", "-si",    "9",
+      "-ct",            "text/plain", "-up", "k=v", "-f", "avro",
+      "-Ap",            "schema.avsc", "-c", "1", "-L", "1"};
+
+  const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+  CHECK(options.command == TestClientCommand::Scenario);
+  CHECK(options.load_mode == "publish-rate");
+
+  bool has_dup = false;
+  bool has_payload_format = false;
+  bool has_expiry = false;
+  bool has_alias = false;
+  bool has_response_topic = false;
+  bool has_correlation = false;
+  bool has_subscription_identifier = false;
+  bool has_content_type = false;
+  bool has_user_property = false;
+  bool has_encoding = false;
+  bool has_avsc = false;
+  for (const auto &entry : options.overrides) {
+    has_dup = has_dup ||
+              (entry.first == "publish_dup" && entry.second == "true");
+    has_payload_format = has_payload_format ||
+                         (entry.first == "publish_payload_format_indicator" &&
+                          entry.second == "1");
+    has_expiry = has_expiry ||
+                 (entry.first == "publish_message_expiry_interval_seconds" &&
+                  entry.second == "12");
+    has_alias = has_alias ||
+                (entry.first == "publish_topic_alias" && entry.second == "5");
+    has_response_topic = has_response_topic ||
+                         (entry.first == "publish_response_topic" &&
+                          entry.second == "reply");
+    has_correlation = has_correlation ||
+                      (entry.first == "publish_correlation_data" &&
+                       entry.second == "abcd");
+    has_subscription_identifier = has_subscription_identifier ||
+                                  (entry.first == "publish_subscription_identifier" &&
+                                   entry.second == "9");
+    has_content_type = has_content_type ||
+                       (entry.first == "publish_content_type" &&
+                        entry.second == "text/plain");
+    has_user_property = has_user_property ||
+                        (entry.first == "publish_user_property" &&
+                         entry.second == "k=v");
+    has_encoding = has_encoding ||
+                   (entry.first == "publish_payload_encoding" &&
+                    entry.second == "avro");
+    has_avsc = has_avsc ||
+               (entry.first == "publish_avsc_path" &&
+                entry.second == "schema.avsc");
+  }
+
+  CHECK(has_dup);
+  CHECK(has_payload_format);
+  CHECK(has_expiry);
+  CHECK(has_alias);
+  CHECK(has_response_topic);
+  CHECK(has_correlation);
+  CHECK(has_subscription_identifier);
+  CHECK(has_content_type);
+  CHECK(has_user_property);
+  CHECK(has_encoding);
+  CHECK(has_avsc);
+}
+
 } // namespace mqtt

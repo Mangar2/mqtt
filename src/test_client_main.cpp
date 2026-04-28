@@ -4,10 +4,12 @@
 #include <cctype>
 #include <csignal>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <optional>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -327,6 +329,52 @@ decode_base64_to_bytes_or_throw(std::string_view text) {
   return binary_data;
 }
 
+void validate_publish_schema_options_or_throw(const TestClientProfile &profile) {
+  const auto require_schema_file = [](const std::optional<std::string> &path,
+                                      const std::string_view key_name) {
+    if (!path.has_value()) {
+      throw std::invalid_argument("Missing required option: " + std::string(key_name));
+    }
+    if (path->empty()) {
+      throw std::invalid_argument("Empty schema path in option: " + std::string(key_name));
+    }
+    const std::filesystem::path schema_path(*path);
+    if (!std::filesystem::exists(schema_path)) {
+      throw std::runtime_error("Schema file does not exist: " + *path);
+    }
+    if (!std::filesystem::is_regular_file(schema_path)) {
+      throw std::runtime_error("Schema path is not a file: " + *path);
+    }
+  };
+
+  if (profile.publish_payload_encoding == "protobuf") {
+    require_schema_file(profile.publish_protobuf_path, "publish_protobuf_path");
+    if (!profile.publish_protobuf_message_name.has_value() ||
+        profile.publish_protobuf_message_name->empty()) {
+      throw std::invalid_argument(
+          "Missing required option: publish_protobuf_message_name");
+    }
+  }
+  if (profile.publish_payload_encoding == "avro") {
+    require_schema_file(profile.publish_avsc_path, "publish_avsc_path");
+  }
+}
+
+[[nodiscard]] BinaryData generate_random_payload(const std::size_t payload_size) {
+  static constexpr std::string_view alphabet =
+      "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  static thread_local std::mt19937 generator(std::random_device{}());
+  std::uniform_int_distribution<std::size_t> distribution(0U, alphabet.size() - 1U);
+
+  BinaryData binary_data;
+  binary_data.data.reserve(payload_size);
+  for (std::size_t index = 0U; index < payload_size; ++index) {
+    const std::size_t random_index = distribution(generator);
+    binary_data.data.push_back(static_cast<uint8_t>(alphabet[random_index]));
+  }
+  return binary_data;
+}
+
 [[nodiscard]] std::string read_stdin_payload(const bool multiline_mode) {
   std::string payload_text;
   if (!multiline_mode) {
@@ -348,6 +396,12 @@ decode_base64_to_bytes_or_throw(std::string_view text) {
 
 [[nodiscard]] BinaryData
 resolve_publish_payload_or_throw(const TestClientProfile &profile) {
+  validate_publish_schema_options_or_throw(profile);
+
+  if (profile.publish_payload_size > 0U) {
+    return generate_random_payload(profile.publish_payload_size);
+  }
+
   if (profile.publish_payload.has_value()) {
     return binary_from_text_with_encoding_or_throw(
         *profile.publish_payload, profile.publish_payload_encoding,

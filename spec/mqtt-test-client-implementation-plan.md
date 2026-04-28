@@ -81,14 +81,14 @@ Publish-oriented options (`pub`, `bench pub`, `simulate`):
 - `-m`, `--message <BODY>` - implemented - meaning: publish payload text.
 - `-q`, `--qos <0/1/2>` - implemented - meaning: publish QoS level.
 - `-r`, `--retain` - implemented - meaning: set retained flag.
-- `-d`, `--dup` - wrongly implemented - meaning: effective for `pub`, but ignored in `bench pub` runtime path.
-- `-pf`, `--payload-format-indicator` - wrongly implemented - meaning: effective for `pub`, but ignored in `bench pub` runtime path.
-- `-e`, `--message-expiry-interval <NUMBER>` - wrongly implemented - meaning: effective for `pub`, but ignored in `bench pub` runtime path.
-- `-ta`, `--topic-alias <NUMBER>` - wrongly implemented - meaning: effective for `pub`, but ignored in `bench pub` runtime path.
-- `-rt`, `--response-topic <TOPIC>` - wrongly implemented - meaning: effective for `pub`, but ignored in `bench pub` runtime path.
-- `-cd`, `--correlation-data <DATA>` - wrongly implemented - meaning: effective for `pub`, but ignored in `bench pub` runtime path.
-- `-si`, `--subscription-identifier <NUMBER>` - wrongly implemented - meaning: effective for `pub`, but ignored in `bench pub` runtime path.
-- `-ct`, `--content-type <TYPE>` - wrongly implemented - meaning: effective for `pub`, but ignored in `bench pub` runtime path.
+- `-d`, `--dup` - implemented - meaning: applied in both one-shot `pub` and `bench pub` publish packets.
+- `-pf`, `--payload-format-indicator` - implemented - meaning: applied in both one-shot `pub` and `bench pub` publish packets.
+- `-e`, `--message-expiry-interval <NUMBER>` - implemented - meaning: applied in both one-shot `pub` and `bench pub` publish packets.
+- `-ta`, `--topic-alias <NUMBER>` - implemented - meaning: applied in both one-shot `pub` and `bench pub` publish packets.
+- `-rt`, `--response-topic <TOPIC>` - implemented - meaning: applied in both one-shot `pub` and `bench pub` publish packets.
+- `-cd`, `--correlation-data <DATA>` - implemented - meaning: applied in both one-shot `pub` and `bench pub` publish packets.
+- `-si`, `--subscription-identifier <NUMBER>` - implemented - meaning: applied in both one-shot `pub` and `bench pub` publish packets.
+- `-ct`, `--content-type <TYPE>` - implemented - meaning: applied in both one-shot `pub` and `bench pub` publish packets.
 - `-v`, `--verbose` (in bench/simulate) - implemented - meaning: print history/statistics with rates.
 
 `pub`-only payload/source/encoding options:
@@ -97,10 +97,10 @@ Publish-oriented options (`pub`, `bench pub`, `simulate`):
 - `-lm`, `--line-mode` - implemented - meaning: interactive line mode (`-s -M` semantics).
 - `-f`, `--format <TYPE>` - implemented - meaning: input payload format (for example `base64`, `json`, `hex`, `binary`, `cbor`, `msgpack`).
 - `--file-read <PATH>` - implemented - meaning: read payload from file.
-- `-Pp`, `--protobuf-path <PATH>` - wrongly implemented - meaning: currently accepted but not used to build/encode payload.
-- `-Pmn`, `--protobuf-message-name <NAME>` - wrongly implemented - meaning: currently accepted but not used to build/encode payload.
-- `-Ap`, `--avsc-path <PATH>` - wrongly implemented - meaning: currently accepted but not used to build/encode payload.
-- `-S`, `--payload-size <SIZE>` - wrongly implemented - meaning: currently accepted but no random payload generation is applied.
+- `-Pp`, `--protobuf-path <PATH>` - implemented - meaning: mapped into runtime profile and validated in protobuf payload path.
+- `-Pmn`, `--protobuf-message-name <NAME>` - implemented - meaning: mapped into runtime profile and validated in protobuf payload path.
+- `-Ap`, `--avsc-path <PATH>` - implemented - meaning: mapped into runtime profile and validated in avro payload path.
+- `-S`, `--payload-size <SIZE>` - implemented - meaning: generates randomized payload with configured size in one-shot `pub`.
 
 Subscribe-oriented options (`sub`, `bench sub`):
 - `-t`, `--topic <TOPIC...>` - implemented - meaning: one or more subscribe topic filters.
@@ -234,6 +234,18 @@ Integration tests required:
 - Output contract tests for verbose and metrics outputs.
 
 ### WP4 – Publish Feature Completion (pub and bench pub)
+
+Implementation status (2026-04-28): implemented.
+
+Implemented scope:
+- `bench pub` runtime applies publish-property options `-d`, `-pf`, `-e`, `-ta`, `-rt`, `-cd`, `-si`, and `-ct` into outgoing PUBLISH packets.
+- `bench pub` payload path now respects `-f/--format` payload encoding semantics (`raw`, `json`, `hex`, `base64`, `binary`, `protobuf`, `avro`) and correlation-data encoding semantics.
+- `pub` parser and runtime now map and apply `-Pp`, `-Pmn`, `-Ap`, and `-S` (payload-size generation).
+- Protobuf/AVRO schema options are validated in runtime (required options + file existence checks) when corresponding payload encodings are selected.
+
+Verification evidence:
+- Unit tests: `test_client_cli_wp4_pub_payload_schema_and_size_options_are_parsed`, `test_client_cli_wp4_bench_pub_publish_properties_and_schema_flags_are_parsed`.
+- Integration tests: `test-client-shell/test_client_shell_wp4_pub_payload_size_and_protobuf_schema`, `test-client-shell/test_client_shell_wp4_bench_publish_properties_semantics`.
 
 Goal:
 - Ensure publish-related flags have real runtime effect in all applicable modes.

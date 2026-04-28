@@ -70,6 +70,10 @@ struct TestClientProfile {
   bool publish_payload_stdin{false};
   bool publish_payload_stdin_multiline{false};
   std::optional<std::string> publish_payload_file;
+  std::optional<std::string> publish_protobuf_path;
+  std::optional<std::string> publish_protobuf_message_name;
+  std::optional<std::string> publish_avsc_path;
+  uint32_t publish_payload_size{0U};
   std::string publish_payload_encoding{"raw"};
   std::optional<uint8_t> publish_payload_format_indicator;
   std::optional<uint32_t> publish_message_expiry_interval_seconds;
@@ -157,6 +161,10 @@ void validate_test_client_profile_or_throw(const TestClientProfile &profile);
  * - publish_payload_stdin
  * - publish_payload_stdin_multiline
  * - publish_payload_file
+ * - publish_protobuf_path
+ * - publish_protobuf_message_name
+ * - publish_avsc_path
+ * - publish_payload_size
  * - publish_payload_encoding
  * - publish_payload_format_indicator
  * - publish_message_expiry_interval_seconds

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -23,6 +24,7 @@
 #include "codec/packet_reader/packet_reader.h"
 #include "codec/read_buffer.h"
 #include "codec/write_buffer.h"
+#include "data_model/property/property_id.h"
 #include "network/stream_buffer.h"
 
 #if !defined(_WIN32)
@@ -187,6 +189,93 @@ std::string make_payload_for_index(uint32_t index,
     return *profile.publish_payload;
   }
   return "step32-message-" + std::to_string(index);
+}
+
+uint8_t hex_nibble_or_throw(const char character) {
+  if (character >= '0' && character <= '9') {
+    return static_cast<uint8_t>(character - '0');
+  }
+  if (character >= 'a' && character <= 'f') {
+    return static_cast<uint8_t>(10 + (character - 'a'));
+  }
+  if (character >= 'A' && character <= 'F') {
+    return static_cast<uint8_t>(10 + (character - 'A'));
+  }
+  throw std::invalid_argument("Invalid hex character");
+}
+
+std::vector<uint8_t> decode_hex_to_bytes_or_throw(std::string_view text) {
+  std::string normalized;
+  normalized.reserve(text.size());
+  for (const char character : text) {
+    if (std::isspace(static_cast<unsigned char>(character)) == 0) {
+      normalized.push_back(character);
+    }
+  }
+
+  if ((normalized.size() % 2U) != 0U) {
+    throw std::invalid_argument("Hex payload requires even number of digits");
+  }
+
+  std::vector<uint8_t> bytes;
+  bytes.reserve(normalized.size() / 2U);
+  for (std::size_t index = 0U; index < normalized.size(); index += 2U) {
+    const uint8_t high = hex_nibble_or_throw(normalized[index]);
+    const uint8_t low = hex_nibble_or_throw(normalized[index + 1U]);
+    bytes.push_back(static_cast<uint8_t>((high << 4U) | low));
+  }
+  return bytes;
+}
+
+std::vector<uint8_t> decode_base64_to_bytes_or_throw(std::string_view text) {
+  constexpr std::string_view alphabet =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+  std::vector<uint8_t> decoded;
+  uint32_t accumulator = 0U;
+  uint8_t bit_count = 0U;
+
+  for (const char character : text) {
+    if (std::isspace(static_cast<unsigned char>(character)) != 0) {
+      continue;
+    }
+    if (character == '=') {
+      break;
+    }
+
+    const std::size_t value_index = alphabet.find(character);
+    if (value_index == std::string_view::npos) {
+      throw std::invalid_argument("Invalid base64 character");
+    }
+
+    accumulator = (accumulator << 6U) | static_cast<uint32_t>(value_index);
+    bit_count = static_cast<uint8_t>(bit_count + 6U);
+    while (bit_count >= 8U) {
+      bit_count = static_cast<uint8_t>(bit_count - 8U);
+      decoded.push_back(
+          static_cast<uint8_t>((accumulator >> bit_count) & 0xFFU));
+    }
+  }
+
+  return decoded;
+}
+
+BinaryData binary_from_text_with_encoding_or_throw(const std::string& text,
+                                                   const std::string& encoding) {
+  BinaryData binary_data;
+
+  if (encoding == "raw" || encoding == "json" || encoding == "binary" ||
+      encoding == "protobuf" || encoding == "avro") {
+    binary_data = BinaryData::from_string(text);
+  } else if (encoding == "hex") {
+    binary_data.data = decode_hex_to_bytes_or_throw(text);
+  } else if (encoding == "base64") {
+    binary_data.data = decode_base64_to_bytes_or_throw(text);
+  } else {
+    throw std::invalid_argument("Unsupported publish payload encoding");
+  }
+
+  return binary_data;
 }
 
 std::vector<std::string> split_payload_variants(
@@ -480,10 +569,58 @@ int publish_once_on_persistent_connection(PersistentPublisherConnection& connect
   publish_packet.topic = Utf8String{connection_state.topic};
   publish_packet.qos = qos_from_u8_or_throw(profile.publish_qos);
   publish_packet.retain = profile.publish_retain;
-  publish_packet.dup = false;
-  publish_packet.payload = BinaryData::from_string(payload);
+  publish_packet.dup = profile.publish_dup;
+  publish_packet.payload =
+      binary_from_text_with_encoding_or_throw(payload,
+                                              profile.publish_payload_encoding);
   if (publish_packet.qos != QoS::AtMostOnce) {
     publish_packet.packet_id = next_packet_id();
+  }
+
+  if (profile.publish_payload_format_indicator.has_value()) {
+    publish_packet.properties.push_back(
+        Property{.id = PropertyId::PayloadFormatIndicator,
+                 .value = *profile.publish_payload_format_indicator});
+  }
+  if (profile.publish_message_expiry_interval_seconds.has_value()) {
+    publish_packet.properties.push_back(
+        Property{.id = PropertyId::MessageExpiryInterval,
+                 .value = FourByteInteger{
+                     *profile.publish_message_expiry_interval_seconds}});
+  }
+  if (profile.publish_topic_alias.has_value()) {
+    publish_packet.properties.push_back(
+        Property{.id = PropertyId::TopicAlias,
+                 .value = TwoByteInteger{*profile.publish_topic_alias}});
+  }
+  if (profile.publish_response_topic.has_value()) {
+    publish_packet.properties.push_back(
+        Property{.id = PropertyId::ResponseTopic,
+                 .value = Utf8String{*profile.publish_response_topic}});
+  }
+  if (profile.publish_correlation_data.has_value()) {
+    publish_packet.properties.push_back(
+        Property{.id = PropertyId::CorrelationData,
+                 .value = binary_from_text_with_encoding_or_throw(
+                     *profile.publish_correlation_data,
+                     profile.publish_correlation_data_encoding)});
+  }
+  if (profile.publish_subscription_identifier.has_value()) {
+    publish_packet.properties.push_back(
+        Property{.id = PropertyId::SubscriptionIdentifier,
+                 .value = VariableByteInteger{
+                     *profile.publish_subscription_identifier}});
+  }
+  if (profile.publish_content_type.has_value()) {
+    publish_packet.properties.push_back(
+        Property{.id = PropertyId::ContentType,
+                 .value = Utf8String{*profile.publish_content_type}});
+  }
+  for (const auto& user_property : profile.publish_user_properties) {
+    publish_packet.properties.push_back(
+        Property{.id = PropertyId::UserProperty,
+                 .value = Utf8StringPair{.name = Utf8String{user_property.first},
+                                         .value = Utf8String{user_property.second}}});
   }
 
   WriteBuffer publish_frame;
@@ -876,6 +1013,29 @@ int run_publish_rate_mode(
     if (options.load_verbose) {
       std::cout << "WP3 bench-pub op=" << (publish_index + 1U)
                 << " connection=" << connection_index
+                << " dup=" << (profile.publish_dup ? "true" : "false")
+        << " pf="
+        << (profile.publish_payload_format_indicator.has_value() ? "true"
+                      : "false")
+        << " expiry="
+        << (profile.publish_message_expiry_interval_seconds.has_value()
+          ? "true"
+          : "false")
+        << " alias="
+        << (profile.publish_topic_alias.has_value() ? "true" : "false")
+        << " rt="
+        << (profile.publish_response_topic.has_value() ? "true"
+                    : "false")
+        << " cd="
+        << (profile.publish_correlation_data.has_value() ? "true"
+                     : "false")
+        << " si="
+        << (profile.publish_subscription_identifier.has_value() ? "true"
+                      : "false")
+        << " ct="
+        << (profile.publish_content_type.has_value() ? "true"
+                       : "false")
+                << " user_properties=" << profile.publish_user_properties.size()
                 << " payload_size=" << payload.size()
                 << " payload='" << payload << "'"
                 << " result=" << (result_code == 0 ? "ok" : "failed")

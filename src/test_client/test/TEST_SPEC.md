@@ -45,6 +45,8 @@
 | `test_client_cli_wp3_bench_verbose_is_not_metrics_json` | `[test_client][cli]` | Bench `-v/--verbose` enables verbose bench output semantics without implicitly enabling metrics-json output. |
 | `test_client_cli_wp3_bench_split_and_payload_size_are_parsed` | `[test_client][cli]` | Bench publish parser stores `--split` delimiter and `-S/--payload-size` for runtime payload generation behavior. |
 | `test_client_cli_wp3_bench_limit_zero_is_parsed` | `[test_client][cli]` | Bench publish parser preserves `-L/--limit 0` as unlimited-mode signal instead of remapping to bounded operation count. |
+| `test_client_cli_wp4_pub_payload_schema_and_size_options_are_parsed` | `[test_client][cli]` | mqttx pub parser maps `-Pp`, `-Pmn`, and `-S` to effective publish runtime overrides. |
+| `test_client_cli_wp4_bench_pub_publish_properties_and_schema_flags_are_parsed` | `[test_client][cli]` | mqttx bench pub parser maps publish-property flags and schema/encoding options into profile overrides for runtime application. |
 
 ## Scenario Runner
 

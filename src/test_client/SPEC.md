@@ -34,6 +34,10 @@ orchestration for broker-supported transports (`mqtt`, `ws`) without TLS.
   `avro`), and MQTT 5 PUBLISH properties (format indicator, expiry, alias,
   response topic, correlation data, subscription identifier, content type,
   user properties).
+- Step 29 publish runtime supports `-S/--payload-size` random payload
+  generation and validates protobuf/avro schema options
+  (`-Pp/--protobuf-path`, `-Pmn/--protobuf-message-name`,
+  `-Ap/--avsc-path`) when matching payload encoding is selected.
 - Step 30 subscribe matrix: one-or-many subscription entries with per-entry
   QoS/no-local/retain-as-published/retain-handling options, MQTT 5 subscribe
   properties (subscription identifier and user properties), and output modes
@@ -52,6 +56,9 @@ orchestration for broker-supported transports (`mqtt`, `ws`) without TLS.
   unlimited publish loop behavior.
 - Step 32 bench publish applies `--split` payload tokenization and
   `-S/--payload-size` payload generation semantics.
+- Step 32 bench publish applies publish properties (`dup`, payload-format,
+  expiry, alias, response-topic, correlation-data, subscription-identifier,
+  content-type, and user-properties) and payload encoding semantics.
 
 ## Public API
 
@@ -113,6 +120,7 @@ Compatibility behavior:
 - Top-level `--version` and `-v` return version output without profile loading.
 - Supported mqttx-style aliases are accepted for implemented capabilities,
   including short publish flags (`-t`, `-m`, `-q`, `-r`, `-d`, `-s`, `-M`),
+  publish payload/schema flags (`-f`, `-Pp`, `-Pmn`, `-Ap`, `-S`),
   publish MQTT 5 properties (`-pf`, `-e`, `-ta`, `-rt`, `-cd`, `-up`, `-si`,
   `-ct`), connection aliases (`-h`, `-p`, `-i`, `--no-clean`, `-k`, `-u`,
   `-P`, `-l`, `--path`, `-wh`, `-rp`, `-se`, `--rcv-max`, `--req-response-info`,

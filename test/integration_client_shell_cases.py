@@ -1014,6 +1014,198 @@ def run_test_client_shell_wp3_bench_limit_zero_unlimited(config) -> tuple[bool, 
         return False, f"wp3 limit=0 check failed: {error}"
 
 
+def run_test_client_shell_wp4_pub_payload_size_and_protobuf_schema(config) -> tuple[bool, str]:
+    binary_path = _build_yahatestclient()
+    if binary_path is None:
+        return False, "yahatestclient binary not found and build failed"
+
+    unique = uuid.uuid4().hex
+    topic = f"integration/wp4/pub-size/{unique}"
+    schema_path = _project_root() / "test" / "integration_tests" / "tmp" / f"schema-{unique}.proto"
+    schema_path.parent.mkdir(parents=True, exist_ok=True)
+    schema_path.write_text('syntax = "proto3"; message Envelope { string value = 1; }\n', encoding="utf-8")
+
+    subscriber_command = [
+        str(binary_path),
+        "subscribe",
+        "--host",
+        config.host,
+        "--port",
+        str(config.port),
+        "--transport",
+        "mqtt",
+        "--client-id",
+        f"wp4-sub-{unique[:10]}",
+        "--subscription",
+        f"{topic}|0|false|false|0",
+        "--clean-output",
+        "--message-limit",
+        "1",
+        "--wait-timeout-ms",
+        "6000",
+        "--maximum-reconnect-times",
+        "0",
+    ]
+
+    subscriber_process = None
+    try:
+        subscriber_process = subprocess.Popen(
+            subscriber_command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=_project_root(),
+        )
+
+        time.sleep(1.0)
+
+        publish_command = [
+            str(binary_path),
+            "pub",
+            "-h",
+            config.host,
+            "-p",
+            str(config.port),
+            "-t",
+            topic,
+            "-q",
+            "0",
+            "-f",
+            "protobuf",
+            "-Pp",
+            str(schema_path),
+            "-Pmn",
+            "Envelope",
+            "-S",
+            "24",
+            "--maximum-reconnect-times",
+            "0",
+        ]
+        publish_completed = subprocess.run(
+            publish_command,
+            cwd=_project_root(),
+            capture_output=True,
+            text=True,
+            timeout=max(8.0, config.timeout_seconds * 2.0),
+            check=False,
+        )
+
+        publish_merged = "\n".join(
+            chunk
+            for chunk in [publish_completed.stdout.strip(), publish_completed.stderr.strip()]
+            if chunk
+        ).strip()
+        if publish_completed.returncode != 0:
+            return False, (
+                "wp4 pub payload-size/protobuf run failed: "
+                f"exit={publish_completed.returncode}, output={publish_merged or 'no output'}"
+            )
+
+        try:
+            subscriber_stdout, subscriber_stderr = subscriber_process.communicate(timeout=10.0)
+        except subprocess.TimeoutExpired:
+            subscriber_process.kill()
+            subscriber_stdout, subscriber_stderr = subscriber_process.communicate(timeout=2.0)
+            return False, "wp4 subscriber timed out waiting for payload"
+
+        merged = "\n".join(
+            chunk for chunk in [subscriber_stdout.strip(), subscriber_stderr.strip()] if chunk
+        ).strip()
+        if subscriber_process.returncode != 0:
+            return False, (
+                "wp4 subscriber failed: "
+                f"exit={subscriber_process.returncode}, output={merged or 'no output'}"
+            )
+
+        payload_text = subscriber_stdout.strip()
+        if len(payload_text) != 24:
+            return False, (
+                "wp4 payload-size semantics failed: "
+                f"expected 24 bytes, got {len(payload_text)}"
+            )
+
+        return True, "WP4 pub payload-size and protobuf schema option checks succeeded"
+    except Exception as error:  # pylint: disable=broad-except
+        return False, f"wp4 pub payload-size/protobuf check failed: {error}"
+    finally:
+        if subscriber_process is not None and subscriber_process.poll() is None:
+            subscriber_process.kill()
+            subscriber_process.wait(timeout=2.0)
+
+
+def run_test_client_shell_wp4_bench_publish_properties_semantics(config) -> tuple[bool, str]:
+    timeout_seconds = max(10.0, config.timeout_seconds * 2.0)
+    unique = uuid.uuid4().hex
+    returncode, stdout_text, stderr_text = _run_cli_command(
+        [
+            "bench",
+            "pub",
+            "-h",
+            config.host,
+            "-p",
+            str(config.port),
+            "-t",
+            f"integration/wp4/bench/{unique}/%i",
+            "-m",
+            "payload",
+            "-q",
+            "1",
+            "-d",
+            "-pf",
+            "1",
+            "-e",
+            "12",
+            "-ta",
+            "7",
+            "-rt",
+            "integration/wp4/reply",
+            "-cd",
+            "abcd",
+            "-si",
+            "9",
+            "-ct",
+            "text/plain",
+            "-up",
+            "k=v",
+            "-c",
+            "1",
+            "-L",
+            "2",
+            "-v",
+            "--maximum-reconnect-times",
+            "0",
+        ],
+        timeout_seconds,
+    )
+
+    merged = "\n".join(
+        chunk for chunk in [stdout_text.strip(), stderr_text.strip()] if chunk
+    ).strip()
+    if returncode != 0:
+        return False, (
+            "wp4 bench publish properties run failed: "
+            f"exit={returncode}, output={merged or 'no output'}"
+        )
+
+    required_tokens = [
+        "dup=true",
+        "pf=true",
+        "expiry=true",
+        "alias=true",
+        "rt=true",
+        "cd=true",
+        "si=true",
+        "ct=true",
+        "user_properties=1",
+        "attempted=2 succeeded=2",
+    ]
+    for token in required_tokens:
+        if token not in stdout_text:
+            return False, f"wp4 bench property trace missing token: {token}"
+
+    return True, "WP4 bench publish property semantics checks succeeded"
+
+
 TEST_CASES = [
     {
         "name": "test-client-shell/test_client_shell_wp1_command_help_discoverability",
@@ -1059,6 +1251,16 @@ TEST_CASES = [
         "name": "test-client-shell/test_client_shell_wp3_bench_limit_zero_unlimited",
         "description": "21.0.9 Local yahatestclient bench pub keeps running for limit zero (unlimited mode)",
         "run": run_test_client_shell_wp3_bench_limit_zero_unlimited,
+    },
+    {
+        "name": "test-client-shell/test_client_shell_wp4_pub_payload_size_and_protobuf_schema",
+        "description": "21.0.10 Local yahatestclient pub applies payload-size generation and validates protobuf schema options",
+        "run": run_test_client_shell_wp4_pub_payload_size_and_protobuf_schema,
+    },
+    {
+        "name": "test-client-shell/test_client_shell_wp4_bench_publish_properties_semantics",
+        "description": "21.0.11 Local yahatestclient bench pub applies publish-property flags in runtime semantics",
+        "run": run_test_client_shell_wp4_bench_publish_properties_semantics,
     },
     {
         "name": "connect/test_client_shell_connect",

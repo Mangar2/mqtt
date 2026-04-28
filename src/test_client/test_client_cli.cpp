@@ -345,6 +345,26 @@ void parse_bench_options(TestClientCliOptions &options,
       add_override("publish_payload_file", option_name);
       continue;
     }
+    if (option_name == "-f" || option_name == "--format") {
+      require_mode(option_name, is_bench_pub);
+      add_override("publish_payload_encoding", option_name);
+      continue;
+    }
+    if (option_name == "-Pp" || option_name == "--protobuf-path") {
+      require_mode(option_name, is_bench_pub);
+      add_override("publish_protobuf_path", option_name);
+      continue;
+    }
+    if (option_name == "-Pmn" || option_name == "--protobuf-message-name") {
+      require_mode(option_name, is_bench_pub);
+      add_override("publish_protobuf_message_name", option_name);
+      continue;
+    }
+    if (option_name == "-Ap" || option_name == "--avsc-path") {
+      require_mode(option_name, is_bench_pub);
+      add_override("publish_avsc_path", option_name);
+      continue;
+    }
     if (option_name == "--split") {
       require_mode(option_name, is_bench_pub);
       options.load_split_enabled = true;
@@ -649,23 +669,19 @@ void parse_mqttx_pub_options(TestClientCliOptions &options,
       continue;
     }
     if (option_name == "-Pp" || option_name == "--protobuf-path") {
-      (void)require_value(index, argc, argv, option_name);
-      ++index;
+      add_override("publish_protobuf_path", option_name);
       continue;
     }
     if (option_name == "-Pmn" || option_name == "--protobuf-message-name") {
-      (void)require_value(index, argc, argv, option_name);
-      ++index;
+      add_override("publish_protobuf_message_name", option_name);
       continue;
     }
     if (option_name == "-Ap" || option_name == "--avsc-path") {
-      (void)require_value(index, argc, argv, option_name);
-      ++index;
+      add_override("publish_avsc_path", option_name);
       continue;
     }
     if (option_name == "-S" || option_name == "--payload-size") {
-      (void)require_value(index, argc, argv, option_name);
-      ++index;
+      add_override("publish_payload_size", option_name);
       continue;
     }
     if (option_name == "--debug") {
@@ -1454,7 +1470,9 @@ std::string test_client_help_text() {
       "  command: pub\n"
       "  publish: -t -m --message -q -r -d -s --stdin -M --multiline\n"
       "           --file-read -pf -e -ta -rt -cd -up --user-properties\n"
-      "           -si -ct -f --format\n"
+      "           -si -ct -f --format -Pp --protobuf-path\n"
+      "           -Pmn --protobuf-message-name -Ap --avsc-path\n"
+      "           -S --payload-size\n"
       "  connection: -h --hostname -p -i --no-clean -k --keepalive -u -P\n"
       "              -l --protocol --path -wh --ws-headers -rp --reconnect-period\n"
       "              -se --rcv-max --req-response-info --no-req-problem-info\n"

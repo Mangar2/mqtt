@@ -330,6 +330,15 @@ WP3 bench runtime semantics (`bench pub`):
 - `-S`, `--payload-size` generates fixed-size payload per publish operation.
 - `-v`, `--verbose` enables bench operation traces and does not imply metrics-json output.
 
+WP4 publish feature semantics (`pub` and `bench pub`):
+
+- `bench pub` applies publish property flags in runtime packets: `-d`, `-pf`, `-e`, `-ta`, `-rt`, `-cd`, `-si`, `-ct`, and `-up`.
+- `bench pub` applies publish payload encoding semantics from `-f/--format`.
+- `pub -S/--payload-size` generates randomized payload data with the configured payload size.
+- `pub` validates schema options when selected by payload encoding:
+    - `-Pp/--protobuf-path` + `-Pmn/--protobuf-message-name` for `-f protobuf`
+    - `-Ap/--avsc-path` for `-f avro`
+
 Profile precedence is deterministic:
 
 1. Built-in defaults
@@ -347,6 +356,7 @@ Supported profile keys:
 - `authentication_method`, `authentication_data`
 - will options: `will_topic`, `will_payload`, `will_qos`, `will_retain`, `will_delay_interval_seconds`, `will_payload_format_indicator`, `will_message_expiry_interval_seconds`, `will_content_type`, `will_response_topic`, `will_correlation_data`, repeatable `will_user_property`
 - publish options: `publish_topic`, `publish_qos`, `publish_retain`, `publish_dup`, `publish_payload`, `publish_payload_stdin`, `publish_payload_stdin_multiline`, `publish_payload_file`
+- publish schema and generated payload options: `publish_protobuf_path`, `publish_protobuf_message_name`, `publish_avsc_path`, `publish_payload_size`
 - publish encoding options: `publish_payload_encoding` (`raw|json|hex|base64|binary|protobuf|avro`), `publish_correlation_data_encoding` (`raw|hex|base64`)
 - publish MQTT 5 property options: `publish_payload_format_indicator`, `publish_message_expiry_interval_seconds`, `publish_topic_alias`, `publish_response_topic`, `publish_correlation_data`, `publish_subscription_identifier`, `publish_content_type`, repeatable `publish_user_property`
 - subscribe options: repeatable `subscribe_entry` (`filter|qos|no_local|retain_as_published|retain_handling`), `subscribe_identifier`, repeatable `subscribe_user_property`
