@@ -7,6 +7,12 @@ Create specs for YAHA home automation components being reimplemented in C++.
 Source: legacy JavaScript code under spec/@mangar2/
 Target: spec/yaha/ — one SPEC.md per component
 
+## MQTT topic conventions
+
+$SYS is reserved for broker-originated messages per MQTT specification. YAHA components must never publish or subscribe to $SYS topics.
+All system/control messages that were previously sent to $SYS/... in the legacy JS code must be specified as $MONITORING/... in the new specs.
+When reading legacy code, treat any $SYS topic as $MONITORING for the new spec.
+
 ## Architecture principles to preserve
 
 MQTT-client-as-interface pattern:
@@ -36,13 +42,21 @@ Also read related components (e.g. messagetree for messagestore) if referenced.
 
 ### Step 2 — Identify cross-cutting concerns
 
-While reading, look for concepts that are not specific to this component:
-- Reusable interfaces (e.g. IMqttComponent interface with getSubscriptions/handleMessage)
-- Shared data structures (e.g. Message, Reason, History node)
-- Shared patterns (persistence loop, configuration schema validation)
-- Shared services (http server abstraction, persist service)
+A cross-cutting concern only gets its own SPEC document if it is used by MORE THAN ONE component.
+Internal helper structures, data containers, or algorithms used only by the current component stay inside the component spec.
 
-For each such concept: check if spec/yaha/SPEC-<name>.md already exists.
+Things that qualify:
+- Interfaces implemented by multiple components (e.g. IMqttComponent)
+- Services consumed by multiple components (e.g. a shared HTTP server abstraction, a persist service)
+- Data types exchanged between components (e.g. Message, Reason)
+- Shared data formats passed between component boundaries — even if they appear only as function arguments: check the *shape* of what handleMessage receives, what is published, what HTTP responses contain. If that shape is the same across components, it needs a dedicated spec.
+
+Things that do NOT qualify:
+- Internal data structures only used by this component (e.g. a tree used only by MessageStore)
+- Helper algorithms private to this component
+- Configuration schemas
+
+For each qualifying concept: check if spec/yaha/SPEC-<name>.md already exists.
 If not: create it alongside the component spec.
 
 ### Step 3 — Write the component SPEC

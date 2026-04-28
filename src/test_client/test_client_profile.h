@@ -88,9 +88,14 @@ struct TestClientProfile {
   std::vector<std::string> subscribe_entries{};
   std::optional<uint32_t> subscribe_identifier;
   std::vector<std::pair<std::string, std::string>> subscribe_user_properties{};
+  std::string subscribe_payload_format{"raw"};
+  std::optional<std::string> subscribe_protobuf_path;
+  std::optional<std::string> subscribe_protobuf_message_name;
+  std::optional<std::string> subscribe_avsc_path;
   bool subscribe_clean_output{false};
   bool subscribe_verbose_packets{false};
   std::optional<std::string> subscribe_output_file;
+  std::optional<std::string> subscribe_output_file_save;
   bool subscribe_output_append{false};
   std::string subscribe_output_delimiter{"\\n"};
   std::optional<std::string> subscribe_output_format;
@@ -178,9 +183,14 @@ void validate_test_client_profile_or_throw(const TestClientProfile &profile);
  * - subscribe_entry (repeatable: filter|qos|no_local|retain_as_published|retain_handling)
  * - subscribe_identifier
  * - subscribe_user_property (repeatable key=value)
+ * - subscribe_payload_format
+ * - subscribe_protobuf_path
+ * - subscribe_protobuf_message_name
+ * - subscribe_avsc_path
  * - subscribe_clean_output
  * - subscribe_verbose_packets
  * - subscribe_output_file
+ * - subscribe_output_file_save
  * - subscribe_output_append
  * - subscribe_output_delimiter
  * - subscribe_output_format

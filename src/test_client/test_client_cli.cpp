@@ -57,6 +57,17 @@ namespace {
   return value == "--help" || value == "-h";
 }
 
+[[nodiscard]] bool parse_bool_literal_or_throw(const std::string &value,
+                                               const std::string &option_name) {
+  if (value == "true" || value == "1" || value == "yes") {
+    return true;
+  }
+  if (value == "false" || value == "0" || value == "no") {
+    return false;
+  }
+  throw std::invalid_argument("Invalid boolean value for option " + option_name);
+}
+
 void parse_bench_options(TestClientCliOptions &options,
                          const int argc,
                          const char *argv[],
@@ -103,7 +114,7 @@ void parse_bench_options(TestClientCliOptions &options,
       continue;
     }
     if (option_name == "-L" || option_name == "--limit") {
-      require_mode(option_name, is_bench_pub);
+      require_mode(option_name, is_bench_pub || is_bench_sub);
       options.load_publish_limit =
           static_cast<uint32_t>(std::stoul(require_value(index, argc, argv, option_name)));
       ++index;
@@ -140,13 +151,20 @@ void parse_bench_options(TestClientCliOptions &options,
       if (is_bench_pub) {
         add_override("publish_qos", option_name);
       } else {
-        add_override("publish_qos", option_name);
+        options.load_subscribe_qos = static_cast<uint8_t>(
+            std::stoul(require_value(index, argc, argv, option_name)));
+        ++index;
       }
       continue;
     }
     if (is_compact_qos_option(option_name)) {
       require_mode(option_name, is_bench_pub || is_bench_sub);
-      options.overrides.emplace_back("publish_qos", compact_qos_value(option_name));
+      if (is_bench_pub) {
+        options.overrides.emplace_back("publish_qos", compact_qos_value(option_name));
+      } else {
+        options.load_subscribe_qos = static_cast<uint8_t>(
+            std::stoul(compact_qos_value(option_name)));
+      }
       continue;
     }
     if (option_name == "-r") {
@@ -199,7 +217,10 @@ void parse_bench_options(TestClientCliOptions &options,
       if (is_bench_pub) {
         add_override("publish_subscription_identifier", option_name);
       } else {
-        add_override("subscribe_identifier", option_name);
+        options.load_subscribe_identifier_set = true;
+        options.load_subscribe_identifier =
+            static_cast<uint32_t>(std::stoul(require_value(index, argc, argv, option_name)));
+        ++index;
       }
       continue;
     }
@@ -410,7 +431,24 @@ void parse_bench_options(TestClientCliOptions &options,
         option_name == "-rap" || option_name == "--retain-as-published" ||
         option_name == "-rh" || option_name == "--retain-handling") {
       require_mode(option_name, is_bench_sub);
-      if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
+      if (option_name == "-nl" || option_name == "--no_local") {
+        bool value = true;
+        if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
+          value = parse_bool_literal_or_throw(argv[index + 1], option_name);
+          ++index;
+        }
+        options.load_subscribe_no_local = value;
+      } else if (option_name == "-rap" ||
+                 option_name == "--retain-as-published") {
+        bool value = true;
+        if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
+          value = parse_bool_literal_or_throw(argv[index + 1], option_name);
+          ++index;
+        }
+        options.load_subscribe_retain_as_published = value;
+      } else {
+        options.load_subscribe_retain_handling = static_cast<uint8_t>(
+            std::stoul(require_value(index, argc, argv, option_name)));
         ++index;
       }
       continue;
@@ -424,6 +462,220 @@ void parse_bench_options(TestClientCliOptions &options,
     }
 
     throw std::invalid_argument("Unknown option: " + option_name);
+  }
+}
+
+void parse_mqttx_sub_options(TestClientCliOptions &options,
+                             const int argc,
+                             const char *argv[],
+                             int start_index) {
+  std::vector<std::string> topic_filters;
+  uint8_t subscribe_qos = 0U;
+  bool subscribe_no_local = false;
+  bool subscribe_retain_as_published = false;
+  uint8_t subscribe_retain_handling = 0U;
+
+  auto add_override = [&options, argc,
+                       argv](int &index, const std::string &key_name,
+                             const std::string &flag_name) {
+    const std::string value = require_value(index, argc, argv, flag_name);
+    options.overrides.emplace_back(key_name, value);
+    ++index;
+  };
+
+  for (int index = start_index; index < argc; ++index) {
+    const std::string option_name = argv[index];
+
+    if (option_name == "-t" || option_name == "--topic") {
+      topic_filters.push_back(require_value(index, argc, argv, option_name));
+      ++index;
+      continue;
+    }
+    if (option_name == "-q" || option_name == "--qos") {
+      subscribe_qos = static_cast<uint8_t>(
+          std::stoul(require_value(index, argc, argv, option_name)));
+      ++index;
+      continue;
+    }
+    if (is_compact_qos_option(option_name)) {
+      subscribe_qos = static_cast<uint8_t>(std::stoul(compact_qos_value(option_name)));
+      continue;
+    }
+    if (option_name == "-nl" || option_name == "--no_local") {
+      bool value = true;
+      if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
+        value = parse_bool_literal_or_throw(argv[index + 1], option_name);
+        ++index;
+      }
+      subscribe_no_local = value;
+      continue;
+    }
+    if (option_name == "-rap" || option_name == "--retain-as-published") {
+      bool value = true;
+      if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
+        value = parse_bool_literal_or_throw(argv[index + 1], option_name);
+        ++index;
+      }
+      subscribe_retain_as_published = value;
+      continue;
+    }
+    if (option_name == "-rh" || option_name == "--retain-handling") {
+      subscribe_retain_handling = static_cast<uint8_t>(
+          std::stoul(require_value(index, argc, argv, option_name)));
+      ++index;
+      continue;
+    }
+    if (option_name == "-si" || option_name == "--subscription-identifier") {
+      add_override(index, "subscribe_identifier", option_name);
+      continue;
+    }
+    if (option_name == "-up" || option_name == "--user-properties") {
+      add_override(index, "subscribe_user_property", option_name);
+      continue;
+    }
+    if (option_name == "-v" || option_name == "--verbose") {
+      options.overrides.emplace_back("subscribe_verbose_packets", "true");
+      continue;
+    }
+    if (option_name == "--output-mode") {
+      const std::string mode = require_value(index, argc, argv, option_name);
+      if (mode == "clean") {
+        options.overrides.emplace_back("subscribe_clean_output", "true");
+      } else if (mode == "default") {
+        options.overrides.emplace_back("subscribe_clean_output", "false");
+      } else {
+        throw std::invalid_argument("Unsupported --output-mode: " + mode);
+      }
+      ++index;
+      continue;
+    }
+    if (option_name == "--file-write") {
+      add_override(index, "subscribe_output_file", option_name);
+      options.overrides.emplace_back("subscribe_output_append", "true");
+      continue;
+    }
+    if (option_name == "--file-save") {
+      add_override(index, "subscribe_output_file_save", option_name);
+      continue;
+    }
+    if (option_name == "--delimiter") {
+      std::string delimiter = "\n";
+      if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
+        delimiter = argv[index + 1];
+        ++index;
+      }
+      options.overrides.emplace_back("subscribe_output_delimiter", delimiter);
+      continue;
+    }
+    if (option_name == "-f" || option_name == "--format") {
+      add_override(index, "subscribe_payload_format", option_name);
+      continue;
+    }
+    if (option_name == "-Pp" || option_name == "--protobuf-path") {
+      add_override(index, "subscribe_protobuf_path", option_name);
+      continue;
+    }
+    if (option_name == "-Pmn" || option_name == "--protobuf-message-name") {
+      add_override(index, "subscribe_protobuf_message_name", option_name);
+      continue;
+    }
+    if (option_name == "-Ap" || option_name == "--avsc-path") {
+      add_override(index, "subscribe_avsc_path", option_name);
+      continue;
+    }
+    if (option_name == "--message-limit") {
+      add_override(index, "subscribe_message_limit", option_name);
+      continue;
+    }
+    if (option_name == "--wait-timeout-ms") {
+      add_override(index, "subscribe_wait_timeout_ms", option_name);
+      continue;
+    }
+    if (option_name == "-h" || option_name == "--hostname") {
+      add_override(index, "host", option_name);
+      continue;
+    }
+    if (option_name == "-p" || option_name == "--port") {
+      add_override(index, "port", option_name);
+      continue;
+    }
+    if (option_name == "-i" || option_name == "--client-id") {
+      add_override(index, "client_id", option_name);
+      continue;
+    }
+    if (option_name == "--no-clean") {
+      options.overrides.emplace_back("clean_start", "false");
+      continue;
+    }
+    if (option_name == "-k" || option_name == "--keepalive") {
+      add_override(index, "keep_alive_seconds", option_name);
+      continue;
+    }
+    if (option_name == "-u" || option_name == "--username") {
+      add_override(index, "username", option_name);
+      continue;
+    }
+    if (option_name == "-P" || option_name == "--password") {
+      add_override(index, "password", option_name);
+      continue;
+    }
+    if (option_name == "-l" || option_name == "--protocol") {
+      const std::string protocol = require_value(index, argc, argv, option_name);
+      if (is_secure_protocol(protocol)) {
+        throw std::invalid_argument(
+            "Secure transports mqtts/wss are intentionally unsupported");
+      }
+      options.overrides.emplace_back("transport", protocol);
+      ++index;
+      continue;
+    }
+    if (option_name == "--path") {
+      add_override(index, "ws_path", option_name);
+      continue;
+    }
+    if (option_name == "-wh" || option_name == "--ws-headers") {
+      add_override(index, "ws_header", option_name);
+      continue;
+    }
+    if (option_name == "-rp" || option_name == "--reconnect-period") {
+      add_override(index, "reconnect_period_ms", option_name);
+      continue;
+    }
+    if (option_name == "--maximum-reconnect-times") {
+      add_override(index, "maximum_reconnect_times", option_name);
+      continue;
+    }
+    if (option_name == "--maximun-reconnect-times") {
+      add_override(index, "maximum_reconnect_times", option_name);
+      continue;
+    }
+    if (option_name == "--debug" || option_name == "-so" ||
+        option_name == "--save-options" || option_name == "-lo" ||
+        option_name == "--load-options") {
+      throw std::invalid_argument(
+          "Option " + option_name +
+          " is recognized but not implemented in mqttx-compatible paths");
+    }
+    if (option_name == "--key" || option_name == "--cert" ||
+        option_name == "--ca" || option_name == "--insecure" ||
+        option_name == "--alpn") {
+      throw std::invalid_argument(
+          "Secure TLS options are intentionally unsupported");
+    }
+
+    throw std::invalid_argument("Unknown option: " + option_name);
+  }
+
+  if (topic_filters.empty()) {
+    throw std::invalid_argument("sub command requires -t/--topic");
+  }
+  for (const std::string &filter : topic_filters) {
+    options.overrides.emplace_back(
+        "subscribe_entry",
+        filter + "|" + std::to_string(subscribe_qos) + "|" +
+            (subscribe_no_local ? "true" : "false") + "|" +
+            (subscribe_retain_as_published ? "true" : "false") + "|" +
+            std::to_string(subscribe_retain_handling));
   }
 }
 
@@ -1226,6 +1478,23 @@ void parse_common_options(TestClientCliOptions &options, const int argc,
       add_override("subscribe_user_property", "--subscribe-user-property");
       continue;
     }
+    if (option_name == "--subscribe-payload-format") {
+      add_override("subscribe_payload_format", "--subscribe-payload-format");
+      continue;
+    }
+    if (option_name == "--subscribe-protobuf-path") {
+      add_override("subscribe_protobuf_path", "--subscribe-protobuf-path");
+      continue;
+    }
+    if (option_name == "--subscribe-protobuf-message-name") {
+      add_override("subscribe_protobuf_message_name",
+                   "--subscribe-protobuf-message-name");
+      continue;
+    }
+    if (option_name == "--subscribe-avsc-path") {
+      add_override("subscribe_avsc_path", "--subscribe-avsc-path");
+      continue;
+    }
     if (option_name == "--clean-output") {
       options.overrides.emplace_back("subscribe_clean_output", "true");
       continue;
@@ -1236,6 +1505,10 @@ void parse_common_options(TestClientCliOptions &options, const int argc,
     }
     if (option_name == "--output-file") {
       add_override("subscribe_output_file", "--output-file");
+      continue;
+    }
+    if (option_name == "--output-file-save") {
+      add_override("subscribe_output_file_save", "--output-file-save");
       continue;
     }
     if (option_name == "--append-output") {
@@ -1312,6 +1585,16 @@ TestClientCliOptions parse_test_client_cli(const int argc, const char *argv[]) {
     return options;
   }
 
+  if (command_name == "sub") {
+    options.command = TestClientCommand::Subscribe;
+    if (argc == 3 && is_help_flag(argv[2])) {
+      options.command = TestClientCommand::Help;
+      return options;
+    }
+    parse_mqttx_sub_options(options, argc, argv, 2);
+    return options;
+  }
+
   if (command_name == "scenario") {
     options.command = TestClientCommand::Scenario;
     parse_common_options(options, argc, argv, 2);
@@ -1351,8 +1634,8 @@ TestClientCliOptions parse_test_client_cli(const int argc, const char *argv[]) {
     return options;
   }
 
-  if (command_name == "conn" || command_name == "sub" ||
-      command_name == "simulate" || command_name == "ls" ||
+    if (command_name == "conn" || command_name == "simulate" ||
+      command_name == "ls" ||
       command_name == "init" || command_name == "check") {
     if (argc == 2 || (argc == 3 && is_help_flag(argv[2]))) {
       options.command = TestClientCommand::Help;
@@ -1391,9 +1674,8 @@ std::string test_client_help_text() {
       "Commands:\n"
       "  connect        Connect using profile + CLI overrides and keep session open\n"
       "  publish|pub    Connect, publish one message, wait for QoS ACK flow, exit\n"
-      "  subscribe      Connect, subscribe, stream matching publishes, and optionally exit on message limit\n"
+        "  subscribe|sub  Connect, subscribe, stream matching publishes, and optionally exit on message limit\n"
   "  conn           mqttx compatibility command stub (help-only)\n"
-  "  sub            mqttx compatibility command stub (help-only)\n"
       "  bench          mqttx-compatible load benchmark entrypoint (conn|pub|sub)\n"
   "  simulate       mqttx compatibility command stub (help-only)\n"
   "  ls             mqttx compatibility command stub (help-only)\n"
@@ -1458,9 +1740,14 @@ std::string test_client_help_text() {
       "  --subscription <filter|qos|no_local|retain_as_published|retain_handling> (repeatable)\n"
       "  --subscribe-identifier <value>\n"
       "  --subscribe-user-property <name=value> (repeatable)\n"
+      "  --subscribe-payload-format <raw|json|hex|base64|binary|protobuf|avro>\n"
+      "  --subscribe-protobuf-path <path>\n"
+      "  --subscribe-protobuf-message-name <name>\n"
+      "  --subscribe-avsc-path <path>\n"
       "  --clean-output\n"
       "  --verbose-packets\n"
       "  --output-file <path>\n"
+      "  --output-file-save <directory>\n"
       "  --append-output\n"
       "  --output-delimiter <text>\n"
       "  --output-format <template>\n"
@@ -1473,6 +1760,11 @@ std::string test_client_help_text() {
       "           -si -ct -f --format -Pp --protobuf-path\n"
       "           -Pmn --protobuf-message-name -Ap --avsc-path\n"
       "           -S --payload-size\n"
+      "  subscribe: -t --topic -q --qos -nl --no_local -rap --retain-as-published\n"
+      "             -rh --retain-handling -si --subscription-identifier\n"
+      "             -up --user-properties -v --verbose --output-mode\n"
+      "             --file-write --file-save --delimiter -f --format\n"
+      "             -Pp --protobuf-path -Pmn --protobuf-message-name -Ap --avsc-path\n"
       "  connection: -h --hostname -p -i --no-clean -k --keepalive -u -P\n"
       "              -l --protocol --path -wh --ws-headers -rp --reconnect-period\n"
       "              -se --rcv-max --req-response-info --no-req-problem-info\n"

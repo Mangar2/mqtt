@@ -12,7 +12,7 @@ orchestration for broker-supported transports (`mqtt`, `ws`) without TLS.
 - Command-line subcommands for `connect`, `publish`, `subscribe`,
   `scenario`, `save-profile`, and `show-profile`.
 - Top-level `--help` and `--version` command-surface support.
-- mqttx compatibility command stubs for `conn`, `sub`, `simulate`, `ls`,
+- mqttx compatibility command stubs for `conn`, `simulate`, `ls`,
   `init`, and `check` with help/discoverability flow.
 - One-shot `publish` command with QoS-aware ACK completion flow.
 - Long-running `subscribe` command with per-subscription MQTT 5 options and
@@ -43,6 +43,9 @@ orchestration for broker-supported transports (`mqtt`, `ws`) without TLS.
   properties (subscription identifier and user properties), and output modes
   (`clean`, template format, delimiter, optional append/truncate file sink,
   verbose packet log) with optional message-limit/timeout controls.
+- mqttx `sub` command path is implemented with alias mapping for subscribe
+  filter/options/output controls (`-q`, `-nl`, `-rap`, `-rh`, `-si`,
+  `--output-mode`, `--file-write`, `--file-save`, `--delimiter`, `-f`).
 - Step 31 scripted scenario workflows: built-in scenario catalog discovery,
   scenario selection, step-by-step pass/fail logging, and non-zero process exit
   when any scenario step fails.
@@ -59,6 +62,8 @@ orchestration for broker-supported transports (`mqtt`, `ws`) without TLS.
 - Step 32 bench publish applies publish properties (`dup`, payload-format,
   expiry, alias, response-topic, correlation-data, subscription-identifier,
   content-type, and user-properties) and payload encoding semantics.
+- Step 32 `multi-subscribe` applies bench subscribe semantics for
+  qos/no-local/retain-as-published/retain-handling/subscription-identifier.
 
 ## Public API
 
@@ -100,8 +105,11 @@ Profile keys:
 - subscribe keys: repeatable `subscribe_entry`
   (`filter|qos|no_local|retain_as_published|retain_handling`),
   `subscribe_identifier`, repeatable `subscribe_user_property`,
+  `subscribe_payload_format`, `subscribe_protobuf_path`,
+  `subscribe_protobuf_message_name`, `subscribe_avsc_path`,
   `subscribe_clean_output`, `subscribe_verbose_packets`,
-  `subscribe_output_file`, `subscribe_output_append`,
+  `subscribe_output_file`, `subscribe_output_file_save`,
+  `subscribe_output_append`,
   `subscribe_output_delimiter`, `subscribe_output_format`,
   `subscribe_message_limit`, `subscribe_wait_timeout_ms`
 - `reconnect_period_ms`, `maximum_reconnect_times`
@@ -117,6 +125,7 @@ Profile keys:
 Compatibility behavior:
 
 - `publish` command accepts alias `pub`.
+- `subscribe` command accepts alias `sub`.
 - Top-level `--version` and `-v` return version output without profile loading.
 - Supported mqttx-style aliases are accepted for implemented capabilities,
   including short publish flags (`-t`, `-m`, `-q`, `-r`, `-d`, `-s`, `-M`),
@@ -132,7 +141,7 @@ Compatibility behavior:
   `--debug`, `--save-options`, and `--load-options` with argument errors.
 - Bench `-v/--verbose` enables verbose bench traces and does not imply
   metrics-json output.
-- mqttx top-level commands `conn`, `sub`, `simulate`, `ls`, `init`, and
+- mqttx top-level commands `conn`, `simulate`, `ls`, `init`, and
   `check` are recognized as compatibility stubs: `--help` succeeds and
   non-help execution returns a not-implemented argument error.
 - `bench --help` and `bench <subcommand> --help` (`conn|pub|sub`) are

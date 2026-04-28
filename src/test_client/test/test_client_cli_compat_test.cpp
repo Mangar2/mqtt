@@ -174,7 +174,7 @@ TEST_CASE("test_client_cli_wp1_stub_commands_without_help_fail",
     CHECK_THROWS_AS(parse_test_client_cli(argc_of(argv), argv), std::invalid_argument);
   }
   {
-    const char *argv[] = {"yahatestclient", "sub", "-t", "a/b"};
+    const char *argv[] = {"yahatestclient", "simulate", "-t", "a/b"};
     CHECK_THROWS_AS(parse_test_client_cli(argc_of(argv), argv), std::invalid_argument);
   }
 }
@@ -418,6 +418,80 @@ TEST_CASE("test_client_cli_wp4_bench_pub_publish_properties_and_schema_flags_are
   CHECK(has_user_property);
   CHECK(has_encoding);
   CHECK(has_avsc);
+}
+
+TEST_CASE("test_client_cli_wp5_sub_command_maps_mqttx_aliases",
+          "[test_client][cli]") {
+  const char *argv[] = {
+      "yahatestclient", "sub", "-t", "topic/a", "-q", "1",
+      "-nl",            "true", "-rap", "true", "-rh", "1",
+      "-si",            "7", "-up", "k=v", "--output-mode", "clean",
+      "--file-write",   "sub.log", "--delimiter", "|", "-f", "hex"};
+
+  const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+  CHECK(options.command == TestClientCommand::Subscribe);
+
+  bool has_sub_entry = false;
+  bool has_sub_id = false;
+  bool has_user_property = false;
+  bool has_clean_output = false;
+  bool has_file_write = false;
+  bool has_append = false;
+  bool has_delimiter = false;
+  bool has_payload_format = false;
+  for (const auto &entry : options.overrides) {
+    has_sub_entry = has_sub_entry ||
+                    (entry.first == "subscribe_entry" &&
+                     entry.second == "topic/a|1|true|true|1");
+    has_sub_id = has_sub_id ||
+                 (entry.first == "subscribe_identifier" &&
+                  entry.second == "7");
+    has_user_property = has_user_property ||
+                        (entry.first == "subscribe_user_property" &&
+                         entry.second == "k=v");
+    has_clean_output = has_clean_output ||
+                       (entry.first == "subscribe_clean_output" &&
+                        entry.second == "true");
+    has_file_write = has_file_write ||
+                     (entry.first == "subscribe_output_file" &&
+                      entry.second == "sub.log");
+    has_append = has_append ||
+                 (entry.first == "subscribe_output_append" &&
+                  entry.second == "true");
+    has_delimiter = has_delimiter ||
+                    (entry.first == "subscribe_output_delimiter" &&
+                     entry.second == "|");
+    has_payload_format = has_payload_format ||
+                         (entry.first == "subscribe_payload_format" &&
+                          entry.second == "hex");
+  }
+
+  CHECK(has_sub_entry);
+  CHECK(has_sub_id);
+  CHECK(has_user_property);
+  CHECK(has_clean_output);
+  CHECK(has_file_write);
+  CHECK(has_append);
+  CHECK(has_delimiter);
+  CHECK(has_payload_format);
+}
+
+TEST_CASE("test_client_cli_wp5_bench_sub_option_semantics_are_parsed",
+          "[test_client][cli]") {
+  const char *argv[] = {
+      "yahatestclient", "bench", "sub", "-t", "topic/%i", "-q", "2",
+      "-nl",            "true", "-rap", "true", "-rh", "1",
+      "-si",            "9", "-c", "2", "--maximum-reconnect-times", "0"};
+
+  const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+  CHECK(options.command == TestClientCommand::Scenario);
+  CHECK(options.load_mode == "multi-subscribe");
+  CHECK(options.load_subscribe_qos == 2U);
+  CHECK(options.load_subscribe_no_local);
+  CHECK(options.load_subscribe_retain_as_published);
+  CHECK(options.load_subscribe_retain_handling == 1U);
+  CHECK(options.load_subscribe_identifier_set);
+  CHECK(options.load_subscribe_identifier == 9U);
 }
 
 } // namespace mqtt

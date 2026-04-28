@@ -43,6 +43,12 @@ struct TestClientCliOptions {
   std::string load_topic_template{"load/{index}"};
   std::string load_client_template{"load-client-{index}"};
   bool load_verbose{false};
+  uint8_t load_subscribe_qos{0U};
+  bool load_subscribe_no_local{false};
+  bool load_subscribe_retain_as_published{false};
+  uint8_t load_subscribe_retain_handling{0U};
+  bool load_subscribe_identifier_set{false};
+  uint32_t load_subscribe_identifier{0U};
   bool load_split_enabled{false};
   std::string load_split_delimiter{","};
   uint32_t load_payload_size{0U};

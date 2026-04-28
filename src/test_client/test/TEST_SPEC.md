@@ -36,8 +36,8 @@
 | `test_client_cli_mqttx_will_aliases_are_supported` | `[test_client][cli]` | mqttx-style will aliases (`-Wt`..`-Wup`) map to supported will profile overrides. |
 | `test_client_cli_mqttx_version_alias_rejects_non_v5` | `[test_client][cli]` | mqttx version alias accepts only MQTT 5.0 and rejects unsupported versions. |
 | `test_client_cli_wp1_version_flags_are_supported` | `[test_client][cli]` | Top-level version flags (`--version`, `-v`) are parsed as dedicated version command mode. |
-| `test_client_cli_wp1_stub_commands_help_flow_is_supported` | `[test_client][cli]` | mqttx compatibility stub commands (`conn`, `sub`, `simulate`, `ls`, `init`, `check`) accept `--help` and resolve to help mode. |
-| `test_client_cli_wp1_stub_commands_without_help_fail` | `[test_client][cli]` | mqttx compatibility stub commands reject non-help execution until runtime behavior is implemented. |
+| `test_client_cli_wp1_stub_commands_help_flow_is_supported` | `[test_client][cli]` | mqttx compatibility stub commands (`conn`, `simulate`, `ls`, `init`, `check`) accept `--help` and resolve to help mode. |
+| `test_client_cli_wp1_stub_commands_without_help_fail` | `[test_client][cli]` | mqttx compatibility stub commands (`conn`, `simulate`, `ls`, `init`, `check`) reject non-help execution until runtime behavior is implemented. |
 | `test_client_cli_wp1_bench_help_flows_are_supported` | `[test_client][cli]` | Bench entry and bench subcommands accept `--help` and return help mode instead of argument errors. |
 | `test_client_cli_wp2_reconnect_alias_maximun_is_supported` | `[test_client][cli]` | mqttx simulate alias spelling `--maximun-reconnect-times` is accepted in mqttx-compatible pub/bench flows and mapped to reconnect override. |
 | `test_client_cli_wp2_pub_rejects_not_implemented_debug_save_load_options` | `[test_client][cli]` | mqttx pub compatibility path rejects recognized but not implemented `--debug`, `--save-options`, and `--load-options` with argument errors. |
@@ -47,6 +47,8 @@
 | `test_client_cli_wp3_bench_limit_zero_is_parsed` | `[test_client][cli]` | Bench publish parser preserves `-L/--limit 0` as unlimited-mode signal instead of remapping to bounded operation count. |
 | `test_client_cli_wp4_pub_payload_schema_and_size_options_are_parsed` | `[test_client][cli]` | mqttx pub parser maps `-Pp`, `-Pmn`, and `-S` to effective publish runtime overrides. |
 | `test_client_cli_wp4_bench_pub_publish_properties_and_schema_flags_are_parsed` | `[test_client][cli]` | mqttx bench pub parser maps publish-property flags and schema/encoding options into profile overrides for runtime application. |
+| `test_client_cli_wp5_sub_command_maps_mqttx_aliases` | `[test_client][cli]` | mqttx `sub` parser maps topic/subscribe/output aliases into effective subscribe profile overrides. |
+| `test_client_cli_wp5_bench_sub_option_semantics_are_parsed` | `[test_client][cli]` | mqttx `bench sub` parser stores runtime semantics for qos/no-local/retain-as-published/retain-handling/subscription-identifier. |
 
 ## Scenario Runner
 

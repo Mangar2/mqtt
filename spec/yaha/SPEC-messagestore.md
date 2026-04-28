@@ -30,7 +30,7 @@ Special topic:
 
 | Topic                      | Meaning                                                      |
 |----------------------------|--------------------------------------------------------------|
-| `$SYS/messages/cleanup`    | Triggers a cleanup of stale nodes. Payload is the number of days without update after which a node is considered stale. |
+| `$MONITORING/messages/cleanup` | Triggers a cleanup of stale nodes. Payload is the number of days without update after which a node is considered stale. |
 
 ## Published messages
 
@@ -60,19 +60,51 @@ Returns the current state of one or more nodes from the message tree.
 
 ## Data model
 
-The MessageStore delegates all storage to a MessageTree (see [SPEC-messagetree.md](./SPEC-messagetree.md)). The MessageStore itself holds no secondary data structure. Its own state is:
+The MessageStore keeps all state in an internal message tree. Its own top-level state is:
 
-- A reference to the MessageTree instance.
+- The message tree instance.
 - The HTTP server instance.
 - A running/stopped flag.
 - Configuration (subscriptions, persistence settings, server settings, tree settings).
+
+### Message tree structure
+
+The tree is keyed by topic path segments. Each `/`-separated segment of a topic is one level of the tree. Intermediate nodes that carry no data act as routing nodes. A node at any level may simultaneously have data and children.
+
+### Data node
+
+A node that has received at least one message contains:
+
+| Field   | Type            | Meaning                                              |
+|---------|-----------------|------------------------------------------------------|
+| topic   | string          | Full topic path of this node                         |
+| value   | any             | Most recent payload value                            |
+| time    | timestamp (ms)  | Wall-clock time of the most recent update            |
+| reason  | Reason[]        | List of reason objects attached to the last message  |
+| history | HistoryEntry[]  | Compressed record of earlier values (see below)      |
+
+### History
+
+Each time a node is updated, its previous `{time, value, reason}` is appended to a history list. The list is kept bounded: once its length exceeds a configured maximum, the oldest entries are removed in a batch (hysteresis) to avoid constant trimming. History entries are stored in compressed form and decompressed on retrieval.
+
+### History entry
+
+| Field  | Type            | Meaning              |
+|--------|-----------------|----------------------|
+| time   | timestamp (ms)  | Time of the entry    |
+| value  | any             | Value at that time   |
+| reason | Reason[]        | Reason at that time  |
+
+### Reason
+
+A reason describes why a message was sent. It is a list of objects each with at least a `message` string and a `timestamp`. The exact schema is determined by the publishing component.
 
 ## Behavior
 
 ### Message handling
 
 On receiving a message via `handleMessage`:
-1. If the topic is `$SYS/messages/cleanup`, the payload value is interpreted as a number of days. A cleanup is triggered on the tree with that value.
+1. If the topic is `$MONITORING/messages/cleanup`, the payload value is interpreted as a number of days. A cleanup is triggered on the tree with that value.
 2. For all other topics, the message is passed to the tree's `addData` operation.
 
 ### HTTP query handling
@@ -118,23 +150,35 @@ The MessageTree state is periodically serialised to disk. On startup the most re
 | persist.keepFiles      | persist       | integer          | Number of old files to keep                                    |
 | server.port            | server        | integer/string   | Port the HTTP server listens on                                |
 | server.path            | server        | string           | URL path prefix for the HTTP store endpoint                    |
-| tree.*                 | tree          | see MessageTree  | Passed through to MessageTree (see SPEC-messagetree.md)        |
+| tree.maxHistoryLength          | tree | integer | Maximum history entries per node before trimming (default 50)            |
+| tree.historyHysterese          | tree | integer | Entries removed when trimming triggers (default 10)                      |
+| tree.maxValuesPerHistoryEntry  | tree | integer | Maximum distinct values in one compressed history entry (default 256)    |
+| tree.lengthForFurtherCompression | tree | integer | Entry count threshold for additional compression (default 10)          |
+| tree.upperBoundFactor          | tree | number  | Factor for upper time bound of a history interval (default 1.2)          |
+| tree.upperBoundAddInMilliseconds | tree | integer | Milliseconds added to upper bound of an interval (default 1000)        |
+| tree.lowerBoundFactor          | tree | number  | Factor for lower time bound of a history interval (default 0.8)          |
+| tree.lowerBoundSubInMilliseconds | tree | integer | Milliseconds subtracted from lower bound of an interval (default 1000) |
 
 ## Error handling
 
 - Malformed request body (invalid JSON) in HTTP requests: treated as if no body was provided; a full section query is executed.
 - Unknown HTTP path: error returned to caller.
 - Persistence load failure: the store starts with an empty tree and logs the failure.
-- `$SYS/messages/cleanup` with a non-numeric payload: ignored.
+- `$MONITORING/messages/cleanup` with a non-numeric payload: ignored.
 
 ## Architectural notes
 
-- The HTTP server and MQTT client run concurrently. Access to the MessageTree from both the MQTT message handler and the HTTP request handler must be safe. The implementation must address this, but the mechanism is not specified here.
+- The HTTP server and MQTT client run concurrently. Access to the message tree from both the MQTT message handler and the HTTP request handler must be safe. The implementation must address this, but the mechanism is not specified here.
 - The MessageStore is designed for high read frequency (dashboards polling) and moderate write frequency (broker messages). The tree structure supports O(subtree size) reads by prefix.
+- The tree is keyed by topic path segments, not by the full topic string. This is what makes prefix retrieval efficient — traversal follows the path segments directly rather than scanning all stored topics.
+- History compression is a non-trivial quality requirement: repeated identical values (e.g. a sensor holding the same temperature) must not consume unbounded memory. The compression is interval-based.
 
 ## Open questions
 
 - Should the HTTP API support POST/websocket push in addition to GET polling? The legacy code is poll-only.
-- Should `$SYS/messages/cleanup` be a reserved topic handled inside the MessageStore, or should cleanup be triggerable via HTTP as well?
+- Should `$MONITORING/messages/cleanup` be a reserved topic handled inside the MessageStore, or should cleanup be triggerable via HTTP as well?
 - Is the HTTP interface sufficient, or should a gRPC or WebSocket interface be considered for the C++ reimplementation?
 - What authentication/authorisation (if any) should the HTTP server enforce? The legacy code has none.
+- Should the message tree support concurrent reads during a write, or is single-threaded access assumed (locked by the caller)?
+- Should cleanup be topic-pattern-scoped (only clean under a given prefix) or always global?
+- Is the history compression algorithm required to be byte-for-byte compatible with the JS implementation (for data migration), or can it be redesigned?

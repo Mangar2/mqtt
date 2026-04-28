@@ -404,6 +404,27 @@ void validate_test_client_profile_or_throw(const TestClientProfile &profile) {
   }
   validate_user_properties_or_throw(profile.subscribe_user_properties,
                                     "subscribe_user_properties");
+  if (!is_payload_encoding_supported(profile.subscribe_payload_format)) {
+    throw std::invalid_argument("Profile subscribe_payload_format is unsupported");
+  }
+  if (profile.subscribe_payload_format == "protobuf") {
+    if (!profile.subscribe_protobuf_path.has_value() ||
+        profile.subscribe_protobuf_path->empty()) {
+      throw std::invalid_argument(
+          "Profile subscribe_payload_format protobuf requires subscribe_protobuf_path");
+    }
+    if (!profile.subscribe_protobuf_message_name.has_value() ||
+        profile.subscribe_protobuf_message_name->empty()) {
+      throw std::invalid_argument(
+          "Profile subscribe_payload_format protobuf requires subscribe_protobuf_message_name");
+    }
+  }
+  if (profile.subscribe_payload_format == "avro" &&
+      (!profile.subscribe_avsc_path.has_value() ||
+       profile.subscribe_avsc_path->empty())) {
+    throw std::invalid_argument(
+        "Profile subscribe_payload_format avro requires subscribe_avsc_path");
+  }
   if (profile.subscribe_output_append &&
       !profile.subscribe_output_file.has_value()) {
     throw std::invalid_argument(
@@ -413,6 +434,11 @@ void validate_test_client_profile_or_throw(const TestClientProfile &profile) {
       profile.subscribe_output_file->empty()) {
     throw std::invalid_argument(
         "Profile subscribe_output_file must not be empty when set");
+  }
+  if (profile.subscribe_output_file_save.has_value() &&
+      profile.subscribe_output_file_save->empty()) {
+    throw std::invalid_argument(
+        "Profile subscribe_output_file_save must not be empty when set");
   }
   if (profile.subscribe_output_delimiter.empty()) {
     throw std::invalid_argument(
@@ -670,6 +696,22 @@ void apply_profile_override(TestClientProfile &profile, const std::string_view k
     profile.subscribe_user_properties.push_back(parse_user_property(value, key));
     return;
   }
+  if (key == "subscribe_payload_format") {
+    profile.subscribe_payload_format = std::string(value);
+    return;
+  }
+  if (key == "subscribe_protobuf_path") {
+    profile.subscribe_protobuf_path = std::string(value);
+    return;
+  }
+  if (key == "subscribe_protobuf_message_name") {
+    profile.subscribe_protobuf_message_name = std::string(value);
+    return;
+  }
+  if (key == "subscribe_avsc_path") {
+    profile.subscribe_avsc_path = std::string(value);
+    return;
+  }
   if (key == "subscribe_clean_output") {
     profile.subscribe_clean_output = parse_bool(value, key);
     return;
@@ -680,6 +722,10 @@ void apply_profile_override(TestClientProfile &profile, const std::string_view k
   }
   if (key == "subscribe_output_file") {
     profile.subscribe_output_file = std::string(value);
+    return;
+  }
+  if (key == "subscribe_output_file_save") {
+    profile.subscribe_output_file_save = std::string(value);
     return;
   }
   if (key == "subscribe_output_append") {
@@ -934,6 +980,20 @@ void save_test_client_profile_to_file(const std::string &path,
     output_stream << "subscribe_user_property=" << entry.first << '='
                   << entry.second << '\n';
   }
+  output_stream << "subscribe_payload_format=" << profile.subscribe_payload_format
+                << '\n';
+  if (profile.subscribe_protobuf_path.has_value()) {
+    output_stream << "subscribe_protobuf_path="
+                  << *profile.subscribe_protobuf_path << '\n';
+  }
+  if (profile.subscribe_protobuf_message_name.has_value()) {
+    output_stream << "subscribe_protobuf_message_name="
+                  << *profile.subscribe_protobuf_message_name << '\n';
+  }
+  if (profile.subscribe_avsc_path.has_value()) {
+    output_stream << "subscribe_avsc_path=" << *profile.subscribe_avsc_path
+                  << '\n';
+  }
   output_stream << "subscribe_clean_output="
                 << (profile.subscribe_clean_output ? "true" : "false")
                 << '\n';
@@ -943,6 +1003,10 @@ void save_test_client_profile_to_file(const std::string &path,
   if (profile.subscribe_output_file.has_value()) {
     output_stream << "subscribe_output_file=" << *profile.subscribe_output_file
                   << '\n';
+  }
+  if (profile.subscribe_output_file_save.has_value()) {
+    output_stream << "subscribe_output_file_save="
+                  << *profile.subscribe_output_file_save << '\n';
   }
   output_stream << "subscribe_output_append="
                 << (profile.subscribe_output_append ? "true" : "false")

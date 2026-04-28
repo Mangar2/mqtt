@@ -590,7 +590,7 @@ def run_test_client_shell_wp1_command_help_discoverability(config) -> tuple[bool
         ("bench pub help", ["bench", "pub", "--help"], ["bench", "pub"]),
         ("bench sub help", ["bench", "sub", "--help"], ["bench", "sub"]),
         ("conn help", ["conn", "--help"], ["conn", "help-only"]),
-        ("sub help", ["sub", "--help"], ["sub", "help-only"]),
+        ("sub help", ["sub", "--help"], ["subscribe", "sub"]),
         ("simulate help", ["simulate", "--help"], ["simulate", "help-only"]),
         ("ls help", ["ls", "--help"], ["ls", "help-only"]),
         ("init help", ["init", "--help"], ["init", "help-only"]),
@@ -1206,6 +1206,175 @@ def run_test_client_shell_wp4_bench_publish_properties_semantics(config) -> tupl
     return True, "WP4 bench publish property semantics checks succeeded"
 
 
+def run_test_client_shell_wp5_sub_command_output_pipeline(config) -> tuple[bool, str]:
+    binary_path = _build_yahatestclient()
+    if binary_path is None:
+        return False, "yahatestclient binary not found and build failed"
+
+    unique = uuid.uuid4().hex
+    topic = f"integration/wp5/sub/{unique}"
+    write_file_path = _project_root() / "test" / "integration_tests" / "tmp" / f"sub-write-{unique}.log"
+    save_dir_path = _project_root() / "test" / "integration_tests" / "tmp" / f"sub-save-{unique}"
+    write_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    sub_command = [
+        str(binary_path),
+        "sub",
+        "-h",
+        config.host,
+        "-p",
+        str(config.port),
+        "-i",
+        f"wp5-sub-{unique[:10]}",
+        "-t",
+        topic,
+        "-q",
+        "0",
+        "--output-mode",
+        "clean",
+        "--file-write",
+        str(write_file_path),
+        "--file-save",
+        str(save_dir_path),
+        "--delimiter",
+        "|",
+        "-f",
+        "hex",
+        "--message-limit",
+        "1",
+        "--wait-timeout-ms",
+        "6000",
+        "--maximum-reconnect-times",
+        "0",
+    ]
+
+    subscriber_process = None
+    try:
+        subscriber_process = subprocess.Popen(
+            sub_command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=_project_root(),
+        )
+        time.sleep(1.0)
+
+        publish_ok, publish_details = _run_publish(
+            config,
+            [
+                "--qos",
+                "0",
+                "--payload",
+                "AB",
+                "--payload-encoding",
+                "raw",
+            ],
+            topic_override=topic,
+        )
+        if not publish_ok:
+            return False, f"wp5 sub publish side failed: {publish_details}"
+
+        try:
+            stdout_text, stderr_text = subscriber_process.communicate(timeout=10.0)
+        except subprocess.TimeoutExpired:
+            subscriber_process.kill()
+            stdout_text, stderr_text = subscriber_process.communicate(timeout=2.0)
+            return False, "wp5 sub command timed out before receiving message"
+
+        merged = "\n".join(
+            chunk for chunk in [stdout_text.strip(), stderr_text.strip()] if chunk
+        ).strip()
+        if subscriber_process.returncode != 0:
+            return False, (
+                "wp5 sub command failed: "
+                f"exit={subscriber_process.returncode}, output={merged or 'no output'}"
+            )
+
+        if "4142|" not in stdout_text:
+            return False, "wp5 sub stdout missing expected formatted payload+delimiter"
+
+        if not write_file_path.exists():
+            return False, "wp5 sub file-write output missing"
+        write_content = write_file_path.read_text(encoding="utf-8")
+        if "4142|" not in write_content:
+            return False, "wp5 sub file-write output missing formatted payload"
+
+        if not save_dir_path.exists():
+            return False, "wp5 sub file-save directory missing"
+        saved_files = sorted(save_dir_path.glob("message-*.txt"))
+        if len(saved_files) != 1:
+            return False, f"wp5 sub file-save expected 1 file, found {len(saved_files)}"
+        saved_content = saved_files[0].read_text(encoding="utf-8")
+        if "4142" not in saved_content:
+            return False, "wp5 sub file-save content missing formatted payload"
+
+        return True, "WP5 sub command output pipeline checks succeeded"
+    except Exception as error:  # pylint: disable=broad-except
+        return False, f"wp5 sub output pipeline check failed: {error}"
+    finally:
+        if subscriber_process is not None and subscriber_process.poll() is None:
+            subscriber_process.kill()
+            subscriber_process.wait(timeout=2.0)
+
+
+def run_test_client_shell_wp5_bench_sub_semantics(config) -> tuple[bool, str]:
+    timeout_seconds = max(10.0, config.timeout_seconds * 2.0)
+    unique = uuid.uuid4().hex
+    returncode, stdout_text, stderr_text = _run_cli_command(
+        [
+            "bench",
+            "sub",
+            "-h",
+            config.host,
+            "-p",
+            str(config.port),
+            "-t",
+            f"integration/wp5/bench-sub/{unique}/%i",
+            "-q",
+            "1",
+            "-nl",
+            "true",
+            "-rap",
+            "true",
+            "-rh",
+            "1",
+            "-si",
+            "13",
+            "-c",
+            "1",
+            "-L",
+            "1",
+            "-v",
+            "--maximum-reconnect-times",
+            "0",
+        ],
+        timeout_seconds,
+    )
+
+    merged = "\n".join(
+        chunk for chunk in [stdout_text.strip(), stderr_text.strip()] if chunk
+    ).strip()
+    if returncode != 0:
+        return False, (
+            "wp5 bench sub run failed: "
+            f"exit={returncode}, output={merged or 'no output'}"
+        )
+
+    required_tokens = [
+        "WP5 bench-sub settings",
+        "qos=1",
+        "no_local=true",
+        "retain_as_published=true",
+        "retain_handling=1",
+        "subscription_identifier=13",
+    ]
+    for token in required_tokens:
+        if token not in stdout_text:
+            return False, f"wp5 bench-sub trace missing token: {token}"
+
+    return True, "WP5 bench sub semantic checks succeeded"
+
+
 TEST_CASES = [
     {
         "name": "test-client-shell/test_client_shell_wp1_command_help_discoverability",
@@ -1261,6 +1430,16 @@ TEST_CASES = [
         "name": "test-client-shell/test_client_shell_wp4_bench_publish_properties_semantics",
         "description": "21.0.11 Local yahatestclient bench pub applies publish-property flags in runtime semantics",
         "run": run_test_client_shell_wp4_bench_publish_properties_semantics,
+    },
+    {
+        "name": "test-client-shell/test_client_shell_wp5_sub_command_output_pipeline",
+        "description": "21.0.12 Local yahatestclient sub command applies mqttx output pipeline aliases and payload formatting",
+        "run": run_test_client_shell_wp5_sub_command_output_pipeline,
+    },
+    {
+        "name": "test-client-shell/test_client_shell_wp5_bench_sub_semantics",
+        "description": "21.0.13 Local yahatestclient bench sub applies qos/no-local/retain/subscription-identifier semantics",
+        "run": run_test_client_shell_wp5_bench_sub_semantics,
     },
     {
         "name": "connect/test_client_shell_connect",

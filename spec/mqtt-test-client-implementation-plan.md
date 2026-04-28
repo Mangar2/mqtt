@@ -21,14 +21,14 @@ MQTTX top-level commands:
 - `init` - not implemented
 - `conn` - not implemented
 - `pub` - implemented
-- `sub` - not implemented
+- `sub` - implemented
 - `bench` (`bench conn`, `bench pub`, `bench sub`) - wrongly implemented (core semantic gaps vs mqttx, especially `bench pub` connection model)
 - `simulate` - not implemented
 - `ls` - not implemented
 
 Top-level options:
-- `-v`, `--version` - not implemented - meaning: print CLI version.
-- `-h`, `--help` - not implemented - meaning: show command help.
+- `-v`, `--version` - implemented - meaning: print CLI version.
+- `-h`, `--help` - implemented - meaning: show command help.
 
 Global connection/session/security options used by `conn`, `pub`, `sub`, `bench *`, `simulate`:
 - `-V`, `--mqtt-version <5.0/3.1.1/3.1>` - wrongly implemented - meaning: mqttx supports 5.0/3.1.1/3.1; current implementation rejects non-5 values.
@@ -48,8 +48,8 @@ Global connection/session/security options used by `conn`, `pub`, `sub`, `bench 
 - `--ca <PATH>` - not implemented - meaning: TLS CA certificate path.
 - `--insecure` - not implemented - meaning: disable TLS server certificate verification.
 - `--alpn <PROTO...>` - not implemented - meaning: ALPN protocol list for TLS handshake.
-- `-rp`, `--reconnect-period <MILLISECONDS>` - wrongly implemented - meaning: parsed, but mqttx-style reconnect behavior is not consistently applied in one-shot `pub` and current bench runtime paths.
-- `--maximum-reconnect-times <NUMBER>` - wrongly implemented - meaning: parsed, but mqttx-style reconnect behavior is not consistently applied in one-shot `pub` and current bench runtime paths.
+- `-rp`, `--reconnect-period <MILLISECONDS>` - implemented - meaning: mqttx-style reconnect behavior is applied in one-shot `pub` and Step32 bench direct operations.
+- `--maximum-reconnect-times <NUMBER>` - implemented - meaning: mqttx-style reconnect behavior is applied in one-shot `pub` and Step32 bench direct operations.
 - `--maximun-reconnect-times <NUMBER>` (as printed by `mqttx simulate --help`) - implemented - meaning: compatibility alias/spelling variant accepted and mapped to max reconnect attempts.
 - `-se`, `--session-expiry-interval <SECONDS>` - implemented - meaning: session expiry interval.
 - `--rcv-max`, `--receive-maximum <NUMBER>` - implemented - meaning: MQTT 5 receive maximum.
@@ -104,26 +104,26 @@ Publish-oriented options (`pub`, `bench pub`, `simulate`):
 
 Subscribe-oriented options (`sub`, `bench sub`):
 - `-t`, `--topic <TOPIC...>` - implemented - meaning: one or more subscribe topic filters.
-- `-q`, `--qos <0/1/2...>` - wrongly implemented - meaning: accepted for `bench sub`, but current runtime uses fixed subscribe QoS settings.
-- `-nl`, `--no_local [FLAG...]` - wrongly implemented - meaning: accepted for `bench sub`, but current runtime does not apply no-local behavior to SUBSCRIBE packets.
-- `-rap`, `--retain-as-published [FLAG...]` - wrongly implemented - meaning: accepted for `bench sub`, but current runtime does not apply retain-as-published behavior.
-- `-rh`, `--retain-handling <0/1/2...>` - wrongly implemented - meaning: accepted for `bench sub`, but current runtime does not apply retain-handling behavior.
-- `-si`, `--subscription-identifier <NUMBER...>` - wrongly implemented - meaning: accepted for `bench sub`, but current runtime does not apply subscription identifier as mqttx does.
-- `-f`, `--format <TYPE>` (`sub`) - not implemented - meaning: decode/format incoming message payload.
-- `-v`, `--verbose` - wrongly implemented - meaning: in bench flows it currently toggles metrics-json style output instead of mqttx-style verbose subscribe history semantics.
-- `--output-mode <default/clean>` (`sub`) - not implemented - meaning: choose default or clean output style.
-- `--file-write <PATH>` (`sub`) - not implemented - meaning: append incoming messages to one file.
-- `--file-save <PATH>` (`sub`) - not implemented - meaning: save each incoming message to separate file(s).
-- `--delimiter [CHARACTER]` (`sub`) - not implemented - meaning: append delimiter between output messages.
-- `-Pp`, `--protobuf-path <PATH>` (`sub`) - not implemented - meaning: `.proto` path for payload decoding.
-- `-Pmn`, `--protobuf-message-name <NAME>` (`sub`) - not implemented - meaning: protobuf type name for decoding.
-- `-Ap`, `--avsc-path <PATH>` (`sub`) - not implemented - meaning: AVRO schema path for decoding.
+- `-q`, `--qos <0/1/2...>` - implemented - meaning: applied in `sub` subscribe entries and `bench sub` SUBSCRIBE packets.
+- `-nl`, `--no_local [FLAG...]` - implemented - meaning: applied in `sub` subscribe entries and `bench sub` SUBSCRIBE packets.
+- `-rap`, `--retain-as-published [FLAG...]` - implemented - meaning: applied in `sub` subscribe entries and `bench sub` SUBSCRIBE packets.
+- `-rh`, `--retain-handling <0/1/2...>` - implemented - meaning: applied in `sub` subscribe entries and `bench sub` SUBSCRIBE packets.
+- `-si`, `--subscription-identifier <NUMBER...>` - implemented - meaning: applied in `sub` and `bench sub` SUBSCRIBE properties.
+- `-f`, `--format <TYPE>` (`sub`) - implemented - meaning: output payload formatting for subscribe output pipeline (`raw`, `json`, `hex`, `base64`, `binary`, `protobuf`, `avro`).
+- `-v`, `--verbose` - implemented - meaning: `sub` enables packet-verbose output and `bench sub` enables semantic trace output.
+- `--output-mode <default/clean>` (`sub`) - implemented - meaning: choose default or clean output style.
+- `--file-write <PATH>` (`sub`) - implemented - meaning: append incoming messages to one file.
+- `--file-save <PATH>` (`sub`) - implemented - meaning: save each incoming message to separate file(s).
+- `--delimiter [CHARACTER]` (`sub`) - implemented - meaning: append delimiter between output messages.
+- `-Pp`, `--protobuf-path <PATH>` (`sub`) - wrongly implemented - meaning: accepted and validated for selected format, but protobuf payload decoding is not yet implemented.
+- `-Pmn`, `--protobuf-message-name <NAME>` (`sub`) - wrongly implemented - meaning: accepted and validated for selected format, but protobuf payload decoding is not yet implemented.
+- `-Ap`, `--avsc-path <PATH>` (`sub`) - wrongly implemented - meaning: accepted and validated for selected format, but avro payload decoding is not yet implemented.
 
 Benchmark-control options:
 - `-c`, `--count <NUMBER>` - implemented - meaning: number of persistent benchmark connections in `bench pub`.
 - `-i`, `--interval <MILLISECONDS>` - implemented - meaning: connect interval between setting up persistent benchmark connections.
 - `-im`, `--message-interval <MILLISECONDS>` (`bench pub`) - implemented - meaning: delay between publish operations.
-- `-L`, `--limit <NUMBER>` (`bench pub`) - implemented - meaning: publish operation limit; `0` means unlimited loop.
+- `-L`, `--limit <NUMBER>` (`bench pub`, `bench sub`) - implemented - meaning: publish operation limit; `0` means unlimited loop.
 - `--split [CHARACTER]` (`bench pub`) - implemented - meaning: split configured payload by delimiter into publish payload sequence.
 - `-S`, `--payload-size <SIZE>` (`bench pub`) - implemented - meaning: generate payload with configured size for each publish operation.
 
@@ -155,7 +155,7 @@ Implementation status (2026-04-28): implemented.
 
 Implemented scope:
 - Top-level `--help` and `--version`/`-v` are supported.
-- mqttx compatibility command stubs `conn`, `sub`, `simulate`, `ls`, `init`, and `check` are recognized with help flow (`--help`).
+- mqttx compatibility command stubs `conn`, `simulate`, `ls`, `init`, and `check` are recognized with help flow (`--help`).
 - `bench --help` and `bench conn|pub|sub --help` are accepted and return help output.
 
 Verification evidence:
@@ -261,6 +261,20 @@ Integration tests required:
 - Regression tests for stdin/multiline/line-mode/file-read interactions.
 
 ### WP5 – Subscribe Feature Completion (sub and bench sub)
+
+Implementation status (2026-04-28): implemented.
+
+Implemented scope:
+- mqttx `sub` command path is implemented and routed to subscribe runtime (no longer help-only stub).
+- `sub` parser supports mqttx subscribe aliases for topic/qos/no-local/retain-as-published/retain-handling/subscription-identifier/user-properties.
+- `bench sub` runtime applies `-q`, `-nl`, `-rap`, `-rh`, and `-si` semantics to outgoing SUBSCRIBE packets.
+- `sub` output pipeline aliases are implemented: `--output-mode`, `--file-write`, `--file-save`, and `--delimiter`.
+- `sub -f/--format` payload formatting is implemented for raw/json/hex/base64/binary/protobuf/avro output representations.
+- `sub` schema decode input flags (`-Pp`, `-Pmn`, `-Ap`) are parsed and validated for selected payload formats.
+
+Verification evidence:
+- Unit tests: `test_client_cli_wp5_sub_command_maps_mqttx_aliases`, `test_client_cli_wp5_bench_sub_option_semantics_are_parsed`.
+- Integration tests: `test-client-shell/test_client_shell_wp5_sub_command_output_pipeline`, `test-client-shell/test_client_shell_wp5_bench_sub_semantics`.
 
 Goal:
 - Implement full subscribe path and align subscription option semantics.

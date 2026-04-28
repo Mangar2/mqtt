@@ -714,6 +714,12 @@ void close_persistent_publishers(std::vector<PersistentPublisherConnection>& con
 int execute_subscribe_once_direct(const TestClientProfile& profile,
                                   const std::string& client_id,
                                   const std::string& topic,
+                                  uint8_t subscribe_qos,
+                                  bool subscribe_no_local,
+                                  bool subscribe_retain_as_published,
+                                  uint8_t subscribe_retain_handling,
+                                  bool subscribe_identifier_set,
+                                  uint32_t subscribe_identifier,
                                   uint32_t timeout_ms) {
   for (uint32_t attempt_index = 0U;
        attempt_index <= profile.maximum_reconnect_times; ++attempt_index) {
@@ -730,11 +736,16 @@ int execute_subscribe_once_direct(const TestClientProfile& profile,
     subscribe_packet.packet_id = next_packet_id();
     SubscribeFilter filter;
     filter.topic_filter = Utf8String{topic};
-    filter.options.max_qos = QoS::AtMostOnce;
-    filter.options.no_local = false;
-    filter.options.retain_as_published = false;
-    filter.options.retain_handling = 0U;
+    filter.options.max_qos = qos_from_u8_or_throw(subscribe_qos);
+    filter.options.no_local = subscribe_no_local;
+    filter.options.retain_as_published = subscribe_retain_as_published;
+    filter.options.retain_handling = subscribe_retain_handling;
     subscribe_packet.filters.push_back(filter);
+    if (subscribe_identifier_set) {
+      subscribe_packet.properties.push_back(
+          Property{.id = PropertyId::SubscriptionIdentifier,
+                   .value = VariableByteInteger{subscribe_identifier}});
+    }
 
     WriteBuffer subscribe_frame;
     encode_subscribe(subscribe_frame, subscribe_packet);
@@ -1068,6 +1079,35 @@ int run_multi_subscribe_mode(
   std::vector<SubscriberTask> subscribers;
   subscribers.reserve(options.load_connection_count);
 
+  if (options.load_subscribe_qos > 2U) {
+    throw std::invalid_argument("bench sub qos must be in range 0..2");
+  }
+  if (options.load_subscribe_retain_handling > 2U) {
+    throw std::invalid_argument(
+        "bench sub retain-handling must be in range 0..2");
+  }
+  if (options.load_subscribe_identifier_set &&
+      options.load_subscribe_identifier == 0U) {
+    throw std::invalid_argument(
+        "bench sub subscription-identifier must be greater than zero");
+  }
+  if (options.load_verbose) {
+    std::cout << "WP5 bench-sub settings qos="
+              << static_cast<uint32_t>(options.load_subscribe_qos)
+              << " no_local="
+              << (options.load_subscribe_no_local ? "true" : "false")
+              << " retain_as_published="
+              << (options.load_subscribe_retain_as_published ? "true"
+                                                             : "false")
+              << " retain_handling="
+              << static_cast<uint32_t>(options.load_subscribe_retain_handling)
+              << " subscription_identifier="
+              << (options.load_subscribe_identifier_set
+                      ? std::to_string(options.load_subscribe_identifier)
+                      : std::string("none"))
+              << "\n";
+  }
+
   for (uint32_t subscriber_index = 0U;
        subscriber_index < options.load_connection_count; ++subscriber_index) {
     const std::string topic =
@@ -1079,10 +1119,16 @@ int run_multi_subscribe_mode(
 
     SubscriberTask task{
       std::async(std::launch::async,
-             [profile, topic, client_id]() {
+             [profile, topic, client_id, &options]() {
              return execute_subscribe_once_direct(profile,
                                client_id,
                                topic,
+                               options.load_subscribe_qos,
+                               options.load_subscribe_no_local,
+                               options.load_subscribe_retain_as_published,
+                               options.load_subscribe_retain_handling,
+                               options.load_subscribe_identifier_set,
+                               options.load_subscribe_identifier,
                                15000U);
              }),
         topic,

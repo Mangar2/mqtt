@@ -1,0 +1,1 @@
+syntax = "proto3"; message Envelope { string value = 1; }

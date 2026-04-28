@@ -597,6 +597,70 @@ build_subscribe_packet_from_profile_or_throw(const TestClientProfile &profile) {
   return std::string(payload.data.begin(), payload.data.end());
 }
 
+[[nodiscard]] std::string payload_to_hex(const BinaryData &payload) {
+  static constexpr char hex_chars[] = "0123456789abcdef";
+  std::string encoded;
+  encoded.reserve(payload.data.size() * 2U);
+  for (const uint8_t byte_value : payload.data) {
+    encoded.push_back(hex_chars[(byte_value >> 4U) & 0x0FU]);
+    encoded.push_back(hex_chars[byte_value & 0x0FU]);
+  }
+  return encoded;
+}
+
+[[nodiscard]] std::string payload_to_base64(const BinaryData &payload) {
+  static constexpr char alphabet[] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string encoded;
+  std::size_t index = 0U;
+  while (index + 2U < payload.data.size()) {
+    const uint32_t block = (static_cast<uint32_t>(payload.data[index]) << 16U) |
+                           (static_cast<uint32_t>(payload.data[index + 1U]) << 8U) |
+                           static_cast<uint32_t>(payload.data[index + 2U]);
+    encoded.push_back(alphabet[(block >> 18U) & 0x3FU]);
+    encoded.push_back(alphabet[(block >> 12U) & 0x3FU]);
+    encoded.push_back(alphabet[(block >> 6U) & 0x3FU]);
+    encoded.push_back(alphabet[block & 0x3FU]);
+    index += 3U;
+  }
+
+  const std::size_t remaining = payload.data.size() - index;
+  if (remaining == 1U) {
+    const uint32_t block = static_cast<uint32_t>(payload.data[index]) << 16U;
+    encoded.push_back(alphabet[(block >> 18U) & 0x3FU]);
+    encoded.push_back(alphabet[(block >> 12U) & 0x3FU]);
+    encoded.push_back('=');
+    encoded.push_back('=');
+  } else if (remaining == 2U) {
+    const uint32_t block =
+        (static_cast<uint32_t>(payload.data[index]) << 16U) |
+        (static_cast<uint32_t>(payload.data[index + 1U]) << 8U);
+    encoded.push_back(alphabet[(block >> 18U) & 0x3FU]);
+    encoded.push_back(alphabet[(block >> 12U) & 0x3FU]);
+    encoded.push_back(alphabet[(block >> 6U) & 0x3FU]);
+    encoded.push_back('=');
+  }
+  return encoded;
+}
+
+[[nodiscard]] std::string format_subscribe_payload_or_throw(
+    const BinaryData &payload, const TestClientProfile &profile) {
+  if (profile.subscribe_payload_format == "raw" ||
+      profile.subscribe_payload_format == "json" ||
+      profile.subscribe_payload_format == "binary" ||
+      profile.subscribe_payload_format == "protobuf" ||
+      profile.subscribe_payload_format == "avro") {
+    return payload_to_text(payload);
+  }
+  if (profile.subscribe_payload_format == "hex") {
+    return payload_to_hex(payload);
+  }
+  if (profile.subscribe_payload_format == "base64") {
+    return payload_to_base64(payload);
+  }
+  throw std::invalid_argument("Unsupported subscribe payload format");
+}
+
 void replace_all(std::string &text, const std::string_view needle,
                  const std::string_view replacement) {
   std::size_t search_index = 0U;
@@ -613,7 +677,8 @@ void replace_all(std::string &text, const std::string_view needle,
 [[nodiscard]] std::string
 format_subscribe_output_line(const PublishPacket &publish_packet,
                              const TestClientProfile &profile) {
-  const std::string payload_text = payload_to_text(publish_packet.payload);
+  const std::string payload_text =
+      format_subscribe_payload_or_throw(publish_packet.payload, profile);
   if (profile.subscribe_clean_output) {
     return payload_text;
   }
@@ -674,6 +739,32 @@ void write_subscribe_output_line(const std::string &line,
     *output_file_stream << line << delimiter;
     output_file_stream->flush();
   }
+}
+
+void save_subscribe_message_to_separate_file_or_throw(
+    const std::string &line,
+    const TestClientProfile &profile,
+    const uint32_t message_index) {
+  if (!profile.subscribe_output_file_save.has_value()) {
+    return;
+  }
+
+  const std::filesystem::path save_root(*profile.subscribe_output_file_save);
+  std::error_code error_code;
+  std::filesystem::create_directories(save_root, error_code);
+  if (error_code) {
+    throw std::runtime_error("Failed to create subscribe file-save directory: " +
+                             save_root.string());
+  }
+
+  const std::filesystem::path output_path =
+      save_root / ("message-" + std::to_string(message_index) + ".txt");
+  std::ofstream output_stream(output_path, std::ios::trunc);
+  if (!output_stream.is_open()) {
+    throw std::runtime_error("Failed to open subscribe file-save output: " +
+                             output_path.string());
+  }
+  output_stream << line;
 }
 
 [[nodiscard]] std::vector<uint8_t>
@@ -1214,6 +1305,8 @@ int run_subscribe_command(const TestClientProfile &profile) {
       write_subscribe_output_line(
           output_line, profile,
           output_file_stream.is_open() ? &output_file_stream : nullptr);
+        save_subscribe_message_to_separate_file_or_throw(
+          output_line, profile, received_message_count + 1U);
       ++received_message_count;
 
       if (publish_packet.qos == QoS::AtLeastOnce) {
@@ -1421,6 +1514,20 @@ void print_profile_to_stdout(const TestClientProfile &profile) {
     std::cout << "subscribe_user_property=" << entry.first << '='
               << entry.second << '\n';
   }
+  std::cout << "subscribe_payload_format=" << profile.subscribe_payload_format
+            << '\n';
+  if (profile.subscribe_protobuf_path.has_value()) {
+    std::cout << "subscribe_protobuf_path=" << *profile.subscribe_protobuf_path
+              << '\n';
+  }
+  if (profile.subscribe_protobuf_message_name.has_value()) {
+    std::cout << "subscribe_protobuf_message_name="
+              << *profile.subscribe_protobuf_message_name << '\n';
+  }
+  if (profile.subscribe_avsc_path.has_value()) {
+    std::cout << "subscribe_avsc_path=" << *profile.subscribe_avsc_path
+              << '\n';
+  }
   std::cout << "subscribe_clean_output="
             << (profile.subscribe_clean_output ? "true" : "false") << '\n';
   std::cout << "subscribe_verbose_packets="
@@ -1429,6 +1536,10 @@ void print_profile_to_stdout(const TestClientProfile &profile) {
   if (profile.subscribe_output_file.has_value()) {
     std::cout << "subscribe_output_file=" << *profile.subscribe_output_file
               << '\n';
+  }
+  if (profile.subscribe_output_file_save.has_value()) {
+    std::cout << "subscribe_output_file_save="
+              << *profile.subscribe_output_file_save << '\n';
   }
   std::cout << "subscribe_output_append="
             << (profile.subscribe_output_append ? "true" : "false") << '\n';

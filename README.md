@@ -303,7 +303,8 @@ Supported subcommands:
 - `connect` — connect and keep the session open until signal (`Ctrl+C`)
 - `publish` — connect, publish one message, wait for QoS completion, exit
 - `subscribe` — connect, subscribe with MQTT 5 options, print/save incoming messages
-- `conn`, `sub`, `simulate`, `ls`, `init`, `check` — mqttx compatibility command stubs (help/discoverability surface in WP1)
+- `sub` — mqttx compatibility alias for `subscribe` (implemented runtime path)
+- `conn`, `simulate`, `ls`, `init`, `check` — mqttx compatibility command stubs (help/discoverability surface in WP1)
 - `scenario` — list built-in scenarios, run Step 31 scripted scenarios, or run Step 32 load modes with metrics output
 - `save-profile` — save reusable profile file
 - `show-profile` — print effective profile after load+override merge
@@ -339,6 +340,13 @@ WP4 publish feature semantics (`pub` and `bench pub`):
     - `-Pp/--protobuf-path` + `-Pmn/--protobuf-message-name` for `-f protobuf`
     - `-Ap/--avsc-path` for `-f avro`
 
+WP5 subscribe feature semantics (`sub` and `bench sub`):
+
+- `sub` is implemented as mqttx-compatible alias path for `subscribe`.
+- `sub`/`bench sub` apply subscribe option semantics in runtime packets: `-q`, `-nl`, `-rap`, `-rh`, `-si`.
+- `sub` supports output pipeline aliases: `--output-mode`, `--file-write`, `--file-save`, `--delimiter`, and `-f/--format`.
+- `sub` parses and validates schema input options for payload format selection: `-Pp`, `-Pmn`, `-Ap`.
+
 Profile precedence is deterministic:
 
 1. Built-in defaults
@@ -359,8 +367,8 @@ Supported profile keys:
 - publish schema and generated payload options: `publish_protobuf_path`, `publish_protobuf_message_name`, `publish_avsc_path`, `publish_payload_size`
 - publish encoding options: `publish_payload_encoding` (`raw|json|hex|base64|binary|protobuf|avro`), `publish_correlation_data_encoding` (`raw|hex|base64`)
 - publish MQTT 5 property options: `publish_payload_format_indicator`, `publish_message_expiry_interval_seconds`, `publish_topic_alias`, `publish_response_topic`, `publish_correlation_data`, `publish_subscription_identifier`, `publish_content_type`, repeatable `publish_user_property`
-- subscribe options: repeatable `subscribe_entry` (`filter|qos|no_local|retain_as_published|retain_handling`), `subscribe_identifier`, repeatable `subscribe_user_property`
-- subscriber output options: `subscribe_clean_output`, `subscribe_verbose_packets`, `subscribe_output_file`, `subscribe_output_append`, `subscribe_output_delimiter`, `subscribe_output_format`, `subscribe_message_limit`, `subscribe_wait_timeout_ms`
+- subscribe options: repeatable `subscribe_entry` (`filter|qos|no_local|retain_as_published|retain_handling`), `subscribe_identifier`, repeatable `subscribe_user_property`, `subscribe_payload_format`, `subscribe_protobuf_path`, `subscribe_protobuf_message_name`, `subscribe_avsc_path`
+- subscriber output options: `subscribe_clean_output`, `subscribe_verbose_packets`, `subscribe_output_file`, `subscribe_output_file_save`, `subscribe_output_append`, `subscribe_output_delimiter`, `subscribe_output_format`, `subscribe_message_limit`, `subscribe_wait_timeout_ms`
 - scenario options: `--scenario <name>`, `--list-scenarios`, `--load-mode <mass-connect|publish-rate|multi-subscribe>`
 - Step 32 load controls: `--connection-count`, `--connect-interval-ms`, `--message-interval-ms`, `--publish-limit`, `--topic-template`, `--client-template`, `--metrics-json`
 - `reconnect_period_ms`, `maximum_reconnect_times`
