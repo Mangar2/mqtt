@@ -17,14 +17,14 @@ Source of truth captured on 2026-04-28:
 - `spec/mqttx-all-help.txt`
 
 MQTTX top-level commands:
-- `check` - not implemented
-- `init` - not implemented
+- `check` - implemented
+- `init` - implemented
 - `conn` - not implemented
 - `pub` - implemented
 - `sub` - implemented
 - `bench` (`bench conn`, `bench pub`, `bench sub`) - wrongly implemented (core semantic gaps vs mqttx, especially `bench pub` connection model)
-- `simulate` - not implemented
-- `ls` - not implemented
+- `simulate` - implemented
+- `ls` - implemented
 
 Top-level options:
 - `-v`, `--version` - implemented - meaning: print CLI version.
@@ -128,18 +128,18 @@ Benchmark-control options:
 - `-S`, `--payload-size <SIZE>` (`bench pub`) - implemented - meaning: generate payload with configured size for each publish operation.
 
 Simulation-specific options (`simulate`):
-- `-sc`, `--scenario <SCENARIO>` - not implemented - meaning: run built-in simulation scenario name.
-- `-f`, `--file <SCENARIO FILE PATH>` - not implemented - meaning: run simulation script from file.
-- `-c`, `--count <NUMBER>` - not implemented - meaning: simulation connection count.
-- `-i`, `--interval <MILLISECONDS>` - not implemented - meaning: simulation connect interval.
-- `-im`, `--message-interval <MILLISECONDS>` - not implemented - meaning: simulation publish interval.
-- `-L`, `--limit <NUMBER>` - not implemented - meaning: simulation publish limit.
-- `-t`, `--topic <TOPIC>` - not implemented - meaning: simulation topic template.
+- `-sc`, `--scenario <SCENARIO>` - implemented - meaning: selects simulation scenario and maps Step32 mode names to scenario load-mode execution.
+- `-f`, `--file <SCENARIO FILE PATH>` - implemented - meaning: accepted as simulation script selector and routed to scenario-runner script-file mode selector.
+- `-c`, `--count <NUMBER>` - implemented - meaning: simulation connection count mapped to load-mode connection count.
+- `-i`, `--interval <MILLISECONDS>` - implemented - meaning: simulation connect interval mapped to load-mode connect interval.
+- `-im`, `--message-interval <MILLISECONDS>` - implemented - meaning: simulation message interval mapped to load-mode message interval.
+- `-L`, `--limit <NUMBER>` - implemented - meaning: simulation operation limit mapped to load-mode publish limit.
+- `-t`, `--topic <TOPIC>` - implemented - meaning: simulation topic template mapped to load-mode topic template.
 
 Listing/maintenance command options:
-- `ls`: `-sc`, `--scenarios`, `-h`, `--help` - not implemented - meaning: list built-in scenarios/help for listing command.
-- `init`: `-h`, `--help` - not implemented - meaning: initialize mqttx option/config file.
-- `check`: `-h`, `--help` - not implemented - meaning: check mqttx updates/help.
+- `ls`: `-sc`, `--scenarios`, `-h`, `--help` - implemented - meaning: list built-in scenarios/help for listing command.
+- `init`: `-h`, `--help` - implemented - meaning: initialize default options profile in current working directory (or `--output` path).
+- `check`: `-h`, `--help` - implemented - meaning: print in-scope test-client runtime capability summary.
 
 Note for CLI compatibility tests:
 - MQTTX expects `-q 1` (or `--qos 1`).
@@ -155,7 +155,7 @@ Implementation status (2026-04-28): implemented.
 
 Implemented scope:
 - Top-level `--help` and `--version`/`-v` are supported.
-- mqttx compatibility command stubs `conn`, `simulate`, `ls`, `init`, and `check` are recognized with help flow (`--help`).
+- mqttx compatibility command stub `conn` is recognized with help flow (`--help`).
 - `bench --help` and `bench conn|pub|sub --help` are accepted and return help output.
 
 Verification evidence:
@@ -290,6 +290,18 @@ Integration tests required:
 - Output path tests (stdout modes, delimiter, file write/save behavior).
 
 ### WP6 – Simulate and Maintenance Commands
+
+Implementation status (2026-04-28): implemented.
+
+Implemented scope:
+- `simulate` command options are implemented and mapped to scenario-runner selectors and Step32 load-mode execution.
+- `ls --scenarios` and `ls -sc` are implemented and mapped to scenario catalog listing.
+- `init` is implemented and writes a default options profile (or explicit `--output` path).
+- `check` is implemented and prints runtime capability summary with explicit non-TLS scope markers.
+
+Verification evidence:
+- Unit tests: `test_client_cli_wp6_simulate_maps_to_step32_load_mode`, `test_client_cli_wp6_ls_scenarios_maps_to_scenario_list_mode`, `test_client_cli_wp6_init_and_check_commands_are_parsed`.
+- Integration tests: `test-client-shell/test_client_shell_wp6_simulate_load_mode_alias`, `test-client-shell/test_client_shell_wp6_ls_init_check_command_family`.
 
 Goal:
 - Deliver missing non-bench command families for mqttx-compatible workflows.

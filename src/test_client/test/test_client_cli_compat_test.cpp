@@ -494,4 +494,53 @@ TEST_CASE("test_client_cli_wp5_bench_sub_option_semantics_are_parsed",
   CHECK(options.load_subscribe_identifier == 9U);
 }
 
+TEST_CASE("test_client_cli_wp6_simulate_maps_to_step32_load_mode",
+          "[test_client][cli]") {
+  const char *argv[] = {
+      "yahatestclient", "simulate", "-sc", "mass-connect", "-c", "3",
+      "-i",             "2",        "-im", "1",            "-L", "5",
+      "-t",             "sim/%i",    "-I",  "sim-client-%i"};
+
+  const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+  CHECK(options.command == TestClientCommand::Scenario);
+  CHECK(options.load_mode == "mass-connect");
+  CHECK(options.load_connection_count == 3U);
+  CHECK(options.load_connect_interval_ms == 2U);
+  CHECK(options.load_message_interval_ms == 1U);
+  CHECK(options.load_publish_limit == 5U);
+  CHECK(options.load_topic_template == "sim/{index}");
+  CHECK(options.load_client_template == "sim-client-{index}");
+}
+
+TEST_CASE("test_client_cli_wp6_ls_scenarios_maps_to_scenario_list_mode",
+          "[test_client][cli]") {
+  {
+    const char *argv[] = {"yahatestclient", "ls", "--scenarios"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Scenario);
+    CHECK(options.list_scenarios);
+  }
+  {
+    const char *argv[] = {"yahatestclient", "ls", "-sc"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Scenario);
+    CHECK(options.list_scenarios);
+  }
+}
+
+TEST_CASE("test_client_cli_wp6_init_and_check_commands_are_parsed",
+          "[test_client][cli]") {
+  {
+    const char *argv[] = {"yahatestclient", "init", "--output", "init.ini"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Init);
+    CHECK(options.output_path == "init.ini");
+  }
+  {
+    const char *argv[] = {"yahatestclient", "check"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Check);
+  }
+}
+
 } // namespace mqtt

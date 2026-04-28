@@ -980,6 +980,9 @@ int run_publish_rate_mode(
         connected = true;
         break;
       } catch (const std::exception&) {
+        std::cerr << "Step32 publish attempt " << (attempt_index + 1U)
+                  << " failed for client_id=" << client_id << " topic="
+                  << topic << "\n";
       }
 
       if (attempt_index == profile.maximum_reconnect_times) {

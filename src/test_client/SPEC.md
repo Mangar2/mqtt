@@ -12,8 +12,9 @@ orchestration for broker-supported transports (`mqtt`, `ws`) without TLS.
 - Command-line subcommands for `connect`, `publish`, `subscribe`,
   `scenario`, `save-profile`, and `show-profile`.
 - Top-level `--help` and `--version` command-surface support.
-- mqttx compatibility command stubs for `conn`, `simulate`, `ls`,
-  `init`, and `check` with help/discoverability flow.
+- mqttx compatibility command stub for `conn` with help/discoverability flow.
+- mqttx command-family runtime support for `simulate`, `ls --scenarios`,
+  `init`, and `check`.
 - One-shot `publish` command with QoS-aware ACK completion flow.
 - Long-running `subscribe` command with per-subscription MQTT 5 options and
   automation-oriented output pipeline controls.
@@ -49,6 +50,11 @@ orchestration for broker-supported transports (`mqtt`, `ws`) without TLS.
 - Step 31 scripted scenario workflows: built-in scenario catalog discovery,
   scenario selection, step-by-step pass/fail logging, and non-zero process exit
   when any scenario step fails.
+- WP6 simulation command-family support: `simulate` command alias mapped to
+  scenario runner selectors (`-sc/--scenario`, `-f/--file`) and Step32 load
+  modes, `ls --scenarios` mapped to catalog listing, and in-scope runtime
+  commands `init` (default profile generation) and `check` (runtime capability
+  summary).
 - Step 32 load modes: `mass-connect`, `publish-rate`, and
   `multi-subscribe` with configurable connection count, connect/message
   interval, publish limit, topic/client templates, and optional JSON metrics
@@ -126,6 +132,9 @@ Compatibility behavior:
 
 - `publish` command accepts alias `pub`.
 - `subscribe` command accepts alias `sub`.
+- `simulate` accepts mqttx-style selector aliases and routes to scenario
+  runner execution.
+- `ls --scenarios` and `ls -sc` route to scenario catalog listing mode.
 - Top-level `--version` and `-v` return version output without profile loading.
 - Supported mqttx-style aliases are accepted for implemented capabilities,
   including short publish flags (`-t`, `-m`, `-q`, `-r`, `-d`, `-s`, `-M`),
@@ -141,9 +150,11 @@ Compatibility behavior:
   `--debug`, `--save-options`, and `--load-options` with argument errors.
 - Bench `-v/--verbose` enables verbose bench traces and does not imply
   metrics-json output.
-- mqttx top-level commands `conn`, `simulate`, `ls`, `init`, and
-  `check` are recognized as compatibility stubs: `--help` succeeds and
-  non-help execution returns a not-implemented argument error.
+- mqttx top-level command `conn` remains a compatibility stub:
+  `--help` succeeds and non-help execution returns a not-implemented argument
+  error.
+- `simulate`, `ls`, `init`, and `check` are implemented command-family paths
+  with in-scope runtime behavior.
 - `bench --help` and `bench <subcommand> --help` (`conn|pub|sub`) are
   accepted and routed to help output.
 

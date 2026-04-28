@@ -304,7 +304,11 @@ Supported subcommands:
 - `publish` — connect, publish one message, wait for QoS completion, exit
 - `subscribe` — connect, subscribe with MQTT 5 options, print/save incoming messages
 - `sub` — mqttx compatibility alias for `subscribe` (implemented runtime path)
-- `conn`, `simulate`, `ls`, `init`, `check` — mqttx compatibility command stubs (help/discoverability surface in WP1)
+- `simulate` — mqttx compatibility alias for scenario execution surface (`-sc`/`-f` selectors)
+- `ls` — mqttx-style scenario listing alias (`ls --scenarios` / `ls -sc`)
+- `init` — initialize default options profile (`--output` optional)
+- `check` — print runtime capability summary
+- `conn` — mqttx compatibility command stub (help/discoverability surface)
 - `scenario` — list built-in scenarios, run Step 31 scripted scenarios, or run Step 32 load modes with metrics output
 - `save-profile` — save reusable profile file
 - `show-profile` — print effective profile after load+override merge
@@ -346,6 +350,13 @@ WP5 subscribe feature semantics (`sub` and `bench sub`):
 - `sub`/`bench sub` apply subscribe option semantics in runtime packets: `-q`, `-nl`, `-rap`, `-rh`, `-si`.
 - `sub` supports output pipeline aliases: `--output-mode`, `--file-write`, `--file-save`, `--delimiter`, and `-f/--format`.
 - `sub` parses and validates schema input options for payload format selection: `-Pp`, `-Pmn`, `-Ap`.
+
+WP6 simulate and maintenance command semantics:
+
+- `simulate` parses mqttx-style simulation selectors and control aliases (`-sc`, `-f`, `-c`, `-i`, `-im`, `-L`, `-t`, `-I`) and maps Step32 mode names (`mass-connect`, `publish-rate`, `multi-subscribe`) to load-mode execution.
+- `ls --scenarios` and `ls -sc` map to scenario catalog listing output.
+- `init` writes default profile content (or explicit `--output` path).
+- `check` prints runtime capability summary with explicit MQTT5/non-TLS scope.
 
 Profile precedence is deterministic:
 

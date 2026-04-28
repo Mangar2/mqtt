@@ -1375,6 +1375,114 @@ def run_test_client_shell_wp5_bench_sub_semantics(config) -> tuple[bool, str]:
     return True, "WP5 bench sub semantic checks succeeded"
 
 
+def run_test_client_shell_wp6_simulate_load_mode_alias(config) -> tuple[bool, str]:
+    timeout_seconds = max(10.0, config.timeout_seconds * 2.0)
+    unique = uuid.uuid4().hex
+    returncode, stdout_text, stderr_text = _run_cli_command(
+        [
+            "simulate",
+            "-sc",
+            "mass-connect",
+            "-h",
+            config.host,
+            "-p",
+            str(config.port),
+            "-t",
+            f"integration/wp6/simulate/{unique}/%i",
+            "-I",
+            f"integration-wp6-simulate-{unique}-%i",
+            "-c",
+            "2",
+            "-i",
+            "1",
+            "-L",
+            "2",
+            "--metrics-json",
+            "--maximum-reconnect-times",
+            "0",
+        ],
+        timeout_seconds,
+    )
+
+    merged = "\n".join(
+        chunk for chunk in [stdout_text.strip(), stderr_text.strip()] if chunk
+    ).strip()
+    if returncode != 0:
+        return False, (
+            "wp6 simulate load-mode alias run failed: "
+            f"exit={returncode}, output={merged or 'no output'}"
+        )
+
+    if "Step32 load mode: mass-connect" not in stdout_text:
+        return False, "wp6 simulate output missing mass-connect load-mode summary"
+
+    json_ok, json_detail = _extract_metrics_json(stdout_text)
+    if not json_ok:
+        return False, f"wp6 simulate output missing valid metrics json: {json_detail}"
+
+    return True, "WP6 simulate load-mode alias checks succeeded"
+
+
+def run_test_client_shell_wp6_ls_init_check_command_family(config) -> tuple[bool, str]:
+    timeout_seconds = max(8.0, config.timeout_seconds)
+
+    ls_returncode, ls_stdout, ls_stderr = _run_cli_command(
+        ["ls", "--scenarios"], timeout_seconds
+    )
+    if ls_returncode != 0:
+        merged = "\n".join(
+            chunk for chunk in [ls_stdout.strip(), ls_stderr.strip()] if chunk
+        ).strip()
+        return False, (
+            "wp6 ls --scenarios failed: "
+            f"exit={ls_returncode}, output={merged or 'no output'}"
+        )
+    if "Step32 load modes:" not in ls_stdout:
+        return False, "wp6 ls --scenarios output missing load-mode section"
+
+    init_path = _project_root() / "test" / "integration_tests" / "tmp" / f"wp6-init-{uuid.uuid4().hex}.ini"
+    init_returncode, init_stdout, init_stderr = _run_cli_command(
+        ["init", "--output", str(init_path)], timeout_seconds
+    )
+    if init_returncode != 0:
+        merged = "\n".join(
+            chunk for chunk in [init_stdout.strip(), init_stderr.strip()] if chunk
+        ).strip()
+        return False, (
+            "wp6 init failed: "
+            f"exit={init_returncode}, output={merged or 'no output'}"
+        )
+    if not init_path.exists():
+        return False, "wp6 init did not create output profile file"
+    init_content = init_path.read_text(encoding="utf-8")
+    if "host=" not in init_content or "client_id=" not in init_content:
+        return False, "wp6 init output profile missing required keys"
+
+    check_returncode, check_stdout, check_stderr = _run_cli_command(
+        ["check"], timeout_seconds
+    )
+    if check_returncode != 0:
+        merged = "\n".join(
+            chunk for chunk in [check_stdout.strip(), check_stderr.strip()] if chunk
+        ).strip()
+        return False, (
+            "wp6 check failed: "
+            f"exit={check_returncode}, output={merged or 'no output'}"
+        )
+
+    required_tokens = [
+        "status=ok",
+        "mqtt_version=5.0",
+        "transports=mqtt,ws",
+        "tls=unsupported",
+    ]
+    for token in required_tokens:
+        if token not in check_stdout:
+            return False, f"wp6 check output missing token: {token}"
+
+    return True, "WP6 ls/init/check command-family checks succeeded"
+
+
 TEST_CASES = [
     {
         "name": "test-client-shell/test_client_shell_wp1_command_help_discoverability",
@@ -1440,6 +1548,16 @@ TEST_CASES = [
         "name": "test-client-shell/test_client_shell_wp5_bench_sub_semantics",
         "description": "21.0.13 Local yahatestclient bench sub applies qos/no-local/retain/subscription-identifier semantics",
         "run": run_test_client_shell_wp5_bench_sub_semantics,
+    },
+    {
+        "name": "test-client-shell/test_client_shell_wp6_simulate_load_mode_alias",
+        "description": "21.0.14 Local yahatestclient simulate command maps to step32 load-mode execution and metrics output",
+        "run": run_test_client_shell_wp6_simulate_load_mode_alias,
+    },
+    {
+        "name": "test-client-shell/test_client_shell_wp6_ls_init_check_command_family",
+        "description": "21.0.15 Local yahatestclient ls/init/check command family executes in-scope runtime behavior",
+        "run": run_test_client_shell_wp6_ls_init_check_command_family,
     },
     {
         "name": "connect/test_client_shell_connect",

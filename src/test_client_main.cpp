@@ -1555,6 +1555,33 @@ void print_profile_to_stdout(const TestClientProfile &profile) {
             << '\n';
 }
 
+[[nodiscard]] std::string resolve_init_output_path(
+    const TestClientCliOptions &options) {
+  if (!options.output_path.empty()) {
+    return options.output_path;
+  }
+  return "mqttx-options.ini";
+}
+
+int run_init_command(const TestClientCliOptions &options) {
+  TestClientProfile default_profile;
+  const std::string output_path = resolve_init_output_path(options);
+  save_test_client_profile_to_file(output_path, default_profile);
+  std::cout << "Initialized options profile at " << output_path << '\n';
+  return 0;
+}
+
+int run_check_command() {
+  std::cout << "yahatestclient check\n";
+  std::cout << "status=ok\n";
+  std::cout << "mqtt_version=5.0\n";
+  std::cout << "transports=mqtt,ws\n";
+  std::cout << "tls=unsupported\n";
+  std::cout << "commands=connect,publish,pub,subscribe,sub,bench,scenario,simulate,ls,init,check\n";
+  std::cout << "bench_subcommands=conn,pub,sub\n";
+  return 0;
+}
+
 } // namespace
 } // namespace mqtt
 
@@ -1570,6 +1597,12 @@ int main(const int argc, const char *argv[]) {
     if (options.command == mqtt::TestClientCommand::Version) {
       std::cout << mqtt::test_client_version_text();
       return 0;
+    }
+    if (options.command == mqtt::TestClientCommand::Init) {
+      return mqtt::run_init_command(options);
+    }
+    if (options.command == mqtt::TestClientCommand::Check) {
+      return mqtt::run_check_command();
     }
     const mqtt::TestClientProfile profile = mqtt::build_effective_profile(options);
     if (options.command == mqtt::TestClientCommand::ShowProfile) {

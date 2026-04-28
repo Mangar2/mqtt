@@ -18,6 +18,8 @@ namespace mqtt {
 enum class TestClientCommand : uint8_t {
   Help,
   Version,
+  Init,
+  Check,
   Connect,
   Publish,
   Subscribe,
