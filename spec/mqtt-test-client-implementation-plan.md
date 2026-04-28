@@ -177,6 +177,18 @@ Integration tests required:
 
 ### WP2 – Shared Connection Semantics Parity
 
+Implementation status (2026-04-28): implemented.
+
+Implemented scope:
+- One-shot `pub`/`publish` applies reconnect retry semantics with `-rp`/`--reconnect-period` and `--maximum-reconnect-times`.
+- Step 32 direct bench operations (`bench pub` / load publish path and direct subscribe path) apply reconnect retry semantics with the same reconnect settings.
+- mqttx alias spelling `--maximun-reconnect-times` is accepted and mapped to `maximum_reconnect_times` in mqttx-compatible parser paths.
+- Recognized but not implemented mqttx options `--debug`, `--save-options`, and `--load-options` are now explicitly rejected with clear argument errors in mqttx-compatible paths.
+
+Verification evidence:
+- Unit tests: `test_client_cli_wp2_reconnect_alias_maximun_is_supported`, `test_client_cli_wp2_pub_rejects_not_implemented_debug_save_load_options`, `test_client_cli_wp2_bench_rejects_not_implemented_debug_save_load_options`.
+- Integration tests: `test-client-shell/test_client_shell_wp2_pub_reconnect_matrix`, `test-client-shell/test_client_shell_wp2_bench_reconnect_matrix`, `test-client-shell/test_client_shell_wp2_reconnect_alias_precedence`.
+
 Goal:
 - Make shared connection/session behavior consistent across commands that already parse these options.
 

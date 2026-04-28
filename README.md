@@ -313,6 +313,12 @@ Top-level options:
 - `--help`
 - `--version`, `-v`
 
+WP2 shared connection semantics for mqttx-compatible paths:
+
+- Reconnect settings are applied for one-shot `publish` and Step 32 direct load operations: `-rp`/`--reconnect-period`, `--maximum-reconnect-times`.
+- Compatibility alias spelling `--maximun-reconnect-times` is accepted and mapped to `maximum_reconnect_times`.
+- Recognized but currently out-of-scope options in mqttx-compatible paths are rejected explicitly: `--debug`, `--save-options`, `--load-options`.
+
 Profile precedence is deterministic:
 
 1. Built-in defaults

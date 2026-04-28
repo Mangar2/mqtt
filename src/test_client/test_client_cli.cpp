@@ -263,6 +263,10 @@ void parse_bench_options(TestClientCliOptions &options,
       add_override("maximum_reconnect_times", option_name);
       continue;
     }
+    if (option_name == "--maximun-reconnect-times") {
+      add_override("maximum_reconnect_times", option_name);
+      continue;
+    }
     if (option_name == "-se" || option_name == "--session-expiry-interval") {
       add_override("session_expiry_interval_seconds", option_name);
       continue;
@@ -365,16 +369,18 @@ void parse_bench_options(TestClientCliOptions &options,
     }
 
     if (option_name == "-so" || option_name == "--save-options") {
-      if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
-        ++index;
-      }
-      continue;
+      throw std::invalid_argument(
+          "Option " + option_name +
+          " is recognized but not implemented in mqttx-compatible paths");
     }
     if (option_name == "-lo" || option_name == "--load-options") {
-      if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
-        ++index;
-      }
-      continue;
+      throw std::invalid_argument(
+          "Option " + option_name +
+          " is recognized but not implemented in mqttx-compatible paths");
+    }
+    if (option_name == "--debug") {
+      throw std::invalid_argument(
+          "Option --debug is recognized but not implemented in mqttx-compatible paths");
     }
     if (option_name == "-nl" || option_name == "--no_local" ||
         option_name == "-rap" || option_name == "--retain-as-published" ||
@@ -548,6 +554,10 @@ void parse_mqttx_pub_options(TestClientCliOptions &options,
       add_override("maximum_reconnect_times", option_name);
       continue;
     }
+    if (option_name == "--maximun-reconnect-times") {
+      add_override("maximum_reconnect_times", option_name);
+      continue;
+    }
     if (option_name == "-se" || option_name == "--session-expiry-interval") {
       add_override("session_expiry_interval_seconds", option_name);
       continue;
@@ -621,16 +631,14 @@ void parse_mqttx_pub_options(TestClientCliOptions &options,
       continue;
     }
     if (option_name == "-so" || option_name == "--save-options") {
-      if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
-        ++index;
-      }
-      continue;
+      throw std::invalid_argument(
+          "Option " + option_name +
+          " is recognized but not implemented in mqttx-compatible paths");
     }
     if (option_name == "-lo" || option_name == "--load-options") {
-      if (has_more_arguments(index, argc) && argv[index + 1][0] != '-') {
-        ++index;
-      }
-      continue;
+      throw std::invalid_argument(
+          "Option " + option_name +
+          " is recognized but not implemented in mqttx-compatible paths");
     }
     if (option_name == "--file-read") {
       add_override("publish_payload_file", option_name);
@@ -657,7 +665,8 @@ void parse_mqttx_pub_options(TestClientCliOptions &options,
       continue;
     }
     if (option_name == "--debug") {
-      continue;
+      throw std::invalid_argument(
+          "Option --debug is recognized but not implemented in mqttx-compatible paths");
     }
     if (option_name == "--key" || option_name == "--cert" ||
         option_name == "--ca" || option_name == "--insecure" ||
@@ -1004,6 +1013,24 @@ void parse_common_options(TestClientCliOptions &options, const int argc,
     if (option_name == "--maximum-reconnect-times") {
       add_override("maximum_reconnect_times", "--maximum-reconnect-times");
       continue;
+    }
+    if (option_name == "--maximun-reconnect-times") {
+      add_override("maximum_reconnect_times", "--maximun-reconnect-times");
+      continue;
+    }
+    if (option_name == "-so" || option_name == "--save-options") {
+      throw std::invalid_argument(
+          "Option " + option_name +
+          " is recognized but not implemented in mqttx-compatible paths");
+    }
+    if (option_name == "-lo" || option_name == "--load-options") {
+      throw std::invalid_argument(
+          "Option " + option_name +
+          " is recognized but not implemented in mqttx-compatible paths");
+    }
+    if (option_name == "--debug") {
+      throw std::invalid_argument(
+          "Option --debug is recognized but not implemented in mqttx-compatible paths");
     }
     if (option_name == "--session-expiry-interval-seconds") {
       add_override("session_expiry_interval_seconds",

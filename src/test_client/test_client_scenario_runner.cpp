@@ -292,10 +292,12 @@ int execute_publish_operation_direct(const TestClientProfile& profile,
                                     const std::string& client_id,
                                     const std::string& topic,
                                     const std::string& payload) {
-  try {
-  TcpConnection connection =
-    ConnectionNegotiator::dial_tcp(profile.host, profile.port);
-  StreamBuffer stream_buffer;
+  for (uint32_t attempt_index = 0U;
+       attempt_index <= profile.maximum_reconnect_times; ++attempt_index) {
+    try {
+      TcpConnection connection =
+          ConnectionNegotiator::dial_tcp(profile.host, profile.port);
+      StreamBuffer stream_buffer;
 
     const ClientConfig config = make_client_config_for_operation(profile, client_id);
     const ConnectPacket connect_packet = build_connect_packet(config);
@@ -389,22 +391,34 @@ int execute_publish_operation_direct(const TestClientProfile& profile,
       }
     }
 
-    send_disconnect_best_effort(connection);
-    connection.close();
-    return 0;
-  } catch (...) {
-    return 1;
+      send_disconnect_best_effort(connection);
+      connection.close();
+      return 0;
+    } catch (...) {
+      std::cerr << "Step32 publish attempt " << (attempt_index + 1U)
+            << " failed for client_id=" << client_id << " topic="
+            << topic << "\n";
+    }
+
+    if (attempt_index == profile.maximum_reconnect_times) {
+      break;
+    }
+    sleep_between_operations(profile.reconnect_period_ms);
   }
+
+  return 1;
 }
 
 int execute_subscribe_once_direct(const TestClientProfile& profile,
                                   const std::string& client_id,
                                   const std::string& topic,
                                   uint32_t timeout_ms) {
-  try {
-  TcpConnection connection =
-    ConnectionNegotiator::dial_tcp(profile.host, profile.port);
-  StreamBuffer stream_buffer;
+  for (uint32_t attempt_index = 0U;
+       attempt_index <= profile.maximum_reconnect_times; ++attempt_index) {
+    try {
+      TcpConnection connection =
+          ConnectionNegotiator::dial_tcp(profile.host, profile.port);
+      StreamBuffer stream_buffer;
 
     const ClientConfig config = make_client_config_for_operation(profile, client_id);
     const ConnectPacket connect_packet = build_connect_packet(config);
@@ -464,12 +478,22 @@ int execute_subscribe_once_direct(const TestClientProfile& profile,
       }
     }
 
-    send_disconnect_best_effort(connection);
-    connection.close();
-    return 0;
-  } catch (...) {
-    return 1;
+      send_disconnect_best_effort(connection);
+      connection.close();
+      return 0;
+    } catch (...) {
+      std::cerr << "Step32 subscribe attempt " << (attempt_index + 1U)
+            << " failed for client_id=" << client_id << " topic="
+            << topic << "\n";
+    }
+
+    if (attempt_index == profile.maximum_reconnect_times) {
+      break;
+    }
+    sleep_between_operations(profile.reconnect_period_ms);
   }
+
+  return 1;
 }
 
 void record_load_result(LoadMetrics& metrics,

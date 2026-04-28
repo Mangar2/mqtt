@@ -694,6 +694,180 @@ def run_test_client_shell_wp1_unknown_behavior_parity(config) -> tuple[bool, str
     return True, "WP1 unknown command/option behavior checks succeeded"
 
 
+def _run_reconnect_failure_case(
+    argv: list[str],
+    timeout_seconds: float,
+) -> tuple[bool, float, str]:
+    started_at = time.monotonic()
+    returncode, stdout_text, stderr_text = _run_cli_command(argv, timeout_seconds)
+    elapsed_seconds = time.monotonic() - started_at
+
+    merged = "\n".join(
+        chunk for chunk in [stdout_text.strip(), stderr_text.strip()] if chunk
+    ).strip()
+    if returncode == 0:
+        return False, elapsed_seconds, "command unexpectedly succeeded"
+    return True, elapsed_seconds, merged or "failed as expected"
+
+
+def run_test_client_shell_wp2_pub_reconnect_matrix(config) -> tuple[bool, str]:
+    unreachable_port = "1"
+    timeout_seconds = max(8.0, config.timeout_seconds)
+
+    ok_zero, _, detail_zero = _run_reconnect_failure_case(
+        [
+            "pub",
+            "-t",
+            "integration/wp2/reconnect",
+            "-m",
+            "payload",
+            "-h",
+            "127.0.0.1",
+            "-p",
+            unreachable_port,
+            "-rp",
+            "200",
+            "--maximum-reconnect-times",
+            "0",
+        ],
+        timeout_seconds,
+    )
+    if not ok_zero:
+        return False, f"max=0 case failed: {detail_zero}"
+
+    ok_two, _, detail_two = _run_reconnect_failure_case(
+        [
+            "pub",
+            "-t",
+            "integration/wp2/reconnect",
+            "-m",
+            "payload",
+            "-h",
+            "127.0.0.1",
+            "-p",
+            unreachable_port,
+            "-rp",
+            "200",
+            "--maximum-reconnect-times",
+            "2",
+        ],
+        timeout_seconds,
+    )
+    if not ok_two:
+        return False, f"max=2 case failed: {detail_two}"
+
+    if "Publish attempt 1 failed" not in detail_zero:
+        return False, "max=0 case missing attempt-1 failure trace"
+    if "Publish attempt 2 failed" in detail_zero:
+        return False, "max=0 case executed unexpected second attempt"
+    if "Publish attempt 3 failed" in detail_zero:
+        return False, "max=0 case executed unexpected third attempt"
+
+    if "Publish attempt 1 failed" not in detail_two:
+        return False, "max=2 case missing attempt-1 failure trace"
+    if "Publish attempt 2 failed" not in detail_two:
+        return False, "max=2 case missing attempt-2 failure trace"
+    if "Publish attempt 3 failed" not in detail_two:
+        return False, "max=2 case missing attempt-3 failure trace"
+
+    return True, "WP2 pub reconnect matrix checks succeeded"
+
+
+def run_test_client_shell_wp2_bench_reconnect_matrix(config) -> tuple[bool, str]:
+    timeout_seconds = max(8.0, config.timeout_seconds)
+    ok, _, detail = _run_reconnect_failure_case(
+        [
+            "bench",
+            "pub",
+            "-t",
+            "integration/wp2/bench/%i",
+            "-m",
+            "payload",
+            "-h",
+            "127.0.0.1",
+            "-p",
+            "1",
+            "-rp",
+            "200",
+            "--maximum-reconnect-times",
+            "2",
+            "-c",
+            "1",
+            "-L",
+            "1",
+        ],
+        timeout_seconds,
+    )
+    if not ok:
+        return False, detail
+
+    if "Step32 publish attempt 1 failed" not in detail:
+        return False, "bench case missing Step32 publish attempt-1 trace"
+    if "Step32 publish attempt 2 failed" not in detail:
+        return False, "bench case missing Step32 publish attempt-2 trace"
+    if "Step32 publish attempt 3 failed" not in detail:
+        return False, "bench case missing Step32 publish attempt-3 trace"
+
+    return True, "WP2 bench reconnect matrix check succeeded"
+
+
+def run_test_client_shell_wp2_reconnect_alias_precedence(config) -> tuple[bool, str]:
+    timeout_seconds = max(8.0, config.timeout_seconds)
+
+    ok_alias_last, _, detail_alias_last = _run_reconnect_failure_case(
+        [
+            "pub",
+            "-t",
+            "integration/wp2/alias",
+            "-m",
+            "payload",
+            "-h",
+            "127.0.0.1",
+            "-p",
+            "1",
+            "-rp",
+            "200",
+            "--maximum-reconnect-times",
+            "0",
+            "--maximun-reconnect-times",
+            "2",
+        ],
+        timeout_seconds,
+    )
+    if not ok_alias_last:
+        return False, f"alias-last case failed: {detail_alias_last}"
+
+    ok_standard_last, _, detail_standard_last = _run_reconnect_failure_case(
+        [
+            "pub",
+            "-t",
+            "integration/wp2/alias",
+            "-m",
+            "payload",
+            "-h",
+            "127.0.0.1",
+            "-p",
+            "1",
+            "-rp",
+            "200",
+            "--maximun-reconnect-times",
+            "2",
+            "--maximum-reconnect-times",
+            "0",
+        ],
+        timeout_seconds,
+    )
+    if not ok_standard_last:
+        return False, f"standard-last case failed: {detail_standard_last}"
+
+    if "Publish attempt 3 failed" not in detail_alias_last:
+        return False, "alias-last case did not apply max reconnect alias value"
+    if "Publish attempt 2 failed" in detail_standard_last:
+        return False, "standard-last case did not preserve last-option precedence"
+
+    return True, "WP2 reconnect alias and precedence checks succeeded"
+
+
 TEST_CASES = [
     {
         "name": "test-client-shell/test_client_shell_wp1_command_help_discoverability",
@@ -709,6 +883,21 @@ TEST_CASES = [
         "name": "test-client-shell/test_client_shell_wp1_unknown_behavior_parity",
         "description": "21.0.3 Local yahatestclient unknown command and unknown option behavior remains explicit",
         "run": run_test_client_shell_wp1_unknown_behavior_parity,
+    },
+    {
+        "name": "test-client-shell/test_client_shell_wp2_pub_reconnect_matrix",
+        "description": "21.0.4 Local yahatestclient pub applies reconnect-period and maximum reconnect attempts on connection failures",
+        "run": run_test_client_shell_wp2_pub_reconnect_matrix,
+    },
+    {
+        "name": "test-client-shell/test_client_shell_wp2_bench_reconnect_matrix",
+        "description": "21.0.5 Local yahatestclient bench pub applies reconnect-period and maximum reconnect attempts on connection failures",
+        "run": run_test_client_shell_wp2_bench_reconnect_matrix,
+    },
+    {
+        "name": "test-client-shell/test_client_shell_wp2_reconnect_alias_precedence",
+        "description": "21.0.6 Local yahatestclient accepts mqttx maximun reconnect alias spelling and preserves last-option precedence",
+        "run": run_test_client_shell_wp2_reconnect_alias_precedence,
     },
     {
         "name": "connect/test_client_shell_connect",

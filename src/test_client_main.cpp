@@ -942,119 +942,136 @@ int run_connect_command_with_retries(const TestClientProfile &profile) {
 }
 
 int run_publish_command(const TestClientProfile &profile) {
-  const ConnectPacket connect_packet = build_connect_packet_from_profile(profile);
-  const PublishPacket publish_packet =
-      build_publish_packet_from_profile_or_throw(profile);
+  for (uint32_t attempt_index = 0U;
+       attempt_index <= profile.maximum_reconnect_times; ++attempt_index) {
+    try {
+      const ConnectPacket connect_packet = build_connect_packet_from_profile(profile);
+      const PublishPacket publish_packet =
+          build_publish_packet_from_profile_or_throw(profile);
 
-  TcpConnection connection =
-      ConnectionNegotiator::dial_tcp(profile.host, profile.port);
-  StreamBuffer mqtt_stream_buffer;
-  WebSocketFrameCodec ws_frame_codec;
+      TcpConnection connection =
+          ConnectionNegotiator::dial_tcp(profile.host, profile.port);
+      StreamBuffer mqtt_stream_buffer;
+      WebSocketFrameCodec ws_frame_codec;
 
-  if (profile.transport == TestClientTransport::Mqtt) {
-    (void)ConnectionNegotiator::negotiate(connection, connect_packet, 5000U);
-  } else {
-    perform_ws_upgrade(connection, profile);
-    negotiate_mqtt_connect_over_ws(connection, connect_packet);
-  }
+      if (profile.transport == TestClientTransport::Mqtt) {
+        (void)ConnectionNegotiator::negotiate(connection, connect_packet, 5000U);
+      } else {
+        perform_ws_upgrade(connection, profile);
+        negotiate_mqtt_connect_over_ws(connection, connect_packet);
+      }
 
-  WriteBuffer publish_frame;
-  encode_publish(publish_frame, publish_packet);
-  write_transport_packet_or_throw(connection, profile.transport, publish_frame);
+      WriteBuffer publish_frame;
+      encode_publish(publish_frame, publish_packet);
+      write_transport_packet_or_throw(connection, profile.transport, publish_frame);
 
-  if (publish_packet.qos == QoS::AtLeastOnce) {
-    const uint16_t expected_packet_id = *publish_packet.packet_id;
-    while (true) {
-      const AnyPacket any_packet = read_next_transport_packet_or_throw(
-          connection, profile.transport, mqtt_stream_buffer, ws_frame_codec,
-          5000U);
-      if (std::holds_alternative<PubackPacket>(any_packet)) {
-        const PubackPacket &puback_packet = std::get<PubackPacket>(any_packet);
-        if (puback_packet.packet_id == expected_packet_id) {
-          if (is_error(puback_packet.reason_code)) {
-            throw ClientException(ClientError::ProtocolError,
-                                  "PUBACK returned error reason",
-                                  puback_packet.reason_code);
+      if (publish_packet.qos == QoS::AtLeastOnce) {
+        const uint16_t expected_packet_id = *publish_packet.packet_id;
+        while (true) {
+          const AnyPacket any_packet = read_next_transport_packet_or_throw(
+              connection, profile.transport, mqtt_stream_buffer, ws_frame_codec,
+              5000U);
+          if (std::holds_alternative<PubackPacket>(any_packet)) {
+            const PubackPacket &puback_packet = std::get<PubackPacket>(any_packet);
+            if (puback_packet.packet_id == expected_packet_id) {
+              if (is_error(puback_packet.reason_code)) {
+                throw ClientException(ClientError::ProtocolError,
+                                      "PUBACK returned error reason",
+                                      puback_packet.reason_code);
+              }
+              break;
+            }
           }
+          if (std::holds_alternative<DisconnectPacket>(any_packet)) {
+            const DisconnectPacket &disconnect_packet =
+                std::get<DisconnectPacket>(any_packet);
+            throw ClientException(ClientError::ProtocolError,
+                                  "Broker sent DISCONNECT during publish",
+                                  disconnect_packet.reason_code);
+          }
+        }
+      } else if (publish_packet.qos == QoS::ExactlyOnce) {
+        const uint16_t expected_packet_id = *publish_packet.packet_id;
+        while (true) {
+          const AnyPacket any_packet = read_next_transport_packet_or_throw(
+              connection, profile.transport, mqtt_stream_buffer, ws_frame_codec,
+              5000U);
+          if (!std::holds_alternative<PubrecPacket>(any_packet)) {
+            if (std::holds_alternative<DisconnectPacket>(any_packet)) {
+              const DisconnectPacket &disconnect_packet =
+                  std::get<DisconnectPacket>(any_packet);
+              throw ClientException(ClientError::ProtocolError,
+                                    "Broker sent DISCONNECT during QoS2 publish",
+                                    disconnect_packet.reason_code);
+            }
+            continue;
+          }
+
+          const PubrecPacket &pubrec_packet = std::get<PubrecPacket>(any_packet);
+          if (pubrec_packet.packet_id != expected_packet_id) {
+            continue;
+          }
+          if (is_error(pubrec_packet.reason_code)) {
+            throw ClientException(ClientError::ProtocolError,
+                                  "PUBREC returned error reason",
+                                  pubrec_packet.reason_code);
+          }
+
+          WriteBuffer pubrel_frame;
+          PubrelPacket pubrel_packet;
+          pubrel_packet.packet_id = expected_packet_id;
+          encode_pubrel(pubrel_frame, pubrel_packet);
+          write_transport_packet_or_throw(connection, profile.transport,
+                                          pubrel_frame);
           break;
         }
-      }
-      if (std::holds_alternative<DisconnectPacket>(any_packet)) {
-        const DisconnectPacket &disconnect_packet =
-            std::get<DisconnectPacket>(any_packet);
-        throw ClientException(ClientError::ProtocolError,
-                              "Broker sent DISCONNECT during publish",
-                              disconnect_packet.reason_code);
-      }
-    }
-  } else if (publish_packet.qos == QoS::ExactlyOnce) {
-    const uint16_t expected_packet_id = *publish_packet.packet_id;
-    while (true) {
-      const AnyPacket any_packet = read_next_transport_packet_or_throw(
-          connection, profile.transport, mqtt_stream_buffer, ws_frame_codec,
-          5000U);
-      if (!std::holds_alternative<PubrecPacket>(any_packet)) {
-        if (std::holds_alternative<DisconnectPacket>(any_packet)) {
-          const DisconnectPacket &disconnect_packet =
-              std::get<DisconnectPacket>(any_packet);
-          throw ClientException(ClientError::ProtocolError,
-                                "Broker sent DISCONNECT during QoS2 publish",
-                                disconnect_packet.reason_code);
+
+        while (true) {
+          const AnyPacket any_packet = read_next_transport_packet_or_throw(
+              connection, profile.transport, mqtt_stream_buffer, ws_frame_codec,
+              5000U);
+          if (std::holds_alternative<PubcompPacket>(any_packet)) {
+            const PubcompPacket &pubcomp_packet = std::get<PubcompPacket>(any_packet);
+            if (pubcomp_packet.packet_id == expected_packet_id) {
+              if (is_error(pubcomp_packet.reason_code)) {
+                throw ClientException(ClientError::ProtocolError,
+                                      "PUBCOMP returned error reason",
+                                      pubcomp_packet.reason_code);
+              }
+              break;
+            }
+          }
+          if (std::holds_alternative<DisconnectPacket>(any_packet)) {
+            const DisconnectPacket &disconnect_packet =
+                std::get<DisconnectPacket>(any_packet);
+            throw ClientException(ClientError::ProtocolError,
+                                  "Broker sent DISCONNECT during QoS2 completion",
+                                  disconnect_packet.reason_code);
+          }
         }
-        continue;
       }
 
-      const PubrecPacket &pubrec_packet = std::get<PubrecPacket>(any_packet);
-      if (pubrec_packet.packet_id != expected_packet_id) {
-        continue;
-      }
-      if (is_error(pubrec_packet.reason_code)) {
-        throw ClientException(ClientError::ProtocolError,
-                              "PUBREC returned error reason",
-                              pubrec_packet.reason_code);
-      }
+      send_disconnect_best_effort(connection, profile.transport);
+      connection.close();
 
-      WriteBuffer pubrel_frame;
-      PubrelPacket pubrel_packet;
-      pubrel_packet.packet_id = expected_packet_id;
-      encode_pubrel(pubrel_frame, pubrel_packet);
-      write_transport_packet_or_throw(connection, profile.transport,
-                                      pubrel_frame);
+      std::cout << "Publish succeeded to topic " << publish_packet.topic.value
+                << " with qos=" << static_cast<uint32_t>(profile.publish_qos)
+                << '\n';
+      return 0;
+    } catch (const std::exception &exception) {
+      std::cerr << "Publish attempt " << (attempt_index + 1U)
+                << " failed: " << exception.what() << '\n';
+    }
+
+    if (attempt_index == profile.maximum_reconnect_times) {
       break;
     }
 
-    while (true) {
-      const AnyPacket any_packet = read_next_transport_packet_or_throw(
-          connection, profile.transport, mqtt_stream_buffer, ws_frame_codec,
-          5000U);
-      if (std::holds_alternative<PubcompPacket>(any_packet)) {
-        const PubcompPacket &pubcomp_packet = std::get<PubcompPacket>(any_packet);
-        if (pubcomp_packet.packet_id == expected_packet_id) {
-          if (is_error(pubcomp_packet.reason_code)) {
-            throw ClientException(ClientError::ProtocolError,
-                                  "PUBCOMP returned error reason",
-                                  pubcomp_packet.reason_code);
-          }
-          break;
-        }
-      }
-      if (std::holds_alternative<DisconnectPacket>(any_packet)) {
-        const DisconnectPacket &disconnect_packet =
-            std::get<DisconnectPacket>(any_packet);
-        throw ClientException(ClientError::ProtocolError,
-                              "Broker sent DISCONNECT during QoS2 completion",
-                              disconnect_packet.reason_code);
-      }
-    }
+    std::this_thread::sleep_for(
+        std::chrono::milliseconds(profile.reconnect_period_ms));
   }
 
-  send_disconnect_best_effort(connection, profile.transport);
-  connection.close();
-
-  std::cout << "Publish succeeded to topic " << publish_packet.topic.value
-            << " with qos=" << static_cast<uint32_t>(profile.publish_qos)
-            << '\n';
-  return 0;
+  return 1;
 }
 
 int run_subscribe_command(const TestClientProfile &profile) {

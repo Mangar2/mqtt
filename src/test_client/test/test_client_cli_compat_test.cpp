@@ -203,4 +203,82 @@ TEST_CASE("test_client_cli_wp1_bench_help_flows_are_supported",
   }
 }
 
+TEST_CASE("test_client_cli_wp2_reconnect_alias_maximun_is_supported",
+          "[test_client][cli]") {
+  {
+    const char *argv[] = {"yahatestclient", "pub", "-t", "topic/a", "-m",
+                          "hello",          "--maximun-reconnect-times", "2"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Publish);
+    bool found_alias_override = false;
+    for (const auto &entry : options.overrides) {
+      if (entry.first == "maximum_reconnect_times" && entry.second == "2") {
+        found_alias_override = true;
+        break;
+      }
+    }
+    CHECK(found_alias_override);
+  }
+
+  {
+    const char *argv[] = {"yahatestclient", "bench", "pub", "-t", "topic/%i",
+                          "-m",             "hello", "--maximun-reconnect-times", "3"};
+    const TestClientCliOptions options = parse_test_client_cli(argc_of(argv), argv);
+    CHECK(options.command == TestClientCommand::Scenario);
+    CHECK(options.load_mode == "publish-rate");
+    bool found_alias_override = false;
+    for (const auto &entry : options.overrides) {
+      if (entry.first == "maximum_reconnect_times" && entry.second == "3") {
+        found_alias_override = true;
+        break;
+      }
+    }
+    CHECK(found_alias_override);
+  }
+}
+
+TEST_CASE("test_client_cli_wp2_pub_rejects_not_implemented_debug_save_load_options",
+          "[test_client][cli]") {
+  {
+    const char *argv[] = {"yahatestclient", "pub", "-t", "topic/a", "-m",
+                          "hello",          "--debug"};
+    CHECK_THROWS_AS(parse_test_client_cli(argc_of(argv), argv),
+                    std::invalid_argument);
+  }
+  {
+    const char *argv[] = {"yahatestclient", "pub", "-t", "topic/a", "-m",
+                          "hello",          "--save-options"};
+    CHECK_THROWS_AS(parse_test_client_cli(argc_of(argv), argv),
+                    std::invalid_argument);
+  }
+  {
+    const char *argv[] = {"yahatestclient", "pub", "-t", "topic/a", "-m",
+                          "hello",          "--load-options"};
+    CHECK_THROWS_AS(parse_test_client_cli(argc_of(argv), argv),
+                    std::invalid_argument);
+  }
+}
+
+TEST_CASE("test_client_cli_wp2_bench_rejects_not_implemented_debug_save_load_options",
+          "[test_client][cli]") {
+  {
+    const char *argv[] = {"yahatestclient", "bench", "pub", "-t", "topic/%i",
+                          "-m",             "hello", "--debug"};
+    CHECK_THROWS_AS(parse_test_client_cli(argc_of(argv), argv),
+                    std::invalid_argument);
+  }
+  {
+    const char *argv[] = {"yahatestclient", "bench", "pub", "-t", "topic/%i",
+                          "-m",             "hello", "--save-options"};
+    CHECK_THROWS_AS(parse_test_client_cli(argc_of(argv), argv),
+                    std::invalid_argument);
+  }
+  {
+    const char *argv[] = {"yahatestclient", "bench", "pub", "-t", "topic/%i",
+                          "-m",             "hello", "--load-options"};
+    CHECK_THROWS_AS(parse_test_client_cli(argc_of(argv), argv),
+                    std::invalid_argument);
+  }
+}
+
 } // namespace mqtt

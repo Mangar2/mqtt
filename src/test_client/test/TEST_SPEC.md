@@ -39,6 +39,9 @@
 | `test_client_cli_wp1_stub_commands_help_flow_is_supported` | `[test_client][cli]` | mqttx compatibility stub commands (`conn`, `sub`, `simulate`, `ls`, `init`, `check`) accept `--help` and resolve to help mode. |
 | `test_client_cli_wp1_stub_commands_without_help_fail` | `[test_client][cli]` | mqttx compatibility stub commands reject non-help execution until runtime behavior is implemented. |
 | `test_client_cli_wp1_bench_help_flows_are_supported` | `[test_client][cli]` | Bench entry and bench subcommands accept `--help` and return help mode instead of argument errors. |
+| `test_client_cli_wp2_reconnect_alias_maximun_is_supported` | `[test_client][cli]` | mqttx simulate alias spelling `--maximun-reconnect-times` is accepted in mqttx-compatible pub/bench flows and mapped to reconnect override. |
+| `test_client_cli_wp2_pub_rejects_not_implemented_debug_save_load_options` | `[test_client][cli]` | mqttx pub compatibility path rejects recognized but not implemented `--debug`, `--save-options`, and `--load-options` with argument errors. |
+| `test_client_cli_wp2_bench_rejects_not_implemented_debug_save_load_options` | `[test_client][cli]` | mqttx bench compatibility path rejects recognized but not implemented `--debug`, `--save-options`, and `--load-options` with argument errors. |
 
 ## Scenario Runner
 

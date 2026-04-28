@@ -22,6 +22,10 @@ orchestration for broker-supported transports (`mqtt`, `ws`) without TLS.
 - Connection shell that negotiates MQTT CONNECT and keeps the session open until
   process signal (`SIGINT`/`SIGTERM`) with keep-alive pings.
 - Reconnect retry loop driven by profile settings.
+- One-shot `publish` command applies reconnect retry semantics driven by
+  `reconnect_period_ms` and `maximum_reconnect_times`.
+- Step 32 direct benchmark operations apply reconnect retry semantics driven by
+  `reconnect_period_ms` and `maximum_reconnect_times`.
 - Step 28 MQTT 5 CONNECT completeness: session/receive/packet-size/topic-alias
   properties, response/problem info flags, connect user properties, optional
   enhanced authentication properties, and full Last-Will property set.
@@ -108,6 +112,10 @@ Compatibility behavior:
   `-P`, `-l`, `--path`, `-wh`, `-rp`, `-se`, `--rcv-max`, `--req-response-info`,
   `--no-req-problem-info`, `-Cup`, `-am`), and will aliases (`-Wt`..`-Wup`).
 - `-V/--mqtt-version` is accepted only for `5` or `5.0`.
+- mqttx compatibility alias `--maximun-reconnect-times` is accepted and mapped
+  to `maximum_reconnect_times`.
+- mqttx-compatible command paths explicitly reject recognized-but-unimplemented
+  `--debug`, `--save-options`, and `--load-options` with argument errors.
 - mqttx top-level commands `conn`, `sub`, `simulate`, `ls`, `init`, and
   `check` are recognized as compatibility stubs: `--help` succeeds and
   non-help execution returns a not-implemented argument error.
