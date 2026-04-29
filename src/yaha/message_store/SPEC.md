@@ -1,10 +1,11 @@
-# message_store — MessageTree Core
+# message_store — MessageTree + Persistence
 
 ## Purpose
 
-Provides the internal MessageTree data structure for MessageStore step 4. The tree stores
-current topic state, bounded history, and supports section queries, snapshot diff queries,
-and stale-node cleanup.
+Provides MessageStore foundations for steps 4 and 5: internal MessageTree data structure
+and persistence service. The tree stores current topic state, bounded history, section and
+snapshot diff queries, plus stale-node cleanup. Persistence serializes tree state to disk,
+restores from the most recent valid file on startup, and manages periodic saves.
 
 ## Public API
 
@@ -26,6 +27,17 @@ struct MessageTreeNode;
 | `getSection` | `vector<MessageTreeNode>(const string&, uint32_t, bool, bool) const` | prefix + depth query |
 | `getNodes` | `vector<MessageTreeNode>(const vector<MessageTreeSnapshotNode>&) const` | returns changed nodes only |
 | `cleanup` | `size_t(uint32_t)` | removes stale nodes older than N days |
+| `replaceAllNodes` | `void(const vector<MessageTreeNode>&)` | replaces full tree from persisted snapshot |
+
+### Class `MessageTreePersistence`
+
+| Member | Signature | Notes |
+|--------|-----------|-------|
+| ctor | `MessageTreePersistence(Config)` | persistence runtime config |
+| `persistNow` | `bool(const MessageTree&)` | serializes tree to timestamped file |
+| `restoreLatest` | `bool(MessageTree&)` | loads newest valid persisted file |
+| `startPeriodic` | `void(const MessageTree&)` | starts background periodic persist loop |
+| `stopPeriodic` | `void()` | stops periodic loop |
 
 ## Data behavior
 
@@ -49,11 +61,23 @@ struct MessageTreeNode;
 - Empty branch nodes are pruned recursively.
 - Return value is number of removed data nodes.
 
+## Persistence behavior
+
+- File naming: `<filename>_<timestamp>.mtree` in configured directory.
+- `persistNow` writes full tree snapshot including current values and history.
+- `restoreLatest` scans candidate files newest-first and loads first valid snapshot.
+- Missing/corrupt files are handled silently; restore returns false and tree remains usable.
+- Retention keeps newest `keepFiles` snapshots and deletes older files.
+- Periodic mode persists every `interval` milliseconds; `interval == 0` disables periodic loop.
+
 ## Files
 
 | File | Role |
 |------|------|
 | `message_tree.h` | Public declarations |
 | `message_tree.cpp` | Implementation |
+| `message_tree_persistence.h` | Persistence declarations |
+| `message_tree_persistence.cpp` | Persistence implementation |
 | `test/TEST_SPEC.md` | Unit test specification |
 | `test/message_tree_test.cpp` | Unit tests |
+| `test/message_tree_persistence_test.cpp` | Persistence unit tests |

@@ -103,6 +103,28 @@ MessageTree::getNodes(const std::vector<MessageTreeSnapshotNode>& snapshot) cons
     return diff;
 }
 
+void MessageTree::replaceAllNodes(const std::vector<MessageTreeNode>& nodes) {
+    root_ = TreeNode{};
+
+    for (const auto& node : nodes) {
+        if (node.topic.empty()) {
+            continue;
+        }
+
+        TreeNode* target = ensurePath(node.topic);
+        if (target == nullptr) {
+            continue;
+        }
+
+        target->hasData = true;
+        target->data.timeMs = node.timeMs;
+        target->data.value = node.value;
+        target->data.reason = node.reason;
+        target->data.compressedHistory = compressHistory(node.history);
+        trimHistory(target->data);
+    }
+}
+
 std::size_t MessageTree::cleanup(std::uint32_t daysWithoutUpdate) {
     constexpr std::int64_t k_millisPerDay = 86400000;
     const std::int64_t cutoffMs = nowMilliseconds() -
@@ -234,6 +256,27 @@ MessageTree::decompressHistory(const std::vector<CompressedHistoryEntry>& compre
         }
     }
     return history;
+}
+
+std::vector<MessageTree::CompressedHistoryEntry>
+MessageTree::compressHistory(const std::vector<MessageTreeHistoryEntry>& history) const {
+    std::vector<CompressedHistoryEntry> compressed{};
+    for (const auto& entry : history) {
+        if (!compressed.empty()) {
+            auto& last = compressed.back();
+            if (last.entry.value == entry.value &&
+                reasonListsEqual(last.entry.reason, entry.reason) &&
+                last.repeatCount < config_.maxValuesPerHistoryEntry) {
+                last.repeatCount += 1U;
+                last.entry.timeMs = entry.timeMs;
+                continue;
+            }
+        }
+
+        compressed.push_back({entry, 1U});
+    }
+
+    return compressed;
 }
 
 void MessageTree::collectSection(const TreeNode& node,

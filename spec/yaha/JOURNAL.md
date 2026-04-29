@@ -83,3 +83,15 @@ Added `TEST_SPEC.md` and `message_tree_test.cpp` covering node insertion, update
 
 ### [MILESTONE] Step 4 complete — MessageTree implemented and validated
 Step 4 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/message_store/`. Full `python3 test/run_coverage.py` is green on tests (1277/1277). Scoped coverage for `src/yaha/` reports threshold MET with `message_tree.cpp` at Regions 84.62%, Functions 95.00%, Lines 84.80%.
+
+### [ARTIFACT] src/yaha/message_store/message_tree_persistence.* created (Step 5)
+Implemented `MessageTreePersistence` with immediate snapshot save, periodic snapshot loop, restore from newest valid snapshot, and retention cleanup of older files. Snapshot format includes topic/value/time/reason/history for full tree reconstruction.
+
+### [ARTIFACT] MessageTree restore API extended for persistence
+Added `MessageTree::replaceAllNodes(...)` for startup restore and `compressHistory(...)` helper so persisted decompressed history can be reconstructed into internal compressed representation.
+
+### [ARTIFACT] src/yaha/message_store/test/message_tree_persistence_test.cpp created
+Added persistence unit tests for roundtrip restore, corrupt-file fallback, malformed snapshot handling, missing snapshot handling, retention modes (`keepFiles > 0` and `keepFiles == 0`), periodic loop behavior, and default-constructor path.
+
+### [MILESTONE] Step 5 complete — MessageStore persistence implemented and validated
+Step 5 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/message_store/`. Full `python3 test/run_coverage.py` passed tests (1287/1287). Scoped coverage for `src/yaha/` reports threshold MET with `message_tree_persistence.cpp` at Regions 84.85%, Functions 100.00%, Lines 80.84%.

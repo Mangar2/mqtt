@@ -94,6 +94,12 @@ public:
     getNodes(const std::vector<MessageTreeSnapshotNode>& snapshot) const;
 
     /**
+     * @brief Replaces full tree content with provided nodes.
+     * @param nodes Full snapshot nodes to import.
+     */
+    void replaceAllNodes(const std::vector<MessageTreeNode>& nodes);
+
+    /**
      * @brief Removes nodes older than the provided day threshold.
      * @param daysWithoutUpdate Age threshold in days.
      * @return Number of removed data nodes.
@@ -177,6 +183,9 @@ private:
     [[nodiscard]] static std::vector<MessageTreeHistoryEntry>
     decompressHistory(const std::vector<CompressedHistoryEntry>& compressed,
                       bool includeReason);
+
+    [[nodiscard]] std::vector<CompressedHistoryEntry>
+    compressHistory(const std::vector<MessageTreeHistoryEntry>& history) const;
 
     /**
      * @brief Traverses subtree and appends section query nodes.
