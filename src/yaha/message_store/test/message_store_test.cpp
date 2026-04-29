@@ -290,6 +290,29 @@ TEST_CASE("http_get_store_returns_json_for_topic_prefix", "[message_store]") {
 
 }
 
+TEST_CASE("http_get_store_decodes_percent_encoded_topic_prefix", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.handleMessage(yaha::Message{"home room/lamp", std::string{"on"}});
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    const auto response = client.Get("/store/home%20room");
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 200);
+    REQUIRE(response->body.find("\"topic\":\"home room/lamp\"") != std::string::npos);
+}
+
 TEST_CASE("http_get_store_applies_levelamount_history_reason_headers", "[message_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};

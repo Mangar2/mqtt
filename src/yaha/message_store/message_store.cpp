@@ -39,6 +39,51 @@ bool startsWith(const std::string& text, const std::string& prefix) {
     return text.size() >= prefix.size() && text.compare(0U, prefix.size(), prefix) == 0;
 }
 
+bool isHexDigit(char c) {
+    return (c >= '0' && c <= '9')
+        || (c >= 'a' && c <= 'f')
+        || (c >= 'A' && c <= 'F');
+}
+
+int hexValue(char c) {
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+        return 10 + (c - 'a');
+    }
+    return 10 + (c - 'A');
+}
+
+bool tryDecodePercentEncoding(const std::string& encoded, std::string& decoded) {
+    decoded.clear();
+    decoded.reserve(encoded.size());
+
+    for (std::size_t i = 0U; i < encoded.size(); ++i) {
+        const char c = encoded[i];
+        if (c != '%') {
+            decoded.push_back(c);
+            continue;
+        }
+
+        if ((i + 2U) >= encoded.size()) {
+            return false;
+        }
+
+        const char hi = encoded[i + 1U];
+        const char lo = encoded[i + 2U];
+        if (!isHexDigit(hi) || !isHexDigit(lo)) {
+            return false;
+        }
+
+        const int value = (hexValue(hi) << 4) | hexValue(lo);
+        decoded.push_back(static_cast<char>(value));
+        i += 2U;
+    }
+
+    return true;
+}
+
 std::string normalizeBasePath(const std::string& configuredPath) {
     std::string base = configuredPath.empty() ? "/store" : configuredPath;
     if (base.front() != '/') {
@@ -536,14 +581,22 @@ void MessageStore::handleHttpRequest(MessageStore& store,
                                      const std::string& basePath,
                                      const httplib::Request& request,
                                      httplib::Response& response) {
-    std::string topicPrefix;
+    std::string topicPrefixEncoded;
     if (request.path == basePath) {
-        topicPrefix.clear();
+        topicPrefixEncoded.clear();
     } else if (startsWith(request.path, basePath + "/")) {
-        topicPrefix = request.path.substr(basePath.size() + 1U);
+        topicPrefixEncoded = request.path.substr(basePath.size() + 1U);
     } else {
         response.status = 404;
         response.set_content("{\"error\":\"not_found\"}", "application/json");
+        return;
+    }
+
+    std::string topicPrefix;
+    if (!tryDecodePercentEncoding(topicPrefixEncoded, topicPrefix)) {
+        response.status = 400;
+        response.set_content("{\"error\":\"bad_request\",\"message\":\"invalid_percent_encoding\"}",
+                             "application/json");
         return;
     }
 
