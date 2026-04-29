@@ -33,3 +33,8 @@ Unit tests for MessageTree behavior required by step 4.
 | `run_restore_starts_callbacks_and_periodic_persist` | Lifecycle run path | pre-existing snapshot + callbacks + interval>0 | restored data present, start/stop callbacks invoked, periodic file created |
 | `close_performs_final_persist_when_periodic_disabled` | Final persist on shutdown | interval=0 run/close | at least one snapshot file exists |
 | `run_and_close_are_idempotent` | Repeated lifecycle calls are safe | run twice and close twice | callbacks invoked once each |
+| `http_get_store_returns_json_for_topic_prefix` | GET endpoint section mode with defaults | GET `/store/home` | status 200 and JSON array with matching topics |
+| `http_get_store_applies_levelamount_history_reason_headers` | Header options are honored | GET with `levelamount=2`, `history=true`, `reason=false` | status 200 and returned nodes include history but no reason |
+| `http_get_store_snapshot_body_uses_diff_mode` | JSON body activates diff mode | GET body with prior snapshot array | only changed/new topics returned |
+| `http_get_store_malformed_snapshot_returns_empty_array` | Malformed body fallback path | GET body `not-json` | status 200 and `[]` |
+| `http_unknown_path_returns_404` | Non-store endpoint is rejected | GET `/unknown/path` | status 404 |

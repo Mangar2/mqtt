@@ -1,9 +1,10 @@
-# message_store — MessageTree + Persistence + Component
+# message_store — MessageTree + Persistence + Component + HTTP
 
 ## Purpose
 
-Provides MessageStore foundations for steps 4 to 6: internal MessageTree data structure,
-persistence service, and MessageStore component logic implementing IMqttComponent.
+Provides MessageStore foundations for steps 4 to 7: internal MessageTree data structure,
+persistence service, MessageStore component logic implementing IMqttComponent, and HTTP GET
+query interface via cpp-httplib.
 The tree stores current topic state, bounded history, section and snapshot diff queries,
 plus stale-node cleanup. Persistence serializes tree state to disk, restores from the most
 recent valid file on startup, and manages periodic saves.
@@ -50,6 +51,7 @@ struct MessageTreeNode;
 | `run` | `void()` | restore, start HTTP callback, start periodic persistence |
 | `close` | `void()` | stop HTTP callback, stop periodic persistence, final persist |
 | `querySection` | `vector<MessageTreeNode>(...) const` | read API used by future HTTP step |
+| `queryNodes` | `vector<MessageTreeNode>(const vector<MessageTreeSnapshotNode>&) const` | snapshot diff read API |
 
 ## Data behavior
 
@@ -91,7 +93,20 @@ struct MessageTreeNode;
 - Non-numeric cleanup payload is ignored.
 - `run()` restores latest persisted snapshot before serving.
 - `close()` always performs one final `persistNow` after periodic loop is stopped.
-- HTTP server integration is callback-based in step 6; concrete endpoint implementation comes in step 7.
+
+## HTTP behavior
+
+- `run()` starts an internal cpp-httplib server on `config.serverPort`.
+- GET path: `<config.serverPath>/<topicPrefix>`; default `serverPath` is `/store`.
+- Headers:
+  - `levelamount` (default 1)
+  - `history` (default false)
+  - `reason` (default true)
+- Empty body -> section mode using `getSection`.
+- JSON array body -> snapshot diff mode using `getNodes`.
+- Malformed body -> empty result array with status 200.
+- Unknown path -> status 404.
+- Response is JSON array with `application/json`.
 
 ## Files
 

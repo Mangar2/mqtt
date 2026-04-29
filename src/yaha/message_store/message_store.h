@@ -10,8 +10,16 @@
 #include "yaha/mqtt_component/mqtt_component.h"
 
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
+
+namespace httplib {
+class Server;
+struct Request;
+struct Response;
+} // namespace httplib
 
 namespace yaha {
 
@@ -21,6 +29,8 @@ namespace yaha {
 struct MessageStoreConfig {
     SubscriptionMap subscriptions{};                    ///< Topic subscriptions for MQTT transport.
     std::string cleanupTopic{"$MONITORING/messages/cleanup"}; ///< Cleanup command topic.
+    std::string serverPath{"/store"};                 ///< HTTP GET base path.
+    std::uint16_t serverPort{8090U};                   ///< HTTP server listen port.
     MessageTreeConfig treeConfig{};                    ///< MessageTree behavior config.
     MessageTreePersistence::Config persistenceConfig{};///< Persistence behavior config.
     std::function<void()> httpStartCallback{};         ///< Optional HTTP start callback.
@@ -88,12 +98,31 @@ public:
                  bool includeHistory,
                  bool includeReason) const;
 
+    /**
+     * @brief Returns changed/new nodes relative to a snapshot list.
+     * @param snapshot Snapshot baseline used for diff mode.
+     * @return Flat node list that changed since snapshot.
+     */
+    [[nodiscard]] std::vector<MessageTreeNode>
+    queryNodes(const std::vector<MessageTreeSnapshotNode>& snapshot) const;
+
 private:
+    void startHttpServer();
+    void stopHttpServer();
+
     [[nodiscard]] static bool tryParseCleanupDays(const Value& value, std::uint32_t& days);
+    [[nodiscard]] static bool parseBoolHeaderValue(const std::string& value, bool defaultValue);
+
+    static void handleHttpRequest(MessageStore& store,
+                                  const std::string& basePath,
+                                  const httplib::Request& request,
+                                  httplib::Response& response);
 
     MessageStoreConfig config_{};
     MessageTree tree_{};
     MessageTreePersistence persistence_{};
+    std::unique_ptr<httplib::Server> httpServer_{};
+    std::thread httpThread_{};
 
     mutable std::mutex lifecycleStateMutex_;
     mutable std::mutex treeStateMutex_;
