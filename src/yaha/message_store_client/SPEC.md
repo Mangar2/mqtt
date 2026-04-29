@@ -48,12 +48,23 @@ When `[subscriptions]` is missing or empty, default subscription is `#` with QoS
 - `close()` stops MQTT client before stopping MessageStore to avoid new inbound dispatch
   during shutdown.
 
-## Transport note
+## Transport behavior
 
-The current composition wires an in-memory transport callback bundle so process wiring and
-component lifecycle can run without binding to broker-transport internals. Replacing this
-bundle with a real broker transport adapter is a runtime integration step and does not
-change MessageStore or YahaMqttClient APIs.
+The composition wires a real TCP MQTT transport adapter into `YahaMqttClient::Transport`.
+The adapter is implemented on top of core client modules from `src/client`:
+
+- `client/connection_negotiator.h` for TCP dial + CONNECT/CONNACK negotiation.
+- MQTT codecs (`codec/packet/*.h`, `codec/packet_reader/packet_reader.h`) for wire encoding/decoding.
+- `network/stream_buffer.h` for packet framing over TCP stream reads.
+
+Transport callback behavior:
+
+- `connect`: dials broker endpoint, negotiates CONNECT, initializes stream state.
+- `subscribe`: sends SUBSCRIBE and waits for SUBACK.
+- `publish`: sends PUBLISH according to YAHA message qos/retain.
+- `pollIncoming`: reads inbound packets, maps inbound PUBLISH to YAHA `Message`, and emits PUBACK/PUBREC/PUBCOMP as required.
+- `ping`: sends PINGREQ.
+- `disconnect`: sends best-effort DISCONNECT and closes socket.
 
 ## Files
 

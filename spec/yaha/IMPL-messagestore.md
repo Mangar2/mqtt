@@ -43,6 +43,23 @@ When done: any component can be written against this interface without knowing a
 
 ---
 
+### Step 2.5 — MQTT-IMqttComponent wiring client foundation
+
+Create the reusable MQTT client foundation that accepts an `IMqttComponent` and can wire any
+future YAHA MQTT domain component to broker transport logic.
+
+What is produced:
+- A reusable client/session layer that accepts an `IMqttComponent` instance and drives it.
+- Transport-side implementation based on existing code under `src/client` (connection negotiation,
+     packet encode/decode, keep-alive, subscribe/publish flow).
+- Component wiring contract: `getSubscriptions()`, inbound dispatch to `handleMessage()`, and
+     outgoing publish integration via `setPublishCallback(...)`.
+
+When done: every future YAHA MQTT domain client can reuse the same MQTT client code unchanged and
+only provide a new `IMqttComponent` implementation.
+
+---
+
 ### Step 3 — MQTT session (YahaMqttClient)
 
 Implement the MQTT client that drives any `IMqttComponent`. This is the transport half of the composition pattern described in [SPEC-IMqttComponent.md](./SPEC-IMqttComponent.md) (section: Composition in main).
@@ -163,6 +180,7 @@ When done: a deployable binary that connects to yahabroker, records all messages
 ```
 Step 1 (Message)
   └─ Step 2 (IMqttComponent)
+       └─ Step 2.5 (MQTT-IMqttComponent wiring foundation)
        └─ Step 3 (YahaMqttClient)        ← reused by all future services
   └─ Step 4 (Message tree)
        └─ Step 5 (Persistence)

@@ -61,7 +61,7 @@ public:
         std::string& errorMessage);
 
 private:
-    [[nodiscard]] static YahaMqttClient::Transport makeInMemoryTransport();
+    [[nodiscard]] static YahaMqttClient::Transport makeBrokerTransport();
 
     MessageStore configStore_;
     YahaMqttClient mqttClient_;
