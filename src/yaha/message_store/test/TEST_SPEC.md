@@ -26,3 +26,10 @@ Unit tests for MessageTree behavior required by step 4.
 | `start_periodic_persists_until_stopped` | Periodic persistence loop | short interval + running period | at least one snapshot file created |
 | `start_periodic_noop_when_interval_zero_or_already_running` | startPeriodic guard branches | interval=0 and repeated start call | no periodic files for interval=0 and stable run for repeated start |
 | `default_constructor_can_persist_and_restore_reason_history` | Default-config constructor and reason/history serialization | value + reason + history | roundtrip keeps reason and history entries |
+| `get_subscriptions_returns_configured_map` | MessageStore forwards configured subscriptions | config map with multiple entries | returned map equals config map |
+| `handle_message_adds_regular_topic_to_tree` | Non-cleanup message must be stored | regular topic/value message | querySection contains node |
+| `handle_message_cleanup_topic_uses_numeric_payload` | Cleanup dispatch with numeric payload | old node + cleanup payload 1 | stale node removed |
+| `handle_message_cleanup_topic_ignores_invalid_payload` | Invalid cleanup payload must be ignored | existing node + cleanup payload text | existing node remains |
+| `run_restore_starts_callbacks_and_periodic_persist` | Lifecycle run path | pre-existing snapshot + callbacks + interval>0 | restored data present, start/stop callbacks invoked, periodic file created |
+| `close_performs_final_persist_when_periodic_disabled` | Final persist on shutdown | interval=0 run/close | at least one snapshot file exists |
+| `run_and_close_are_idempotent` | Repeated lifecycle calls are safe | run twice and close twice | callbacks invoked once each |

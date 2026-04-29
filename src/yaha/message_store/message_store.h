@@ -1,0 +1,103 @@
+#pragma once
+
+/**
+ * @file message_store.h
+ * @brief MessageStore component logic implementing IMqttComponent.
+ */
+
+#include "yaha/message_store/message_tree.h"
+#include "yaha/message_store/message_tree_persistence.h"
+#include "yaha/mqtt_component/mqtt_component.h"
+
+#include <functional>
+#include <mutex>
+#include <string>
+
+namespace yaha {
+
+/**
+ * @brief Runtime configuration for MessageStore component logic.
+ */
+struct MessageStoreConfig {
+    SubscriptionMap subscriptions{};                    ///< Topic subscriptions for MQTT transport.
+    std::string cleanupTopic{"$MONITORING/messages/cleanup"}; ///< Cleanup command topic.
+    MessageTreeConfig treeConfig{};                    ///< MessageTree behavior config.
+    MessageTreePersistence::Config persistenceConfig{};///< Persistence behavior config.
+    std::function<void()> httpStartCallback{};         ///< Optional HTTP start callback.
+    std::function<void()> httpStopCallback{};          ///< Optional HTTP stop callback.
+};
+
+/**
+ * @brief MessageStore component implementation for MQTT-facing runtime logic.
+ */
+class MessageStore final : public IMqttComponent {
+public:
+    /**
+     * @brief Constructs MessageStore from runtime configuration.
+     * @param config MessageStore configuration.
+     */
+    explicit MessageStore(MessageStoreConfig config);
+
+    /**
+     * @brief Virtual destructor.
+     */
+    ~MessageStore() override;
+
+    MessageStore(const MessageStore&) = delete;
+    MessageStore& operator=(const MessageStore&) = delete;
+
+    /**
+     * @brief Returns configured MQTT subscriptions.
+     * @return Topic filter to QoS map.
+     */
+    [[nodiscard]] SubscriptionMap getSubscriptions() const override;
+
+    /**
+     * @brief Handles one inbound message from MQTT client.
+     * @param message Inbound message.
+     */
+    void handleMessage(const Message& message) override;
+
+    /**
+     * @brief Starts component lifecycle: restore, HTTP start, periodic persistence.
+     */
+    void run();
+
+    /**
+     * @brief Stops component lifecycle: HTTP stop, periodic stop, final persist.
+     */
+    void close();
+
+    /**
+     * @brief Returns whether component lifecycle is currently running.
+     * @return True when running.
+     */
+    [[nodiscard]] bool isRunning() const;
+
+    /**
+     * @brief Returns tree section for future HTTP queries.
+     * @param topicPrefix Prefix path; empty means root.
+     * @param levelAmount Relative depth from prefix.
+     * @param includeHistory Include history entries in result.
+     * @param includeReason Include reason lists in result.
+     * @return Flat node list under prefix.
+     */
+    [[nodiscard]] std::vector<MessageTreeNode>
+    querySection(const std::string& topicPrefix,
+                 std::uint32_t levelAmount,
+                 bool includeHistory,
+                 bool includeReason) const;
+
+private:
+    [[nodiscard]] static bool tryParseCleanupDays(const Value& value, std::uint32_t& days);
+
+    MessageStoreConfig config_{};
+    MessageTree tree_{};
+    MessageTreePersistence persistence_{};
+
+    mutable std::mutex lifecycleStateMutex_;
+    mutable std::mutex treeStateMutex_;
+    bool running_{false};
+};
+
+} // namespace yaha

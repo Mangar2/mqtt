@@ -1,11 +1,12 @@
-# message_store — MessageTree + Persistence
+# message_store — MessageTree + Persistence + Component
 
 ## Purpose
 
-Provides MessageStore foundations for steps 4 and 5: internal MessageTree data structure
-and persistence service. The tree stores current topic state, bounded history, section and
-snapshot diff queries, plus stale-node cleanup. Persistence serializes tree state to disk,
-restores from the most recent valid file on startup, and manages periodic saves.
+Provides MessageStore foundations for steps 4 to 6: internal MessageTree data structure,
+persistence service, and MessageStore component logic implementing IMqttComponent.
+The tree stores current topic state, bounded history, section and snapshot diff queries,
+plus stale-node cleanup. Persistence serializes tree state to disk, restores from the most
+recent valid file on startup, and manages periodic saves.
 
 ## Public API
 
@@ -39,6 +40,17 @@ struct MessageTreeNode;
 | `startPeriodic` | `void(const MessageTree&)` | starts background periodic persist loop |
 | `stopPeriodic` | `void()` | stops periodic loop |
 
+### Class `MessageStore`
+
+| Member | Signature | Notes |
+|--------|-----------|-------|
+| ctor | `MessageStore(MessageStoreConfig)` | builds tree+persistence from config |
+| `getSubscriptions` | `SubscriptionMap() const` | returns configured topic->QoS map |
+| `handleMessage` | `void(const Message&)` | cleanup-topic dispatch or tree addData |
+| `run` | `void()` | restore, start HTTP callback, start periodic persistence |
+| `close` | `void()` | stop HTTP callback, stop periodic persistence, final persist |
+| `querySection` | `vector<MessageTreeNode>(...) const` | read API used by future HTTP step |
+
 ## Data behavior
 
 - Tree keys are topic path segments split by `/`.
@@ -70,6 +82,17 @@ struct MessageTreeNode;
 - Retention keeps newest `keepFiles` snapshots and deletes older files.
 - Periodic mode persists every `interval` milliseconds; `interval == 0` disables periodic loop.
 
+## Component behavior
+
+- `getSubscriptions()` returns `config.subscriptions` unchanged.
+- `handleMessage()`:
+  - cleanup topic: parse payload as days and call `tree.cleanup(days)`.
+  - other topics: call `tree.addData(message)`.
+- Non-numeric cleanup payload is ignored.
+- `run()` restores latest persisted snapshot before serving.
+- `close()` always performs one final `persistNow` after periodic loop is stopped.
+- HTTP server integration is callback-based in step 6; concrete endpoint implementation comes in step 7.
+
 ## Files
 
 | File | Role |
@@ -78,6 +101,9 @@ struct MessageTreeNode;
 | `message_tree.cpp` | Implementation |
 | `message_tree_persistence.h` | Persistence declarations |
 | `message_tree_persistence.cpp` | Persistence implementation |
+| `message_store.h` | MessageStore component declarations |
+| `message_store.cpp` | MessageStore component implementation |
 | `test/TEST_SPEC.md` | Unit test specification |
 | `test/message_tree_test.cpp` | Unit tests |
 | `test/message_tree_persistence_test.cpp` | Persistence unit tests |
+| `test/message_store_test.cpp` | MessageStore component tests |

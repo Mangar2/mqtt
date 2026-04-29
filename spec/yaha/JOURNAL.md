@@ -95,3 +95,12 @@ Added persistence unit tests for roundtrip restore, corrupt-file fallback, malfo
 
 ### [MILESTONE] Step 5 complete — MessageStore persistence implemented and validated
 Step 5 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/message_store/`. Full `python3 test/run_coverage.py` passed tests (1287/1287). Scoped coverage for `src/yaha/` reports threshold MET with `message_tree_persistence.cpp` at Regions 84.85%, Functions 100.00%, Lines 80.84%.
+
+### [ARTIFACT] src/yaha/message_store/message_store.* created (Step 6)
+Implemented `MessageStore` component logic in `message_store.h/.cpp` as `IMqttComponent`: configured subscription exposure, inbound message dispatch to `MessageTree`, cleanup-topic handling (`$MONITORING/messages/cleanup`), lifecycle `run()`/`close()`, startup restore via persistence, periodic persistence start/stop, and final persist on shutdown.
+
+### [ARTIFACT] src/yaha/message_store/test/message_store_test.cpp created
+Added component tests for configured subscriptions, regular message storage, numeric cleanup dispatch, invalid cleanup payload behavior, run/close lifecycle callbacks, restore-on-run behavior, periodic persistence start, final persist on close, and idempotent run/close semantics.
+
+### [MILESTONE] Step 6 complete — MessageStore component logic implemented and validated
+Step 6 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/message_store/`. Full `python3 test/run_coverage.py` passed tests (1294/1294). Scoped coverage for `src/yaha/` reports threshold MET with `message_store.cpp` at Regions 93.33%, Functions 100.00%, Lines 91.86%.
