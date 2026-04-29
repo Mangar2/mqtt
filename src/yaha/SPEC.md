@@ -8,3 +8,5 @@ directly here — each sub-topic has its own subdirectory.
 | Directory    | Step | Description |
 |--------------|------|-------------|
 | `message/`   | 1    | Universal YAHA Message value type shared by all YAHA components. |
+| `mqtt_component/` | 2 | Transport-agnostic IMqttComponent interface used by MQTT session/client wiring. |
+| `mqtt_client/` | 3 | Reusable YahaMqttClient MQTT session loop with reconnect, subscribe replay, inbound dispatch, and keep-alive. |

@@ -54,3 +54,23 @@ Created `src/yaha/message/message.h`, `message.cpp`, `test/message_test.cpp`. Va
 
 ### [DECISION] reason chain: prepend (most-recent at index 0)
 Legacy JS code used `Array.push` (most-recent at end). Written spec says "most recent is at the front". C++ implementation follows the spec: `addReason` inserts at `begin()`, so `reason()[0]` is always the newest entry.
+
+## 2026-04-29
+
+### [ARTIFACT] src/yaha/mqtt_component/* created (Step 2)
+Implemented `IMqttComponent` as transport boundary interface in `src/yaha/mqtt_component/mqtt_component.h` and `mqtt_component.cpp`. Added shared aliases `SubscriptionMap` and `PublishCallback`, pure virtual methods `getSubscriptions()` and `handleMessage()`, optional default `setPublishCallback(...)`, and virtual destructor.
+
+### [ARTIFACT] src/yaha/mqtt_component/test/* created
+Added `TEST_SPEC.md` and `mqtt_component_test.cpp` with contract-focused tests for default callback setter, polymorphic dispatch, subscription map exposure, and overridden publish callback behavior.
+
+### [MILESTONE] Step 2 complete — IMqttComponent implemented and tested
+Step 2 from `spec/yaha/IMPL-messagestore.md` is complete. `src/yaha/SPEC.md` updated with the new `mqtt_component/` sub-module entry. Local compile and focused tests pass.
+
+### [ARTIFACT] src/yaha/mqtt_client/* created (Step 3)
+Implemented `YahaMqttClient` in `src/yaha/mqtt_client/mqtt_client.h` and `mqtt_client.cpp` as the reusable MQTT session driver for any `IMqttComponent`. Added callback-based transport abstraction, background session loop, reconnect with subscription replay, inbound dispatch with topic-filter matching (`+`, `#`), keep-alive ping scheduling, publish forwarding, and graceful shutdown.
+
+### [ARTIFACT] src/yaha/mqtt_client/test/* created
+Added `TEST_SPEC.md` and `mqtt_client_test.cpp` with behavior tests for callback injection order, initial subscription setup, reconnect+resubscribe, publish forwarding, inbound topic filtering, keep-alive ping behavior, and close/disconnect semantics.
+
+### [MILESTONE] Step 3 complete — YahaMqttClient implemented and validated
+Step 3 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/mqtt_client/`. Full `python3 test/run_coverage.py` passed all tests (1269/1269). Scoped coverage for `src/yaha/` reports threshold MET with `mqtt_client.cpp` at Regions 91.84%, Functions 93.75%, Lines 89.02%.
