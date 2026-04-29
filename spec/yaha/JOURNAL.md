@@ -74,3 +74,12 @@ Added `TEST_SPEC.md` and `mqtt_client_test.cpp` with behavior tests for callback
 
 ### [MILESTONE] Step 3 complete — YahaMqttClient implemented and validated
 Step 3 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/mqtt_client/`. Full `python3 test/run_coverage.py` passed all tests (1269/1269). Scoped coverage for `src/yaha/` reports threshold MET with `mqtt_client.cpp` at Regions 91.84%, Functions 93.75%, Lines 89.02%.
+
+### [ARTIFACT] src/yaha/message_store/* created (Step 4)
+Implemented MessageTree in `src/yaha/message_store/message_tree.h` and `message_tree.cpp` with topic-segment indexing, `addData`, `getSection`, `getNodes`, and `cleanup`. Added bounded history with hysteresis trimming, internal history compression (consecutive equal value/reason buckets), and decompression on query output.
+
+### [ARTIFACT] src/yaha/message_store/test/* created
+Added `TEST_SPEC.md` and `message_tree_test.cpp` covering node insertion, update->history transfer, bounded trim behavior, depth-limited section retrieval, reason/history projection flags, snapshot diff mode, stale cleanup with branch pruning, and structural (non-wildcard) topic-prefix query behavior.
+
+### [MILESTONE] Step 4 complete — MessageTree implemented and validated
+Step 4 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/message_store/`. Full `python3 test/run_coverage.py` is green on tests (1277/1277). Scoped coverage for `src/yaha/` reports threshold MET with `message_tree.cpp` at Regions 84.62%, Functions 95.00%, Lines 84.80%.
