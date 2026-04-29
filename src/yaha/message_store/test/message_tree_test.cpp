@@ -16,10 +16,12 @@ struct FakeClock {
 
 yaha::MessageTree makeTree(FakeClock& clock,
                            std::uint32_t maxHistoryLength = 50U,
-                           std::uint32_t historyHysterese = 10U) {
+                           std::uint32_t historyHysterese = 10U,
+                           std::uint32_t maxValuesPerHistoryEntry = 256U) {
     yaha::MessageTreeConfig config{};
     config.maxHistoryLength = maxHistoryLength;
     config.historyHysterese = historyHysterese;
+    config.maxValuesPerHistoryEntry = maxValuesPerHistoryEntry;
     config.nowMillisecondsProvider = [&clock]() {
         return clock.nowMs;
     };
@@ -77,6 +79,26 @@ TEST_CASE("history_is_trimmed_with_hysteresis", "[message_store]") {
     REQUIRE(nodes.size() == 1U);
     REQUIRE(nodes.front().history.size() <= 3U);
     REQUIRE_FALSE(nodes.front().history.empty());
+}
+
+TEST_CASE("history_compresses_repeated_equal_values", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock, 50U, 10U, 2U);
+
+    tree.addData(yaha::Message{"sensor/equal", std::string{"steady"}});
+    clock.nowMs += 1000;
+    tree.addData(yaha::Message{"sensor/equal", std::string{"steady"}});
+    clock.nowMs += 1000;
+    tree.addData(yaha::Message{"sensor/equal", std::string{"steady"}});
+    clock.nowMs += 1000;
+    tree.addData(yaha::Message{"sensor/equal", std::string{"steady"}});
+
+    const auto nodes = tree.getSection("sensor/equal", 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().history.size() == 3U);
+    REQUIRE(std::get<std::string>(nodes.front().history[0].value) == "steady");
+    REQUIRE(std::get<std::string>(nodes.front().history[1].value) == "steady");
+    REQUIRE(nodes.front().history[0].timeMs == nodes.front().history[1].timeMs);
 }
 
 TEST_CASE("get_section_respects_depth", "[message_store]") {

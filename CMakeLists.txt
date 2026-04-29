@@ -44,6 +44,7 @@ file(GLOB_RECURSE MQTT_ALL_SOURCES  CONFIGURE_DEPENDS "src/*.cpp")
 file(GLOB_RECURSE MQTT_TEST_SOURCES CONFIGURE_DEPENDS "src/*_test.cpp")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/test/")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/test_client_main\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_msgstoreclient_main\\.cpp$")
 
 if(WIN32)
     list(FILTER MQTT_ALL_SOURCES  EXCLUDE REGEX "_posix\\.cpp$")
@@ -115,6 +116,22 @@ if(WIN32)
     target_link_libraries(yahatestclient PRIVATE ws2_32)
 endif()
 
+#  YAHA MessageStore standalone executable
+add_executable(yahamsgstoreclient
+    src/yaha_msgstoreclient_main.cpp
+    ${MQTT_LIBRARY_SOURCES}
+)
+
+target_compile_options(yahamsgstoreclient PRIVATE ${MQTT_COMPILE_OPTIONS})
+target_link_options(yahamsgstoreclient    PRIVATE ${MQTT_LINK_OPTIONS})
+target_include_directories(yahamsgstoreclient PRIVATE src)
+target_include_directories(yahamsgstoreclient PRIVATE ${httplib_SOURCE_DIR})
+target_compile_definitions(yahamsgstoreclient PRIVATE
+    $<$<BOOL:${MQTT_TRACING_DISABLED}>:MQTT_TRACING_DISABLED>)
+if(WIN32)
+    target_link_libraries(yahamsgstoreclient PRIVATE ws2_32)
+endif()
+
 #  External dependencies (shared by YAHA client executables, not yahabroker)
 include(FetchContent)
 FetchContent_Declare(
@@ -170,5 +187,6 @@ endif()
 include(GNUInstallDirs)
 install(TARGETS yahabroker
     yahatestclient
+    yahamsgstoreclient
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )

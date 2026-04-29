@@ -54,4 +54,5 @@ using Value = std::variant<std::string, double>;
 |------|------|
 | `message.h` | Type declarations |
 | `message.cpp` | Method implementations |
+| `test/TEST_SPEC.md` | Unit-test specification |
 | `test/message_test.cpp` | Catch2 unit tests |

@@ -1,0 +1,145 @@
+#include <catch2/catch_test_macros.hpp>
+
+#include "yaha/message_store_client/message_store_client_app.h"
+
+#include <chrono>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <string>
+
+namespace {
+
+std::filesystem::path makeTempDirectory() {
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto path = std::filesystem::temp_directory_path() /
+        ("yaha_msgstore_client_test_" + std::to_string(stamp));
+    std::filesystem::create_directories(path);
+    return path;
+}
+
+void removeDirectoryQuiet(const std::filesystem::path& path) {
+    std::error_code error{};
+    std::filesystem::remove_all(path, error);
+}
+
+std::filesystem::path writeConfigFile(const std::filesystem::path& directory,
+                                      const std::string& content) {
+    const auto path = directory / "msgstore.ini";
+    std::ofstream output{path};
+    output << content;
+    return path;
+}
+
+} // namespace
+
+TEST_CASE("load_config_parses_mqtt_server_persist_and_subscriptions", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = broker.local\n"
+        "port = 1884\n"
+        "clientId = msgstore-client\n"
+        "reconnectDelayMs = 1234\n"
+        "keepAliveIntervalMs = 5678\n"
+        "loopSleepMs = 33\n"
+        "\n"
+        "[server]\n"
+        "port = 9000\n"
+        "path = /store\n"
+        "\n"
+        "[persist]\n"
+        "directory = data-store\n"
+        "filename = snapshot\n"
+        "intervalMs = 250\n"
+        "keepFiles = 7\n"
+        "\n"
+        "[messagestore]\n"
+        "cleanupTopic = $MONITORING/messages/cleanup\n"
+        "\n"
+        "[subscriptions]\n"
+        "# = 1\n"
+        "home/+/state = 0\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE(yaha::MessageStoreClientApp::tryLoadConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(config.mqttConfig.brokerHost == "broker.local");
+    REQUIRE(config.mqttConfig.brokerPort == 1884U);
+    REQUIRE(config.mqttConfig.clientId == "msgstore-client");
+    REQUIRE(config.mqttConfig.reconnectDelay.count() == 1234);
+    REQUIRE(config.mqttConfig.keepAliveInterval.count() == 5678);
+    REQUIRE(config.mqttConfig.loopSleep.count() == 33);
+
+    REQUIRE(config.storeConfig.serverPort == 9000U);
+    REQUIRE(config.storeConfig.serverPath == "/store");
+    REQUIRE(config.storeConfig.persistenceConfig.directory == std::filesystem::path{"data-store"});
+    REQUIRE(config.storeConfig.persistenceConfig.filename == "snapshot");
+    REQUIRE(config.storeConfig.persistenceConfig.intervalMs == 250U);
+    REQUIRE(config.storeConfig.persistenceConfig.keepFiles == 7U);
+    REQUIRE(config.storeConfig.subscriptions.size() == 2U);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_config_uses_default_subscription_when_missing", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE(yaha::MessageStoreClientApp::tryLoadConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(config.storeConfig.subscriptions.size() == 1U);
+    REQUIRE(config.storeConfig.subscriptions.count("#") == 1U);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_config_rejects_invalid_subscription_qos", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[subscriptions]\n"
+        "# = 9\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(yaha::MessageStoreClientApp::tryLoadConfigFromFile(configPath, config, errorMessage));
+    REQUIRE_FALSE(errorMessage.empty());
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_config_rejects_invalid_numeric_fields", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "port = abc\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(yaha::MessageStoreClientApp::tryLoadConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.find("mqtt.port") != std::string::npos);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("run_and_close_update_app_running_state", "[message_store_client]") {
+    yaha::MessageStoreClientRuntimeConfig config{};
+    config.storeConfig.serverPort = 0U;
+    config.storeConfig.persistenceConfig.intervalMs = 0U;
+
+    yaha::MessageStoreClientApp app{config};
+
+    REQUIRE_FALSE(app.isRunning());
+    app.run();
+    REQUIRE(app.isRunning());
+    app.close();
+    REQUIRE_FALSE(app.isRunning());
+}
