@@ -112,3 +112,12 @@ Created a dedicated YAHA spec for the HTTP-modified MQTT interface in version 1.
 
 ### [MILESTONE] HTTP-modified MQTT interface 1.0 spec completed
 Version 1.0 is now documented as a standalone source-of-truth spec for YAHA. Version 0.0 was intentionally excluded as requested.
+
+### [ARTIFACT] spec/yaha/IMPL-broker-connector.md created
+Created implementation plan for a YAHA Broker Connector that subscribes on an HTTP MQTT interface source broker and forwards all received messages to a standard MQTT receiver broker. Plan includes architecture split, phased implementation order, configuration model, reliability rules, and verification steps.
+
+### [MILESTONE] Broker Connector plan completed
+A full step-by-step delivery plan now exists for the new connector component, including open decisions for QoS, retain handling, topic policy, and failure strategy before coding starts.
+
+### [DECISION] Broker Connector boundary clarified
+The connector plan now explicitly fixes architecture boundaries: receiver side uses the existing generic YAHA MQTT client unchanged, while the HTTP source connection and relay policy are the connector domain part (fachteil). This avoids creating a second custom MQTT client implementation inside the connector.
