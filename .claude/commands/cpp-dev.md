@@ -16,6 +16,7 @@ C++20 coding rules for this project.
 - Never use mutex only as name for mutexes. Always name a mutex according to the objekt it protects (e.g. message_list_mutex_)
 - minimize includes in headers, include in cpp only, if reasonable
 - use std::fromat to format strings
+- flush at the end when writing to std::cout or std::cerr
 
 ## Compiler warnings
 

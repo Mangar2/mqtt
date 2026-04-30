@@ -29,6 +29,7 @@ namespace yaha {
 struct MessageStoreConfig {
     SubscriptionMap subscriptions{};                    ///< Topic subscriptions for MQTT transport.
     std::string cleanupTopic{"$MONITORING/messages/cleanup"}; ///< Cleanup command topic.
+    std::string serverHost{"127.0.0.1"};             ///< HTTP server bind host/IP.
     std::string serverPath{"/store"};                 ///< HTTP GET base path.
     std::uint16_t serverPort{8090U};                   ///< HTTP server listen port.
     MessageTreeConfig treeConfig{};                    ///< MessageTree behavior config.

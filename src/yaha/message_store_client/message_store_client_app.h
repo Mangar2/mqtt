@@ -49,6 +49,12 @@ public:
     [[nodiscard]] bool isRunning() const;
 
     /**
+     * @brief Returns whether MQTT transport is currently connected to broker.
+     * @return True when MQTT connection is established.
+     */
+    [[nodiscard]] bool isConnected() const;
+
+    /**
      * @brief Loads runtime configuration from an INI-like text file.
      * @param configPath Path to configuration file.
      * @param output Loaded runtime configuration on success.

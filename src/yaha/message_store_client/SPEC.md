@@ -32,7 +32,7 @@ INI-like key-value file with optional sections:
 - `[mqtt]`
   - `host`, `port`, `clientId`, `reconnectDelayMs`, `keepAliveIntervalMs`, `loopSleepMs`
 - `[server]`
-  - `port`, `path`
+  - `host`, `port`, `path`
 - `[persist]`
   - `directory`, `filename`, `intervalMs`, `keepFiles`
 - `[messagestore]`
@@ -47,6 +47,16 @@ When `[subscriptions]` is missing or empty, default subscription is `#` with QoS
 - `run()` starts MessageStore HTTP/persistence lifecycle and then starts MQTT client loop.
 - `close()` stops MQTT client before stopping MessageStore to avoid new inbound dispatch
   during shutdown.
+
+## Runtime console output
+
+The standalone executable prints short status lines to stdout so operators can verify
+runtime state quickly:
+
+- startup banner with config path and effective MQTT/HTTP/persistence/subscription settings
+- HTTP endpoint status (`listening` or `disabled` when `server.port=0`)
+- initial MQTT broker connectivity result (`connected` or deferred retry notice)
+- signal handling and shutdown progress lines (`received`, `disconnecting`, `shutting down`, `stopped`)
 
 ## Transport behavior
 

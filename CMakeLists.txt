@@ -16,6 +16,16 @@ option(MQTT_SANITIZE "Enable AddressSanitizer and UBSan (host builds only)" OFF)
 option(MQTT_COVERAGE "Enable clang source-based coverage instrumentation"   OFF)
 option(MQTT_TRACING_DISABLED "Compile out structured tracing guards" OFF)
 
+#  External dependencies
+include(FetchContent)
+FetchContent_Declare(
+    httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    GIT_TAG        v0.18.7
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(httplib)
+
 #  Shared compiler/linker flags 
 set(MQTT_COMPILE_OPTIONS
     -Wall
@@ -131,16 +141,6 @@ target_compile_definitions(yahamsgstoreclient PRIVATE
 if(WIN32)
     target_link_libraries(yahamsgstoreclient PRIVATE ws2_32)
 endif()
-
-#  External dependencies (shared by YAHA client executables, not yahabroker)
-include(FetchContent)
-FetchContent_Declare(
-    httplib
-    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-    GIT_TAG        v0.18.7
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(httplib)
 
 #  Unit tests 
 include(CTest)

@@ -559,10 +559,11 @@ void MessageStore::startHttpServer() {
         handleHttpRequest(*this, basePath, request, response);
     });
 
+    const std::string host = config_.serverHost.empty() ? "127.0.0.1" : config_.serverHost;
     const std::uint16_t port = config_.serverPort;
-    httpThread_ = std::thread([this, port]() {
+    httpThread_ = std::thread([this, host, port]() {
         if (httpServer_ != nullptr) {
-            (void)httpServer_->listen("127.0.0.1", static_cast<int>(port));
+            (void)httpServer_->listen(host, static_cast<int>(port));
         }
     });
 }

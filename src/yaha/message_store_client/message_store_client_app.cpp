@@ -179,6 +179,10 @@ bool parseMessageStoreConfig(const SectionMap& sections,
         output.serverPath = *serverPath;
     }
 
+    if (const auto serverHost = lookupValue(sections, "server", "host"); serverHost.has_value()) {
+        output.serverHost = *serverHost;
+    }
+
     if (const auto serverPort = lookupValue(sections, "server", "port"); serverPort.has_value()) {
         std::uint64_t parsed = 0U;
         if (!tryParseUnsigned(*serverPort, 0U, 65535U, parsed)) {
@@ -574,6 +578,10 @@ void MessageStoreClientApp::close() {
 
 bool MessageStoreClientApp::isRunning() const {
     return configStore_.isRunning() && mqttClient_.isRunning();
+}
+
+bool MessageStoreClientApp::isConnected() const {
+    return mqttClient_.isConnected();
 }
 
 bool MessageStoreClientApp::tryLoadConfigFromFile(

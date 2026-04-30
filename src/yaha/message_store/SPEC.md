@@ -96,7 +96,7 @@ struct MessageTreeNode;
 
 ## HTTP behavior
 
-- `run()` starts an internal cpp-httplib server on `config.serverPort`.
+- `run()` starts an internal cpp-httplib server on `config.serverHost:config.serverPort`.
 - GET path: `<config.serverPath>/<topicPrefix>`; default `serverPath` is `/store`.
 - Headers:
   - `levelamount` (default 1)
