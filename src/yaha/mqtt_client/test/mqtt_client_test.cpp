@@ -33,6 +33,10 @@ public:
         publish_callback_ = std::move(callback);
     }
 
+    void run() override {}
+
+    void close() override {}
+
     void publishFromComponent(const yaha::Message& message) const {
         if (publish_callback_) {
             publish_callback_(message);

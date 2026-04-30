@@ -22,6 +22,20 @@ shutdown.
 | `isRunning()` | `bool() const` | true while background loop active |
 | `isConnected()` | `bool() const` | true when loop currently considers transport connected |
 
+### Shared config mapping helpers
+
+| Function | Signature | Notes |
+|----------|-----------|-------|
+| `tryLoadMqttClientConfigFromIni` | `bool(const IniDocument&, YahaMqttClient::Config&, string&)` | maps optional `[mqtt]` INI values into MQTT runtime config |
+| `tryLoadSubscriptionsFromIni` | `bool(const IniDocument&, string_view, SubscriptionMap&, string&)` | parses topic/qos entries from one section |
+
+### Generic runtime orchestration
+
+| Type | Member | Notes |
+|------|--------|-------|
+| `YahaMqttClientRuntime` | ctor `(YahaMqttClient&, IMqttComponent&)` | runtime owns generic orchestration only and talks to component via interface |
+| `YahaMqttClientRuntime` | `runUntilSignal()` | installs SIGINT/SIGTERM handlers, calls `component.run()`, starts mqtt loop, waits, then stops mqtt and calls `component.close()` |
+
 ## Transport callback contract
 
 `Transport` contains function objects:
@@ -35,6 +49,9 @@ shutdown.
 - `isConnected() -> bool`
 
 The class is transport-agnostic; it does not contain socket/protocol code.
+
+This module also provides a reusable broker-backed transport factory that converts
+the callback contract into real TCP MQTT packet I/O.
 
 ## Behavior
 
@@ -70,5 +87,12 @@ Topic filter matching supports MQTT wildcards used by component subscriptions:
 |------|------|
 | `mqtt_client.h` | Public declarations |
 | `mqtt_client.cpp` | Session loop implementation |
+| `mqtt_client_runtime.h` | Generic process runtime orchestration declarations |
+| `mqtt_client_runtime.cpp` | Generic process runtime orchestration implementation |
+| `mqtt_client_config.h` | Reusable MQTT config parser declarations |
+| `mqtt_client_config.cpp` | Reusable MQTT config parser implementation |
+| `broker_transport.h` | Broker transport factory declaration |
+| `broker_transport.cpp` | Broker transport adapter implementation using core client/codec/network modules |
 | `test/TEST_SPEC.md` | Unit-test specification |
 | `test/mqtt_client_test.cpp` | Unit tests |
+| `test/mqtt_client_config_test.cpp` | Config parser unit tests |

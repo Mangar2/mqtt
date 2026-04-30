@@ -8,6 +8,8 @@ Defines the central boundary between domain logic and the generic MQTT client ru
 
 Every YAHA component that needs to receive or send MQTT messages implements this interface. The MQTT client calls `getSubscriptions` once at startup to know what to subscribe to, and calls `handleMessage` for every incoming message that matches a subscription. If a component needs to publish messages itself, it uses a callback or injected publish function that is also provided through this interface boundary.
 
+The component lifecycle is also part of this interface boundary: generic runtime orchestration starts and stops components through `run` and `close` on `IMqttComponent` only.
+
 A `main` entry point creates an MQTT client and a component independently, wires them together via the interface, and starts both. Neither the MQTT client source nor the component source contains any reference to the other.
 
 This interface is not just a method contract. It is the architectural rule that keeps all non-domain MQTT concerns in one reusable place so every YAHA app behaves the same way at runtime.
@@ -43,6 +45,14 @@ Called by the MQTT client for every message whose topic matches a subscription r
 
 **Parameters:** a message object containing at minimum topic, payload, QoS, and retain flag.
 
+### run
+
+Starts the component lifecycle. This is called by generic runtime orchestration before the MQTT session loop is started.
+
+### close
+
+Stops the component lifecycle. This is called by generic runtime orchestration after the MQTT session loop is closed.
+
 ### setPublishCallback *(optional)*
 
 If a component needs to publish messages, the MQTT client injects a publish function through this method before the first message is delivered. The component stores this function and calls it when it needs to send a message to the broker. The component must not assume the function is available before it has been injected.
@@ -60,7 +70,7 @@ The main entry point:
 1. Creates the component (passing its configuration).
 2. Creates the MQTT client (passing its configuration).
 3. Wires them: passes the component as the message handler to the MQTT client.
-4. Starts the MQTT client, which manages the connection lifecycle.
+4. Calls generic runtime orchestration once ("mach"), which starts/stops both component and MQTT client through interface-based lifecycle methods.
 
 The component does not start the MQTT client. The MQTT client does not construct the component.
 

@@ -1,18 +1,15 @@
 #include "yaha/message_store_client/message_store_client_app.h"
+#include "yaha/mqtt_client/broker_transport.h"
+#include "yaha/mqtt_client/mqtt_client_runtime.h"
 
-#include <atomic>
-#include <chrono>
-#include <csignal>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
 #include <string>
-#include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
-
-std::atomic<bool> shutdownRequested{false};
 
 struct CliOptions {
     std::filesystem::path configPath{"broker.ini"};
@@ -20,10 +17,6 @@ struct CliOptions {
     bool enableMessageTrace{false};
     bool showHelp{false};
 };
-
-void handleSignal(int) {
-    shutdownRequested.store(true);
-}
 
 void printUsage() {
     std::cout << "Usage: yahamsgstoreclient [config-path] [--trace-messages] [--help]\n"
@@ -114,9 +107,19 @@ int main(int argc, char* argv[]) {
 
     const std::filesystem::path configPath = cliOptions.configPath;
 
-    yaha::MessageStoreClientRuntimeConfig runtimeConfig{};
+    yaha::IniDocument configDocument{};
     std::string errorMessage{};
-    if (!yaha::MessageStoreClientApp::tryLoadConfigFromFile(configPath, runtimeConfig, errorMessage)) {
+    if (!yaha::IniDocument::tryLoadFromFile(configPath, configDocument, errorMessage)) {
+        std::cerr << "Failed to load config file '" << configPath.string()
+                  << "': " << errorMessage << '\n';
+        return 1;
+    }
+
+    yaha::MessageStoreClientRuntimeConfig runtimeConfig{};
+    if (!yaha::tryLoadMessageStoreClientRuntimeConfigFromIni(
+            configDocument,
+            runtimeConfig,
+            errorMessage)) {
         std::cerr << "Failed to load MessageStore config from '" << configPath.string()
                   << "': " << errorMessage << '\n';
         return 1;
@@ -130,30 +133,29 @@ int main(int argc, char* argv[]) {
 
     printStartupConfiguration(configPath, runtimeConfig);
 
-    yaha::MessageStoreClientApp app{std::move(runtimeConfig)};
+    yaha::MessageStore store{std::move(runtimeConfig.storeConfig)};
+    yaha::YahaMqttClient mqttClient{
+        std::move(runtimeConfig.mqttConfig),
+        store,
+        yaha::makeBrokerTransport()};
 
-    std::signal(SIGINT, handleSignal);
-    std::signal(SIGTERM, handleSignal);
-
-    app.run();
     std::cout << "  runtime: started\n";
     if (configuredHttpPort == 0U) {
         std::cout << "  http: disabled (server.port=0)\n";
     } else {
-        const std::string effectiveHost = configuredHttpHost.empty() ? "127.0.0.1" : configuredHttpHost;
+        const std::string effectiveHost =
+            configuredHttpHost.empty() ? "127.0.0.1" : configuredHttpHost;
         std::cout << "  http: listening on http://" << effectiveHost << ':' << configuredHttpPort
                   << configuredHttpPath << "\n";
     }
     std::cout << "  signal: waiting for SIGINT/SIGTERM\n";
     std::cout << std::flush;
 
-    while (!shutdownRequested.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds{100});
-    }
+    yaha::YahaMqttClientRuntime runtime{mqttClient, store};
+    runtime.runUntilSignal();
 
     std::cout << "  signal: received, disconnecting\n";
     std::cout << "  runtime: shutting down\n";
-    app.close();
     std::cout << "  runtime: stopped\n";
     std::cout << std::flush;
     return 0;

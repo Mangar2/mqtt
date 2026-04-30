@@ -1,4 +1,4 @@
-GET http://192.168.0.183:8090/store
+GET http://192.168.0.183:8090/store/$SYS/broker/uptime
 levelamount: 5
 history: false
 reason: true

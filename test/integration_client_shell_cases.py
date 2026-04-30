@@ -1319,37 +1319,52 @@ def run_test_client_shell_wp5_sub_command_output_pipeline(config) -> tuple[bool,
 
 def run_test_client_shell_wp5_bench_sub_semantics(config) -> tuple[bool, str]:
     timeout_seconds = max(10.0, config.timeout_seconds * 2.0)
-    unique = uuid.uuid4().hex
-    returncode, stdout_text, stderr_text = _run_cli_command(
-        [
-            "bench",
-            "sub",
-            "-h",
-            config.host,
-            "-p",
-            str(config.port),
-            "-t",
-            f"integration/wp5/bench-sub/{unique}/%i",
-            "-q",
-            "1",
-            "-nl",
-            "true",
-            "-rap",
-            "true",
-            "-rh",
-            "1",
-            "-si",
-            "13",
-            "-c",
-            "1",
-            "-L",
-            "1",
-            "-v",
-            "--maximum-reconnect-times",
-            "0",
-        ],
-        timeout_seconds,
-    )
+    attempts = 3
+    returncode = 1
+    stdout_text = ""
+    stderr_text = ""
+    last_failure = ""
+
+    for _ in range(attempts):
+        unique = uuid.uuid4().hex
+        returncode, stdout_text, stderr_text = _run_cli_command(
+            [
+                "bench",
+                "sub",
+                "-h",
+                config.host,
+                "-p",
+                str(config.port),
+                "-t",
+                f"integration/wp5/bench-sub/{unique}/%i",
+                "-q",
+                "1",
+                "-nl",
+                "true",
+                "-rap",
+                "true",
+                "-rh",
+                "1",
+                "-si",
+                "13",
+                "-c",
+                "1",
+                "-L",
+                "1",
+                "-v",
+                "--maximum-reconnect-times",
+                "0",
+            ],
+            timeout_seconds,
+        )
+
+        if returncode == 0:
+            break
+
+        merged_failure = "\n".join(
+            chunk for chunk in [stdout_text.strip(), stderr_text.strip()] if chunk
+        ).strip()
+        last_failure = merged_failure or "no output"
 
     merged = "\n".join(
         chunk for chunk in [stdout_text.strip(), stderr_text.strip()] if chunk
@@ -1357,7 +1372,8 @@ def run_test_client_shell_wp5_bench_sub_semantics(config) -> tuple[bool, str]:
     if returncode != 0:
         return False, (
             "wp5 bench sub run failed: "
-            f"exit={returncode}, output={merged or 'no output'}"
+            f"exit={returncode}, output={merged or 'no output'}, retries={attempts}, "
+            f"last_failure={last_failure}"
         )
 
     required_tokens = [

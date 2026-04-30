@@ -1,10 +1,9 @@
-# message_store_client — YAHA MessageStore Standalone Composition
+# message_store_client — YAHA MessageStore Runtime Types and Domain Mapping
 
 ## Purpose
 
-Composes the MessageStore component with the reusable YahaMqttClient session driver for
-standalone process execution. This module owns runtime configuration loading, lifecycle
-coordination, and process-level startup/shutdown orchestration.
+Defines MessageStore client runtime config data types and MessageStore-specific
+config mapping from generic INI documents.
 
 ## Public API
 
@@ -15,20 +14,19 @@ coordination, and process-level startup/shutdown orchestration.
 | `storeConfig` | `MessageStoreConfig` | MessageStore settings (subscriptions, HTTP, persistence, tree) |
 | `mqttConfig` | `YahaMqttClient::Config` | MQTT session runtime settings |
 
-### Class `MessageStoreClientApp`
-
-| Member | Signature | Notes |
-|--------|-----------|-------|
-| ctor | `MessageStoreClientApp(MessageStoreClientRuntimeConfig)` | creates MessageStore and YahaMqttClient |
-| `run` | `void()` | starts MessageStore first, then MQTT session loop |
-| `close` | `void()` | stops MQTT session first, then MessageStore |
-| `isRunning` | `bool() const` | true when both components are running |
-| `pollConnectionEvent` | `optional<ConnectionEvent>()` | reports one connection state transition when changed |
-| `tryLoadConfigFromFile` | `static bool(const filesystem::path&, MessageStoreClientRuntimeConfig&, string&)` | parses INI-like config and validates numeric ranges |
+No standalone app wrapper class is provided in this module.
+Process composition and lifecycle orchestration are handled directly by
+`src/yaha_msgstoreclient_main.cpp`.
 
 ## Configuration format
 
 INI-like key-value file with optional sections:
+
+Parsing is composed from reusable shared modules:
+
+- `src/yaha/ini/` loads/parses INI and provides generic typed readers.
+- `src/yaha/mqtt_client/mqtt_client_config.*` maps MQTT and subscription sections.
+- `message_store_client_config.*` maps only MessageStore domain fields.
 
 - `[mqtt]`
   - `host`, `port`, `clientId`, `reconnectDelayMs`, `keepAliveIntervalMs`, `loopSleepMs`
@@ -43,11 +41,12 @@ INI-like key-value file with optional sections:
 
 When `[subscriptions]` is missing or empty, default subscription is `#` with QoS 1.
 
-## Lifecycle behavior
+## Runtime composition behavior
 
-- `run()` starts MessageStore HTTP/persistence lifecycle and then starts MQTT client loop.
-- `close()` stops MQTT client before stopping MessageStore to avoid new inbound dispatch
-  during shutdown.
+`src/yaha_msgstoreclient_main.cpp` composes runtime directly:
+
+- start order: `MessageStore::run()` then `YahaMqttClient::run()`
+- stop order: `YahaMqttClient::close()` then `MessageStore::close()`
 
 ## Runtime console output
 
@@ -63,8 +62,10 @@ all YAHA apps can share the same non-domain runtime behavior.
 
 ## Transport behavior
 
-The composition wires a real TCP MQTT transport adapter into `YahaMqttClient::Transport`.
-The adapter is implemented on top of core client modules from `src/client`:
+Runtime composition in `src/yaha_msgstoreclient_main.cpp` wires the reusable
+broker transport factory from `src/yaha/mqtt_client/broker_transport.*` into
+`YahaMqttClient::Transport`.
+The shared transport adapter itself is implemented on top of core client modules from `src/client`:
 
 - `client/connection_negotiator.h` for TCP dial + CONNECT/CONNACK negotiation.
 - MQTT codecs (`codec/packet/*.h`, `codec/packet_reader/packet_reader.h`) for wire encoding/decoding.
@@ -84,7 +85,7 @@ Transport callback behavior:
 
 | File | Role |
 |------|------|
-| `message_store_client_app.h` | Composition and config-loading API declarations |
-| `message_store_client_app.cpp` | Runtime parser and lifecycle implementation |
+| `message_store_client_app.h` | Runtime config value type and loading/mapping API declarations |
+| `message_store_client_app.cpp` | Runtime config loading and MessageStore domain mapping implementation |
 | `test/TEST_SPEC.md` | Unit test specification |
 | `test/message_store_client_app_test.cpp` | Unit tests |

@@ -46,6 +46,16 @@ public:
     virtual void handleMessage(const Message& message) = 0;
 
     /**
+     * @brief Starts component lifecycle.
+     */
+    virtual void run() = 0;
+
+    /**
+     * @brief Stops component lifecycle.
+     */
+    virtual void close() = 0;
+
+    /**
      * @brief Injects publish callback used for outgoing messages.
      *
      * Components that do not publish may ignore this callback.

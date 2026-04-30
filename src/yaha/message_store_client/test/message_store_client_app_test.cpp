@@ -31,6 +31,17 @@ std::filesystem::path writeConfigFile(const std::filesystem::path& directory,
     return path;
 }
 
+bool tryLoadRuntimeConfigFromFile(const std::filesystem::path& configPath,
+                                  yaha::MessageStoreClientRuntimeConfig& output,
+                                  std::string& errorMessage) {
+    yaha::IniDocument document{};
+    if (!yaha::IniDocument::tryLoadFromFile(configPath, document, errorMessage)) {
+        return false;
+    }
+
+    return yaha::tryLoadMessageStoreClientRuntimeConfigFromIni(document, output, errorMessage);
+}
+
 } // namespace
 
 TEST_CASE("load_config_parses_mqtt_server_persist_and_subscriptions", "[message_store_client]") {
@@ -65,7 +76,7 @@ TEST_CASE("load_config_parses_mqtt_server_persist_and_subscriptions", "[message_
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
 
-    REQUIRE(yaha::MessageStoreClientApp::tryLoadConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
     REQUIRE(config.mqttConfig.brokerHost == "broker.local");
     REQUIRE(config.mqttConfig.brokerPort == 1884U);
     REQUIRE(config.mqttConfig.clientId == "msgstore-client");
@@ -93,7 +104,7 @@ TEST_CASE("load_config_uses_default_subscription_when_missing", "[message_store_
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
 
-    REQUIRE(yaha::MessageStoreClientApp::tryLoadConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
     REQUIRE(config.storeConfig.subscriptions.size() == 1U);
     REQUIRE(config.storeConfig.subscriptions.count("#") == 1U);
 
@@ -109,7 +120,7 @@ TEST_CASE("load_config_rejects_invalid_subscription_qos", "[message_store_client
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(yaha::MessageStoreClientApp::tryLoadConfigFromFile(configPath, config, errorMessage));
+    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
     REQUIRE_FALSE(errorMessage.empty());
 
     removeDirectoryQuiet(tempDir);
@@ -124,22 +135,9 @@ TEST_CASE("load_config_rejects_invalid_numeric_fields", "[message_store_client]"
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(yaha::MessageStoreClientApp::tryLoadConfigFromFile(configPath, config, errorMessage));
+    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
     REQUIRE(errorMessage.find("mqtt.port") != std::string::npos);
 
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("run_and_close_update_app_running_state", "[message_store_client]") {
-    yaha::MessageStoreClientRuntimeConfig config{};
-    config.storeConfig.serverPort = 0U;
-    config.storeConfig.persistenceConfig.intervalMs = 0U;
-
-    yaha::MessageStoreClientApp app{config};
-
-    REQUIRE_FALSE(app.isRunning());
-    app.run();
-    REQUIRE(app.isRunning());
-    app.close();
-    REQUIRE_FALSE(app.isRunning());
-}

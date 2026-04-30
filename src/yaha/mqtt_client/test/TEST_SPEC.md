@@ -16,3 +16,7 @@ Unit tests for `YahaMqttClient` session behavior with a fake transport callback 
 | `keep_alive_ping_runs_while_connected` | Session sends periodic keepalive pings | short keepalive interval | ping callback invoked at least once |
 | `close_stops_loop_and_disconnects` | Graceful shutdown stops worker, unsubscribes active filters, and disconnects | running client then close | `isRunning()==false`, unsubscribe called for active filter, disconnect called once |
 | `transport_poll_exception_triggers_reconnect_without_crash` | Transport callback exception must not terminate process and should trigger reconnect | one transient exception from `pollIncoming()` while connected | worker keeps running, reconnect occurs, close succeeds |
+| `mqtt_client_config_maps_optional_mqtt_fields` | Parse [mqtt] section into config | complete [mqtt] section | config fields reflect parsed values |
+| `mqtt_client_config_rejects_invalid_numeric_values` | Validate [mqtt] numeric fields | `port = abc` | parser fails with `invalid mqtt.port` |
+| `mqtt_client_subscription_parser_reads_topic_qos_map` | Parse [subscriptions] entries | `topic=qos` pairs | map contains all topic/qos entries |
+| `mqtt_client_subscription_parser_rejects_invalid_qos` | Validate subscription qos range | qos value `9` | parser fails with invalid qos error |

@@ -72,12 +72,12 @@ public:
     /**
      * @brief Starts component lifecycle: restore, HTTP start, periodic persistence.
      */
-    void run();
+    void run() override;
 
     /**
      * @brief Stops component lifecycle: HTTP stop, periodic stop, final persist.
      */
-    void close();
+    void close() override;
 
     /**
      * @brief Returns whether component lifecycle is currently running.

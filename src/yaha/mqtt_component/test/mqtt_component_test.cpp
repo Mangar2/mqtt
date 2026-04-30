@@ -21,6 +21,10 @@ public:
         received_messages_.push_back(message);
     }
 
+    void run() override {}
+
+    void close() override {}
+
     [[nodiscard]] std::size_t receivedCount() const noexcept {
         return received_messages_.size();
     }
@@ -46,6 +50,10 @@ public:
     void setPublishCallback(yaha::PublishCallback callback) override {
         callback_ = std::move(callback);
     }
+
+    void run() override {}
+
+    void close() override {}
 
     void publish(const yaha::Message& message) const {
         if (callback_) {
