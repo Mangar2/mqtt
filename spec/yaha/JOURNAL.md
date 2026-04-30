@@ -104,3 +104,11 @@ Added component tests for configured subscriptions, regular message storage, num
 
 ### [MILESTONE] Step 6 complete — MessageStore component logic implemented and validated
 Step 6 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/message_store/`. Full `python3 test/run_coverage.py` passed tests (1294/1294). Scoped coverage for `src/yaha/` reports threshold MET with `message_store.cpp` at Regions 93.33%, Functions 100.00%, Lines 91.86%.
+
+## 2026-04-30
+
+### [ARTIFACT] spec/yaha/SPEC-http-mqtt-interface.md created
+Created a dedicated YAHA spec for the HTTP-modified MQTT interface in version 1.0 based on the legacy source under `spec/@mangar2/mqtt-utils/src/mqtt-interface/`. The spec documents request/response contracts, headers, payload shapes, and validation behavior for connect, disconnect, publish, pubrel, subscribe, and unsubscribe.
+
+### [MILESTONE] HTTP-modified MQTT interface 1.0 spec completed
+Version 1.0 is now documented as a standalone source-of-truth spec for YAHA. Version 0.0 was intentionally excluded as requested.
