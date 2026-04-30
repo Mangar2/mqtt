@@ -9,6 +9,7 @@
 #include "yaha/mqtt_client/mqtt_client.h"
 
 #include <filesystem>
+#include <optional>
 #include <string>
 
 namespace yaha {
@@ -26,6 +27,11 @@ struct MessageStoreClientRuntimeConfig {
  */
 class MessageStoreClientApp {
 public:
+    enum class ConnectionEvent {
+        Connected,
+        Disconnected,
+    };
+
     /**
      * @brief Constructs the app from runtime configuration.
      * @param config Runtime configuration.
@@ -55,6 +61,12 @@ public:
     [[nodiscard]] bool isConnected() const;
 
     /**
+     * @brief Returns one MQTT connection transition event when state changed.
+     * @return Connected/Disconnected when state toggled since last poll, otherwise nullopt.
+     */
+    [[nodiscard]] std::optional<ConnectionEvent> pollConnectionEvent();
+
+    /**
      * @brief Loads runtime configuration from an INI-like text file.
      * @param configPath Path to configuration file.
      * @param output Loaded runtime configuration on success.
@@ -71,6 +83,7 @@ private:
 
     MessageStore configStore_;
     YahaMqttClient mqttClient_;
+    std::optional<bool> lastObservedConnectionState_{};
 };
 
 } // namespace yaha

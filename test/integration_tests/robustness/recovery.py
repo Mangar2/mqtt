@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import importlib.util
+import os
 from pathlib import Path
+import subprocess
 import shutil
 import socket
 import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 
 
@@ -33,6 +40,10 @@ MqttClient = _mqtt_client_module.MqttClient
 PacketTypes = _mqtt_client_module.PacketTypes
 Properties = _mqtt_client_module.Properties
 _SESSION_EXPIRY_SECONDS = 600
+_BROKER_MANAGED_ENV = "MQTT_INTEGRATION_BROKER_MANAGED"
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_RELEASE_DIR = _PROJECT_ROOT / "build" / "release"
+_MSGSTORE_BINARY = _RELEASE_DIR / ("yahamsgstoreclient.exe" if os.name == "nt" else "yahamsgstoreclient")
 
 
 def _unique_client_id(prefix: str) -> str:
@@ -43,6 +54,153 @@ def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
         tcp_socket.bind(("127.0.0.1", 0))
         return int(tcp_socket.getsockname()[1])
+
+
+def _require_managed_broker_in_remote(required_overrides: str) -> None:
+    if os.environ.get(_BROKER_MANAGED_ENV, "").strip() != "0":
+        return
+    raise _broker_module.ManagedBrokerRequired(
+        f"requires managed broker startup (requested overrides: {required_overrides})"
+    )
+
+
+def _run_or_raise(command: list[str], label: str) -> None:
+    completed = subprocess.run(
+        command,
+        cwd=_PROJECT_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode == 0:
+        return
+
+    output = "\n".join(
+        part.strip() for part in [completed.stdout, completed.stderr] if part and part.strip()
+    ).strip()
+    raise RuntimeError(
+        f"{label} failed with exit code {completed.returncode}"
+        + (f": {output}" if output else "")
+    )
+
+
+def _ensure_msgstore_binary() -> None:
+    _run_or_raise(["cmake", "--preset", "release"], "cmake configure (release)")
+    _run_or_raise(
+        ["cmake", "--build", "--preset", "release", "--target", "yahamsgstoreclient"],
+        "cmake build (yahamsgstoreclient)",
+    )
+    if not _MSGSTORE_BINARY.exists():
+        raise RuntimeError(f"msgstore binary not found at {_MSGSTORE_BINARY}")
+
+
+def _write_msgstore_config(
+    config_path: Path,
+    *,
+    mqtt_host: str,
+    mqtt_port: int,
+    http_port: int,
+    persistence_dir: Path,
+    subscribe_topic: str,
+) -> None:
+    config_text = "\n".join([
+        "[mqtt]",
+        f"host = {mqtt_host}",
+        f"port = {mqtt_port}",
+        f"clientId = {_unique_client_id('msgstore-19-4-5')}",
+        "reconnectDelayMs = 200",
+        "keepAliveIntervalMs = 1000",
+        "loopSleepMs = 20",
+        "",
+        "[server]",
+        "host = 127.0.0.1",
+        f"port = {http_port}",
+        "path = /store",
+        "",
+        "[persist]",
+        f"directory = {persistence_dir}",
+        "filename = message_store.bak",
+        "intervalMs = 500",
+        "keepFiles = 2",
+        "",
+        "[subscriptions]",
+        f"{subscribe_topic} = 1",
+        "$SYS/# = 1",
+        "",
+    ])
+    config_path.write_text(config_text, encoding="utf-8")
+
+
+def _start_msgstore_process(config_path: Path, working_directory: Path) -> subprocess.Popen[str]:
+    return subprocess.Popen(
+        [str(_MSGSTORE_BINARY), str(config_path)],
+        cwd=working_directory,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+
+
+def _stop_process(process: subprocess.Popen[str] | None) -> None:
+    if process is None:
+        return
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
+def _fetch_store_nodes(host: str, port: int, timeout_seconds: float) -> list[dict[str, object]]:
+    url = f"http://{host}:{port}/store"
+    request = urllib.request.Request(url, method="GET")
+    request.add_header("levelamount", "10")
+    request.add_header("history", "false")
+    request.add_header("reason", "false")
+    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+        payload = response.read().decode("utf-8")
+    parsed = json.loads(payload)
+    if not isinstance(parsed, list):
+        raise RuntimeError("msgstore HTTP response is not a JSON array")
+    return parsed
+
+
+def _wait_for_store_topic_value(
+    *,
+    host: str,
+    port: int,
+    topic: str,
+    expected_value: str,
+    timeout_seconds: float,
+) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            nodes = _fetch_store_nodes(host, port, timeout_seconds=min(1.0, timeout_seconds))
+            for node in nodes:
+                if str(node.get("topic", "")) != topic:
+                    continue
+                value = node.get("value")
+                if isinstance(value, str) and value == expected_value:
+                    return True
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+            pass
+        time.sleep(0.2)
+    return False
+
+
+def _wait_for_http_ready(host: str, port: int, timeout_seconds: float) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            _fetch_store_nodes(host, port, timeout_seconds=min(1.0, timeout_seconds))
+            return True
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+            time.sleep(0.2)
+    return False
 
 
 def _new_connect_properties(**values):
@@ -335,6 +493,90 @@ def run_19_4_4_crash_recovery_maintains_data_integrity(config) -> tuple[bool, st
     finally:
         stop_broker(process)
         shutil.rmtree(data_dir, ignore_errors=True)
+
+
+def run_19_4_5_broker_sigkill_msgstore_survives_and_reconnects(config) -> tuple[bool, str]:
+    broker_process = None
+    msgstore_process = None
+    working_dir = Path(tempfile.mkdtemp(prefix="mqtt-integration-19-4-5-"))
+    mqtt_port = _find_free_port()
+    http_port = _find_free_port()
+    publish_topic = f"integration/robustness/19-4-5/reconnect/{uuid.uuid4().hex}"
+    publish_payload = f"after-restart-{uuid.uuid4().hex}"
+    msgstore_config_path = working_dir / "msgstore.ini"
+
+    try:
+        _require_managed_broker_in_remote(
+            "broker process control (SIGKILL), isolated mqtt/http ports, local msgstore process"
+        )
+        _ensure_msgstore_binary()
+
+        broker_overrides = {
+            "network.mqtt_port": mqtt_port,
+            "network.ws_port": 0,
+            "broker.allow_anonymous": True,
+        }
+        broker_process = start_broker(broker_overrides)
+        host = _broker_module.resolve_target_host("127.0.0.1")
+
+        _write_msgstore_config(
+            msgstore_config_path,
+            mqtt_host=host,
+            mqtt_port=mqtt_port,
+            http_port=http_port,
+            persistence_dir=working_dir,
+            subscribe_topic="integration/robustness/19-4-5/#",
+        )
+        msgstore_process = _start_msgstore_process(msgstore_config_path, working_dir)
+        if not _wait_for_http_ready("127.0.0.1", http_port, timeout_seconds=max(4.0, config.timeout_seconds)):
+            return False, "19.4.5 msgstore HTTP endpoint did not become ready"
+
+        if broker_process is None:
+            return False, "19.4.5 requires managed local broker process"
+
+        broker_process.kill()
+        broker_process.wait(timeout=5)
+        broker_process = None
+
+        time.sleep(1.0)
+        if msgstore_process.poll() is not None:
+            return False, "19.4.5 msgstore crashed after broker SIGKILL"
+
+        broker_process = start_broker(broker_overrides)
+
+        with MqttClient(timeout_seconds=max(2.0, config.timeout_seconds)) as publisher:
+            connack = publisher.connect(
+                host,
+                mqtt_port,
+                client_id=_unique_client_id("pub-19-4-5"),
+                clean_start=True,
+            )
+            assert_connack(connack, reason_code=0x00, session_present=False)
+            assert_reason_code(
+                publisher.publish(publish_topic, publish_payload.encode("utf-8"), qos=1),
+                0x00,
+            )
+
+        if msgstore_process.poll() is not None:
+            return False, "19.4.5 msgstore crashed after broker restart"
+
+        observed = _wait_for_store_topic_value(
+            host="127.0.0.1",
+            port=http_port,
+            topic=publish_topic,
+            expected_value=publish_payload,
+            timeout_seconds=max(6.0, config.timeout_seconds),
+        )
+        if not observed:
+            return False, "19.4.5 msgstore did not store post-restart message (no reconnect evidence)"
+
+        return True, "19.4.5 broker SIGKILL did not crash msgstore; msgstore reconnected and stored post-restart publish"
+    except Exception as error:
+        return False, f"19.4.5 failed: {error}"
+    finally:
+        stop_broker(broker_process)
+        _stop_process(msgstore_process)
+        shutil.rmtree(working_dir, ignore_errors=True)
 
 
 TEST_CASES = [

@@ -23,6 +23,7 @@ coordination, and process-level startup/shutdown orchestration.
 | `run` | `void()` | starts MessageStore first, then MQTT session loop |
 | `close` | `void()` | stops MQTT session first, then MessageStore |
 | `isRunning` | `bool() const` | true when both components are running |
+| `pollConnectionEvent` | `optional<ConnectionEvent>()` | reports one connection state transition when changed |
 | `tryLoadConfigFromFile` | `static bool(const filesystem::path&, MessageStoreClientRuntimeConfig&, string&)` | parses INI-like config and validates numeric ranges |
 
 ## Configuration format
@@ -50,12 +51,14 @@ When `[subscriptions]` is missing or empty, default subscription is `#` with QoS
 
 ## Runtime console output
 
-The standalone executable prints short status lines to stdout so operators can verify
-runtime state quickly:
+The standalone executable prints startup/shutdown status lines to stdout.
+Broker session lifecycle output is emitted by the generic `YahaMqttClient` layer so
+all YAHA apps can share the same non-domain runtime behavior.
 
 - startup banner with config path and effective MQTT/HTTP/persistence/subscription settings
 - HTTP endpoint status (`listening` or `disabled` when `server.port=0`)
-- initial MQTT broker connectivity result (`connected` or deferred retry notice)
+- MQTT lifecycle logs from generic client (`connect`, `connected`, `reconnect`, `reconnected`, `subscribe`, `unsubscribe`, `disconnect`)
+- optional MQTT message logs (`sent`, `recv`) when enabled by CLI flag `--trace-messages`
 - signal handling and shutdown progress lines (`received`, `disconnecting`, `shutting down`, `stopped`)
 
 ## Transport behavior
@@ -71,6 +74,7 @@ Transport callback behavior:
 
 - `connect`: dials broker endpoint, negotiates CONNECT, initializes stream state.
 - `subscribe`: sends SUBSCRIBE and waits for SUBACK.
+- `unsubscribe`: sends UNSUBSCRIBE and waits for UNSUBACK.
 - `publish`: sends PUBLISH according to YAHA message qos/retain.
 - `pollIncoming`: reads inbound packets, maps inbound PUBLISH to YAHA `Message`, and emits PUBACK/PUBREC/PUBCOMP as required.
 - `ping`: sends PINGREQ.

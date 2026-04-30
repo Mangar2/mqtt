@@ -1,5 +1,7 @@
 #include "yaha/mqtt_client/mqtt_client.h"
 
+#include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -23,6 +25,29 @@ std::vector<std::string> splitTopic(const std::string& text) {
     return segments;
 }
 
+const char* qosToText(const Qos qosLevel) {
+    switch (qosLevel) {
+        case Qos::AtMostOnce:
+            return "0";
+        case Qos::AtLeastOnce:
+            return "1";
+        case Qos::ExactlyOnce:
+            return "2";
+    }
+
+    return "0";
+}
+
+std::string valueToText(const Value& value) {
+    if (std::holds_alternative<std::string>(value)) {
+        return std::get<std::string>(value);
+    }
+
+    std::ostringstream stream{};
+    stream << std::get<double>(value);
+    return stream.str();
+}
+
 } // namespace
 
 YahaMqttClient::YahaMqttClient(Config config, IMqttComponent& component, Transport transport)
@@ -40,7 +65,7 @@ void YahaMqttClient::run() {
         return;
     }
     if (!transport_.connect || !transport_.disconnect || !transport_.publish ||
-        !transport_.subscribe || !transport_.pollIncoming || !transport_.ping ||
+        !transport_.subscribe || !transport_.unsubscribe || !transport_.pollIncoming || !transport_.ping ||
         !transport_.isConnected) {
         throw std::invalid_argument{"YahaMqttClient transport callbacks must be set"};
     }
@@ -70,10 +95,23 @@ void YahaMqttClient::close() {
     {
         std::lock_guard<std::mutex> lock{stateMutex_};
         was_connected = connected_;
+    }
+
+    if (was_connected) {
+        unsubscribeAll();
+    }
+
+    {
+        std::lock_guard<std::mutex> lock{stateMutex_};
         connected_ = false;
+        activeSubscriptions_.clear();
     }
     if (was_connected) {
-        transport_.disconnect();
+        traceLifecycle("  broker: disconnect");
+        try {
+            transport_.disconnect();
+        } catch (...) {
+        }
     }
 }
 
@@ -85,6 +123,7 @@ void YahaMqttClient::publish(const Message& message) {
         throw std::runtime_error{"YahaMqttClient publish requested while disconnected"};
     }
     transport_.publish(message);
+    traceMessage("sent", message);
 }
 
 bool YahaMqttClient::isRunning() const {
@@ -99,17 +138,48 @@ bool YahaMqttClient::isConnected() const {
 
 void YahaMqttClient::workerLoop() {
     while (isRunning()) {
-        if (!ensureConnected()) {
-            std::this_thread::sleep_for(config_.reconnectDelay);
-            continue;
+        bool should_sleep_reconnect = false;
+
+        try {
+            if (!ensureConnected()) {
+                should_sleep_reconnect = true;
+            } else {
+                processIncoming();
+                processKeepAlive();
+
+                if (!transport_.isConnected()) {
+                    should_sleep_reconnect = true;
+                }
+            }
+        } catch (...) {
+            should_sleep_reconnect = true;
         }
 
-        processIncoming();
-        processKeepAlive();
+        if (should_sleep_reconnect) {
+            bool was_connected = false;
+            {
+                std::lock_guard<std::mutex> lock{stateMutex_};
+                was_connected = connected_;
+                connected_ = false;
+            }
 
-        if (!transport_.isConnected()) {
-            std::lock_guard<std::mutex> lock{stateMutex_};
-            connected_ = false;
+            if (was_connected) {
+                traceLifecycle("  broker: connection lost");
+            }
+
+            traceLifecycle("  broker: reconnecting");
+
+            try {
+                transport_.disconnect();
+            } catch (...) {
+            }
+
+            if (!isRunning()) {
+                break;
+            }
+
+            std::this_thread::sleep_for(config_.reconnectDelay);
+            continue;
         }
 
         std::this_thread::sleep_for(config_.loopSleep);
@@ -124,6 +194,14 @@ bool YahaMqttClient::ensureConnected() {
         }
     }
 
+    bool use_reconnect_text = false;
+    {
+        std::lock_guard<std::mutex> lock{stateMutex_};
+        use_reconnect_text = everConnected_;
+    }
+
+    traceLifecycle(use_reconnect_text ? "  broker: reconnect" : "  broker: connect");
+
     if (!transport_.connect(config_)) {
         return false;
     }
@@ -131,8 +209,11 @@ bool YahaMqttClient::ensureConnected() {
     {
         std::lock_guard<std::mutex> lock{stateMutex_};
         connected_ = true;
+        everConnected_ = true;
         lastPingAt_ = std::chrono::steady_clock::now();
     }
+
+    traceLifecycle(use_reconnect_text ? "  broker: reconnected" : "  broker: connected");
 
     replaySubscriptions();
     return true;
@@ -142,10 +223,28 @@ void YahaMqttClient::replaySubscriptions() {
     const SubscriptionMap subscriptions = component_.getSubscriptions();
     for (const auto& [topic_filter, qos_level] : subscriptions) {
         transport_.subscribe(topic_filter, qos_level);
+        traceLifecycle("  broker: subscribe " + topic_filter + " qos=" + qosToText(qos_level));
     }
 
     std::lock_guard<std::mutex> lock{stateMutex_};
     activeSubscriptions_ = subscriptions;
+}
+
+void YahaMqttClient::unsubscribeAll() {
+    SubscriptionMap subscriptions{};
+    {
+        std::lock_guard<std::mutex> lock{stateMutex_};
+        subscriptions = activeSubscriptions_;
+    }
+
+    for (const auto& [topic_filter, qos_level] : subscriptions) {
+        (void)qos_level;
+        traceLifecycle("  broker: unsubscribe " + topic_filter);
+        try {
+            transport_.unsubscribe(topic_filter);
+        } catch (...) {
+        }
+    }
 }
 
 void YahaMqttClient::processIncoming() {
@@ -159,6 +258,7 @@ void YahaMqttClient::processIncoming() {
         return;
     }
 
+    traceMessage("recv", *maybe_message);
     component_.handleMessage(*maybe_message);
 }
 
@@ -217,6 +317,26 @@ bool YahaMqttClient::topicMatchesFilter(const std::string& filter,
     }
 
     return idx == topic_segments.size();
+}
+
+void YahaMqttClient::traceLifecycle(const std::string& text) const {
+    if (!config_.enableLifecycleTrace) {
+        return;
+    }
+
+    std::cout << text << '\n' << std::flush;
+}
+
+void YahaMqttClient::traceMessage(const std::string& direction, const Message& message) const {
+    if (!config_.enableLifecycleTrace || !config_.enableMessageTrace) {
+        return;
+    }
+
+    std::cout << "  broker: " << direction << " topic=" << message.topic()
+              << " qos=" << qosToText(message.qos())
+              << " retain=" << (message.retain() ? "1" : "0")
+              << " value=" << valueToText(message.value())
+              << '\n' << std::flush;
 }
 
 } // namespace yaha

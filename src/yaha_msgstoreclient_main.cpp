@@ -8,13 +8,59 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
 std::atomic<bool> shutdownRequested{false};
 
+struct CliOptions {
+    std::filesystem::path configPath{"broker.ini"};
+    bool configPathProvided{false};
+    bool enableMessageTrace{false};
+    bool showHelp{false};
+};
+
 void handleSignal(int) {
     shutdownRequested.store(true);
+}
+
+void printUsage() {
+    std::cout << "Usage: yahamsgstoreclient [config-path] [--trace-messages] [--help]\n"
+              << "  config-path         optional INI config file (default: broker.ini)\n"
+              << "  --trace-messages    print sent/received MQTT messages\n"
+              << "  --help              print this help and exit\n"
+              << std::flush;
+}
+
+bool tryParseCli(int argc, char* argv[], CliOptions& options, std::string& errorText) {
+    for (int argIndex = 1; argIndex < argc; ++argIndex) {
+        const std::string argument{argv[argIndex]};
+        if (argument == "--help" || argument == "-h") {
+            options.showHelp = true;
+            continue;
+        }
+
+        if (argument == "--trace-messages") {
+            options.enableMessageTrace = true;
+            continue;
+        }
+
+        if (!argument.empty() && argument.front() == '-') {
+            errorText = "unknown argument: " + argument;
+            return false;
+        }
+
+        if (options.configPathProvided) {
+            errorText = "multiple config paths provided";
+            return false;
+        }
+
+        options.configPath = std::filesystem::path{argument};
+        options.configPathProvided = true;
+    }
+
+    return true;
 }
 
 const char* qosToText(const yaha::Qos qos) {
@@ -50,29 +96,23 @@ void printStartupConfiguration(const std::filesystem::path& configPath,
     std::cout << '\n';
 }
 
-void reportInitialConnection(yaha::MessageStoreClientApp& app) {
-    constexpr std::uint32_t maximumWaitCycles = 50U;
-    for (std::uint32_t waitCycle = 0U; waitCycle < maximumWaitCycles; ++waitCycle) {
-        if (app.isConnected()) {
-            std::cout << "  broker: connected\n";
-            return;
-        }
-
-        if (shutdownRequested.load()) {
-            return;
-        }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds{100});
-    }
-
-    std::cout << "  broker: not connected yet, retry running in background\n";
-}
-
 } // namespace
 
 int main(int argc, char* argv[]) {
-    const std::filesystem::path configPath =
-        (argc >= 2) ? std::filesystem::path{argv[1]} : std::filesystem::path{"broker.ini"};
+    CliOptions cliOptions{};
+    std::string cliError{};
+    if (!tryParseCli(argc, argv, cliOptions, cliError)) {
+        std::cerr << "Failed to parse arguments: " << cliError << '\n';
+        printUsage();
+        return 1;
+    }
+
+    if (cliOptions.showHelp) {
+        printUsage();
+        return 0;
+    }
+
+    const std::filesystem::path configPath = cliOptions.configPath;
 
     yaha::MessageStoreClientRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
@@ -81,6 +121,8 @@ int main(int argc, char* argv[]) {
                   << "': " << errorMessage << '\n';
         return 1;
     }
+
+    runtimeConfig.mqttConfig.enableMessageTrace = cliOptions.enableMessageTrace;
 
     const std::string configuredHttpHost = runtimeConfig.storeConfig.serverHost;
     const std::string configuredHttpPath = runtimeConfig.storeConfig.serverPath;
@@ -102,7 +144,6 @@ int main(int argc, char* argv[]) {
         std::cout << "  http: listening on http://" << effectiveHost << ':' << configuredHttpPort
                   << configuredHttpPath << "\n";
     }
-    reportInitialConnection(app);
     std::cout << "  signal: waiting for SIGINT/SIGTERM\n";
     std::cout << std::flush;
 

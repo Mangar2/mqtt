@@ -419,6 +419,36 @@ public:
         }
     }
 
+    void unsubscribe(const std::string& topicFilter) {
+        std::lock_guard<std::mutex> lock{mutex_};
+        if (!connected_ || connection_ == nullptr) {
+            return;
+        }
+
+        mqtt::UnsubscribePacket packet{};
+        packet.packet_id = nextPacketId_++;
+        if (nextPacketId_ == 0U) {
+            nextPacketId_ = 1U;
+        }
+        packet.topic_filters.push_back(mqtt::Utf8String{topicFilter});
+
+        mqtt::WriteBuffer encoded{};
+        mqtt::encode_unsubscribe(encoded, packet);
+        if (!connection_->write(asSpan(encoded))) {
+            disconnectLocked();
+            return;
+        }
+
+        try {
+            const std::optional<mqtt::AnyPacket> maybePacket = readNextPacketLocked(5000U);
+            if (!maybePacket.has_value() || !std::holds_alternative<mqtt::UnsubackPacket>(*maybePacket)) {
+                disconnectLocked();
+            }
+        } catch (...) {
+            disconnectLocked();
+        }
+    }
+
     std::optional<Message> pollIncoming() {
         std::lock_guard<std::mutex> lock{mutex_};
         if (!connected_ || connection_ == nullptr) {
@@ -584,6 +614,21 @@ bool MessageStoreClientApp::isConnected() const {
     return mqttClient_.isConnected();
 }
 
+std::optional<MessageStoreClientApp::ConnectionEvent> MessageStoreClientApp::pollConnectionEvent() {
+    const bool connectedNow = mqttClient_.isConnected();
+    if (!lastObservedConnectionState_.has_value()) {
+        lastObservedConnectionState_ = connectedNow;
+        return std::nullopt;
+    }
+
+    if (*lastObservedConnectionState_ == connectedNow) {
+        return std::nullopt;
+    }
+
+    lastObservedConnectionState_ = connectedNow;
+    return connectedNow ? ConnectionEvent::Connected : ConnectionEvent::Disconnected;
+}
+
 bool MessageStoreClientApp::tryLoadConfigFromFile(
     const std::filesystem::path& configPath,
     MessageStoreClientRuntimeConfig& output,
@@ -620,6 +665,9 @@ YahaMqttClient::Transport MessageStoreClientApp::makeBrokerTransport() {
     };
     transport.subscribe = [adapter](const std::string& topicFilter, const Qos qos) {
         adapter->subscribe(topicFilter, qos);
+    };
+    transport.unsubscribe = [adapter](const std::string& topicFilter) {
+        adapter->unsubscribe(topicFilter);
     };
     transport.pollIncoming = [adapter]() -> std::optional<Message> {
         return adapter->pollIncoming();

@@ -24,6 +24,15 @@ A fully specification-compliant MQTT 5.0 broker written in C++20.
     --trace-module=broker \
     --trace-module=connection
 
+# Run YAHA MessageStore client with default config path (broker.ini)
+./build/release/yahamsgstoreclient
+
+# Run YAHA MessageStore client with explicit config path
+./build/release/yahamsgstoreclient path/to/broker.ini
+
+# Enable MQTT sent/received message tracing (lifecycle tracing is always on)
+./build/release/yahamsgstoreclient path/to/broker.ini --trace-messages
+
 # Run the Step 27 test-client shell
 ./build/release/yahatestclient --help
 
@@ -76,6 +85,14 @@ Startup precedence is deterministic:
 3. CLI overrides (`--port`, `--trace-level`, `--trace-module`)
 
 Any unknown CLI flag causes startup failure.
+
+`yahamsgstoreclient` accepts one optional positional config path and one optional flag:
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `<config-path>` | positional path | `broker.ini` | Optional path to MessageStore INI config. |
+| `--trace-messages` | flag | off | Enables printing MQTT sent/received message lines to stdout. |
+| `-h`, `--help` | flag | off | Prints CLI usage and exits successfully. |
 
 ## Prerequisites
 

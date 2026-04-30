@@ -4,6 +4,7 @@
 #include <chrono>
 #include <deque>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -63,8 +64,10 @@ struct TransportState {
     std::atomic<int> disconnect_calls{0};
     std::atomic<int> subscribe_calls{0};
     std::atomic<int> publish_calls{0};
+    std::atomic<int> unsubscribe_calls{0};
     std::atomic<int> ping_calls{0};
     std::atomic<bool> connected{false};
+    std::atomic<int> poll_throw_countdown{0};
     std::deque<yaha::Message> inbox{};
     std::vector<std::pair<std::string, yaha::Qos>> subscriptions{};
     std::vector<yaha::Message> published_messages{};
@@ -94,7 +97,15 @@ yaha::YahaMqttClient::Transport makeTransport(TransportState& state) {
         state.subscriptions.emplace_back(topic, qos);
     };
 
+    transport.unsubscribe = [&state](const std::string&) {
+        state.unsubscribe_calls.fetch_add(1);
+    };
+
     transport.pollIncoming = [&state]() -> std::optional<yaha::Message> {
+        if (state.poll_throw_countdown.load() > 0
+            && state.poll_throw_countdown.fetch_sub(1) > 0) {
+            throw std::runtime_error{"pollIncoming transient failure"};
+        }
         if (state.inbox.empty()) {
             return std::nullopt;
         }
@@ -239,4 +250,23 @@ TEST_CASE("close_stops_loop_and_disconnects", "[mqtt_client]") {
 
     REQUIRE_FALSE(client.isRunning());
     REQUIRE(state.disconnect_calls.load() == 1);
+    REQUIRE(state.unsubscribe_calls.load() == 1);
+}
+
+TEST_CASE("transport_poll_exception_triggers_reconnect_without_crash", "[mqtt_client]") {
+    TransportState state{};
+    state.poll_throw_countdown.store(1);
+    RecordingComponent component{{{"home/#", yaha::Qos::AtLeastOnce}}};
+
+    yaha::YahaMqttClient::Config config{};
+    config.loopSleep = std::chrono::milliseconds{5};
+    config.reconnectDelay = std::chrono::milliseconds{5};
+
+    yaha::YahaMqttClient client{config, component, makeTransport(state)};
+    client.run();
+    std::this_thread::sleep_for(std::chrono::milliseconds{60});
+    client.close();
+
+    REQUIRE(state.connect_calls.load() >= 2);
+    REQUIRE(state.disconnect_calls.load() >= 1);
 }

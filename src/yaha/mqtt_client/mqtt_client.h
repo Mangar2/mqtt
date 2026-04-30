@@ -34,6 +34,8 @@ public:
         std::chrono::milliseconds reconnectDelay{1000};
         std::chrono::milliseconds keepAliveInterval{30000};
         std::chrono::milliseconds loopSleep{20};
+        bool enableLifecycleTrace{true};
+        bool enableMessageTrace{false};
     };
 
     /**
@@ -44,6 +46,7 @@ public:
         std::function<void()> disconnect;
         std::function<void(const Message&)> publish;
         std::function<void(const std::string&, Qos)> subscribe;
+        std::function<void(const std::string&)> unsubscribe;
         std::function<std::optional<Message>()> pollIncoming;
         std::function<void()> ping;
         std::function<bool()> isConnected;
@@ -97,8 +100,11 @@ private:
     void workerLoop();
     bool ensureConnected();
     void replaySubscriptions();
+    void unsubscribeAll();
     void processIncoming();
     void processKeepAlive();
+    void traceLifecycle(const std::string& text) const;
+    void traceMessage(const std::string& direction, const Message& message) const;
     [[nodiscard]] bool isTopicSubscribed(const std::string& topic) const;
     [[nodiscard]] static bool topicMatchesFilter(const std::string& filter,
                                                  const std::string& topic);
@@ -110,6 +116,7 @@ private:
     mutable std::mutex stateMutex_;
     bool running_{false};
     bool connected_{false};
+    bool everConnected_{false};
     SubscriptionMap activeSubscriptions_;
     std::chrono::steady_clock::time_point lastPingAt_{};
 

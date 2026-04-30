@@ -37,9 +37,9 @@ For incoming messages (broker → device): when a message arrives on a device's 
 The bridge is a standalone executable. Its entry point creates:
 - An HTTP server that accepts device commands.
 - An HTTP client for delivering messages to device callbacks.
-- A per-device MQTT connection factory: each `/connect` call creates a new MQTT client instance.
+- A per-device domain session component plus a generic MQTT client instance: each `/connect` call creates one component instance and one MQTT client instance wired through `IMqttComponent`.
 
-No `IMqttComponent` interface is needed: the bridge is the MQTT client logic. Both translation sides are its sole purpose.
+The bridge domain logic is not the MQTT transport implementation. It is wired to the shared generic MQTT client through `IMqttComponent` so reconnect, keep-alive, broker runtime parameters, and non-domain transport tracing stay consistent with other YAHA apps.
 
 ## In-memory device registry
 
@@ -144,7 +144,7 @@ The bridge supports CORS for browser-based clients. `Access-Control-Allow-Origin
 
 - One real MQTT connection per device. The broker owns all session state, QoS guarantees, and message queuing.
 - The bridge holds no persistent state. Restart = all devices must reconnect.
-- The MQTT client per device manages its own reconnect loop internally (ping-based keep-alive). The bridge does not implement reconnect logic.
+- The generic MQTT client per device manages reconnect loop internally (ping-based keep-alive). Bridge domain component logic does not implement reconnect policy.
 - TLS termination and external access control are handled by nginx in front of the bridge's HTTP server.
 - No WebSocket support. HTTP only between bridge and devices.
 - Failed callback delivery is handled silently: device is removed from registry and MQTT connection is closed. No separate notification channel.

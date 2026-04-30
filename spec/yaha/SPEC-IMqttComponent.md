@@ -2,13 +2,32 @@
 
 ## Purpose
 
-Defines the contract between an MQTT client and a home automation component. Allows any component to be connected to an MQTT client without either side knowing about the other's internals. The interface is the only coupling point.
+Defines the central boundary between domain logic and the generic MQTT client runtime used by YAHA applications. Allows any component to be connected to the same reusable MQTT client behavior without either side knowing internal details. The interface is the only coupling point.
 
 ## Role in the system
 
 Every YAHA component that needs to receive or send MQTT messages implements this interface. The MQTT client calls `getSubscriptions` once at startup to know what to subscribe to, and calls `handleMessage` for every incoming message that matches a subscription. If a component needs to publish messages itself, it uses a callback or injected publish function that is also provided through this interface boundary.
 
 A `main` entry point creates an MQTT client and a component independently, wires them together via the interface, and starts both. Neither the MQTT client source nor the component source contains any reference to the other.
+
+This interface is not just a method contract. It is the architectural rule that keeps all non-domain MQTT concerns in one reusable place so every YAHA app behaves the same way at runtime.
+
+## Separation of responsibilities
+
+### Domain component responsibilities (behind IMqttComponent)
+
+- domain subscriptions and domain message handling
+- optional domain-driven publishes through injected callback
+- domain configuration and domain state management
+
+### Generic MQTT client responsibilities (outside domain component)
+
+- broker connectivity lifecycle (connect, reconnect, keep-alive, subscription replay)
+- broker-facing CLI/runtime parameter handling (host, port, client id, keep alive, reconnect delay, and similar connection/runtime options)
+- non-domain tracing and operational logs (transport state, reconnect transitions, broker session diagnostics)
+- transport/session error handling and shutdown behavior
+
+No domain component should implement broker transport policy, reconnect policy, or non-domain tracing logic.
 
 ## Interface contract
 
@@ -44,6 +63,8 @@ The main entry point:
 4. Starts the MQTT client, which manages the connection lifecycle.
 
 The component does not start the MQTT client. The MQTT client does not construct the component.
+
+Main must remain thin orchestration code: composition and lifecycle wiring only, with no broker-policy logic.
 
 ## Architectural notes
 

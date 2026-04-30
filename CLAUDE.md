@@ -26,11 +26,20 @@ Skills only here:
 /code-create: workflow coding
 /github-pr: GitHub branches and Pull Requests
 /bug-fixing: bug reproduction analysis and fix workflow
+/yaha-spec: YAHA specification workflow
+/yaha-log: YAHA logging workflow
 
 ## Project Plan
 
-Implementation plan spec/implementation-plan.md Always consult never rename or move 
-Defines modules sub-components dependency order
+Pure MQTT broker activities:
+Use implementation plan spec/implementation-plan.md.
+Always consult never rename or move.
+Defines broker modules sub-components dependency order.
+
+YAHA activities:
+Use spec/yaha/ as primary plan and specification source.
+Do not use spec/implementation-plan.md as planning source for YAHA-only work.
+In YAHA area follow spec/yaha documents and matching src/yaha/**/SPEC.md.
 
 ## Project Structure
 

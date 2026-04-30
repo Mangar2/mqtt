@@ -14,4 +14,5 @@ Unit tests for `YahaMqttClient` session behavior with a fake transport callback 
 | `publish_forwards_valid_message_to_transport` | Outbound publish path delegates to transport publish callback | one valid message | transport publish called with same topic/value |
 | `inbound_non_matching_topic_is_filtered_out` | Messages outside active filters must not reach component | subscription `home/+/state`, inbound `other/topic` | zero handled messages |
 | `keep_alive_ping_runs_while_connected` | Session sends periodic keepalive pings | short keepalive interval | ping callback invoked at least once |
-| `close_stops_loop_and_disconnects` | Graceful shutdown stops worker and disconnects | running client then close | `isRunning()==false`, disconnect called once |
+| `close_stops_loop_and_disconnects` | Graceful shutdown stops worker, unsubscribes active filters, and disconnects | running client then close | `isRunning()==false`, unsubscribe called for active filter, disconnect called once |
+| `transport_poll_exception_triggers_reconnect_without_crash` | Transport callback exception must not terminate process and should trigger reconnect | one transient exception from `pollIncoming()` while connected | worker keeps running, reconnect occurs, close succeeds |

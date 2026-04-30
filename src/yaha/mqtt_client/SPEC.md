@@ -29,6 +29,7 @@ shutdown.
 - `disconnect()`
 - `publish(message)`
 - `subscribe(topic_filter, qos)`
+- `unsubscribe(topic_filter)`
 - `pollIncoming() -> optional<Message>`
 - `ping()`
 - `isConnected() -> bool`
@@ -40,10 +41,15 @@ The class is transport-agnostic; it does not contain socket/protocol code.
 - On `run()`, injects component publish callback before processing incoming messages.
 - Connect loop retries with `reconnectDelay` on failures.
 - After each successful connect, fetches `component.getSubscriptions()` and subscribes all entries.
+- During `close()`, unsubscribes active filters before transport disconnect for deterministic broker-side teardown.
 - Inbound polling forwards only messages that match active subscriptions.
 - Keep-alive sends `ping()` every `keepAliveInterval` while connected.
 - On external disconnect (`isConnected() == false`), marks disconnected and reconnects.
+- Exceptions raised by transport callbacks during the worker loop are treated as transient disconnects; the loop keeps running and retries connect after `reconnectDelay`.
 - `close()` always ends with one `disconnect()` call if currently connected.
+- `close()` ignores transport disconnect exceptions to preserve no-throw shutdown behavior.
+- Lifecycle tracing is handled in this generic layer (`connect`, `connected`, `reconnect`, `reconnected`, `subscribe`, `unsubscribe`, `disconnect`, `connection lost`, `reconnecting`).
+- Optional message tracing (`sent`/`recv`) is controlled by config flag `enableMessageTrace`.
 
 ## Topic matching
 
