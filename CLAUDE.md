@@ -28,6 +28,7 @@ Skills only here:
 /bug-fixing: bug reproduction analysis and fix workflow
 /yaha-spec: YAHA specification workflow
 /yaha-log: YAHA logging workflow
+/yaha-client-architektur: YAHA client main architecture workflow
 
 ## Project Plan
 
