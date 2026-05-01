@@ -7,7 +7,7 @@ Implements Phase 3 core of Broker Connector:
 - receiver-side publish port built on standard `YahaMqttClient`
 - relay component with retry policy and runtime counters
 
-This module now provides complete source-to-receiver forwarding logic. Executable composition remains out of scope (Phase 4).
+This module now provides complete source-to-receiver forwarding logic through `IMqttComponent` coupling. Executable composition remains out of scope (Phase 4).
 
 ## Public API
 
@@ -122,9 +122,12 @@ This module now provides complete source-to-receiver forwarding logic. Executabl
 |--------|-----------|-------|
 | ctor | `BrokerConnectorComponent(RelayPolicyConfig)` | stores relay policy |
 | dtor | `~BrokerConnectorComponent()` | closes component |
-| `setReceiverPublishPort` | `void(ReceiverPublishPort&)` | wires receiver boundary |
-| `run` | `void()` | marks relay active |
-| `close` | `void()` | marks relay inactive |
+| `setSourceAdapter` | `void(SourceHttpBrokerAdapter&, SourceLifecycleConfig)` | wires source adapter and lifecycle loop |
+| `getSubscriptions` | `SubscriptionMap() const` | returns empty map for receiver side |
+| `handleMessage` | `void(const Message&)` | no-op for inbound receiver messages |
+| `setPublishCallback` | `void(PublishCallback)` | receives generic mqtt publish boundary |
+| `run` | `void()` | marks relay active and starts source lifecycle loop |
+| `close` | `void()` | marks relay inactive and stops source lifecycle loop |
 | `onIncomingPublish` | `bool(const Message&, const SourcePublishMeta&)` | applies mapping + retry publish loop |
 | `getStats` | `RelayCounters() const` | returns counter snapshot |
 | `isRunning` | `bool() const` | active runtime state |
@@ -160,12 +163,12 @@ Reason-chain content in callback payload is currently ignored in this phase and 
 4. On shutdown, close adapter.
 
 `BrokerConnectorComponent` forwarding path:
-1. Rejects forwarding when not running or no receiver port is wired.
+1. Rejects forwarding when not running or no publish callback is wired.
 2. Increments `received` counter for each accepted source callback.
-3. Maps source metadata to receiver publish options:
+3. Maps source metadata to outgoing `Message` fields:
 	- qos mapping: `0 -> 0`, `1/2 -> 1` when normalization is enabled
 	- retain mapping: source retain passthrough or forced false
-4. Calls `ReceiverPublishPort::publish` with bounded retries.
+4. Calls `PublishCallback` (generic mqtt client boundary) with bounded retries.
 5. Increments `forwarded` on success or `failed` after retry budget is exhausted.
 
 ## Threading model
@@ -194,4 +197,4 @@ Reason-chain content in callback payload is currently ignored in this phase and 
 | `relay_component.cpp` | Relay component implementation |
 | `test/TEST_SPEC.md` | Unit test specification |
 | `test/source_http_adapter_test.cpp` | Unit tests for Phase 2 behavior |
-| `test/relay_component_test.cpp` | Unit tests for receiver publish port and relay behavior |
+| `test/relay_component_test.cpp` | Unit tests for receiver publish port and IMqttComponent relay behavior |

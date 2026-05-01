@@ -18,6 +18,8 @@ C++20 coding rules for this project.
 - use std::fromat to format strings
 - flush at the end when writing to std::cout or std::cerr
 - return values by function result. Create result structures or use std:pair or similar.
+- use exceptions
+- minimize boilerplate code
 
 ## Compiler warnings
 

@@ -80,7 +80,7 @@ bool tryLoadSourceHttpBrokerConfigFromIni(
 
 bool tryLoadReceiverMqttBrokerConfigFromIni(
     const IniDocument& document,
-    ReceiverMqttBrokerConfig& output,
+    YahaMqttClient::Config& output,
     std::string& errorMessage) {
     if (const auto host = document.lastValue("receiverMqttBroker", "host"); host.has_value()) {
         output.brokerHost = *host;

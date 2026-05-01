@@ -52,6 +52,28 @@
 | `test_client_cli_wp6_simulate_maps_to_step32_load_mode` | `[test_client][cli]` | mqttx `simulate -sc <mass-connect|publish-rate|multi-subscribe>` maps to Step32 load-mode execution options and template normalization. |
 | `test_client_cli_wp6_ls_scenarios_maps_to_scenario_list_mode` | `[test_client][cli]` | mqttx `ls --scenarios|-sc` maps to scenario catalog list mode. |
 | `test_client_cli_wp6_init_and_check_commands_are_parsed` | `[test_client][cli]` | `init` and `check` command families parse as dedicated runtime command modes. |
+| `test_client_cli_mqttx_pub_accepts_avsc_alias_in_pub_mode` | `[test_client][cli]` | mqttx `pub` parser maps `-Ap|--avsc-path` to `publish_avsc_path` override in direct pub mode. |
+| `test_client_cli_mqttx_pub_rejects_secure_tls_flags` | `[test_client][cli]` | mqttx `pub` parser rejects secure TLS options (`--key`, `--cert`, `--ca`, `--insecure`, `--alpn`) with explicit unsupported error. |
+| `test_client_cli_publish_command_with_short_aliases_covers_common_parser_paths` | `[test_client][cli]` | `publish` command with short mqttx-style aliases covers common parser override mapping paths for publish/connection/will/auth options. |
+| `test_client_cli_publish_command_with_long_options_covers_common_parser_paths` | `[test_client][cli]` | `publish` command with long-form options covers common parser mapping for connect/publish/subscribe-compatible override keys. |
+| `test_client_cli_publish_command_covers_remaining_common_error_and_alias_paths` | `[test_client][cli]` | `publish` command covers remaining common parser branches (`-V` invalid, `--maximun-reconnect-times`, `--save-options`, `--load-options`, `--debug`, and long payload-format flag). |
+| `test_client_cli_pub_help_shortcuts_return_help` | `[test_client][cli]` | mqttx `pub --help|-h` is mapped to help command mode. |
+| `test_client_cli_ls_and_bench_error_paths` | `[test_client][cli]` | parser rejects unsupported `ls` payload, missing `bench` subcommand, and unknown `bench` subcommand. |
+| `test_client_cli_mqttx_pub_long_alias_variants_are_supported` | `[test_client][cli]` | mqttx `pub` parser accepts long alias variants for message/payload/property/connection/will options and maps them to overrides. |
+| `test_client_cli_mqttx_pub_long_payload_format_indicator_is_supported` | `[test_client][cli]` | mqttx `pub` parser accepts long `--payload-format-indicator` alias and maps it to `publish_payload_format_indicator`. |
+| `test_client_cli_mqttx_sub_long_alias_variants_are_supported` | `[test_client][cli]` | mqttx `sub` parser accepts long alias variants for topic/qos/no-local/retain/output/schema flags and maps them to overrides. |
+| `test_client_cli_scenario_list_scenarios_flag_is_parsed` | `[test_client][cli]` | `scenario --list-scenarios` toggles list mode through common options parser path. |
+| `test_client_cli_publish_payload_format_indicator_long_flag_is_parsed` | `[test_client][cli]` | `publish --payload-format-indicator` maps to publish payload-format override through common options parser path. |
+| `test_client_cli_branch_sweep_executes_many_option_paths` | `[test_client][cli]` | broad parser sweep executes many command/option branches (success and error paths) to guard CLI compatibility behavior. |
+| `test_client_cli_mqttx_sub_compact_qos_and_default_output_mode_are_supported` | `[test_client][cli]` | mqttx `sub` parser supports compact qos tokens and `--output-mode default` branch. |
+| `test_client_cli_mqttx_sub_delimiter_without_value_uses_default` | `[test_client][cli]` | mqttx `sub` parser applies default newline delimiter when `--delimiter` has no explicit value. |
+| `test_client_cli_mqttx_sub_boolean_flags_without_values_enable_true` | `[test_client][cli]` | mqttx `sub` parser enables no-local and retain-as-published when boolean flags are passed without explicit values. |
+| `test_client_cli_mqttx_sub_rejects_secure_tls_flags` | `[test_client][cli]` | mqttx `sub` parser rejects secure TLS flags with unsupported-option error. |
+| `test_client_cli_bench_pub_extended_option_sweep_covers_parser_branches` | `[test_client][cli]` | bench `pub` parser sweep covers interval/message-interval, qos forms, metrics, protocol handling, split delimiter and many alias options. |
+| `test_client_cli_bench_sub_and_conn_user_property_paths_are_supported` | `[test_client][cli]` | bench `sub` and `conn` paths cover user-property routing and boolean parsing branches. |
+| `test_client_cli_bench_and_sub_boolean_parsers_reject_invalid_literals` | `[test_client][cli]` | invalid boolean literals for no-local/retain-as-published are rejected in bench/sub parsers. |
+| `test_client_cli_sub_extended_connection_options_are_supported` | `[test_client][cli]` | mqttx `sub` parser accepts extended connection/session/output options and maps all related overrides. |
+| `test_client_cli_simulate_extended_option_sweep_covers_parser_branches` | `[test_client][cli]` | simulate parser sweep covers publish/connection/will/schema aliases, metrics flag and selector mapping behavior. |
 
 ## Scenario Runner
 
@@ -69,3 +91,7 @@
 | `test_client_scenario_command_step32_mass_connect_mode_succeeds_with_fake_broker` | `[test_client][scenario]` | Step 32 `mass-connect` mode succeeds against a local fake MQTT broker and covers direct publish operation path. |
 | `test_client_scenario_command_step32_publish_rate_mode_succeeds_with_fake_broker` | `[test_client][scenario]` | Step 32 `publish-rate` mode succeeds against a local fake broker, including persistent QoS2 publish handshake and publish property encoding paths. |
 | `test_client_scenario_command_step32_multi_subscribe_mode_succeeds_with_fake_broker` | `[test_client][scenario]` | Step 32 `multi-subscribe` mode succeeds against a local fake broker and covers subscribe option mapping and subscriber completion path. |
+| `test_client_scenario_command_step32_publish_rate_mode_qos1_succeeds_with_fake_broker` | `[test_client][scenario]` | Step 32 `publish-rate` mode with QoS1 succeeds against fake broker and covers persistent publish Puback handshake path. |
+| `test_client_scenario_command_step32_mass_connect_mode_qos2_succeeds_with_fake_broker` | `[test_client][scenario]` | Step 32 `mass-connect` mode with QoS2 succeeds against fake broker and covers direct publish Pubrec/Pubrel/Pubcomp handshake path. |
+| `test_client_scenario_command_step32_multi_subscribe_rejects_invalid_bench_settings` | `[test_client][scenario]` | Step 32 `multi-subscribe` mode validates bench settings and rejects invalid qos/retain-handling/subscription-identifier combinations. |
+| `test_client_scenario_command_step32_publish_rate_mode_fails_when_broker_disconnects_on_publish` | `[test_client][scenario]` | Step 32 `publish-rate` mode returns non-zero when broker disconnects immediately after receiving a publish frame. |

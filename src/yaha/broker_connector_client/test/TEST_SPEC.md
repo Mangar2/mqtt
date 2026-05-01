@@ -2,7 +2,7 @@
 
 ## Scope
 
-Unit tests for runtime orchestration and INI config mapping of the standalone broker connector client.
+Unit tests for INI config mapping of the standalone broker connector client.
 
 ## Test cases
 
@@ -12,5 +12,7 @@ Unit tests for runtime orchestration and INI config mapping of the standalone br
 | `load_runtime_config_uses_defaults_when_optional_keys_missing` | Default-preserving path | ini document containing only required host/port keys | missing optional values stay at struct defaults and source subscriptions default to `#` qos1 |
 | `load_runtime_config_rejects_invalid_bool_field` | bool parser error path | ini document with `automation.retainPassthrough=maybe` | parser returns false and error mentions invalid boolean field |
 | `broker_connector_client_config_applies_keepalive_fallback_and_monitoring_trace` | Fallback and optional monitoring branches | config without automation.sourceKeepAliveIntervalMs and with monitoring.sourceLifecycleTrace | source lifecycle keepalive falls back to source keepAliveSeconds and monitoring trace flag is applied |
-| `runtime_start_and_close_follow_required_order` | deterministic start/stop choreography | fake receiver/source/component runtime ports with order recording | start order receiver->connector->source and close order source->receiver->connector |
-| `runtime_start_propagates_receiver_start_failure` | startup failure propagation path | fake receiver start returns false with error text | runtime start returns false with same error and no source/component start |
+| `broker_connector_client_config_rejects_invalid_source_port` | Source section numeric validation failure | config with `sourceHttpBroker.port` outside valid range | parser returns false and reports source port error |
+| `broker_connector_client_config_rejects_invalid_monitoring_trace_boolean` | Monitoring section bool validation failure | config with `monitoring.sourceLifecycleTrace=maybe` | parser returns false and reports monitoring bool error |
+| `broker_connector_client_config_rejects_invalid_source_optional_fields` | Source section optional field validation failures | configs with invalid `listenerPort`, `keepAliveSeconds`, and `clean` values | parser returns false and reports corresponding source field errors |
+| `broker_connector_client_config_rejects_invalid_receiver_and_automation_fields` | Receiver/automation numeric and bool validation failures | configs with invalid receiver and automation values | parser returns false and reports corresponding receiver/automation field errors |

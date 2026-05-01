@@ -165,6 +165,25 @@ TEST_CASE("handle_message_cleanup_topic_ignores_invalid_payload", "[message_stor
     REQUIRE(nodes.size() == 1U);
 }
 
+TEST_CASE("handle_message_cleanup_topic_accepts_numeric_string_payload", "[message_store]") {
+    FakeClock clock{};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = 0U;
+    config.treeConfig.nowMillisecondsProvider = [&clock]() {
+        return clock.nowMs;
+    };
+
+    yaha::MessageStore store{config};
+
+    store.handleMessage(yaha::Message{"old/topic", std::string{"x"}});
+    clock.nowMs += (2 * 86400000);
+    store.handleMessage(yaha::Message{"$MONITORING/messages/cleanup", std::string{"1"}});
+
+    const auto nodes = store.querySection("", 5U, false, true);
+    REQUIRE(nodes.empty());
+}
+
 TEST_CASE("run_restore_starts_callbacks_and_periodic_persist", "[message_store]") {
     const auto tempDir = makeTempDirectory();
 
@@ -313,6 +332,52 @@ TEST_CASE("http_get_store_decodes_percent_encoded_topic_prefix", "[message_store
     REQUIRE(response->body.find("\"topic\":\"home room/lamp\"") != std::string::npos);
 }
 
+TEST_CASE("http_get_store_rejects_invalid_percent_encoded_topic_prefix", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.handleMessage(yaha::Message{"home/lamp", std::string{"on"}});
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    const auto response = client.Get("/store/home%2");
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 400);
+    REQUIRE(response->body.find("invalid_percent_encoding") != std::string::npos);
+}
+
+TEST_CASE("http_get_store_decodes_percent_encoded_hex_bytes", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.handleMessage(yaha::Message{"homeAroom/lamp", std::string{"on"}});
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    const auto response = client.Get("/store/home%41room");
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 200);
+    REQUIRE(response->body.find("\"topic\":\"homeAroom/lamp\"") != std::string::npos);
+}
+
 TEST_CASE("http_get_store_applies_levelamount_history_reason_headers", "[message_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};
@@ -347,6 +412,34 @@ TEST_CASE("http_get_store_applies_levelamount_history_reason_headers", "[message
 
 }
 
+TEST_CASE("http_get_store_header_defaults_apply_for_blank_or_invalid_values", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.handleMessage(yaha::Message{"home/zone/light", std::string{"on"}});
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    httplib::Headers headers{
+        {"levelamount", "   "},
+        {"history", "   "},
+        {"reason", "not-a-bool"}
+    };
+    const auto response = client.Get("/store/home", headers);
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 200);
+}
+
 TEST_CASE("http_get_store_snapshot_body_uses_diff_mode", "[message_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};
@@ -379,6 +472,90 @@ TEST_CASE("http_get_store_snapshot_body_uses_diff_mode", "[message_store]") {
     REQUIRE(response->body.find("\"topic\":\"home/lamp\"") != std::string::npos);
     REQUIRE(response->body.find("\"topic\":\"home/temp\"") == std::string::npos);
 
+}
+
+TEST_CASE("http_get_store_snapshot_body_skips_unknown_fields_and_json_variants", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.handleMessage(yaha::Message{"home/lamp", std::string{"on"}});
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+
+    const std::string snapshotBody =
+        R"([{"topic":"home/lamp","value":"off","meta":{"a":1},"arr":[1,2],"flag":true,"nil":null}])";
+    httplib::Request request{};
+    request.method = "GET";
+    request.path = "/store/home";
+    request.body = snapshotBody;
+    request.set_header("Content-Type", "application/json");
+    const auto response = client.send(request);
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 200);
+    REQUIRE(response->body.find("\"topic\":\"home/lamp\"") != std::string::npos);
+}
+
+TEST_CASE("http_get_store_snapshot_body_supports_escaped_strings", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.handleMessage(yaha::Message{"home/lamp", std::string{"on"}});
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+
+    const std::string snapshotBody =
+        R"([{"topic":"home\/lamp","value":"line1\nline2\t\"q\"\\x"}])";
+    httplib::Request request{};
+    request.method = "GET";
+    request.path = "/store/home";
+    request.body = snapshotBody;
+    request.set_header("Content-Type", "application/json");
+    const auto response = client.send(request);
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 200);
+}
+
+TEST_CASE("http_get_store_json_output_escapes_special_characters", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.handleMessage(yaha::Message{"home/escaped", std::string{"line1\nline2\r\t\"q\"\\x"}});
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    const auto response = client.Get("/store/home/escaped");
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 200);
+    REQUIRE(response->body.find("line1\\nline2\\r\\t\\\"q\\\"\\\\x") != std::string::npos);
 }
 
 TEST_CASE("http_get_store_malformed_snapshot_returns_empty_array", "[message_store]") {

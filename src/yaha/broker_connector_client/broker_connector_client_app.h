@@ -5,12 +5,13 @@
  * @brief Runtime config types and INI mapping helpers for YAHA Broker Connector standalone process.
  */
 
-#include "yaha/broker_connector/receiver_publish_port.h"
 #include "yaha/broker_connector/relay_component.h"
 #include "yaha/broker_connector/source_http_adapter.h"
 #include "yaha/broker_connector/source_lifecycle_manager.h"
 #include "yaha/ini/ini_document.h"
+#include "yaha/mqtt_client/mqtt_client.h"
 
+#include <chrono>
 #include <string>
 
 namespace yaha {
@@ -21,7 +22,15 @@ namespace yaha {
 struct BrokerConnectorClientRuntimeConfig {
     SourceHttpBrokerConfig sourceConfig{};             ///< Source HTTP broker configuration.
     SourceLifecycleConfig sourceLifecycleConfig{};     ///< Source lifecycle timing configuration.
-    ReceiverMqttBrokerConfig receiverConfig{};         ///< Receiver MQTT broker configuration.
+    YahaMqttClient::Config receiverConfig{             ///< Receiver MQTT client configuration.
+        .brokerHost = "127.0.0.1",
+        .brokerPort = 1883U,
+        .clientId = "broker-connector-receiver",
+        .reconnectDelay = std::chrono::milliseconds{1000},
+        .keepAliveInterval = std::chrono::milliseconds{30000},
+        .loopSleep = std::chrono::milliseconds{20},
+        .enableLifecycleTrace = true,
+        .enableMessageTrace = false};
     RelayPolicyConfig relayPolicyConfig{};             ///< Relay policy and retry configuration.
 };
 
@@ -46,7 +55,7 @@ struct BrokerConnectorClientRuntimeConfig {
  */
 [[nodiscard]] bool tryLoadReceiverMqttBrokerConfigFromIni(
     const IniDocument& document,
-    ReceiverMqttBrokerConfig& output,
+    YahaMqttClient::Config& output,
     std::string& errorMessage);
 
 /**

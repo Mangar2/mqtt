@@ -73,3 +73,35 @@ State what is generic.
 State what is app specific.
 List violations by file path.
 Give minimal refactor path to restore boundary.
+
+Required completion check
+Must confirm all points before task end.
+
+1 Main is thin compose only.
+No runtime policy in main.
+No reconnect policy in main.
+No signal policy in main.
+
+2 Domain logic is behind IMqttComponent.
+Domain component implements IMqttComponent.
+Generic mqtt client is wired with IMqttComponent only.
+Generic runtime is wired with mqtt client plus IMqttComponent only.
+
+3 No custom coupling architecture added.
+No app specific runtime orchestrator class.
+No app specific adapter layer for runtime coupling.
+No second lifecycle choreography path outside generic runtime.
+
+4 Main has one run entry only.
+Create component.
+Create mqtt client.
+Create generic runtime.
+Call run once.
+
+5 Generic boundaries preserved.
+Shutdown order owned by generic runtime only.
+No duplicated generic parser logic in main.
+
+Required final confirmation text
+Use this exact line in final report:
+YAHA client architecture check passed: IMqttComponent coupling used and no custom coupling architecture introduced.

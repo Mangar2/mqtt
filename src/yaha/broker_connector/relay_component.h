@@ -5,12 +5,14 @@
  * @brief Relay component for Broker Connector Phase 3 source-to-receiver forwarding.
  */
 
-#include "yaha/broker_connector/receiver_publish_port.h"
 #include "yaha/broker_connector/source_http_adapter.h"
+#include "yaha/broker_connector/source_lifecycle_manager.h"
+#include "yaha/mqtt_component/mqtt_component.h"
 
 #include <chrono>
 #include <cstdint>
 #include <mutex>
+#include <memory>
 
 namespace yaha {
 
@@ -36,7 +38,7 @@ struct RelayCounters {
 /**
  * @brief Broker connector domain component that relays source messages to receiver publish port.
  */
-class BrokerConnectorComponent {
+class BrokerConnectorComponent : public IMqttComponent {
 public:
     /**
      * @brief Constructs relay component from policy config.
@@ -53,20 +55,40 @@ public:
     BrokerConnectorComponent& operator=(const BrokerConnectorComponent&) = delete;
 
     /**
-     * @brief Wires receiver publish port implementation.
-     * @param receiverPort Receiver publish port.
+     * @brief Wires source adapter and lifecycle settings into the component.
+     * @param sourceAdapter Source HTTP adapter instance.
+     * @param lifecycleConfig Source lifecycle loop configuration.
      */
-    void setReceiverPublishPort(ReceiverPublishPort& receiverPort);
+    void setSourceAdapter(SourceHttpBrokerAdapter& sourceAdapter,
+                          SourceLifecycleConfig lifecycleConfig);
+
+    /**
+     * @brief Returns topic subscriptions for receiver side.
+     * @return Empty map because source side drives incoming messages.
+     */
+    [[nodiscard]] SubscriptionMap getSubscriptions() const override;
+
+    /**
+     * @brief Handles inbound receiver messages.
+     * @param message Inbound receiver message.
+     */
+    void handleMessage(const Message& message) override;
 
     /**
      * @brief Starts component runtime state.
      */
-    void run();
+    void run() override;
 
     /**
      * @brief Stops component runtime state.
      */
-    void close();
+    void close() override;
+
+    /**
+     * @brief Injects publish callback provided by generic mqtt client.
+     * @param callback Publish callback.
+     */
+    void setPublishCallback(PublishCallback callback) override;
 
     /**
      * @brief Handles one incoming source publish and forwards it with retry policy.
@@ -90,12 +112,14 @@ public:
     [[nodiscard]] bool isRunning() const;
 
 private:
-    [[nodiscard]] ReceiverPublishOptions toPublishOptions(const SourcePublishMeta& sourceMeta) const;
+    [[nodiscard]] Message toForwardMessage(const Message& message,
+                                           const SourcePublishMeta& sourceMeta) const;
 
     RelayPolicyConfig config_{};
 
     mutable std::mutex relay_state_mutex_{};
-    ReceiverPublishPort* receiverPort_{nullptr};
+    PublishCallback publishCallback_{};
+    std::unique_ptr<SourceLifecycleManager> sourceLifecycle_{};
     bool running_{false};
     RelayCounters counters_{};
 };

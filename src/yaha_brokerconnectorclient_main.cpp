@@ -1,9 +1,9 @@
-#include "yaha/broker_connector/receiver_publish_port.h"
 #include "yaha/broker_connector/relay_component.h"
 #include "yaha/broker_connector/source_http_adapter.h"
-#include "yaha/broker_connector/source_lifecycle_manager.h"
 #include "yaha/broker_connector_client/broker_connector_client_app.h"
-#include "yaha/broker_connector_client/broker_connector_runtime.h"
+#include "yaha/mqtt_client/broker_transport.h"
+#include "yaha/mqtt_client/mqtt_client.h"
+#include "yaha/mqtt_client/mqtt_client_runtime.h"
 
 #include <filesystem>
 #include <exception>
@@ -49,40 +49,6 @@ bool tryParseCli(const int argc, char* argv[], CliOptions& options, std::string&
 
     return true;
 }
-
-class SourceLifecycleRuntimeAdapter final : public yaha::SourceRuntimePort {
-public:
-    explicit SourceLifecycleRuntimeAdapter(yaha::SourceLifecycleManager& manager)
-        : manager_(manager) {}
-
-    void run() override {
-        manager_.run();
-    }
-
-    void close() override {
-        manager_.close();
-    }
-
-private:
-    yaha::SourceLifecycleManager& manager_;
-};
-
-class RelayComponentRuntimeAdapter final : public yaha::ConnectorRuntimePort {
-public:
-    explicit RelayComponentRuntimeAdapter(yaha::BrokerConnectorComponent& component)
-        : component_(component) {}
-
-    void run() override {
-        component_.run();
-    }
-
-    void close() override {
-        component_.close();
-    }
-
-private:
-    yaha::BrokerConnectorComponent& component_;
-};
 
 void printStartupConfiguration(const std::filesystem::path& configPath,
                                const yaha::BrokerConnectorClientRuntimeConfig& runtimeConfig) {
@@ -142,26 +108,16 @@ int main(int argc, char* argv[]) {
 
     printStartupConfiguration(cliOptions.configPath, runtimeConfig);
 
-    yaha::ReceiverMqttPublishPort receiverPort{runtimeConfig.receiverConfig};
     yaha::BrokerConnectorComponent relayComponent{runtimeConfig.relayPolicyConfig};
-    relayComponent.setReceiverPublishPort(receiverPort);
-
     yaha::SourceHttpBrokerAdapter sourceAdapter{runtimeConfig.sourceConfig};
-    sourceAdapter.setIncomingPublishCallback(
-        [&relayComponent](const yaha::Message& message, const yaha::SourcePublishMeta& sourceMeta) {
-            (void)relayComponent.onIncomingPublish(message, sourceMeta);
-        });
+    relayComponent.setSourceAdapter(sourceAdapter, runtimeConfig.sourceLifecycleConfig);
 
-    yaha::SourceLifecycleManager sourceLifecycle{sourceAdapter, runtimeConfig.sourceLifecycleConfig};
-    SourceLifecycleRuntimeAdapter sourceRuntime{sourceLifecycle};
-    RelayComponentRuntimeAdapter connectorRuntime{relayComponent};
-
-    yaha::BrokerConnectorClientRuntime runtime{receiverPort, sourceRuntime, connectorRuntime};
-
-    if (!runtime.runUntilSignal(errorMessage)) {
-        std::cerr << "Runtime startup failed: " << errorMessage << '\n';
-        return 1;
-    }
+    yaha::YahaMqttClient receiverClient{
+        runtimeConfig.receiverConfig,
+        relayComponent,
+        yaha::makeBrokerTransport()};
+    yaha::YahaMqttClientRuntime runtime{receiverClient, relayComponent};
+    runtime.runUntilSignal();
 
     return 0;
 }

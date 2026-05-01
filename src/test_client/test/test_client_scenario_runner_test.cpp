@@ -70,6 +70,10 @@ public:
     return listener_->port();
   }
 
+  void set_disconnect_on_publish(const bool enabled) {
+    disconnect_on_publish_ = enabled;
+  }
+
 private:
   static std::optional<AnyPacket> read_next_packet(
       TcpConnection &connection,
@@ -244,6 +248,11 @@ private:
       }
 
       if (std::holds_alternative<PublishPacket>(*maybe_packet)) {
+        if (disconnect_on_publish_) {
+          connection->close();
+          break;
+        }
+
         const PublishPacket &publish_packet = std::get<PublishPacket>(*maybe_packet);
         if (publish_packet.qos == QoS::AtLeastOnce &&
             publish_packet.packet_id.has_value()) {
@@ -299,6 +308,7 @@ private:
   std::thread accept_thread_{};
   std::mutex client_threads_mutex_{};
   std::vector<std::thread> client_threads_{};
+  bool disconnect_on_publish_{false};
 };
 
 std::filesystem::path make_temp_script_path(const std::string &base_name,
@@ -529,6 +539,59 @@ TEST_CASE("test_client_scenario_command_step32_publish_rate_mode_succeeds_with_f
   broker.stop();
 }
 
+TEST_CASE("test_client_scenario_command_step32_publish_rate_mode_qos1_succeeds_with_fake_broker",
+          "[test_client][scenario]") {
+  FakeScenarioMqttBroker broker{};
+  broker.start();
+
+  TestClientCliOptions options;
+  options.command = TestClientCommand::Scenario;
+  options.load_mode = "publish-rate";
+  options.load_connection_count = 1U;
+  options.load_publish_limit = 2U;
+  options.load_parallelism = 1U;
+  options.load_connect_interval_ms = 0U;
+  options.load_message_interval_ms = 0U;
+  options.load_topic_template = "step32/rate-q1/{index}";
+  options.load_client_template = "step32-rate-q1-client-{index}";
+
+  TestClientProfile profile;
+  profile.host = "127.0.0.1";
+  profile.port = broker.port();
+  profile.maximum_reconnect_times = 0U;
+  profile.reconnect_period_ms = 0U;
+  profile.publish_qos = 1U;
+
+  CHECK(run_test_client_scenario_command(options, profile, "ignored") == 0);
+  broker.stop();
+}
+
+TEST_CASE("test_client_scenario_command_step32_mass_connect_mode_qos2_succeeds_with_fake_broker",
+          "[test_client][scenario]") {
+  FakeScenarioMqttBroker broker{};
+  broker.start();
+
+  TestClientCliOptions options;
+  options.command = TestClientCommand::Scenario;
+  options.load_mode = "mass-connect";
+  options.load_connection_count = 2U;
+  options.load_parallelism = 1U;
+  options.load_connect_interval_ms = 0U;
+  options.load_message_interval_ms = 0U;
+  options.load_topic_template = "step32/mass-q2/{index}";
+  options.load_client_template = "step32-mass-q2-client-{index}";
+
+  TestClientProfile profile;
+  profile.host = "127.0.0.1";
+  profile.port = broker.port();
+  profile.maximum_reconnect_times = 0U;
+  profile.reconnect_period_ms = 0U;
+  profile.publish_qos = 2U;
+
+  CHECK(run_test_client_scenario_command(options, profile, "ignored") == 0);
+  broker.stop();
+}
+
 TEST_CASE("test_client_scenario_command_step32_multi_subscribe_mode_succeeds_with_fake_broker",
           "[test_client][scenario]") {
   FakeScenarioMqttBroker broker{};
@@ -560,6 +623,66 @@ TEST_CASE("test_client_scenario_command_step32_multi_subscribe_mode_succeeds_wit
   profile.publish_qos = 1U;
 
   CHECK(run_test_client_scenario_command(options, profile, "ignored") == 0);
+  broker.stop();
+}
+
+TEST_CASE("test_client_scenario_command_step32_multi_subscribe_rejects_invalid_bench_settings",
+          "[test_client][scenario]") {
+  TestClientCliOptions options;
+  options.command = TestClientCommand::Scenario;
+  options.load_mode = "multi-subscribe";
+  options.load_connection_count = 1U;
+  options.load_publish_limit = 1U;
+  options.load_topic_template = "step32/sub-invalid/{index}";
+  options.load_client_template = "step32-sub-invalid-client-{index}";
+
+  TestClientProfile profile;
+  profile.host = "127.0.0.1";
+  profile.port = 1U;
+  profile.maximum_reconnect_times = 0U;
+  profile.reconnect_period_ms = 0U;
+
+  options.load_subscribe_qos = 3U;
+  CHECK_THROWS_AS(run_test_client_scenario_command(options, profile, "ignored"),
+                  std::invalid_argument);
+
+  options.load_subscribe_qos = 1U;
+  options.load_subscribe_retain_handling = 3U;
+  CHECK_THROWS_AS(run_test_client_scenario_command(options, profile, "ignored"),
+                  std::invalid_argument);
+
+  options.load_subscribe_retain_handling = 1U;
+  options.load_subscribe_identifier_set = true;
+  options.load_subscribe_identifier = 0U;
+  CHECK_THROWS_AS(run_test_client_scenario_command(options, profile, "ignored"),
+                  std::invalid_argument);
+}
+
+TEST_CASE("test_client_scenario_command_step32_publish_rate_mode_fails_when_broker_disconnects_on_publish",
+          "[test_client][scenario]") {
+  FakeScenarioMqttBroker broker{};
+  broker.set_disconnect_on_publish(true);
+  broker.start();
+
+  TestClientCliOptions options;
+  options.command = TestClientCommand::Scenario;
+  options.load_mode = "publish-rate";
+  options.load_connection_count = 1U;
+  options.load_publish_limit = 2U;
+  options.load_parallelism = 1U;
+  options.load_connect_interval_ms = 0U;
+  options.load_message_interval_ms = 0U;
+  options.load_topic_template = "step32/rate-fail/{index}";
+  options.load_client_template = "step32-rate-fail-client-{index}";
+
+  TestClientProfile profile;
+  profile.host = "127.0.0.1";
+  profile.port = broker.port();
+  profile.maximum_reconnect_times = 0U;
+  profile.reconnect_period_ms = 0U;
+  profile.publish_qos = 1U;
+
+  CHECK_THROWS(run_test_client_scenario_command(options, profile, "ignored"));
   broker.stop();
 }
 

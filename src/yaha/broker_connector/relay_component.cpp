@@ -1,6 +1,8 @@
 #include "yaha/broker_connector/relay_component.h"
 
+#include <exception>
 #include <thread>
+#include <utility>
 
 namespace yaha {
 
@@ -11,46 +13,87 @@ BrokerConnectorComponent::~BrokerConnectorComponent() {
     close();
 }
 
-void BrokerConnectorComponent::setReceiverPublishPort(ReceiverPublishPort& receiverPort) {
+void BrokerConnectorComponent::setSourceAdapter(SourceHttpBrokerAdapter& sourceAdapter,
+                                                SourceLifecycleConfig lifecycleConfig) {
+    sourceAdapter.setIncomingPublishCallback(
+        [this](const Message& message, const SourcePublishMeta& sourceMeta) {
+            (void)onIncomingPublish(message, sourceMeta);
+        });
+
     std::lock_guard<std::mutex> lock{relay_state_mutex_};
-    receiverPort_ = &receiverPort;
+    sourceLifecycle_ = std::make_unique<SourceLifecycleManager>(sourceAdapter, lifecycleConfig);
+}
+
+SubscriptionMap BrokerConnectorComponent::getSubscriptions() const {
+    return {};
+}
+
+void BrokerConnectorComponent::handleMessage(const Message& message) {
+    (void)message;
+}
+
+void BrokerConnectorComponent::setPublishCallback(PublishCallback callback) {
+    std::lock_guard<std::mutex> lock{relay_state_mutex_};
+    publishCallback_ = std::move(callback);
 }
 
 void BrokerConnectorComponent::run() {
-    std::lock_guard<std::mutex> lock{relay_state_mutex_};
-    running_ = true;
+    SourceLifecycleManager* lifecycle = nullptr;
+    {
+        std::lock_guard<std::mutex> lock{relay_state_mutex_};
+        if (running_) {
+            return;
+        }
+
+        running_ = true;
+        lifecycle = sourceLifecycle_.get();
+    }
+
+    if (lifecycle != nullptr) {
+        lifecycle->run();
+    }
 }
 
 void BrokerConnectorComponent::close() {
-    std::lock_guard<std::mutex> lock{relay_state_mutex_};
-    running_ = false;
+    SourceLifecycleManager* lifecycle = nullptr;
+    {
+        std::lock_guard<std::mutex> lock{relay_state_mutex_};
+        running_ = false;
+        lifecycle = sourceLifecycle_.get();
+    }
+
+    if (lifecycle != nullptr) {
+        lifecycle->close();
+    }
 }
 
 bool BrokerConnectorComponent::onIncomingPublish(const Message& message,
                                                  const SourcePublishMeta& sourceMeta) {
-    ReceiverPublishPort* receiverPort = nullptr;
+    PublishCallback callback{};
     {
         std::lock_guard<std::mutex> lock{relay_state_mutex_};
-        if (!running_ || receiverPort_ == nullptr) {
+        if (!running_ || !publishCallback_) {
             return false;
         }
 
         counters_.received += 1U;
-        receiverPort = receiverPort_;
+        callback = publishCallback_;
     }
 
-    const ReceiverPublishOptions publishOptions = toPublishOptions(sourceMeta);
+    const Message outgoingMessage = toForwardMessage(message, sourceMeta);
 
     std::uint32_t attempt = 0U;
-    while (attempt <= config_.maxPublishRetries) {
-        std::string errorMessage{};
-        if (receiverPort->publish(message, publishOptions, errorMessage)) {
+    while (true) {
+        try {
+            callback(outgoingMessage);
             std::lock_guard<std::mutex> lock{relay_state_mutex_};
             counters_.forwarded += 1U;
             return true;
+        } catch (const std::exception&) {
+        } catch (...) {
         }
 
-        if (attempt == config_.maxPublishRetries) {
+        if (attempt >= config_.maxPublishRetries) {
             std::lock_guard<std::mutex> lock{relay_state_mutex_};
             counters_.failed += 1U;
             return false;
@@ -78,18 +121,23 @@ bool BrokerConnectorComponent::isRunning() const {
     return running_;
 }
 
-ReceiverPublishOptions
-BrokerConnectorComponent::toPublishOptions(const SourcePublishMeta& sourceMeta) const {
-    ReceiverPublishOptions options{};
+Message BrokerConnectorComponent::toForwardMessage(const Message& message,
+                                                   const SourcePublishMeta& sourceMeta) const {
+    Qos targetQos = Qos::AtLeastOnce;
     if (config_.normalizeQosToAtLeastOnce) {
-        options.qos = sourceMeta.qos == Qos::AtMostOnce ? Qos::AtMostOnce : Qos::AtLeastOnce;
+        targetQos = sourceMeta.qos == Qos::AtMostOnce ? Qos::AtMostOnce : Qos::AtLeastOnce;
     } else {
-        options.qos = sourceMeta.qos;
+        targetQos = sourceMeta.qos;
     }
 
-    options.retain = config_.retainPassthrough ? sourceMeta.retain : false;
-    options.dup = sourceMeta.dup;
-    return options;
+    const bool targetRetain = config_.retainPassthrough ? sourceMeta.retain : false;
+
+    Message mapped{message.topic(), message.value(), targetQos, targetRetain};
+    for (const auto& reasonEntry : message.reason()) {
+        mapped.addReason(reasonEntry.message, reasonEntry.timestamp);
+    }
+
+    return mapped;
 }
 
 } // namespace yaha
