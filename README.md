@@ -110,7 +110,7 @@ Any unknown CLI flag causes startup failure.
 BrokerConnector INI sections:
 
 - `[sourceHttpBroker]`: `host`, `port`, `clientId`, `clean`, `keepAliveSeconds`, `listenerHost`, `listenerPort`
-- `[sourceSubscriptions]`: topic filter to qos map (`0`, `1`, `2`), default `#=1` when section is missing
+- repeated `[subscription]`: `topic` and `qos` (`0`, `1`, `2`), default `topic=#` with `qos=1` when missing
 - `[receiverMqttBroker]`: `host`, `port`, `clientId`, `reconnectDelayMs`, `keepAliveSeconds`, `loopSleepMs`, `enableLifecycleTrace`, `enableMessageTrace`
 - `[automation]`: `reconnectDelayMs`, `sourceLoopSleepMs`, `sourceKeepAliveIntervalMs`, `maxPublishRetries`, `publishRetryBackoffMs`, `normalizeQosToAtLeastOnce`, `retainPassthrough`
 - `[monitoring]`: `sourceLifecycleTrace`

@@ -87,7 +87,6 @@ int main(int argc, char* argv[]) {
     }
 
     yaha::IniDocument configDocument{};
-    std::string errorMessage{};
     try {
         configDocument = yaha::IniDocument::loadFromFile(cliOptions.configPath);
     } catch (const std::exception& exceptionValue) {
@@ -96,15 +95,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    yaha::BrokerConnectorClientRuntimeConfig runtimeConfig{};
-    if (!yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(
-            configDocument,
-            runtimeConfig,
-            errorMessage)) {
+    const auto runtimeConfigResult = yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(configDocument);
+    if (!runtimeConfigResult.config.has_value()) {
         std::cerr << "Failed to parse connector config from '" << cliOptions.configPath.string()
-                  << "': " << errorMessage << '\n';
+                  << "': " << runtimeConfigResult.errorMessage << '\n';
         return 1;
     }
+    const yaha::BrokerConnectorClientRuntimeConfig runtimeConfig = *runtimeConfigResult.config;
 
     printStartupConfiguration(cliOptions.configPath, runtimeConfig);
 

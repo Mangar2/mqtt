@@ -26,9 +26,9 @@ Protocol and domain logic remain in `broker_connector/`. Runtime orchestration i
 
 | Function | Signature | Notes |
 |---------|-----------|-------|
-| `tryLoadSourceHttpBrokerConfigFromIni` | `bool(const IniDocument&, SourceHttpBrokerConfig&, std::string&)` | Reads `sourceHttpBroker` and `sourceSubscriptions` sections |
-| `tryLoadReceiverMqttBrokerConfigFromIni` | `bool(const IniDocument&, YahaMqttClient::Config&, std::string&)` | Reads `receiverMqttBroker` section |
-| `tryLoadBrokerConnectorClientRuntimeConfigFromIni` | `bool(const IniDocument&, BrokerConnectorClientRuntimeConfig&, std::string&)` | Reads source, receiver, `automation`, and `monitoring` sections |
+| `tryLoadSourceHttpBrokerConfigFromIni` | `SourceHttpBrokerConfigLoadResult(const IniDocument&)` | Reads `sourceHttpBroker` and `subscription` sections (legacy fallback: `sourceSubscriptions`) |
+| `tryLoadReceiverMqttBrokerConfigFromIni` | `ReceiverMqttBrokerConfigLoadResult(const IniDocument&)` | Reads `receiverMqttBroker` section |
+| `tryLoadBrokerConnectorClientRuntimeConfigFromIni` | `BrokerConnectorClientRuntimeConfigLoadResult(const IniDocument&)` | Reads source, receiver, `automation`, and `monitoring` sections |
 
 ## Configuration model
 
@@ -42,11 +42,13 @@ Protocol and domain logic remain in `broker_connector/`. Runtime orchestration i
 - `listenerHost` string
 - `listenerPort` uint16 in range `0..65535`
 
-### Section `[sourceSubscriptions]`
+### Repeated section `[subscription]`
 
-- key: topic filter
-- value: qos (`0`, `1`, `2`)
-- default when empty/missing: `# => qos1`
+- key `topic`: topic filter
+- key `qos`: qos (`0`, `1`, `2`)
+- section can be repeated for multiple subscriptions
+- default when missing: `topic=#`, `qos=1`
+- legacy fallback: `[sourceSubscriptions]` key/value mapping is still accepted
 
 ### Section `[receiverMqttBroker]`
 
@@ -80,7 +82,7 @@ Only present keys override defaults.
 
 ## Error handling
 
-- Parsing functions return `false` with `errorMessage` on first invalid field.
+- Parsing functions return typed result structs with either `config` value or `errorMessage` on first invalid field.
 - Runtime start/stop and signal handling are delegated to generic `YahaMqttClientRuntime`.
 
 ## Files

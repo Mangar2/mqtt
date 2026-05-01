@@ -30,24 +30,16 @@ std::filesystem::path write_config_file(const std::filesystem::path& directory,
     return path;
 }
 
-bool try_load_runtime_config_from_file(const std::filesystem::path& config_path,
-                                       yaha::BrokerConnectorClientRuntimeConfig& output,
-                                       std::string& error_message) {
+yaha::BrokerConnectorClientRuntimeConfigLoadResult try_load_runtime_config_from_file(
+    const std::filesystem::path& config_path) {
     yaha::IniDocument document{};
     try {
         document = yaha::IniDocument::loadFromFile(config_path);
     } catch (const std::exception& exception) {
-        error_message = exception.what();
-        return false;
+        return {.config = std::nullopt, .errorMessage = exception.what()};
     }
 
-    if (!yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document,
-                                                                 output,
-                                                                 error_message)) {
-        return false;
-    }
-
-    return true;
+    return yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document);
 }
 
 } // namespace
@@ -66,8 +58,9 @@ TEST_CASE("broker_connector_client_config_parses_complete_ini",
         "keepAliveSeconds = 11\n"
         "clean = no\n"
         "\n"
-        "[sourceSubscriptions]\n"
-        "home/# = 1\n"
+        "[subscription]\n"
+        "topic = home/#\n"
+        "qos = 1\n"
         "\n"
         "[receiverMqttBroker]\n"
         "host = receiver.local\n"
@@ -88,10 +81,9 @@ TEST_CASE("broker_connector_client_config_parses_complete_ini",
         "normalizeQosToAtLeastOnce = false\n"
         "retainPassthrough = true\n");
 
-    yaha::BrokerConnectorClientRuntimeConfig config{};
-    std::string error_message{};
-
-    REQUIRE(try_load_runtime_config_from_file(config_path, config, error_message));
+    const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
+    REQUIRE(runtime_config_result.config.has_value());
+    const auto config = *runtime_config_result.config;
     REQUIRE(config.sourceConfig.brokerHost == "source.local");
     REQUIRE(config.sourceConfig.brokerPort == 8080U);
     REQUIRE(config.sourceConfig.clientId == "source-client");
@@ -144,10 +136,9 @@ TEST_CASE("broker_connector_client_config_applies_keepalive_fallback_and_monitor
         "[monitoring]\n"
         "sourceLifecycleTrace = true\n");
 
-    yaha::BrokerConnectorClientRuntimeConfig config{};
-    std::string error_message{};
-
-    REQUIRE(try_load_runtime_config_from_file(config_path, config, error_message));
+    const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
+    REQUIRE(runtime_config_result.config.has_value());
+    const auto config = *runtime_config_result.config;
     REQUIRE(config.sourceLifecycleConfig.keepAliveInterval.count() == 13000);
     REQUIRE(config.sourceLifecycleConfig.enableTrace);
 
@@ -161,11 +152,9 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_boolean",
         "[receiverMqttBroker]\n"
         "enableMessageTrace = maybe\n");
 
-    yaha::BrokerConnectorClientRuntimeConfig config{};
-    std::string error_message{};
-
-    REQUIRE_FALSE(try_load_runtime_config_from_file(config_path, config, error_message));
-    REQUIRE(error_message.find("receiverMqttBroker.enableMessageTrace") != std::string::npos);
+    const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
+    REQUIRE_FALSE(runtime_config_result.config.has_value());
+    REQUIRE(runtime_config_result.errorMessage.find("receiverMqttBroker.enableMessageTrace") != std::string::npos);
 
     remove_directory_quiet(temp_directory);
 }
@@ -181,11 +170,9 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_source_port",
         "[receiverMqttBroker]\n"
         "host = receiver.local\n");
 
-    yaha::BrokerConnectorClientRuntimeConfig config{};
-    std::string error_message{};
-
-    REQUIRE_FALSE(try_load_runtime_config_from_file(config_path, config, error_message));
-    REQUIRE(error_message.find("sourceHttpBroker.port") != std::string::npos);
+    const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
+    REQUIRE_FALSE(runtime_config_result.config.has_value());
+    REQUIRE(runtime_config_result.errorMessage.find("sourceHttpBroker.port") != std::string::npos);
 
     remove_directory_quiet(temp_directory);
 }
@@ -203,11 +190,9 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_monitoring_trace_boole
         "[monitoring]\n"
         "sourceLifecycleTrace = maybe\n");
 
-    yaha::BrokerConnectorClientRuntimeConfig config{};
-    std::string error_message{};
-
-    REQUIRE_FALSE(try_load_runtime_config_from_file(config_path, config, error_message));
-    REQUIRE(error_message.find("monitoring.sourceLifecycleTrace") != std::string::npos);
+    const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
+    REQUIRE_FALSE(runtime_config_result.config.has_value());
+    REQUIRE(runtime_config_result.errorMessage.find("monitoring.sourceLifecycleTrace") != std::string::npos);
 
     remove_directory_quiet(temp_directory);
 }
@@ -224,10 +209,9 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_source_optional_fields
             "\n"
             "[receiverMqttBroker]\n"
             "host = receiver.local\n");
-        yaha::BrokerConnectorClientRuntimeConfig config{};
-        std::string error_message{};
-        REQUIRE_FALSE(try_load_runtime_config_from_file(config_path, config, error_message));
-        REQUIRE(error_message.find("sourceHttpBroker.listenerPort") != std::string::npos);
+        const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
+        REQUIRE_FALSE(runtime_config_result.config.has_value());
+        REQUIRE(runtime_config_result.errorMessage.find("sourceHttpBroker.listenerPort") != std::string::npos);
     }
 
     {
@@ -238,10 +222,9 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_source_optional_fields
             "\n"
             "[receiverMqttBroker]\n"
             "host = receiver.local\n");
-        yaha::BrokerConnectorClientRuntimeConfig config{};
-        std::string error_message{};
-        REQUIRE_FALSE(try_load_runtime_config_from_file(config_path, config, error_message));
-        REQUIRE(error_message.find("sourceHttpBroker.keepAliveSeconds") != std::string::npos);
+        const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
+        REQUIRE_FALSE(runtime_config_result.config.has_value());
+        REQUIRE(runtime_config_result.errorMessage.find("sourceHttpBroker.keepAliveSeconds") != std::string::npos);
     }
 
     {
@@ -252,10 +235,9 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_source_optional_fields
             "\n"
             "[receiverMqttBroker]\n"
             "host = receiver.local\n");
-        yaha::BrokerConnectorClientRuntimeConfig config{};
-        std::string error_message{};
-        REQUIRE_FALSE(try_load_runtime_config_from_file(config_path, config, error_message));
-        REQUIRE(error_message.find("sourceHttpBroker.clean") != std::string::npos);
+        const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
+        REQUIRE_FALSE(runtime_config_result.config.has_value());
+        REQUIRE(runtime_config_result.errorMessage.find("sourceHttpBroker.clean") != std::string::npos);
     }
 
     remove_directory_quiet(temp_directory);
@@ -273,10 +255,9 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_receiver_and_automatio
             "[receiverMqttBroker]\n"
             "host = receiver.local\n"
             "port = 70000\n");
-        yaha::BrokerConnectorClientRuntimeConfig config{};
-        std::string error_message{};
-        REQUIRE_FALSE(try_load_runtime_config_from_file(config_path, config, error_message));
-        REQUIRE(error_message.find("receiverMqttBroker.port") != std::string::npos);
+        const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
+        REQUIRE_FALSE(runtime_config_result.config.has_value());
+        REQUIRE(runtime_config_result.errorMessage.find("receiverMqttBroker.port") != std::string::npos);
     }
 
     {
@@ -289,10 +270,9 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_receiver_and_automatio
             "\n"
             "[automation]\n"
             "reconnectDelayMs = 0\n");
-        yaha::BrokerConnectorClientRuntimeConfig config{};
-        std::string error_message{};
-        REQUIRE_FALSE(try_load_runtime_config_from_file(config_path, config, error_message));
-        REQUIRE(error_message.find("automation.reconnectDelayMs") != std::string::npos);
+        const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
+        REQUIRE_FALSE(runtime_config_result.config.has_value());
+        REQUIRE(runtime_config_result.errorMessage.find("automation.reconnectDelayMs") != std::string::npos);
     }
 
     {
@@ -305,10 +285,9 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_receiver_and_automatio
             "\n"
             "[automation]\n"
             "normalizeQosToAtLeastOnce = maybe\n");
-        yaha::BrokerConnectorClientRuntimeConfig config{};
-        std::string error_message{};
-        REQUIRE_FALSE(try_load_runtime_config_from_file(config_path, config, error_message));
-        REQUIRE(error_message.find("automation.normalizeQosToAtLeastOnce") != std::string::npos);
+        const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
+        REQUIRE_FALSE(runtime_config_result.config.has_value());
+        REQUIRE(runtime_config_result.errorMessage.find("automation.normalizeQosToAtLeastOnce") != std::string::npos);
     }
 
     remove_directory_quiet(temp_directory);

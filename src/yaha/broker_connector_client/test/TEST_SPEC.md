@@ -8,9 +8,10 @@ Unit tests for INI config mapping of the standalone broker connector client.
 
 | Name | Scenario | Input | Expected |
 |------|----------|-------|----------|
-| `load_runtime_config_parses_source_receiver_and_automation` | Full config parsing for phase 4 composition | ini document with source, subscriptions, receiver, automation, monitoring sections | runtime config contains all mapped values and boolean overrides |
+| `load_runtime_config_parses_source_receiver_and_automation` | Full config parsing for phase 4 composition | ini document with source, repeated `subscription` sections, receiver, automation, monitoring sections | runtime config contains all mapped values and boolean overrides |
 | `load_runtime_config_uses_defaults_when_optional_keys_missing` | Default-preserving path | ini document containing only required host/port keys | missing optional values stay at struct defaults and source subscriptions default to `#` qos1 |
 | `load_runtime_config_rejects_invalid_bool_field` | bool parser error path | ini document with `automation.retainPassthrough=maybe` | parser returns false and error mentions invalid boolean field |
+| `load_runtime_config_rejects_incomplete_subscription_entry` | Structured subscription validation failure | ini document with `subscription.topic` but without `subscription.qos` | parser returns false and reports incomplete subscription entry |
 | `broker_connector_client_config_applies_keepalive_fallback_and_monitoring_trace` | Fallback and optional monitoring branches | config without automation.sourceKeepAliveIntervalMs and with monitoring.sourceLifecycleTrace | source lifecycle keepalive falls back to source keepAliveSeconds and monitoring trace flag is applied |
 | `broker_connector_client_config_rejects_invalid_source_port` | Source section numeric validation failure | config with `sourceHttpBroker.port` outside valid range | parser returns false and reports source port error |
 | `broker_connector_client_config_rejects_invalid_monitoring_trace_boolean` | Monitoring section bool validation failure | config with `monitoring.sourceLifecycleTrace=maybe` | parser returns false and reports monitoring bool error |

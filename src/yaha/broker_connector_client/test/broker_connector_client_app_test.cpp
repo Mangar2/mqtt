@@ -42,9 +42,13 @@ TEST_CASE("load_runtime_config_parses_source_receiver_and_automation", "[broker_
         "listenerHost=0.0.0.0\n"
         "listenerPort=18080\n"
         "\n"
-        "[sourceSubscriptions]\n"
-        "home/#=1\n"
-        "sensor/+/state=0\n"
+        "[subscription]\n"
+        "topic=home/#\n"
+        "qos=1\n"
+        "\n"
+        "[subscription]\n"
+        "topic=sensor/+/state\n"
+        "qos=0\n"
         "\n"
         "[receiverMqttBroker]\n"
         "host=receiver.local\n"
@@ -72,8 +76,9 @@ TEST_CASE("load_runtime_config_parses_source_receiver_and_automation", "[broker_
     std::string errorMessage{};
     REQUIRE(loadDocumentFromText(iniText, document, errorMessage));
 
-    yaha::BrokerConnectorClientRuntimeConfig config{};
-    REQUIRE(yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document, config, errorMessage));
+    const auto runtimeConfigResult = yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document);
+    REQUIRE(runtimeConfigResult.config.has_value());
+    const yaha::BrokerConnectorClientRuntimeConfig config = *runtimeConfigResult.config;
 
     REQUIRE(config.sourceConfig.brokerHost == "source.local");
     REQUIRE(config.sourceConfig.brokerPort == 8081U);
@@ -118,8 +123,9 @@ TEST_CASE("load_runtime_config_uses_defaults_when_optional_keys_missing", "[brok
     std::string errorMessage{};
     REQUIRE(loadDocumentFromText(iniText, document, errorMessage));
 
-    yaha::BrokerConnectorClientRuntimeConfig config{};
-    REQUIRE(yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document, config, errorMessage));
+    const auto runtimeConfigResult = yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document);
+    REQUIRE(runtimeConfigResult.config.has_value());
+    const yaha::BrokerConnectorClientRuntimeConfig config = *runtimeConfigResult.config;
 
     REQUIRE(config.sourceConfig.clientId == "broker-connector-source");
     REQUIRE(config.sourceConfig.clean);
@@ -148,7 +154,29 @@ TEST_CASE("load_runtime_config_rejects_invalid_bool_field", "[broker_connector_c
     std::string errorMessage{};
     REQUIRE(loadDocumentFromText(iniText, document, errorMessage));
 
-    yaha::BrokerConnectorClientRuntimeConfig config{};
-    REQUIRE_FALSE(yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document, config, errorMessage));
-    REQUIRE(errorMessage.find("automation.retainPassthrough") != std::string::npos);
+    const auto runtimeConfigResult = yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document);
+    REQUIRE_FALSE(runtimeConfigResult.config.has_value());
+    REQUIRE(runtimeConfigResult.errorMessage.find("automation.retainPassthrough") != std::string::npos);
+}
+
+TEST_CASE("load_runtime_config_rejects_incomplete_subscription_entry", "[broker_connector_client]") {
+    const std::string iniText =
+        "[sourceHttpBroker]\n"
+        "host=127.0.0.1\n"
+        "port=8080\n"
+        "\n"
+        "[subscription]\n"
+        "topic=home/#\n"
+        "\n"
+        "[receiverMqttBroker]\n"
+        "host=127.0.0.1\n"
+        "port=1883\n";
+
+    yaha::IniDocument document{};
+    std::string errorMessage{};
+    REQUIRE(loadDocumentFromText(iniText, document, errorMessage));
+
+    const auto runtimeConfigResult = yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document);
+    REQUIRE_FALSE(runtimeConfigResult.config.has_value());
+    REQUIRE(runtimeConfigResult.errorMessage.find("incomplete [subscription] entry") != std::string::npos);
 }

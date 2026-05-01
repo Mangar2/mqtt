@@ -12,6 +12,7 @@
 #include "yaha/mqtt_client/mqtt_client.h"
 
 #include <chrono>
+#include <optional>
 #include <string>
 
 namespace yaha {
@@ -35,39 +36,51 @@ struct BrokerConnectorClientRuntimeConfig {
 };
 
 /**
+ * @brief Result wrapper for source HTTP broker config parsing.
+ */
+struct SourceHttpBrokerConfigLoadResult {
+    std::optional<SourceHttpBrokerConfig> config{};    ///< Parsed config when successful.
+    std::string errorMessage{};                        ///< Human-readable parse error when failed.
+};
+
+/**
+ * @brief Result wrapper for receiver MQTT broker config parsing.
+ */
+struct ReceiverMqttBrokerConfigLoadResult {
+    std::optional<YahaMqttClient::Config> config{};    ///< Parsed config when successful.
+    std::string errorMessage{};                        ///< Human-readable parse error when failed.
+};
+
+/**
+ * @brief Result wrapper for broker connector runtime config parsing.
+ */
+struct BrokerConnectorClientRuntimeConfigLoadResult {
+    std::optional<BrokerConnectorClientRuntimeConfig> config{};  ///< Parsed config when successful.
+    std::string errorMessage{};                                  ///< Human-readable parse error when failed.
+};
+
+/**
  * @brief Maps source HTTP broker config from parsed INI document.
  * @param document Parsed INI document.
- * @param output Source config output.
- * @param errorMessage Human-readable parser error text on failure.
- * @return True when parsing and validation succeeded.
+ * @return Source config result including either parsed value or error text.
  */
-[[nodiscard]] bool tryLoadSourceHttpBrokerConfigFromIni(
-    const IniDocument& document,
-    SourceHttpBrokerConfig& output,
-    std::string& errorMessage);
+[[nodiscard]] SourceHttpBrokerConfigLoadResult tryLoadSourceHttpBrokerConfigFromIni(
+    const IniDocument& document);
 
 /**
  * @brief Maps receiver MQTT broker config from parsed INI document.
  * @param document Parsed INI document.
- * @param output Receiver config output.
- * @param errorMessage Human-readable parser error text on failure.
- * @return True when parsing and validation succeeded.
+ * @return Receiver config result including either parsed value or error text.
  */
-[[nodiscard]] bool tryLoadReceiverMqttBrokerConfigFromIni(
-    const IniDocument& document,
-    YahaMqttClient::Config& output,
-    std::string& errorMessage);
+[[nodiscard]] ReceiverMqttBrokerConfigLoadResult tryLoadReceiverMqttBrokerConfigFromIni(
+    const IniDocument& document);
 
 /**
  * @brief Maps full Broker Connector runtime config from parsed INI document.
  * @param document Parsed INI document.
- * @param output Runtime config output.
- * @param errorMessage Human-readable parser error text on failure.
- * @return True when parsing and validation succeeded.
+ * @return Runtime config result including either parsed value or error text.
  */
-[[nodiscard]] bool tryLoadBrokerConnectorClientRuntimeConfigFromIni(
-    const IniDocument& document,
-    BrokerConnectorClientRuntimeConfig& output,
-    std::string& errorMessage);
+[[nodiscard]] BrokerConnectorClientRuntimeConfigLoadResult tryLoadBrokerConnectorClientRuntimeConfigFromIni(
+    const IniDocument& document);
 
 } // namespace yaha
