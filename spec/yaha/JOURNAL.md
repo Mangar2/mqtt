@@ -121,3 +121,12 @@ A full step-by-step delivery plan now exists for the new connector component, in
 
 ### [DECISION] Broker Connector boundary clarified
 The connector plan now explicitly fixes architecture boundaries: receiver side uses the existing generic YAHA MQTT client unchanged, while the HTTP source connection and relay policy are the connector domain part (fachteil). This avoids creating a second custom MQTT client implementation inside the connector.
+
+### [ARTIFACT] spec/yaha/SPEC-broker-connector.md created
+Created the component specification for Broker Connector with purpose, system role, standalone composition, subscriptions, publish behavior, configuration, error handling, and architecture constraints. The spec fixes one-way relay behavior from HTTP source broker to standard MQTT receiver broker.
+
+### [ARTIFACT] spec/yaha/SPEC-broker-connector-contracts.md created
+Created Phase 1 contract specification for SourceHttpBrokerAdapter, ReceiverPublishPort, BrokerConnectorComponent, ConnectorRuntimePort, and shared data/config contracts. This defines stable boundaries before implementation and keeps transport concerns separated from relay domain logic.
+
+### [MILESTONE] Broker Connector Phase 1 completed
+Phase 1 from the implementation plan is now implemented through component spec and explicit adapter contracts. The architecture boundary between standard YAHA MQTT client usage and connector HTTP fachteil is now normative in the specs.
