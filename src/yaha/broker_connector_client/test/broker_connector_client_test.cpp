@@ -54,6 +54,7 @@ TEST_CASE("broker_connector_client_config_parses_complete_ini",
         "port = 8080\n"
         "clientId = source-client\n"
         "listenerHost = 127.0.0.1\n"
+        "listenerBindHost = 0.0.0.0\n"
         "listenerPort = 18080\n"
         "keepAliveSeconds = 11\n"
         "clean = no\n"
@@ -88,6 +89,7 @@ TEST_CASE("broker_connector_client_config_parses_complete_ini",
     REQUIRE(config.sourceConfig.brokerPort == 8080U);
     REQUIRE(config.sourceConfig.clientId == "source-client");
     REQUIRE(config.sourceConfig.listenerHost == "127.0.0.1");
+    REQUIRE(config.sourceConfig.listenerBindHost == "0.0.0.0");
     REQUIRE(config.sourceConfig.listenerPort == 18080U);
     REQUIRE(config.sourceConfig.keepAliveSeconds == 11U);
     REQUIRE_FALSE(config.sourceConfig.clean);

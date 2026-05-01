@@ -116,6 +116,11 @@ SourceHttpBrokerConfigLoadResult tryLoadSourceHttpBrokerConfigFromIni(
         parsed.listenerHost = *listenerHost;
     }
 
+    if (const auto listenerBindHost = document.lastValue("sourceHttpBroker", "listenerBindHost");
+        listenerBindHost.has_value()) {
+        parsed.listenerBindHost = *listenerBindHost;
+    }
+
     const auto sourcePortResult = document.readUnsigned("sourceHttpBroker", "port", 1U, 65535U);
     if (!sourcePortResult.second.empty()) {
         return {.config = std::nullopt, .errorMessage = sourcePortResult.second};

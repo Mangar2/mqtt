@@ -68,7 +68,11 @@ void SourceLifecycleManager::workerLoop() {
                 continue;
             }
 
-            trace("  source: connected and subscribed");
+            if (connectError.empty()) {
+                trace("  source: connected and subscribed");
+            } else {
+                trace("  source: connected and subscribed: " + connectError);
+            }
             lastPing = std::chrono::steady_clock::now();
         }
 

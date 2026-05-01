@@ -35,8 +35,16 @@ public:
         subscribeStatusCode_ = statusCode;
     }
 
+    void setSubscribeResponseBody(std::string responseBody) {
+        subscribeResponseBody_ = std::move(responseBody);
+    }
+
     void setPingPacketHeader(std::string packetHeader) {
         pingPacketHeader_ = std::move(packetHeader);
+    }
+
+    void setRequireReceiveTokenForPing(const bool value) {
+        requireReceiveTokenForPing_ = value;
     }
 
     void start() {
@@ -77,12 +85,22 @@ public:
             response.set_header("content-type", "application/json; charset=UTF-8");
             response.set_header("packet", "suback");
             response.set_header("packetid", request.get_header_value("packetid"));
-            response.set_content("{\"qos\":[1]}", "application/json");
+            if (!subscribeResponseBody_.empty()) {
+                response.set_content(subscribeResponseBody_, "application/json");
+                return;
+            }
+            response.set_content(buildDefaultSubscribeResponse(request.body), "application/json");
         });
 
         server_->Put("/pingreq", [this](const httplib::Request& request, httplib::Response& response) {
             pingCalls_.fetch_add(1);
             lastPingBody_ = request.body;
+            if (requireReceiveTokenForPing_ &&
+                request.body.find("\"token\":\"recv-token\"") == std::string::npos) {
+                response.status = 400;
+                response.set_content("{\"error\":\"invalid_token\"}", "application/json");
+                return;
+            }
             response.status = 204;
             response.set_header("content-type", "application/json; charset=UTF-8");
             response.set_header("packet", pingPacketHeader_);
@@ -193,12 +211,64 @@ public:
     }
 
 private:
+    [[nodiscard]] static std::string buildDefaultSubscribeResponse(const std::string& subscribeBody) {
+        const std::string topicsKey{"\"topics\":{"};
+        const std::size_t topicsPos = subscribeBody.find(topicsKey);
+        if (topicsPos == std::string::npos) {
+            return "{\"qos\":[]}";
+        }
+
+        const std::size_t objectStart = topicsPos + topicsKey.size();
+        std::size_t objectEnd = objectStart;
+        int depth = 1;
+        while (objectEnd < subscribeBody.size() && depth > 0) {
+            if (subscribeBody[objectEnd] == '{') {
+                ++depth;
+            } else if (subscribeBody[objectEnd] == '}') {
+                --depth;
+                if (depth == 0) {
+                    break;
+                }
+            }
+            ++objectEnd;
+        }
+
+        const std::string topicsObject = subscribeBody.substr(
+            objectStart,
+            objectEnd > objectStart ? objectEnd - objectStart : 0U);
+
+        std::size_t topicCount = 0U;
+        bool inString = false;
+        for (const char chr : topicsObject) {
+            if (chr == '"') {
+                inString = !inString;
+                continue;
+            }
+            if (chr == ':' && !inString) {
+                topicCount += 1U;
+            }
+        }
+
+        std::ostringstream stream{};
+        stream << "{\"qos\":[";
+        for (std::size_t idx = 0U; idx < topicCount; ++idx) {
+            if (idx != 0U) {
+                stream << ',';
+            }
+            stream << 1;
+        }
+        stream << "]}";
+        return stream.str();
+    }
+
     std::unique_ptr<httplib::Server> server_{};
     std::thread serverThread_{};
     std::uint16_t port_{0U};
 
     bool failFirstConnect_{false};
     int subscribeStatusCode_{200};
+    std::string subscribeResponseBody_{};
+    bool requireReceiveTokenForPing_{false};
     std::string pingPacketHeader_{"pingresp"};
     std::atomic<int> connectCalls_{0};
     std::atomic<int> subscribeCalls_{0};
@@ -538,6 +608,31 @@ TEST_CASE("source_adapter_subscribe_status_error_propagates", "[broker_connector
     sourceBroker.stop();
 }
 
+TEST_CASE("source_adapter_subscribe_rejected_qos_fails_connect", "[broker_connector]") {
+    FakeSourceHttpBroker sourceBroker{};
+    sourceBroker.setSubscribeResponseBody("{\"qos\":[128]}");
+    sourceBroker.start();
+
+    yaha::SourceHttpBrokerConfig config{};
+    config.brokerHost = "127.0.0.1";
+    config.brokerPort = sourceBroker.port();
+    config.clientId = "connector-test-client";
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = 0U;
+    config.subscribeTopics = {{"home/#", yaha::Qos::AtLeastOnce}};
+
+    yaha::SourceHttpBrokerAdapter adapter{config};
+    adapter.setIncomingPublishCallback([](const yaha::Message&, const yaha::SourcePublishMeta&) {});
+
+    std::string errorMessage{};
+    REQUIRE_FALSE(adapter.connectAndSubscribe(errorMessage));
+    REQUIRE(errorMessage.find("source subscribe rejected topic index") != std::string::npos);
+    REQUIRE_FALSE(adapter.isConnected());
+
+    adapter.close();
+    sourceBroker.stop();
+}
+
 TEST_CASE("source_adapter_ping_wrong_packet_sets_disconnected", "[broker_connector]") {
     FakeSourceHttpBroker sourceBroker{};
     sourceBroker.setPingPacketHeader("broken");
@@ -561,6 +656,57 @@ TEST_CASE("source_adapter_ping_wrong_packet_sets_disconnected", "[broker_connect
     REQUIRE_FALSE(adapter.ping(errorMessage));
     REQUIRE(errorMessage == "ping response missing packet=pingresp");
     REQUIRE_FALSE(adapter.isConnected());
+
+    adapter.close();
+    sourceBroker.stop();
+}
+
+TEST_CASE("source_adapter_ping_uses_receive_token", "[broker_connector]") {
+    FakeSourceHttpBroker sourceBroker{};
+    sourceBroker.setRequireReceiveTokenForPing(true);
+    sourceBroker.start();
+
+    yaha::SourceHttpBrokerConfig config{};
+    config.brokerHost = "127.0.0.1";
+    config.brokerPort = sourceBroker.port();
+    config.clientId = "connector-test-client";
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = 0U;
+    config.subscribeTopics = {{"home/#", yaha::Qos::AtLeastOnce}};
+
+    yaha::SourceHttpBrokerAdapter adapter{config};
+    adapter.setIncomingPublishCallback([](const yaha::Message&, const yaha::SourcePublishMeta&) {});
+
+    std::string errorMessage{};
+    REQUIRE(adapter.connectAndSubscribe(errorMessage));
+
+    errorMessage.clear();
+    REQUIRE(adapter.ping(errorMessage));
+    REQUIRE(errorMessage.empty());
+
+    adapter.close();
+    sourceBroker.stop();
+}
+
+TEST_CASE("source_adapter_binds_listener_host_separately_from_advertised_host", "[broker_connector]") {
+    FakeSourceHttpBroker sourceBroker{};
+    sourceBroker.start();
+
+    yaha::SourceHttpBrokerConfig config{};
+    config.brokerHost = "127.0.0.1";
+    config.brokerPort = sourceBroker.port();
+    config.clientId = "connector-test-client";
+    config.listenerHost = "yaha2";
+    config.listenerBindHost = "127.0.0.1";
+    config.listenerPort = 0U;
+    config.subscribeTopics = {{"home/#", yaha::Qos::AtLeastOnce}};
+
+    yaha::SourceHttpBrokerAdapter adapter{config};
+    adapter.setIncomingPublishCallback([](const yaha::Message&, const yaha::SourcePublishMeta&) {});
+
+    std::string errorMessage{};
+    REQUIRE(adapter.connectAndSubscribe(errorMessage));
+    REQUIRE(sourceBroker.lastConnectBody().find("\"host\":\"yaha2\"") != std::string::npos);
 
     adapter.close();
     sourceBroker.stop();

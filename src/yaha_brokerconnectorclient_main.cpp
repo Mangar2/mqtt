@@ -105,8 +105,8 @@ int main(int argc, char* argv[]) {
 
     printStartupConfiguration(cliOptions.configPath, runtimeConfig);
 
-    yaha::BrokerConnectorComponent relayComponent{runtimeConfig.relayPolicyConfig};
     yaha::SourceHttpBrokerAdapter sourceAdapter{runtimeConfig.sourceConfig};
+    yaha::BrokerConnectorComponent relayComponent{runtimeConfig.relayPolicyConfig};
     relayComponent.setSourceAdapter(sourceAdapter, runtimeConfig.sourceLifecycleConfig);
 
     yaha::YahaMqttClient receiverClient{

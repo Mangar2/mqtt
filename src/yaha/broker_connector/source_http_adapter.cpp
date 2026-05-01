@@ -12,6 +12,7 @@
 #include <stdexcept>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace yaha {
 
@@ -306,6 +307,83 @@ bool parseIncomingMessageBody(const std::string& payload,
     return true;
 }
 
+bool tryParseQosArray(const std::string& payload, std::vector<int>& qosValues) {
+    const std::size_t qosKeyPos = payload.find("\"qos\"");
+    if (qosKeyPos == std::string::npos) {
+        return false;
+    }
+
+    std::size_t cursor = payload.find('[', qosKeyPos);
+    if (cursor == std::string::npos) {
+        return false;
+    }
+    ++cursor;
+
+    while (cursor < payload.size()) {
+        while (cursor < payload.size() &&
+               std::isspace(static_cast<unsigned char>(payload[cursor])) != 0) {
+            ++cursor;
+        }
+
+        if (cursor >= payload.size()) {
+            return false;
+        }
+        if (payload[cursor] == ']') {
+            return true;
+        }
+
+        bool negative = false;
+        if (payload[cursor] == '-') {
+            negative = true;
+            ++cursor;
+        }
+        if (cursor >= payload.size() || !std::isdigit(static_cast<unsigned char>(payload[cursor]))) {
+            return false;
+        }
+
+        int parsed = 0;
+        while (cursor < payload.size() && std::isdigit(static_cast<unsigned char>(payload[cursor]))) {
+            parsed = (parsed * 10) + (payload[cursor] - '0');
+            ++cursor;
+        }
+        qosValues.push_back(negative ? -parsed : parsed);
+
+        while (cursor < payload.size() &&
+               std::isspace(static_cast<unsigned char>(payload[cursor])) != 0) {
+            ++cursor;
+        }
+
+        if (cursor >= payload.size()) {
+            return false;
+        }
+        if (payload[cursor] == ',') {
+            ++cursor;
+            continue;
+        }
+        if (payload[cursor] == ']') {
+            return true;
+        }
+        return false;
+    }
+
+    return false;
+}
+
+std::string qosValuesToText(const std::vector<int>& qosValues) {
+    std::ostringstream stream{};
+    stream << '[';
+    bool first = true;
+    for (const int qosValue : qosValues) {
+        if (!first) {
+            stream << ',';
+        }
+        first = false;
+        stream << qosValue;
+    }
+    stream << ']';
+    return stream.str();
+}
+
 std::optional<std::string> responseHeader(const httplib::Response& response,
                                           const std::string& key) {
     if (!response.has_header(key)) {
@@ -345,17 +423,20 @@ bool SourceHttpBrokerAdapter::connectAndSubscribe(std::string& errorMessage) {
         return false;
     }
 
-    if (!sendConnect(errorMessage)) {
+    std::string connectSummary{};
+    if (!sendConnect(errorMessage, connectSummary)) {
         connected_ = false;
         return false;
     }
 
-    if (!sendSubscribe(errorMessage)) {
+    std::string subscribeSummary{};
+    if (!sendSubscribe(errorMessage, subscribeSummary)) {
         connected_ = false;
         return false;
     }
 
     connected_ = true;
+    errorMessage = connectSummary + " | " + subscribeSummary;
     return true;
 }
 
@@ -367,7 +448,7 @@ bool SourceHttpBrokerAdapter::ping(std::string& errorMessage) {
     }
 
     httplib::Client client{config_.brokerHost, static_cast<int>(config_.brokerPort)};
-    const std::string payload = "{\"token\":\"" + escapeJson(sendToken_) + "\"}";
+    const std::string payload = "{\"token\":\"" + escapeJson(receiveToken_) + "\"}";
     httplib::Headers headers = makeStandardJsonHeaders();
 
     const auto response = client.Put("/pingreq", headers, payload, "application/json");
@@ -476,7 +557,13 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
         }
     });
 
-    const std::string host = config_.listenerHost.empty() ? "127.0.0.1" : config_.listenerHost;
+    std::string host = config_.listenerBindHost;
+    if (host.empty()) {
+        host = config_.listenerHost;
+    }
+    if (host.empty()) {
+        host = "127.0.0.1";
+    }
     int bound = 0;
     if (config_.listenerPort == 0U) {
         bound = server_->bind_to_any_port(host);
@@ -484,7 +571,9 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
         bound = server_->bind_to_port(host, static_cast<int>(config_.listenerPort));
     }
     if (bound <= 0) {
-        errorMessage = "unable to bind source callback listener";
+        errorMessage =
+            "unable to bind source callback listener to " + host + ":" +
+            std::to_string(config_.listenerPort);
         server_.reset();
         return false;
     }
@@ -517,7 +606,7 @@ void SourceHttpBrokerAdapter::stopListener() {
     }
 }
 
-bool SourceHttpBrokerAdapter::sendConnect(std::string& errorMessage) {
+bool SourceHttpBrokerAdapter::sendConnect(std::string& errorMessage, std::string& responseSummary) {
     httplib::Headers headers = makeStandardJsonHeaders();
     const std::string payload = buildConnectPayload(config_, boundListenerPort_);
 
@@ -565,10 +654,12 @@ bool SourceHttpBrokerAdapter::sendConnect(std::string& errorMessage) {
 
     sendToken_ = std::move(sendToken);
     receiveToken_ = std::move(receiveToken);
+    responseSummary = "connect_response status=" + std::to_string(response->status) +
+        " packet=" + *packet + " body=" + response->body;
     return true;
 }
 
-bool SourceHttpBrokerAdapter::sendSubscribe(std::string& errorMessage) {
+bool SourceHttpBrokerAdapter::sendSubscribe(std::string& errorMessage, std::string& responseSummary) {
     httplib::Client client{config_.brokerHost, static_cast<int>(config_.brokerPort)};
     httplib::Headers headers = makeStandardJsonHeaders();
 
@@ -598,6 +689,32 @@ bool SourceHttpBrokerAdapter::sendSubscribe(std::string& errorMessage) {
         errorMessage = "source subscribe returned wrong packet id";
         return false;
     }
+
+    std::vector<int> qosValues{};
+    if (!tryParseQosArray(response->body, qosValues)) {
+        errorMessage = "source subscribe response missing qos array";
+        return false;
+    }
+    if (qosValues.size() != config_.subscribeTopics.size()) {
+        errorMessage = "source subscribe response qos count mismatch";
+        return false;
+    }
+    for (std::size_t idx = 0U; idx < qosValues.size(); ++idx) {
+        const int qosValue = qosValues[idx];
+        if (qosValue == 128) {
+            errorMessage =
+                "source subscribe rejected topic index " + std::to_string(idx);
+            return false;
+        }
+        if (qosValue < 0 || qosValue > 2) {
+            errorMessage = "source subscribe returned invalid qos value";
+            return false;
+        }
+    }
+
+    responseSummary = "subscribe_response status=" + std::to_string(response->status) +
+        " packet=" + *packet + " packetid=" + std::to_string(responsePacketId) +
+        " qos=" + qosValuesToText(qosValues) + " body=" + response->body;
 
     return true;
 }

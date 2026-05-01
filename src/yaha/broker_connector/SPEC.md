@@ -20,7 +20,8 @@ This module now provides complete source-to-receiver forwarding logic through `I
 | `clientId` | `std::string` | Source-side client identity |
 | `clean` | `bool` | Connect clean-session flag |
 | `keepAliveSeconds` | `std::uint32_t` | Source keep-alive value for connect payload |
-| `listenerHost` | `std::string` | Local callback listener host |
+| `listenerHost` | `std::string` | Callback host advertised to source broker |
+| `listenerBindHost` | `std::string` | Local callback listener bind host |
 | `listenerPort` | `std::uint16_t` | Local callback listener port (`0` allowed) |
 | `subscribeTopics` | `SubscriptionMap` | Topic->QoS map for source subscribe |
 
@@ -140,6 +141,10 @@ Adapter uses interface version 1.0 and supports:
 - PUT `/pingreq`
 - PUT `/disconnect`
 
+Token usage from `/connect` response:
+- `token.send`: source-to-connector callback token used in incoming `/publish` payloads
+- `token.receive`: connector-to-source session token used by outgoing `/pingreq`
+
 Adapter listener handles callbacks:
 - PUT `/publish`
 - PUT `/pubrel`
@@ -161,6 +166,12 @@ Reason-chain content in callback payload is currently ignored in this phase and 
 2. On success, keep session alive with periodic `ping`.
 3. On failure, wait reconnect delay and retry.
 4. On shutdown, close adapter.
+
+`connectAndSubscribe` now validates source HTTP responses concretely before reporting success:
+- `/connect`: status `200`, header `packet=connack`, valid token object with non-empty `send` and `receive`
+- `/subscribe`: status `200`, header `packet=suback`, matching `packetid`, parseable `qos` array with one entry per requested topic and no reject code `128`
+
+On successful handshake, lifecycle trace logs include concrete source broker response summaries for `/connect` and `/subscribe`.
 
 `BrokerConnectorComponent` forwarding path:
 1. Rejects forwarding when not running or no publish callback is wired.

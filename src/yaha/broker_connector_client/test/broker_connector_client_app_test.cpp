@@ -40,6 +40,7 @@ TEST_CASE("load_runtime_config_parses_source_receiver_and_automation", "[broker_
         "clean=false\n"
         "keepAliveSeconds=45\n"
         "listenerHost=0.0.0.0\n"
+        "listenerBindHost=127.0.0.1\n"
         "listenerPort=18080\n"
         "\n"
         "[subscription]\n"
@@ -86,6 +87,7 @@ TEST_CASE("load_runtime_config_parses_source_receiver_and_automation", "[broker_
     REQUIRE_FALSE(config.sourceConfig.clean);
     REQUIRE(config.sourceConfig.keepAliveSeconds == 45U);
     REQUIRE(config.sourceConfig.listenerHost == "0.0.0.0");
+    REQUIRE(config.sourceConfig.listenerBindHost == "127.0.0.1");
     REQUIRE(config.sourceConfig.listenerPort == 18080U);
     REQUIRE(config.sourceConfig.subscribeTopics.size() == 2U);
 

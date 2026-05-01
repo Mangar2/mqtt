@@ -32,6 +32,7 @@ struct SourceHttpBrokerConfig {
     bool clean{true};
     std::uint32_t keepAliveSeconds{30U};
     std::string listenerHost{"127.0.0.1"};
+    std::string listenerBindHost{"127.0.0.1"};
     std::uint16_t listenerPort{0U};
     SubscriptionMap subscribeTopics{};
 };
@@ -111,8 +112,8 @@ private:
     bool startListener(std::string& errorMessage);
     void stopListener();
 
-    bool sendConnect(std::string& errorMessage);
-    bool sendSubscribe(std::string& errorMessage);
+    bool sendConnect(std::string& errorMessage, std::string& responseSummary);
+    bool sendSubscribe(std::string& errorMessage, std::string& responseSummary);
     bool sendDisconnect();
 
     [[nodiscard]] static std::string buildConnectPayload(const SourceHttpBrokerConfig& config,

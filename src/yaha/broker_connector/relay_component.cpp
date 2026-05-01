@@ -55,11 +55,11 @@ void BrokerConnectorComponent::run() {
 }
 
 void BrokerConnectorComponent::close() {
-    SourceLifecycleManager* lifecycle = nullptr;
+    std::unique_ptr<SourceLifecycleManager> lifecycle{};
     {
         std::lock_guard<std::mutex> lock{relay_state_mutex_};
         running_ = false;
-        lifecycle = sourceLifecycle_.get();
+        lifecycle = std::move(sourceLifecycle_);
     }
 
     if (lifecycle != nullptr) {

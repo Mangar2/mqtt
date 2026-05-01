@@ -39,7 +39,8 @@ Protocol and domain logic remain in `broker_connector/`. Runtime orchestration i
 - `clientId` string
 - `clean` bool (`true/false/1/0/yes/no/on/off`)
 - `keepAliveSeconds` uint32 in range `1..86400`
-- `listenerHost` string
+- `listenerHost` string (callback host advertised to source broker)
+- `listenerBindHost` string (local bind host for callback listener)
 - `listenerPort` uint16 in range `0..65535`
 
 ### Repeated section `[subscription]`
