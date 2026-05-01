@@ -1,14 +1,13 @@
-# broker_connector — Source HTTP Side for Broker Connector
+# broker_connector — Source and Relay Core for Broker Connector
 
 ## Purpose
 
-Implements Phase 2 of Broker Connector: source-side connectivity to an HTTP MQTT 1.0 broker.
+Implements Phase 3 core of Broker Connector:
+- source-side HTTP MQTT 1.0 connectivity
+- receiver-side publish port built on standard `YahaMqttClient`
+- relay component with retry policy and runtime counters
 
-This module provides:
-- source HTTP adapter (`SourceHttpBrokerAdapter`) for connect/subscribe/ping/disconnect
-- source lifecycle manager (`SourceLifecycleManager`) for connect-retry and re-subscribe loop
-
-Receiver-side publish transport is intentionally out of scope for this module phase.
+This module now provides complete source-to-receiver forwarding logic. Executable composition remains out of scope (Phase 4).
 
 ## Public API
 
@@ -57,6 +56,79 @@ Receiver-side publish transport is intentionally out of scope for this module ph
 | `close` | `void()` | stops loop and closes adapter |
 | `isRunning` | `bool() const` | returns lifecycle loop state |
 
+### Struct `ReceiverPublishOptions`
+
+| Field | Type | Meaning |
+|------|------|---------|
+| `qos` | `Qos` | Effective outgoing receiver qos |
+| `retain` | `bool` | Effective outgoing retain flag |
+| `dup` | `bool` | Source dup flag for diagnostics |
+
+### Struct `ReceiverMqttBrokerConfig`
+
+| Field | Type | Meaning |
+|------|------|---------|
+| `brokerHost` | `std::string` | Receiver MQTT broker host |
+| `brokerPort` | `std::uint16_t` | Receiver MQTT broker port |
+| `clientId` | `std::string` | Receiver MQTT client id |
+| `reconnectDelay` | `std::chrono::milliseconds` | Reconnect delay |
+| `keepAliveInterval` | `std::chrono::milliseconds` | Receiver keep-alive interval |
+| `loopSleep` | `std::chrono::milliseconds` | MQTT worker loop sleep interval |
+| `enableLifecycleTrace` | `bool` | Enables lifecycle trace output |
+| `enableMessageTrace` | `bool` | Enables sent/recv trace output |
+
+### Interface `ReceiverPublishPort`
+
+| Member | Signature | Notes |
+|--------|-----------|-------|
+| dtor | `virtual ~ReceiverPublishPort()` | virtual cleanup |
+| `start` | `bool(std::string&)` | starts receiver runtime |
+| `close` | `void()` | stops receiver runtime |
+| `publish` | `bool(const Message&, const ReceiverPublishOptions&, std::string&)` | publishes one mapped message |
+| `isConnected` | `bool() const` | receiver connection state |
+
+### Class `ReceiverMqttPublishPort`
+
+| Member | Signature | Notes |
+|--------|-----------|-------|
+| ctor | `ReceiverMqttPublishPort(ReceiverMqttBrokerConfig)` | uses default broker transport factory |
+| ctor | `ReceiverMqttPublishPort(ReceiverMqttBrokerConfig, YahaMqttClient::Transport)` | transport injection for tests |
+| dtor | `~ReceiverMqttPublishPort()` | closes runtime |
+| `start` | `bool(std::string&)` | starts internal sink component and `YahaMqttClient` |
+| `close` | `void()` | closes client runtime |
+| `publish` | `bool(const Message&, const ReceiverPublishOptions&, std::string&)` | forwards with effective qos/retain |
+| `isConnected` | `bool() const` | reports `YahaMqttClient` connection state |
+
+### Struct `RelayPolicyConfig`
+
+| Field | Type | Meaning |
+|------|------|---------|
+| `maxPublishRetries` | `std::uint32_t` | Retry attempts after first failure |
+| `publishRetryBackoff` | `std::chrono::milliseconds` | Delay between retry attempts |
+| `normalizeQosToAtLeastOnce` | `bool` | Maps source qos 1/2 to outgoing qos 1 |
+| `retainPassthrough` | `bool` | Keep or clear source retain flag |
+
+### Struct `RelayCounters`
+
+| Field | Type | Meaning |
+|------|------|---------|
+| `received` | `std::uint64_t` | Accepted source messages |
+| `forwarded` | `std::uint64_t` | Successful forwards |
+| `failed` | `std::uint64_t` | Final failures after retries |
+
+### Class `BrokerConnectorComponent`
+
+| Member | Signature | Notes |
+|--------|-----------|-------|
+| ctor | `BrokerConnectorComponent(RelayPolicyConfig)` | stores relay policy |
+| dtor | `~BrokerConnectorComponent()` | closes component |
+| `setReceiverPublishPort` | `void(ReceiverPublishPort&)` | wires receiver boundary |
+| `run` | `void()` | marks relay active |
+| `close` | `void()` | marks relay inactive |
+| `onIncomingPublish` | `bool(const Message&, const SourcePublishMeta&)` | applies mapping + retry publish loop |
+| `getStats` | `RelayCounters() const` | returns counter snapshot |
+| `isRunning` | `bool() const` | active runtime state |
+
 ## Source HTTP protocol behavior
 
 Adapter uses interface version 1.0 and supports:
@@ -87,6 +159,15 @@ Reason-chain content in callback payload is currently ignored in this phase and 
 3. On failure, wait reconnect delay and retry.
 4. On shutdown, close adapter.
 
+`BrokerConnectorComponent` forwarding path:
+1. Rejects forwarding when not running or no receiver port is wired.
+2. Increments `received` counter for each accepted source callback.
+3. Maps source metadata to receiver publish options:
+	- qos mapping: `0 -> 0`, `1/2 -> 1` when normalization is enabled
+	- retain mapping: source retain passthrough or forced false
+4. Calls `ReceiverPublishPort::publish` with bounded retries.
+5. Increments `forwarded` on success or `failed` after retry budget is exhausted.
+
 ## Threading model
 
 - `SourceHttpBrokerAdapter` runs one httplib listener thread while active.
@@ -107,5 +188,10 @@ Reason-chain content in callback payload is currently ignored in this phase and 
 | `source_http_adapter.cpp` | Source adapter implementation |
 | `source_lifecycle_manager.h` | Lifecycle manager declarations |
 | `source_lifecycle_manager.cpp` | Lifecycle manager implementation |
+| `receiver_publish_port.h` | Receiver publish boundary and MQTT-backed implementation declarations |
+| `receiver_publish_port.cpp` | Receiver publish port implementation |
+| `relay_component.h` | Relay component declarations and counters/policy contracts |
+| `relay_component.cpp` | Relay component implementation |
 | `test/TEST_SPEC.md` | Unit test specification |
 | `test/source_http_adapter_test.cpp` | Unit tests for Phase 2 behavior |
+| `test/relay_component_test.cpp` | Unit tests for receiver publish port and relay behavior |

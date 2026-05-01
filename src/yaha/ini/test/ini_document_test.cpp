@@ -3,6 +3,7 @@
 #include "yaha/ini/ini_document.h"
 
 #include <chrono>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -42,10 +43,7 @@ TEST_CASE("load_ini_with_sections_and_values", "[ini]") {
         "[server]\n"
         "path = /store\n");
 
-    yaha::IniDocument document{};
-    std::string errorMessage{};
-
-    REQUIRE(yaha::IniDocument::tryLoadFromFile(iniPath, document, errorMessage));
+    const auto document = yaha::IniDocument::loadFromFile(iniPath);
     REQUIRE(document.lastValue("mqtt", "host").value_or("") == "broker.local");
     REQUIRE(document.lastValue("mqtt", "port").value_or("") == "1883");
     REQUIRE(document.lastValue("server", "path").value_or("") == "/store");
@@ -61,10 +59,7 @@ TEST_CASE("load_ini_preserves_multivalue_keys", "[ini]") {
         "module = connection\n"
         "module = monitoring\n");
 
-    yaha::IniDocument document{};
-    std::string errorMessage{};
-
-    REQUIRE(yaha::IniDocument::tryLoadFromFile(iniPath, document, errorMessage));
+    const auto document = yaha::IniDocument::loadFromFile(iniPath);
 
     const auto* section = document.findSection("tracing");
     REQUIRE(section != nullptr);
@@ -85,11 +80,13 @@ TEST_CASE("load_ini_rejects_missing_equals", "[ini]") {
         "[mqtt]\n"
         "host broker.local\n");
 
-    yaha::IniDocument document{};
-    std::string errorMessage{};
-
-    REQUIRE_FALSE(yaha::IniDocument::tryLoadFromFile(iniPath, document, errorMessage));
-    REQUIRE(errorMessage.find("missing '='") != std::string::npos);
+    try {
+        const auto document = yaha::IniDocument::loadFromFile(iniPath);
+        (void)document;
+        FAIL("expected parse exception");
+    } catch (const std::exception& exceptionValue) {
+        REQUIRE(std::string{exceptionValue.what()}.find("missing '='") != std::string::npos);
+    }
 
     removeDirectoryQuiet(tempDir);
 }
@@ -100,11 +97,13 @@ TEST_CASE("load_ini_rejects_empty_section_name", "[ini]") {
         "[]\n"
         "host = broker.local\n");
 
-    yaha::IniDocument document{};
-    std::string errorMessage{};
-
-    REQUIRE_FALSE(yaha::IniDocument::tryLoadFromFile(iniPath, document, errorMessage));
-    REQUIRE(errorMessage.find("empty section name") != std::string::npos);
+    try {
+        const auto document = yaha::IniDocument::loadFromFile(iniPath);
+        (void)document;
+        FAIL("expected parse exception");
+    } catch (const std::exception& exceptionValue) {
+        REQUIRE(std::string{exceptionValue.what()}.find("empty section name") != std::string::npos);
+    }
 
     removeDirectoryQuiet(tempDir);
 }

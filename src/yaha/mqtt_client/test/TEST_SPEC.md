@@ -20,3 +20,5 @@ Unit tests for `YahaMqttClient` session behavior with a fake transport callback 
 | `mqtt_client_config_rejects_invalid_numeric_values` | Validate [mqtt] numeric fields | `port = abc` | parser fails with `invalid mqtt.port` |
 | `mqtt_client_subscription_parser_reads_topic_qos_map` | Parse [subscriptions] entries | `topic=qos` pairs | map contains all topic/qos entries |
 | `mqtt_client_subscription_parser_rejects_invalid_qos` | Validate subscription qos range | qos value `9` | parser fails with invalid qos error |
+| `mqtt_client_runtime_run_until_signal_starts_and_stops_component` | Runtime wrapper orchestrates component and client lifecycle | running runtime in background thread, then SIGTERM | component run/close invoked exactly once and mqtt client stops cleanly |
+| `broker_transport_connect_poll_publish_and_unsubscribe_roundtrip` | Default broker transport callback bundle performs packet roundtrip with a broker | local fake MQTT broker with connack/suback/unsuback and incoming pingresp/pubrel/publish packets | connect/subscribe/poll/publish/ping/unsubscribe/disconnect complete and incoming values are decoded correctly |

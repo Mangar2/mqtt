@@ -3,6 +3,7 @@
 #include "yaha/mqtt_client/mqtt_client_runtime.h"
 
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -109,9 +110,11 @@ int main(int argc, char* argv[]) {
 
     yaha::IniDocument configDocument{};
     std::string errorMessage{};
-    if (!yaha::IniDocument::tryLoadFromFile(configPath, configDocument, errorMessage)) {
+    try {
+        configDocument = yaha::IniDocument::loadFromFile(configPath);
+    } catch (const std::exception& exceptionValue) {
         std::cerr << "Failed to load config file '" << configPath.string()
-                  << "': " << errorMessage << '\n';
+                  << "': " << exceptionValue.what() << '\n';
         return 1;
     }
 

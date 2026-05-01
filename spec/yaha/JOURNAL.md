@@ -144,3 +144,27 @@ Added `broker_connector/` sub-module entry to the YAHA source index so module do
 
 ### [MILESTONE] Broker Connector Phase 2 implemented
 Phase 2 implementation from `spec/yaha/IMPL-broker-connector.md` is now in place: source adapter and source lifecycle manager are implemented with tests and integrated project documentation.
+
+### [ARTIFACT] src/yaha/broker_connector/receiver_publish_port.* created
+Implemented receiver-side publish boundary (`ReceiverPublishPort`) and MQTT-backed adapter (`ReceiverMqttPublishPort`) using the standard `YahaMqttClient` without connector-specific transport forks. Added testable transport injection constructor for deterministic unit tests.
+
+### [ARTIFACT] src/yaha/broker_connector/relay_component.* created
+Implemented `BrokerConnectorComponent` with source-to-receiver forwarding logic, bounded publish retry policy, qos/retain mapping, and runtime counters (`received`, `forwarded`, `failed`).
+
+### [ARTIFACT] src/yaha/broker_connector/test/relay_component_test.cpp created
+Added phase 3 unit tests for receiver publish port runtime behavior and relay component forwarding/retry/counter behavior, including edge branches for not-running guard, idempotent start, pre-start publish rejection, and non-normalized qos policy.
+
+### [ARTIFACT] src/yaha/broker_connector/SPEC.md updated
+Extended module spec from phase 2 source-only scope to phase 3 scope with receiver publish contracts, relay policy/counter contracts, and updated runtime behavior documentation.
+
+### [MILESTONE] Broker Connector Phase 3 implemented
+Phase 3 from `spec/yaha/IMPL-broker-connector.md` is now implemented: standard YAHA MQTT client is wired through receiver publish port and relay component forwards source callbacks with retry and statistics. Full `python3 test/run_coverage.py` passed tests (1335/1335); changed production files exceed 80% on Regions/Functions/Lines.
+
+### [ARTIFACT] src/yaha/broker_connector_client/* created
+Implemented phase 4 composition module with runtime config mapping (`broker_connector_client_app.*`) and runtime orchestration (`broker_connector_runtime.*`) for deterministic startup/shutdown order.
+
+### [ARTIFACT] src/yaha_brokerconnectorclient_main.cpp created
+Added standalone broker connector executable main composition: CLI/config load, runtime wiring (source adapter + lifecycle, relay component, receiver publish port), signal-driven runtime execution.
+
+### [ARTIFACT] CMake and README updated for BrokerConnector executable
+Registered new `yahabrokerconnectorclient` target in `CMakeLists.txt`, added install rule, and documented run/config usage in `README.md`.

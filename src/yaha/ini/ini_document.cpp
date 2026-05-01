@@ -1,11 +1,16 @@
 #include "yaha/ini/ini_document.h"
 
 #include <algorithm>
+#include <cerrno>
+#include <charconv>
 #include <cctype>
 #include <cstdint>
 #include <fstream>
+#include <format>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
 
 namespace yaha {
@@ -27,6 +32,24 @@ std::string stripComment(std::string line) {
     const std::size_t commentPosition =
         semicolonPosition == std::string::npos ? line.size() : semicolonPosition;
     return line.substr(0U, commentPosition);
+}
+
+[[nodiscard]] std::string makeFieldName(
+    const std::string_view sectionName,
+    const std::string_view key) {
+    return std::format("{}.{}", sectionName, key);
+}
+
+[[nodiscard]] std::runtime_error makeLoadError(
+    const std::filesystem::path& filePath,
+    const std::string_view reason,
+    const std::error_code systemError) {
+    return std::runtime_error{std::format(
+        "unable to load config file '{}' (reason='{}', system_error_id={}, system_error='{}')",
+        filePath.string(),
+        reason,
+        systemError.value(),
+        systemError.message())};
 }
 
 } // namespace
@@ -58,14 +81,11 @@ std::optional<std::string> IniDocument::Section::lastValueForKey(std::string_vie
     return maybeValues->back();
 }
 
-bool IniDocument::tryLoadFromFile(
-    const std::filesystem::path& filePath,
-    IniDocument& output,
-    std::string& errorMessage) {
+IniDocument IniDocument::loadFromFile(const std::filesystem::path& filePath) {
     std::ifstream input{filePath};
     if (!input.is_open()) {
-        errorMessage = "unable to open config file: " + filePath.string();
-        return false;
+        const auto systemError = std::error_code{errno, std::generic_category()};
+        throw makeLoadError(filePath, "open failed", systemError);
     }
 
     IniDocument parsed{};
@@ -84,30 +104,41 @@ bool IniDocument::tryLoadFromFile(
         if (cleaned.front() == '[' && cleaned.back() == ']') {
             currentSection = trimCopy(cleaned.substr(1U, cleaned.size() - 2U));
             if (currentSection.empty()) {
-                errorMessage = "empty section name at line " + std::to_string(lineNumber);
-                return false;
+                throw std::runtime_error{std::format(
+                    "invalid config syntax in '{}' at line {}: empty section name",
+                    filePath.string(),
+                    lineNumber)};
             }
             continue;
         }
 
         const std::size_t delimiterPosition = cleaned.find('=');
         if (delimiterPosition == std::string::npos) {
-            errorMessage = "missing '=' at line " + std::to_string(lineNumber);
-            return false;
+            throw std::runtime_error{std::format(
+                "invalid config syntax in '{}' at line {}: missing '=' in '{}'",
+                filePath.string(),
+                lineNumber,
+                cleaned)};
         }
 
         const std::string key = trimCopy(cleaned.substr(0U, delimiterPosition));
         const std::string value = trimCopy(cleaned.substr(delimiterPosition + 1U));
         if (key.empty()) {
-            errorMessage = "empty key at line " + std::to_string(lineNumber);
-            return false;
+            throw std::runtime_error{std::format(
+                "invalid config syntax in '{}' at line {}: empty key",
+                filePath.string(),
+                lineNumber)};
         }
 
         parsed.sections_[currentSection].addEntry(key, value);
     }
 
-    output = std::move(parsed);
-    return true;
+    if (!input.eof()) {
+        const auto systemError = std::error_code{errno, std::generic_category()};
+        throw makeLoadError(filePath, "read failed", systemError);
+    }
+
+    return parsed;
 }
 
 const IniDocument::Section* IniDocument::findSection(std::string_view sectionName) const {
@@ -128,6 +159,78 @@ std::optional<std::string> IniDocument::lastValue(
     }
 
     return section->lastValueForKey(key);
+}
+
+std::optional<std::uint64_t> IniDocument::parseUnsigned(
+    const std::string_view text,
+    const std::uint64_t minValue,
+    const std::uint64_t maxValue) {
+    if (text.empty()) {
+        return std::nullopt;
+    }
+
+    auto parsed = std::uint64_t{0U};
+    const auto* const beginIterator = text.data();
+    const auto* const endIterator = text.data() + text.size();
+    const auto [nextIterator, parseError] = std::from_chars(beginIterator, endIterator, parsed, 10);
+    if (parseError != std::errc{} || nextIterator != endIterator) {
+        return std::nullopt;
+    }
+
+    if (parsed < minValue || parsed > maxValue) {
+        return std::nullopt;
+    }
+
+    return parsed;
+}
+
+std::pair<std::optional<std::uint64_t>, std::string> IniDocument::readUnsigned(
+    const std::string_view sectionName,
+    const std::string_view key,
+    const std::uint64_t minValue,
+    const std::uint64_t maxValue) const {
+    const auto maybeValue = lastValue(sectionName, key);
+    if (!maybeValue.has_value()) {
+        return {std::nullopt, ""};
+    }
+
+    const auto parsed = parseUnsigned(*maybeValue, minValue, maxValue);
+    if (!parsed.has_value()) {
+        const auto fieldName = makeFieldName(sectionName, key);
+        return {
+            std::nullopt,
+            std::format(
+                "invalid unsigned value for '{}' (expected {}..{}, got '{}')",
+                fieldName,
+                minValue,
+                maxValue,
+                *maybeValue)};
+    }
+
+    return {*parsed, ""};
+}
+
+std::pair<std::optional<bool>, std::string> IniDocument::readBool(
+    const std::string_view sectionName,
+    const std::string_view key) const {
+    const auto maybeValue = lastValue(sectionName, key);
+    if (!maybeValue.has_value()) {
+        return {std::nullopt, ""};
+    }
+
+    const auto& text = *maybeValue;
+    if (text == "true" || text == "1" || text == "yes" || text == "on") {
+        return {true, ""};
+    }
+
+    if (text == "false" || text == "0" || text == "no" || text == "off") {
+        return {false, ""};
+    }
+
+    const auto fieldName = makeFieldName(sectionName, key);
+    return {
+        std::nullopt,
+        std::format("invalid boolean value for '{}' (got '{}')", fieldName, text)};
 }
 
 } // namespace yaha

@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <deque>
 #include <optional>
 #include <stdexcept>
@@ -11,6 +12,7 @@
 #include <vector>
 
 #include "yaha/mqtt_client/mqtt_client.h"
+#include "yaha/mqtt_client/mqtt_client_runtime.h"
 
 namespace {
 
@@ -273,4 +275,70 @@ TEST_CASE("transport_poll_exception_triggers_reconnect_without_crash", "[mqtt_cl
 
     REQUIRE(state.connect_calls.load() >= 2);
     REQUIRE(state.disconnect_calls.load() >= 1);
+}
+
+TEST_CASE("mqtt_client_runtime_run_until_signal_starts_and_stops_component",
+          "[mqtt_client]") {
+    class RuntimeRecordingComponent final : public yaha::IMqttComponent {
+    public:
+        [[nodiscard]] yaha::SubscriptionMap getSubscriptions() const override {
+            return {};
+        }
+
+        void handleMessage(const yaha::Message&) override {
+        }
+
+        void setPublishCallback(yaha::PublishCallback callback) override {
+            callback_ = std::move(callback);
+        }
+
+        void run() override {
+            run_calls_.fetch_add(1);
+        }
+
+        void close() override {
+            close_calls_.fetch_add(1);
+        }
+
+        [[nodiscard]] int runCalls() const {
+            return run_calls_.load();
+        }
+
+        [[nodiscard]] int closeCalls() const {
+            return close_calls_.load();
+        }
+
+    private:
+        yaha::PublishCallback callback_{};
+        std::atomic<int> run_calls_{0};
+        std::atomic<int> close_calls_{0};
+    };
+
+    TransportState state{};
+    RuntimeRecordingComponent component{};
+
+    yaha::YahaMqttClient::Config config{};
+    config.loopSleep = std::chrono::milliseconds{5};
+    config.reconnectDelay = std::chrono::milliseconds{5};
+
+    yaha::YahaMqttClient client{config, component, makeTransport(state)};
+    yaha::YahaMqttClientRuntime runtime{client, component};
+
+    std::thread runtime_thread([&runtime]() {
+        runtime.runUntilSignal();
+    });
+
+    const auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds{500};
+    while (!client.isRunning() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+    REQUIRE(client.isRunning());
+
+    std::raise(SIGTERM);
+    runtime_thread.join();
+
+    CHECK_FALSE(client.isRunning());
+    CHECK(component.runCalls() == 1);
+    CHECK(component.closeCalls() == 1);
 }

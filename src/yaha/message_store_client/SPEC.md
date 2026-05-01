@@ -24,7 +24,7 @@ INI-like key-value file with optional sections:
 
 Parsing is composed from reusable shared modules:
 
-- `src/yaha/ini/` loads/parses INI and provides generic typed readers.
+- `src/yaha/ini/` loads/parses INI and provides typed readers directly on `IniDocument`.
 - `src/yaha/mqtt_client/mqtt_client_config.*` maps MQTT and subscription sections.
 - `message_store_client_config.*` maps only MessageStore domain fields.
 

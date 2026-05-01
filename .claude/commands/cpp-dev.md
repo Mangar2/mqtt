@@ -17,6 +17,7 @@ C++20 coding rules for this project.
 - minimize includes in headers, include in cpp only, if reasonable
 - use std::fromat to format strings
 - flush at the end when writing to std::cout or std::cerr
+- return values by function result. Create result structures or use std:pair or similar.
 
 ## Compiler warnings
 

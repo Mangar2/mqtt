@@ -34,7 +34,13 @@ std::filesystem::path writeIniFile(const std::filesystem::path& directory,
 bool loadDocument(const std::filesystem::path& path,
                   yaha::IniDocument& document,
                   std::string& errorMessage) {
-    return yaha::IniDocument::tryLoadFromFile(path, document, errorMessage);
+    try {
+        document = yaha::IniDocument::loadFromFile(path);
+        return true;
+    } catch (const std::exception& exceptionValue) {
+        errorMessage = exceptionValue.what();
+        return false;
+    }
 }
 
 } // namespace
@@ -78,7 +84,7 @@ TEST_CASE("mqtt_client_config_rejects_invalid_numeric_values", "[mqtt_client]") 
 
     yaha::YahaMqttClient::Config config{};
     REQUIRE_FALSE(yaha::tryLoadMqttClientConfigFromIni(document, config, errorMessage));
-    REQUIRE(errorMessage == "invalid mqtt.port");
+    REQUIRE(errorMessage == "invalid unsigned value for 'mqtt.port' (expected 1..65535, got 'abc')");
 
     removeDirectoryQuiet(tempDir);
 }

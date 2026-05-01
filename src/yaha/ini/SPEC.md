@@ -10,9 +10,12 @@ Provides reusable INI infrastructure for YAHA clients. The parser is domain-agno
 
 | Member | Signature | Notes |
 |--------|-----------|-------|
-| `tryLoadFromFile` | `static bool(const filesystem::path&, IniDocument&, string&)` | parses INI text into document model |
+| `loadFromFile` | `static IniDocument(const filesystem::path&)` | parses INI text into document model, throws on load/parse failure |
 | `findSection` | `const Section*(string_view) const` | returns section pointer or null |
 | `lastValue` | `optional<string>(string_view, string_view) const` | returns last value for section/key |
+| `parseUnsigned` | `static optional<uint64_t>(string_view, uint64_t, uint64_t)` | bounded unsigned parser |
+| `readUnsigned` | `pair<optional<uint64_t>, string>(string_view, string_view, uint64_t, uint64_t) const` | typed unsigned read with value/error result |
+| `readBool` | `pair<optional<bool>, string>(string_view, string_view) const` | typed bool read with value/error result |
 
 ### Class `IniDocument::Section`
 
@@ -29,14 +32,6 @@ Provides reusable INI infrastructure for YAHA clients. The parser is domain-agno
 | `key` | `string` | parsed key |
 | `value` | `string` | parsed value |
 
-### Generic helper functions
-
-| Function | Signature | Notes |
-|----------|-----------|-------|
-| `iniLookupLastValue` | `optional<string>(const IniDocument&, string_view, string_view)` | generic section/key lookup helper |
-| `iniTryParseUnsigned` | `bool(const string&, uint64_t, uint64_t, uint64_t&)` | bounded unsigned parser |
-| `iniTryReadUnsigned` | `bool(const IniDocument&, string_view, string_view, uint64_t, uint64_t, uint64_t&, string_view, string&)` | optional typed reader with standardized error text |
-
 ## Parsing behavior
 
 - INI section headers: `[section]`
@@ -45,7 +40,9 @@ Provides reusable INI infrastructure for YAHA clients. The parser is domain-agno
 - Leading/trailing whitespace is trimmed on keys, values, and section names
 - Empty lines are ignored
 - Duplicate keys are allowed and preserved as multiple values in insertion order
-- Parse errors return `false` and a descriptive `errorMessage` with line number
+- Parse errors throw with a descriptive message that includes file context and line number
+- Open/read failures include system error id and system error text
+- Typed read errors include the complete field path (`section.key`) and raw input value
 
 ## Files
 
@@ -53,8 +50,6 @@ Provides reusable INI infrastructure for YAHA clients. The parser is domain-agno
 |------|------|
 | `ini_document.h` | INI parser API declarations |
 | `ini_document.cpp` | parser implementation |
-| `ini_value_reader.h` | generic value reader API declarations |
-| `ini_value_reader.cpp` | generic value reader implementation |
 | `test/TEST_SPEC.md` | unit test specification |
 | `test/ini_document_test.cpp` | unit tests |
-| `test/ini_value_reader_test.cpp` | value reader unit tests |
+| `test/ini_document_typed_read_test.cpp` | typed read unit tests |

@@ -55,6 +55,7 @@ file(GLOB_RECURSE MQTT_TEST_SOURCES CONFIGURE_DEPENDS "src/*_test.cpp")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/test/")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/test_client_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_msgstoreclient_main\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_brokerconnectorclient_main\\.cpp$")
 
 if(WIN32)
     list(FILTER MQTT_ALL_SOURCES  EXCLUDE REGEX "_posix\\.cpp$")
@@ -142,6 +143,22 @@ if(WIN32)
     target_link_libraries(yahamsgstoreclient PRIVATE ws2_32)
 endif()
 
+#  YAHA BrokerConnector standalone executable
+add_executable(yahabrokerconnectorclient
+    src/yaha_brokerconnectorclient_main.cpp
+    ${MQTT_LIBRARY_SOURCES}
+)
+
+target_compile_options(yahabrokerconnectorclient PRIVATE ${MQTT_COMPILE_OPTIONS})
+target_link_options(yahabrokerconnectorclient    PRIVATE ${MQTT_LINK_OPTIONS})
+target_include_directories(yahabrokerconnectorclient PRIVATE src)
+target_include_directories(yahabrokerconnectorclient PRIVATE ${httplib_SOURCE_DIR})
+target_compile_definitions(yahabrokerconnectorclient PRIVATE
+    $<$<BOOL:${MQTT_TRACING_DISABLED}>:MQTT_TRACING_DISABLED>)
+if(WIN32)
+    target_link_libraries(yahabrokerconnectorclient PRIVATE ws2_32)
+endif()
+
 #  Unit tests 
 include(CTest)
 
@@ -188,5 +205,6 @@ include(GNUInstallDirs)
 install(TARGETS yahabroker
     yahatestclient
     yahamsgstoreclient
+    yahabrokerconnectorclient
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )

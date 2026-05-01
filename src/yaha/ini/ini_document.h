@@ -6,10 +6,12 @@
  */
 
 #include <filesystem>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace yaha {
@@ -65,16 +67,12 @@ public:
     };
 
     /**
-     * @brief Loads and parses INI file into output document.
+     * @brief Loads and parses one INI file.
      * @param filePath Source INI file path.
-     * @param output Parsed output document.
-     * @param errorMessage Human-readable parser error text.
-     * @return True when parsing succeeded.
+     * @return Parsed INI document.
+     * @throws std::runtime_error when file open/read or parse fails.
      */
-    [[nodiscard]] static bool tryLoadFromFile(
-        const std::filesystem::path& filePath,
-        IniDocument& output,
-        std::string& errorMessage);
+    [[nodiscard]] static IniDocument loadFromFile(const std::filesystem::path& filePath);
 
     /**
      * @brief Finds one section by name.
@@ -90,6 +88,46 @@ public:
      * @return Last value when section and key exist, otherwise nullopt.
      */
     [[nodiscard]] std::optional<std::string> lastValue(
+        std::string_view sectionName,
+        std::string_view key) const;
+
+    /**
+     * @brief Parses one unsigned integer with inclusive bounds.
+     * @param text Input text.
+     * @param minValue Lower inclusive bound.
+     * @param maxValue Upper inclusive bound.
+     * @return Parsed result when parsing and bounds validation succeeded.
+     */
+    [[nodiscard]] static std::optional<std::uint64_t> parseUnsigned(
+        std::string_view text,
+        std::uint64_t minValue,
+        std::uint64_t maxValue);
+
+    /**
+     * @brief Reads one optional unsigned value and returns value/error as function result.
+     * @param sectionName Section name.
+     * @param key Key name.
+     * @param minValue Lower inclusive bound.
+     * @param maxValue Upper inclusive bound.
+     * @return Pair of parsed optional value and error text.
+     */
+    [[nodiscard]] std::pair<std::optional<std::uint64_t>, std::string> readUnsigned(
+        std::string_view sectionName,
+        std::string_view key,
+        std::uint64_t minValue,
+        std::uint64_t maxValue) const;
+
+    /**
+     * @brief Reads one optional boolean value and returns value/error as function result.
+     *
+     * Accepted true values: true, 1, yes, on
+     * Accepted false values: false, 0, no, off
+     *
+     * @param sectionName Section name.
+     * @param key Key name.
+     * @return Pair of parsed optional value and error text.
+     */
+    [[nodiscard]] std::pair<std::optional<bool>, std::string> readBool(
         std::string_view sectionName,
         std::string_view key) const;
 

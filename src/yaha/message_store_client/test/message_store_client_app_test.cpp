@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -34,8 +35,11 @@ std::filesystem::path writeConfigFile(const std::filesystem::path& directory,
 bool tryLoadRuntimeConfigFromFile(const std::filesystem::path& configPath,
                                   yaha::MessageStoreClientRuntimeConfig& output,
                                   std::string& errorMessage) {
-    yaha::IniDocument document{};
-    if (!yaha::IniDocument::tryLoadFromFile(configPath, document, errorMessage)) {
+    auto document = yaha::IniDocument{};
+    try {
+        document = yaha::IniDocument::loadFromFile(configPath);
+    } catch (const std::exception& exceptionValue) {
+        errorMessage = exceptionValue.what();
         return false;
     }
 

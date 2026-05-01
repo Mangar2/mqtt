@@ -66,3 +66,6 @@
 | `test_client_scenario_command_runs_step32_publish_rate_mode` | `[test_client][scenario]` | Step 32 `publish-rate` mode executes burst publish loop successfully with a mock executable. |
 | `test_client_scenario_command_runs_step32_multi_subscribe_mode` | `[test_client][scenario]` | Step 32 `multi-subscribe` mode executes concurrent subscriber/publisher workflow successfully with a mock executable. |
 | `test_client_scenario_command_rejects_unknown_step32_mode` | `[test_client][scenario]` | Step 32 runner rejects unsupported load-mode names with non-zero result. |
+| `test_client_scenario_command_step32_mass_connect_mode_succeeds_with_fake_broker` | `[test_client][scenario]` | Step 32 `mass-connect` mode succeeds against a local fake MQTT broker and covers direct publish operation path. |
+| `test_client_scenario_command_step32_publish_rate_mode_succeeds_with_fake_broker` | `[test_client][scenario]` | Step 32 `publish-rate` mode succeeds against a local fake broker, including persistent QoS2 publish handshake and publish property encoding paths. |
+| `test_client_scenario_command_step32_multi_subscribe_mode_succeeds_with_fake_broker` | `[test_client][scenario]` | Step 32 `multi-subscribe` mode succeeds against a local fake broker and covers subscribe option mapping and subscriber completion path. |

@@ -27,6 +27,12 @@ A fully specification-compliant MQTT 5.0 broker written in C++20.
 # Run YAHA MessageStore client with default config path (broker.ini)
 ./build/release/yahamsgstoreclient
 
+# Run YAHA BrokerConnector client with default config path (broker.ini)
+./build/release/yahabrokerconnectorclient
+
+# Run YAHA BrokerConnector client with explicit config path
+./build/release/yahabrokerconnectorclient path/to/broker.ini
+
 # Run YAHA MessageStore client with explicit config path
 ./build/release/yahamsgstoreclient path/to/broker.ini
 
@@ -93,6 +99,21 @@ Any unknown CLI flag causes startup failure.
 | `<config-path>` | positional path | `broker.ini` | Optional path to MessageStore INI config. |
 | `--trace-messages` | flag | off | Enables printing MQTT sent/received message lines to stdout. |
 | `-h`, `--help` | flag | off | Prints CLI usage and exits successfully. |
+
+`yahabrokerconnectorclient` accepts one optional positional config path:
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `<config-path>` | positional path | `broker.ini` | Optional path to BrokerConnector INI config. |
+| `-h`, `--help` | flag | off | Prints CLI usage and exits successfully. |
+
+BrokerConnector INI sections:
+
+- `[sourceHttpBroker]`: `host`, `port`, `clientId`, `clean`, `keepAliveSeconds`, `listenerHost`, `listenerPort`
+- `[sourceSubscriptions]`: topic filter to qos map (`0`, `1`, `2`), default `#=1` when section is missing
+- `[receiverMqttBroker]`: `host`, `port`, `clientId`, `reconnectDelayMs`, `keepAliveSeconds`, `loopSleepMs`, `enableLifecycleTrace`, `enableMessageTrace`
+- `[automation]`: `reconnectDelayMs`, `sourceLoopSleepMs`, `sourceKeepAliveIntervalMs`, `maxPublishRetries`, `publishRetryBackoffMs`, `normalizeQosToAtLeastOnce`, `retainPassthrough`
+- `[monitoring]`: `sourceLifecycleTrace`
 
 ## Prerequisites
 

@@ -1,6 +1,6 @@
 #include "yaha/message_store_client/message_store_client_app.h"
 
-#include "yaha/ini/ini_value_reader.h"
+#include "yaha/ini/ini_document.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <cstdint>
@@ -12,72 +12,56 @@ bool tryLoadMessageStoreConfigFromIni(
     const IniDocument& document,
     MessageStoreConfig& output,
     std::string& errorMessage) {
-    if (const auto cleanupTopic = iniLookupLastValue(document, "messagestore", "cleanupTopic");
+    if (const auto cleanupTopic = document.lastValue("messagestore", "cleanupTopic");
         cleanupTopic.has_value()) {
         output.cleanupTopic = *cleanupTopic;
     }
 
-    if (const auto serverPath = iniLookupLastValue(document, "server", "path");
+    if (const auto serverPath = document.lastValue("server", "path");
         serverPath.has_value()) {
         output.serverPath = *serverPath;
     }
 
-    if (const auto serverHost = iniLookupLastValue(document, "server", "host");
+    if (const auto serverHost = document.lastValue("server", "host");
         serverHost.has_value()) {
         output.serverHost = *serverHost;
     }
 
-    std::uint64_t parsed = 0U;
-    if (!iniTryReadUnsigned(document,
-                            "server",
-                            "port",
-                            0U,
-                            65535U,
-                            parsed,
-                            "server.port",
-                            errorMessage)) {
+    const auto serverPortResult = document.readUnsigned("server", "port", 0U, 65535U);
+    if (!serverPortResult.second.empty()) {
+        errorMessage = serverPortResult.second;
         return false;
     }
-    if (iniLookupLastValue(document, "server", "port").has_value()) {
-        output.serverPort = static_cast<std::uint16_t>(parsed);
+    if (serverPortResult.first.has_value()) {
+        output.serverPort = static_cast<std::uint16_t>(*serverPortResult.first);
     }
 
-    if (const auto persistDirectory = iniLookupLastValue(document, "persist", "directory");
+    if (const auto persistDirectory = document.lastValue("persist", "directory");
         persistDirectory.has_value()) {
         output.persistenceConfig.directory = *persistDirectory;
     }
 
-    if (const auto persistFilename = iniLookupLastValue(document, "persist", "filename");
+    if (const auto persistFilename = document.lastValue("persist", "filename");
         persistFilename.has_value()) {
         output.persistenceConfig.filename = *persistFilename;
     }
 
-    if (!iniTryReadUnsigned(document,
-                            "persist",
-                            "intervalMs",
-                            0U,
-                            86400000U,
-                            parsed,
-                            "persist.intervalMs",
-                            errorMessage)) {
+    const auto intervalResult = document.readUnsigned("persist", "intervalMs", 0U, 86400000U);
+    if (!intervalResult.second.empty()) {
+        errorMessage = intervalResult.second;
         return false;
     }
-    if (iniLookupLastValue(document, "persist", "intervalMs").has_value()) {
-        output.persistenceConfig.intervalMs = static_cast<std::uint32_t>(parsed);
+    if (intervalResult.first.has_value()) {
+        output.persistenceConfig.intervalMs = static_cast<std::uint32_t>(*intervalResult.first);
     }
 
-    if (!iniTryReadUnsigned(document,
-                            "persist",
-                            "keepFiles",
-                            0U,
-                            1024U,
-                            parsed,
-                            "persist.keepFiles",
-                            errorMessage)) {
+    const auto keepFilesResult = document.readUnsigned("persist", "keepFiles", 0U, 1024U);
+    if (!keepFilesResult.second.empty()) {
+        errorMessage = keepFilesResult.second;
         return false;
     }
-    if (iniLookupLastValue(document, "persist", "keepFiles").has_value()) {
-        output.persistenceConfig.keepFiles = static_cast<std::uint32_t>(parsed);
+    if (keepFilesResult.first.has_value()) {
+        output.persistenceConfig.keepFiles = static_cast<std::uint32_t>(*keepFilesResult.first);
     }
 
     SubscriptionMap parsedSubscriptions{};

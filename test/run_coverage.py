@@ -48,6 +48,9 @@ SUMMARY_FILE = TEST_DIR / "run_coverage.summary.json"
 
 THRESHOLD = 80.0  # minimum coverage percent
 
+# Coverage policy: excluding production files from threshold checks is forbidden.
+# If a file is below threshold, add or improve tests until it reaches >= THRESHOLD.
+
 # Unit-test execution safety guards to avoid indefinite waits in step 2.
 CTEST_PER_TEST_TIMEOUT_SECONDS = int(os.environ.get("MQTT_CTEST_TIMEOUT", "120"))
 CTEST_TOTAL_TIMEOUT_SECONDS = int(os.environ.get("MQTT_CTEST_TOTAL_TIMEOUT", "1800"))
@@ -469,7 +472,10 @@ def _parse_test_summary(ctest_output: str) -> tuple[int, int]:
 
 
 def _parse_coverage_rows(cov_output: str) -> list[dict]:
-    """Return one row per production source file (no test files, no Catch2)."""
+    """Return one row per production source file (no test files, no Catch2).
+
+    Policy note: production files must not be excluded from threshold checks.
+    """
     rows = []
     for line in cov_output.splitlines():
         # Accept only lines that are source files (.cpp or .h)
