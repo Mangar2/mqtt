@@ -130,3 +130,17 @@ Created Phase 1 contract specification for SourceHttpBrokerAdapter, ReceiverPubl
 
 ### [MILESTONE] Broker Connector Phase 1 completed
 Phase 1 from the implementation plan is now implemented through component spec and explicit adapter contracts. The architecture boundary between standard YAHA MQTT client usage and connector HTTP fachteil is now normative in the specs.
+
+## 2026-05-01
+
+### [ARTIFACT] src/yaha/broker_connector/* created
+Implemented Broker Connector Phase 2 source-side module under `src/yaha/broker_connector/` with `SourceHttpBrokerAdapter` and `SourceLifecycleManager`. The adapter handles HTTP MQTT 1.0 connect/subscribe/ping/disconnect plus `/publish` and `/pubrel` callback acks; lifecycle manager adds reconnect and re-subscribe loop behavior.
+
+### [ARTIFACT] src/yaha/broker_connector/test/* created
+Added unit test specification and source-side tests for connect/subscribe callback flow, qos2 pubrel handshake, reconnect behavior, qos0 metadata path, invalid publish payload handling, and disconnected ping guard behavior.
+
+### [ARTIFACT] src/yaha/SPEC.md updated
+Added `broker_connector/` sub-module entry to the YAHA source index so module documentation stays discoverable from the top-level YAHA spec map.
+
+### [MILESTONE] Broker Connector Phase 2 implemented
+Phase 2 implementation from `spec/yaha/IMPL-broker-connector.md` is now in place: source adapter and source lifecycle manager are implemented with tests and integrated project documentation.
