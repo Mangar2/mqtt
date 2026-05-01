@@ -43,8 +43,8 @@ public:
         pingPacketHeader_ = std::move(packetHeader);
     }
 
-    void setRequireReceiveTokenForPing(const bool value) {
-        requireReceiveTokenForPing_ = value;
+    void setRequireSendTokenForPing(const bool value) {
+        requireSendTokenForPing_ = value;
     }
 
     void start() {
@@ -95,8 +95,8 @@ public:
         server_->Put("/pingreq", [this](const httplib::Request& request, httplib::Response& response) {
             pingCalls_.fetch_add(1);
             lastPingBody_ = request.body;
-            if (requireReceiveTokenForPing_ &&
-                request.body.find("\"token\":\"recv-token\"") == std::string::npos) {
+            if (requireSendTokenForPing_ &&
+                request.body.find("\"token\":\"send-token\"") == std::string::npos) {
                 response.status = 400;
                 response.set_content("{\"error\":\"invalid_token\"}", "application/json");
                 return;
@@ -268,7 +268,7 @@ private:
     bool failFirstConnect_{false};
     int subscribeStatusCode_{200};
     std::string subscribeResponseBody_{};
-    bool requireReceiveTokenForPing_{false};
+    bool requireSendTokenForPing_{false};
     std::string pingPacketHeader_{"pingresp"};
     std::atomic<int> connectCalls_{0};
     std::atomic<int> subscribeCalls_{0};
@@ -339,6 +339,7 @@ TEST_CASE("source_adapter_connect_subscribe_and_callback_publish", "[broker_conn
     REQUIRE(sourceBroker.connectCalls() >= 1);
     REQUIRE(sourceBroker.subscribeCalls() >= 1);
     REQUIRE_FALSE(adapter.listenerPort() == 0U);
+    REQUIRE(sourceBroker.lastConnectBody().find("\"keepAlive\":15000") != std::string::npos);
 
     const auto publishResponse = sourceBroker.sendPublishTo(
         adapter.listenerPort(),
@@ -661,9 +662,9 @@ TEST_CASE("source_adapter_ping_wrong_packet_sets_disconnected", "[broker_connect
     sourceBroker.stop();
 }
 
-TEST_CASE("source_adapter_ping_uses_receive_token", "[broker_connector]") {
+TEST_CASE("source_adapter_ping_uses_send_token", "[broker_connector]") {
     FakeSourceHttpBroker sourceBroker{};
-    sourceBroker.setRequireReceiveTokenForPing(true);
+    sourceBroker.setRequireSendTokenForPing(true);
     sourceBroker.start();
 
     yaha::SourceHttpBrokerConfig config{};

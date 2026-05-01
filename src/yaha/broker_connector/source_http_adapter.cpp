@@ -7,6 +7,7 @@
 #include <cctype>
 #include <charconv>
 #include <cstdlib>
+#include <iostream>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -266,6 +267,12 @@ bool tryParseValueToken(const std::string& objectText,
         return false;
     }
 
+    const std::string lowered = toLower(numericText);
+    if (lowered == "true" || lowered == "false" || lowered == "null") {
+        value = lowered;
+        return true;
+    }
+
     char* parseEnd = nullptr;
     const double parsedNumber = std::strtod(numericText.c_str(), &parseEnd);
     if (parseEnd == nullptr || *parseEnd != '\0') {
@@ -369,6 +376,16 @@ bool tryParseQosArray(const std::string& payload, std::vector<int>& qosValues) {
     return false;
 }
 
+std::string valueToText(const Value& value) {
+    if (std::holds_alternative<std::string>(value)) {
+        return std::get<std::string>(value);
+    }
+
+    std::ostringstream stream{};
+    stream << std::get<double>(value);
+    return stream.str();
+}
+
 std::string qosValuesToText(const std::vector<int>& qosValues) {
     std::ostringstream stream{};
     stream << '[';
@@ -447,31 +464,54 @@ bool SourceHttpBrokerAdapter::ping(std::string& errorMessage) {
         return false;
     }
 
-    httplib::Client client{config_.brokerHost, static_cast<int>(config_.brokerPort)};
-    const std::string payload = "{\"token\":\"" + escapeJson(receiveToken_) + "\"}";
-    httplib::Headers headers = makeStandardJsonHeaders();
+    const auto tryPingWithToken = [this](const std::string& token,
+                                         const char* tokenLabel,
+                                         std::string& failureText) -> bool {
+        httplib::Client client{config_.brokerHost, static_cast<int>(config_.brokerPort)};
+        const std::string payload = "{\"token\":\"" + escapeJson(token) + "\"}";
+        httplib::Headers headers = makeStandardJsonHeaders();
 
-    const auto response = client.Put("/pingreq", headers, payload, "application/json");
-    if (!response) {
+        const auto response = client.Put("/pingreq", headers, payload, "application/json");
+        if (!response) {
+            failureText = std::string{"ping request failed using "} + tokenLabel + " token";
+            return false;
+        }
+
+        if (response->status != 204) {
+            failureText = "ping failed with status " + std::to_string(response->status) +
+                " using " + tokenLabel + " token";
+            return false;
+        }
+
+        const std::optional<std::string> packet = responseHeader(*response, "packet");
+        if (!packet.has_value() || *packet != "pingresp") {
+            failureText = std::string{"ping response missing packet=pingresp using "} + tokenLabel +
+                " token";
+            return false;
+        }
+
+        return true;
+    };
+
+    std::string sendFailure{};
+    if (tryPingWithToken(sendToken_, "send", sendFailure)) {
+        return true;
+    }
+
+    if (!receiveToken_.empty() && receiveToken_ != sendToken_) {
+        std::string receiveFailure{};
+        if (tryPingWithToken(receiveToken_, "receive", receiveFailure)) {
+            return true;
+        }
+
         connected_ = false;
-        errorMessage = "ping request failed";
+        errorMessage = sendFailure + "; fallback failed: " + receiveFailure;
         return false;
     }
 
-    if (response->status != 204) {
-        connected_ = false;
-        errorMessage = "ping failed with status " + std::to_string(response->status);
-        return false;
-    }
-
-    const std::optional<std::string> packet = responseHeader(*response, "packet");
-    if (!packet.has_value() || *packet != "pingresp") {
-        connected_ = false;
-        errorMessage = "ping response missing packet=pingresp";
-        return false;
-    }
-
-    return true;
+    connected_ = false;
+    errorMessage = sendFailure;
+    return false;
 }
 
 void SourceHttpBrokerAdapter::close() {
@@ -517,10 +557,18 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
 
         Message message{"", std::string{}};
         if (!parseIncomingMessageBody(request.body, meta.qos, meta.retain, message)) {
+            std::cout << "  source: publish rejected bad payload body=" << request.body
+                      << '\n' << std::flush;
             response.status = 400;
             response.set_content("{\"error\":\"bad_publish_payload\"}", "application/json");
             return;
         }
+
+        std::cout << "  source: publish recv topic=" << message.topic()
+                  << " qos=" << static_cast<int>(meta.qos)
+                  << " retain=" << (meta.retain ? "1" : "0")
+                  << " value=" << valueToText(message.value())
+                  << '\n' << std::flush;
 
         SourcePublishCallback callback{};
         {
@@ -564,21 +612,31 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
     if (host.empty()) {
         host = "127.0.0.1";
     }
-    int bound = 0;
     if (config_.listenerPort == 0U) {
-        bound = server_->bind_to_any_port(host);
-    } else {
-        bound = server_->bind_to_port(host, static_cast<int>(config_.listenerPort));
-    }
-    if (bound <= 0) {
-        errorMessage =
-            "unable to bind source callback listener to " + host + ":" +
-            std::to_string(config_.listenerPort);
-        server_.reset();
-        return false;
-    }
+        const int bound = server_->bind_to_any_port(host);
+        if (bound <= 0) {
+            errorMessage =
+                "unable to bind source callback listener to " + host + ":" +
+                std::to_string(config_.listenerPort);
+            server_.reset();
+            return false;
+        }
 
-    boundListenerPort_ = static_cast<std::uint16_t>(bound);
+        boundListenerPort_ = static_cast<std::uint16_t>(bound);
+    } else {
+        const bool bound =
+            server_->bind_to_port(host, static_cast<int>(config_.listenerPort));
+        if (!bound) {
+            errorMessage =
+                "unable to bind source callback listener to " + host + ":" +
+                std::to_string(config_.listenerPort);
+            server_.reset();
+            return false;
+        }
+
+        // For fixed ports we advertise exactly the configured listenerPort.
+        boundListenerPort_ = config_.listenerPort;
+    }
     listenerThread_ = std::thread([this]() {
         if (server_ != nullptr) {
             server_->listen_after_bind();
@@ -731,6 +789,8 @@ bool SourceHttpBrokerAdapter::sendDisconnect() {
 std::string SourceHttpBrokerAdapter::buildConnectPayload(const SourceHttpBrokerConfig& config,
                                                          const std::uint16_t effectiveListenerPort) {
     const std::string host = config.listenerHost.empty() ? "127.0.0.1" : config.listenerHost;
+    const std::uint64_t keepAliveMilliseconds =
+        static_cast<std::uint64_t>(config.keepAliveSeconds) * 1000U;
 
     std::ostringstream stream{};
     stream << "{"
@@ -738,7 +798,7 @@ std::string SourceHttpBrokerAdapter::buildConnectPayload(const SourceHttpBrokerC
            << "\"host\":\"" << escapeJson(host) << "\"," 
            << "\"port\":" << effectiveListenerPort << ','
            << "\"clean\":" << (config.clean ? "true" : "false") << ','
-           << "\"keepAlive\":" << config.keepAliveSeconds
+           << "\"keepAlive\":" << keepAliveMilliseconds
            << '}';
     return stream.str();
 }

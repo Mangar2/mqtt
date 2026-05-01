@@ -19,7 +19,7 @@ This module now provides complete source-to-receiver forwarding logic through `I
 | `brokerPort` | `std::uint16_t` | Source broker HTTP port |
 | `clientId` | `std::string` | Source-side client identity |
 | `clean` | `bool` | Connect clean-session flag |
-| `keepAliveSeconds` | `std::uint32_t` | Source keep-alive value for connect payload |
+| `keepAliveSeconds` | `std::uint32_t` | Source keep-alive value in seconds (sent as milliseconds in `/connect` payload) |
 | `listenerHost` | `std::string` | Callback host advertised to source broker |
 | `listenerBindHost` | `std::string` | Local callback listener bind host |
 | `listenerPort` | `std::uint16_t` | Local callback listener port (`0` allowed) |
@@ -142,8 +142,8 @@ Adapter uses interface version 1.0 and supports:
 - PUT `/disconnect`
 
 Token usage from `/connect` response:
-- `token.send`: source-to-connector callback token used in incoming `/publish` payloads
-- `token.receive`: connector-to-source session token used by outgoing `/pingreq`
+- `token.send`: connector-to-source session token used by outgoing `/pingreq`
+- `token.receive`: currently parsed and stored for compatibility
 
 Adapter listener handles callbacks:
 - PUT `/publish`
