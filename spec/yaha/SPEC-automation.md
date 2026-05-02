@@ -103,6 +103,7 @@ Public component interface:
 No HTTP server API is exposed by Automation itself.
 
 Automation uses optional outbound HTTP client integration for file-store read/write of rule trees.
+File-store contract reference: [SPEC-filestore.md](./SPEC-filestore.md).
 
 ## Configuration
 
@@ -201,6 +202,9 @@ Rule identity:
 Each rule is a JSON object.
 Mandatory field: topic.
 
+Expression-bearing fields (`check`, `value`, `time`) use the Python-style textual DSL defined below.
+The previous JSON-array expression tree is replaced by this textual DSL in new rule authoring.
+
 Supported fields:
 - topic
 - value
@@ -232,7 +236,7 @@ Behavior:
 ## value field semantics
 
 - Device command/state payload to emit.
-- Can be literal or expression tree result.
+- Can be literal or Python-style expression result.
 - Optional when topic is object map containing explicit per-topic values.
 
 ## time and duration semantics
@@ -248,7 +252,7 @@ duration:
 
 ## check semantics
 
-- Additional predicate expression.
+- Additional predicate expression (Python-style DSL).
 - Rule emits only when check resolves true.
 
 ## Event trigger fields
@@ -282,24 +286,138 @@ cooldownInSeconds:
 delayInSeconds:
 - Output is emitted only after identical candidate output remains stable for configured delay.
 
-## Expression language
+## Expression language (Python-style DSL)
 
-The same expression language is used in check, value, and places where time/value is computed.
+The same DSL is used in `check`, `value`, and places where time/value is computed.
 
-Supported expression forms:
-- [and, term1, term2, ...]
-- [or, term1, term2, ...]
-- [comparator, term1, term2]
-  - comparator in { =, !=, <>, >, <, >=, <= }
-- [operator, term1, term2]
-  - operator in { +, - }
-- [if, condition, trueValue, falseValue]
-- [switch, term, { value1: term1, value2: term2, ..., default: termDefault }]
+Authoring rule:
+- Use textual expressions with normal parentheses `(` `)` only.
+- Do not use JSON expression arrays for new rules.
 
-Terms may recursively contain nested expressions.
+## Core operators
+
+- Logical: `and`, `or`, `not`
+- Comparison: `=`, `!=`, `<>`, `>`, `<`, `>=`, `<=`
+- Arithmetic: `+`, `-`
+
+Parentheses control grouping precedence.
+
+## EBNF grammar
+
+The following EBNF defines the parser contract for expression fields.
+
+```ebnf
+fieldScript        = { declarationLine , lineBreak } , resultExpression ;
+
+declarationLine    = identifier , ws? , "=" , ws? , mapLiteral ;
+resultExpression   = expression ;
+
+expression         = orExpr ;
+orExpr             = andExpr , { ws , "or" , ws , andExpr } ;
+andExpr            = compareExpr , { ws , "and" , ws , compareExpr } ;
+compareExpr        = addExpr , [ ws? , comparator , ws? , addExpr ] ;
+addExpr            = unaryExpr , { ws? , addOp , ws? , unaryExpr } ;
+unaryExpr          = [ "not" , ws ] , primary ;
+
+primary            = mapCall
+                   | ifCall
+                   | mapLiteral
+                   | "(" , ws? , expression , ws? , ")"
+                   | valueToken ;
+
+ifCall             = "if" , ws? , "(" , ws? , expression , ws? , "," , ws? , expression , ws? , "," , ws? , expression , ws? , ")" ;
+mapCall            = identifier , ws? , "(" , ws? , expression , ws? , ")" ;
+
+mapLiteral         = "(" , ws? , mapEntry , { ws? , "," , ws? , mapEntry } , ws? , ")" ;
+mapEntry           = mapKey , ws? , ":" , ws? , expression ;
+mapKey             = "default" | valueToken ;
+
+valueToken         = quotedString | number | identifier | variableRef ;
+variableRef        = ("$" | "/" | identifierStart) , { variableChar } , "/" , { variableChar } ;
+identifier         = identifierStart , { identifierChar } ;
+
+comparator         = "=" | "!=" | "<>" | ">" | "<" | ">=" | "<=" ;
+addOp              = "+" | "-" ;
+
+quotedString       = '"' , { stringChar } , '"'
+                   | "'" , { stringChar } , "'" ;
+
+number             = [ "-" ] , digit , { digit } , [ "." , digit , { digit } ] ;
+
+identifierStart    = letter | "_" ;
+identifierChar     = letter | digit | "_" ;
+variableChar       = letter | digit | "_" | "-" | "." | "$" | "/" | " " ;
+
+lineBreak          = "\n" | "\r\n" ;
+ws                 = { " " | "\t" } ;
+
+letter             = "A".."Z" | "a".."z" ;
+digit              = "0".."9" ;
+stringChar         = ? any character except unescaped quote and line break ? ;
+```
+
+Grammar notes:
+- `fieldScript` applies to `check`, `value`, and computed `time` expressions.
+- `valueToken` allows unquoted symbolic tokens (`awake`, `off`, `Mon`) and topic-like variable references.
+- `variableRef` is recognized by containing at least one `/`.
+- `mapEntry` with key `default` is mandatory in semantic validation, even if grammar accepts map literals without it.
+
+## Map declarations (replacement for switch)
+
+Map declaration syntax:
+- `name = (key1: value1, key2: value2, default: valueDefault)`
+
+Map invocation syntax:
+- `name(selectorExpression)`
+
+Semantics:
+- Evaluate `selectorExpression`.
+- If selector matches a declared key, return mapped value.
+- Else return `default` value.
+- `default` key is mandatory for deterministic behavior.
+
+Example:
+- `presence = (1: awake, on: awake, awake: awake, sleeping: sleeping, default: absent)`
+- `$MONITORING/presence != presence($MONITORING/presence/set)`
+
+## Multi-line field script format
+
+Each expression field may contain:
+1. Zero or more declaration lines.
+2. One final result expression line.
+
+Execution order:
+- Declaration lines are evaluated top-down.
+- The final line is the field result.
+
+Example (`check` field):
+- `presence = (1: awake, on: awake, awake: awake, sleeping: sleeping, default: absent)`
+- `$MONITORING/presence != presence($MONITORING/presence/set)`
+
+## If semantics
+
+Conditional expression syntax:
+- `if(condition, trueValue, falseValue)`
+
+Semantics are equivalent to legacy `if` node behavior.
+
+## String literal and quoting rules
+
+- Quotes are optional for tokens that contain only safe identifier characters and no whitespace.
+- Quotes are required when value contains spaces or separator characters.
+- Unquoted topic-like tokens (for example `/time`, `$MONITORING/presence`) are treated as variable references.
+- Literal text values must be quoted when ambiguous.
+
+## Semantic equivalence requirement
+
+The Python-style DSL must keep the same evaluation semantics as legacy rules functionality:
+- same boolean/arithmetic outcomes,
+- same variable resolution behavior,
+- same switch/default behavior,
+- same time arithmetic behavior.
 
 Time arithmetic behavior:
-- Subtracting numeric value from time expression means subtracting minutes.
+- Subtracting numeric value from a time expression means subtracting minutes.
 
 ## Variable model
 

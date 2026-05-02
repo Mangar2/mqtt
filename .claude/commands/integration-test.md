@@ -7,6 +7,7 @@ NEVER base test expectations on C++ implementation details
 Tests verify MQTT 5.0 SPECIFICATION behavior not implementation behavior
 Only sources allowed: spec/integration-test-plan.md, spec/anforderungskatalog.md, spec/MQTT Version 5.0.html
 Violation produces tests that pass on broken brokers and fail on correct ones
+Never run all integration tests, run only integration test belonging to the project you work on
 
 ## Framework
 

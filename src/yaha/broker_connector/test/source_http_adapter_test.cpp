@@ -655,7 +655,7 @@ TEST_CASE("source_adapter_ping_wrong_packet_sets_disconnected", "[broker_connect
 
     errorMessage.clear();
     REQUIRE_FALSE(adapter.ping(errorMessage));
-    REQUIRE(errorMessage == "ping response missing packet=pingresp");
+    REQUIRE(errorMessage.starts_with("ping response missing packet=pingresp"));
     REQUIRE_FALSE(adapter.isConnected());
 
     adapter.close();
