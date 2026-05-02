@@ -12,6 +12,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Changed
 - Renamed broker tool/binary and related build/test target names from `mqtt_broker`/`mqtt-broker` to `yahabroker`.
 
+### Fixed
+- Fixed YAHA broker connector callback port advertisement for fixed listener ports: connector now advertises configured `sourceHttpBroker.listenerPort` instead of an incorrect bind success value (could appear as port `1`), resolving HTTP source callback `ECONNREFUSED` and missing forwarded messages.
+
 ## [0.1.0] – 2026-04-26
 
 ### Added

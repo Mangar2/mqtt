@@ -1,5 +1,86 @@
 # Bug: qos1-throughput-low-load
 
+## active bug focus
+
+- This bug is about broker send throughput in QoS1 publish fan-out.
+- Exact symptom to fix: after an initial good phase, broker send path becomes slower than broker receive path, so in P02 `sent` and `recv` diverge over time.
+- Primary verification signal: in the P02 timeline output, `sent` per line should stay approximately equal to `recv` per line until scenario end.
+- Queue-full effects are a consequence to analyze only in relation to this throughput divergence, not a separate bug target; the analysis must explicitly explain why the outbound queue fills in the first place.
+
+Hard prohibition for all further work on this bug:
+
+- Absolute focus: explain only why outbound writing/draining is too slow although machine load is low.
+- Forbidden: any analysis, hypothesis, or code search outside this exact topic.
+- Forbidden: discussing queue limits, config defaults, trace-volume tuning, or any other side topic as primary cause.
+- Forbidden: expanding scope to unrelated protocol areas (QoS0/QoS2/retained/will/persistence/auth).
+- Every step must answer only this question: why does the write/drain path not keep up with inbound publish rate?
+
+## test prerequisite
+
+- Before any fix verification with `python3 test/run_performance_tests.py --host qapla --filter P02 --size middle`:
+	1. Rebuild broker binary with current code.
+	2. Deploy/restart broker on target host.
+- Running the performance script against a stale broker process does not validate the current fix.
+
+## one-pass analysis capture (full trace set)
+
+Goal:
+
+- Capture enough runtime evidence in one expensive run to isolate why broker send throughput falls behind receive throughput in P02.
+
+Scope for this capture:
+
+- QoS1 publish receive path, broker route/deliver path, outbound drain/write scheduling path.
+
+Required broker start (with full trace coverage in one run):
+
+- Run this directly on qapla shell (not via deploy helper).
+- Binary path is fixed: `./build/release/yahabroker`.
+- Config path is fixed: `test/broker.ws.ini`.
+- Trace must be written to a dedicated file in the broker working directory: `./broker-p02-analysis.trace`.
+- Mandatory command style for this bug: provide only the pure broker process invocation.
+- Forbidden in the broker command: `cd`, `pkill`, `mkdir`, `nohup`, ssh wrappers, or chained shell control operators.
+
+```sh
+./build/release/yahabroker test/broker.ws.ini \
+	--trace-level=trace \
+	--trace-module=broker \
+	--trace-module=connection \
+	--trace-module=executor \
+	--trace-module=message_router \
+	--trace-module=session_manager \
+	--trace-module=subscription_manager \
+	--trace-module=transport \
+	> ./broker-p02-analysis.trace 2>&1
+```
+
+Reproduction command (unchanged verification path):
+
+```sh
+python3 test/run_performance_tests.py --host qapla --filter P02 --size middle
+```
+
+Copy trace artifact from qapla to local bug directory after run:
+
+```sh
+mkdir -p spec/bug/qos1-throughput-low-load/artifacts
+scp -o BatchMode=yes \
+	mangar@qapla:/home/mangar/dev/mqtt/broker-p02-analysis.trace \
+	spec/bug/qos1-throughput-low-load/artifacts/
+```
+
+Optional copy of the exact runner summary used for correlation:
+
+```sh
+cp test/performance_test_results.json \
+	spec/bug/qos1-throughput-low-load/artifacts/performance_test_results.p02.json
+```
+
+Note:
+
+- This section is the default analysis procedure for this bug. Reuse it for future analysis iterations to avoid incomplete trace capture.
+- Command quality rule for this bug: never provide wrapper or orchestration commands when asked for broker invocation; return only the direct broker process call with explicit trace output file.
+
 ## user report
 
 aber davon abgesehen. Wir haben zwei fehler. Einen kennen wir: der broker schafft trotz niedriger last keinen vernünftigen durchsatz bei QoS1 meldungen 4000 Meldungen pro sekunde sollte er schaffen schon bei 231 kommt er nicht mehr mit. 2. Das ist nur ein fehler verdacht - nicht alle QoS1 meldungen kommen an, es werden meldungen verschluckt. Beide fehler sind zu behandeln und in einem sicheren testfall nachzustellen der den fehler konkret beweist und direkt und einduetig als ergebnis ausgibt.
@@ -106,6 +187,7 @@ Zusaetzlicher bereits beobachteter Referenzlauf:
 - QoS0 and QoS2 scenarios
 - retained, will, persistence behavior
 - protocol features outside QoS1 publish/ack/deliver path
+- any analysis not directly tied to outbound write/drain under low CPU load
 
 ## confirmed facts
 
@@ -118,23 +200,71 @@ Zusaetzlicher bereits beobachteter Referenzlauf:
 - CPU measurement basis is not yet captured in testcase artifact (total/system/thread-level, sampling interval).
 - Exact acceptance threshold for throughput-proof run is not yet fixed in code (using 4000 msg/s as requested target).
 
-## resolution
 
-Status: CLOSED
+## protocol update 2026-04-26
 
-Confirmed root cause:
+New validation runs with scaled P02 clients:
 
-- The first limit came from the MQTT client side (`pub_max_inflight`) and insufficient publisher parallelism, not from message loss semantics.
+- Command: `python3 test/run_performance_tests.py --host qapla --filter P02 --size middle`
+- Scenario configuration log: `subscribers=10 dynamic_pub_clients=10..N max_rate_per_client=2000/s`
+- Result: `FAIL (DEVIATION)`
+- Summary values: `sent=1004794`, `received=587698`, `throughput=4856.62 msg/s`, `pub_clients=60`
 
-Implemented fix that removed the first limit:
+- Command: `python3 test/run_performance_tests.py --host localhost --filter P02 --size middle`
+- Scenario configuration log: `subscribers=10 dynamic_pub_clients=10..N max_rate_per_client=2000/s`
+- Result: `FAIL (DEVIATION)`
+- Summary values: `sent=1004536`, `received=556657`, `throughput=4599.78 msg/s`, `pub_clients=60`
 
-- Increased effective inflight window handling in the test path.
-- Parallelized publisher clients dynamically for the offered rate.
+Recorded observations from this comparison:
 
-Observed outcome after fix:
+- Increasing sender and receiver client count by factor 10 did not remove the P02 deviation.
+- The same failure pattern appears on remote host and on localhost.
+- With localhost result in the same range as remote, network bandwidth and network latency are not the primary bottleneck for this bug.
 
-- The original first throughput limit is no longer present under the corrected setup.
+Working assumptions agreed in this analysis iteration:
 
-Follow-up:
+- OS socket transport on one machine has high reserve for this payload size and is not treated as the main limiter.
+- Python client library is assumed to have large remaining headroom (order-of-magnitude reserve) and is not treated as the main limiter in this iteration.
 
-- A new, separate bug was found after this fix and is tracked independently.
+Current primary hypothesis after this update:
+
+- The dominant bottleneck is in broker-internal outbound processing (fan-out write/drain path), especially scheduling/fairness/queue-drain behavior across many active subscriber connections.
+
+## protocol update 2026-04-26 (parallel dual-broker run, halved load)
+
+Testcase adjustments used for this run:
+
+- P02 dual-broker alternation was reverted (single broker per run via `--port`).
+- P02 load was halved for all size profiles.
+	- `small`: `10->2000/s` to `5->1000/s`
+	- `middle`: `100->20000/s` to `50->10000/s`
+	- `large`: `1000->100000/s` to `500->50000/s`
+
+Parallel run A (broker on port 1883):
+
+- Command: `python3 test/run_performance_tests.py --host localhost --port 1883 --filter P02 --size middle`
+- Result: `FAIL (DEVIATION)`
+- Summary values: `sent=702408`, `received=599518`, `throughput=4954.52 msg/s`, `pub_clients=5`
+
+Parallel run B (broker on port 11883):
+
+- Command: `python3 test/run_performance_tests.py --host localhost --port 11883 --filter P02 --size middle`
+- Result: `FAIL (DEVIATION)`
+- Summary values: `sent=702477`, `received=606856`, `throughput=5015.29 msg/s`, `pub_clients=5`
+
+Recorded observations from this parallel comparison:
+
+- Both independent broker instances show nearly identical deviation behavior under the same halved P02 profile.
+- Divergence remains (`sent` noticeably above `received`) on both ports.
+- This behavior is therefore not tied to one specific broker instance or one port.
+
+## protocol update 2026-04-26 (client-side limitation hypothesis)
+
+Additional interpretation agreed after the latest counter-tests:
+
+- A single run that internally distributes pairs across two brokers does not materially improve behavior versus a single run against one broker.
+- Two independent client runs in parallel (one per broker) increase aggregate throughput more clearly.
+
+Working conclusion from these observations:
+
+- The throughput limitation is most likely dominated by the Python client/test-runner side (single-run pacing/drain/scheduling behavior), not by a single broker instance.
