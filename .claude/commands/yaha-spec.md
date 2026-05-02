@@ -7,6 +7,16 @@ Create specs for YAHA home automation components being reimplemented in C++.
 Source: legacy JavaScript code under spec/@mangar2/
 Target: spec/yaha/ — one SPEC.md per component
 
+## Source of truth rule
+
+Only code counts.
+Use only executable code files as source of truth.
+Ignore README, CODE_README, CHANGELOG, docs, comments, and any documentation text outside executable code.
+
+If documentation conflicts with code, code wins always.
+If documentation adds behavior not present in code, do not include it in spec.
+If code is unclear, mark as open question instead of guessing from docs.
+
 ## MQTT topic conventions
 
 $SYS is reserved for broker-originated messages per MQTT specification. YAHA components must never publish or subscribe to $SYS topics.
