@@ -18,3 +18,4 @@ directly here — each sub-topic has its own subdirectory.
 | `file_store_client/` | filestore phase 2 | Standalone FileStore process config mapping and runtime composition wiring. |
 | `message_store/` | 4-7 | Internal MessageTree plus persistence and MessageStore IMqttComponent logic for state/history queries, cleanup, disk restore/save, and HTTP query interface. |
 | `message_store_client/` | 8 | Standalone MessageStore process composition, runtime config loader, and lifecycle orchestration for executable wiring. |
+| `automation/` | automation step 1 | Expression DSL tokenizer for YAHA automation rules engine. |
