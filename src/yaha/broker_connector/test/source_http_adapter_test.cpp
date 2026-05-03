@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <format>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -47,6 +48,11 @@ public:
         requireSendTokenForPing_ = value;
     }
 
+    void setConnectTokens(std::string sendToken, std::string receiveToken) {
+        connectSendToken_ = std::move(sendToken);
+        connectReceiveToken_ = std::move(receiveToken);
+    }
+
     void start() {
         if (server_ != nullptr) {
             return;
@@ -69,7 +75,10 @@ public:
             response.set_header("packet", "connack");
             response.set_header("version", "1.0");
             response.set_content(
-                "{\"present\":0,\"token\":{\"send\":\"send-token\",\"receive\":\"recv-token\"}}",
+                std::format(
+                    "{{\"present\":0,\"token\":{{\"send\":\"{}\",\"receive\":\"{}\"}}}}",
+                    connectSendToken_,
+                    connectReceiveToken_),
                 "application/json");
         });
 
@@ -270,6 +279,8 @@ private:
     std::string subscribeResponseBody_{};
     bool requireSendTokenForPing_{false};
     std::string pingPacketHeader_{"pingresp"};
+    std::string connectSendToken_{"send-token"};
+    std::string connectReceiveToken_{"recv-token"};
     std::atomic<int> connectCalls_{0};
     std::atomic<int> subscribeCalls_{0};
     std::atomic<int> pingCalls_{0};
@@ -549,6 +560,52 @@ TEST_CASE("source_adapter_invalid_publish_payload_returns_400", "[broker_connect
     sourceBroker.stop();
 }
 
+TEST_CASE("source_adapter_publish_invalid_bool_headers_fallback_to_false", "[broker_connector]") {
+    FakeSourceHttpBroker sourceBroker{};
+    sourceBroker.start();
+
+    yaha::SourceHttpBrokerConfig config{};
+    config.brokerHost = "127.0.0.1";
+    config.brokerPort = sourceBroker.port();
+    config.clientId = "connector-test-client";
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = 0U;
+    config.subscribeTopics = {{"home/#", yaha::Qos::AtLeastOnce}};
+
+    yaha::SourceHttpBrokerAdapter adapter{config};
+
+    std::mutex callbackMutex{};
+    std::optional<yaha::SourcePublishMeta> lastMeta{};
+    adapter.setIncomingPublishCallback([&callbackMutex, &lastMeta](const yaha::Message&, const yaha::SourcePublishMeta& meta) {
+        std::lock_guard<std::mutex> lock{callbackMutex};
+        lastMeta = meta;
+    });
+
+    std::string errorMessage{};
+    REQUIRE(adapter.connectAndSubscribe(errorMessage));
+
+    const auto publishResponse = sourceBroker.sendPublishTo(
+        adapter.listenerPort(),
+        "0",
+        "",
+        "{\"message\":{\"topic\":\"home/state\",\"value\":\"ok\"}}",
+        "  maybe  ",
+        "  ???  ");
+
+    REQUIRE(publishResponse != nullptr);
+    REQUIRE(publishResponse->status == 204);
+
+    {
+        std::lock_guard<std::mutex> lock{callbackMutex};
+        REQUIRE(lastMeta.has_value());
+        REQUIRE_FALSE(lastMeta->retain);
+        REQUIRE_FALSE(lastMeta->dup);
+    }
+
+    adapter.close();
+    sourceBroker.stop();
+}
+
 TEST_CASE("source_adapter_ping_when_disconnected_returns_false", "[broker_connector]") {
     yaha::SourceHttpBrokerConfig config{};
     config.brokerHost = "127.0.0.1";
@@ -684,6 +741,63 @@ TEST_CASE("source_adapter_ping_uses_send_token", "[broker_connector]") {
     errorMessage.clear();
     REQUIRE(adapter.ping(errorMessage));
     REQUIRE(errorMessage.empty());
+
+    adapter.close();
+    sourceBroker.stop();
+}
+
+TEST_CASE("source_adapter_ping_transport_failure_sets_disconnected", "[broker_connector]") {
+    FakeSourceHttpBroker sourceBroker{};
+    sourceBroker.start();
+
+    yaha::SourceHttpBrokerConfig config{};
+    config.brokerHost = "127.0.0.1";
+    config.brokerPort = sourceBroker.port();
+    config.clientId = "connector-test-client";
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = 0U;
+    config.subscribeTopics = {{"home/#", yaha::Qos::AtLeastOnce}};
+
+    yaha::SourceHttpBrokerAdapter adapter{config};
+    adapter.setIncomingPublishCallback([](const yaha::Message&, const yaha::SourcePublishMeta&) {});
+
+    std::string errorMessage{};
+    REQUIRE(adapter.connectAndSubscribe(errorMessage));
+
+    sourceBroker.stop();
+
+    errorMessage.clear();
+    REQUIRE_FALSE(adapter.ping(errorMessage));
+    REQUIRE(errorMessage.find("ping request failed using send token") != std::string::npos);
+    REQUIRE_FALSE(adapter.isConnected());
+
+    adapter.close();
+}
+
+TEST_CASE("source_adapter_ping_failure_without_fallback_sets_disconnected", "[broker_connector]") {
+    FakeSourceHttpBroker sourceBroker{};
+    sourceBroker.setConnectTokens("shared-token", "shared-token");
+    sourceBroker.setPingPacketHeader("broken");
+    sourceBroker.start();
+
+    yaha::SourceHttpBrokerConfig config{};
+    config.brokerHost = "127.0.0.1";
+    config.brokerPort = sourceBroker.port();
+    config.clientId = "connector-test-client";
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = 0U;
+    config.subscribeTopics = {{"home/#", yaha::Qos::AtLeastOnce}};
+
+    yaha::SourceHttpBrokerAdapter adapter{config};
+    adapter.setIncomingPublishCallback([](const yaha::Message&, const yaha::SourcePublishMeta&) {});
+
+    std::string errorMessage{};
+    REQUIRE(adapter.connectAndSubscribe(errorMessage));
+
+    errorMessage.clear();
+    REQUIRE_FALSE(adapter.ping(errorMessage));
+    REQUIRE(errorMessage.find("using send token") != std::string::npos);
+    REQUIRE_FALSE(adapter.isConnected());
 
     adapter.close();
     sourceBroker.stop();

@@ -13,5 +13,20 @@ Unit tests for `FileStore` HTTP behavior, key mapping, lifecycle, and MQTT monit
 | `http_post_and_get_roundtrip_text_payload` | Text payload path | POST text then GET same key | GET body is JSON string |
 | `http_post_and_get_roundtrip_json_payload` | JSON payload path | POST application/json object then GET | GET body equals JSON object text |
 | `http_post_rejects_key_longer_than_limit` | Key length guard | POST with key length > max | status 400 |
+| `http_get_rejects_key_longer_than_limit` | Key length guard for read path | GET with key length > max | status 400 |
+| `http_get_missing_key_returns_error` | Missing key read path | GET for not existing key | status 400 |
+| `http_post_invalid_json_returns_error` | Invalid JSON rejected in JSON mode | POST with malformed JSON and content-type application/json | status 400 |
+| `http_post_invalid_json_token_returns_error` | Invalid JSON first token rejected | POST with malformed JSON token and content-type application/json | status 400 |
+| `http_options_returns_cors_headers` | CORS preflight contract | OPTIONS request | status 200 and CORS headers |
+| `http_roundtrip_text_payload_escapes_json_control_chars` | Text payload escaping in GET response | POST text containing quote, backslash, newline, carriage return, tab then GET | GET body contains escaped JSON string |
+| `http_get_reads_legacy_untyped_payload_file` | Backward compatibility for old file format without type prefix | manually write plain file content then GET | JSON string body returned |
+| `monitoring_disabled_suppresses_post_event` | Monitoring disable switch | monitoring.enabled=false and successful POST | no publish callback event |
+| `monitoring_error_event_is_emitted_for_invalid_directory` | Watcher snapshot error publishes monitoring error with details | configure directory path as regular file and run watcher | one `$MONITOR/FileStore/error` event with payload details |
+| `monitoring_topic_prefix_all_slashes_uses_suffix_topic` | Empty normalized topic prefix path | monitoring.topicPrefix set to only slashes and successful POST | published topic equals event suffix |
+| `monitoring_topic_prefix_empty_uses_default_prefix` | Default topic prefix fallback path | monitoring.topicPrefix set to empty and successful POST | published topic starts with `$MONITOR/FileStore/` |
+| `http_post_returns_error_when_directory_is_not_writable_directory` | Write failure path bubbles to HTTP error | configure directory path as regular file and POST | status 400 with generic error |
+| `run_invokes_http_start_and_stop_callbacks` | HTTP lifecycle callbacks from config | set start/stop callbacks and run+close | both callbacks invoked exactly once |
+| `handle_message_is_noop` | Inbound message handler contract | call handleMessage with any message | no throw and component stays usable |
 | `http_post_emits_monitoring_changed_event` | Monitoring publish on successful write | set callback + POST | one `$MONITOR/FileStore/changed` publish |
+| `watcher_emits_created_changed_deleted_events` | Filesystem watcher emits events for out-of-band file changes | create, update, delete file in store dir | changed + deleted topics published (created may be timing-dependent) |
 | `run_and_close_are_idempotent` | Lifecycle reentry safety | run twice, close twice | no crash, running flag toggles correctly |

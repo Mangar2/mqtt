@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+Usage:
+    svc list [pattern]
+
+Subcommands:
+    list    Show PM2-like overview for system services (default filter: yaha)
+EOF
+}
+
+ensure_dependencies() {
+    if ! command -v systemctl >/dev/null 2>&1; then
+        echo "error: systemctl not found" >&2
+        exit 1
+    fi
+}
+
+format_bytes() {
+    local bytes="${1:-}"
+
+    if [[ -z "$bytes" || "$bytes" == "0" || "$bytes" == "[not set]" ]]; then
+        printf '%s' "-"
+        return
+    fi
+
+    if command -v numfmt >/dev/null 2>&1; then
+        numfmt --to=iec-i --suffix=B "$bytes"
+    else
+        awk -v b="$bytes" 'BEGIN {
+            split("B KiB MiB GiB TiB", u, " ");
+            i=1;
+            while (b >= 1024 && i < 5) { b/=1024; i++ }
+            if (i == 1) {
+                printf "%d%s", b, u[i]
+            } else {
+                printf "%.1f%s", b, u[i]
+            }
+        }'
+    fi
+}
+
+read_rss_bytes_from_pid() {
+    local pid="${1:-}"
+    local status_file
+    local rss_kib
+
+    if [[ -z "$pid" || "$pid" == "0" ]]; then
+        printf '%s' ""
+        return
+    fi
+
+    status_file="/proc/$pid/status"
+    if [[ ! -r "$status_file" ]]; then
+        printf '%s' ""
+        return
+    fi
+
+    rss_kib="$(awk '/^VmRSS:/ { print $2; exit }' "$status_file" 2>/dev/null || true)"
+    if [[ -z "$rss_kib" ]]; then
+        printf '%s' ""
+        return
+    fi
+
+    # VmRSS is reported in KiB.
+    awk -v kib="$rss_kib" 'BEGIN { printf "%.0f", kib * 1024 }'
+}
+
+list_services() {
+    ensure_dependencies
+
+    local pattern="${1:-yaha}"
+    local services
+    services="$(systemctl list-units --type=service --all --no-legend --no-pager | awk '{print $1}' | grep -E "$pattern" | sort -u || true)"
+
+    printf '%-42s %-18s %-10s %-10s %-8s %s\n' "SERVICE" "STATE" "RESTARTS" "MEMORY" "PID" "LAST_START"
+    printf '%-42s %-18s %-10s %-10s %-8s %s\n' "------------------------------------------" "------------------" "----------" "----------" "--------" "------------------------------"
+
+    if [[ -z "$services" ]]; then
+        echo "no system services matched pattern: $pattern" >&2
+        return
+    fi
+
+    local service show_out line key value
+    local active sub restarts memory pid started state memory_h rss_bytes
+
+    while IFS= read -r service; do
+        show_out="$(systemctl show "$service" \
+            -p ActiveState \
+            -p SubState \
+            -p NRestarts \
+            -p MemoryCurrent \
+            -p MainPID \
+            -p ExecMainStartTimestamp)"
+
+        active="-"
+        sub="-"
+        restarts="-"
+        memory="-"
+        pid="-"
+        started="-"
+
+        while IFS= read -r line; do
+            key="${line%%=*}"
+            value="${line#*=}"
+            case "$key" in
+                ActiveState) active="$value" ;;
+                SubState) sub="$value" ;;
+                NRestarts) restarts="$value" ;;
+                MemoryCurrent) memory="$value" ;;
+                MainPID) pid="$value" ;;
+                ExecMainStartTimestamp) started="$value" ;;
+            esac
+        done <<< "$show_out"
+
+        if [[ -z "$restarts" || "$restarts" == "0" ]]; then
+            restarts="${restarts:-0}"
+        fi
+
+        if [[ -z "$pid" || "$pid" == "0" ]]; then
+            pid="-"
+        fi
+
+        if [[ -z "$memory" || "$memory" == "0" || "$memory" == "[not set]" ]]; then
+            rss_bytes="$(read_rss_bytes_from_pid "$pid")"
+            if [[ -n "$rss_bytes" ]]; then
+                memory="$rss_bytes"
+            fi
+        fi
+
+        if [[ -z "$started" || "$started" == "n/a" ]]; then
+            started="-"
+        fi
+
+        state="${active}/${sub}"
+        memory_h="$(format_bytes "$memory")"
+
+        printf '%-42s %-18s %-10s %-10s %-8s %s\n' "$service" "$state" "$restarts" "$memory_h" "$pid" "$started"
+    done <<< "$services"
+}
+
+main() {
+    local cmd="${1:-}"
+    local arg1="${2:-}"
+
+    case "$cmd" in
+        list)
+            list_services "$arg1"
+            ;;
+        -h|--help|help|"")
+            usage
+            ;;
+        *)
+            echo "error: unknown subcommand '$cmd'" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

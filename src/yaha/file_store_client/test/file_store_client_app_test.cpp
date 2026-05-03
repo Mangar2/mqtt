@@ -143,3 +143,46 @@ TEST_CASE("load_config_rejects_invalid_bool_field", "[file_store_client]") {
 
     removeDirectoryQuiet(tempDir);
 }
+
+TEST_CASE("load_config_rejects_invalid_server_port", "[file_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[server]\n"
+        "port = invalid\n");
+
+    const auto loadResult = loadRuntimeConfigFromFile(configPath);
+    REQUIRE_FALSE(loadResult.success);
+    REQUIRE_FALSE(loadResult.errorMessage.empty());
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_config_rejects_invalid_watch_interval", "[file_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[monitoring]\n"
+        "watchIntervalMs = 9999999\n");
+
+    const auto loadResult = loadRuntimeConfigFromFile(configPath);
+    REQUIRE_FALSE(loadResult.success);
+    REQUIRE_FALSE(loadResult.errorMessage.empty());
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_runtime_config_rejects_invalid_mqtt_port", "[file_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = broker.local\n"
+        "port = invalid\n"
+        "\n"
+        "[filestore]\n"
+        "directory = data-store\n");
+
+    const auto loadResult = loadRuntimeConfigFromFile(configPath);
+    REQUIRE_FALSE(loadResult.success);
+    REQUIRE_FALSE(loadResult.errorMessage.empty());
+
+    removeDirectoryQuiet(tempDir);
+}
