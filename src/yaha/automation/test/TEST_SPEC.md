@@ -20,3 +20,7 @@ Unit tests for the first automation step: lexical tokenization of expression DSL
 | `internal_variables_weekday_uses_sunday_zero_index` | weekday encoding parity | date for Sunday | `/weekday` is numeric `0` |
 | `internal_variables_sun_times_have_expected_order` | twilight/sun order sanity | summer date + coordinates | dawn chain <= sunrise < sunset <= dusk chain |
 | `internal_variables_time_value_matches_input_date` | passthrough current time variable | explicit date-time input | `/time` equals input time point |
+| `expression_parser_parses_declarations_and_collects_external_topics` | declaration + result script parse | multiline script with map declaration and topic references | parser succeeds, declaration exists, external variable set contains referenced topics |
+| `expression_parser_builds_operator_precedence_tree` | precedence correctness for or/and/not/comparison | `a = b and c = d or not e = f` | top AST operator is `or` |
+| `rules_tree_parser_exposes_snippets_by_slash_path` | structured tree traversal and snippet addressing | nested object with `check` and `value` strings | snippets available under slash paths and external topics aggregated |
+| `rules_tree_parser_reports_path_on_expression_error` | path-aware parser error reporting | nested object with invalid `if` call argument count | parse error includes exact snippet source path |

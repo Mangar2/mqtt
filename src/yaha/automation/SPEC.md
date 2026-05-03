@@ -8,6 +8,7 @@ This module evaluates rule DSL expressions and emits outbound MQTT messages.
 Current implementation step:
 - Expression tokenizer for the Python-style DSL.
 - Internal variable calculator including sunrise/sunset and twilight calculations.
+- Expression AST parser and structured rules-tree snippet parser.
 
 ## Public API
 
@@ -33,6 +34,49 @@ Tokenization behavior:
 Error behavior:
 - Unterminated quoted string throws `std::invalid_argument`.
 - Lone `!` throws `std::invalid_argument`.
+
+### Expression AST parser
+
+Class:
+- `ExpressionParser`
+
+Public contract:
+- `parse(script) -> ExpressionParseResult`
+
+`ExpressionParseResult` contains:
+- `success` flag
+- `FieldScriptAst ast`
+- `externalVariables` set containing all external variable references (topics)
+- `errors` list with structured parser errors
+
+AST model supports:
+- declarations (`name = (key: value, default: value)`)
+- literals, identifiers, variable refs
+- unary operator: `not`
+- binary operators: `+`, `-`, `=`, `!=`, `<>`, `>`, `<`, `>=`, `<=`, `and`, `or`
+- calls: `if(...)`, `mapName(selector)`
+- inline map literals
+
+External variable extraction rule:
+- Every parsed variable reference containing `/` and not starting with `/` is exported as external topic dependency.
+
+### Structured rules-tree parser
+
+Classes/Types:
+- `RuleTreeNode` generic structured input node (object/array/string/number/bool)
+- `RulesTreeParser`
+- `RulesTreeParseResult`
+
+Public contract:
+- `RulesTreeParser::parse(root) -> RulesTreeParseResult`
+
+Behavior:
+- Traverses full structured tree recursively.
+- Parses expression-bearing string fields: `check`, `value`, `time`.
+- Stores each parsed snippet under slash path key, for example:
+  - `motion/rules/setReceived/check`
+- Aggregates external topic variables across all snippets.
+- Reports parser errors with `sourcePath` context to identify failing snippet.
 
 ### Class `InternalVariables`
 
@@ -74,6 +118,12 @@ Error behavior:
 | `expression_tokenizer.cpp` | Tokenizer implementation |
 | `internal_variables.h` | Internal variable calculator declaration |
 | `internal_variables.cpp` | Internal variable calculator implementation |
+| `expression_ast.h` | AST and parser result/error type declarations |
+| `expression_parser.h` | Single-script expression parser declaration |
+| `expression_parser.cpp` | Single-script expression parser implementation |
+| `rules_tree_parser.h` | Structured tree parser declaration and input node model |
+| `rules_tree_parser.cpp` | Structured tree traversal and snippet parsing implementation |
 | `test/TEST_SPEC.md` | Unit-test specification |
 | `test/expression_tokenizer_test.cpp` | Catch2 unit tests |
 | `test/internal_variables_test.cpp` | Catch2 unit tests for internal variable computation |
+| `test/expression_parser_test.cpp` | Catch2 unit tests for AST parser and tree parser |
