@@ -169,7 +169,8 @@ Do not treat "it only triggers `-Werror` so it would already fail the build" as 
 See `/build` skill for all commands. Use Python script only — never cmake/ctest/llvm directly.
 
 ```sh
-python test/run_coverage.py
+python test/run_coverage_broker.py
+python test/run_coverage_clients.py
 ```
 
 Completion checklist mandatory gate
@@ -177,7 +178,7 @@ Completion checklist mandatory gate
 Do not mark any module complete until every item passes.
 
 1 Build clean
-Verify python test/run_coverage.py step 1 exits with 0 errors and 0 warnings.
+Verify python test/run_coverage_broker.py and python test/run_coverage_clients.py step 1 exit with 0 errors and 0 warnings.
 
 2 No compiler warnings
 Build uses -Werror so any warning is a build failure.
@@ -189,10 +190,10 @@ All clang tidy diagnostics resolved.
 Use get_errors on all changed files. Zero errors and zero warnings. Fix every IDE diagnostic before done.
 
 5 All tests pass
-python test/run_coverage.py summary must show Tests N slash N OK. New tests must appear by name in ctest.
+Both script summaries must show Tests N slash N OK for their scopes.
 
 6 Test coverage at least 80 percent
-python test/run_coverage.py summary must show Threshold MET and all production files at least 80 percent for Regions Functions Lines. This blocks commit.
+Both script summaries must show Threshold MET and all production files in their scopes at least 80 percent for Regions Functions Lines. This blocks commit.
 
 7 SPEC.md current — MANDATORY, NO EXCEPTIONS
 Every directory whose code was touched has an accurate, up-to-date SPEC.md.
@@ -213,7 +214,7 @@ End every implementation with this report. All sections are mandatory.
 ## Completion report — <Module name>
 
 ### Build + Tests + Coverage
-python test/run_coverage.py -> summary output:
+python test/run_coverage_broker.py and python test/run_coverage_clients.py -> summary output:
 
 ```
 Tests      : <N>/<N>  [OK]

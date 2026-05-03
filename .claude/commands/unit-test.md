@@ -28,30 +28,33 @@ CMake discovers all `src/*_test.cpp` files automatically — no manual registrat
 All commands are run from the **project root**: `c:\Development\mqtt`.
 **Never call cmake, ctest, llvm-profdata or llvm-cov directly.** Use only the script.
 
-The script lives at `test/run_coverage.py`.  
-All generated files (`run.log`, `coverage.profraw`, `coverage.profdata`) are written to `test/` — never to the project root or `build/`.
+The scripts live at `test/run_coverage_broker.py` and `test/run_coverage_clients.py`.  
+All generated files are written to `test/` (`run_broker.log`, `run_clients.log`, `coverage_broker.profdata`, `coverage_clients.profdata`) — never to the project root or `build/`.
 
 ### Full workflow (most common)
 
 ```sh
-python test/run_coverage.py
+python test/run_coverage_broker.py
+python test/run_coverage_clients.py
 ```
 
-Runs in sequence: (1) build debug, (2) run tests, (3) build coverage binary, (4) measure coverage.  
+Each script runs in sequence: (1) build debug, (2) run scoped tests, (3) build coverage binary, (4) measure scoped coverage.  
 Stops immediately on failure and prints a focused error summary.  
 On success prints a compact table — tests passed and coverage per production file.  
-Full output goes to `test/run.log` — read it only when diagnosing a failure.
+Full output goes to `test/run_broker.log` or `test/run_clients.log` — read it only when diagnosing a failure.
 
 ### Line-level detail for a file below threshold
 
 ```sh
-python test/run_coverage.py --show src/<module>/<file>.cpp
+python test/run_coverage_broker.py --show src/<module>/<file>.cpp
+python test/run_coverage_clients.py --show src/<module>/<file>.cpp
 ```
 
 ### Scoped report (reuses existing profdata — no rebuild)
 
 ```sh
-python test/run_coverage.py --scope src/<module>/
+python test/run_coverage_broker.py --scope src/<module>/
+python test/run_coverage_clients.py --scope src/<module>/
 ```
 
 > After adding or changing tests, always run the full script first to regenerate profdata.
@@ -126,11 +129,9 @@ Coverage uses **clang source-based instrumentation** (`-fprofile-instr-generate`
 `-fcoverage-mapping`). The `test-coverage` CMake preset enables it automatically.
 
 > **Critical:** Never use `ctest` to collect coverage.
-> `catch_discover_tests` runs every `TEST_CASE` as its own subprocess; each one
-> overwrites `default.profraw`, so only the last test case's data survives.
-> The Python script already handles this correctly by running the binary directly.
+> The Python scripts handle coverage collection via scoped test execution.
 
-**Always use `python test/run_coverage.py` — never run llvm-profdata or llvm-cov manually.**
+**Always use `python test/run_coverage_broker.py` and `python test/run_coverage_clients.py` — never run llvm-profdata or llvm-cov manually.**
 
 ### Improving coverage — one file at a time
 
@@ -143,14 +144,16 @@ When the full report shows files below 80%, work through them **strictly one at 
 1. Pick the first file below threshold.
 2. Run `--show` for that file only — no other commands in parallel:
    ```sh
-   python run_coverage.py --show src/<module>/<file>
+    python test/run_coverage_broker.py --show src/<module>/<file>
+    python test/run_coverage_clients.py --show src/<module>/<file>
    ```
 3. Read the `TEST_SPEC.md` for that module — one file read, nothing else in parallel.
 4. Analyse: which uncovered lines correspond to which missing test cases?
-5. Write or extend the test, then run the full suite to verify:
-   ```sh
-   cmake --build --preset debug && ctest --preset debug
-   ```
+5. Write or extend the test, then run both scoped scripts to verify:
+    ```sh
+    python test/run_coverage_broker.py
+    python test/run_coverage_clients.py
+    ```
 6. Only after that file reaches ≥ 80 %: move to the next file below threshold.
 
 Mandatory rule: if you did not improve coverage by adding a test to reach 80% refactor the source code to improve its unit-testability instead of just add new test cases.

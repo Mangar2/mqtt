@@ -1,8 +1,17 @@
-﻿Build test coverage in one command from project root:
+﻿Build and coverage are now split by scope and must be run separately from project root.
+
+Broker scope:
 
 ```sh
-python test/run_coverage.py
+python test/run_coverage_broker.py
 ```
 
-Stops on first failure. Log: test/run.log
+Client scopes (YAHA plus generic client):
+
+```sh
+python test/run_coverage_clients.py
+```
+
+Run both commands for full validation.
+Stops on first failure. Logs: test/run_broker.log and test/run_clients.log
 Never call cmake/ctest/llvm directly.
