@@ -5,6 +5,7 @@ data/
 *.profraw
 *.profdata
 *.json
+!test/rules.json
 *.log
 *.trace
 .sysroots/
