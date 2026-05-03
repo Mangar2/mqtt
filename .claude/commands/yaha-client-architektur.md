@@ -14,6 +14,14 @@ Main does not implement reconnect policy.
 Main does not implement signal policy.
 Main does not implement generic io parsing policy.
 
+Mandatory error rule
+Use only yaha error class from src/yaha/error_handling/yaha_error.h.
+All error returns must use YahaError buildMessage output.
+All throw paths must throw YahaError.
+No direct string error return.
+No other exception type for app errors.
+No exception to this rule.
+
 Required architecture
 One domain component implements IMqttComponent.
 Generic mqtt client takes IMqttComponent only.
@@ -62,6 +70,8 @@ Check main has no while sleep shutdown loop.
 Check main has no duplicated generic parser code.
 Check main uses IMqttComponent boundary only for runtime orchestration.
 Check main file size stays small and orchestration only.
+Check all error outputs use YahaError.
+Check all throw paths use YahaError.
 
 Anti patterns
 Moving generic code from app class into main is forbidden.
@@ -101,6 +111,10 @@ Call run once.
 5 Generic boundaries preserved.
 Shutdown order owned by generic runtime only.
 No duplicated generic parser logic in main.
+
+6 Error contract preserved.
+All error outputs use YahaError buildMessage.
+All throw paths use YahaError only.
 
 Required final confirmation text
 Use this exact line in final report:

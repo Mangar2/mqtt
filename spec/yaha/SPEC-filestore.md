@@ -124,10 +124,13 @@ Success response:
 Error responses:
 - Key too long:
   - Status: `400`
-  - Body: `Error: Key too long, a maximum of 100 characters are supported`
-- Any parse/persist/internal error:
+  - Body: `Error: Key too long, a maximum of <maxKeyLength> characters are supported`
+- JSON parse error:
   - Status: `400`
-  - Body: `Error in request`
+  - Body: `Error: Invalid JSON payload`
+- Persist/internal runtime error:
+  - Status: `500`
+  - Body: `Error: Failed to persist key (<reason>)`
 
 ### HTTP GET `<keyPath>`
 
@@ -153,10 +156,13 @@ Success response:
 Error responses:
 - Key too long:
   - Status: `400`
-  - Body: `Error: Key too long, a maximum of 100 characters are suported`
+  - Body: `Error: Key too long, a maximum of <maxKeyLength> characters are supported`
+- Key not found:
+  - Status: `404`
+  - Body: `Error: Key not found`
 - Read/internal error:
-  - Status: `400`
-  - Body: `Error in request`
+  - Status: `500`
+  - Body: `Error: Failed to read key (<reason>)`
 
 ## Data model
 
@@ -274,10 +280,11 @@ MQTT runtime/broker configuration remains in generic MQTT client configuration a
 
 ## Error handling
 
-- Any exception in POST/GET request handling is logged and returned as `400 Error in request`.
-- Invalid JSON payload in JSON POST path results in `400 Error in request`.
-- Missing/unreadable key on GET results in `400 Error in request`.
-- Overlength keys return specific `400` key-length error text.
+- Invalid JSON payload in JSON POST path returns `400 Error: Invalid JSON payload`.
+- Missing key on GET returns `404 Error: Key not found`.
+- Filesystem/runtime failures on POST return `500 Error: Failed to persist key (<reason>)`.
+- Filesystem/runtime failures on GET return `500 Error: Failed to read key (<reason>)`.
+- Overlength keys return `400 Error: Key too long, a maximum of <maxKeyLength> characters are supported`.
 - Watcher errors trigger `$MONITOR/FileStore/error` publish attempt and local error logging.
 - MQTT publish errors for monitoring messages are logged; FileStore HTTP service remains available.
 
@@ -291,9 +298,7 @@ MQTT runtime/broker configuration remains in generic MQTT client configuration a
 
 ## Open questions
 
-- Should key-length limit remain fixed at `100` or become configurable?
 - Should JSON content-type parsing accept media type parameters (`; charset=utf-8`) for compatibility with common HTTP clients?
-- Should not-found reads return `404` instead of generic `400`?
 - Should response `Content-Type` casing be normalized (`application/json`) or remain legacy-compatible (`Application/Json`)?
 - Should authentication/authorization be added for production deployment? Legacy behavior has none.
 - Should FileStore publish only watcher-based events, or both watcher and successful HTTP-write events permanently?

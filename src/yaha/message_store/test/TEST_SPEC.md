@@ -36,7 +36,7 @@ Unit tests for MessageTree behavior required by step 4.
 | `run_and_close_are_idempotent` | Repeated lifecycle calls are safe | run twice and close twice | callbacks invoked once each |
 | `http_get_store_returns_json_for_topic_prefix` | GET endpoint section mode with defaults | GET `/store/home` | status 200 and JSON array with matching topics |
 | `http_get_store_decodes_percent_encoded_topic_prefix` | Topic path is percent-decoded | GET `/store/home%20room` | status 200 and topics under `home room` returned |
-| `http_get_store_rejects_invalid_percent_encoded_topic_prefix` | Invalid percent-encoding path handling | GET `/store/home%2` | status 400 with invalid percent-encoding error payload |
+| `http_get_store_rejects_invalid_percent_encoded_topic_prefix` | Invalid percent-encoding path handling | GET `/store/home%2` | status 400 with YahaError payload code `YAHA_MESSAGE_STORE_HTTP_INVALID_PERCENT_ENCODING` |
 | `http_get_store_decodes_percent_encoded_hex_bytes` | Percent decoder hex branch coverage | GET `/store/home%41room` with matching topic | status 200 and decoded topic prefix is resolved |
 | `http_get_store_applies_levelamount_history_reason_headers` | Header options are honored | GET with `levelamount=2`, `history=true`, `reason=false` | status 200 and returned nodes include history but no reason |
 | `http_get_store_header_defaults_apply_for_blank_or_invalid_values` | Header parser fallback branches | GET with blank `levelamount/history` and invalid `reason` | status 200 and request is processed with defaults |
@@ -44,6 +44,6 @@ Unit tests for MessageTree behavior required by step 4.
 | `http_get_store_snapshot_body_skips_unknown_fields_and_json_variants` | Snapshot parser unknown-field skipping | GET body with unknown object/array/boolean/null fields | status 200 and parser keeps valid topic/value entries |
 | `http_get_store_snapshot_body_supports_escaped_strings` | Snapshot parser escaped-string handling | GET body with escaped slash/quote/newline/tab/backslash sequences | status 200 and parser accepts escaped string payloads |
 | `http_get_store_malformed_snapshot_returns_empty_array` | Malformed body fallback path | GET body `not-json` | status 200 and `[]` |
-| `http_unknown_path_returns_404` | Non-store endpoint is rejected | GET `/unknown/path` | status 404 |
+| `http_unknown_path_returns_404` | Non-store endpoint is rejected | GET `/unknown/path` | status 404 with YahaError payload code `YAHA_MESSAGE_STORE_HTTP_NOT_FOUND` |
 | `http_get_store_json_output_escapes_special_characters` | JSON escaping branch coverage | store string payload with quote/backslash/newline/carriage-return/tab | response payload contains escaped JSON control sequences |
 | `handle_message_cleanup_topic_accepts_numeric_string_payload` | Cleanup path string-number conversion | cleanup message with payload "1" | stale nodes are removed |

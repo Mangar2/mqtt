@@ -1,6 +1,7 @@
 #include "yaha/message_store/message_store.h"
 
 #include "httplib.h"
+#include "yaha/error_handling/yaha_error.h"
 
 #include <algorithm>
 #include <cctype>
@@ -447,6 +448,11 @@ bool parseSnapshotBody(const std::string& body, std::vector<MessageTreeSnapshotN
     return parser.parse(out);
 }
 
+void setHttpErrorResponse(httplib::Response& response, int status, const YahaError& error) {
+    response.status = status;
+    response.set_content(error.buildMessage(), "text/plain");
+}
+
 } // namespace
 
 MessageStore::MessageStore(MessageStoreConfig config)
@@ -588,16 +594,23 @@ void MessageStore::handleHttpRequest(MessageStore& store,
     } else if (startsWith(request.path, basePath + "/")) {
         topicPrefixEncoded = request.path.substr(basePath.size() + 1U);
     } else {
-        response.status = 404;
-        response.set_content("{\"error\":\"not_found\"}", "application/json");
+        setHttpErrorResponse(response,
+                             404,
+                             YahaError{"YAHA_MESSAGE_STORE_HTTP_NOT_FOUND",
+                                       "not_found",
+                                       "The requested HTTP path was not found.",
+                                       "path=" + request.path + ", base_path=" + basePath});
         return;
     }
 
     std::string topicPrefix;
     if (!tryDecodePercentEncoding(topicPrefixEncoded, topicPrefix)) {
-        response.status = 400;
-        response.set_content("{\"error\":\"bad_request\",\"message\":\"invalid_percent_encoding\"}",
-                             "application/json");
+        setHttpErrorResponse(response,
+                             400,
+                             YahaError{"YAHA_MESSAGE_STORE_HTTP_INVALID_PERCENT_ENCODING",
+                                       "invalid_percent_encoding",
+                                       "The request path contains invalid percent encoding.",
+                                       "encoded_prefix=" + topicPrefixEncoded});
         return;
     }
 

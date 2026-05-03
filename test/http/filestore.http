@@ -1,0 +1,17 @@
+@host = 192.168.0.183
+@port = 8210
+@keyPath = /automation/rules/test-rule
+@baseUrl = http://{{host}}:{{port}}{{keyPath}}
+
+### Write JSON value to FileStore
+POST {{baseUrl}}
+content-type: application/json
+
+{
+  "name": "test-rule",
+  "enabled": true,
+  "updatedBy": "http-test"
+}
+
+### Read value from FileStore
+GET {{baseUrl}}

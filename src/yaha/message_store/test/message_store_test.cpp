@@ -352,7 +352,8 @@ TEST_CASE("http_get_store_rejects_invalid_percent_encoded_topic_prefix", "[messa
 
     REQUIRE(response != nullptr);
     REQUIRE(response->status == 400);
-    REQUIRE(response->body.find("invalid_percent_encoding") != std::string::npos);
+    REQUIRE(response->body.find("code=YAHA_MESSAGE_STORE_HTTP_INVALID_PERCENT_ENCODING")
+            != std::string::npos);
 }
 
 TEST_CASE("http_get_store_decodes_percent_encoded_hex_bytes", "[message_store]") {
@@ -606,5 +607,6 @@ TEST_CASE("http_unknown_path_returns_404", "[message_store]") {
 
     REQUIRE(response != nullptr);
     REQUIRE(response->status == 404);
+    REQUIRE(response->body.find("code=YAHA_MESSAGE_STORE_HTTP_NOT_FOUND") != std::string::npos);
 
 }

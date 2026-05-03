@@ -52,6 +52,16 @@ Implements a standalone key/value HTTP store with MQTT monitoring publishes.
   - `content-type: application/json` stores JSON payload as JSON.
   - other content types store payload as text.
 - Key length > `maxKeyLength` returns `400`.
+- Missing key on `GET` returns `404`.
+- Internal filesystem/runtime errors return `500`.
+- All HTTP error responses are built from `yaha::YahaError` (`src/yaha/error_handling/yaha_error.h`).
+- Error payload contains machine code, technical message, user-facing message, and optional debug details.
+- FileStore HTTP error codes:
+  - `YAHA_FILE_STORE_KEY_TOO_LONG` (400)
+  - `YAHA_FILE_STORE_INVALID_JSON_PAYLOAD` (400)
+  - `YAHA_FILE_STORE_KEY_NOT_FOUND` (404)
+  - `YAHA_FILE_STORE_PERSIST_FAILED` (500)
+  - `YAHA_FILE_STORE_READ_FAILED` (500)
 - Monitoring publishes to `<topicPrefix>/created|changed|deleted|error`.
 - Monitoring trigger sources:
   - successful HTTP `POST` write (`source=http-post`),

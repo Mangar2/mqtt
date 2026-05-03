@@ -105,7 +105,8 @@ struct MessageTreeNode;
 - Empty body -> section mode using `getSection`.
 - JSON array body -> snapshot diff mode using `getNodes`.
 - Malformed body -> empty result array with status 200.
-- Unknown path -> status 404.
+- Unknown path -> status 404 with `YahaError` payload code `YAHA_MESSAGE_STORE_HTTP_NOT_FOUND`.
+- Invalid percent-encoding in topic prefix -> status 400 with `YahaError` payload code `YAHA_MESSAGE_STORE_HTTP_INVALID_PERCENT_ENCODING`.
 - Response is JSON array with `application/json`.
 
 ## Files

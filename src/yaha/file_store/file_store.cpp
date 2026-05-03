@@ -1,6 +1,7 @@
 #include "yaha/file_store/file_store.h"
 
 #include "httplib.h"
+#include "yaha/error_handling/yaha_error.h"
 
 #include <algorithm>
 #include <chrono>
@@ -34,6 +35,11 @@ std::string joinTopic(const std::string& prefix, const std::string& suffix) {
         return prefix + suffix;
     }
     return std::format("{}/{}", prefix, suffix);
+}
+
+void setHttpErrorResponse(httplib::Response& response, int status, const YahaError& error) {
+    response.status = status;
+    response.set_content(error.buildMessage(), "text/plain");
 }
 
 } // namespace
@@ -466,8 +472,14 @@ void FileStore::handleHttpPost(FileStore& store,
                                httplib::Response& response) {
     const std::string keyPath = request.path;
     if (keyPath.size() > store.config_.maxKeyLength) {
-        response.status = 400;
-        response.set_content("Error: Key too long, a maximum of 100 characters are supported", "text/plain");
+        setHttpErrorResponse(response,
+                             400,
+                             YahaError{"YAHA_FILE_STORE_KEY_TOO_LONG",
+                                       "key_too_long",
+                                       "The key is too long for this FileStore instance.",
+                                       std::format("key_length={}, max_length={}",
+                                                   keyPath.size(),
+                                                   store.config_.maxKeyLength)});
         return;
     }
 
@@ -479,15 +491,22 @@ void FileStore::handleHttpPost(FileStore& store,
     payload.body = request.body;
 
     if (isJson && !store.validateJsonPayload(payload.body)) {
-        response.status = 400;
-        response.set_content("Error in request", "text/plain");
+        setHttpErrorResponse(response,
+                             400,
+                             YahaError{"YAHA_FILE_STORE_INVALID_JSON_PAYLOAD",
+                                       "invalid_json_payload",
+                                       "The provided JSON payload is invalid."});
         return;
     }
 
     const auto writeResult = store.writeKeyPayload(keyPath, payload);
     if (!writeResult.success) {
-        response.status = 400;
-        response.set_content("Error in request", "text/plain");
+        setHttpErrorResponse(response,
+                             500,
+                             YahaError{"YAHA_FILE_STORE_PERSIST_FAILED",
+                                       "failed_to_persist_key",
+                                       "The key could not be persisted.",
+                                       writeResult.errorText});
         return;
     }
 
@@ -503,15 +522,33 @@ void FileStore::handleHttpGet(FileStore& store,
                               httplib::Response& response) {
     const std::string keyPath = request.path;
     if (keyPath.size() > store.config_.maxKeyLength) {
-        response.status = 400;
-        response.set_content("Error: Key too long, a maximum of 100 characters are suported", "text/plain");
+        setHttpErrorResponse(response,
+                             400,
+                             YahaError{"YAHA_FILE_STORE_KEY_TOO_LONG",
+                                       "key_too_long",
+                                       "The key is too long for this FileStore instance.",
+                                       std::format("key_length={}, max_length={}",
+                                                   keyPath.size(),
+                                                   store.config_.maxKeyLength)});
         return;
     }
 
     const auto readResult = store.readKeyPayload(keyPath);
     if (!readResult.success) {
-        response.status = 400;
-        response.set_content("Error in request", "text/plain");
+        if (readResult.errorText == "file not found") {
+            setHttpErrorResponse(response,
+                                 404,
+                                 YahaError{"YAHA_FILE_STORE_KEY_NOT_FOUND",
+                                           "key_not_found",
+                                           "The requested key does not exist."});
+        } else {
+            setHttpErrorResponse(response,
+                                 500,
+                                 YahaError{"YAHA_FILE_STORE_READ_FAILED",
+                                           "failed_to_read_key",
+                                           "The key could not be read.",
+                                           readResult.errorText});
+        }
         return;
     }
 

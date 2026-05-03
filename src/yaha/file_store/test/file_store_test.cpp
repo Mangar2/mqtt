@@ -258,7 +258,8 @@ TEST_CASE("http_get_missing_key_returns_error", "[file_store]") {
     httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
     const auto getResponse = client.Get("/file/does-not-exist");
     REQUIRE(getResponse != nullptr);
-    REQUIRE(getResponse->status == 400);
+    REQUIRE(getResponse->status == 404);
+    REQUIRE(getResponse->body.find("code=YAHA_FILE_STORE_KEY_NOT_FOUND") != std::string::npos);
 }
 
 TEST_CASE("http_post_invalid_json_returns_error", "[file_store]") {
@@ -278,6 +279,7 @@ TEST_CASE("http_post_invalid_json_returns_error", "[file_store]") {
     const auto postResponse = client.Post("/file/json", "   ", "application/json");
     REQUIRE(postResponse != nullptr);
     REQUIRE(postResponse->status == 400);
+    REQUIRE(postResponse->body.find("code=YAHA_FILE_STORE_INVALID_JSON_PAYLOAD") != std::string::npos);
 }
 
 TEST_CASE("http_post_invalid_json_token_returns_error", "[file_store]") {
@@ -297,6 +299,7 @@ TEST_CASE("http_post_invalid_json_token_returns_error", "[file_store]") {
     const auto postResponse = client.Post("/file/json", ":bad-json", "application/json");
     REQUIRE(postResponse != nullptr);
     REQUIRE(postResponse->status == 400);
+    REQUIRE(postResponse->body.find("code=YAHA_FILE_STORE_INVALID_JSON_PAYLOAD") != std::string::npos);
 }
 
 TEST_CASE("http_options_returns_cors_headers", "[file_store]") {
@@ -519,8 +522,9 @@ TEST_CASE("http_post_returns_error_when_directory_is_not_writable_directory", "[
     httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
     const auto postResponse = client.Post("/file/fail-write", "payload", "text/plain");
     REQUIRE(postResponse != nullptr);
-    REQUIRE(postResponse->status == 400);
-    REQUIRE(postResponse->body == "Error in request");
+    REQUIRE(postResponse->status == 500);
+    REQUIRE(postResponse->body.find("code=YAHA_FILE_STORE_PERSIST_FAILED") != std::string::npos);
+    REQUIRE(postResponse->body.find("failed to create directory") != std::string::npos);
 }
 
 TEST_CASE("run_invokes_http_start_and_stop_callbacks", "[file_store]") {
