@@ -101,10 +101,10 @@ struct FieldScriptAst {
 };
 
 struct ParseError {
-    std::string message;
+    std::string message{};
     std::size_t tokenIndex{0U};
-    std::string tokenText;
-    std::string sourcePath;
+    std::string tokenText{};
+    std::string sourcePath{};
 };
 
 struct ExpressionParseResult {

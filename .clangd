@@ -18,3 +18,5 @@ Diagnostics:
       - performance-*
     Remove:
       - modernize-use-trailing-return-type
+      - readability-redundant-member-init
+      - readability-redundant-string-init

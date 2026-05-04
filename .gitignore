@@ -1,6 +1,7 @@
 # Build output
 build/
 out/
+deployment/
 data/
 *.profraw
 *.profdata
