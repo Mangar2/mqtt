@@ -48,7 +48,8 @@ namespace {
     return isLineBreak(ch)
         || ch == '\'' || ch == '"'
         || ch == '(' || ch == ')' || ch == ',' || ch == ':'
-        || ch == '=' || ch == '>' || ch == '<' || ch == '!';
+    || ch == '=' || ch == '>' || ch == '<' || ch == '!'
+    || ch == '+' || ch == '-';
 }
 
 [[nodiscard]] std::size_t skipSpaces(const std::string& input, const std::size_t index) {
@@ -57,6 +58,65 @@ namespace {
         probe += 1U;
     }
     return probe;
+}
+
+[[nodiscard]] bool startsWithWord(const std::string& input, const std::size_t index,
+                                  const std::string& word) {
+    if (index + word.size() > input.size()) {
+        return false;
+    }
+    for (std::size_t i = 0U; i < word.size(); ++i) {
+        if (input[index + i] != word[i]) {
+            return false;
+        }
+    }
+
+    const std::size_t after = index + word.size();
+    if (after >= input.size()) {
+        return true;
+    }
+    const char separator = input[after];
+    return isWhitespace(separator) || isTokenBoundaryChar(separator) || startsTwoCharToken(input, after);
+}
+
+[[nodiscard]] bool firstWordContainsSlash(const std::string& input, const std::size_t index) {
+    std::size_t probe = index;
+    while (probe < input.size()) {
+        const char current = input[probe];
+        if (isWhitespace(current) || isTokenBoundaryChar(current) || startsTwoCharToken(input, probe)) {
+            break;
+        }
+        if (current == '/') {
+            return true;
+        }
+        probe += 1U;
+    }
+    return false;
+}
+
+[[nodiscard]] bool startsLogicalOperatorBoundary(const std::string& input, const std::size_t index) {
+    std::size_t probe = skipSpaces(input, index);
+    std::string op;
+    if (startsWithWord(input, probe, "and")) {
+        op = "and";
+    } else if (startsWithWord(input, probe, "or")) {
+        op = "or";
+    } else {
+        return false;
+    }
+
+    probe += op.size();
+    probe = skipSpaces(input, probe);
+    if (probe >= input.size()) {
+        return true;
+    }
+
+    const char next = input[probe];
+    if (next == '\'' || next == '"' || next == '$' || next == '/') {
+        return true;
+    }
+
+    return firstWordContainsSlash(input, probe);
 }
 
 void appendQuotedToken(const std::string& input, std::size_t* index,
@@ -102,6 +162,10 @@ void appendBareToken(const std::string& input, std::size_t* index,
 
         if (isWhitespace(current)) {
             if (!containsSlash) {
+                break;
+            }
+
+            if (startsLogicalOperatorBoundary(input, *index)) {
                 break;
             }
 

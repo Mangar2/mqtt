@@ -78,3 +78,19 @@ TEST_CASE("rules_tree_parser_reports_path_on_expression_error", "[yaha][automati
     REQUIRE(result.errors.empty() == false);
     REQUIRE(result.errors[0].sourcePath == "motion/rules/broken/check");
 }
+
+TEST_CASE("expression_parser_accepts_quoted_time_variables_in_conditions", "[yaha][automation]") {
+    const std::string script = "\"/time\" >= $SYS/motion/cellar/latest + 5 and $SYS/motion/ground/latest > $SYS/motion/cellar/latest";
+
+    const yaha::ExpressionParseResult result = yaha::ExpressionParser::parse(script);
+
+    REQUIRE(result.success);
+}
+
+TEST_CASE("expression_parser_accepts_if_condition_with_spaced_topic_names", "[yaha][automation]") {
+    const std::string script = "if(\"/time\" > \"/sunset\" + outdoor/garden/light stairs/sunset delay and \"/time\" < outdoor/garden/light stairs/off evening, on, off)";
+
+    const yaha::ExpressionParseResult result = yaha::ExpressionParser::parse(script);
+
+    REQUIRE(result.success);
+}

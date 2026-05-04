@@ -78,6 +78,21 @@ Behavior:
 - Aggregates external topic variables across all snippets.
 - Reports parser errors with `sourcePath` context to identify failing snippet.
 
+### JSON reader for parser input
+
+Classes/Types:
+- `RulesTreeJsonReader`
+- `RuleTreeJsonReadResult`
+
+Public contract:
+- `parseJsonText(jsonText) -> RuleTreeJsonReadResult`
+- `parseJsonFile(filePath) -> RuleTreeJsonReadResult`
+
+Behavior:
+- Parses JSON object/array/string/number/bool/null into `RuleTreeNode` tree.
+- Returns structured read errors including line/column position when parsing fails.
+- Intended to validate full fixture files (for example `test/rules.json`) through `RulesTreeParser`.
+
 ### Class `InternalVariables`
 
 | Member | Signature | Notes |
@@ -123,7 +138,10 @@ Error behavior:
 | `expression_parser.cpp` | Single-script expression parser implementation |
 | `rules_tree_parser.h` | Structured tree parser declaration and input node model |
 | `rules_tree_parser.cpp` | Structured tree traversal and snippet parsing implementation |
+| `rules_tree_json_reader.h` | JSON-to-RuleTreeNode reader declaration |
+| `rules_tree_json_reader.cpp` | JSON-to-RuleTreeNode reader implementation |
 | `test/TEST_SPEC.md` | Unit-test specification |
 | `test/expression_tokenizer_test.cpp` | Catch2 unit tests |
 | `test/internal_variables_test.cpp` | Catch2 unit tests for internal variable computation |
 | `test/expression_parser_test.cpp` | Catch2 unit tests for AST parser and tree parser |
+| `test/rules_tree_parser_rules_json_test.cpp` | Catch2 integration tests against `test/rules.json` |

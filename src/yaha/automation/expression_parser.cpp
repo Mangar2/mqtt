@@ -56,6 +56,18 @@ namespace {
     return index == token.size();
 }
 
+[[nodiscard]] bool isTimeNumberToken(const std::string& token) {
+    if (token.empty()) {
+        return false;
+    }
+    for (const char current : token) {
+        if (std::isdigit(static_cast<unsigned char>(current)) == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
 [[nodiscard]] bool isVariableRef(const std::string& token) {
     if (token.find('/') == std::string::npos || token.empty()) {
         return false;
@@ -317,6 +329,21 @@ private:
 
         if (index_ + 1U < tokens_.size() && isIdentifier(peek()) && tokens_[index_ + 1U] == "(") {
             return parseMapCall(errors);
+        }
+
+        if (index_ + 2U < tokens_.size()
+            && isTimeNumberToken(tokens_[index_])
+            && tokens_[index_ + 1U] == ":"
+            && isTimeNumberToken(tokens_[index_ + 2U])) {
+            std::string timeToken = tokens_[index_] + ":" + tokens_[index_ + 2U];
+            index_ += 3U;
+            if (index_ + 1U < tokens_.size()
+                && tokens_[index_] == ":"
+                && isTimeNumberToken(tokens_[index_ + 1U])) {
+                timeToken += ":" + tokens_[index_ + 1U];
+                index_ += 2U;
+            }
+            return makeExpr(ExprNode{.node = LiteralNode{.value = timeToken}});
         }
 
         const std::string token = consume();

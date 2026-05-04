@@ -24,3 +24,5 @@ Unit tests for the first automation step: lexical tokenization of expression DSL
 | `expression_parser_builds_operator_precedence_tree` | precedence correctness for or/and/not/comparison | `a = b and c = d or not e = f` | top AST operator is `or` |
 | `rules_tree_parser_exposes_snippets_by_slash_path` | structured tree traversal and snippet addressing | nested object with `check` and `value` strings | snippets available under slash paths and external topics aggregated |
 | `rules_tree_parser_reports_path_on_expression_error` | path-aware parser error reporting | nested object with invalid `if` call argument count | parse error includes exact snippet source path |
+| `rules_tree_parser_parses_rules_json_without_errors` | end-to-end parser validation against converted fixture file | `test/rules.json` | json reader and rules parser both succeed with zero parse errors |
+| `rules_tree_parser_collects_external_topics_from_rules_json` | external topic collection from full rules tree | `test/rules.json` | external variable set is non-empty and contains known topics |
