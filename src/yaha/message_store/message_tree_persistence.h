@@ -24,10 +24,12 @@ public:
      * @brief Runtime persistence configuration.
      */
     struct Config {
+        static constexpr std::uint32_t k_default_keep_files{5U};
+
         std::filesystem::path directory{"data"};    ///< Snapshot directory.
         std::string filename{"messagestore"};       ///< Snapshot filename prefix.
         std::uint32_t intervalMs{0U};                ///< Periodic persist interval; 0 disables periodic loop.
-        std::uint32_t keepFiles{5U};                 ///< Retain newest N snapshot files.
+        std::uint32_t keepFiles{k_default_keep_files}; ///< Retain newest N snapshot files.
     };
 
     /**
@@ -83,7 +85,7 @@ private:
     Config config_{};
     std::atomic<bool> periodicRunning_{false};
     const MessageTree* periodicTree_{nullptr};
-    std::thread periodicThread_{};
+    std::thread periodicThread_;
 };
 
 } // namespace yaha

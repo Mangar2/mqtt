@@ -146,3 +146,26 @@ uint32_t value{0};  ///< Encoded integer value; must not exceed k_max_value.
 - Use `/ */` block style for all standalone doc blocks (not `///`).
 - Do not repeat what the type signature already says — focus on *why* and *constraints*.
 - Enum values use `///<` trailing comments when the name alone is ambiguous.
+
+## Mandatory completion action get_errors per file
+
+Before declaring any development task as complete, run IDE diagnostics with
+`get_errors` for every changed file individually.
+
+This is mandatory no exceptions.
+
+Required execution sequence:
+
+1. Build the exact list of changed files.
+2. Call `get_errors` with one file path at a time, not only folder-wide checks.
+3. Fix all reported diagnostics.
+4. Re-run `get_errors` again for each changed file until all are clean.
+5. Send explicit completion feedback to the user that this check was executed.
+
+Mandatory user feedback format at completion:
+
+- `get_errors per changed file executed: yes`
+- `files checked: <comma-separated list>`
+- `remaining diagnostics: none` or `remaining diagnostics: <file + short summary>`
+
+Do not mark the task done without this feedback.

@@ -55,6 +55,9 @@ struct MessageTreeNode;
 
 ## Data behavior
 
+- Configuration structs expose named default constants for key defaults
+  (for example server port, history limits, retention count) to avoid literal coupling.
+
 - Tree keys are topic path segments split by `/`.
 - Every update moves previous `{time,value,reason}` into history.
 - History is compressed internally by grouping consecutive equal `value` and `reason`.

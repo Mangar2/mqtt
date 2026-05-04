@@ -180,7 +180,7 @@ const MessageTree::TreeNode* MessageTree::findPath(const std::string& topic) con
     return current;
 }
 
-void MessageTree::appendHistory(NodeData& data) {
+void MessageTree::appendHistory(NodeData& data) const {
     MessageTreeHistoryEntry entry{};
     entry.timeMs = data.timeMs;
     entry.value = data.value;

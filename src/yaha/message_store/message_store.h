@@ -27,15 +27,17 @@ namespace yaha {
  * @brief Runtime configuration for MessageStore component logic.
  */
 struct MessageStoreConfig {
-    SubscriptionMap subscriptions{};                    ///< Topic subscriptions for MQTT transport.
+    static constexpr std::uint16_t k_default_server_port{8090U};
+
+    SubscriptionMap subscriptions;                    ///< Topic subscriptions for MQTT transport.
     std::string cleanupTopic{"$MONITORING/messages/cleanup"}; ///< Cleanup command topic.
     std::string serverHost{"127.0.0.1"};             ///< HTTP server bind host/IP.
     std::string serverPath{"/store"};                 ///< HTTP GET base path.
-    std::uint16_t serverPort{8090U};                   ///< HTTP server listen port.
+    std::uint16_t serverPort{k_default_server_port};   ///< HTTP server listen port.
     MessageTreeConfig treeConfig{};                    ///< MessageTree behavior config.
     MessageTreePersistence::Config persistenceConfig{};///< Persistence behavior config.
-    std::function<void()> httpStartCallback{};         ///< Optional HTTP start callback.
-    std::function<void()> httpStopCallback{};          ///< Optional HTTP stop callback.
+    std::function<void()> httpStartCallback;           ///< Optional HTTP start callback.
+    std::function<void()> httpStopCallback;            ///< Optional HTTP stop callback.
 };
 
 /**
@@ -120,10 +122,10 @@ private:
                                   httplib::Response& response);
 
     MessageStoreConfig config_{};
-    MessageTree tree_{};
-    MessageTreePersistence persistence_{};
-    std::unique_ptr<httplib::Server> httpServer_{};
-    std::thread httpThread_{};
+    MessageTree tree_;
+    MessageTreePersistence persistence_;
+    std::unique_ptr<httplib::Server> httpServer_;
+    std::thread httpThread_;
 
     mutable std::mutex lifecycleStateMutex_;
     mutable std::mutex treeStateMutex_;

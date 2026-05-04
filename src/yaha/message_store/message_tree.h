@@ -21,37 +21,41 @@ namespace yaha {
 struct MessageTreeHistoryEntry {
     std::int64_t timeMs{0};               ///< Wall-clock timestamp of this historic state.
     Value value{std::string{}};           ///< Historic value.
-    std::vector<ReasonEntry> reason{};    ///< Historic reason chain.
+    std::vector<ReasonEntry> reason;      ///< Historic reason chain.
 };
 
 /**
  * @brief Public node representation returned by tree queries.
  */
 struct MessageTreeNode {
-    std::string topic{};                           ///< Full topic path.
+    std::string topic;                             ///< Full topic path.
     std::int64_t timeMs{0};                        ///< Wall-clock timestamp of current value.
     Value value{std::string{}};                    ///< Current value.
-    std::vector<ReasonEntry> reason{};             ///< Current reason chain.
-    std::vector<MessageTreeHistoryEntry> history{};///< Decompressed history entries.
+    std::vector<ReasonEntry> reason;               ///< Current reason chain.
+    std::vector<MessageTreeHistoryEntry> history;  ///< Decompressed history entries.
 };
 
 /**
  * @brief Snapshot node used by diff query mode.
  */
 struct MessageTreeSnapshotNode {
-    std::string topic{};                        ///< Full topic path.
+    std::string topic;                          ///< Full topic path.
     Value value{std::string{}};                 ///< Snapshot value.
-    std::vector<ReasonEntry> reason{};          ///< Snapshot reason chain.
+    std::vector<ReasonEntry> reason;            ///< Snapshot reason chain.
 };
 
 /**
  * @brief Runtime configuration for MessageTree behavior.
  */
 struct MessageTreeConfig {
-    std::uint32_t maxHistoryLength{50U};              ///< Hard limit for decompressed history entries.
-    std::uint32_t historyHysterese{10U};              ///< Batch trim amount once max is exceeded.
-    std::uint32_t maxValuesPerHistoryEntry{256U};     ///< Max repeat compression count per bucket.
-    std::function<std::int64_t()> nowMillisecondsProvider{}; ///< Time source override for tests.
+    static constexpr std::uint32_t k_default_max_history_length{50U};
+    static constexpr std::uint32_t k_default_history_hysterese{10U};
+    static constexpr std::uint32_t k_default_max_values_per_history_entry{256U};
+
+    std::uint32_t maxHistoryLength{k_default_max_history_length}; ///< Hard limit for decompressed history entries.
+    std::uint32_t historyHysterese{k_default_history_hysterese}; ///< Batch trim amount once max is exceeded.
+    std::uint32_t maxValuesPerHistoryEntry{k_default_max_values_per_history_entry}; ///< Max repeat compression count per bucket.
+    std::function<std::int64_t()> nowMillisecondsProvider; ///< Time source override for tests.
 };
 
 /**
@@ -121,16 +125,16 @@ private:
     struct NodeData {
         std::int64_t timeMs{0};                               ///< Current timestamp.
         Value value{std::string{}};                           ///< Current value.
-        std::vector<ReasonEntry> reason{};                    ///< Current reason.
-        std::vector<CompressedHistoryEntry> compressedHistory{}; ///< Compressed historic values.
+        std::vector<ReasonEntry> reason;                      ///< Current reason.
+        std::vector<CompressedHistoryEntry> compressedHistory; ///< Compressed historic values.
     };
 
     /**
      * @brief Internal topic-segment node.
      */
     struct TreeNode {
-        std::string topicPath{};                              ///< Full topic path for this node.
-        std::vector<std::pair<std::string, TreeNode>> children{}; ///< Child segments.
+        std::string topicPath;                                ///< Full topic path for this node.
+        std::vector<std::pair<std::string, TreeNode>> children; ///< Child segments.
         bool hasData{false};                                  ///< True when current data is present.
         NodeData data{};                                      ///< Current data payload.
     };
@@ -159,7 +163,7 @@ private:
      * @brief Appends current node value as compressed history entry.
      * @param data Mutable node data.
      */
-    void appendHistory(NodeData& data);
+    void appendHistory(NodeData& data) const;
 
     /**
      * @brief Applies bounded-history trimming with hysteresis.

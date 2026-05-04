@@ -13,6 +13,8 @@ namespace yaha {
 
 namespace {
 
+constexpr int k_double_precision_digits{17};
+
 std::int64_t wallClockMilliseconds() {
     const auto now = std::chrono::system_clock::now().time_since_epoch();
     return std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
@@ -24,7 +26,7 @@ bool writeValue(std::ofstream& stream, const Value& value) {
         return static_cast<bool>(stream);
     }
 
-    stream << "N " << std::setprecision(17) << std::get<double>(value) << '\n';
+    stream << "N " << std::setprecision(k_double_precision_digits) << std::get<double>(value) << '\n';
     return static_cast<bool>(stream);
 }
 

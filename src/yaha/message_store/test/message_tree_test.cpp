@@ -10,14 +10,20 @@
 
 namespace {
 
+constexpr std::int64_t k_initial_now_ms{1000};
+constexpr std::int64_t k_tick_ms{1000};
+constexpr double k_temperature_before{21.0};
+constexpr double k_temperature_after{22.0};
+constexpr int k_history_last_step{6};
+
 struct FakeClock {
-    std::int64_t nowMs{1000};
+    std::int64_t nowMs{k_initial_now_ms};
 };
 
 yaha::MessageTree makeTree(FakeClock& clock,
-                           std::uint32_t maxHistoryLength = 50U,
-                           std::uint32_t historyHysterese = 10U,
-                           std::uint32_t maxValuesPerHistoryEntry = 256U) {
+                           std::uint32_t maxHistoryLength = yaha::MessageTreeConfig::k_default_max_history_length,
+                           std::uint32_t historyHysterese = yaha::MessageTreeConfig::k_default_history_hysterese,
+                           std::uint32_t maxValuesPerHistoryEntry = yaha::MessageTreeConfig::k_default_max_values_per_history_entry) {
     yaha::MessageTreeConfig config{};
     config.maxHistoryLength = maxHistoryLength;
     config.historyHysterese = historyHysterese;
@@ -54,15 +60,15 @@ TEST_CASE("add_data_updates_move_previous_value_into_history", "[message_store]"
     FakeClock clock{};
     yaha::MessageTree tree = makeTree(clock);
 
-    tree.addData(yaha::Message{"home/living/temp", 21.0});
-    clock.nowMs += 1000;
-    tree.addData(yaha::Message{"home/living/temp", 22.0});
+    tree.addData(yaha::Message{"home/living/temp", k_temperature_before});
+    clock.nowMs += k_tick_ms;
+    tree.addData(yaha::Message{"home/living/temp", k_temperature_after});
 
     const auto nodes = tree.getSection("home/living/temp", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(std::get<double>(nodes.front().value) == 22.0);
+    REQUIRE(std::get<double>(nodes.front().value) == k_temperature_after);
     REQUIRE(nodes.front().history.size() == 1U);
-    REQUIRE(std::get<double>(nodes.front().history.front().value) == 21.0);
+    REQUIRE(std::get<double>(nodes.front().history.front().value) == k_temperature_before);
 }
 
 TEST_CASE("history_is_trimmed_with_hysteresis", "[message_store]") {
@@ -70,8 +76,8 @@ TEST_CASE("history_is_trimmed_with_hysteresis", "[message_store]") {
     yaha::MessageTree tree = makeTree(clock, 3U, 1U);
 
     tree.addData(yaha::Message{"sensor/value", 1.0});
-    for (int step = 2; step <= 6; ++step) {
-        clock.nowMs += 1000;
+    for (int step = 2; step <= k_history_last_step; ++step) {
+        clock.nowMs += k_tick_ms;
         tree.addData(yaha::Message{"sensor/value", static_cast<double>(step)});
     }
 
@@ -83,14 +89,17 @@ TEST_CASE("history_is_trimmed_with_hysteresis", "[message_store]") {
 
 TEST_CASE("history_compresses_repeated_equal_values", "[message_store]") {
     FakeClock clock{};
-    yaha::MessageTree tree = makeTree(clock, 50U, 10U, 2U);
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      2U);
 
     tree.addData(yaha::Message{"sensor/equal", std::string{"steady"}});
-    clock.nowMs += 1000;
+    clock.nowMs += k_tick_ms;
     tree.addData(yaha::Message{"sensor/equal", std::string{"steady"}});
-    clock.nowMs += 1000;
+    clock.nowMs += k_tick_ms;
     tree.addData(yaha::Message{"sensor/equal", std::string{"steady"}});
-    clock.nowMs += 1000;
+    clock.nowMs += k_tick_ms;
     tree.addData(yaha::Message{"sensor/equal", std::string{"steady"}});
 
     const auto nodes = tree.getSection("sensor/equal", 0U, true, true);
@@ -128,7 +137,7 @@ TEST_CASE("get_section_can_exclude_reason_and_history", "[message_store]") {
     first.addReason("origin", "2026-01-01T00:00:00Z");
     tree.addData(first);
 
-    clock.nowMs += 1000;
+    clock.nowMs += k_tick_ms;
     yaha::Message second{"home/r1", std::string{"off"}};
     second.addReason("updated", "2026-01-01T00:00:01Z");
     tree.addData(second);

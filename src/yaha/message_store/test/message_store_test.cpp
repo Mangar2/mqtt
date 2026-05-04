@@ -16,8 +16,19 @@
 
 namespace {
 
+constexpr std::int64_t k_initial_now_ms{1000};
+constexpr std::uint16_t k_fallback_http_port{19090U};
+constexpr int k_http_timeout_microseconds{100000};
+constexpr int k_http_ready_max_attempts{50};
+constexpr int k_http_ready_sleep_ms{10};
+constexpr std::int64_t k_millis_per_day{86400000};
+constexpr std::uint32_t k_periodic_interval_ms{20U};
+constexpr int k_periodic_wait_ms{70};
+constexpr double k_room_temperature_celsius{21.5};
+constexpr double k_snapshot_temperature_celsius{20.0};
+
 struct FakeClock {
-    std::int64_t nowMs{1000};
+    std::int64_t nowMs{k_initial_now_ms};
 };
 
 std::filesystem::path makeTempDirectory() {
@@ -46,7 +57,7 @@ std::size_t countSnapshotFiles(const std::filesystem::path& path) {
 std::uint16_t reserveFreeLocalPort() {
     const int sock = ::socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
-        return 19090U;
+        return k_fallback_http_port;
     }
 
     sockaddr_in addr{};
@@ -56,14 +67,14 @@ std::uint16_t reserveFreeLocalPort() {
 
     if (::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
         ::close(sock);
-        return 19090U;
+        return k_fallback_http_port;
     }
 
     sockaddr_in bound{};
     socklen_t len = sizeof(bound);
     if (::getsockname(sock, reinterpret_cast<sockaddr*>(&bound), &len) != 0) {
         ::close(sock);
-        return 19090U;
+        return k_fallback_http_port;
     }
 
     const std::uint16_t port = ntohs(bound.sin_port);
@@ -73,13 +84,13 @@ std::uint16_t reserveFreeLocalPort() {
 
 bool waitForHttpReady(std::uint16_t port) {
     httplib::Client client{"127.0.0.1", static_cast<int>(port)};
-    client.set_connection_timeout(0, 100000);
-    client.set_read_timeout(0, 100000);
-    for (int i = 0; i < 50; ++i) {
+    client.set_connection_timeout(0, k_http_timeout_microseconds);
+    client.set_read_timeout(0, k_http_timeout_microseconds);
+    for (int attempt = 0; attempt < k_http_ready_max_attempts; ++attempt) {
         if (const auto res = client.Get("/store")) {
             return true;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        std::this_thread::sleep_for(std::chrono::milliseconds{k_http_ready_sleep_ms});
     }
     return false;
 }
@@ -94,7 +105,7 @@ struct StoreCloseGuard {
 };
 
 struct DirectoryCleanupGuard {
-    std::filesystem::path path{};
+    std::filesystem::path path;
     ~DirectoryCleanupGuard() {
         if (!path.empty()) {
             removeDirectoryQuiet(path);
@@ -145,7 +156,7 @@ TEST_CASE("handle_message_cleanup_topic_uses_numeric_payload", "[message_store]"
     yaha::MessageStore store{config};
 
     store.handleMessage(yaha::Message{"old/topic", std::string{"x"}});
-    clock.nowMs += (2 * 86400000);
+    clock.nowMs += (2 * k_millis_per_day);
 
     store.handleMessage(yaha::Message{"$MONITORING/messages/cleanup", 1.0});
 
@@ -177,7 +188,7 @@ TEST_CASE("handle_message_cleanup_topic_accepts_numeric_string_payload", "[messa
     yaha::MessageStore store{config};
 
     store.handleMessage(yaha::Message{"old/topic", std::string{"x"}});
-    clock.nowMs += (2 * 86400000);
+    clock.nowMs += (2 * k_millis_per_day);
     store.handleMessage(yaha::Message{"$MONITORING/messages/cleanup", std::string{"1"}});
 
     const auto nodes = store.querySection("", 5U, false, true);
@@ -194,7 +205,7 @@ TEST_CASE("run_restore_starts_callbacks_and_periodic_persist", "[message_store]"
         yaha::MessageTreePersistence::Config persistConfig{};
         persistConfig.directory = tempDir;
         persistConfig.filename = "state";
-        persistConfig.keepFiles = 5U;
+        persistConfig.keepFiles = yaha::MessageTreePersistence::Config::k_default_keep_files;
 
         yaha::MessageTreePersistence persistence{persistConfig};
         REQUIRE(persistence.persistNow(sourceTree));
@@ -207,7 +218,7 @@ TEST_CASE("run_restore_starts_callbacks_and_periodic_persist", "[message_store]"
     config.serverPort = 0U;
     config.persistenceConfig.directory = tempDir;
     config.persistenceConfig.filename = "state";
-    config.persistenceConfig.intervalMs = 20U;
+    config.persistenceConfig.intervalMs = k_periodic_interval_ms;
     config.httpStartCallback = [&startCount]() {
         startCount += 1U;
     };
@@ -217,7 +228,7 @@ TEST_CASE("run_restore_starts_callbacks_and_periodic_persist", "[message_store]"
 
     yaha::MessageStore store{config};
     store.run();
-    std::this_thread::sleep_for(std::chrono::milliseconds{70});
+    std::this_thread::sleep_for(std::chrono::milliseconds{k_periodic_wait_ms});
     store.close();
 
     const auto restored = store.querySection("restore/topic", 0U, false, true);
@@ -295,7 +306,7 @@ TEST_CASE("http_get_store_returns_json_for_topic_prefix", "[message_store]") {
     yaha::MessageStore store{config};
     StoreCloseGuard guard{&store};
     store.handleMessage(yaha::Message{"home/lamp", std::string{"on"}});
-    store.handleMessage(yaha::Message{"home/temp", 21.5});
+    store.handleMessage(yaha::Message{"home/temp", k_room_temperature_celsius});
     store.run();
 
     REQUIRE(waitForHttpReady(config.serverPort));
@@ -453,7 +464,7 @@ TEST_CASE("http_get_store_snapshot_body_uses_diff_mode", "[message_store]") {
     yaha::MessageStore store{config};
     StoreCloseGuard guard{&store};
     store.handleMessage(yaha::Message{"home/lamp", std::string{"on"}});
-    store.handleMessage(yaha::Message{"home/temp", 20.0});
+    store.handleMessage(yaha::Message{"home/temp", k_snapshot_temperature_celsius});
     store.run();
 
     REQUIRE(waitForHttpReady(config.serverPort));

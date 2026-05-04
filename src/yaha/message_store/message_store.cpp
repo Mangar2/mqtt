@@ -8,12 +8,16 @@
 #include <cmath>
 #include <cstdlib>
 #include <sstream>
-#include <stdexcept>
 #include <utility>
 
 namespace yaha {
 
 namespace {
+
+constexpr int k_hex_alpha_offset{10};
+constexpr int k_http_status_ok{200};
+constexpr int k_http_status_bad_request{400};
+constexpr int k_http_status_not_found{404};
 
 std::string trim(const std::string& value) {
     std::size_t begin = 0U;
@@ -30,8 +34,8 @@ std::string trim(const std::string& value) {
 }
 
 std::string toLower(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char currentChar) {
+        return static_cast<char>(std::tolower(currentChar));
     });
     return value;
 }
@@ -40,20 +44,20 @@ bool startsWith(const std::string& text, const std::string& prefix) {
     return text.size() >= prefix.size() && text.compare(0U, prefix.size(), prefix) == 0;
 }
 
-bool isHexDigit(char c) {
-    return (c >= '0' && c <= '9')
-        || (c >= 'a' && c <= 'f')
-        || (c >= 'A' && c <= 'F');
+bool isHexDigit(char currentChar) {
+    return (currentChar >= '0' && currentChar <= '9')
+        || (currentChar >= 'a' && currentChar <= 'f')
+        || (currentChar >= 'A' && currentChar <= 'F');
 }
 
-int hexValue(char c) {
-    if (c >= '0' && c <= '9') {
-        return c - '0';
+int hexValue(char currentChar) {
+    if (currentChar >= '0' && currentChar <= '9') {
+        return currentChar - '0';
     }
-    if (c >= 'a' && c <= 'f') {
-        return 10 + (c - 'a');
+    if (currentChar >= 'a' && currentChar <= 'f') {
+        return k_hex_alpha_offset + (currentChar - 'a');
     }
-    return 10 + (c - 'A');
+    return k_hex_alpha_offset + (currentChar - 'A');
 }
 
 bool tryDecodePercentEncoding(const std::string& encoded, std::string& decoded) {
@@ -61,9 +65,9 @@ bool tryDecodePercentEncoding(const std::string& encoded, std::string& decoded) 
     decoded.reserve(encoded.size());
 
     for (std::size_t i = 0U; i < encoded.size(); ++i) {
-        const char c = encoded[i];
-        if (c != '%') {
-            decoded.push_back(c);
+        const char currentChar = encoded[i];
+        if (currentChar != '%') {
+            decoded.push_back(currentChar);
             continue;
         }
 
@@ -71,13 +75,13 @@ bool tryDecodePercentEncoding(const std::string& encoded, std::string& decoded) 
             return false;
         }
 
-        const char hi = encoded[i + 1U];
-        const char lo = encoded[i + 2U];
-        if (!isHexDigit(hi) || !isHexDigit(lo)) {
+        const char highNibbleChar = encoded[i + 1U];
+        const char lowNibbleChar = encoded[i + 2U];
+        if (!isHexDigit(highNibbleChar) || !isHexDigit(lowNibbleChar)) {
             return false;
         }
 
-        const int value = (hexValue(hi) << 4) | hexValue(lo);
+        const int value = (hexValue(highNibbleChar) << 4) | hexValue(lowNibbleChar);
         decoded.push_back(static_cast<char>(value));
         i += 2U;
     }
@@ -117,8 +121,8 @@ bool tryParseUnsignedHeader(const std::string& text, std::uint32_t defaultValue,
 std::string jsonEscape(const std::string& text) {
     std::string result;
     result.reserve(text.size());
-    for (char c : text) {
-        switch (c) {
+    for (char currentChar : text) {
+        switch (currentChar) {
             case '\\':
                 result += "\\\\";
                 break;
@@ -135,7 +139,7 @@ std::string jsonEscape(const std::string& text) {
                 result += "\\t";
                 break;
             default:
-                result.push_back(c);
+                result.push_back(currentChar);
                 break;
         }
     }
@@ -310,45 +314,38 @@ private:
             return parseString(ignored);
         }
         if (current == '{') {
-            int depth = 0;
-            do {
-                const char c = peek();
-                if (c == '\0') {
-                    return false;
-                }
-                if (c == '{') {
-                    depth += 1;
-                }
-                if (c == '}') {
-                    depth -= 1;
-                }
-                pos_ += 1U;
-            } while (depth > 0);
-            return true;
+            return skipNestedStructure('{', '}');
         }
         if (current == '[') {
-            int depth = 0;
-            do {
-                const char c = peek();
-                if (c == '\0') {
-                    return false;
-                }
-                if (c == '[') {
-                    depth += 1;
-                }
-                if (c == ']') {
-                    depth -= 1;
-                }
-                pos_ += 1U;
-            } while (depth > 0);
-            return true;
+            return skipNestedStructure('[', ']');
         }
 
+        return skipPrimitiveValue();
+    }
+
+    bool skipNestedStructure(char openChar, char closeChar) {
+        int depth = 0;
+        do {
+            const char currentChar = peek();
+            if (currentChar == '\0') {
+                return false;
+            }
+            if (currentChar == openChar) {
+                depth += 1;
+            }
+            if (currentChar == closeChar) {
+                depth -= 1;
+            }
+            pos_ += 1U;
+        } while (depth > 0);
+        return true;
+    }
+
+    bool skipPrimitiveValue() {
         double ignored = 0.0;
         if (parseNumber(ignored)) {
             return true;
         }
-
         return parseLiteral("true") || parseLiteral("false") || parseLiteral("null");
     }
 
@@ -372,12 +369,12 @@ private:
 
         std::string result;
         while (pos_ < json_.size()) {
-            const char c = json_[pos_++];
-            if (c == '"') {
+            const char currentChar = json_[pos_++];
+            if (currentChar == '"') {
                 out = std::move(result);
                 return true;
             }
-            if (c == '\\') {
+            if (currentChar == '\\') {
                 if (pos_ >= json_.size()) {
                     return false;
                 }
@@ -402,7 +399,7 @@ private:
                 }
                 continue;
             }
-            result.push_back(c);
+            result.push_back(currentChar);
         }
 
         return false;
@@ -595,7 +592,7 @@ void MessageStore::handleHttpRequest(MessageStore& store,
         topicPrefixEncoded = request.path.substr(basePath.size() + 1U);
     } else {
         setHttpErrorResponse(response,
-                             404,
+                             k_http_status_not_found,
                              YahaError{"YAHA_MESSAGE_STORE_HTTP_NOT_FOUND",
                                        "not_found",
                                        "The requested HTTP path was not found.",
@@ -606,7 +603,7 @@ void MessageStore::handleHttpRequest(MessageStore& store,
     std::string topicPrefix;
     if (!tryDecodePercentEncoding(topicPrefixEncoded, topicPrefix)) {
         setHttpErrorResponse(response,
-                             400,
+                             k_http_status_bad_request,
                              YahaError{"YAHA_MESSAGE_STORE_HTTP_INVALID_PERCENT_ENCODING",
                                        "invalid_percent_encoding",
                                        "The request path contains invalid percent encoding.",
@@ -639,7 +636,7 @@ void MessageStore::handleHttpRequest(MessageStore& store,
         }
     }
 
-    response.status = 200;
+    response.status = k_http_status_ok;
     response.set_content(nodesToJson(nodes), "application/json");
 }
 
