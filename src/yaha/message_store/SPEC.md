@@ -3,8 +3,10 @@
 ## Purpose
 
 Provides MessageStore foundations for steps 4 to 7: internal MessageTree data structure,
-persistence service, MessageStore component logic implementing IMqttComponent, and HTTP GET
-query interface via cpp-httplib.
+persistence service, MessageStore component logic implementing IMqttComponent, and HTTP query
+interface (GET + sensor-compatible POST) via cpp-httplib.
+JSON request parsing for snapshot and sensor-compatible payloads is isolated in dedicated
+parser helper files to keep component logic compact.
 The tree stores current topic state, bounded history, section and snapshot diff queries,
 plus stale-node cleanup. Persistence serializes tree state to disk, restores from the most
 recent valid file on startup, and manages periodic saves.
@@ -101,12 +103,19 @@ struct MessageTreeNode;
 
 - `run()` starts an internal cpp-httplib server on `config.serverHost:config.serverPort`.
 - GET path: `<config.serverPath>/<topicPrefix>`; default `serverPath` is `/store`.
+- POST path: same base path, intended for `sensor.php` compatibility payloads.
 - Headers:
   - `levelamount` (default 1)
   - `history` (default false)
   - `reason` (default true)
 - Empty body -> section mode using `getSection`.
 - JSON array body -> snapshot diff mode using `getNodes`.
+- POST JSON object mode:
+  - `topic` maps to topic prefix (`"/a/b"` normalized to `"a/b"`).
+  - `history` and `reason` expect string literals (`"true"` enables, any other value disables).
+  - `levelAmount` supports integer number or integer string; invalid values fall back to 1.
+  - `nodes` property, when present, activates snapshot diff mode with the provided array/object value.
+  - Invalid POST JSON falls back to section query defaults (legacy bridge behavior).
 - Malformed body -> empty result array with status 200.
 - Unknown path -> status 404 with `YahaError` payload code `YAHA_MESSAGE_STORE_HTTP_NOT_FOUND`.
 - Invalid percent-encoding in topic prefix -> status 400 with `YahaError` payload code `YAHA_MESSAGE_STORE_HTTP_INVALID_PERCENT_ENCODING`.
@@ -122,6 +131,8 @@ struct MessageTreeNode;
 | `message_tree_persistence.cpp` | Persistence implementation |
 | `message_store.h` | MessageStore component declarations |
 | `message_store.cpp` | MessageStore component implementation |
+| `message_store_json_parser.h` | JSON parser helper declarations for HTTP request payloads |
+| `message_store_json_parser.cpp` | JSON parser helper implementation for snapshot + sensor POST formats |
 | `test/TEST_SPEC.md` | Unit test specification |
 | `test/message_tree_test.cpp` | Unit tests |
 | `test/message_tree_persistence_test.cpp` | Persistence unit tests |

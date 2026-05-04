@@ -314,9 +314,13 @@ def _select_client_tests(binary: Path) -> list[str]:
 
 
 def _write_selection_file(test_names: list[str]) -> None:
+    def _escape_catch2_filter(name: str) -> str:
+        # Catch2 treats commas as filter separators in input files.
+        return name.replace("\\", "\\\\").replace(",", "\\,")
+
     with open(SELECTION_FILE, "w", encoding="utf-8") as fh:
         for name in test_names:
-            fh.write(name)
+            fh.write(_escape_catch2_filter(name))
             fh.write("\n")
 
 

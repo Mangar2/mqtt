@@ -570,6 +570,100 @@ TEST_CASE("http_get_store_json_output_escapes_special_characters", "[message_sto
     REQUIRE(response->body.find("line1\\nline2\\r\\t\\\"q\\\"\\\\x") != std::string::npos);
 }
 
+TEST_CASE("http_post_store_sensor_payload_uses_topic_and_query_flags", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.handleMessage(yaha::Message{"home/zone1/light", std::string{"off"}});
+    store.handleMessage(yaha::Message{"home/zone1/light", std::string{"on"}});
+    store.handleMessage(yaha::Message{"home/zone1/light/state", std::string{"stable"}});
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+
+    httplib::Request request{};
+    request.method = "POST";
+    request.path = "/store";
+    request.body = R"({"topic":"home","history":"true","reason":"false","levelAmount":2})";
+    request.set_header("Content-Type", "application/json");
+    const auto response = client.send(request);
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 200);
+    REQUIRE(response->body.find("\"topic\":\"home/zone1/light\"") != std::string::npos);
+    REQUIRE(response->body.find("\"history\":[") != std::string::npos);
+    REQUIRE(response->body.find("\"reason\":[]") != std::string::npos);
+}
+
+TEST_CASE("http_post_store_sensor_payload_nodes_activates_diff_mode", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.handleMessage(yaha::Message{"home/lamp", std::string{"on"}});
+    store.handleMessage(yaha::Message{"home/temp", k_snapshot_temperature_celsius});
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+
+    httplib::Request request{};
+    request.method = "POST";
+    request.path = "/store";
+    request.body =
+        R"({"topic":"home","nodes":[{"topic":"home/lamp","value":"off"},{"topic":"home/temp","value":20.0}]})";
+    request.set_header("Content-Type", "application/json");
+    const auto response = client.send(request);
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 200);
+    REQUIRE(response->body.find("\"topic\":\"home/lamp\"") != std::string::npos);
+    REQUIRE(response->body.find("\"topic\":\"home/temp\"") == std::string::npos);
+}
+
+TEST_CASE("http_post_store_invalid_json_falls_back_to_section_query", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.handleMessage(yaha::Message{"home/lamp", std::string{"on"}});
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+
+    httplib::Request request{};
+    request.method = "POST";
+    request.path = "/store/home";
+    request.body = "not-json";
+    request.set_header("Content-Type", "application/json");
+    const auto response = client.send(request);
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 200);
+    REQUIRE(response->body.find("\"topic\":\"home/lamp\"") != std::string::npos);
+}
+
 TEST_CASE("http_get_store_malformed_snapshot_returns_empty_array", "[message_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};
