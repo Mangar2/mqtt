@@ -169,13 +169,17 @@ Implementation requirement for parity:
 prepare behavior:
 1. Create Automation if not provided.
 2. Try readRulesFromFileStore(filestoreOptions) when filestore.use=true.
-3. If file-store read returns null, load local rule file(s) from config.rules.
-4. Call setRules(loadedRuleTree).
+3. Call setRules(loadedRuleTree).
+
+Compatibility note:
+- The previous local file fallback after file-store read failure is retired.
+- Rule loading is now file-store-only when `filestore.use=true`.
 
 ## Local file loading
 
-- If rules is string: parse single JSON file.
-- If rules is array: parse each file in order and shallow-merge objects left-to-right.
+Status:
+- Local file fallback loading is retired compatibility behavior and must not be used.
+- `config.rules` remains schema-compatible for legacy configuration acceptance, but it is not used as runtime fallback source.
 
 ## Runtime persistence
 
@@ -621,7 +625,7 @@ Expected error classes and handling:
 - Action: catch and log; avoid component crash.
 
 3. File-store read error
-- Action: log and fallback to local rule files.
+- Action: log and continue runtime with current/empty in-memory rules; no local file fallback.
 
 4. File-store write error
 - Action: log and continue runtime.
@@ -650,6 +654,7 @@ For a reimplementation to be considered parity-correct, these requirements are m
 8. Incoming messages with value 0 must not be added to event history.
 9. Rule management ack messages must use qos 1.
 10. Startup rule-source precedence must be file-store first, local files fallback.
+10. Startup rule-source is file-store-only when `filestore.use=true`; local fallback is retired.
 11. processTasks must enforce simulation mode match guard.
 
 ## Architectural notes
