@@ -1,0 +1,52 @@
+---
+Checks: >-
+  -*,
+  bugprone-*,
+  cppcoreguidelines-avoid-c-arrays,
+  cppcoreguidelines-interfaces-global-init,
+  cppcoreguidelines-owning-memory,
+  cppcoreguidelines-pro-type-member-init,
+  misc-const-correctness,
+  modernize-loop-convert,
+  modernize-make-unique,
+  modernize-use-auto,
+  modernize-use-nullptr,
+  performance-*,
+  readability-braces-around-statements,
+  readability-const-return-type,
+  readability-identifier-length,
+  readability-misleading-indentation,
+  readability-redundant-control-flow,
+  readability-redundant-smartptr-get,
+  readability-simplify-boolean-expr,
+  readability-static-accessed-through-instance,
+  readability-uniqueptr-delete-release
+WarningsAsErrors: >-
+  bugprone-*,
+  cppcoreguidelines-*,
+  misc-const-correctness,
+  modernize-*,
+  performance-*,
+  readability-*
+HeaderFileExtensions:
+  - h
+  - hh
+  - hpp
+ImplementationFileExtensions:
+  - c
+  - cc
+  - cpp
+  - cxx
+CheckOptions:
+  - key: readability-identifier-length.MinimumVariableNameLength
+    value: "3"
+  - key: readability-identifier-length.MinimumParameterNameLength
+    value: "3"
+  - key: readability-identifier-length.MinimumLoopCounterNameLength
+    value: "3"
+  - key: readability-identifier-length.MinimumExceptionNameLength
+    value: "3"
+  - key: readability-identifier-length.IgnoredVariableNames
+    value: "^_$"
+  - key: readability-braces-around-statements.ShortStatementLines
+    value: "0"

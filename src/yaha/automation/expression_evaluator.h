@@ -1,38 +1,33 @@
 #pragma once
 
+/**
+ * @file expression_evaluator.h
+ * @brief Recursive evaluator for parsed YAHA automation expressions.
+ */
+
 #include <chrono>
 #include <map>
-#include <set>
 #include <string>
 #include <variant>
-#include <vector>
 
+#include "yaha/automation/expression_evaluation_result.h"
 #include "yaha/automation/expression_ast.h"
 
 namespace yaha {
 
-struct MapRuntimeEntry {
-    bool isDefault{false};
-    std::string keyToken;
-    std::variant<std::string, double, bool, std::chrono::system_clock::time_point> value;
-};
-
-struct MapRuntimeValue {
-    std::vector<MapRuntimeEntry> entries;
-};
-
-struct ExpressionEvaluationResult {
-    using Value = std::variant<std::string, double, bool, std::chrono::system_clock::time_point, MapRuntimeValue>;
-
-    bool success{false};
-    Value value{std::string{}};
-    std::set<std::string> usedVariables;
-    std::vector<std::string> errors;
-};
-
+/**
+ * @brief Evaluates parsed field scripts into runtime values.
+ */
 class ExpressionEvaluator {
 public:
+    /**
+     * @brief Value type accepted for external variables.
+     */
     using Value = std::variant<std::string, double, bool, std::chrono::system_clock::time_point>;
+
+    /**
+     * @brief Variable map used as input context during evaluation.
+     */
     using VariableMap = std::map<std::string, Value>;
 
     /**
@@ -40,6 +35,10 @@ public:
      *
      * Declaration lines are evaluated in order and can be referenced by map calls
      * in subsequent declarations and in the result expression.
+     *
+     * @param script Parsed field script AST.
+     * @param variables Runtime values for external variable references.
+     * @return Evaluation result with value, used variables, and possible errors.
      */
     [[nodiscard]] static ExpressionEvaluationResult evaluate(
         const FieldScriptAst& script,

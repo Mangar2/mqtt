@@ -169,7 +169,8 @@ Error behavior:
 | `rules_tree_parser.cpp` | Structured tree traversal and snippet parsing implementation |
 | `rules_tree_json_reader.h` | JSON-to-RuleTreeNode reader declaration |
 | `rules_tree_json_reader.cpp` | JSON-to-RuleTreeNode reader implementation |
-| `expression_evaluator.h` | Recursive AST evaluator declaration and result types |
+| `expression_evaluation_result.h` | Evaluator result type declaration |
+| `expression_evaluator.h` | Recursive AST evaluator declaration |
 | `expression_evaluator.cpp` | Recursive AST evaluator implementation |
 | `test/TEST_SPEC.md` | Unit-test specification |
 | `test/expression_tokenizer_test.cpp` | Catch2 unit tests |

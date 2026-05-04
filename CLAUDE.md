@@ -18,7 +18,7 @@ Only use skills from .claude/commands. Never read or follow skills from VS Code 
 Skills only here:
 
 /build`: build project
-/cpp-dev: C++ development rules, never violate any of these rules
+/cpp-dev: C++20 rules, never violate, check after each created or changed file hat you followed all rules without any acception
 /unit-test: unit testing
 /integration-test: integration testing
 /code-create: workflow coding
