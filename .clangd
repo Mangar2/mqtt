@@ -18,4 +18,3 @@ Diagnostics:
       - performance-*
     Remove:
       - modernize-use-trailing-return-type
-      - readability-magic-numbers
