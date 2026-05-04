@@ -4,6 +4,7 @@
 
 Defines the HTTP request and response contract used by mqtt-utils for MQTT operations in interface version 1.0.
 This document describes only version 1.0 behavior and data shapes.
+It also defines a legacy browser publish compatibility profile so `publish.php` is no longer required.
 
 ## Scope
 
@@ -20,6 +21,10 @@ Covered shared contract elements:
 
 - shared headers and result types from interfaces.ts
 - dispatcher behavior in index.ts for selecting the version implementation
+
+Covered compatibility bridge:
+
+- direct HTTP browser publish contract replacing `publish.php`
 
 ## Shared Types And Headers
 
@@ -163,6 +168,69 @@ Return object:
 - payload: empty string
 
 ## Publish 1.0
+
+### Direct HTTP Compatibility Profile (publish.php Replacement)
+
+This profile is normative for server implementations that want to remove the PHP bridge while keeping browser/client behavior compatible.
+
+Required endpoints:
+
+- `POST /publish` (compatibility entrypoint)
+- `POST /publish.php` (legacy alias; optional to disable by deployment flag, enabled by default)
+- `PUT /publish` (native v1.0 publish endpoint)
+
+For `POST /publish` and `POST /publish.php`:
+
+- accepted content types:
+  - `application/x-www-form-urlencoded`
+  - `application/json`
+  - `text/plain` containing JSON object
+- accepted input fields:
+  - `topic` (required)
+  - `value` (optional, forwarded as-is)
+  - `reason` (optional)
+  - `qos` (optional, default is `1`)
+  - `retain` (optional, default is `0`)
+
+Input extraction rules (PHP-compatible):
+
+- first read `topic` and `value` from form/query-style fields
+- if `topic` is empty and body is non-empty, parse JSON and read `topic` and `value` from body
+- `topic` normalization must decode `%2F` to `/` (case-insensitive)
+- when `topic` is still empty after parsing, return `400` JSON error payload
+
+Reason defaulting rules:
+
+- if no `reason` was provided, implementation must generate:
+  - `reason: [{"message":"Request by browser","timestamp":"<RFC3339/ISO-8601>"}]`
+- if `reason` is provided and valid, forward unchanged
+
+Publish mapping rules:
+
+- compatibility POST must be mapped internally to Publish 1.0 processing
+- mapped message payload must contain exactly:
+  - `topic`
+  - `value`
+  - `reason`
+- mapped headers must include:
+  - `qos` (default `1`)
+  - `retain` (default `0`)
+  - `version: 1.0`
+
+Compatibility response rules:
+
+- on successful publish mapping and processing, return one of:
+  - native mode: `204` with empty payload (same as `PUT /publish`), or
+  - legacy PHP-compatible mode: `200` with `application/json` payload containing `JSON.stringify(<downstream payload string>)`
+- deployments that replace browser calls to `/publish` directly should use native mode
+- deployments that must stay wire-compatible with existing `publish.php` callers must use legacy PHP-compatible mode for `/publish.php`
+
+Error handling rules:
+
+- invalid JSON body: `400`
+- missing/empty topic: `400`
+- unsupported method: `405`
+- internal publish processing failure: `500`
 
 ### Request Builder
 

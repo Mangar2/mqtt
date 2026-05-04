@@ -12,6 +12,7 @@ directly here — each sub-topic has its own subdirectory.
 | `ini/`       | shared | Generic INI parser with section/key multi-value support reusable across YAHA clients. |
 | `mqtt_component/` | 2 | Transport-agnostic IMqttComponent interface used by MQTT session/client wiring. |
 | `mqtt_client/` | 3 | Reusable YahaMqttClient MQTT session loop with reconnect, subscribe replay, inbound dispatch, and keep-alive. |
+| `http_mqtt_interface/` | http mqtt interface phase 1 | Shared HTTP MQTT request/response contracts and low-level header/payload validators reused by all HTTP MQTT operations. |
 | `broker_connector/` | broker connector phase 3 | Source HTTP adapter plus IMqttComponent relay component for source-to-target forwarding core. |
 | `broker_connector_client/` | broker connector phase 4 | Standalone process config mapping for broker connector composition using generic mqtt runtime modules. |
 | `file_store/` | filestore phase 1 | FileStore IMqttComponent with HTTP key/value API and MQTT monitoring publishes for file changes. |
