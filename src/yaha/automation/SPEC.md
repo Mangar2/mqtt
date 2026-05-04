@@ -142,6 +142,24 @@ Behavior:
 Error behavior:
 - Fails on invalid rule structure, parse/evaluation errors, unsupported value result type, or invalid qos values.
 
+### Whole rule-tree processor
+
+Class:
+- `RulesTreeProcessor`
+
+Public contract:
+- `process(root, variables) -> RulesTreeProcessingResult`
+
+Behavior:
+- Traverses the complete structured rules tree recursively.
+- Treats every object that contains `topic` as one rule object.
+- Processes each discovered rule via `SingleRuleProcessor`.
+- Aggregates outbound messages, used variables, processed/triggered counters, and path-aware errors.
+- Continues processing remaining rules even if one rule fails.
+
+Error behavior:
+- Returns `success=false` when one or more rules fail, while still returning valid results from successful rules.
+
 ### Class `InternalVariables`
 
 | Member | Signature | Notes |
@@ -195,6 +213,8 @@ Error behavior:
 | `expression_evaluator.cpp` | Recursive AST evaluator implementation |
 | `single_rule_processor.h` | End-to-end processing declaration for one full rule |
 | `single_rule_processor.cpp` | End-to-end processing implementation for one full rule |
+| `rules_tree_processor.h` | End-to-end processing declaration for complete rule tree |
+| `rules_tree_processor.cpp` | End-to-end processing implementation for complete rule tree |
 | `test/TEST_SPEC.md` | Unit-test specification |
 | `test/expression_tokenizer_test.cpp` | Catch2 unit tests |
 | `test/internal_variables_test.cpp` | Catch2 unit tests for internal variable computation |
@@ -202,3 +222,4 @@ Error behavior:
 | `test/rules_tree_parser_rules_json_test.cpp` | Catch2 integration tests against `test/rules.json` |
 | `test/expression_evaluator_test.cpp` | Catch2 unit tests for recursive expression evaluation |
 | `test/single_rule_processor_test.cpp` | Catch2 unit tests for full single-rule processing |
+| `test/rules_tree_processor_test.cpp` | Catch2 unit tests for full rule-tree processing |

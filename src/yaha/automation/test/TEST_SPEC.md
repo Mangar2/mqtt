@@ -35,3 +35,5 @@ Unit tests for the first automation step: lexical tokenization of expression DSL
 | `single_rule_processor_returns_no_message_when_check_is_false` | complete rule where condition is false | rule object with false check and value | success with triggered=false and no outbound message |
 | `single_rule_processor_reports_invalid_rule_structure` | required field validation | rule object without topic field | processing fails with structure error |
 | `single_rule_processor_reports_expression_errors` | expression parse validation in check field | rule object with invalid check expression | processing fails with parse/evaluation errors |
+| `rules_tree_processor_processes_all_rules_in_tree` | end-to-end processing over complete rules tree | root tree containing two rule objects and runtime variables | processed/triggered counters and emitted messages match expected outcomes |
+| `rules_tree_processor_collects_path_aware_errors_and_keeps_valid_results` | mixed valid and invalid rules in one tree | root tree with one valid and one invalid rule object | returns error list with path context while preserving message from valid rule |
