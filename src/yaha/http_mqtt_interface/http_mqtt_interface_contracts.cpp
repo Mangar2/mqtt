@@ -105,7 +105,7 @@ std::string requireHeaderValue(
     return *headerValue;
 }
 
-std::optional<std::uint16_t> tryParsePacketId(const std::string_view packetIdText) {
+std::optional<std::uint16_t> parsePacketId(const std::string_view packetIdText) {
     const std::string cleanedText = trimCopy(packetIdText);
     if (cleanedText.empty()) {
         return std::nullopt;
@@ -123,13 +123,13 @@ std::optional<std::uint16_t> tryParsePacketId(const std::string_view packetIdTex
     return static_cast<std::uint16_t>(parsedPacketId);
 }
 
-std::optional<std::uint16_t> tryReadPacketIdHeader(const HttpMqttHeaders& headersInput) {
+std::optional<std::uint16_t> readPacketIdHeader(const HttpMqttHeaders& headersInput) {
     const auto headerValue = tryReadHeaderValue(headersInput, k_packetIdName);
     if (!headerValue.has_value()) {
         return std::nullopt;
     }
 
-    return tryParsePacketId(*headerValue);
+    return parsePacketId(*headerValue);
 }
 
 std::string resolveVersion(const HttpMqttHeaders& headersInput, const std::string_view defaultVersion) {

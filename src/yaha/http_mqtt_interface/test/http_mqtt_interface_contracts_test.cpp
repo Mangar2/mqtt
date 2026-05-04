@@ -30,7 +30,7 @@ TEST_CASE("header_lookup_is_case_insensitive", "[http_mqtt_interface]") {
     REQUIRE(contentType.has_value());
     REQUIRE(*contentType == "application/json; charset=UTF-8");
 
-    const auto packetIdentifier = yaha::tryReadPacketIdHeader(headersMap);
+    const auto packetIdentifier = yaha::readPacketIdHeader(headersMap);
     REQUIRE(packetIdentifier.has_value());
     REQUIRE(*packetIdentifier == 42U);
 }
@@ -48,16 +48,16 @@ TEST_CASE("require_header_throws_for_missing_key", "[http_mqtt_interface]") {
 }
 
 TEST_CASE("packet_id_parser_accepts_valid_decimal", "[http_mqtt_interface]") {
-    const auto packetIdentifier = yaha::tryParsePacketId("65535");
+    const auto packetIdentifier = yaha::parsePacketId("65535");
 
     REQUIRE(packetIdentifier.has_value());
     REQUIRE(*packetIdentifier == 65535U);
 }
 
 TEST_CASE("packet_id_parser_rejects_invalid_text", "[http_mqtt_interface]") {
-    REQUIRE_FALSE(yaha::tryParsePacketId("-1").has_value());
-    REQUIRE_FALSE(yaha::tryParsePacketId("65a").has_value());
-    REQUIRE_FALSE(yaha::tryParsePacketId("70000").has_value());
+    REQUIRE_FALSE(yaha::parsePacketId("-1").has_value());
+    REQUIRE_FALSE(yaha::parsePacketId("65a").has_value());
+    REQUIRE_FALSE(yaha::parsePacketId("70000").has_value());
 }
 
 TEST_CASE("resolve_version_uses_default_when_absent", "[http_mqtt_interface]") {

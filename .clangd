@@ -12,7 +12,11 @@ CompileFlags:
 Diagnostics:
   # Suppress noisy clang-tidy checks that are not relevant for this project.
   ClangTidy:
+    # Run the full clang-tidy set (not only fast checks), so style checks
+    # like modernize-raw-string-literal appear as diagnostics in Problems.
+    FastCheckFilter: Loose
     Add:
+      - modernize-raw-string-literal
       - modernize-*
       - readability-*
       - performance-*

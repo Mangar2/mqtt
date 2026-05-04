@@ -110,14 +110,14 @@ struct HttpMqttRequestData {
  * @param packetIdText Packet id text.
  * @return Parsed packet id when valid, otherwise nullopt.
  */
-[[nodiscard]] std::optional<std::uint16_t> tryParsePacketId(std::string_view packetIdText);
+[[nodiscard]] std::optional<std::uint16_t> parsePacketId(std::string_view packetIdText);
 
 /**
  * @brief Reads and parses packet id from one header map.
  * @param headersInput Header map.
  * @return Parsed packet id when present and valid, otherwise nullopt.
  */
-[[nodiscard]] std::optional<std::uint16_t> tryReadPacketIdHeader(const HttpMqttHeaders& headersInput);
+[[nodiscard]] std::optional<std::uint16_t> readPacketIdHeader(const HttpMqttHeaders& headersInput);
 
 /**
  * @brief Resolves version from headers with fallback default.

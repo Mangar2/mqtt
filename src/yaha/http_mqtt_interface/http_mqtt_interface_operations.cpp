@@ -11,7 +11,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 namespace yaha {
@@ -141,19 +140,18 @@ constexpr std::size_t k_escapeReservePadding{8U};
     return false;
 }
 
-[[nodiscard]] bool tryExtractStringField(
+[[nodiscard]] std::optional<std::string> tryExtractStringField(
     const std::string_view objectText,
-    const std::string_view keyName,
-    std::string& outputValue) {
+    const std::string_view keyName) {
     const std::string keyToken = std::format("\"{}\"", keyName);
     const std::size_t keyPosition = objectText.find(keyToken);
     if (keyPosition == std::string::npos) {
-        return false;
+        return std::nullopt;
     }
 
     std::size_t cursorIndex = objectText.find(':', keyPosition + keyToken.size());
     if (cursorIndex == std::string::npos) {
-        return false;
+        return std::nullopt;
     }
     ++cursorIndex;
 
@@ -161,7 +159,7 @@ constexpr std::size_t k_escapeReservePadding{8U};
         ++cursorIndex;
     }
     if (cursorIndex >= objectText.size() || objectText[cursorIndex] != '"') {
-        return false;
+        return std::nullopt;
     }
 
     ++cursorIndex;
@@ -171,36 +169,34 @@ constexpr std::size_t k_escapeReservePadding{8U};
         if (currentChar == '\\') {
             ++cursorIndex;
             if (cursorIndex >= objectText.size()) {
-                return false;
+                return std::nullopt;
             }
             parsedText.push_back(objectText[cursorIndex]);
             ++cursorIndex;
             continue;
         }
         if (currentChar == '"') {
-            outputValue = std::move(parsedText);
-            return true;
+            return parsedText;
         }
         parsedText.push_back(currentChar);
         ++cursorIndex;
     }
 
-    return false;
+    return std::nullopt;
 }
 
-[[nodiscard]] bool tryExtractIntegerField(
+[[nodiscard]] std::optional<int> tryExtractIntegerField(
     const std::string_view objectText,
-    const std::string_view keyName,
-    int& outputValue) {
+    const std::string_view keyName) {
     const std::string keyToken = std::format("\"{}\"", keyName);
     const std::size_t keyPosition = objectText.find(keyToken);
     if (keyPosition == std::string::npos) {
-        return false;
+        return std::nullopt;
     }
 
     std::size_t cursorIndex = objectText.find(':', keyPosition + keyToken.size());
     if (cursorIndex == std::string::npos) {
-        return false;
+        return std::nullopt;
     }
     ++cursorIndex;
 
@@ -208,7 +204,7 @@ constexpr std::size_t k_escapeReservePadding{8U};
         ++cursorIndex;
     }
     if (cursorIndex >= objectText.size()) {
-        return false;
+        return std::nullopt;
     }
 
     std::size_t endIndex = cursorIndex;
@@ -218,7 +214,7 @@ constexpr std::size_t k_escapeReservePadding{8U};
     }
 
     if (endIndex <= cursorIndex) {
-        return false;
+        return std::nullopt;
     }
 
     int parsedValue = 0;
@@ -226,11 +222,10 @@ constexpr std::size_t k_escapeReservePadding{8U};
     const auto* endPtr = objectText.data() + static_cast<std::ptrdiff_t>(endIndex);
     const auto parseResult = std::from_chars(beginPtr, endPtr, parsedValue);
     if (parseResult.ec != std::errc{} || parseResult.ptr != endPtr) {
-        return false;
+        return std::nullopt;
     }
 
-    outputValue = parsedValue;
-    return true;
+    return parsedValue;
 }
 
 [[nodiscard]] std::string serializeTopics(const HttpMqttTopics& topicsInput) {
@@ -348,7 +343,7 @@ void validatePacketIdMatch(
         return;
     }
 
-    const auto receivedPacketId = tryReadPacketIdHeader(resultInput.headers);
+    const auto receivedPacketId = readPacketIdHeader(resultInput.headers);
     if (!receivedPacketId.has_value() || receivedPacketId != expectedPacketId) {
         throw std::runtime_error{std::format("{}: packetid mismatch", contextText)};
     }
@@ -405,19 +400,18 @@ void validatePacketIdMatch(
         validateHeaderEquals(resultInput, "packet", "connack", "connect result");
         requireJsonObjectPayload(resultInput.payload, "connect result");
 
-        int presentValue = -1;
-        if (!tryExtractIntegerField(resultInput.payload, "present", presentValue) ||
-            (presentValue != 0 && presentValue != 1)) {
+        const std::optional<int> presentValue = tryExtractIntegerField(resultInput.payload, "present");
+        if (!presentValue.has_value() || (*presentValue != 0 && *presentValue != 1)) {
             throw std::runtime_error{"connect result: present must be 0 or 1"};
         }
 
-        int mqttCode = 0;
-        if (tryExtractIntegerField(resultInput.payload, "mqttcode", mqttCode)) {
-            if (mqttCode == 0) {
+        const std::optional<int> mqttCode = tryExtractIntegerField(resultInput.payload, "mqttcode");
+        if (mqttCode.has_value()) {
+            if (*mqttCode == 0) {
                 return;
             }
-            if (mqttCode >= 1 && mqttCode <= k_connectCodeMax) {
-                throw std::runtime_error{mqttCodeErrorMessage(mqttCode)};
+            if (*mqttCode >= 1 && *mqttCode <= k_connectCodeMax) {
+                throw std::runtime_error{mqttCodeErrorMessage(*mqttCode)};
             }
             throw std::runtime_error{"connect result: invalid mqttcode"};
         }
@@ -429,11 +423,10 @@ void validatePacketIdMatch(
         }
 
         const std::string tokenObject = resultInput.payload.substr(tokenStart, tokenEnd - tokenStart + 1U);
-        std::string sendToken{};
-        std::string receiveToken{};
-        if (!tryExtractStringField(tokenObject, "send", sendToken) ||
-            !tryExtractStringField(tokenObject, "receive", receiveToken) ||
-            sendToken.empty() || receiveToken.empty()) {
+        const std::optional<std::string> sendToken = tryExtractStringField(tokenObject, "send");
+        const std::optional<std::string> receiveToken = tryExtractStringField(tokenObject, "receive");
+        if (!sendToken.has_value() || !receiveToken.has_value() ||
+            sendToken->empty() || receiveToken->empty()) {
             throw std::runtime_error{"connect result: token.send and token.receive must be strings"};
         }
     };
@@ -546,7 +539,7 @@ void validatePacketIdMatch(
         resultOutput.headers["retain"] = *retainHeader;
     }
 
-    const auto packetId = tryReadPacketIdHeader(headersInput);
+    const auto packetId = readPacketIdHeader(headersInput);
     if (packetId.has_value()) {
         resultOutput.packetId = packetId;
         resultOutput.headers["packetid"] = std::to_string(*packetId);
@@ -595,7 +588,7 @@ void validatePacketIdMatch(
     resultOutput.headers["packet"] = "pubcomp";
     resultOutput.payload.clear();
 
-    const auto packetId = tryReadPacketIdHeader(headersInput);
+    const auto packetId = readPacketIdHeader(headersInput);
     if (packetId.has_value()) {
         resultOutput.packetId = packetId;
         resultOutput.headers["packetid"] = std::to_string(*packetId);
@@ -644,7 +637,7 @@ void validatePacketIdMatch(
     resultOutput.headers["version"] = std::string{k_versionValue};
     resultOutput.headers["packet"] = "suback";
 
-    const auto packetId = tryReadPacketIdHeader(headersInput);
+    const auto packetId = readPacketIdHeader(headersInput);
     if (packetId.has_value()) {
         resultOutput.packetId = packetId;
         resultOutput.headers["packetid"] = std::to_string(*packetId);
@@ -701,7 +694,7 @@ void validatePacketIdMatch(
     resultOutput.headers["version"] = std::string{k_versionValue};
     resultOutput.headers["packet"] = "unsuback";
 
-    const auto packetId = tryReadPacketIdHeader(headersInput);
+    const auto packetId = readPacketIdHeader(headersInput);
     if (packetId.has_value()) {
         resultOutput.packetId = packetId;
         resultOutput.headers["packetid"] = std::to_string(*packetId);
