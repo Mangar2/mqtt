@@ -2,7 +2,7 @@
 
 ## Scope
 
-Unit tests for shared HTTP MQTT contract types and validation helpers.
+Unit tests for shared HTTP MQTT contract types, validation helpers, and phase-2 dispatcher behavior.
 
 ## Test cases
 
@@ -17,3 +17,9 @@ Unit tests for shared HTTP MQTT contract types and validation helpers.
 | `resolve_version_uses_default_when_absent` | Version fallback is applied | headers without `version` | returns provided fallback |
 | `require_json_object_payload_accepts_trimmed_object` | JSON object shape validation accepts trimmed object text | payload with spaces around object | no exception |
 | `require_json_object_payload_rejects_non_object` | JSON object shape validation rejects arrays and plain text | payload `[1,2]` | throws deterministic payload-shape error |
+| `dispatcher_get_version_defaults_to_0_0` | Dispatcher uses `0.0` fallback when header missing | headers without `version`, onPublish map with `0.0` | returns `0.0` |
+| `dispatcher_get_version_throws_for_undefined_version` | Dispatcher rejects unsupported version | headers with `version=9.9`, onPublish map without `9.9` | throws `undefined version 9.9` |
+| `interfaces_on_publish_dispatches_by_resolved_version` | Facade dispatches onPublish via header version | registry with `publishResponses[1.0]` and headers `version=1.0` | selected handler result is returned |
+| `interfaces_on_publish_uses_0_0_fallback` | Facade onPublish supports missing version fallback | registry with `publishResponses[0.0]` and headers without version | `0.0` handler is used |
+| `interfaces_publish_request_dispatches_by_explicit_version` | Request-side publish dispatch uses explicit version argument | registry with `publishRequests[1.0]` and call `publish(1.0,...)` | selected request builder result is returned |
+| `interfaces_on_connect_and_on_disconnect_use_dispatcher_version` | Other `onX` methods use same dispatcher version rule | registry with `publishResponses[1.0]`, `connectResponses[1.0]`, `disconnectResponses[1.0]` | both handlers are selected for headers `version=1.0` |
