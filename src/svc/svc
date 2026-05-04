@@ -6,9 +6,11 @@ usage() {
     cat <<'EOF'
 Usage:
     svc list [pattern]
+    svc log <service> [lines]
 
 Subcommands:
     list    Show PM2-like overview for system services (default filter: yaha)
+    log     Follow service logs via journalctl (default lines: 100)
 EOF
 }
 
@@ -142,13 +144,55 @@ list_services() {
     done <<< "$services"
 }
 
+normalize_service_unit() {
+    local service_name="$1"
+
+    if [[ -z "$service_name" ]]; then
+        printf '%s' ""
+        return
+    fi
+
+    if [[ "$service_name" == *.service ]]; then
+        printf '%s' "$service_name"
+    else
+        printf '%s.service' "$service_name"
+    fi
+}
+
+follow_service_logs() {
+    ensure_dependencies
+
+    local service_name="${1:-}"
+    local lines="${2:-100}"
+    local unit
+
+    if [[ -z "$service_name" ]]; then
+        echo "error: missing service name (example: svc log yahabrokerconnectorclient)" >&2
+        exit 1
+    fi
+
+    if ! [[ "$lines" =~ ^[0-9]+$ ]]; then
+        echo "error: lines must be a non-negative integer" >&2
+        exit 1
+    fi
+
+    unit="$(normalize_service_unit "$service_name")"
+
+    echo "Following logs for ${unit} (press Ctrl+C to stop)..."
+    journalctl -u "$unit" -n "$lines" -f --no-pager
+}
+
 main() {
     local cmd="${1:-}"
     local arg1="${2:-}"
+    local arg2="${3:-}"
 
     case "$cmd" in
         list)
             list_services "$arg1"
+            ;;
+        log)
+            follow_service_logs "$arg1" "$arg2"
             ;;
         -h|--help|help|"")
             usage

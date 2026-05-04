@@ -107,6 +107,21 @@ Any unknown CLI flag causes startup failure.
 | `<config-path>` | positional path | `broker.ini` | Optional path to BrokerConnector INI config. |
 | `-h`, `--help` | flag | off | Prints CLI usage and exits successfully. |
 
+`yahaautomationclient` accepts one optional positional config path and one optional flag:
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `<config-path>` | positional path | `broker.ini` | Optional path to Automation client INI config. |
+| `--trace-messages` | flag | off | Enables MQTT transport sent/received trace lines in runtime client. |
+| `-h`, `--help` | flag | off | Prints CLI usage and exits successfully. |
+
+Automation client INI sections:
+
+- `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs)
+- `[filestore]`: `use`, `host`, `port`, `path`
+- `[monitoring]`: `topicPrefix`
+- `[automation]`: `topicPrefix`, `managementTopicPrefix`, `longitude`, `latitude`, `subscribeQoS`, `logIncomingMessages`, `logOutgoingMessages`
+
 BrokerConnector INI sections:
 
 - `[sourceHttpBroker]`: `host`, `port`, `clientId`, `clean`, `keepAliveSeconds`, `listenerHost`, `listenerBindHost`, `listenerPort`

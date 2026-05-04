@@ -70,6 +70,11 @@ void printStartupConfiguration(const std::filesystem::path& configPath,
     std::cout << "  topics: monitorPrefix=" << runtimeConfig.automationConfig.monitorTopicPrefix
               << " managementPrefix=" << runtimeConfig.automationConfig.managementTopicPrefix
               << '\n';
+    std::cout << "  logging: incoming="
+              << (runtimeConfig.automationConfig.logIncomingMessages ? "1" : "0")
+              << " outgoing="
+              << (runtimeConfig.automationConfig.logOutgoingMessages ? "1" : "0")
+              << '\n';
     std::cout << std::flush;
 }
 

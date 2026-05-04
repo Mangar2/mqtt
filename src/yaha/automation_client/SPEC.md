@@ -23,6 +23,8 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
 | `longitude` | `double` | `0.0` | Geo longitude for internal variables |
 | `latitude` | `double` | `0.0` | Geo latitude for internal variables |
 | `subscribeQos` | `Qos` | `Qos::AtLeastOnce` | Subscription qos for monitor/management channels |
+| `logIncomingMessages` | `bool` | `false` | Logs incoming MQTT messages handled by automation client |
+| `logOutgoingMessages` | `bool` | `false` | Logs outgoing MQTT messages emitted by automation client |
 
 ### Class `AutomationClientComponent` : `IMqttComponent`
 
@@ -75,6 +77,9 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
   - It processes complete rule tree with `RulesTreeProcessor`.
   - Produced rule output messages are published via callback.
   - Produced outputs are reflected back into runtime variable map.
+- Logging behavior:
+  - If `logIncomingMessages=true`, each inbound message handled by component is logged.
+  - If `logOutgoingMessages=true`, each outbound rule/ack message sent via callback is logged.
 
 ## Files
 

@@ -125,6 +125,10 @@ Optional:
   - host: string
   - port: string or integer
 
+Automation client standalone optional logging switches (`[automation]`):
+- logIncomingMessages: boolean
+- logOutgoingMessages: boolean
+
 Unknown config properties are not allowed by schema.
 
 ## Defaults
@@ -141,6 +145,9 @@ Unknown config properties are not allowed by schema.
   - path: /automation/rules
   - host: localhost
   - port: 8210
+- automation client logging:
+  - logIncomingMessages: false
+  - logOutgoingMessages: false
 
 ## Config semantics
 
@@ -150,6 +157,8 @@ Unknown config properties are not allowed by schema.
 - rules can be one file or multiple files.
 - filestore.use=true activates file-store-first rule loading and write-back on rule updates.
 - Timezone is not configurable in Automation config.
+- logIncomingMessages enables logging for all incoming messages handled by Automation client runtime.
+- logOutgoingMessages enables logging for all outgoing rule and acknowledgment messages emitted by Automation client runtime.
 
 ## Temporal basis and timezone behavior
 
@@ -636,6 +645,16 @@ Expected error classes and handling:
 6. Local file parse/read error while loading rule files
 - Action: log; resulting rule tree may be partial/empty based on successful files.
 
+## Logging capability parity
+
+Automation client logging capabilities must be parity-compatible with legacy automation client behavior for inbound and outbound message tracing.
+
+Mandatory implementation requirements:
+- Incoming message logging can be enabled/disabled at runtime via `automation.logIncomingMessages` INI setting.
+- Outgoing message logging can be enabled/disabled at runtime via `automation.logOutgoingMessages` INI setting.
+- Both settings default to `false` when omitted.
+- When enabled, logging must include topic, value, qos, and retain fields for each message direction.
+
 ## Deterministic compatibility requirements
 
 For a reimplementation to be considered parity-correct, these requirements are mandatory:
@@ -655,6 +674,7 @@ For a reimplementation to be considered parity-correct, these requirements are m
 9. Rule management ack messages must use qos 1.
 10. Startup rule-source is file-store-only when `filestore.use=true`; local fallback is retired.
 11. processTasks must enforce simulation mode match guard.
+12. Incoming/outgoing logging toggles must exist with defaults disabled and must log message topic/value/qos/retain when enabled.
 
 ## Architectural notes
 

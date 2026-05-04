@@ -40,6 +40,8 @@ struct AutomationClientConfig {
     double longitude{0.0};                                              ///< Geo longitude for internal variables.
     double latitude{0.0};                                               ///< Geo latitude for internal variables.
     Qos subscribeQos{Qos::AtLeastOnce};                                ///< Requested QoS for subscriptions.
+    bool logIncomingMessages{false};                                    ///< Logs all incoming messages handled by automation client.
+    bool logOutgoingMessages{false};                                    ///< Logs all outgoing messages published by automation client.
 };
 
 /**
@@ -127,6 +129,32 @@ private:
     [[nodiscard]] static std::optional<RuleTreeNode> parseJsonNode(const std::string& payload);
     [[nodiscard]] static std::string toJsonText(const RuleTreeNode& node);
     [[nodiscard]] static ExpressionEvaluator::Value messageValueToExpressionValue(const Value& messageValue);
+
+    /**
+     * @brief Converts message payload value into stable logging text.
+     * @param messageValue MQTT message payload value.
+     * @return Printable payload text.
+     */
+    [[nodiscard]] static std::string valueToLogText(const Value& messageValue);
+
+    /**
+     * @brief Converts QoS enum into numeric logging text.
+     * @param qosValue QoS value from message.
+     * @return QoS as decimal string.
+     */
+    [[nodiscard]] static std::string qosToLogText(Qos qosValue);
+
+    /**
+     * @brief Logs one incoming message when incoming tracing is enabled.
+     * @param message Message observed on inbound processing path.
+     */
+    void logIncomingMessageIfEnabled(const Message& message) const;
+
+    /**
+     * @brief Logs one outgoing message when outgoing tracing is enabled.
+     * @param message Message emitted on outbound processing path.
+     */
+    void logOutgoingMessageIfEnabled(const Message& message) const;
 
     void publishManagementAck(const std::string& ruleName, const std::string& payloadText) const;
 

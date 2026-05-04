@@ -71,11 +71,11 @@ SERVICE_COMPONENTS = (
     },
 )
 
-TOOL_COMPONENTS = (
+ROOT_TOOLS = (
     {
         "name": "svc",
         "source": PROJECT_ROOT / "src" / "svc" / "svc",
-        "install_name": "svc",
+        "target_name": "svc",
     },
 )
 
@@ -100,7 +100,7 @@ def ensure_ini_templates() -> None:
         if not ini_path.exists():
             missing.append(ini_path)
 
-    for tool_component in TOOL_COMPONENTS:
+    for tool_component in ROOT_TOOLS:
         if not tool_component["source"].exists():
             missing.append(tool_component["source"])
 
@@ -186,7 +186,6 @@ def render_root_install_script() -> str:
         "msgstore",
         "automation",
         "brokerconnector",
-        "svc",
     ]
     return "\n".join(
         [
@@ -208,37 +207,6 @@ def render_root_install_script() -> str:
             "echo \"YAHA installation completed.\"",
         ]
     )
-
-
-def render_tool_install_script(*, install_name: str) -> str:
-    return "\n".join(
-        [
-            "#!/usr/bin/env bash",
-            "set -euo pipefail",
-            "",
-            "SCRIPT_DIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"",
-            f"TOOL_FILE=\"${{SCRIPT_DIR}}/{install_name}\"",
-            "TARGET_DIR=\"${YAHA_TOOL_BIN_DIR:-/usr/local/bin}\"",
-            f"TARGET_FILE=\"${{TARGET_DIR}}/{install_name}\"",
-            "",
-            "if [[ ! -f \"${TOOL_FILE}\" ]]; then",
-            "  echo \"Missing tool file: ${TOOL_FILE}\" >&2",
-            "  exit 1",
-            "fi",
-            "",
-            "if [[ ${EUID} -eq 0 ]]; then",
-            "  mkdir -p \"${TARGET_DIR}\"",
-            "  install -m 0755 \"${TOOL_FILE}\" \"${TARGET_FILE}\"",
-            "else",
-            "  sudo mkdir -p \"${TARGET_DIR}\"",
-            "  sudo install -m 0755 \"${TOOL_FILE}\" \"${TARGET_FILE}\"",
-            "fi",
-            "",
-            "echo \"Installed tool to ${TARGET_FILE}\"",
-        ]
-    )
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -336,21 +304,11 @@ def main() -> int:
             install_script_path.write_text(install_script_content, encoding="utf-8")
             set_executable(install_script_path)
 
-        for tool_component in TOOL_COMPONENTS:
-            tool_dir = output_dir / tool_component["name"]
-            tool_dir.mkdir(parents=True, exist_ok=True)
-
+        for tool_component in ROOT_TOOLS:
             source_tool = tool_component["source"]
-            target_tool = tool_dir / tool_component["install_name"]
+            target_tool = output_dir / tool_component["target_name"]
             shutil.copy2(source_tool, target_tool)
             set_executable(target_tool)
-
-            tool_install_script = render_tool_install_script(
-                install_name=tool_component["install_name"],
-            )
-            tool_install_path = tool_dir / "install.sh"
-            tool_install_path.write_text(tool_install_script, encoding="utf-8")
-            set_executable(tool_install_path)
 
         root_install = output_dir / "install.sh"
         root_install.write_text(render_root_install_script(), encoding="utf-8")

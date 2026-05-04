@@ -48,7 +48,9 @@ TEST_CASE("load_automation_client_runtime_config_from_ini", "[automation_client]
         "managementTopicPrefix=$MONITORING/automation/rules\n"
         "longitude=8.68\n"
         "latitude=50.11\n"
-        "subscribeQoS=1\n";
+        "subscribeQoS=1\n"
+        "logIncomingMessages=true\n"
+        "logOutgoingMessages=true\n";
 
     const auto iniPath = writeTempIni(iniText);
     const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniPath);
@@ -70,6 +72,8 @@ TEST_CASE("load_automation_client_runtime_config_from_ini", "[automation_client]
     REQUIRE(runtimeConfig.automationConfig.managementTopicPrefix == "$MONITORING/automation/rules");
     REQUIRE(runtimeConfig.automationConfig.longitude == k_test_longitude);
     REQUIRE(runtimeConfig.automationConfig.latitude == k_test_latitude);
+    REQUIRE(runtimeConfig.automationConfig.logIncomingMessages);
+    REQUIRE(runtimeConfig.automationConfig.logOutgoingMessages);
 
     std::filesystem::remove(iniPath);
 }
@@ -123,6 +127,83 @@ TEST_CASE("load_automation_client_runtime_config_reports_invalid_latitude", "[au
 
     REQUIRE_FALSE(success);
     REQUIRE(errorMessage == "invalid value for automation.latitude");
+
+    std::filesystem::remove(iniPath);
+}
+
+TEST_CASE("load_automation_client_runtime_config_defaults_logging_flags_to_false", "[automation_client]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "host=127.0.0.1\n"
+        "port=1883\n"
+        "clientId=automation-client\n";
+
+    const auto iniPath = writeTempIni(iniText);
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniPath);
+
+    yaha::AutomationClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+    const bool success = yaha::tryLoadAutomationClientRuntimeConfigFromIni(
+        document,
+        runtimeConfig,
+        errorMessage);
+
+    REQUIRE(success);
+    REQUIRE(errorMessage.empty());
+    REQUIRE_FALSE(runtimeConfig.automationConfig.logIncomingMessages);
+    REQUIRE_FALSE(runtimeConfig.automationConfig.logOutgoingMessages);
+
+    std::filesystem::remove(iniPath);
+}
+
+TEST_CASE("load_automation_client_runtime_config_reports_invalid_log_incoming_messages", "[automation_client]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "host=127.0.0.1\n"
+        "port=1883\n"
+        "clientId=automation-client\n"
+        "\n"
+        "[automation]\n"
+        "logIncomingMessages=maybe\n";
+
+    const auto iniPath = writeTempIni(iniText);
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniPath);
+
+    yaha::AutomationClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+    const bool success = yaha::tryLoadAutomationClientRuntimeConfigFromIni(
+        document,
+        runtimeConfig,
+        errorMessage);
+
+    REQUIRE_FALSE(success);
+    REQUIRE(errorMessage.find("automation.logIncomingMessages") != std::string::npos);
+
+    std::filesystem::remove(iniPath);
+}
+
+TEST_CASE("load_automation_client_runtime_config_reports_invalid_log_outgoing_messages", "[automation_client]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "host=127.0.0.1\n"
+        "port=1883\n"
+        "clientId=automation-client\n"
+        "\n"
+        "[automation]\n"
+        "logOutgoingMessages=maybe\n";
+
+    const auto iniPath = writeTempIni(iniText);
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniPath);
+
+    yaha::AutomationClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+    const bool success = yaha::tryLoadAutomationClientRuntimeConfigFromIni(
+        document,
+        runtimeConfig,
+        errorMessage);
+
+    REQUIRE_FALSE(success);
+    REQUIRE(errorMessage.find("automation.logOutgoingMessages") != std::string::npos);
 
     std::filesystem::remove(iniPath);
 }

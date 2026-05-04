@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -95,6 +96,8 @@ SubscriptionMap AutomationClientComponent::getSubscriptions() const {
 }
 
 void AutomationClientComponent::handleMessage(const Message& message) {
+    logIncomingMessageIfEnabled(message);
+
     if (isManagementTopic(message.topic())) {
         handleManagementMessage(message);
         return;
@@ -343,6 +346,7 @@ void AutomationClientComponent::evaluateAndPublishRules() {
 
     for (const auto& outputMessage : result.messages) {
         try {
+            logOutgoingMessageIfEnabled(outputMessage);
             callback(outputMessage);
         } catch (...) {
         }
@@ -467,6 +471,55 @@ ExpressionEvaluator::Value AutomationClientComponent::messageValueToExpressionVa
     return std::get<double>(messageValue);
 }
 
+std::string AutomationClientComponent::valueToLogText(const Value& messageValue) {
+    if (std::holds_alternative<std::string>(messageValue)) {
+        return std::get<std::string>(messageValue);
+    }
+
+    std::ostringstream textStream;
+    textStream << std::get<double>(messageValue);
+    return textStream.str();
+}
+
+std::string AutomationClientComponent::qosToLogText(const Qos qosValue) {
+    switch (qosValue) {
+    case Qos::AtMostOnce:
+        return "0";
+    case Qos::AtLeastOnce:
+        return "1";
+    case Qos::ExactlyOnce:
+        return "2";
+    }
+
+    return "unknown";
+}
+
+void AutomationClientComponent::logIncomingMessageIfEnabled(const Message& message) const {
+    if (!config_.logIncomingMessages) {
+        return;
+    }
+
+    std::cout << "automation_client[in] topic=" << message.topic()
+              << " qos=" << qosToLogText(message.qos())
+              << " retain=" << (message.retain() ? "1" : "0")
+              << " value=" << valueToLogText(message.value())
+              << '\n'
+              << std::flush;
+}
+
+void AutomationClientComponent::logOutgoingMessageIfEnabled(const Message& message) const {
+    if (!config_.logOutgoingMessages) {
+        return;
+    }
+
+    std::cout << "automation_client[out] topic=" << message.topic()
+              << " qos=" << qosToLogText(message.qos())
+              << " retain=" << (message.retain() ? "1" : "0")
+              << " value=" << valueToLogText(message.value())
+              << '\n'
+              << std::flush;
+}
+
 void AutomationClientComponent::publishManagementAck(
     const std::string& ruleName,
     const std::string& payloadText) const {
@@ -480,12 +533,15 @@ void AutomationClientComponent::publishManagementAck(
         return;
     }
 
+    const Message ackMessage{
+        config_.managementTopicPrefix + "/" + ruleName,
+        payloadText,
+        Qos::AtLeastOnce,
+        false};
+
     try {
-        callback(Message{
-            config_.managementTopicPrefix + "/" + ruleName,
-            payloadText,
-            Qos::AtLeastOnce,
-            false});
+        logOutgoingMessageIfEnabled(ackMessage);
+        callback(ackMessage);
     } catch (...) {
     }
 }

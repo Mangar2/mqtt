@@ -95,6 +95,24 @@ bool tryLoadAutomationClientConfigFromIni(
         output.subscribeQos = static_cast<Qos>(*qosResult.first);
     }
 
+    const auto logIncomingResult = document.readBool("automation", "logIncomingMessages");
+    if (!logIncomingResult.second.empty()) {
+        errorMessage = logIncomingResult.second;
+        return false;
+    }
+    if (logIncomingResult.first.has_value()) {
+        output.logIncomingMessages = *logIncomingResult.first;
+    }
+
+    const auto logOutgoingResult = document.readBool("automation", "logOutgoingMessages");
+    if (!logOutgoingResult.second.empty()) {
+        errorMessage = logOutgoingResult.second;
+        return false;
+    }
+    if (logOutgoingResult.first.has_value()) {
+        output.logOutgoingMessages = *logOutgoingResult.first;
+    }
+
     return true;
 }
 

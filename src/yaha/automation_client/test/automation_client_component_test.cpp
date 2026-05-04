@@ -4,7 +4,9 @@
 
 #include <chrono>
 #include <cstdint>
+#include <iostream>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -334,6 +336,41 @@ TEST_CASE("automation_component_get_subscriptions_includes_dynamic_topics", "[au
 
     const yaha::SubscriptionMap subscriptions = component.getSubscriptions();
     REQUIRE(subscriptions.contains("$MONITORING/presence/set"));
+
+    component.close();
+}
+
+TEST_CASE("automation_component_logs_incoming_and_outgoing_messages_when_enabled", "[automation_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setRulesJson(
+        "{\"rules\":{\"presenceOn\":{\"topic\":\"house/light/set\",\"check\":\"$MONITORING/presence/set = on\",\"value\":\"on\"}}}");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+    config.logIncomingMessages = true;
+    config.logOutgoingMessages = true;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+    component.setPublishCallback([](const yaha::Message&) {
+    });
+
+    std::ostringstream capturedOutput;
+    std::streambuf* previousBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    component.handleMessage(yaha::Message{
+        "$MONITORING/presence/set",
+        std::string{"on"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    std::cout.rdbuf(previousBuffer);
+
+    const std::string logOutput = capturedOutput.str();
+    REQUIRE(logOutput.find("automation_client[in] topic=$MONITORING/presence/set") != std::string::npos);
+    REQUIRE(logOutput.find("automation_client[out] topic=house/light/set") != std::string::npos);
 
     component.close();
 }
