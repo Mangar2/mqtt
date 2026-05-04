@@ -31,3 +31,7 @@ Unit tests for the first automation step: lexical tokenization of expression DSL
 | `expression_evaluator_supports_time_arithmetic_in_minutes` | time +/- numeric minute semantics | comparison script with `/time` and `/sunrise` | evaluates to true with minute-shifted comparison |
 | `expression_evaluator_reports_undefined_variable` | missing variable handling | script with external variable and empty variable map | evaluation fails and returns error list |
 | `expression_evaluator_can_evaluate_program_from_rules_fixture` | fixture-like expression runtime | expression shape from converted `test/rules.json` | returns expected branch output |
+| `single_rule_processor_processes_complete_rule_and_emits_message` | full rule handling with check/value/qos | rule object with topic check and value expression plus variable map | triggered result contains outbound message with expected topic value qos and used variables |
+| `single_rule_processor_returns_no_message_when_check_is_false` | complete rule where condition is false | rule object with false check and value | success with triggered=false and no outbound message |
+| `single_rule_processor_reports_invalid_rule_structure` | required field validation | rule object without topic field | processing fails with structure error |
+| `single_rule_processor_reports_expression_errors` | expression parse validation in check field | rule object with invalid check expression | processing fails with parse/evaluation errors |
