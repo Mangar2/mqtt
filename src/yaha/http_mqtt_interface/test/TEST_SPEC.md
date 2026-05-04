@@ -23,3 +23,13 @@ Unit tests for shared HTTP MQTT contract types, validation helpers, and phase-2 
 | `interfaces_on_publish_uses_0_0_fallback` | Facade onPublish supports missing version fallback | registry with `publishResponses[0.0]` and headers without version | `0.0` handler is used |
 | `interfaces_publish_request_dispatches_by_explicit_version` | Request-side publish dispatch uses explicit version argument | registry with `publishRequests[1.0]` and call `publish(1.0,...)` | selected request builder result is returned |
 | `interfaces_on_connect_and_on_disconnect_use_dispatcher_version` | Other `onX` methods use same dispatcher version rule | registry with `publishResponses[1.0]`, `connectResponses[1.0]`, `disconnectResponses[1.0]` | both handlers are selected for headers `version=1.0` |
+| `connect_v1_request_sets_headers_and_keepalive_default` | Connect request builder applies v1 defaults | call `connect("1.0", ...)` without keepAlive | payload contains `keepAlive:0` and `version=1.0` header |
+| `connect_v1_result_check_accepts_valid_connack` | Connect result validator accepts valid response | status 200, `packet=connack`, payload with present/token | result check does not throw |
+| `connect_v1_result_check_throws_for_mqtt_error_code` | Connect validator maps mqtt error codes | response payload with `mqttcode=4` | result check throws mapped connect error |
+| `disconnect_v1_request_and_on_disconnect_response` | Disconnect request and response contract | call `disconnect` and `onDisconnect` for `1.0` | request has version header, response is `204` and empty payload |
+| `publish_v1_request_and_result_check_qos1` | Publish v1 request and qos1 ack validation | qos1 message and response `packet=puback` | result check does not throw |
+| `on_publish_v1_maps_ack_headers_by_qos` | onPublish maps ack packet by qos | qos headers `1` and `2` | returns `puback` for qos1 and `pubrec` for qos2 |
+| `pubrel_v1_request_result_and_response` | Pubrel builder and response contract | call `pubrel`, validate `packet=pubcomp`, call `onPubrel` | request and response satisfy v1 rules |
+| `subscribe_v1_request_result_and_response` | Subscribe builder and validation contract | subscribe response with qos array and matching packetid | result check passes and onSubscribe returns suback payload |
+| `unsubscribe_v1_accepts_204_empty_payload` | Unsubscribe backward-compatibility path | status `204`, empty payload | result check passes |
+| `unsubscribe_v1_result_and_response_with_codes` | Unsubscribe return-code validation and response contract | status `200` with `[0,17]` | result check passes and onUnsubscribe returns `unsuback` |

@@ -1,12 +1,11 @@
-# http_mqtt_interface — HTTP MQTT Contracts and Version Dispatcher
+# http_mqtt_interface — HTTP MQTT Contracts, Dispatcher, and V1 Operations
 
 ## Purpose
 
-Provides shared contract types, low-level helpers, and the phase-2 version dispatcher
-for HTTP MQTT interface operations.
-This module still contains no operation-specific protocol implementation. It defines
-reusable data structures, standard headers, deterministic validation helpers, and the
-top-level `HttpMqttInterfaces` facade shell used to dispatch versioned handlers.
+Provides shared contract types, low-level helpers, the version dispatcher, and version 1.0
+operation implementations for HTTP MQTT interface processing.
+The module now includes concrete v1 handlers for connect/disconnect, publish/pubrel,
+subscribe/unsubscribe plus facade wiring through versioned handler maps.
 
 ## Public API
 
@@ -89,6 +88,32 @@ Dispatch behavior:
 - if resolved version is missing in `publishResponses`, throw `undefined version <version>`
 - request-side methods dispatch by explicit version argument and throw the same undefined-version error for missing handlers
 
+### Phase-3/4/5 operation implementation
+
+Public factory functions:
+
+- `makeHttpMqttInterfaceHandlerRegistryV1()`
+- `makeHttpMqttInterfacesV1()`
+
+Implemented version `1.0` operation pairs:
+
+- connect / onConnect
+- disconnect / onDisconnect
+- publish / onPublish
+- pubrel / onPubrel
+- subscribe / onSubscribe
+- unsubscribe / onUnsubscribe
+
+Implemented behavior highlights:
+
+- Connect request forces `keepAlive=0` when option is absent.
+- Connect result validation enforces status, headers, payload shape, present flag, mqttcode rules, and token tuple.
+- Publish request forwards only token and `message` fields (`topic`, `value`, `reason`) with qos/dup/retain headers.
+- Publish result validation enforces qos-dependent ack packet rules and optional packetid echo.
+- Pubrel response returns `packet=pubcomp` and optional packetid echo.
+- Subscribe and unsubscribe request builders include packetid headers and topic maps.
+- Unsubscribe result validation supports backward-compatible `204` with empty payload.
+
 ## Constraints and behavior
 
 - Header key lookup is case-insensitive through lowercase normalization.
@@ -97,6 +122,7 @@ Dispatch behavior:
 - Error paths use deterministic `std::runtime_error` messages for stable operation diagnostics.
 - Version dispatch fallback is `0.0` when `version` header is missing or empty.
 - Undefined dispatch versions always throw `undefined version <version>`.
+- V1 operation factory wires only version `1.0`; fallback `0.0` remains undefined until explicitly added.
 
 ## Files
 
@@ -106,6 +132,9 @@ Dispatch behavior:
 | `http_mqtt_interface_contracts.cpp` | Shared helper implementations |
 | `http_mqtt_interface_dispatcher.h` | Versioned handler registry and `HttpMqttInterfaces` facade declarations |
 | `http_mqtt_interface_dispatcher.cpp` | Dispatcher and facade implementation |
+| `http_mqtt_interface_operations.h` | V1 operation factory declarations |
+| `http_mqtt_interface_operations.cpp` | V1 operation builders, validators, and response handlers |
 | `test/TEST_SPEC.md` | Unit test specification |
 | `test/http_mqtt_interface_contracts_test.cpp` | Unit tests for phase 1 contracts and helpers |
 | `test/http_mqtt_interface_dispatcher_test.cpp` | Unit tests for phase 2 dispatcher and facade shell |
+| `test/http_mqtt_interface_operations_test.cpp` | Unit tests for phase 3/4/5 operation handlers |
