@@ -3,9 +3,23 @@
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <cstdint>
+#include <cstdlib>
 #include <utility>
 
 namespace yaha {
+namespace {
+
+[[nodiscard]] bool tryParseDoubleText(const std::string& text, double* parsedValue) {
+    char* parseEnd = nullptr;
+    const double value = std::strtod(text.c_str(), &parseEnd);
+    if (parseEnd == text.c_str() || *parseEnd != '\0') {
+        return false;
+    }
+    *parsedValue = value;
+    return true;
+}
+
+} // namespace
 
 bool tryLoadAutomationClientConfigFromIni(
     const IniDocument& document,
@@ -45,6 +59,31 @@ bool tryLoadAutomationClientConfigFromIni(
     if (const auto managementPrefix = document.lastValue("automation", "managementTopicPrefix");
         managementPrefix.has_value()) {
         output.managementTopicPrefix = *managementPrefix;
+    }
+
+    if (const auto automationPrefix = document.lastValue("automation", "topicPrefix");
+        automationPrefix.has_value()) {
+        output.automationTopicPrefix = *automationPrefix;
+    }
+
+    if (const auto longitudeValue = document.lastValue("automation", "longitude");
+        longitudeValue.has_value()) {
+        double parsedLongitude = 0.0;
+        if (!tryParseDoubleText(*longitudeValue, &parsedLongitude)) {
+            errorMessage = "invalid value for automation.longitude";
+            return false;
+        }
+        output.longitude = parsedLongitude;
+    }
+
+    if (const auto latitudeValue = document.lastValue("automation", "latitude");
+        latitudeValue.has_value()) {
+        double parsedLatitude = 0.0;
+        if (!tryParseDoubleText(*latitudeValue, &parsedLatitude)) {
+            errorMessage = "invalid value for automation.latitude";
+            return false;
+        }
+        output.latitude = parsedLatitude;
     }
 
     const auto qosResult = document.readUnsigned("automation", "subscribeQoS", 0U, 2U);

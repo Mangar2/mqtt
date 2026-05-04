@@ -1,10 +1,13 @@
 #include "yaha/automation_client/automation_client_component.h"
 
 #include "httplib.h"
+#include "yaha/automation/internal_variables.h"
 #include "yaha/automation/rules_tree_json_reader.h"
+#include "yaha/automation/rules_tree_processor.h"
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -75,8 +78,19 @@ AutomationClientComponent::AutomationClientComponent(AutomationClientConfig conf
 
 SubscriptionMap AutomationClientComponent::getSubscriptions() const {
     SubscriptionMap subscriptions{};
+    subscriptions.insert({config_.automationTopicPrefix + "/#", Qos::AtLeastOnce});
     subscriptions.insert({config_.managementTopicPrefix + "/#", config_.subscribeQos});
     subscriptions.insert({config_.monitorTopicPrefix + "/#", config_.subscribeQos});
+
+    for (const auto& topicFilter : config_.motionTopics) {
+        subscriptions.insert({topicFilter, config_.subscribeQos});
+    }
+
+    std::lock_guard<std::mutex> lock{stateMutex_};
+    for (const auto& topicFilter : dynamicTopicSubscriptions_) {
+        subscriptions.insert({topicFilter, config_.subscribeQos});
+    }
+
     return subscriptions;
 }
 
@@ -88,7 +102,14 @@ void AutomationClientComponent::handleMessage(const Message& message) {
 
     if (isMonitoringTopic(message.topic())) {
         handleMonitoringMessage(message);
+        return;
     }
+
+    if (isAutomationControlTopic(message.topic())) {
+        return;
+    }
+
+    handleDomainMessage(message);
 }
 
 void AutomationClientComponent::run() {
@@ -102,6 +123,11 @@ void AutomationClientComponent::run() {
 
     if (config_.fileStoreEnabled) {
         (void)loadRulesFromFileStore();
+    }
+
+    {
+        std::lock_guard<std::mutex> lock{stateMutex_};
+        runtimeVariables_[config_.presenceTopic] = std::string{"initial"};
     }
 }
 
@@ -164,6 +190,7 @@ bool AutomationClientComponent::loadRulesFromFileStore() {
     rulesRoot_ = parsed.value();
     RuleTreeNode::Object* rulesObject = ensureRulesObject(&rulesRoot_);
     (void)rulesObject;
+    refreshDynamicSubscriptionsLocked();
     return true;
 }
 
@@ -219,6 +246,7 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
             std::lock_guard<std::mutex> lock{stateMutex_};
             RuleTreeNode::Object* rulesObject = ensureRulesObject(&rulesRoot_);
             rulesObject->erase(*ruleName);
+            refreshDynamicSubscriptionsLocked();
         }
 
         if (persistRulesToFileStore()) {
@@ -244,6 +272,7 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
         }
 
         (*rulesObject)[*ruleName] = std::move(ruleNode);
+        refreshDynamicSubscriptionsLocked();
         acknowledgedRuleJson = toJsonText(rulesObject->at(*ruleName));
     }
 
@@ -255,12 +284,86 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
     publishManagementAck(*ruleName, acknowledgedRuleJson);
 }
 
+void AutomationClientComponent::handleDomainMessage(const Message& message) {
+    {
+        std::lock_guard<std::mutex> lock{stateMutex_};
+        runtimeVariables_[message.topic()] = messageValueToExpressionValue(message.value());
+    }
+
+    evaluateAndPublishRules();
+}
+
+void AutomationClientComponent::refreshDynamicSubscriptionsLocked() {
+    dynamicTopicSubscriptions_.clear();
+    const RulesTreeParseResult parseResult = RulesTreeParser::parse(rulesRoot_);
+    for (const auto& topicFilter : parseResult.externalVariables) {
+        dynamicTopicSubscriptions_.insert(topicFilter);
+    }
+}
+
+void AutomationClientComponent::evaluateAndPublishRules() {
+    RuleTreeNode rulesSnapshot;
+    ExpressionEvaluator::VariableMap variablesSnapshot;
+    {
+        std::lock_guard<std::mutex> lock{stateMutex_};
+        rulesSnapshot = rulesRoot_;
+        variablesSnapshot = runtimeVariables_;
+    }
+
+    try {
+        const InternalVariables internalVariables{
+            InternalVariables::GeoCoordinates{config_.longitude, config_.latitude}};
+        const InternalVariables::VariableMap internalValues = internalVariables.calculate(
+            std::chrono::system_clock::now());
+        for (const auto& [variableName, variableValue] : internalValues) {
+            if (std::holds_alternative<double>(variableValue)) {
+                variablesSnapshot[variableName] = std::get<double>(variableValue);
+            } else {
+                variablesSnapshot[variableName] = std::get<std::chrono::system_clock::time_point>(
+                    variableValue);
+            }
+        }
+    } catch (...) {
+    }
+
+    const RulesTreeProcessingResult result = RulesTreeProcessor::process(rulesSnapshot, variablesSnapshot);
+    if (result.messages.empty()) {
+        return;
+    }
+
+    PublishCallback callback;
+    {
+        std::lock_guard<std::mutex> lock{publishMutex_};
+        callback = publishCallback_;
+    }
+
+    if (!callback) {
+        return;
+    }
+
+    for (const auto& outputMessage : result.messages) {
+        try {
+            callback(outputMessage);
+        } catch (...) {
+        }
+    }
+
+    std::lock_guard<std::mutex> lock{stateMutex_};
+    for (const auto& outputMessage : result.messages) {
+        runtimeVariables_[outputMessage.topic()] = messageValueToExpressionValue(outputMessage.value());
+    }
+}
+
 bool AutomationClientComponent::isMonitoringTopic(const std::string& topicName) const {
     return startsWithText(topicName, config_.monitorTopicPrefix + "/");
 }
 
 bool AutomationClientComponent::isManagementTopic(const std::string& topicName) const {
     return startsWithText(topicName, config_.managementTopicPrefix + "/") && endsWithSetSuffix(topicName);
+}
+
+bool AutomationClientComponent::isAutomationControlTopic(const std::string& topicName) const {
+    return startsWithText(topicName, config_.automationTopicPrefix + "/");
 }
 
 std::optional<std::string> AutomationClientComponent::extractRuleNameFromManagementTopic(
@@ -355,6 +458,13 @@ std::string AutomationClientComponent::toJsonText(const RuleTreeNode& node) {
     }
     jsonText.push_back('}');
     return jsonText;
+}
+
+ExpressionEvaluator::Value AutomationClientComponent::messageValueToExpressionValue(const Value& messageValue) {
+    if (std::holds_alternative<std::string>(messageValue)) {
+        return std::get<std::string>(messageValue);
+    }
+    return std::get<double>(messageValue);
 }
 
 void AutomationClientComponent::publishManagementAck(

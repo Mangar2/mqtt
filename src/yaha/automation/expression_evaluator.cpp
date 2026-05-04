@@ -11,6 +11,9 @@
 namespace yaha {
 namespace {
 
+constexpr int k_max_minutes_or_seconds{59};
+constexpr double k_numeric_epsilon{1e-12};
+
 using ExternalVariableMap = ExpressionEvaluator::VariableMap;
 
 struct MapRuntimeEntry {
@@ -48,7 +51,8 @@ using RuntimeValue = std::variant<std::string, double, bool, std::chrono::system
     int secondValue = 0;
 
     if (std::sscanf(timeText.c_str(), "%d:%d:%d", &hourValue, &minuteValue, &secondValue) == 3) {
-        if (hourValue < 0 || minuteValue < 0 || minuteValue > 59 || secondValue < 0 || secondValue > 59) {
+        if (hourValue < 0 || minuteValue < 0 || minuteValue > k_max_minutes_or_seconds || secondValue < 0
+            || secondValue > k_max_minutes_or_seconds) {
             return false;
         }
         *parsedSeconds = std::chrono::hours{hourValue} + std::chrono::minutes{minuteValue} + std::chrono::seconds{secondValue};
@@ -56,7 +60,7 @@ using RuntimeValue = std::variant<std::string, double, bool, std::chrono::system
     }
 
     if (std::sscanf(timeText.c_str(), "%d:%d", &hourValue, &minuteValue) == 2) {
-        if (hourValue < 0 || minuteValue < 0 || minuteValue > 59) {
+        if (hourValue < 0 || minuteValue < 0 || minuteValue > k_max_minutes_or_seconds) {
             return false;
         }
         *parsedSeconds = std::chrono::hours{hourValue} + std::chrono::minutes{minuteValue};
@@ -125,7 +129,7 @@ using RuntimeValue = std::variant<std::string, double, bool, std::chrono::system
         return std::get<bool>(runtimeValue);
     }
     if (std::holds_alternative<double>(runtimeValue)) {
-        return std::fabs(std::get<double>(runtimeValue)) > 1e-12;
+        return std::fabs(std::get<double>(runtimeValue)) > k_numeric_epsilon;
     }
     if (std::holds_alternative<std::string>(runtimeValue)) {
         const std::string loweredValue = toLower(std::get<std::string>(runtimeValue));
@@ -142,7 +146,7 @@ using RuntimeValue = std::variant<std::string, double, bool, std::chrono::system
 
 [[nodiscard]] bool evalEquals(const RuntimeValue& leftValue, const RuntimeValue& rightValue) {
     if (std::holds_alternative<double>(leftValue) && std::holds_alternative<double>(rightValue)) {
-        return std::fabs(std::get<double>(leftValue) - std::get<double>(rightValue)) < 1e-12;
+        return std::fabs(std::get<double>(leftValue) - std::get<double>(rightValue)) < k_numeric_epsilon;
     }
 
     const auto leftTime = tryTimeOfDay(leftValue);
@@ -413,7 +417,7 @@ private:
     [[nodiscard]] static bool matchesMapKey(const std::string& keyToken, const RuntimeValue& selectorValue) {
         double keyNumber = 0.0;
         if (parseDouble(keyToken, &keyNumber) && std::holds_alternative<double>(selectorValue)) {
-            return std::fabs(std::get<double>(selectorValue) - keyNumber) < 1e-12;
+            return std::fabs(std::get<double>(selectorValue) - keyNumber) < k_numeric_epsilon;
         }
 
         std::string normalizedKey = keyToken;

@@ -49,7 +49,8 @@ TEST_CASE("rules_tree_processor_collects_path_aware_errors_and_keeps_valid_resul
     validRule.insert({"value", yaha::RuleTreeNode{"on"}});
 
     yaha::RuleTreeNode::Object invalidRule;
-    invalidRule.insert({"value", yaha::RuleTreeNode{"on"}});
+    invalidRule.insert({"topic", yaha::RuleTreeNode{"house/faulty/set"}});
+    invalidRule.insert({"value", yaha::RuleTreeNode{yaha::RuleTreeNode::Object{}}});
 
     yaha::RuleTreeNode::Object rulesObject;
     rulesObject.insert({"good", yaha::RuleTreeNode{std::move(validRule)}});
@@ -63,7 +64,7 @@ TEST_CASE("rules_tree_processor_collects_path_aware_errors_and_keeps_valid_resul
         yaha::ExpressionEvaluator::VariableMap{});
 
     REQUIRE_FALSE(result.success);
-    REQUIRE(result.processedRules == 1U);
+    REQUIRE(result.processedRules == 2U);
     REQUIRE(result.triggeredRules == 1U);
     REQUIRE(result.messages.size() == 1U);
     REQUIRE(result.errors.empty() == false);

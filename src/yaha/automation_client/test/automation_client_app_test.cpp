@@ -9,6 +9,9 @@
 
 namespace {
 
+constexpr double k_test_longitude{8.68};
+constexpr double k_test_latitude{50.11};
+
 std::filesystem::path writeTempIni(const std::string& content) {
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto path = std::filesystem::temp_directory_path() /
@@ -41,7 +44,10 @@ TEST_CASE("load_automation_client_runtime_config_from_ini", "[automation_client]
         "topicPrefix=$MONITOR/FileStore\n"
         "\n"
         "[automation]\n"
+        "topicPrefix=$MONITORING/automation\n"
         "managementTopicPrefix=$MONITORING/automation/rules\n"
+        "longitude=8.68\n"
+        "latitude=50.11\n"
         "subscribeQoS=1\n";
 
     const auto iniPath = writeTempIni(iniText);
@@ -60,8 +66,63 @@ TEST_CASE("load_automation_client_runtime_config_from_ini", "[automation_client]
     REQUIRE(runtimeConfig.automationConfig.fileStorePort == 8210U);
     REQUIRE(runtimeConfig.automationConfig.rulesKeyPath == "/automation/rules");
     REQUIRE(runtimeConfig.automationConfig.monitorTopicPrefix == "$MONITOR/FileStore");
+    REQUIRE(runtimeConfig.automationConfig.automationTopicPrefix == "$MONITORING/automation");
     REQUIRE(runtimeConfig.automationConfig.managementTopicPrefix == "$MONITORING/automation/rules");
+    REQUIRE(runtimeConfig.automationConfig.longitude == k_test_longitude);
+    REQUIRE(runtimeConfig.automationConfig.latitude == k_test_latitude);
 
     std::filesystem::remove(iniPath);
 }
 // NOLINTEND(readability-function-cognitive-complexity)
+
+TEST_CASE("load_automation_client_runtime_config_reports_invalid_longitude", "[automation_client]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "host=127.0.0.1\n"
+        "port=1883\n"
+        "clientId=automation-client\n"
+        "\n"
+        "[automation]\n"
+        "longitude=not-a-number\n";
+
+    const auto iniPath = writeTempIni(iniText);
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniPath);
+
+    yaha::AutomationClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+    const bool success = yaha::tryLoadAutomationClientRuntimeConfigFromIni(
+        document,
+        runtimeConfig,
+        errorMessage);
+
+    REQUIRE_FALSE(success);
+    REQUIRE(errorMessage == "invalid value for automation.longitude");
+
+    std::filesystem::remove(iniPath);
+}
+
+TEST_CASE("load_automation_client_runtime_config_reports_invalid_latitude", "[automation_client]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "host=127.0.0.1\n"
+        "port=1883\n"
+        "clientId=automation-client\n"
+        "\n"
+        "[automation]\n"
+        "latitude=not-a-number\n";
+
+    const auto iniPath = writeTempIni(iniText);
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniPath);
+
+    yaha::AutomationClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+    const bool success = yaha::tryLoadAutomationClientRuntimeConfigFromIni(
+        document,
+        runtimeConfig,
+        errorMessage);
+
+    REQUIRE_FALSE(success);
+    REQUIRE(errorMessage == "invalid value for automation.latitude");
+
+    std::filesystem::remove(iniPath);
+}

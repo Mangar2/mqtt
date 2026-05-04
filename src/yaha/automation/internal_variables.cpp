@@ -7,26 +7,38 @@
 namespace yaha {
 namespace {
 
+constexpr double k_degrees_full_turn{360.0};
+constexpr double k_degrees_half_turn{180.0};
+constexpr double k_hours_per_day{24.0};
+constexpr double k_degrees_per_hour{15.0};
+
+constexpr double k_solar_zenith_official{90.833};
+constexpr double k_solar_zenith_civil{96.0};
+constexpr double k_solar_zenith_nautical{102.0};
+constexpr double k_solar_zenith_astronomical{108.0};
+
+constexpr double k_right_ascension_factor{0.91764};
+
 [[nodiscard]] double degreesToRadians(const double degrees) {
-    return degrees * (std::numbers::pi_v<double> / 180.0);
+    return degrees * (std::numbers::pi_v<double> / k_degrees_half_turn);
 }
 
 [[nodiscard]] double radiansToDegrees(const double radians) {
-    return radians * (180.0 / std::numbers::pi_v<double>);
+    return radians * (k_degrees_half_turn / std::numbers::pi_v<double>);
 }
 
 [[nodiscard]] double normalizeAngle(const double degrees) {
-    double normalized = std::fmod(degrees, 360.0);
+    double normalized = std::fmod(degrees, k_degrees_full_turn);
     if (normalized < 0.0) {
-        normalized += 360.0;
+        normalized += k_degrees_full_turn;
     }
     return normalized;
 }
 
 [[nodiscard]] double normalizeHours(const double hours) {
-    double normalized = std::fmod(hours, 24.0);
+    double normalized = std::fmod(hours, k_hours_per_day);
     if (normalized < 0.0) {
-        normalized += 24.0;
+        normalized += k_hours_per_day;
     }
     return normalized;
 }
@@ -63,15 +75,15 @@ InternalVariables::VariableMap InternalVariables::calculate(const TimePoint& dat
     values["/time"] = date;
     values["/weekday"] = weekdayIndex(date);
 
-    values["/sunrise"] = calculateSunEvent(date, coordinates_, 90.833, true);
-    values["/civildawn"] = calculateSunEvent(date, coordinates_, 96.0, true);
-    values["/nauticaldawn"] = calculateSunEvent(date, coordinates_, 102.0, true);
-    values["/astronomicaldawn"] = calculateSunEvent(date, coordinates_, 108.0, true);
+    values["/sunrise"] = calculateSunEvent(date, coordinates_, k_solar_zenith_official, true);
+    values["/civildawn"] = calculateSunEvent(date, coordinates_, k_solar_zenith_civil, true);
+    values["/nauticaldawn"] = calculateSunEvent(date, coordinates_, k_solar_zenith_nautical, true);
+    values["/astronomicaldawn"] = calculateSunEvent(date, coordinates_, k_solar_zenith_astronomical, true);
 
-    values["/sunset"] = calculateSunEvent(date, coordinates_, 90.833, false);
-    values["/civildusk"] = calculateSunEvent(date, coordinates_, 96.0, false);
-    values["/nauticaldusk"] = calculateSunEvent(date, coordinates_, 102.0, false);
-    values["/astronomicaldusk"] = calculateSunEvent(date, coordinates_, 108.0, false);
+    values["/sunset"] = calculateSunEvent(date, coordinates_, k_solar_zenith_official, false);
+    values["/civildusk"] = calculateSunEvent(date, coordinates_, k_solar_zenith_civil, false);
+    values["/nauticaldusk"] = calculateSunEvent(date, coordinates_, k_solar_zenith_nautical, false);
+    values["/astronomicaldusk"] = calculateSunEvent(date, coordinates_, k_solar_zenith_astronomical, false);
 
     return values;
 }
@@ -81,7 +93,7 @@ InternalVariables::TimePoint InternalVariables::calculateSunEvent(
     const GeoCoordinates& coordinates,
     const double zenithDegrees,
     const bool sunriseEvent) {
-    const double lngHour = coordinates.longitude / 15.0;
+    const double lngHour = coordinates.longitude / k_degrees_per_hour;
     const int dayIndex = dayOfYear(date);
     const double approximateTime = sunriseEvent
         ? static_cast<double>(dayIndex) + ((6.0 - lngHour) / 24.0)
@@ -96,12 +108,12 @@ InternalVariables::TimePoint InternalVariables::calculateSunEvent(
         + 282.634);
 
     double rightAscension = normalizeAngle(
-        radiansToDegrees(std::atan(0.91764 * std::tan(degreesToRadians(trueLongitude)))));
+        radiansToDegrees(std::atan(k_right_ascension_factor * std::tan(degreesToRadians(trueLongitude)))));
 
     const double longitudeQuadrant = std::floor(trueLongitude / 90.0) * 90.0;
     const double rightAscensionQuadrant = std::floor(rightAscension / 90.0) * 90.0;
     rightAscension += longitudeQuadrant - rightAscensionQuadrant;
-    rightAscension /= 15.0;
+    rightAscension /= k_degrees_per_hour;
 
     const double sinDeclination = 0.39782 * std::sin(degreesToRadians(trueLongitude));
     const double cosDeclination = std::cos(std::asin(sinDeclination));
@@ -116,9 +128,9 @@ InternalVariables::TimePoint InternalVariables::calculateSunEvent(
     }
 
     double hourAngle = sunriseEvent
-        ? 360.0 - radiansToDegrees(std::acos(cosHourAngle))
+        ? k_degrees_full_turn - radiansToDegrees(std::acos(cosHourAngle))
         : radiansToDegrees(std::acos(cosHourAngle));
-    hourAngle /= 15.0;
+    hourAngle /= k_degrees_per_hour;
 
     const double localMeanTime = hourAngle + rightAscension - (0.06571 * approximateTime) - 6.622;
     const double utcHours = normalizeHours(localMeanTime - lngHour);

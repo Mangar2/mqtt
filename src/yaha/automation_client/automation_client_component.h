@@ -6,6 +6,7 @@
  */
 
 #include "yaha/automation/rules_tree_parser.h"
+#include "yaha/automation/expression_evaluator.h"
 #include "yaha/message/message.h"
 #include "yaha/mqtt_component/mqtt_component.h"
 
@@ -13,7 +14,9 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
+#include <vector>
 
 namespace yaha {
 
@@ -23,12 +26,19 @@ constexpr std::uint16_t k_default_file_store_port{8210U};
  * @brief Runtime config for Automation client component.
  */
 struct AutomationClientConfig {
+    std::string automationTopicPrefix{"$MONITORING/automation"};      ///< Prefix for automation control channels.
     std::string rulesKeyPath{"/automation/rules"};                    ///< FileStore key path for full rules tree.
     std::string fileStoreHost{"127.0.0.1"};                           ///< FileStore HTTP host.
     std::uint16_t fileStorePort{k_default_file_store_port};            ///< FileStore HTTP port.
     bool fileStoreEnabled{true};                                        ///< Enables startup read and write-back.
     std::string monitorTopicPrefix{"$MONITOR/FileStore"};             ///< Prefix for FileStore monitoring topics.
     std::string managementTopicPrefix{"$MONITORING/automation/rules"}; ///< Prefix for runtime rule update topics.
+    std::string presenceTopic{"$MONITORING/presence"};                ///< Presence variable topic.
+    std::vector<std::string> motionTopics{                              ///< Default motion/control subscriptions.
+        "+/+/+/motion sensor/detection state",
+        "$MONITORING/presence/set"};
+    double longitude{0.0};                                              ///< Geo longitude for internal variables.
+    double latitude{0.0};                                               ///< Geo latitude for internal variables.
     Qos subscribeQos{Qos::AtLeastOnce};                                ///< Requested QoS for subscriptions.
 };
 
@@ -96,9 +106,14 @@ private:
 
     void handleMonitoringMessage(const Message& message);
     void handleManagementMessage(const Message& message);
+    void handleDomainMessage(const Message& message);
+
+    void refreshDynamicSubscriptionsLocked();
+    void evaluateAndPublishRules();
 
     [[nodiscard]] bool isMonitoringTopic(const std::string& topicName) const;
     [[nodiscard]] bool isManagementTopic(const std::string& topicName) const;
+    [[nodiscard]] bool isAutomationControlTopic(const std::string& topicName) const;
 
     [[nodiscard]] std::optional<std::string> extractRuleNameFromManagementTopic(
         const std::string& topicName) const;
@@ -111,6 +126,7 @@ private:
 
     [[nodiscard]] static std::optional<RuleTreeNode> parseJsonNode(const std::string& payload);
     [[nodiscard]] static std::string toJsonText(const RuleTreeNode& node);
+    [[nodiscard]] static ExpressionEvaluator::Value messageValueToExpressionValue(const Value& messageValue);
 
     void publishManagementAck(const std::string& ruleName, const std::string& payloadText) const;
 
@@ -118,6 +134,8 @@ private:
 
     mutable std::mutex stateMutex_;
     RuleTreeNode rulesRoot_{RuleTreeNode::Object{}};
+    ExpressionEvaluator::VariableMap runtimeVariables_;
+    std::set<std::string> dynamicTopicSubscriptions_;
     bool running_{false};
 
     mutable std::mutex publishMutex_;

@@ -2,9 +2,11 @@
 
 #include <string>
 
+#include "yaha/error_handling/yaha_error.h"
 #include "yaha/automation/expression_parser.h"
 #include "yaha/automation/rules_tree_parser.h"
 
+// NOLINTBEGIN(readability-function-cognitive-complexity)
 TEST_CASE("expression_parser_parses_declarations_and_collects_external_topics", "[yaha][automation]") {
     const std::string script =
         "presence = (1: awake, on: awake, default: absent)\n"
@@ -94,3 +96,60 @@ TEST_CASE("expression_parser_accepts_if_condition_with_spaced_topic_names", "[ya
 
     REQUIRE(result.success);
 }
+
+TEST_CASE("expression_parser_reports_empty_script", "[yaha][automation]") {
+    const yaha::ExpressionParseResult result = yaha::ExpressionParser::parse("");
+
+    REQUIRE_FALSE(result.success);
+    REQUIRE_FALSE(result.errors.empty());
+}
+
+TEST_CASE("expression_parser_reports_invalid_declaration", "[yaha][automation]") {
+    const yaha::ExpressionParseResult result = yaha::ExpressionParser::parse(
+        "presence (default: absent)\n"
+        "presence($MONITORING/presence)");
+
+    REQUIRE_FALSE(result.success);
+    REQUIRE_FALSE(result.errors.empty());
+}
+
+TEST_CASE("expression_parser_reports_invalid_if_call_shape", "[yaha][automation]") {
+    const yaha::ExpressionParseResult result = yaha::ExpressionParser::parse("if(a,b)");
+
+    REQUIRE_FALSE(result.success);
+    REQUIRE_FALSE(result.errors.empty());
+}
+
+TEST_CASE("expression_parser_reports_invalid_map_literal", "[yaha][automation]") {
+    const yaha::ExpressionParseResult result = yaha::ExpressionParser::parse("state = (default on)\nstate(a)");
+
+    REQUIRE_FALSE(result.success);
+    REQUIRE_FALSE(result.errors.empty());
+}
+
+TEST_CASE("yaha_error_builds_message_without_debug_details", "[yaha][error_handling]") {
+    const yaha::YahaError error{
+        "YAHA_TEST",
+        "technical",
+        "user-facing"};
+
+    REQUIRE(error.errorCode() == "YAHA_TEST");
+    REQUIRE(error.message() == "technical");
+    REQUIRE(error.userMessage() == "user-facing");
+    REQUIRE_FALSE(error.debugDetails().has_value());
+    REQUIRE(error.buildMessage() == "code=YAHA_TEST | message=technical | user_message=user-facing");
+    REQUIRE(std::string{error.what()} == error.buildMessage());
+}
+
+TEST_CASE("yaha_error_builds_message_with_debug_details", "[yaha][error_handling]") {
+    const yaha::YahaError error{
+        "YAHA_TEST_2",
+        "technical-2",
+        "user-2",
+        std::string{"details"}};
+
+    REQUIRE(error.debugDetails().has_value());
+    REQUIRE(*error.debugDetails() == "details");
+    REQUIRE(error.buildMessage() == "code=YAHA_TEST_2 | message=technical-2 | user_message=user-2 | details=details");
+}
+// NOLINTEND(readability-function-cognitive-complexity)
