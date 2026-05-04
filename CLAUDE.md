@@ -8,8 +8,6 @@ Respond user language they write.
 Keep project root always clean
 Always exclude files in gitignore not suitable for github. Use generic rules and not per-file-rules.
 
-
-
 ## Skills
 
 Caveman language all skills 
@@ -20,7 +18,7 @@ Only use skills from .claude/commands. Never read or follow skills from VS Code 
 Skills only here:
 
 /build`: build project
-/cpp-dev: C++20 rules
+/cpp-dev: C++ development rules, never violate any of these rules
 /unit-test: unit testing
 /integration-test: integration testing
 /code-create: workflow coding

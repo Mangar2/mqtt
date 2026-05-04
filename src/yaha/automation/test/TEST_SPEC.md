@@ -26,3 +26,8 @@ Unit tests for the first automation step: lexical tokenization of expression DSL
 | `rules_tree_parser_reports_path_on_expression_error` | path-aware parser error reporting | nested object with invalid `if` call argument count | parse error includes exact snippet source path |
 | `rules_tree_parser_parses_rules_json_without_errors` | end-to-end parser validation against converted fixture file | `test/rules.json` | json reader and rules parser both succeed with zero parse errors |
 | `rules_tree_parser_collects_external_topics_from_rules_json` | external topic collection from full rules tree | `test/rules.json` | external variable set is non-empty and contains known topics |
+| `expression_evaluator_evaluates_map_declaration_and_call` | declaration map invocation runtime | parsed script with declaration and map call plus variable map | returns mapped string value and reports used variable |
+| `expression_evaluator_evaluates_if_expression` | conditional expression runtime | parsed `if` script and variable context | returns selected branch value |
+| `expression_evaluator_supports_time_arithmetic_in_minutes` | time +/- numeric minute semantics | comparison script with `/time` and `/sunrise` | evaluates to true with minute-shifted comparison |
+| `expression_evaluator_reports_undefined_variable` | missing variable handling | script with external variable and empty variable map | evaluation fails and returns error list |
+| `expression_evaluator_can_evaluate_program_from_rules_fixture` | fixture-like expression runtime | expression shape from converted `test/rules.json` | returns expected branch output |

@@ -9,6 +9,7 @@ Current implementation step:
 - Expression tokenizer for the Python-style DSL.
 - Internal variable calculator including sunrise/sunset and twilight calculations.
 - Expression AST parser and structured rules-tree snippet parser.
+- Recursive evaluator for parsed expression programs.
 
 ## Public API
 
@@ -93,6 +94,34 @@ Behavior:
 - Returns structured read errors including line/column position when parsing fails.
 - Intended to validate full fixture files (for example `test/rules.json`) through `RulesTreeParser`.
 
+### Recursive expression evaluator
+
+Class:
+- `ExpressionEvaluator`
+
+Public contract:
+- `evaluate(scriptAst, variables) -> ExpressionEvaluationResult`
+
+Behavior:
+- Evaluates one parsed `FieldScriptAst` recursively over AST nodes.
+- Declaration maps are available to later map calls in the same script.
+- Supports:
+  - literals/identifiers/variable references,
+  - unary `not`,
+  - binary `+`, `-`, `=`, `!=`, `<>`, `>`, `<`, `>=`, `<=`, `and`, `or`,
+  - `if(condition, trueValue, falseValue)`,
+  - map declarations and map calls.
+- Tracks used variable names for dependency/telemetry handling.
+
+Type behavior:
+- Runtime value supports string, number, bool, and time_point values.
+- Time arithmetic follows rules semantics:
+  - subtract/add numeric minutes from time values.
+- Relational comparison supports number-vs-number and time-vs-time.
+
+Error behavior:
+- Fails with structured error list when variables are undefined or operand types are invalid.
+
 ### Class `InternalVariables`
 
 | Member | Signature | Notes |
@@ -140,8 +169,11 @@ Error behavior:
 | `rules_tree_parser.cpp` | Structured tree traversal and snippet parsing implementation |
 | `rules_tree_json_reader.h` | JSON-to-RuleTreeNode reader declaration |
 | `rules_tree_json_reader.cpp` | JSON-to-RuleTreeNode reader implementation |
+| `expression_evaluator.h` | Recursive AST evaluator declaration and result types |
+| `expression_evaluator.cpp` | Recursive AST evaluator implementation |
 | `test/TEST_SPEC.md` | Unit-test specification |
 | `test/expression_tokenizer_test.cpp` | Catch2 unit tests |
 | `test/internal_variables_test.cpp` | Catch2 unit tests for internal variable computation |
 | `test/expression_parser_test.cpp` | Catch2 unit tests for AST parser and tree parser |
 | `test/rules_tree_parser_rules_json_test.cpp` | Catch2 integration tests against `test/rules.json` |
+| `test/expression_evaluator_test.cpp` | Catch2 unit tests for recursive expression evaluation |
