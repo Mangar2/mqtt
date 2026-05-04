@@ -75,3 +75,8 @@ Implements a standalone key/value HTTP store with MQTT monitoring publishes.
 | `file_store.cpp` | Implementation |
 | `test/TEST_SPEC.md` | Unit test specification |
 | `test/file_store_test.cpp` | Unit tests |
+
+## Implementation notes
+
+- Default configuration values in the public config structs are expressed via named constants in `file_store.h` to avoid magic-number literals in member initializers.
+- Internal HTTP handlers use named status-code constants in `file_store.cpp` instead of numeric literals.

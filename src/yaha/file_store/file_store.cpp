@@ -17,6 +17,11 @@ namespace yaha {
 
 namespace {
 
+constexpr int k_http_status_ok{200};
+constexpr int k_http_status_bad_request{400};
+constexpr int k_http_status_not_found{404};
+constexpr int k_http_status_internal_server_error{500};
+
 std::int64_t nowMilliseconds() {
     const auto now = std::chrono::system_clock::now();
     const auto sinceEpoch = now.time_since_epoch();
@@ -349,7 +354,7 @@ FileStore::ReadPayloadResult FileStore::readKeyPayload(const std::string& keyPat
     return result;
 }
 
-bool FileStore::validateJsonPayload(const std::string& jsonText) const {
+bool FileStore::validateJsonPayload(const std::string& jsonText) {
     std::size_t index = 0U;
     while (index < jsonText.size() && std::isspace(static_cast<unsigned char>(jsonText[index])) != 0) {
         index += 1U;
@@ -360,12 +365,10 @@ bool FileStore::validateJsonPayload(const std::string& jsonText) const {
     }
 
     const char first = jsonText[index];
-    if (first != '{' && first != '[' && first != '"' && first != '-' && (first < '0' || first > '9')
-        && first != 't' && first != 'f' && first != 'n') {
-        return false;
-    }
+    const bool startsLikeJson = first == '{' || first == '[' || first == '"' || first == '-'
+        || (first >= '0' && first <= '9') || first == 't' || first == 'f' || first == 'n';
 
-    return true;
+    return startsLikeJson;
 }
 
 void FileStore::publishMonitoring(const std::string& eventType,
@@ -441,8 +444,8 @@ std::string FileStore::jsonEscape(const std::string& text) {
 }
 
 std::string FileStore::toLower(std::string text) {
-    std::transform(text.begin(), text.end(), text.begin(), [](const unsigned char c) {
-        return static_cast<char>(std::tolower(c));
+    std::transform(text.begin(), text.end(), text.begin(), [](const unsigned char chr) {
+        return static_cast<char>(std::tolower(chr));
     });
     return text;
 }
@@ -460,7 +463,7 @@ std::string FileStore::trimTopicPrefix(std::string prefix) {
 }
 
 void FileStore::handleHttpOptions(httplib::Response& response) {
-    response.status = 200;
+    response.status = k_http_status_ok;
     response.set_header("Access-Control-Allow-Origin", "*");
     response.set_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
     response.set_header("Access-Control-Allow-Headers", "content-type");
@@ -473,7 +476,7 @@ void FileStore::handleHttpPost(FileStore& store,
     const std::string keyPath = request.path;
     if (keyPath.size() > store.config_.maxKeyLength) {
         setHttpErrorResponse(response,
-                             400,
+                             k_http_status_bad_request,
                              YahaError{"YAHA_FILE_STORE_KEY_TOO_LONG",
                                        "key_too_long",
                                        "The key is too long for this FileStore instance.",
@@ -490,9 +493,9 @@ void FileStore::handleHttpPost(FileStore& store,
     payload.isJson = isJson;
     payload.body = request.body;
 
-    if (isJson && !store.validateJsonPayload(payload.body)) {
+    if (isJson && !FileStore::validateJsonPayload(payload.body)) {
         setHttpErrorResponse(response,
-                             400,
+                             k_http_status_bad_request,
                              YahaError{"YAHA_FILE_STORE_INVALID_JSON_PAYLOAD",
                                        "invalid_json_payload",
                                        "The provided JSON payload is invalid."});
@@ -502,7 +505,7 @@ void FileStore::handleHttpPost(FileStore& store,
     const auto writeResult = store.writeKeyPayload(keyPath, payload);
     if (!writeResult.success) {
         setHttpErrorResponse(response,
-                             500,
+                             k_http_status_internal_server_error,
                              YahaError{"YAHA_FILE_STORE_PERSIST_FAILED",
                                        "failed_to_persist_key",
                                        "The key could not be persisted.",
@@ -512,7 +515,7 @@ void FileStore::handleHttpPost(FileStore& store,
 
     store.publishMonitoring("changed", &keyPath, writeResult.filename, "http-post", nullptr);
 
-    response.status = 200;
+    response.status = k_http_status_ok;
     response.set_header("Access-Control-Allow-Origin", "*");
     response.set_content("", "text/plain");
 }
@@ -523,7 +526,7 @@ void FileStore::handleHttpGet(FileStore& store,
     const std::string keyPath = request.path;
     if (keyPath.size() > store.config_.maxKeyLength) {
         setHttpErrorResponse(response,
-                             400,
+                             k_http_status_bad_request,
                              YahaError{"YAHA_FILE_STORE_KEY_TOO_LONG",
                                        "key_too_long",
                                        "The key is too long for this FileStore instance.",
@@ -537,13 +540,13 @@ void FileStore::handleHttpGet(FileStore& store,
     if (!readResult.success) {
         if (readResult.errorText == "file not found") {
             setHttpErrorResponse(response,
-                                 404,
+                                 k_http_status_not_found,
                                  YahaError{"YAHA_FILE_STORE_KEY_NOT_FOUND",
                                            "key_not_found",
                                            "The requested key does not exist."});
         } else {
             setHttpErrorResponse(response,
-                                 500,
+                                 k_http_status_internal_server_error,
                                  YahaError{"YAHA_FILE_STORE_READ_FAILED",
                                            "failed_to_read_key",
                                            "The key could not be read.",
@@ -552,7 +555,7 @@ void FileStore::handleHttpGet(FileStore& store,
         return;
     }
 
-    response.status = 200;
+    response.status = k_http_status_ok;
     response.set_header("Access-Control-Allow-Origin", "*");
     response.set_content(readResult.responseJson, "Application/Json");
 }

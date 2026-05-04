@@ -653,7 +653,6 @@ For a reimplementation to be considered parity-correct, these requirements are m
 7. Non-motion events must be single-cycle and cleared after each processTasks run.
 8. Incoming messages with value 0 must not be added to event history.
 9. Rule management ack messages must use qos 1.
-10. Startup rule-source precedence must be file-store first, local files fallback.
 10. Startup rule-source is file-store-only when `filestore.use=true`; local fallback is retired.
 11. processTasks must enforce simulation mode match guard.
 

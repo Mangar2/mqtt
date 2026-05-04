@@ -1,0 +1,189 @@
+#include <catch2/catch_test_macros.hpp>
+
+#include "httplib.h"
+
+#include <chrono>
+#include <cstdint>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
+
+#include "yaha/automation_client/automation_client_component.h"
+
+namespace {
+
+constexpr std::uint16_t k_fallback_test_port{28110U};
+constexpr int k_wait_attempts{40};
+constexpr int k_http_ok_status{200};
+constexpr int k_wait_sleep_ms{10};
+
+[[nodiscard]] std::uint16_t reserveFreeLocalPort() {
+    httplib::Server probeServer;
+    const int boundPort = probeServer.bind_to_any_port("127.0.0.1");
+    if (boundPort <= 0) {
+        return k_fallback_test_port;
+    }
+    const auto port = static_cast<std::uint16_t>(boundPort);
+    probeServer.stop();
+    return port;
+}
+
+bool waitForHttpServer(const std::uint16_t port) {
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    for (int attempt = 0; attempt < k_wait_attempts; ++attempt) {
+        if (const auto response = client.Get("/health")) {
+            return response->status == k_http_ok_status;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds{k_wait_sleep_ms});
+    }
+    return false;
+}
+
+class FileStoreMockServer {
+public:
+    explicit FileStoreMockServer(const std::uint16_t port)
+        : port_(port) {
+        server_.Get("/health", [](const httplib::Request&, httplib::Response& response) {
+            response.status = k_http_ok_status;
+            response.set_content("ok", "text/plain");
+        });
+
+        server_.Get("/automation/rules", [this](const httplib::Request&, httplib::Response& response) {
+            std::lock_guard<std::mutex> lock{mutex_};
+            response.status = k_http_ok_status;
+            response.set_content(rulesJsonText_, "application/json");
+        });
+
+        server_.Post("/automation/rules", [this](const httplib::Request& request, httplib::Response& response) {
+            std::lock_guard<std::mutex> lock{mutex_};
+            lastPostedBodyText_ = request.body;
+            postCountValue_ += 1U;
+            rulesJsonText_ = request.body;
+            response.status = k_http_ok_status;
+            response.set_content("", "text/plain");
+        });
+
+        serverThread_ = std::thread([this]() {
+            server_.listen("127.0.0.1", static_cast<int>(port_));
+        });
+
+        REQUIRE(waitForHttpServer(port_));
+    }
+
+    ~FileStoreMockServer() {
+        server_.stop();
+        if (serverThread_.joinable()) {
+            serverThread_.join();
+        }
+    }
+
+    void setRulesJson(std::string jsonText) {
+        std::lock_guard<std::mutex> lock{mutex_};
+        rulesJsonText_ = std::move(jsonText);
+    }
+
+    [[nodiscard]] std::string lastPostedBody() const {
+        std::lock_guard<std::mutex> lock{mutex_};
+        return lastPostedBodyText_;
+    }
+
+    [[nodiscard]] std::uint32_t postCount() const {
+        std::lock_guard<std::mutex> lock{mutex_};
+        return postCountValue_;
+    }
+
+private:
+    std::uint16_t port_{0U};
+    mutable std::mutex mutex_;
+    httplib::Server server_;
+    std::thread serverThread_;
+    std::string rulesJsonText_{"{\"rules\":{}}"};
+    std::string lastPostedBodyText_;
+    std::uint32_t postCountValue_{0U};
+};
+
+} // namespace
+
+TEST_CASE("automation_component_run_loads_rules_from_filestore", "[automation_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setRulesJson("{\"rules\":{\"wake\":{\"topic\":\"house/light\",\"value\":\"on\"}}}");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    REQUIRE(component.isRunning());
+    REQUIRE(component.ruleCount() == 1U);
+    REQUIRE(component.hasRule("wake"));
+
+    component.close();
+}
+
+TEST_CASE("automation_component_monitoring_event_reload_rules", "[automation_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setRulesJson("{\"rules\":{\"first\":{\"topic\":\"house/light\",\"value\":\"on\"}}}");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+    REQUIRE(component.hasRule("first"));
+
+    fileStore.setRulesJson("{\"rules\":{\"second\":{\"topic\":\"house/heating\",\"value\":\"off\"}}}");
+
+    component.handleMessage(yaha::Message{
+        "$MONITOR/FileStore/changed",
+        std::string{"{\"keyPath\":\"/automation/rules\",\"changeType\":\"changed\"}"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    REQUIRE(component.ruleCount() == 1U);
+    REQUIRE_FALSE(component.hasRule("first"));
+    REQUIRE(component.hasRule("second"));
+
+    component.close();
+}
+
+TEST_CASE("automation_component_management_update_persists_and_acks", "[automation_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{
+        "$MONITORING/automation/rules/demo/set",
+        std::string{"{\"topic\":\"house/light/set\",\"value\":\"on\"}"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    REQUIRE(component.hasRule("demo"));
+    REQUIRE(fileStore.postCount() >= 1U);
+    REQUIRE(fileStore.lastPostedBody().find("\"demo\"") != std::string::npos);
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    REQUIRE_FALSE(published.empty());
+    REQUIRE(published.back().topic() == "$MONITORING/automation/rules/demo");
+    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+
+    component.close();
+}

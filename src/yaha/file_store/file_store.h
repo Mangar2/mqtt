@@ -12,7 +12,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -28,6 +27,21 @@ struct Response;
 namespace yaha {
 
 /**
+ * @brief Default polling interval for filesystem watcher in milliseconds.
+ */
+inline constexpr std::uint32_t k_file_store_default_watch_interval_ms{1000U};
+
+/**
+ * @brief Default HTTP listen port for FileStore.
+ */
+inline constexpr std::uint16_t k_file_store_default_server_port{8210U};
+
+/**
+ * @brief Default maximum accepted key length for FileStore.
+ */
+inline constexpr std::uint32_t k_file_store_default_max_key_length{100U};
+
+/**
  * @brief Monitoring publish configuration for FileStore.
  */
 struct FileStoreMonitoringConfig {
@@ -35,7 +49,7 @@ struct FileStoreMonitoringConfig {
     std::string topicPrefix{"$MONITOR/FileStore"};
     Qos qos{Qos::AtLeastOnce};
     bool retain{false};
-    std::uint32_t watchIntervalMs{1000U};
+    std::uint32_t watchIntervalMs{k_file_store_default_watch_interval_ms};
 };
 
 /**
@@ -43,13 +57,13 @@ struct FileStoreMonitoringConfig {
  */
 struct FileStoreConfig {
     std::string serverHost{"127.0.0.1"};
-    std::uint16_t serverPort{8210U};
+    std::uint16_t serverPort{k_file_store_default_server_port};
     std::filesystem::path directory{"data"};
     std::uint32_t keepFiles{2U};
-    std::uint32_t maxKeyLength{100U};
+    std::uint32_t maxKeyLength{k_file_store_default_max_key_length};
     FileStoreMonitoringConfig monitoring{};
-    std::function<void()> httpStartCallback{};
-    std::function<void()> httpStopCallback{};
+    std::function<void()> httpStartCallback;
+    std::function<void()> httpStopCallback;
 };
 
 /**
@@ -62,8 +76,8 @@ public:
      */
     struct SnapshotBuildResult {
         bool success{false};               ///< True when snapshot scan succeeded.
-        std::string errorText{};           ///< Human-readable error description on failure.
-        std::unordered_map<std::string, std::filesystem::file_time_type> snapshot{}; ///< Filename to mtime map.
+        std::string errorText;             ///< Human-readable error description on failure.
+        std::unordered_map<std::string, std::filesystem::file_time_type> snapshot; ///< Filename to mtime map.
     };
 
     /**
@@ -71,8 +85,8 @@ public:
      */
     struct WritePayloadResult {
         bool success{false};      ///< True when write succeeded.
-        std::string filename{};   ///< Encoded filename for key path.
-        std::string errorText{};  ///< Human-readable error description on failure.
+        std::string filename;     ///< Encoded filename for key path.
+        std::string errorText;    ///< Human-readable error description on failure.
     };
 
     /**
@@ -80,8 +94,8 @@ public:
      */
     struct ReadPayloadResult {
         bool success{false};        ///< True when read succeeded.
-        std::string responseJson{}; ///< JSON response body content.
-        std::string errorText{};    ///< Human-readable error description on failure.
+        std::string responseJson;   ///< JSON response body content.
+        std::string errorText;      ///< Human-readable error description on failure.
     };
 
     /**
@@ -155,7 +169,7 @@ private:
      */
     struct StoredPayload {
         bool isJson{false};
-        std::string body{};
+        std::string body;
     };
 
     /**
@@ -205,7 +219,7 @@ private:
      * @param jsonText Candidate JSON text.
      * @return True when text resembles valid JSON payload start.
      */
-    [[nodiscard]] bool validateJsonPayload(const std::string& jsonText) const;
+    [[nodiscard]] static bool validateJsonPayload(const std::string& jsonText);
 
     /**
      * @brief Publishes one monitoring event message.
@@ -270,16 +284,16 @@ private:
 
     FileStoreConfig config_{}; ///< Runtime configuration.
 
-    std::unique_ptr<httplib::Server> httpServer_{}; ///< HTTP server instance.
-    std::thread httpThread_{};                      ///< HTTP listener thread.
-    std::thread watcherThread_{};                   ///< Filesystem polling thread.
+    std::unique_ptr<httplib::Server> httpServer_;   ///< HTTP server instance.
+    std::thread httpThread_;                        ///< HTTP listener thread.
+    std::thread watcherThread_;                     ///< Filesystem polling thread.
 
-    mutable std::mutex stateMutex_{};               ///< Guards lifecycle state flags.
-    mutable std::mutex publishMutex_{};             ///< Guards publish callback access.
-    std::condition_variable stopCondition_{};       ///< Wakes watcher on shutdown.
+    mutable std::mutex stateMutex_;                 ///< Guards lifecycle state flags.
+    mutable std::mutex publishMutex_;               ///< Guards publish callback access.
+    std::condition_variable stopCondition_;         ///< Wakes watcher on shutdown.
     bool running_{false};                           ///< True when lifecycle is active.
     bool stopRequested_{false};                     ///< True when shutdown requested.
-    PublishCallback publishCallback_{};             ///< Outgoing MQTT publish callback.
+    PublishCallback publishCallback_;               ///< Outgoing MQTT publish callback.
 };
 
 } // namespace yaha

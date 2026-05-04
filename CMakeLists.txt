@@ -57,6 +57,7 @@ list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/test_client_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_msgstoreclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_brokerconnectorclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_filestoreclient_main\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_automationclient_main\\.cpp$")
 
 if(WIN32)
     list(FILTER MQTT_ALL_SOURCES  EXCLUDE REGEX "_posix\\.cpp$")
@@ -176,6 +177,22 @@ if(WIN32)
     target_link_libraries(yahafilestoreclient PRIVATE ws2_32)
 endif()
 
+#  YAHA Automation standalone executable
+add_executable(yahaautomationclient
+    src/yaha_automationclient_main.cpp
+    ${MQTT_LIBRARY_SOURCES}
+)
+
+target_compile_options(yahaautomationclient PRIVATE ${MQTT_COMPILE_OPTIONS})
+target_link_options(yahaautomationclient    PRIVATE ${MQTT_LINK_OPTIONS})
+target_include_directories(yahaautomationclient PRIVATE src)
+target_include_directories(yahaautomationclient PRIVATE ${httplib_SOURCE_DIR})
+target_compile_definitions(yahaautomationclient PRIVATE
+    $<$<BOOL:${MQTT_TRACING_DISABLED}>:MQTT_TRACING_DISABLED>)
+if(WIN32)
+    target_link_libraries(yahaautomationclient PRIVATE ws2_32)
+endif()
+
 #  Unit tests 
 include(CTest)
 
@@ -224,5 +241,6 @@ install(TARGETS yahabroker
     yahamsgstoreclient
     yahabrokerconnectorclient
     yahafilestoreclient
+    yahaautomationclient
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
