@@ -227,46 +227,64 @@ private:
             consume();
         }
 
-        if (atEnd() || std::isdigit(static_cast<unsigned char>(peek())) == 0) {
-            throw makeError("invalid number");
-        }
-
-        if (peek() == '0') {
-            consume();
-        } else {
-            while (!atEnd() && std::isdigit(static_cast<unsigned char>(peek())) != 0) {
-                consume();
-            }
-        }
-
-        if (!atEnd() && peek() == '.') {
-            consume();
-            if (atEnd() || std::isdigit(static_cast<unsigned char>(peek())) == 0) {
-                throw makeError("invalid number fraction");
-            }
-            while (!atEnd() && std::isdigit(static_cast<unsigned char>(peek())) != 0) {
-                consume();
-            }
-        }
-
-        if (!atEnd() && (peek() == 'e' || peek() == 'E')) {
-            consume();
-            if (!atEnd() && (peek() == '+' || peek() == '-')) {
-                consume();
-            }
-            if (atEnd() || std::isdigit(static_cast<unsigned char>(peek())) == 0) {
-                throw makeError("invalid number exponent");
-            }
-            while (!atEnd() && std::isdigit(static_cast<unsigned char>(peek())) != 0) {
-                consume();
-            }
-        }
+        parseIntegerPart();
+        parseFractionPartIfPresent();
+        parseExponentPartIfPresent();
 
         const std::string text = input_.substr(start, index_ - start);
         try {
             return std::stod(text);
         } catch (...) {
             throw makeError("number conversion failed");
+        }
+    }
+
+    void parseIntegerPart() {
+        if (atEnd() || std::isdigit(static_cast<unsigned char>(peek())) == 0) {
+            throw makeError("invalid number");
+        }
+
+        if (peek() == '0') {
+            consume();
+            return;
+        }
+
+        while (!atEnd() && std::isdigit(static_cast<unsigned char>(peek())) != 0) {
+            consume();
+        }
+    }
+
+    void parseFractionPartIfPresent() {
+        if (atEnd() || peek() != '.') {
+            return;
+        }
+
+        consume();
+        if (atEnd() || std::isdigit(static_cast<unsigned char>(peek())) == 0) {
+            throw makeError("invalid number fraction");
+        }
+
+        while (!atEnd() && std::isdigit(static_cast<unsigned char>(peek())) != 0) {
+            consume();
+        }
+    }
+
+    void parseExponentPartIfPresent() {
+        if (atEnd() || (peek() != 'e' && peek() != 'E')) {
+            return;
+        }
+
+        consume();
+        if (!atEnd() && (peek() == '+' || peek() == '-')) {
+            consume();
+        }
+
+        if (atEnd() || std::isdigit(static_cast<unsigned char>(peek())) == 0) {
+            throw makeError("invalid number exponent");
+        }
+
+        while (!atEnd() && std::isdigit(static_cast<unsigned char>(peek())) != 0) {
+            consume();
         }
     }
 

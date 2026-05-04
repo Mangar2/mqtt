@@ -1,6 +1,5 @@
 #include "yaha/automation/rules_tree_parser.h"
 
-#include <stdexcept>
 #include <utility>
 
 #include "yaha/automation/expression_parser.h"

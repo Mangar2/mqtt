@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <set>
 #include <string>
@@ -8,11 +9,11 @@
 
 namespace yaha {
 
-enum class UnaryOperator {
+enum class UnaryOperator : std::uint8_t {
     Not
 };
 
-enum class BinaryOperator {
+enum class BinaryOperator : std::uint8_t {
     Add,
     Sub,
     Eq,

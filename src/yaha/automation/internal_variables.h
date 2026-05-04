@@ -19,13 +19,17 @@ public:
     using Value = std::variant<TimePoint, double>;
     using VariableMap = std::map<std::string, Value>;
 
+    struct GeoCoordinates {
+        double longitude;
+        double latitude;
+    };
+
     /**
      * @brief Creates calculator with fixed geo coordinates.
      *
-     * @param longitude Longitude in decimal degrees.
-     * @param latitude Latitude in decimal degrees.
+    * @param coordinates Longitude and latitude in decimal degrees.
      */
-    InternalVariables(double longitude, double latitude);
+    InternalVariables(GeoCoordinates coordinates);
 
     /**
      * @brief Computes all internal variables for the given date context.
@@ -43,15 +47,13 @@ public:
 private:
     [[nodiscard]] static TimePoint calculateSunEvent(
         const TimePoint& date,
-        double longitude,
-        double latitude,
+        const GeoCoordinates& coordinates,
         double zenithDegrees,
         bool sunriseEvent);
 
     [[nodiscard]] static double weekdayIndex(const TimePoint& date);
 
-    double longitude_;
-    double latitude_;
+    GeoCoordinates coordinates_;
 };
 
 } // namespace yaha

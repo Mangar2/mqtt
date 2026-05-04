@@ -26,7 +26,7 @@ struct MapRuntimeValue {
 using RuntimeValue = std::variant<std::string, double, bool, std::chrono::system_clock::time_point, MapRuntimeValue>;
 
 [[nodiscard]] std::string toLower(std::string textValue) {
-    std::transform(textValue.begin(), textValue.end(), textValue.begin(), [](const unsigned char charValue) {
+    std::ranges::transform(textValue, textValue.begin(), [](const unsigned char charValue) {
         return static_cast<char>(std::tolower(charValue));
     });
     return textValue;
@@ -167,7 +167,7 @@ public:
         ExpressionEvaluationResult result;
 
         if (!script_.resultExpression) {
-            result.errors.push_back("missing result expression");
+            result.errors.emplace_back("missing result expression");
             result.usedVariables = usedVariables_;
             return result;
         }
@@ -188,7 +188,7 @@ public:
         } else if (std::holds_alternative<std::chrono::system_clock::time_point>(*evaluatedValue)) {
             result.value = std::get<std::chrono::system_clock::time_point>(*evaluatedValue);
         } else {
-            errors_.push_back("result expression must not evaluate to a map");
+            errors_.emplace_back("result expression must not evaluate to a map");
         }
 
         result.success = errors_.empty();
@@ -200,7 +200,7 @@ public:
 private:
     [[nodiscard]] std::optional<RuntimeValue> eval(const ExprPtr& expression) {
         if (!expression) {
-            errors_.push_back("invalid null expression");
+            errors_.emplace_back("invalid null expression");
             return std::nullopt;
         }
 
@@ -236,7 +236,7 @@ private:
             return evalMapCallNode(std::get<MapCallNode>(expression->node));
         }
 
-        errors_.push_back("unsupported expression node");
+        errors_.emplace_back("unsupported expression node");
         return std::nullopt;
     }
 
@@ -266,7 +266,7 @@ private:
         return RuntimeValue{std::get<double>(literalValue)};
     }
 
-    [[nodiscard]] std::optional<RuntimeValue> evalIdentifierNode(const IdentifierNode& identifierNode) {
+    [[nodiscard]] static std::optional<RuntimeValue> evalIdentifierNode(const IdentifierNode& identifierNode) {
         const std::string identifierName = identifierNode.name;
         if (toLower(identifierName) == "true") {
             return RuntimeValue{true};
@@ -282,7 +282,7 @@ private:
         usedVariables_.insert(variableName);
         const auto variableIterator = variables_.find(variableName);
         if (variableIterator == variables_.end()) {
-            errors_.push_back("undefined variable: " + variableName);
+            errors_.emplace_back("undefined variable: " + variableName);
             return std::nullopt;
         }
 
@@ -335,7 +335,7 @@ private:
             return evalAddSub(*leftValue, *rightValue, binaryNode.op == BinaryOperator::Add);
         }
 
-        errors_.push_back("unsupported binary operator");
+        errors_.emplace_back("unsupported binary operator");
         return std::nullopt;
     }
 
@@ -355,7 +355,7 @@ private:
                 return std::nullopt;
             }
             if (std::holds_alternative<MapRuntimeValue>(*entryValue)) {
-                errors_.push_back("map entry value must not be a map");
+                errors_.emplace_back("map entry value must not be a map");
                 return std::nullopt;
             }
 
@@ -376,7 +376,7 @@ private:
     [[nodiscard]] std::optional<RuntimeValue> evalMapCallNode(const MapCallNode& mapCallNode) {
         const auto declarationIterator = declarations_.find(mapCallNode.name);
         if (declarationIterator == declarations_.end()) {
-            errors_.push_back("undefined map declaration: " + mapCallNode.name);
+            errors_.emplace_back("undefined map declaration: " + mapCallNode.name);
             return std::nullopt;
         }
 
@@ -387,30 +387,30 @@ private:
 
         std::optional<RuntimeValue> defaultValue;
         for (const auto& mapEntry : declarationIterator->second) {
-            const auto entryValue = eval(mapEntry.value);
+            auto entryValue = eval(mapEntry.value);
             if (!entryValue.has_value()) {
                 return std::nullopt;
             }
 
             if (mapEntry.key.isDefault) {
-                defaultValue = *entryValue;
+                defaultValue = entryValue;
                 continue;
             }
 
             if (matchesMapKey(mapEntry.key.token, *selectorValue)) {
-                return *entryValue;
+                return entryValue;
             }
         }
 
         if (defaultValue.has_value()) {
-            return *defaultValue;
+            return defaultValue;
         }
 
-        errors_.push_back("map call has no matching key and no default: " + mapCallNode.name);
+        errors_.emplace_back("map call has no matching key and no default: " + mapCallNode.name);
         return std::nullopt;
     }
 
-    [[nodiscard]] bool matchesMapKey(const std::string& keyToken, const RuntimeValue& selectorValue) {
+    [[nodiscard]] static bool matchesMapKey(const std::string& keyToken, const RuntimeValue& selectorValue) {
         double keyNumber = 0.0;
         if (parseDouble(keyToken, &keyNumber) && std::holds_alternative<double>(selectorValue)) {
             return std::fabs(std::get<double>(selectorValue) - keyNumber) < 1e-12;
@@ -459,7 +459,7 @@ private:
             return RuntimeValue{*leftTime <= *rightTime};
         }
 
-        errors_.push_back("invalid operands for relational comparison");
+        errors_.emplace_back("invalid operands for relational comparison");
         return std::nullopt;
     }
 
@@ -475,7 +475,7 @@ private:
 
         const auto leftTime = tryTimeOfDay(leftValue);
         if (leftTime.has_value() && std::holds_alternative<double>(rightValue)) {
-            const auto deltaMinutes = static_cast<long long>(std::llround(std::get<double>(rightValue)));
+            const auto deltaMinutes = std::llround(std::get<double>(rightValue));
             const auto deltaDuration = std::chrono::minutes{deltaMinutes};
             const auto resultTime = isAddOperation ? *leftTime + deltaDuration : *leftTime - deltaDuration;
             if (std::holds_alternative<std::chrono::system_clock::time_point>(leftValue)) {
@@ -485,7 +485,7 @@ private:
             return RuntimeValue{formatTimeText(resultTime)};
         }
 
-        errors_.push_back("invalid operands for arithmetic operation");
+        errors_.emplace_back("invalid operands for arithmetic operation");
         return std::nullopt;
     }
 

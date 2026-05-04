@@ -15,7 +15,7 @@ struct RuleTreeJsonReadError {
 
 struct RuleTreeJsonReadResult {
     bool success{false};
-    RuleTreeNode root{};
+    RuleTreeNode root;
     std::vector<RuleTreeJsonReadError> errors;
 };
 

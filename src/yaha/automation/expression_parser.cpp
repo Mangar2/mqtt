@@ -1,8 +1,8 @@
 #include "yaha/automation/expression_parser.h"
 
+#include <algorithm>
 #include <cctype>
 #include <optional>
-#include <stdexcept>
 #include <utility>
 
 #include "yaha/automation/expression_tokenizer.h"
@@ -10,12 +10,12 @@
 namespace yaha {
 namespace {
 
-[[nodiscard]] bool isIdentifierStart(const char ch) {
-    return std::isalpha(static_cast<unsigned char>(ch)) != 0 || ch == '_';
+[[nodiscard]] bool isIdentifierStart(const char currentChar) {
+    return std::isalpha(static_cast<unsigned char>(currentChar)) != 0 || currentChar == '_';
 }
 
-[[nodiscard]] bool isIdentifierChar(const char ch) {
-    return std::isalnum(static_cast<unsigned char>(ch)) != 0 || ch == '_';
+[[nodiscard]] bool isIdentifierChar(const char currentChar) {
+    return std::isalnum(static_cast<unsigned char>(currentChar)) != 0 || currentChar == '_';
 }
 
 [[nodiscard]] bool isIdentifier(const std::string& token) {
@@ -60,12 +60,9 @@ namespace {
     if (token.empty()) {
         return false;
     }
-    for (const char current : token) {
-        if (std::isdigit(static_cast<unsigned char>(current)) == 0) {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::all_of(token, [](const char currentChar) {
+        return std::isdigit(static_cast<unsigned char>(currentChar)) != 0;
+    });
 }
 
 [[nodiscard]] bool isVariableRef(const std::string& token) {
@@ -74,24 +71,17 @@ namespace {
     }
 
     const char first = token.front();
-    if (!(first == '$' || first == '/' || isIdentifierStart(first))) {
+    if (first != '$' && first != '/' && !isIdentifierStart(first)) {
         return false;
     }
 
-    for (const char current : token) {
-        if (std::isalnum(static_cast<unsigned char>(current)) != 0) {
-            continue;
+    return std::ranges::all_of(token, [](const char currentChar) {
+        if (std::isalnum(static_cast<unsigned char>(currentChar)) != 0) {
+            return true;
         }
-
-        if (current == '_' || current == '-' || current == '.' || current == '$'
-            || current == '/' || current == ' ') {
-            continue;
-        }
-
-        return false;
-    }
-
-    return true;
+        return currentChar == '_' || currentChar == '-' || currentChar == '.' || currentChar == '$'
+            || currentChar == '/' || currentChar == ' ';
+    });
 }
 
 [[nodiscard]] bool isComparisonOperator(const std::string& token) {
@@ -165,7 +155,7 @@ public:
     }
 
     [[nodiscard]] ExprPtr parseExpressionLine(std::vector<ParseError>* errors) {
-        const ExprPtr expression = parseExpression(errors);
+        ExprPtr expression = parseExpression(errors);
         if (!expression) {
             return nullptr;
         }
@@ -316,7 +306,7 @@ private:
             }
 
             consume();
-            const ExprPtr expression = parseExpression(errors);
+            ExprPtr expression = parseExpression(errors);
             if (!expression) {
                 return nullptr;
             }

@@ -10,6 +10,7 @@ Current implementation step:
 - Internal variable calculator including sunrise/sunset and twilight calculations.
 - Expression AST parser and structured rules-tree snippet parser.
 - Recursive evaluator for parsed expression programs.
+- Parser implementation in `expression_parser.cpp` is maintained clang-tidy clean without API or behavior changes.
 
 ## Public API
 
@@ -126,13 +127,14 @@ Error behavior:
 
 | Member | Signature | Notes |
 |--------|-----------|-------|
-| Constructor | `InternalVariables(double longitude, double latitude)` | Stores geo coordinates in decimal degrees |
+| Constructor | `InternalVariables(GeoCoordinates coordinates)` | Stores geo coordinates in decimal degrees |
 | `calculate(date)` | `VariableMap(const TimePoint&)` | Returns filled map for all built-in internal variables |
 
 Value model:
 - `TimePoint = std::chrono::system_clock::time_point`
 - `Value = std::variant<TimePoint, double>`
 - `VariableMap = std::map<std::string, Value>`
+- `GeoCoordinates = { longitude, latitude }`
 
 Produced keys:
 - `/time`

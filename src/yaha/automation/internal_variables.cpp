@@ -53,8 +53,8 @@ namespace {
 
 } // namespace
 
-InternalVariables::InternalVariables(const double longitude, const double latitude)
-    : longitude_(longitude), latitude_(latitude) {
+InternalVariables::InternalVariables(const GeoCoordinates coordinates)
+    : coordinates_(coordinates) {
 }
 
 InternalVariables::VariableMap InternalVariables::calculate(const TimePoint& date) const {
@@ -63,30 +63,29 @@ InternalVariables::VariableMap InternalVariables::calculate(const TimePoint& dat
     values["/time"] = date;
     values["/weekday"] = weekdayIndex(date);
 
-    values["/sunrise"] = calculateSunEvent(date, longitude_, latitude_, 90.833, true);
-    values["/civildawn"] = calculateSunEvent(date, longitude_, latitude_, 96.0, true);
-    values["/nauticaldawn"] = calculateSunEvent(date, longitude_, latitude_, 102.0, true);
-    values["/astronomicaldawn"] = calculateSunEvent(date, longitude_, latitude_, 108.0, true);
+    values["/sunrise"] = calculateSunEvent(date, coordinates_, 90.833, true);
+    values["/civildawn"] = calculateSunEvent(date, coordinates_, 96.0, true);
+    values["/nauticaldawn"] = calculateSunEvent(date, coordinates_, 102.0, true);
+    values["/astronomicaldawn"] = calculateSunEvent(date, coordinates_, 108.0, true);
 
-    values["/sunset"] = calculateSunEvent(date, longitude_, latitude_, 90.833, false);
-    values["/civildusk"] = calculateSunEvent(date, longitude_, latitude_, 96.0, false);
-    values["/nauticaldusk"] = calculateSunEvent(date, longitude_, latitude_, 102.0, false);
-    values["/astronomicaldusk"] = calculateSunEvent(date, longitude_, latitude_, 108.0, false);
+    values["/sunset"] = calculateSunEvent(date, coordinates_, 90.833, false);
+    values["/civildusk"] = calculateSunEvent(date, coordinates_, 96.0, false);
+    values["/nauticaldusk"] = calculateSunEvent(date, coordinates_, 102.0, false);
+    values["/astronomicaldusk"] = calculateSunEvent(date, coordinates_, 108.0, false);
 
     return values;
 }
 
 InternalVariables::TimePoint InternalVariables::calculateSunEvent(
     const TimePoint& date,
-    const double longitude,
-    const double latitude,
+    const GeoCoordinates& coordinates,
     const double zenithDegrees,
     const bool sunriseEvent) {
-    const double lngHour = longitude / 15.0;
-    const int n = dayOfYear(date);
+    const double lngHour = coordinates.longitude / 15.0;
+    const int dayIndex = dayOfYear(date);
     const double approximateTime = sunriseEvent
-        ? static_cast<double>(n) + ((6.0 - lngHour) / 24.0)
-        : static_cast<double>(n) + ((18.0 - lngHour) / 24.0);
+        ? static_cast<double>(dayIndex) + ((6.0 - lngHour) / 24.0)
+        : static_cast<double>(dayIndex) + ((18.0 - lngHour) / 24.0);
 
     const double meanAnomaly = (0.9856 * approximateTime) - 3.289;
 
@@ -109,8 +108,8 @@ InternalVariables::TimePoint InternalVariables::calculateSunEvent(
 
     const double cosHourAngle = (
         std::cos(degreesToRadians(zenithDegrees))
-        - (sinDeclination * std::sin(degreesToRadians(latitude))))
-        / (cosDeclination * std::cos(degreesToRadians(latitude)));
+        - (sinDeclination * std::sin(degreesToRadians(coordinates.latitude))))
+        / (cosDeclination * std::cos(degreesToRadians(coordinates.latitude)));
 
     if (cosHourAngle > 1.0 || cosHourAngle < -1.0) {
         throw std::runtime_error("sun event is undefined for date and coordinates");
