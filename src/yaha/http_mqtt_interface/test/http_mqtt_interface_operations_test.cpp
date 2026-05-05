@@ -7,6 +7,8 @@
 
 namespace {
 
+constexpr int k_statusNoContent{204};
+
 [[nodiscard]] yaha::HttpMqttResult makeResult(
     const int statusCode,
     yaha::HttpMqttHeaders headersInput,
@@ -225,4 +227,134 @@ TEST_CASE("unsubscribe_v1_result_and_response_with_codes", "[http_mqtt_interface
     REQUIRE(responseData.statusCode == 200);
     REQUIRE(responseData.headers.at("packet") == "unsuback");
     REQUIRE(responseData.payload == "[0,17]");
+}
+
+TEST_CASE("compat_publish_post_form_maps_to_publish_v1_defaults", "[http_mqtt_interface]") {
+    const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
+    const yaha::HttpMqttPublishCompatibilityRequest requestInput{
+        .method = "POST",
+        .endpoint = "/publish",
+        .headers = {},
+        .fields = {{"topic", "sensor%2Ftemp"}, {"value", "42"}},
+        .body = "",
+        .token = "token-compat"};
+
+    yaha::HttpMqttRequestData capturedRequest{};
+    const yaha::HttpMqttResult response = yaha::handlePublishCompatibilityRequest(
+        interfaces,
+        requestInput,
+        yaha::HttpMqttPublishCompatibilityConfig{},
+        [&](const yaha::HttpMqttRequestData& mappedRequest) {
+            capturedRequest = mappedRequest;
+            return makeResult(k_statusNoContent, {{"content-type", "application/json; charset=UTF-8"}}, "");
+        });
+
+    REQUIRE(response.statusCode == 204);
+    REQUIRE(capturedRequest.headers.at("qos") == "1");
+    REQUIRE(capturedRequest.headers.at("retain") == "0");
+    REQUIRE(capturedRequest.payload.find("\"topic\":\"sensor/temp\"") != std::string::npos);
+    REQUIRE(capturedRequest.payload.find("\"message\":\"Request by browser\"") != std::string::npos);
+}
+
+TEST_CASE("compat_publish_falls_back_to_json_body_when_topic_missing", "[http_mqtt_interface]") {
+    const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
+    const yaha::HttpMqttPublishCompatibilityRequest requestInput{
+        .method = "POST",
+        .endpoint = "/publish",
+        .headers = {{"content-type", "application/json"}},
+        .fields = {},
+        .body = "{\"topic\":\"alpha%2fbeta\",\"value\":\"payload\"}",
+        .token = "token-body"};
+
+    yaha::HttpMqttRequestData capturedRequest{};
+    const yaha::HttpMqttResult response = yaha::handlePublishCompatibilityRequest(
+        interfaces,
+        requestInput,
+        yaha::HttpMqttPublishCompatibilityConfig{},
+        [&](const yaha::HttpMqttRequestData& mappedRequest) {
+            capturedRequest = mappedRequest;
+            return makeResult(k_statusNoContent, {{"content-type", "application/json; charset=UTF-8"}}, "");
+        });
+
+    REQUIRE(response.statusCode == 204);
+    REQUIRE(capturedRequest.payload.find("\"topic\":\"alpha/beta\"") != std::string::npos);
+    REQUIRE(capturedRequest.payload.find("\"value\":\"payload\"") != std::string::npos);
+}
+
+TEST_CASE("compat_publish_php_alias_disabled_returns_405", "[http_mqtt_interface]") {
+    const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
+    const yaha::HttpMqttPublishCompatibilityRequest requestInput{
+        .method = "POST",
+        .endpoint = "/publish.php",
+        .headers = {},
+        .fields = {{"topic", "alpha"}},
+        .body = "",
+        .token = ""};
+
+    const yaha::HttpMqttPublishCompatibilityConfig configInput{
+        .enablePublishPhpAlias = false,
+        .responseMode = yaha::HttpMqttPublishCompatibilityResponseMode::Native};
+
+    bool forwarded = false;
+    const yaha::HttpMqttResult response = yaha::handlePublishCompatibilityRequest(
+        interfaces,
+        requestInput,
+        configInput,
+        [&](const yaha::HttpMqttRequestData&) {
+            forwarded = true;
+            return makeResult(k_statusNoContent, {}, "");
+        });
+
+    REQUIRE(response.statusCode == 405);
+    REQUIRE(forwarded == false);
+}
+
+TEST_CASE("compat_publish_legacy_mode_wraps_downstream_payload", "[http_mqtt_interface]") {
+    const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
+    const yaha::HttpMqttPublishCompatibilityRequest requestInput{
+        .method = "POST",
+        .endpoint = "/publish",
+        .headers = {},
+        .fields = {{"topic", "legacy/topic"}},
+        .body = "",
+        .token = "token-legacy"};
+
+    const yaha::HttpMqttPublishCompatibilityConfig configInput{
+        .enablePublishPhpAlias = true,
+        .responseMode = yaha::HttpMqttPublishCompatibilityResponseMode::LegacyPhp};
+
+    const yaha::HttpMqttResult response = yaha::handlePublishCompatibilityRequest(
+        interfaces,
+        requestInput,
+        configInput,
+        [&](const yaha::HttpMqttRequestData&) {
+            return makeResult(k_statusNoContent, {{"content-type", "application/json; charset=UTF-8"}}, "{\"ok\":1}");
+        });
+
+    REQUIRE(response.statusCode == 200);
+    REQUIRE(response.payload == "\"{\\\"ok\\\":1}\"");
+}
+
+TEST_CASE("compat_publish_invalid_json_returns_400", "[http_mqtt_interface]") {
+    const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
+    const yaha::HttpMqttPublishCompatibilityRequest requestInput{
+        .method = "POST",
+        .endpoint = "/publish",
+        .headers = {{"content-type", "application/json"}},
+        .fields = {},
+        .body = "{\"topic\":",
+        .token = ""};
+
+    bool forwarded = false;
+    const yaha::HttpMqttResult response = yaha::handlePublishCompatibilityRequest(
+        interfaces,
+        requestInput,
+        yaha::HttpMqttPublishCompatibilityConfig{},
+        [&](const yaha::HttpMqttRequestData&) {
+            forwarded = true;
+            return makeResult(k_statusNoContent, {}, "");
+        });
+
+    REQUIRE(response.statusCode == 400);
+    REQUIRE(forwarded == false);
 }

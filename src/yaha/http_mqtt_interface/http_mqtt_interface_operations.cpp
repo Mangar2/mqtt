@@ -5,6 +5,7 @@
 
 #include <cctype>
 #include <charconv>
+#include <cstdlib>
 #include <format>
 #include <optional>
 #include <sstream>
@@ -20,12 +21,16 @@ namespace {
 constexpr std::string_view k_versionValue{"1.0"};
 constexpr std::string_view k_contentTypeJsonPrefix{"application/json"};
 constexpr int k_httpStatusOk{200};
+constexpr int k_httpStatusBadRequest{400};
+constexpr int k_httpStatusMethodNotAllowed{405};
 constexpr int k_httpStatusNoContent{204};
+constexpr int k_httpStatusInternalServerError{500};
 constexpr int k_connectCodeMax{5};
 constexpr int k_subscribeCodeFailLegacy{127};
 constexpr int k_subscribeCodeFailModern{128};
 constexpr int k_unsubscribeNoSubscription{17};
 constexpr std::size_t k_escapeReservePadding{8U};
+constexpr std::string_view k_browserReasonMessage{"Request by browser"};
 
 [[nodiscard]] std::string trimCopy(const std::string_view valueText) {
     std::size_t firstIndex = 0U;
@@ -39,6 +44,77 @@ constexpr std::size_t k_escapeReservePadding{8U};
     }
 
     return std::string{valueText.substr(firstIndex, lastIndex - firstIndex)};
+}
+
+[[nodiscard]] std::string toLowerCopy(const std::string_view valueText) {
+    std::string loweredText{};
+    loweredText.reserve(valueText.size());
+    for (const char currentChar : valueText) {
+        loweredText.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(currentChar))));
+    }
+    return loweredText;
+}
+
+[[nodiscard]] std::string toUpperCopy(const std::string_view valueText) {
+    std::string upperText{};
+    upperText.reserve(valueText.size());
+    for (const char currentChar : valueText) {
+        upperText.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(currentChar))));
+    }
+    return upperText;
+}
+
+[[nodiscard]] std::string decodeTopicSlashEscapes(const std::string_view topicInput) {
+    std::string normalizedTopic{};
+    normalizedTopic.reserve(topicInput.size());
+
+    std::size_t cursorIndex = 0U;
+    while (cursorIndex < topicInput.size()) {
+        if (cursorIndex + 2U < topicInput.size() &&
+            topicInput[cursorIndex] == '%' &&
+            topicInput[cursorIndex + 1U] == '2' &&
+            (topicInput[cursorIndex + 2U] == 'F' || topicInput[cursorIndex + 2U] == 'f')) {
+            normalizedTopic.push_back('/');
+            cursorIndex += 3U;
+            continue;
+        }
+
+        normalizedTopic.push_back(topicInput[cursorIndex]);
+        ++cursorIndex;
+    }
+
+    return normalizedTopic;
+}
+
+[[nodiscard]] HttpMqttResult makeCompatibilityErrorResponse(
+    const int statusCode,
+    const std::string_view errorCode) {
+    HttpMqttResult responseOutput{};
+    responseOutput.statusCode = statusCode;
+    responseOutput.headers = makeStandardJsonHeaders();
+    responseOutput.headers["version"] = std::string{k_versionValue};
+    responseOutput.payload = std::format("{{\"error\":\"{}\"}}", errorCode);
+    return responseOutput;
+}
+
+[[nodiscard]] bool isSupportedCompatibilityRoute(
+    const std::string_view methodInput,
+    const std::string_view endpointInput,
+    const HttpMqttPublishCompatibilityConfig& configInput) {
+    const std::string upperMethod = toUpperCopy(methodInput);
+    if (upperMethod == "PUT" && endpointInput == "/publish") {
+        return true;
+    }
+
+    if (upperMethod == "POST" && endpointInput == "/publish") {
+        return true;
+    }
+
+    if (upperMethod == "POST" && endpointInput == "/publish.php") {
+        return configInput.enablePublishPhpAlias;
+    }
+
+    return false;
 }
 
 [[nodiscard]] std::string escapeJsonString(const std::string_view valueText) {
@@ -226,6 +302,445 @@ constexpr std::size_t k_escapeReservePadding{8U};
     }
 
     return parsedValue;
+}
+
+struct JsonTokenScanState {
+    int objectDepth{0};
+    int arrayDepth{0};
+    bool inString{false};
+    bool escaped{false};
+};
+
+[[nodiscard]] bool advanceScanState(const char currentChar, JsonTokenScanState& stateOutput) {
+    if (stateOutput.inString) {
+        if (stateOutput.escaped) {
+            stateOutput.escaped = false;
+        } else if (currentChar == '\\') {
+            stateOutput.escaped = true;
+        } else if (currentChar == '"') {
+            stateOutput.inString = false;
+        }
+        return true;
+    }
+
+    if (currentChar == '"') {
+        stateOutput.inString = true;
+        return true;
+    }
+    if (currentChar == '{') {
+        ++stateOutput.objectDepth;
+        return true;
+    }
+    if (currentChar == '}') {
+        --stateOutput.objectDepth;
+        return stateOutput.objectDepth >= -1;
+    }
+    if (currentChar == '[') {
+        ++stateOutput.arrayDepth;
+        return true;
+    }
+    if (currentChar == ']') {
+        --stateOutput.arrayDepth;
+        return stateOutput.arrayDepth >= 0;
+    }
+    return true;
+}
+
+[[nodiscard]] std::optional<std::size_t> tryFindRawTokenEnd(
+    const std::string_view objectText,
+    const std::size_t tokenStart) {
+    JsonTokenScanState state{};
+    for (std::size_t cursorIndex = tokenStart; cursorIndex < objectText.size(); ++cursorIndex) {
+        const char currentChar = objectText[cursorIndex];
+        if (!advanceScanState(currentChar, state)) {
+            return std::nullopt;
+        }
+        if (!state.inString && state.objectDepth == 0 && state.arrayDepth == 0 && currentChar == ',') {
+            return cursorIndex;
+        }
+        if (!state.inString && state.objectDepth == -1 && state.arrayDepth == 0 && currentChar == '}') {
+            return cursorIndex;
+        }
+    }
+
+    if (state.inString || state.objectDepth != 0 || state.arrayDepth != 0) {
+        return std::nullopt;
+    }
+    return objectText.size();
+}
+
+[[nodiscard]] std::optional<std::string> extractRawToken(
+    const std::string_view objectText,
+    const std::string_view keyName) {
+    const std::string keyToken = std::format("\"{}\"", keyName);
+    const std::size_t keyPosition = objectText.find(keyToken);
+    if (keyPosition == std::string::npos) {
+        return std::nullopt;
+    }
+
+    std::size_t tokenStart = objectText.find(':', keyPosition + keyToken.size());
+    if (tokenStart == std::string::npos) {
+        return std::nullopt;
+    }
+    ++tokenStart;
+
+    while (tokenStart < objectText.size() && std::isspace(static_cast<unsigned char>(objectText[tokenStart])) != 0) {
+        ++tokenStart;
+    }
+    if (tokenStart >= objectText.size()) {
+        return std::nullopt;
+    }
+
+    const std::optional<std::size_t> tokenEnd = tryFindRawTokenEnd(objectText, tokenStart);
+    if (!tokenEnd.has_value() || *tokenEnd < tokenStart) {
+        return std::nullopt;
+    }
+
+    std::string token = trimCopy(objectText.substr(tokenStart, *tokenEnd - tokenStart));
+    if (token.empty()) {
+        return std::nullopt;
+    }
+    return token;
+}
+
+[[nodiscard]] std::optional<Value> parseJsonValueToken(const std::string_view tokenInput) {
+    const std::string tokenText = trimCopy(tokenInput);
+    if (tokenText.empty()) {
+        return std::nullopt;
+    }
+
+    if (tokenText.front() == '"' && tokenText.back() == '"') {
+        const std::string wrappedValue = std::format("{{\"value\":{}}}", tokenText);
+        const std::optional<std::string> parsedString = tryExtractStringField(wrappedValue, "value");
+        if (!parsedString.has_value()) {
+            return std::nullopt;
+        }
+        return Value{*parsedString};
+    }
+
+    const std::string lowered = toLowerCopy(tokenText);
+    if (lowered == "true" || lowered == "false" || lowered == "null") {
+        return Value{lowered};
+    }
+
+    char* parseEnd = nullptr;
+    const double parsedNumber = std::strtod(tokenText.c_str(), &parseEnd);
+    if (parseEnd == nullptr || *parseEnd != '\0') {
+        return std::nullopt;
+    }
+
+    return Value{parsedNumber};
+}
+
+[[nodiscard]] bool isReasonArrayShapeValid(const std::string& textInput) {
+    return !textInput.empty() && textInput.front() == '[' && textInput.back() == ']';
+}
+
+[[nodiscard]] std::optional<std::size_t> tryFindReasonObjectEnd(
+    const std::string_view reasonArray,
+    const std::size_t objectStart,
+    const std::size_t endIndex) {
+    JsonTokenScanState state{};
+    for (std::size_t cursorIndex = objectStart; cursorIndex < endIndex; ++cursorIndex) {
+        const char currentChar = reasonArray[cursorIndex];
+        if (!advanceScanState(currentChar, state)) {
+            return std::nullopt;
+        }
+        if (!state.inString && state.objectDepth == 0 && currentChar == '}') {
+            return cursorIndex;
+        }
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] std::optional<ReasonEntry> tryParseReasonEntry(const std::string_view objectText) {
+    const std::optional<std::string> messageText = tryExtractStringField(objectText, "message");
+    const std::optional<std::string> timestampText = tryExtractStringField(objectText, "timestamp");
+    if (!messageText.has_value() || !timestampText.has_value()) {
+        return std::nullopt;
+    }
+    return ReasonEntry{*messageText, *timestampText};
+}
+
+[[nodiscard]] std::optional<std::vector<ReasonEntry>> parseReasonArray(const std::string_view arrayText) {
+    const std::string trimmedArray = trimCopy(arrayText);
+    if (!isReasonArrayShapeValid(trimmedArray)) {
+        return std::nullopt;
+    }
+
+    std::vector<ReasonEntry> entriesOutput{};
+    std::size_t cursorIndex = 1U;
+    const std::size_t endIndex = trimmedArray.size() - 1U;
+
+    while (cursorIndex < endIndex) {
+        while (cursorIndex < endIndex && std::isspace(static_cast<unsigned char>(trimmedArray[cursorIndex])) != 0) {
+            ++cursorIndex;
+        }
+        if (cursorIndex >= endIndex) {
+            break;
+        }
+
+        if (trimmedArray[cursorIndex] != '{') {
+            return std::nullopt;
+        }
+
+        const std::optional<std::size_t> objectEnd = tryFindReasonObjectEnd(trimmedArray, cursorIndex, endIndex);
+        if (!objectEnd.has_value() || *objectEnd < cursorIndex) {
+            return std::nullopt;
+        }
+
+        const std::string_view objectText =
+            std::string_view{trimmedArray}.substr(cursorIndex, *objectEnd - cursorIndex + 1U);
+        const std::optional<ReasonEntry> parsedEntry = tryParseReasonEntry(objectText);
+        if (!parsedEntry.has_value()) {
+            return std::nullopt;
+        }
+        entriesOutput.push_back(*parsedEntry);
+
+        cursorIndex = *objectEnd + 1U;
+
+        while (cursorIndex < endIndex && std::isspace(static_cast<unsigned char>(trimmedArray[cursorIndex])) != 0) {
+            ++cursorIndex;
+        }
+        if (cursorIndex < endIndex && trimmedArray[cursorIndex] == ',') {
+            ++cursorIndex;
+            continue;
+        }
+        if (cursorIndex < endIndex) {
+            return std::nullopt;
+        }
+    }
+
+    return entriesOutput;
+}
+
+void appendReasonsPreservingOrder(
+    Message& messageOutput,
+    const std::vector<ReasonEntry>& reasonEntries) {
+    for (std::size_t reverseIndex = reasonEntries.size(); reverseIndex > 0U; --reverseIndex) {
+        const ReasonEntry& entry = reasonEntries[reverseIndex - 1U];
+        messageOutput.addReason(entry.message, entry.timestamp);
+    }
+}
+
+[[nodiscard]] std::optional<Qos> parseQosField(const std::string_view textInput) {
+    const std::string trimmedText = trimCopy(textInput);
+    if (trimmedText.empty()) {
+        return std::nullopt;
+    }
+
+    int parsedQos = 0;
+    const auto parseResult = std::from_chars(trimmedText.data(), trimmedText.data() + trimmedText.size(), parsedQos);
+    if (parseResult.ec != std::errc{} || parseResult.ptr != trimmedText.data() + trimmedText.size()) {
+        return std::nullopt;
+    }
+
+    if (parsedQos < 0 || parsedQos > 2) {
+        return std::nullopt;
+    }
+
+    return static_cast<Qos>(parsedQos);
+}
+
+[[nodiscard]] std::optional<bool> parseRetainField(const std::string_view textInput) {
+    const std::string loweredText = toLowerCopy(trimCopy(textInput));
+    if (loweredText.empty()) {
+        return std::nullopt;
+    }
+    if (loweredText == "1" || loweredText == "true") {
+        return true;
+    }
+    if (loweredText == "0" || loweredText == "false") {
+        return false;
+    }
+    return std::nullopt;
+}
+
+struct CompatibilityBodyFields {
+    std::optional<std::string> topic{};
+    std::optional<Value> value{};
+    std::optional<std::vector<ReasonEntry>> reason{};
+    std::optional<Qos> qos{};
+    std::optional<bool> retain{};
+};
+
+[[nodiscard]] std::optional<CompatibilityBodyFields> tryParseCompatibilityBody(
+    const std::string_view bodyText) {
+    try {
+        requireJsonObjectPayload(bodyText, "publish compatibility body");
+    } catch (const std::runtime_error&) {
+        return std::nullopt;
+    }
+
+    CompatibilityBodyFields fieldsOutput{};
+
+    fieldsOutput.topic = tryExtractStringField(bodyText, "topic");
+
+    const std::optional<std::string> valueToken = extractRawToken(bodyText, "value");
+    if (valueToken.has_value()) {
+        const std::optional<Value> parsedValue = parseJsonValueToken(*valueToken);
+        if (!parsedValue.has_value()) {
+            return std::nullopt;
+        }
+        fieldsOutput.value = parsedValue;
+    }
+
+    const std::optional<std::string> reasonToken = extractRawToken(bodyText, "reason");
+    if (reasonToken.has_value()) {
+        const std::optional<std::vector<ReasonEntry>> parsedReason = parseReasonArray(*reasonToken);
+        if (!parsedReason.has_value()) {
+            return std::nullopt;
+        }
+        fieldsOutput.reason = parsedReason;
+    }
+
+    const std::optional<std::string> qosToken = extractRawToken(bodyText, "qos");
+    if (qosToken.has_value()) {
+        const std::optional<Qos> parsedQos = parseQosField(*qosToken);
+        if (!parsedQos.has_value()) {
+            return std::nullopt;
+        }
+        fieldsOutput.qos = parsedQos;
+    }
+
+    const std::optional<std::string> retainToken = extractRawToken(bodyText, "retain");
+    if (retainToken.has_value()) {
+        const std::optional<bool> parsedRetain = parseRetainField(*retainToken);
+        if (!parsedRetain.has_value()) {
+            return std::nullopt;
+        }
+        fieldsOutput.retain = parsedRetain;
+    }
+
+    return fieldsOutput;
+}
+
+struct CompatibilityParsedFields {
+    std::string topic{};
+    std::optional<Value> value{};
+    std::optional<std::vector<ReasonEntry>> reason{};
+    std::optional<Qos> qos{};
+    std::optional<bool> retain{};
+};
+
+[[nodiscard]] std::optional<CompatibilityParsedFields> tryParseCompatibilityFields(
+    const HttpMqttHeaders& normalizedFields) {
+    CompatibilityParsedFields fieldsOutput{};
+
+    fieldsOutput.topic = trimCopy(tryReadHeaderValue(normalizedFields, "topic").value_or(""));
+
+    if (const auto extractedValue = tryReadHeaderValue(normalizedFields, "value"); extractedValue.has_value()) {
+        fieldsOutput.value = Value{*extractedValue};
+    }
+
+    if (const auto reasonField = tryReadHeaderValue(normalizedFields, "reason"); reasonField.has_value()) {
+        const std::optional<std::vector<ReasonEntry>> parsedReason = parseReasonArray(*reasonField);
+        if (!parsedReason.has_value()) {
+            return std::nullopt;
+        }
+        fieldsOutput.reason = parsedReason;
+    }
+
+    if (const auto qosField = tryReadHeaderValue(normalizedFields, "qos"); qosField.has_value()) {
+        fieldsOutput.qos = parseQosField(*qosField);
+    }
+
+    if (const auto retainField = tryReadHeaderValue(normalizedFields, "retain"); retainField.has_value()) {
+        fieldsOutput.retain = parseRetainField(*retainField);
+    }
+
+    return fieldsOutput;
+}
+
+[[nodiscard]] bool applyCompatibilityBodyFallback(
+    CompatibilityParsedFields& parsedFields,
+    const std::string_view bodyText) {
+    if (!parsedFields.topic.empty()) {
+        return true;
+    }
+
+    const std::string trimmedBody = trimCopy(bodyText);
+    if (trimmedBody.empty()) {
+        return true;
+    }
+
+    const std::optional<CompatibilityBodyFields> bodyFields = tryParseCompatibilityBody(trimmedBody);
+    if (!bodyFields.has_value()) {
+        return false;
+    }
+
+    if (bodyFields->topic.has_value()) {
+        parsedFields.topic = trimCopy(*bodyFields->topic);
+    }
+    if (!parsedFields.value.has_value() && bodyFields->value.has_value()) {
+        parsedFields.value = bodyFields->value;
+    }
+    if (!parsedFields.reason.has_value() && bodyFields->reason.has_value()) {
+        parsedFields.reason = bodyFields->reason;
+    }
+    if (!parsedFields.qos.has_value() && bodyFields->qos.has_value()) {
+        parsedFields.qos = bodyFields->qos;
+    }
+    if (!parsedFields.retain.has_value() && bodyFields->retain.has_value()) {
+        parsedFields.retain = bodyFields->retain;
+    }
+
+    return true;
+}
+
+[[nodiscard]] std::optional<HttpMqttResult> validateCompatibilityTopic(CompatibilityParsedFields& parsedFields) {
+    parsedFields.topic = decodeTopicSlashEscapes(parsedFields.topic);
+    if (parsedFields.topic.empty()) {
+        return makeCompatibilityErrorResponse(k_httpStatusBadRequest, "missing_topic");
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] Message buildCompatibilityMessage(const CompatibilityParsedFields& parsedFields) {
+    Message mappedMessage{
+        parsedFields.topic,
+        parsedFields.value.value_or(Value{std::string{}}),
+        parsedFields.qos.value_or(Qos::AtLeastOnce),
+        parsedFields.retain.value_or(false)};
+
+    if (parsedFields.reason.has_value() && !parsedFields.reason->empty()) {
+        appendReasonsPreservingOrder(mappedMessage, *parsedFields.reason);
+    } else {
+        mappedMessage.addReason(std::string{k_browserReasonMessage});
+    }
+
+    return mappedMessage;
+}
+
+[[nodiscard]] std::optional<HttpMqttResult> tryForwardCompatibilityPublish(
+    const HttpMqttPublishCompatibilityForwarder& forwarder,
+    const HttpMqttRequestData& mappedRequest) {
+    HttpMqttResult downstreamResult{};
+    try {
+        downstreamResult = forwarder(mappedRequest);
+    } catch (const std::exception&) {
+        return makeCompatibilityErrorResponse(k_httpStatusInternalServerError, "internal_failure");
+    }
+
+    if (downstreamResult.statusCode != k_httpStatusNoContent) {
+        return makeCompatibilityErrorResponse(k_httpStatusInternalServerError, "internal_failure");
+    }
+    return downstreamResult;
+}
+
+[[nodiscard]] HttpMqttResult adaptCompatibilityResponse(
+    const HttpMqttResult& downstreamResult,
+    const HttpMqttPublishCompatibilityConfig& configInput) {
+    if (configInput.responseMode == HttpMqttPublishCompatibilityResponseMode::Native) {
+        return downstreamResult;
+    }
+
+    HttpMqttResult compatibilityResult{};
+    compatibilityResult.statusCode = k_httpStatusOk;
+    compatibilityResult.headers = makeStandardJsonHeaders();
+    compatibilityResult.headers["version"] = std::string{k_versionValue};
+    compatibilityResult.payload = std::format("\"{}\"", escapeJsonString(downstreamResult.payload));
+    return compatibilityResult;
 }
 
 [[nodiscard]] std::string serializeTopics(const HttpMqttTopics& topicsInput) {
@@ -732,6 +1247,48 @@ HttpMqttInterfaceHandlerRegistry makeHttpMqttInterfaceHandlerRegistryV1() {
 
 HttpMqttInterfaces makeHttpMqttInterfacesV1() {
     return HttpMqttInterfaces{makeHttpMqttInterfaceHandlerRegistryV1()};
+}
+
+HttpMqttResult handlePublishCompatibilityRequest(
+    const HttpMqttInterfaces& interfaces,
+    const HttpMqttPublishCompatibilityRequest& requestInput,
+    const HttpMqttPublishCompatibilityConfig& configInput,
+    const HttpMqttPublishCompatibilityForwarder& forwarder) {
+    if (!isSupportedCompatibilityRoute(requestInput.method, requestInput.endpoint, configInput)) {
+        return makeCompatibilityErrorResponse(k_httpStatusMethodNotAllowed, "unsupported_method");
+    }
+
+    const HttpMqttHeaders normalizedFields = normalizeHeaderKeys(requestInput.fields);
+    const std::optional<CompatibilityParsedFields> parsedFields = tryParseCompatibilityFields(normalizedFields);
+    if (!parsedFields.has_value()) {
+        return makeCompatibilityErrorResponse(k_httpStatusBadRequest, "invalid_json");
+    }
+
+    CompatibilityParsedFields resolvedFields = *parsedFields;
+    if (!applyCompatibilityBodyFallback(resolvedFields, requestInput.body)) {
+        return makeCompatibilityErrorResponse(k_httpStatusBadRequest, "invalid_json");
+    }
+
+    if (const std::optional<HttpMqttResult> topicError = validateCompatibilityTopic(resolvedFields);
+        topicError.has_value()) {
+        return *topicError;
+    }
+
+    const Message mappedMessage = buildCompatibilityMessage(resolvedFields);
+
+    const HttpMqttPublishOptions mappedOptions{
+        .token = requestInput.token,
+        .message = mappedMessage,
+        .dup = std::nullopt,
+        .packetId = std::nullopt};
+    const HttpMqttRequestData mappedRequest = interfaces.publish(k_versionValue, mappedOptions);
+
+    const std::optional<HttpMqttResult> downstreamResult = tryForwardCompatibilityPublish(forwarder, mappedRequest);
+    if (!downstreamResult.has_value()) {
+        return makeCompatibilityErrorResponse(k_httpStatusInternalServerError, "internal_failure");
+    }
+
+    return adaptCompatibilityResponse(*downstreamResult, configInput);
 }
 
 } // namespace yaha

@@ -33,3 +33,8 @@ Unit tests for shared HTTP MQTT contract types, validation helpers, and phase-2 
 | `subscribe_v1_request_result_and_response` | Subscribe builder and validation contract | subscribe response with qos array and matching packetid | result check passes and onSubscribe returns suback payload |
 | `unsubscribe_v1_accepts_204_empty_payload` | Unsubscribe backward-compatibility path | status `204`, empty payload | result check passes |
 | `unsubscribe_v1_result_and_response_with_codes` | Unsubscribe return-code validation and response contract | status `200` with `[0,17]` | result check passes and onUnsubscribe returns `unsuback` |
+| `compat_publish_post_form_maps_to_publish_v1_defaults` | Browser compat form fields map to native publish v1 with defaults | `POST /publish` with `topic` and `value` fields | forwarded request has decoded topic plus default qos=1, retain=0, and browser default reason |
+| `compat_publish_falls_back_to_json_body_when_topic_missing` | Topic/value are read from JSON body when form/query topic is missing | `POST /publish` with empty fields and JSON body | forwarded request payload contains topic/value from body |
+| `compat_publish_php_alias_disabled_returns_405` | Deployment can disable `/publish.php` alias | `POST /publish.php` with alias disabled | response status is `405` |
+| `compat_publish_legacy_mode_wraps_downstream_payload` | Legacy mode returns PHP-compatible wrapper payload | compat request with legacy mode and downstream `204` payload | response status `200` and payload is JSON stringified downstream payload |
+| `compat_publish_invalid_json_returns_400` | Invalid JSON payload is rejected | `POST /publish` with malformed JSON body and missing topic field | response status is `400` |

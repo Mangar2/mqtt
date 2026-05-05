@@ -5,7 +5,8 @@
 Provides shared contract types, low-level helpers, the version dispatcher, and version 1.0
 operation implementations for HTTP MQTT interface processing.
 The module now includes concrete v1 handlers for connect/disconnect, publish/pubrel,
-subscribe/unsubscribe plus facade wiring through versioned handler maps.
+subscribe/unsubscribe, plus browser compatibility mapping for `POST /publish` and
+`POST /publish.php` replacement flows.
 
 ## Public API
 
@@ -95,6 +96,13 @@ Public factory functions:
 - `makeHttpMqttInterfaceHandlerRegistryV1()`
 - `makeHttpMqttInterfacesV1()`
 
+Public compatibility API:
+
+- `HttpMqttPublishCompatibilityResponseMode`
+- `HttpMqttPublishCompatibilityConfig`
+- `HttpMqttPublishCompatibilityRequest`
+- `handlePublishCompatibilityRequest(...)`
+
 Implemented version `1.0` operation pairs:
 
 - connect / onConnect
@@ -114,6 +122,32 @@ Implemented behavior highlights:
 - Subscribe and unsubscribe request builders include packetid headers and topic maps.
 - Unsubscribe result validation supports backward-compatible `204` with empty payload.
 
+### Phase-6 browser compatibility profile
+
+Implemented compatibility behavior:
+
+- accepted routes:
+	- `POST /publish`
+	- `POST /publish.php` (switchable with `enablePublishPhpAlias`)
+	- `PUT /publish`
+- extraction order:
+	- reads `topic`, `value`, `reason`, `qos`, `retain` from form/query fields first
+	- falls back to JSON body parsing when topic is missing
+- topic normalization decodes `%2F` and `%2f` to `/`
+- defaults:
+	- `qos=1`
+	- `retain=false`
+	- auto reason entry `Request by browser` with auto-generated ISO-8601 timestamp when reason is absent
+- mapping:
+	- compatibility input is translated to native Publish 1.0 request data through `HttpMqttInterfaces::publish("1.0", ...)`
+- response modes:
+	- `Native`: downstream `204` response is forwarded unchanged
+	- `LegacyPhp`: returns `200` with JSON-stringified downstream payload string
+- error mapping:
+	- `400` for invalid JSON or missing topic
+	- `405` for unsupported method/route
+	- `500` for downstream/internal failures
+
 ## Constraints and behavior
 
 - Header key lookup is case-insensitive through lowercase normalization.
@@ -123,6 +157,7 @@ Implemented behavior highlights:
 - Version dispatch fallback is `0.0` when `version` header is missing or empty.
 - Undefined dispatch versions always throw `undefined version <version>`.
 - V1 operation factory wires only version `1.0`; fallback `0.0` remains undefined until explicitly added.
+- Compatibility JSON parsing is strict for `reason`, `qos`, and `retain` tokens; malformed tokens return `400`.
 
 ## Files
 
@@ -132,9 +167,9 @@ Implemented behavior highlights:
 | `http_mqtt_interface_contracts.cpp` | Shared helper implementations |
 | `http_mqtt_interface_dispatcher.h` | Versioned handler registry and `HttpMqttInterfaces` facade declarations |
 | `http_mqtt_interface_dispatcher.cpp` | Dispatcher and facade implementation |
-| `http_mqtt_interface_operations.h` | V1 operation factory declarations |
-| `http_mqtt_interface_operations.cpp` | V1 operation builders, validators, and response handlers |
+| `http_mqtt_interface_operations.h` | V1 operation factory declarations and phase-6 compatibility API |
+| `http_mqtt_interface_operations.cpp` | V1 operation builders, validators, response handlers, and compatibility mapping |
 | `test/TEST_SPEC.md` | Unit test specification |
 | `test/http_mqtt_interface_contracts_test.cpp` | Unit tests for phase 1 contracts and helpers |
 | `test/http_mqtt_interface_dispatcher_test.cpp` | Unit tests for phase 2 dispatcher and facade shell |
-| `test/http_mqtt_interface_operations_test.cpp` | Unit tests for phase 3/4/5 operation handlers |
+| `test/http_mqtt_interface_operations_test.cpp` | Unit tests for phase 3/4/5 handlers and phase-6 compatibility profile |
