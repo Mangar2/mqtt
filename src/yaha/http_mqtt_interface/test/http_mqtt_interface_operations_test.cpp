@@ -7,6 +7,11 @@
 
 namespace {
 
+constexpr int k_statusOk{200};
+constexpr int k_statusBadRequest{400};
+constexpr int k_packetIdSubscribe{41};
+constexpr int k_packetIdPublish{77};
+constexpr int k_packetIdUnsubscribe{51};
 constexpr int k_statusNoContent{204};
 
 [[nodiscard]] yaha::HttpMqttResult makeResult(
@@ -17,6 +22,148 @@ constexpr int k_statusNoContent{204};
         .statusCode = statusCode,
         .headers = std::move(headersInput),
         .payload = std::move(payloadText)};
+}
+
+void verifyPhase7Connect(const yaha::HttpMqttInterfaces& interfaces) {
+    const yaha::HttpMqttRequestData connectRequest = interfaces.connect(
+        "1.0",
+        yaha::HttpMqttConnectOptions{
+            .qos = std::nullopt,
+            .clientId = std::string{"phase7-client"},
+            .version = std::nullopt,
+            .host = std::nullopt,
+            .port = std::nullopt,
+            .clean = true,
+            .keepAlive = std::nullopt,
+            .password = std::nullopt,
+            .user = std::nullopt,
+            .will = std::nullopt});
+    const yaha::HttpMqttResult connectResult = makeResult(
+        k_statusOk,
+        {{"content-type", "application/json; charset=UTF-8"}, {"packet", "connack"}},
+        "{\"present\":1,\"token\":{\"send\":\"send-token\",\"receive\":\"recv-token\"}}"
+    );
+    REQUIRE_NOTHROW(connectRequest.resultCheck(connectResult));
+
+    const yaha::HttpMqttResult onConnectResult = interfaces.onConnect(
+        {{"version", "1.0"}},
+        yaha::HttpMqttConnectResult{
+            .mqttCode = std::nullopt,
+            .present = 1U,
+            .token = yaha::HttpMqttConnectTokens{.send = "send-token", .receive = "recv-token"}}
+    );
+    REQUIRE(onConnectResult.statusCode == k_statusOk);
+    REQUIRE(onConnectResult.headers.at("packet") == "connack");
+}
+
+void verifyPhase7Subscribe(const yaha::HttpMqttInterfaces& interfaces) {
+    const yaha::HttpMqttRequestData subscribeRequest = interfaces.subscribe(
+        "1.0",
+        yaha::HttpMqttTopics{{"alpha/#", yaha::Qos::AtLeastOnce}},
+        "phase7-client",
+        static_cast<std::uint16_t>(k_packetIdSubscribe)
+    );
+    const yaha::HttpMqttResult subscribeResult = makeResult(
+        k_statusOk,
+        {
+            {"content-type", "application/json; charset=UTF-8"},
+            {"packet", "suback"},
+            {"packetid", std::to_string(k_packetIdSubscribe)}
+        },
+        "{\"qos\":[1]}"
+    );
+    REQUIRE_NOTHROW(subscribeRequest.resultCheck(subscribeResult));
+
+    const yaha::HttpMqttResult onSubscribeResult = interfaces.onSubscribe(
+        {{"version", "1.0"}, {"packetid", std::to_string(k_packetIdSubscribe)}},
+        yaha::HttpMqttSubscribeResult{1U}
+    );
+    REQUIRE(onSubscribeResult.headers.at("packet") == "suback");
+    REQUIRE(onSubscribeResult.headers.at("packetid") == std::to_string(k_packetIdSubscribe));
+}
+
+void verifyPhase7Publish(const yaha::HttpMqttInterfaces& interfaces) {
+    const yaha::HttpMqttRequestData publishRequest = interfaces.publish(
+        "1.0",
+        yaha::HttpMqttPublishOptions{
+            .token = "send-token",
+            .message = yaha::Message{"alpha/value", std::string{"payload"}, yaha::Qos::ExactlyOnce, false},
+            .dup = false,
+            .packetId = static_cast<std::uint16_t>(k_packetIdPublish)}
+    );
+    const yaha::HttpMqttResult publishResult = makeResult(
+        k_statusNoContent,
+        {{"packet", "pubrec"}, {"packetid", std::to_string(k_packetIdPublish)}},
+        ""
+    );
+    REQUIRE_NOTHROW(publishRequest.resultCheck(publishResult));
+
+    const yaha::HttpMqttResult onPublishResult = interfaces.onPublish(
+        {
+            {"version", "1.0"},
+            {"qos", "2"},
+            {"retain", "0"},
+            {"packetid", std::to_string(k_packetIdPublish)}
+        }
+    );
+    REQUIRE(onPublishResult.statusCode == k_statusNoContent);
+    REQUIRE(onPublishResult.headers.at("packet") == "pubrec");
+    REQUIRE(onPublishResult.headers.at("packetid") == std::to_string(k_packetIdPublish));
+}
+
+void verifyPhase7Pubrel(const yaha::HttpMqttInterfaces& interfaces) {
+    const yaha::HttpMqttRequestData pubrelRequest = interfaces.pubrel(
+        "1.0",
+        yaha::HttpMqttPubrelOptions{.token = "send-token", .packetId = static_cast<std::uint16_t>(k_packetIdPublish)}
+    );
+    const yaha::HttpMqttResult pubrelResult = makeResult(
+        k_statusNoContent,
+        {{"packet", "pubcomp"}, {"packetid", std::to_string(k_packetIdPublish)}},
+        ""
+    );
+    REQUIRE_NOTHROW(pubrelRequest.resultCheck(pubrelResult));
+
+    const yaha::HttpMqttResult onPubrelResult = interfaces.onPubrel(
+        {{"version", "1.0"}, {"packetid", std::to_string(k_packetIdPublish)}}
+    );
+    REQUIRE(onPubrelResult.headers.at("packet") == "pubcomp");
+    REQUIRE(onPubrelResult.headers.at("packetid") == std::to_string(k_packetIdPublish));
+}
+
+void verifyPhase7Unsubscribe(const yaha::HttpMqttInterfaces& interfaces) {
+    const yaha::HttpMqttRequestData unsubscribeRequest = interfaces.unsubscribe(
+        "1.0",
+        yaha::HttpMqttTopics{{"alpha/#", yaha::Qos::AtLeastOnce}},
+        "phase7-client",
+        static_cast<std::uint16_t>(k_packetIdUnsubscribe)
+    );
+    const yaha::HttpMqttResult unsubscribeResult = makeResult(
+        k_statusOk,
+        {
+            {"content-type", "application/json; charset=UTF-8"},
+            {"packet", "unsuback"},
+            {"packetid", std::to_string(k_packetIdUnsubscribe)}
+        },
+        "[0]"
+    );
+    REQUIRE_NOTHROW(unsubscribeRequest.resultCheck(unsubscribeResult));
+
+    const yaha::HttpMqttResult onUnsubscribeResult = interfaces.onUnsubscribe(
+        {{"version", "1.0"}, {"packetid", std::to_string(k_packetIdUnsubscribe)}},
+        yaha::HttpMqttUnsubscribeResult{0U}
+    );
+    REQUIRE(onUnsubscribeResult.headers.at("packet") == "unsuback");
+    REQUIRE(onUnsubscribeResult.headers.at("packetid") == std::to_string(k_packetIdUnsubscribe));
+}
+
+void verifyPhase7Disconnect(const yaha::HttpMqttInterfaces& interfaces) {
+    const yaha::HttpMqttRequestData disconnectRequest = interfaces.disconnect("1.0", "phase7-client");
+    const yaha::HttpMqttResult disconnectResult = makeResult(k_statusNoContent, {}, "");
+    REQUIRE_NOTHROW(disconnectRequest.resultCheck(disconnectResult));
+
+    const yaha::HttpMqttResult onDisconnectResult = interfaces.onDisconnect({{"version", "1.0"}});
+    REQUIRE(onDisconnectResult.statusCode == k_statusNoContent);
+    REQUIRE(onDisconnectResult.payload.empty());
 }
 
 } // namespace
@@ -309,6 +456,30 @@ TEST_CASE("compat_publish_php_alias_disabled_returns_405", "[http_mqtt_interface
     REQUIRE(forwarded == false);
 }
 
+TEST_CASE("compat_publish_php_alias_enabled_forwards_request", "[http_mqtt_interface]") {
+    const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
+    const yaha::HttpMqttPublishCompatibilityRequest requestInput{
+        .method = "POST",
+        .endpoint = "/publish.php",
+        .headers = {},
+        .fields = {{"topic", "alias/topic"}},
+        .body = "",
+        .token = "alias-token"};
+
+    bool forwarded = false;
+    const yaha::HttpMqttResult response = yaha::handlePublishCompatibilityRequest(
+        interfaces,
+        requestInput,
+        yaha::HttpMqttPublishCompatibilityConfig{},
+        [&](const yaha::HttpMqttRequestData&) {
+            forwarded = true;
+            return makeResult(k_statusNoContent, { {"content-type", "application/json; charset=UTF-8"} }, "");
+        });
+
+    REQUIRE(response.statusCode == k_statusNoContent);
+    REQUIRE(forwarded == true);
+}
+
 TEST_CASE("compat_publish_legacy_mode_wraps_downstream_payload", "[http_mqtt_interface]") {
     const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
     const yaha::HttpMqttPublishCompatibilityRequest requestInput{
@@ -357,4 +528,39 @@ TEST_CASE("compat_publish_invalid_json_returns_400", "[http_mqtt_interface]") {
 
     REQUIRE(response.statusCode == 400);
     REQUIRE(forwarded == false);
+}
+
+TEST_CASE("compat_publish_missing_topic_returns_400", "[http_mqtt_interface]") {
+    const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
+    const yaha::HttpMqttPublishCompatibilityRequest requestInput{
+        .method = "POST",
+        .endpoint = "/publish",
+        .headers = {},
+        .fields = {},
+        .body = "",
+        .token = ""};
+
+    bool forwarded = false;
+    const yaha::HttpMqttResult response = yaha::handlePublishCompatibilityRequest(
+        interfaces,
+        requestInput,
+        yaha::HttpMqttPublishCompatibilityConfig{},
+        [&](const yaha::HttpMqttRequestData&) {
+            forwarded = true;
+            return makeResult(k_statusNoContent, {}, "");
+        });
+
+    REQUIRE(response.statusCode == k_statusBadRequest);
+    REQUIRE(forwarded == false);
+}
+
+TEST_CASE("phase7_e2e_sequence_connect_to_disconnect_validates_contract", "[http_mqtt_interface]") {
+    const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
+
+    verifyPhase7Connect(interfaces);
+    verifyPhase7Subscribe(interfaces);
+    verifyPhase7Publish(interfaces);
+    verifyPhase7Pubrel(interfaces);
+    verifyPhase7Unsubscribe(interfaces);
+    verifyPhase7Disconnect(interfaces);
 }

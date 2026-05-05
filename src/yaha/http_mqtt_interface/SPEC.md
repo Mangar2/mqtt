@@ -172,4 +172,4 @@ Implemented compatibility behavior:
 | `test/TEST_SPEC.md` | Unit test specification |
 | `test/http_mqtt_interface_contracts_test.cpp` | Unit tests for phase 1 contracts and helpers |
 | `test/http_mqtt_interface_dispatcher_test.cpp` | Unit tests for phase 2 dispatcher and facade shell |
-| `test/http_mqtt_interface_operations_test.cpp` | Unit tests for phase 3/4/5 handlers and phase-6 compatibility profile |
+| `test/http_mqtt_interface_operations_test.cpp` | Unit tests for phase 3/4/5 handlers, phase-6 compatibility profile, and phase-7 end-to-end contract sequence |
