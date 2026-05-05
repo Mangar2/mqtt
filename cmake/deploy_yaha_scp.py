@@ -7,6 +7,7 @@ Features:
 - Creates missing remote directories.
 - Compares file hashes before copying and skips identical files.
 - Prompts before overwriting changed .ini and .service files.
+- Optional remote install/restart for selected service components.
 """
 
 import argparse
@@ -212,6 +213,28 @@ def copy_file(
     )
 
 
+def run_remote_component_install(
+    *,
+    remote_host: str,
+    remote_root: str,
+    component_name: str,
+    cwd: Path,
+) -> None:
+    install_script = build_remote_path(remote_root, Path(component_name) / "install.sh")
+    command = (
+        f"if [ ! -x {remote_shell_path(install_script)} ]; then "
+        f"echo 'missing installer: {install_script}' >&2; "
+        "exit 1; "
+        "fi; "
+        f"bash {remote_shell_path(install_script)}"
+    )
+    run_or_fail(
+        ["ssh", "-n", "-o", "BatchMode=yes", remote_host, command],
+        cwd=cwd,
+        label=f"remote install {component_name}",
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -243,6 +266,15 @@ def parse_args() -> argparse.Namespace:
         "--no-overwrite-config",
         action="store_true",
         help="Never overwrite differing .ini/.service files",
+    )
+    parser.add_argument(
+        "--install-component",
+        action="append",
+        default=[],
+        help=(
+            "After copy, run remote <component>/install.sh for this component. "
+            "Repeatable, e.g. --install-component automation"
+        ),
     )
     return parser.parse_args()
 
@@ -341,6 +373,19 @@ def main() -> int:
             f"skipped_identical={stats.skipped_identical} "
             f"skipped_prompt={stats.skipped_prompt}"
         )
+
+        for component_name in args.install_component:
+            cleaned_component = component_name.strip()
+            if not cleaned_component:
+                continue
+            run_remote_component_install(
+                remote_host=remote_host,
+                remote_root=remote_root,
+                component_name=cleaned_component,
+                cwd=PROJECT_ROOT,
+            )
+            print(f"INSTALL remote component={cleaned_component}")
+
         return 0
     except Exception as error:
         print(f"DEPLOY fail error={error}", file=sys.stderr)
