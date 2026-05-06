@@ -1,0 +1,13 @@
+@host = 192.168.0.183
+@port = 8092
+@baseUrl = http://{{host}}:{{port}}
+
+### Publish to broker HTTP facade on yaha2
+POST {{baseUrl}}/publish
+content-type: application/json
+
+{
+  "topic": "first/study/main/light/light on time/set",
+  "value": "off",
+  "timestamp": "2026-05-06T06:26:50.887Z"
+}

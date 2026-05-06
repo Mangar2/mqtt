@@ -3,6 +3,7 @@ build/
 out/
 deployment/
 data/
+tmp/
 *.profraw
 *.profdata
 *.json
