@@ -69,6 +69,17 @@ SERVICE_COMPONENTS = (
             "__INSTALL_ROOT__/brokerconnector/brokerconnector.ini"
         ),
     },
+    {
+        "name": "httpmqttinterface",
+        "binary": "yahahttpmqttinterfaceclient",
+        "ini": "httpmqttinterface.ini",
+        "service": "yahahttpmqttinterfaceclient.service",
+        "description": "Yaha HTTP MQTT Interface Client",
+        "exec": (
+            "__INSTALL_ROOT__/httpmqttinterface/yahahttpmqttinterfaceclient "
+            "__INSTALL_ROOT__/httpmqttinterface/httpmqttinterface.ini"
+        ),
+    },
 )
 
 ROOT_TOOLS = (
@@ -186,6 +197,7 @@ def render_root_install_script() -> str:
         "msgstore",
         "automation",
         "brokerconnector",
+        "httpmqttinterface",
     ]
     return "\n".join(
         [
@@ -263,6 +275,7 @@ def main() -> int:
                     "yahamsgstoreclient",
                     "yahaautomationclient",
                     "yahabrokerconnectorclient",
+                    "yahahttpmqttinterfaceclient",
                 ],
                 PROJECT_ROOT,
             )
