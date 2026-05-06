@@ -11,7 +11,26 @@ import sys
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+def _detect_project_root() -> Path:
+    # Keep the script path lexical to avoid resolving symlinks into transient paths.
+    script_path = Path(__file__).absolute()
+    primary = script_path.parent.parent
+    if (primary / "CMakePresets.json").exists():
+        return primary
+
+    # Fallback for execution from within the repository (e.g. cwd is project root or cmake/).
+    cwd = Path.cwd().absolute()
+    fallback = cwd.parent if cwd.name == "cmake" else cwd
+    if (fallback / "CMakePresets.json").exists():
+        return fallback
+
+    raise RuntimeError(
+        "Could not detect project root containing CMakePresets.json. "
+        f"Checked: {primary} and {fallback}"
+    )
+
+
+PROJECT_ROOT = _detect_project_root()
 DEFAULT_PRESET = "armv7-zig-release"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "deployment" / "yaha"
 INI_DIR = PROJECT_ROOT / "cmake" / "ini"
@@ -269,13 +288,6 @@ def main() -> int:
                     "--build",
                     "--preset",
                     args.preset,
-                    "--target",
-                    "yahabroker",
-                    "yahafilestoreclient",
-                    "yahamsgstoreclient",
-                    "yahaautomationclient",
-                    "yahabrokerconnectorclient",
-                    "yahahttpmqttinterfaceclient",
                 ],
                 PROJECT_ROOT,
             )

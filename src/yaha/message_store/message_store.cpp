@@ -208,6 +208,10 @@ std::string nodesToJson(const std::vector<MessageTreeNode>& nodes) {
     return result;
 }
 
+std::string wrapPayloadObject(const std::string& payloadJson) {
+    return std::string{"{\"payload\":"} + payloadJson + '}';
+}
+
 void setHttpErrorResponse(httplib::Response& response, int status, const YahaError& error) {
     response.status = status;
     response.set_content(error.buildMessage(), "text/plain");
@@ -385,9 +389,11 @@ void MessageStore::handleHttpRequest(MessageStore& store,
 
     bool useSnapshotMode = false;
     std::string snapshotBody{};
+    bool sensorPayloadParsed = false;
     if (isPostRequest) {
         message_store_json::SensorPostRequest sensorRequest{};
         if (message_store_json::parseSensorPostBody(request.body, sensorRequest)) {
+            sensorPayloadParsed = true;
             topicPrefix = sensorRequest.topicPrefix.empty()
                 ? topicPrefix
                 : sensorRequest.topicPrefix;
@@ -427,7 +433,13 @@ void MessageStore::handleHttpRequest(MessageStore& store,
     }
 
     response.status = k_http_status_ok;
-    response.set_content(nodesToJson(nodes), "application/json");
+    const std::string nodesJson = nodesToJson(nodes);
+    if (isPostRequest && sensorPayloadParsed) {
+        response.set_content(wrapPayloadObject(nodesJson), "application/json");
+        return;
+    }
+
+    response.set_content(nodesJson, "application/json");
 }
 
 bool MessageStore::tryParseCleanupDays(const Value& value, std::uint32_t& days) {

@@ -598,6 +598,7 @@ TEST_CASE("http_post_store_sensor_payload_uses_topic_and_query_flags", "[message
 
     REQUIRE(response != nullptr);
     REQUIRE(response->status == 200);
+    REQUIRE(response->body.find("{\"payload\":[") == 0);
     REQUIRE(response->body.find("\"topic\":\"home/zone1/light\"") != std::string::npos);
     REQUIRE(response->body.find("\"history\":[") != std::string::npos);
     REQUIRE(response->body.find("\"reason\":[]") != std::string::npos);
@@ -631,6 +632,7 @@ TEST_CASE("http_post_store_sensor_payload_nodes_activates_diff_mode", "[message_
 
     REQUIRE(response != nullptr);
     REQUIRE(response->status == 200);
+    REQUIRE(response->body.find("{\"payload\":[") == 0);
     REQUIRE(response->body.find("\"topic\":\"home/lamp\"") != std::string::npos);
     REQUIRE(response->body.find("\"topic\":\"home/temp\"") == std::string::npos);
 }

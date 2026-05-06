@@ -115,6 +115,8 @@ struct MessageTreeNode;
   - `history` and `reason` expect string literals (`"true"` enables, any other value disables).
   - `levelAmount` supports integer number or integer string; invalid values fall back to 1.
   - `nodes` property, when present, activates snapshot diff mode with the provided array/object value.
+  - response for successfully parsed sensor-compatible POST body is wrapped as JSON object
+    with `payload` array field for legacy `sensor.php` compatibility.
   - Invalid POST JSON falls back to section query defaults (legacy bridge behavior).
 - Malformed body -> empty result array with status 200.
 - Unknown path -> status 404 with `YahaError` payload code `YAHA_MESSAGE_STORE_HTTP_NOT_FOUND`.

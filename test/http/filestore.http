@@ -1,7 +1,8 @@
 @host = 192.168.0.183
 @port = 8210
-@keyPath = /automation/rules/test-rule
+@keyPath = /automation/rules
 @baseUrl = http://{{host}}:{{port}}{{keyPath}}
+@baseUrlNginx = http://{{host}}/kvstore{{keyPath}}
 
 ### Write JSON value to FileStore
 POST {{baseUrl}}
@@ -15,3 +16,16 @@ content-type: application/json
 
 ### Read value from FileStore
 GET {{baseUrl}}
+
+### Write JSON value via nginx kvstore route (Angular app path style)
+POST {{baseUrlNginx}}
+content-type: application/json
+
+{
+  "name": "test-rule",
+  "enabled": true,
+  "updatedBy": "http-test-nginx"
+}
+
+### Read value via nginx kvstore route (Angular app path style)
+GET {{baseUrlNginx}}
