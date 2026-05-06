@@ -45,6 +45,8 @@ Unit tests for MessageTree behavior required by step 4.
 | `http_get_store_snapshot_body_supports_escaped_strings` | Snapshot parser escaped-string handling | GET body with escaped slash/quote/newline/tab/backslash sequences | status 200 and parser accepts escaped string payloads |
 | `http_post_store_sensor_payload_uses_topic_and_query_flags` | sensor.php-compatible POST fields drive section query | POST body with `topic`, `history`, `reason`, `levelAmount` | status 200 and section query applies topic + flags |
 | `http_post_store_sensor_payload_nodes_activates_diff_mode` | sensor.php-compatible `nodes` field drives diff query | POST body with `nodes` snapshot array | status 200 and only changed/new nodes returned |
+| `http_post_store_sensor_payload_empty_nodes_uses_section_query` | sensor.php-compatible empty `nodes` must not force diff mode | POST body with `topic`, flags and `nodes: []` | status 200 and section query uses topic/history/reason filters |
+| `http_post_store_sensor_payload_accepts_json_boolean_flags` | sensor.php-compatible flags accept JSON booleans and legacy lower-case level key | POST body with `history: true`, `reason: false`, `levelamount` and `nodes: []` | status 200 and section query honors flags and level |
 | `http_post_store_invalid_json_falls_back_to_section_query` | Invalid sensor POST body keeps legacy fallback behavior | POST body `not-json` | status 200 and section query defaults are used |
 | `http_get_store_malformed_snapshot_returns_empty_array` | Malformed body fallback path | GET body `not-json` | status 200 and `[]` |
 | `http_unknown_path_returns_404` | Non-store endpoint is rejected | GET `/unknown/path` | status 404 with YahaError payload code `YAHA_MESSAGE_STORE_HTTP_NOT_FOUND` |

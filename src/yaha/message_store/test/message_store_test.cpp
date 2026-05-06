@@ -637,6 +637,76 @@ TEST_CASE("http_post_store_sensor_payload_nodes_activates_diff_mode", "[message_
     REQUIRE(response->body.find("\"topic\":\"home/temp\"") == std::string::npos);
 }
 
+TEST_CASE("http_post_store_sensor_payload_empty_nodes_uses_section_query", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.handleMessage(yaha::Message{"home/zone1/light", std::string{"off"}});
+    store.handleMessage(yaha::Message{"home/zone1/light", std::string{"on"}});
+    store.handleMessage(yaha::Message{"office/zone2/light", std::string{"on"}});
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+
+    httplib::Request request{};
+    request.method = "POST";
+    request.path = "/store";
+    request.body =
+        R"({"topic":"home","history":"true","reason":"false","levelAmount":2,"nodes":[]})";
+    request.set_header("Content-Type", "application/json");
+    const auto response = client.send(request);
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 200);
+    REQUIRE(response->body.find("{\"payload\":[") == 0);
+    REQUIRE(response->body.find("\"topic\":\"home/zone1/light\"") != std::string::npos);
+    REQUIRE(response->body.find("\"topic\":\"office/zone2/light\"") == std::string::npos);
+    REQUIRE(response->body.find("\"history\":[") != std::string::npos);
+    REQUIRE(response->body.find("\"reason\":[]") != std::string::npos);
+}
+
+TEST_CASE("http_post_store_sensor_payload_accepts_json_boolean_flags", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.handleMessage(yaha::Message{"home/zone1/light", std::string{"off"}});
+    store.handleMessage(yaha::Message{"home/zone1/light", std::string{"on"}});
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+
+    httplib::Request request{};
+    request.method = "POST";
+    request.path = "/store";
+    request.body =
+        R"({"topic":"home","history":true,"reason":false,"levelamount":2,"nodes":[]})";
+    request.set_header("Content-Type", "application/json");
+    const auto response = client.send(request);
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 200);
+    REQUIRE(response->body.find("{\"payload\":[") == 0);
+    REQUIRE(response->body.find("\"topic\":\"home/zone1/light\"") != std::string::npos);
+    REQUIRE(response->body.find("\"history\":[") != std::string::npos);
+    REQUIRE(response->body.find("\"reason\":[]") != std::string::npos);
+}
+
 TEST_CASE("http_post_store_invalid_json_falls_back_to_section_query", "[message_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};

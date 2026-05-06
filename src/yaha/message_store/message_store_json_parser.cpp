@@ -35,6 +35,27 @@ std::string normalizeTopicPrefixForTree(const std::string& topicPrefix) {
     return topicPrefix;
 }
 
+std::string toLower(std::string value) {
+    for (char& charValue : value) {
+        charValue = static_cast<char>(
+            std::tolower(static_cast<unsigned char>(charValue)));
+    }
+    return value;
+}
+
+bool tryParseLegacyBoolToken(const std::string& tokenRaw, bool& output) {
+    const std::string token = toLower(trim(tokenRaw));
+    if (token == "1" || token == "true" || token == "yes" || token == "on") {
+        output = true;
+        return true;
+    }
+    if (token == "0" || token == "false" || token == "no" || token == "off") {
+        output = false;
+        return true;
+    }
+    return false;
+}
+
 bool tryParseUnsignedValue(const std::string& text,
                            std::uint32_t defaultValue,
                            std::uint32_t& output) {
@@ -341,24 +362,34 @@ private:
         }
 
         if (key == "history") {
-            std::string historyValue{};
-            if (!parseString(historyValue)) {
+            std::string historyRaw{};
+            if (!captureRawValue(historyRaw)) {
                 return false;
             }
-            output.includeHistory = (historyValue == "true");
+            bool includeHistory = false;
+            if (tryParseBoolValue(historyRaw, includeHistory)) {
+                output.includeHistory = includeHistory;
+            } else {
+                output.includeHistory = false;
+            }
             return true;
         }
 
         if (key == "reason") {
-            std::string reasonValue{};
-            if (!parseString(reasonValue)) {
+            std::string reasonRaw{};
+            if (!captureRawValue(reasonRaw)) {
                 return false;
             }
-            output.includeReason = (reasonValue == "true");
+            bool includeReason = false;
+            if (tryParseBoolValue(reasonRaw, includeReason)) {
+                output.includeReason = includeReason;
+            } else {
+                output.includeReason = false;
+            }
             return true;
         }
 
-        if (key == "levelAmount") {
+        if (key == "levelAmount" || key == "levelamount") {
             std::string levelAmountRaw{};
             if (!captureRawValue(levelAmountRaw)) {
                 return false;
@@ -372,8 +403,9 @@ private:
             if (!captureRawValue(nodesRaw)) {
                 return false;
             }
-            output.hasNodes = true;
-            output.nodesJson = trim(nodesRaw);
+            const std::string trimmedNodesRaw = trim(nodesRaw);
+            output.hasNodes = !trimmedNodesRaw.empty() && trimmedNodesRaw != "[]" && trimmedNodesRaw != "null";
+            output.nodesJson = output.hasNodes ? trimmedNodesRaw : std::string{};
             return true;
         }
 
@@ -414,6 +446,24 @@ private:
         }
 
         output = static_cast<std::uint32_t>(numericValue);
+    }
+
+    static bool tryParseBoolValue(const std::string& rawValue, bool& output) {
+        const std::string cleaned = trim(rawValue);
+        if (cleaned.empty()) {
+            return false;
+        }
+
+        if (cleaned.front() == '"') {
+            std::string textValue{};
+            SensorPostJsonParser decoder{cleaned};
+            if (!decoder.parseSingleString(textValue)) {
+                return false;
+            }
+            return tryParseLegacyBoolToken(textValue, output);
+        }
+
+        return tryParseLegacyBoolToken(cleaned, output);
     }
 
     bool parseSingleString(std::string& output) {

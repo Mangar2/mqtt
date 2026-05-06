@@ -112,9 +112,9 @@ struct MessageTreeNode;
 - JSON array body -> snapshot diff mode using `getNodes`.
 - POST JSON object mode:
   - `topic` maps to topic prefix (`"/a/b"` normalized to `"a/b"`).
-  - `history` and `reason` expect string literals (`"true"` enables, any other value disables).
-  - `levelAmount` supports integer number or integer string; invalid values fall back to 1.
-  - `nodes` property, when present, activates snapshot diff mode with the provided array/object value.
+  - `history` and `reason` accept string and JSON boolean literals (`"true"`/`true` enables; `"false"`/`false` disables).
+  - `levelAmount` and legacy alias `levelamount` support integer number or integer string; invalid values fall back to 1.
+  - `nodes` property activates snapshot diff mode only for non-empty payload values. Empty `[]` and `null` keep section query mode.
   - response for successfully parsed sensor-compatible POST body is wrapped as JSON object
     with `payload` array field for legacy `sensor.php` compatibility.
   - Invalid POST JSON falls back to section query defaults (legacy bridge behavior).

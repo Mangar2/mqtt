@@ -1,17 +1,17 @@
-GET http://192.168.0.183:8090/store
+GET http://192.168.0.183:8090/store/first/bathroom/main/light/light on time
 levelamount: 5
-history: false
+history: true
 reason: true
 
 ### Legacy PHP-style MsgStore body (direct)
 POST http://192.168.0.183:8090/store
 content-type: application/json
 
-{"topic":"","history":"false","reason":"false","nodes":[],"levelAmount":7}
+{"topic":"first/bathroom/main/light/light on time","history":"true","reason":"true","nodes":[],"levelAmount":7}
 
 ### Legacy PHP route via nginx (sensor.php -> msgstore)
 POST http://192.168.0.183/yahagui/angular/api/sensor.php
 content-type: application/json
 
-{"topic":"","history":"false","reason":"false","nodes":[],"levelAmount":7}
+{"topic":"first/bathroom/main/light/light on time","history":"false","reason":"false","nodes":[],"levelAmount":7}
 
