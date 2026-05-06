@@ -14,7 +14,7 @@ content-type: application/json
 }
 
 ### Publish via nginx route used by Angular app
-PUT {{baseUrlNginx}}/publish
+POST {{baseUrlNginx}}/publish
 content-type: application/json
 
 {
