@@ -1,11 +1,9 @@
-# value_service — YAHA ValueService Config Contract
+# value_service — YAHA ValueService Component
 
 ## Purpose
 
-Defines the ValueService domain runtime configuration contract used by
-ValueService standalone composition and upcoming component behavior implementation.
-
-Phase 1 scope in this module is config contract only.
+Defines ValueService domain runtime configuration and phase 2 component behavior
+for FileStore-backed value-map lifecycle.
 
 ## Public API
 
@@ -21,11 +19,45 @@ Phase 1 scope in this module is config contract only.
 | `subscribeQos` | `Qos` | `Qos::AtLeastOnce` | Subscription and outbound value publish QoS |
 | `legacyValuesFileName` | `std::string` | empty | Legacy migration config key; runtime local-file persistence is disabled |
 
+### Class `ValueServiceComponent` : `IMqttComponent`
+
+| Member | Signature | Notes |
+|------|------|-------|
+| ctor | `explicit ValueServiceComponent(ValueServiceConfig)` | Stores configuration |
+| `getSubscriptions` | `SubscriptionMap() const` | Includes monitor prefix and dynamic `<key>/set` subscriptions |
+| `handleMessage` | `void(const Message&)` | Handles monitor reload and `/set` updates |
+| `run` | `void()` | Optional startup FileStore load and retained replay publish |
+| `close` | `void()` | Stops lifecycle flag |
+| `setPublishCallback` | `void(PublishCallback)` | Stores callback for retained value publishes |
+| `isRunning` | `bool() const` | Lifecycle state helper |
+| `valueCount` | `size_t() const` | Diagnostic helper |
+| `valueForKey` | `std::optional<Value>(const std::string&) const` | Diagnostic helper |
+
+## Behavior
+
+- Startup `run()`:
+	- sets running state
+	- if FileStore enabled, loads full map from configured key path
+	- publishes retained replay for all loaded keys
+- `/set` handling:
+	- accepts `<key>/set` topics
+	- accepts only string and integral numeric values
+	- updates in-memory map and publishes retained `<key>` state message
+	- persists full map to FileStore via HTTP POST (failure does not block publish)
+- Monitor reload handling:
+	- listens to `<monitorTopicPrefix>/#`
+	- reloads from FileStore when payload `keyPath` matches `valuesKeyPath`
+	- on successful reload publishes full retained replay
+- Persistence format:
+	- full JSON object map `key -> value`
+	- values restricted to `string` or integer numbers
+
 ## Files
 
 | File | Role |
 |------|------|
-| `value_service_component.h` | ValueService config contract declarations |
+| `value_service_component.h` | ValueService config and component declarations |
+| `value_service_component.cpp` | ValueService phase 2 runtime behavior implementation |
 
 ## Implementation notes
 

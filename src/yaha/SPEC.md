@@ -18,7 +18,7 @@ directly here — each sub-topic has its own subdirectory.
 | `broker_connector_client/` | broker connector phase 4 | Standalone process config mapping for broker connector composition using generic mqtt runtime modules. |
 | `file_store/` | filestore phase 1 | FileStore IMqttComponent with HTTP key/value API and MQTT monitoring publishes for file changes. |
 | `file_store_client/` | filestore phase 2 | Standalone FileStore process config mapping and runtime composition wiring. |
-| `value_service/` | valueservice phase 1 | ValueService domain runtime config contract for FileStore-backed value map handling. |
+| `value_service/` | valueservice phase 2 | ValueService IMqttComponent with startup FileStore load, `/set` handling, retained replay publish, and monitor-triggered reload. |
 | `value_service_client/` | valueservice phase 1 | Standalone ValueService process config mapping for valueservice/filestore/monitoring/mqtt sections. |
 | `message_store/` | 4-7 | Internal MessageTree plus persistence and MessageStore IMqttComponent logic for state/history queries, cleanup, disk restore/save, and HTTP query interface. |
 | `message_store_client/` | 8 | Standalone MessageStore process composition, runtime config loader, and lifecycle orchestration for executable wiring. |
