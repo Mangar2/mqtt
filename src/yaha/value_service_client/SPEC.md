@@ -65,3 +65,9 @@ Validation rules:
 |------|------|
 | `value_service_client_app.h` | Runtime config declarations |
 | `value_service_client_app.cpp` | Runtime config mapping implementation |
+
+Related verification artifacts:
+
+- Runtime config mapping tests are implemented in
+  `src/yaha/value_service/test/value_service_client_config_test.cpp` with
+  test cases listed in `src/yaha/value_service/test/TEST_SPEC.md`.
