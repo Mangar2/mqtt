@@ -20,6 +20,7 @@ constexpr int k_http_ok_status{200};
 constexpr int k_http_internal_server_error_status{500};
 constexpr int k_wait_sleep_ms{10};
 constexpr double k_non_integral_test_value{21.5};
+constexpr double k_integral_test_value{21.0};
 
 [[nodiscard]] std::uint16_t reserveFreeLocalPort() {
     httplib::Server probeServer;
@@ -340,6 +341,101 @@ TEST_CASE("value_service_rejects_non_integral_numeric_set_value", "[value_servic
 
     std::lock_guard<std::mutex> lock{publishMutex};
     REQUIRE(published.empty());
+
+    component.close();
+}
+
+TEST_CASE("value_service_accepts_integral_double_and_persists_number", "[value_service]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+
+    yaha::ValueServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::ValueServiceComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{
+        "house/temp/set",
+        k_integral_test_value,
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    const auto value = component.valueForKey("house/temp");
+    REQUIRE(value.has_value());
+    REQUIRE(std::holds_alternative<double>(*value));
+    REQUIRE(std::get<double>(*value) == k_integral_test_value);
+    REQUIRE(fileStore.postCount() >= 1U);
+    REQUIRE(fileStore.lastPostedBody().find("\"house/temp\":21") != std::string::npos);
+
+    {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        REQUIRE_FALSE(published.empty());
+        REQUIRE(published.back().topic() == "house/temp");
+    }
+
+    component.close();
+}
+
+TEST_CASE("value_service_monitoring_non_string_payload_is_ignored", "[value_service]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setValuesJson("{\"house/light\":\"on\"}");
+
+    yaha::ValueServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::ValueServiceComponent component{config};
+    component.run();
+
+    component.handleMessage(yaha::Message{
+        "$MONITOR/FileStore/changed",
+        1.0,
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    REQUIRE(component.valueForKey("house/light").has_value());
+    REQUIRE_FALSE(component.valueForKey("house/heating").has_value());
+
+    component.close();
+}
+
+TEST_CASE("value_service_handles_escaped_json_strings_and_idempotent_run", "[value_service]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setValuesJson("{\"house/text\":\"line\\n\\\"quoted\\\"\\tvalue\"}");
+
+    yaha::ValueServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::ValueServiceComponent component{config};
+    component.run();
+    component.run();
+
+    const auto loadedValue = component.valueForKey("house/text");
+    REQUIRE(loadedValue.has_value());
+    REQUIRE(std::holds_alternative<std::string>(*loadedValue));
+    REQUIRE(std::get<std::string>(*loadedValue).find("quoted") != std::string::npos);
+
+    component.handleMessage(yaha::Message{
+        "house/text/set",
+        std::string{"a\\b\"c\n"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    REQUIRE(fileStore.lastPostedBody().find("\\\\") != std::string::npos);
+    REQUIRE(fileStore.lastPostedBody().find("\\\"") != std::string::npos);
+    REQUIRE(fileStore.lastPostedBody().find("\\n") != std::string::npos);
 
     component.close();
 }

@@ -61,11 +61,6 @@ bool tryLoadAutomationClientConfigFromIni(
         output.managementTopicPrefix = *managementPrefix;
     }
 
-    if (const auto automationPrefix = document.lastValue("automation", "topicPrefix");
-        automationPrefix.has_value()) {
-        output.automationTopicPrefix = *automationPrefix;
-    }
-
     if (const auto longitudeValue = document.lastValue("automation", "longitude");
         longitudeValue.has_value()) {
         double parsedLongitude = 0.0;

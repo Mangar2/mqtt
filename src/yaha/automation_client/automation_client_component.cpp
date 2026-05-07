@@ -79,7 +79,6 @@ AutomationClientComponent::AutomationClientComponent(AutomationClientConfig conf
 
 SubscriptionMap AutomationClientComponent::getSubscriptions() const {
     SubscriptionMap subscriptions{};
-    subscriptions.insert({config_.automationTopicPrefix + "/#", Qos::AtLeastOnce});
     subscriptions.insert({config_.managementTopicPrefix + "/#", config_.subscribeQos});
     subscriptions.insert({config_.monitorTopicPrefix + "/#", config_.subscribeQos});
 
@@ -105,10 +104,6 @@ void AutomationClientComponent::handleMessage(const Message& message) {
 
     if (isMonitoringTopic(message.topic())) {
         handleMonitoringMessage(message);
-        return;
-    }
-
-    if (isAutomationControlTopic(message.topic())) {
         return;
     }
 
@@ -364,10 +359,6 @@ bool AutomationClientComponent::isMonitoringTopic(const std::string& topicName) 
 
 bool AutomationClientComponent::isManagementTopic(const std::string& topicName) const {
     return startsWithText(topicName, config_.managementTopicPrefix + "/") && endsWithSetSuffix(topicName);
-}
-
-bool AutomationClientComponent::isAutomationControlTopic(const std::string& topicName) const {
-    return startsWithText(topicName, config_.automationTopicPrefix + "/");
 }
 
 std::optional<std::string> AutomationClientComponent::extractRuleNameFromManagementTopic(

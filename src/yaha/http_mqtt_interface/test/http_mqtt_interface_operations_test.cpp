@@ -554,6 +554,93 @@ TEST_CASE("compat_publish_missing_topic_returns_400", "[http_mqtt_interface]") {
     REQUIRE(forwarded == false);
 }
 
+TEST_CASE("compat_publish_json_body_parses_reason_qos_retain_and_bool_value", "[http_mqtt_interface]") {
+    const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
+    const yaha::HttpMqttPublishCompatibilityRequest requestInput{
+        .method = "POST",
+        .endpoint = "/publish",
+        .headers = {{"content-type", "application/json"}},
+        .fields = {},
+        .body =
+            "{"
+            "\"topic\":\"compat%2Ftopic\"," 
+            "\"value\":true,"
+            "\"reason\":[{\"message\":\"ok\",\"timestamp\":\"2024-01-01T00:00:00Z\"}],"
+            "\"qos\":2,"
+            "\"retain\":true"
+            "}",
+        .token = "compat-token"};
+
+    yaha::HttpMqttRequestData capturedRequest{};
+    const yaha::HttpMqttResult response = yaha::handlePublishCompatibilityRequest(
+        interfaces,
+        requestInput,
+        yaha::HttpMqttPublishCompatibilityConfig{},
+        [&](const yaha::HttpMqttRequestData& mappedRequest) {
+            capturedRequest = mappedRequest;
+            return makeResult(k_statusNoContent, {{"content-type", "application/json; charset=UTF-8"}}, "");
+        });
+
+    REQUIRE(response.statusCode == k_statusNoContent);
+    REQUIRE(capturedRequest.headers.at("qos") == "2");
+    REQUIRE(capturedRequest.headers.at("retain") == "1");
+    REQUIRE(capturedRequest.payload.find("\"topic\":\"compat/topic\"") != std::string::npos);
+    REQUIRE(capturedRequest.payload.find("\"value\":\"true\"") != std::string::npos);
+    REQUIRE(capturedRequest.payload.find("\"message\":\"ok\"") != std::string::npos);
+}
+
+TEST_CASE("compat_publish_json_body_invalid_reason_shape_returns_400", "[http_mqtt_interface]") {
+    const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
+    const yaha::HttpMqttPublishCompatibilityRequest requestInput{
+        .method = "POST",
+        .endpoint = "/publish",
+        .headers = {{"content-type", "application/json"}},
+        .fields = {},
+        .body =
+            "{"
+            "\"topic\":\"compat/topic\"," 
+            "\"reason\":[{\"message\":\"missing-timestamp\"}]"
+            "}",
+        .token = "compat-token"};
+
+    bool forwarded = false;
+    const yaha::HttpMqttResult response = yaha::handlePublishCompatibilityRequest(
+        interfaces,
+        requestInput,
+        yaha::HttpMqttPublishCompatibilityConfig{},
+        [&](const yaha::HttpMqttRequestData&) {
+            forwarded = true;
+            return makeResult(k_statusNoContent, {}, "");
+        });
+
+    REQUIRE(response.statusCode == k_statusBadRequest);
+    REQUIRE_FALSE(forwarded);
+}
+
+TEST_CASE("compat_publish_json_body_parses_null_value_as_string", "[http_mqtt_interface]") {
+    const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
+    const yaha::HttpMqttPublishCompatibilityRequest requestInput{
+        .method = "POST",
+        .endpoint = "/publish",
+        .headers = {{"content-type", "application/json"}},
+        .fields = {},
+        .body = "{\"topic\":\"compat/topic\",\"value\":null}",
+        .token = "compat-token"};
+
+    yaha::HttpMqttRequestData capturedRequest{};
+    const yaha::HttpMqttResult response = yaha::handlePublishCompatibilityRequest(
+        interfaces,
+        requestInput,
+        yaha::HttpMqttPublishCompatibilityConfig{},
+        [&](const yaha::HttpMqttRequestData& mappedRequest) {
+            capturedRequest = mappedRequest;
+            return makeResult(k_statusNoContent, { {"content-type", "application/json; charset=UTF-8"} }, "");
+        });
+
+    REQUIRE(response.statusCode == k_statusNoContent);
+    REQUIRE(capturedRequest.payload.find("\"value\":\"null\"") != std::string::npos);
+}
+
 TEST_CASE("phase7_e2e_sequence_connect_to_disconnect_validates_contract", "[http_mqtt_interface]") {
     const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
 

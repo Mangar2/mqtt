@@ -78,6 +78,17 @@ SERVICE_COMPONENTS = (
         ),
     },
     {
+        "name": "valueservice",
+        "binary": "yahavalueserviceclient",
+        "ini": "valueservice.ini",
+        "service": "yahavalueserviceclient.service",
+        "description": "Yaha Value Service Client",
+        "exec": (
+            "__INSTALL_ROOT__/valueservice/yahavalueserviceclient "
+            "__INSTALL_ROOT__/valueservice/valueservice.ini"
+        ),
+    },
+    {
         "name": "brokerconnector",
         "binary": "yahabrokerconnectorclient",
         "ini": "brokerconnector.ini",
@@ -215,6 +226,7 @@ def render_root_install_script() -> str:
         "filestore",
         "msgstore",
         "automation",
+        "valueservice",
         "brokerconnector",
         "httpmqttinterface",
     ]

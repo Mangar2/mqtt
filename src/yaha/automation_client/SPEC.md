@@ -11,7 +11,6 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
 
 | Field | Type | Default | Notes |
 |------|------|---------|-------|
-| `automationTopicPrefix` | `std::string` | `$MONITORING/automation` | Prefix for automation control channels |
 | `rulesKeyPath` | `std::string` | `/automation/rules` | FileStore key path for full rules tree |
 | `fileStoreHost` | `std::string` | `127.0.0.1` | FileStore HTTP host |
 | `fileStorePort` | `std::uint16_t` | `8210` | FileStore HTTP port |
@@ -31,7 +30,7 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
 | Member | Signature | Notes |
 |--------|-----------|-------|
 | ctor | `explicit AutomationClientComponent(AutomationClientConfig)` | Stores configuration |
-| `getSubscriptions` | `SubscriptionMap() const` | Subscribes monitor, automation control, static motion topics, and rule-discovered dynamic variable topics |
+| `getSubscriptions` | `SubscriptionMap() const` | Subscribes monitoring, management, static motion topics, and rule-discovered dynamic variable topics |
 | `handleMessage` | `void(const Message&)` | Handles monitor reload, rule management, and domain message rule evaluation |
 | `run` | `void()` | Loads rules from FileStore startup key path |
 | `close` | `void()` | Stops lifecycle flag |

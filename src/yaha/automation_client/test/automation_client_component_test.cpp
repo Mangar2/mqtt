@@ -321,6 +321,34 @@ TEST_CASE("automation_component_monitoring_deleted_does_not_reload", "[automatio
     component.close();
 }
 
+TEST_CASE("automation_component_recovers_from_non_object_rules_payload", "[automation_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setRulesJson("[]");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    REQUIRE(component.isRunning());
+    REQUIRE(component.ruleCount() == 0U);
+    REQUIRE_FALSE(component.hasRule("demo"));
+
+    component.handleMessage(yaha::Message{
+        "$MONITORING/automation/rules/demo/set",
+        std::string{"{\"topic\":\"house/light/set\",\"value\":\"on\",\"enabled\":true,\"weight\":1.5,\"list\":[1,2]}"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    REQUIRE(component.hasRule("demo"));
+    REQUIRE(fileStore.postCount() >= 1U);
+
+    component.close();
+}
+
 TEST_CASE("automation_component_get_subscriptions_includes_dynamic_topics", "[automation_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};

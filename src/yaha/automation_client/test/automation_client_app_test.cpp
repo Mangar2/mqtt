@@ -44,7 +44,6 @@ TEST_CASE("load_automation_client_runtime_config_from_ini", "[automation_client]
         "topicPrefix=$MONITOR/FileStore\n"
         "\n"
         "[automation]\n"
-        "topicPrefix=$MONITORING/automation\n"
         "managementTopicPrefix=$MONITORING/automation/rules\n"
         "longitude=8.68\n"
         "latitude=50.11\n"
@@ -68,7 +67,6 @@ TEST_CASE("load_automation_client_runtime_config_from_ini", "[automation_client]
     REQUIRE(runtimeConfig.automationConfig.fileStorePort == 8210U);
     REQUIRE(runtimeConfig.automationConfig.rulesKeyPath == "/automation/rules");
     REQUIRE(runtimeConfig.automationConfig.monitorTopicPrefix == "$MONITOR/FileStore");
-    REQUIRE(runtimeConfig.automationConfig.automationTopicPrefix == "$MONITORING/automation");
     REQUIRE(runtimeConfig.automationConfig.managementTopicPrefix == "$MONITORING/automation/rules");
     REQUIRE(runtimeConfig.automationConfig.longitude == k_test_longitude);
     REQUIRE(runtimeConfig.automationConfig.latitude == k_test_latitude);

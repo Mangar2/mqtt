@@ -26,7 +26,6 @@ constexpr std::uint16_t k_default_file_store_port{8210U};
  * @brief Runtime config for Automation client component.
  */
 struct AutomationClientConfig {
-    std::string automationTopicPrefix{"$MONITORING/automation"};      ///< Prefix for automation control channels.
     std::string rulesKeyPath{"/automation/rules"};                    ///< FileStore key path for full rules tree.
     std::string fileStoreHost{"127.0.0.1"};                           ///< FileStore HTTP host.
     std::uint16_t fileStorePort{k_default_file_store_port};            ///< FileStore HTTP port.
@@ -115,7 +114,6 @@ private:
 
     [[nodiscard]] bool isMonitoringTopic(const std::string& topicName) const;
     [[nodiscard]] bool isManagementTopic(const std::string& topicName) const;
-    [[nodiscard]] bool isAutomationControlTopic(const std::string& topicName) const;
 
     [[nodiscard]] std::optional<std::string> extractRuleNameFromManagementTopic(
         const std::string& topicName) const;

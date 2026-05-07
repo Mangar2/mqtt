@@ -272,25 +272,52 @@ def _discover_tests(binary: Path) -> list[tuple[str, str]]:
     output = _run_or_die("discover tests", [str(binary), "--list-tests", "-v", "high"])
     tests: list[tuple[str, str]] = []
     current_name: str | None = None
+    pending_location_prefix = ""
+
+    def _try_append_test(location_text: str) -> bool:
+        location_match = re.match(r"(.+\.(?:cpp|cc|cxx)):(\d+)\s*$", location_text)
+        if not location_match or current_name is None:
+            return False
+
+        abs_location = Path(location_match.group(1)).resolve()
+        try:
+            rel = abs_location.relative_to(PROJECT_ROOT).as_posix()
+        except ValueError:
+            rel = abs_location.as_posix()
+
+        tests.append((current_name, rel))
+        return True
+
     for raw_line in output.splitlines():
         if raw_line.startswith("  ") and not raw_line.startswith("    "):
             stripped = raw_line.strip()
             if stripped and stripped != "All available test cases:":
                 current_name = stripped
+                pending_location_prefix = ""
             continue
 
         if current_name is None:
             continue
 
-        location_match = re.match(r"\s+(.+\.(?:cpp|cc|cxx)):\d+\s*$", raw_line)
-        if location_match:
-            abs_location = Path(location_match.group(1)).resolve()
-            try:
-                rel = abs_location.relative_to(PROJECT_ROOT).as_posix()
-            except ValueError:
-                rel = abs_location.as_posix()
-            tests.append((current_name, rel))
+        if not raw_line.startswith("    "):
+            continue
+
+        location_fragment = raw_line.strip()
+        if not location_fragment:
+            continue
+
+        combined_location = pending_location_prefix + location_fragment
+        if pending_location_prefix and _try_append_test(combined_location):
             current_name = None
+            pending_location_prefix = ""
+            continue
+
+        if _try_append_test(location_fragment):
+            current_name = None
+            pending_location_prefix = ""
+            continue
+
+        pending_location_prefix = combined_location
 
     if not tests:
         print("\n[FAILED] could not discover Catch2 tests", file=sys.stderr)
