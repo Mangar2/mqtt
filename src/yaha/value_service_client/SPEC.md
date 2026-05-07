@@ -3,9 +3,7 @@
 ## Purpose
 
 Defines ValueService client runtime config data types and ValueService-specific
-INI mapping for standalone composition.
-
-Phase 1 scope in this module is config mapping only.
+INI mapping used by standalone composition.
 
 ## Public API
 
@@ -22,6 +20,22 @@ Phase 1 scope in this module is config mapping only.
 |---------|-----------|-------|
 | `tryLoadValueServiceConfigFromIni` | `(const IniDocument&, ValueServiceConfig&, std::string&) -> bool` | Maps ValueService + FileStore + monitoring fields |
 | `tryLoadValueServiceClientRuntimeConfigFromIni` | `(const IniDocument&, ValueServiceClientRuntimeConfig&, std::string&) -> bool` | Maps full runtime config |
+
+## Runtime composition behavior
+
+`src/yaha_valueserviceclient_main.cpp` composes runtime directly:
+
+- start order: `ValueServiceComponent::run()` then `YahaMqttClient::run()` via `YahaMqttClientRuntime`
+- stop order: `YahaMqttClient::close()` then `ValueServiceComponent::close()` via `YahaMqttClientRuntime`
+
+Standalone main behavior:
+
+- parse CLI args (`[config-path]`, `--trace-messages`, `--help`)
+- load INI config with `IniDocument`
+- map full runtime config with `tryLoadValueServiceClientRuntimeConfigFromIni`
+- construct `ValueServiceComponent`
+- construct `YahaMqttClient` with `makeBrokerTransport()`
+- run until signal using `YahaMqttClientRuntime`
 
 ## Configuration format
 
