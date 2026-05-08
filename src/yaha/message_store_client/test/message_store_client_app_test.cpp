@@ -217,3 +217,113 @@ TEST_CASE("load_config_rejects_invalid_tree_factor_values", "[message_store_clie
     removeDirectoryQuiet(tempDir);
 }
 
+TEST_CASE("load_config_rejects_out_of_range_tree_factor_values", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[tree]\n"
+        "upperBoundFactor = 1001\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.find("tree.upperBoundFactor") != std::string::npos);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_config_rejects_subscription_unknown_key", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[subscription]\n"
+        "topic = #\n"
+        "foo = bar\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.find("unknown key") != std::string::npos);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_config_rejects_subscription_qos_without_topic", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[subscription]\n"
+        "qos = 1\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.find("preceding subscription.topic") != std::string::npos);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_config_rejects_subscription_topic_without_qos", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[subscription]\n"
+        "topic = home/state\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.find("missing subscription.qos") != std::string::npos);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_config_rejects_empty_subscription_topic", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[subscription]\n"
+        "topic = \n"
+        "qos = 1\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.find("must not be empty") != std::string::npos);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_config_parses_server_host_when_set", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[server]\n"
+        "host = 0.0.0.0\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(config.storeConfig.serverHost == "0.0.0.0");
+
+    removeDirectoryQuiet(tempDir);
+}
+

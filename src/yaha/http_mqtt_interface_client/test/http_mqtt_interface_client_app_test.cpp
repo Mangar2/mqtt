@@ -27,8 +27,14 @@ std::filesystem::path writeTempIni(const std::string& content) {
 constexpr std::uint16_t k_fallback_test_port{28130U};
 constexpr int k_wait_attempts{50};
 constexpr int k_wait_sleep_ms{10};
+constexpr int k_http_timeout_microseconds{500000};
 constexpr int k_status_ok{200};
 constexpr int k_status_no_content{204};
+
+void configureHttpClientTimeouts(httplib::Client& client) {
+    client.set_connection_timeout(0, k_http_timeout_microseconds);
+    client.set_read_timeout(0, k_http_timeout_microseconds);
+}
 
 [[nodiscard]] std::uint16_t reserveFreeLocalPort() {
     httplib::Server probeServer;
@@ -43,6 +49,7 @@ constexpr int k_status_no_content{204};
 
 bool waitForHttpServer(const std::uint16_t port) {
     httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
     for (int attempt = 0; attempt < k_wait_attempts; ++attempt) {
         if (const auto response = client.Get("/health")) {
             return response->status == k_status_ok;
@@ -102,6 +109,7 @@ void verifyPostPublishPhpEndpoint(httplib::Client& client, const httplib::Params
 
 void exerciseHttpServerEndpoints(const std::uint16_t port) {
     httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
     verifyHealthEndpoint(client);
     verifyPutEndpoints(client);
 

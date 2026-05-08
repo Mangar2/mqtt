@@ -71,8 +71,6 @@ void MessageTree::addData(const Message& message) {
         trimHistory(node->data);
     }
 
-    node->hasData = true;
-
     std::int64_t effectiveTimeMs = nowMilliseconds();
     const auto& reasons = message.reason();
     if (!reasons.empty()) {
@@ -81,6 +79,7 @@ void MessageTree::addData(const Message& message) {
             effectiveTimeMs = reasonTimeMs;
         }
     }
+    node->hasData = true;
 
     node->data.timeMs = effectiveTimeMs;
     node->data.value = message.value();
@@ -270,6 +269,10 @@ void MessageTree::collectAllNodes(const TreeNode& node,
 
 bool MessageTree::snapshotEquals(const MessageTreeNode& current,
                                  const MessageTreeSnapshotNode& snapshot) {
+    if (snapshot.timeMs.has_value() && current.timeMs != *snapshot.timeMs) {
+        return false;
+    }
+
     return current.topic == snapshot.topic &&
            current.value == snapshot.value &&
            reasonListsEqual(current.reason, snapshot.reason);

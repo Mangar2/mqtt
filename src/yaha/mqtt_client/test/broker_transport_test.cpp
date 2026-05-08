@@ -37,11 +37,21 @@ constexpr int k_keep_alive_seconds{5};
 constexpr double k_outgoing_qos2_value{42.0};
 constexpr std::uint32_t k_fake_read_timeout_ms{100U};
 constexpr int k_poll_deadline_ms{1000};
+constexpr std::size_t k_expected_incoming_messages{8U};
+constexpr double k_forwarded_numeric_value{77.5};
 
 const std::string k_forwarded_inbound_payload =
     "{\"token\":\"abc\",\"message\":{\"topic\":\"transport/forwarded\",\"value\":\"sensor\",\"reason\":[{\"message\":\"src\",\"timestamp\":\"2026-05-08T10:00:00Z\"}]}}";
 const std::string k_forwarded_outbound_payload =
     "{\"token\":\"forward\",\"message\":{\"topic\":\"out/raw\",\"value\":\"keep\",\"reason\":[{\"message\":\"why\",\"timestamp\":\"2026-05-08T10:00:00Z\"}]}}";
+const std::string k_forwarded_numeric_reason_payload =
+    "{\"message\":{\"topic\":\"transport/forwarded_numeric\",\"value\":77.5,\"reason\":\"manual\"}}";
+const std::string k_forwarded_bool_payload =
+    "{\"message\":{\"topic\":\"transport/forwarded_bool\",\"value\":true}}";
+const std::string k_forwarded_escaped_payload =
+    "{\"message\":{\"topic\":\"transport\\/forwarded_escaped\",\"value\":\"line\\nvalue\",\"reason\":[{\"message\":\"plain\"}]}}";
+const std::string k_forwarded_invalid_value_payload =
+    "{\"message\":{\"topic\":\"transport/forwarded_invalid\",\"value\":{}}}";
 
 class FakeBrokerForTransportTest {
 public:
@@ -263,6 +273,34 @@ private:
                           k_server_forwarded_packet_id)) {
             return false;
         }
+        if (!send_publish(connection,
+                          "transport/forwarded_numeric",
+                          k_forwarded_numeric_reason_payload,
+                          mqtt::QoS::AtMostOnce,
+                          std::nullopt)) {
+            return false;
+        }
+        if (!send_publish(connection,
+                          "transport/forwarded_bool",
+                          k_forwarded_bool_payload,
+                          mqtt::QoS::AtMostOnce,
+                          std::nullopt)) {
+            return false;
+        }
+        if (!send_publish(connection,
+                          "transport/forwarded_escaped",
+                          k_forwarded_escaped_payload,
+                          mqtt::QoS::AtMostOnce,
+                          std::nullopt)) {
+            return false;
+        }
+        if (!send_publish(connection,
+                          "transport/forwarded_invalid",
+                          k_forwarded_invalid_value_payload,
+                          mqtt::QoS::AtMostOnce,
+                          std::nullopt)) {
+            return false;
+        }
 
         return true;
     }
@@ -402,14 +440,15 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
     std::vector<yaha::Message> received_messages{};
     const auto deadline = std::chrono::steady_clock::now() +
         std::chrono::milliseconds{k_poll_deadline_ms};
-    while (received_messages.size() < 4U && std::chrono::steady_clock::now() < deadline) {
+        while (received_messages.size() < k_expected_incoming_messages &&
+            std::chrono::steady_clock::now() < deadline) {
         const std::optional<yaha::Message> maybe_message = transport.pollIncoming();
         if (maybe_message.has_value()) {
             received_messages.push_back(*maybe_message);
         }
     }
 
-    REQUIRE(received_messages.size() == 4U);
+    REQUIRE(received_messages.size() == k_expected_incoming_messages);
     CHECK(received_messages[0].topic() == "transport/number");
     REQUIRE(std::holds_alternative<double>(received_messages[0].value()));
 
@@ -428,6 +467,36 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
     CHECK(received_messages[3].reason().front().message == "src");
     REQUIRE(received_messages[3].rawPayload().has_value());
     CHECK(*received_messages[3].rawPayload() == k_forwarded_inbound_payload);
+
+    CHECK(received_messages[4].topic() == "transport/forwarded_numeric");
+    REQUIRE(std::holds_alternative<double>(received_messages[4].value()));
+    CHECK(std::get<double>(received_messages[4].value()) == k_forwarded_numeric_value);
+    REQUIRE(received_messages[4].reason().size() == 1U);
+    CHECK(received_messages[4].reason().front().message == "manual");
+    REQUIRE(received_messages[4].rawPayload().has_value());
+    CHECK(*received_messages[4].rawPayload() == k_forwarded_numeric_reason_payload);
+
+    CHECK(received_messages[5].topic() == "transport/forwarded_bool");
+    REQUIRE(std::holds_alternative<std::string>(received_messages[5].value()));
+    CHECK(std::get<std::string>(received_messages[5].value()) == "true");
+    CHECK(received_messages[5].reason().empty());
+    REQUIRE(received_messages[5].rawPayload().has_value());
+    CHECK(*received_messages[5].rawPayload() == k_forwarded_bool_payload);
+
+    CHECK(received_messages[6].topic() == "transport/forwarded_escaped");
+    REQUIRE(std::holds_alternative<std::string>(received_messages[6].value()));
+    CHECK(std::get<std::string>(received_messages[6].value()) == "linenvalue");
+    REQUIRE(received_messages[6].reason().size() == 1U);
+    CHECK(received_messages[6].reason().front().message == "plain");
+    REQUIRE(received_messages[6].rawPayload().has_value());
+    CHECK(*received_messages[6].rawPayload() == k_forwarded_escaped_payload);
+
+    CHECK(received_messages[7].topic() == "transport/forwarded_invalid");
+    REQUIRE(std::holds_alternative<std::string>(received_messages[7].value()));
+    CHECK(std::get<std::string>(received_messages[7].value()) == k_forwarded_invalid_value_payload);
+    CHECK(received_messages[7].reason().empty());
+    REQUIRE(received_messages[7].rawPayload().has_value());
+    CHECK(*received_messages[7].rawPayload() == k_forwarded_invalid_value_payload);
 
     transport.publish(yaha::Message{"out/qos0", std::string{"a"}, yaha::Qos::AtMostOnce, false});
     transport.publish(yaha::Message{"out/qos1", std::string{"b"}, yaha::Qos::AtLeastOnce, true});

@@ -80,6 +80,8 @@ struct MessageTreeNode;
   the flag only removes node-level `reason`.
 - `interval` decompression follows legacy behavior and emits a synthetic reason entry:
   `regular update, amount: <N>`.
+- Interval decompression exposes `lastTime` as output history timestamp so regular updates remain visible
+  as advancing history entries to polling clients.
 - Bounded history policy:
   - trim triggers when compressed entry count reaches `maxHistoryLength`
   - trim target becomes `maxHistoryLength - historyHysterese` (minimum `1`)
@@ -98,6 +100,7 @@ struct MessageTreeNode;
 - `getSection(prefix, depth, includeHistory, includeReason)` returns flat nodes below prefix.
 - Depth is relative to prefix (`0` means only prefix node).
 - `getNodes(snapshot)` compares topic/value/reason against snapshot and returns changed/new nodes.
+- If snapshot entries include `time`, `getNodes(snapshot)` also treats differing timestamps as changed.
 
 ## Cleanup behavior
 

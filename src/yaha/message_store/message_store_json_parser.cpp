@@ -1,6 +1,7 @@
 #include "yaha/message_store/message_store_json_parser.h"
 
 #include "yaha/message/message.h"
+#include "yaha/message_store/iso_timestamp_parser.h"
 
 #include <cctype>
 #include <cmath>
@@ -129,22 +130,8 @@ private:
                 return false;
             }
 
-            if (key == "topic") {
-                if (!parseString(node.topic)) {
-                    return false;
-                }
-                hasTopic = true;
-            } else if (key == "value") {
-                Value parsed{};
-                if (!parseValue(parsed)) {
-                    return false;
-                }
-                node.value = std::move(parsed);
-                hasValue = true;
-            } else {
-                if (!skipValue()) {
-                    return false;
-                }
+            if (!parseObjectField(key, node, hasTopic, hasValue)) {
+                return false;
             }
 
             skipWs();
@@ -155,6 +142,35 @@ private:
                 return false;
             }
         }
+    }
+
+    bool parseObjectField(const std::string& key,
+                          MessageTreeSnapshotNode& node,
+                          bool& hasTopic,
+                          bool& hasValue) {
+        if (key == "topic") {
+            if (!parseString(node.topic)) {
+                return false;
+            }
+            hasTopic = true;
+            return true;
+        }
+
+        if (key == "value") {
+            Value parsed{};
+            if (!parseValue(parsed)) {
+                return false;
+            }
+            node.value = std::move(parsed);
+            hasValue = true;
+            return true;
+        }
+
+        if (key == "time") {
+            return parseSnapshotTime(node.timeMs);
+        }
+
+        return skipValue();
     }
 
     bool parseValue(Value& output) {
@@ -174,6 +190,32 @@ private:
         }
         output = number;
         return true;
+    }
+
+    bool parseSnapshotTime(std::optional<std::int64_t>& output) {
+        skipWs();
+        if (peek() == '"') {
+            std::string parsedTimestamp{};
+            if (!parseString(parsedTimestamp)) {
+                return false;
+            }
+
+            std::int64_t parsedTimeMs = 0;
+            if (tryParseIsoTimestampMilliseconds(parsedTimestamp, parsedTimeMs)) {
+                output = parsedTimeMs;
+            }
+            return true;
+        }
+
+        double parsedNumber = 0.0;
+        if (parseNumber(parsedNumber)) {
+            if (std::isfinite(parsedNumber) && std::floor(parsedNumber) == parsedNumber) {
+                output = static_cast<std::int64_t>(parsedNumber);
+            }
+            return true;
+        }
+
+        return skipValue();
     }
 
     bool skipValue() {

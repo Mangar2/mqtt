@@ -273,6 +273,112 @@ TEST_CASE("history_compresses_repeated_equal_values", "[message_store]") {
     REQUIRE(nodes.front().history[2].reason.empty());
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("history_single_compression_keeps_reasoned_entries_separate", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock);
+
+    clock.nowMs = k_time_zero_ms;
+    tree.addData(makeReasonedMessage("sensor/compression_single", 1.0, "r1", "1970-01-01T00:00:00.000Z"));
+    clock.nowMs = k_time_one_second_ms;
+    tree.addData(makeReasonedMessage("sensor/compression_single", k_value_two, "r2", "1970-01-01T00:00:01.000Z"));
+    clock.nowMs = k_time_two_seconds_ms;
+    tree.addData(makeReasonedMessage("sensor/compression_single", k_value_three, "r3", "1970-01-01T00:00:02.000Z"));
+
+    const auto nodes = tree.getSection("sensor/compression_single", 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().history.size() == 2U);
+    REQUIRE(std::get<double>(nodes.front().history[0].value) == k_value_two);
+    REQUIRE(std::get<double>(nodes.front().history[1].value) == 1.0);
+    REQUIRE(nodes.front().history[0].reason.size() == 1U);
+    REQUIRE(nodes.front().history[1].reason.size() == 1U);
+    REQUIRE(nodes.front().history[0].reason[0].message == "r2");
+    REQUIRE(nodes.front().history[1].reason[0].message == "r1");
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("history_time_value_compression_merges_value_sequence", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      k_length_for_time_value_only);
+
+    clock.nowMs = k_time_zero_ms;
+    tree.addData(makeReasonedMessage("sensor/compression_time_value", 1.0, "source", "1970-01-01T00:00:00.000Z"));
+    clock.nowMs = k_time_one_second_ms;
+    tree.addData(makeReasonedMessage("sensor/compression_time_value", k_value_two, "source", "1970-01-01T00:00:01.000Z"));
+    clock.nowMs = k_time_two_seconds_ms;
+    tree.addData(makeReasonedMessage("sensor/compression_time_value", k_value_three, "source", "1970-01-01T00:00:02.000Z"));
+
+    const auto nodes = tree.getSection("sensor/compression_time_value", 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().history.size() == 2U);
+    REQUIRE(nodes.front().history[0].reason.empty());
+    REQUIRE(nodes.front().history[1].reason.size() == 1U);
+    REQUIRE(nodes.front().history[1].reason[0].message == "source");
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("history_time_compression_merges_identical_values_without_interval", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      3U,
+                                      k_interval_upper_bound_factor,
+                                      0U,
+                                      k_interval_lower_bound_factor,
+                                      0U);
+
+    clock.nowMs = k_time_zero_ms;
+    tree.addData(makeReasonedMessage("sensor/compression_time", std::string{"steady"}, "source", "1970-01-01T00:00:00.000Z"));
+    clock.nowMs = k_time_one_second_ms;
+    tree.addData(makeReasonedMessage("sensor/compression_time", std::string{"steady"}, "source", "1970-01-01T00:00:01.000Z"));
+    clock.nowMs = k_time_four_seconds_ms;
+    tree.addData(makeReasonedMessage("sensor/compression_time", std::string{"steady"}, "source", "1970-01-01T00:00:04.000Z"));
+    clock.nowMs = k_time_nine_seconds_ms;
+    tree.addData(makeReasonedMessage("sensor/compression_time", std::string{"steady"}, "source", "1970-01-01T00:00:09.000Z"));
+
+    const auto nodes = tree.getSection("sensor/compression_time", 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().history.size() == 3U);
+    REQUIRE(nodes.front().history[0].reason.empty());
+    REQUIRE(nodes.front().history[1].reason.empty());
+    REQUIRE(nodes.front().history[2].reason.size() == 1U);
+    REQUIRE(nodes.front().history[2].reason[0].message == "source");
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("history_interval_compression_merges_regular_updates", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      3U);
+
+    clock.nowMs = k_time_zero_ms;
+    tree.addData(makeReasonedMessage("sensor/compression_interval", k_value_five, "source", "1970-01-01T00:00:00.000Z"));
+    clock.nowMs = k_time_one_second_ms;
+    tree.addData(makeReasonedMessage("sensor/compression_interval", k_value_five, "source", "1970-01-01T00:00:01.000Z"));
+    clock.nowMs = k_time_two_seconds_ms;
+    tree.addData(makeReasonedMessage("sensor/compression_interval", k_value_five, "source", "1970-01-01T00:00:02.000Z"));
+    clock.nowMs = k_time_three_seconds_ms;
+    tree.addData(makeReasonedMessage("sensor/compression_interval", k_value_five, "source", "1970-01-01T00:00:03.000Z"));
+    clock.nowMs = k_time_four_seconds_ms;
+    tree.addData(makeReasonedMessage("sensor/compression_interval", k_value_five, "source", "1970-01-01T00:00:04.000Z"));
+
+    const auto nodes = tree.getSection("sensor/compression_interval", 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().history.size() == 1U);
+    REQUIRE(nodes.front().history[0].reason.size() == 2U);
+    REQUIRE(nodes.front().history[0].reason[0].message == "regular update, amount: 4");
+    REQUIRE(nodes.front().history[0].reason[1].message == "source");
+}
+
 TEST_CASE("history_single_entry_preserves_reason", "[message_store]") {
     FakeClock clock{};
     yaha::MessageTree tree = makeTree(clock);
@@ -362,7 +468,7 @@ TEST_CASE("history_interval_entry_for_regular_updates", "[message_store]") {
     const auto nodes = tree.getSection("sensor/interval", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
     REQUIRE(nodes.front().history.size() == 1U);
-    REQUIRE(nodes.front().history[0].timeMs == 0);
+    REQUIRE(nodes.front().history[0].timeMs == k_time_three_seconds_ms);
     REQUIRE(nodes.front().history[0].reason.size() == 2U);
     REQUIRE(nodes.front().history[0].reason[0].message == "regular update, amount: 4");
     REQUIRE(nodes.front().history[0].reason[1].message == "source");
@@ -445,6 +551,33 @@ TEST_CASE("history_time_value_entries_do_not_duplicate_timestamps", "[message_st
     REQUIRE(historyHasUniqueTimestamps(nodes.front().history));
 }
 
+TEST_CASE("history_time_value_reason_timestamp_override_adds_one_history_entry_per_message", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      k_length_for_time_value_only);
+
+    const std::string sharedTimestamp{"2026-01-01T00:00:00.000Z"};
+    std::size_t addedMessages = 0U;
+
+    auto addOneAndAssert = [&](const yaha::Value& value, std::int64_t nowMs) {
+        clock.nowMs = nowMs;
+        tree.addData(makeReasonedMessage("sensor/no_dup_reason_override", value, "source", sharedTimestamp));
+        addedMessages += 1U;
+
+        const auto nodes = tree.getSection("sensor/no_dup_reason_override", 0U, true, true);
+        REQUIRE(nodes.size() == 1U);
+        REQUIRE(nodes.front().history.size() == (addedMessages - 1U));
+    };
+
+    addOneAndAssert(1.0, k_time_zero_ms);
+    addOneAndAssert(k_value_two, k_time_one_second_ms);
+    addOneAndAssert(k_value_three, k_time_two_seconds_ms);
+    addOneAndAssert(k_value_four, k_time_three_seconds_ms);
+}
+
 TEST_CASE("history_time_entries_do_not_duplicate_timestamps", "[message_store]") {
     FakeClock clock{};
     yaha::MessageTree tree = makeTree(clock,
@@ -519,6 +652,61 @@ TEST_CASE("history_time_to_interval_transition_does_not_duplicate_timestamps", "
     const auto nodes = tree.getSection("sensor/no_dup_transition", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
     REQUIRE(historyHasUniqueTimestamps(nodes.front().history));
+}
+
+TEST_CASE("history_short_regular_tail_keeps_latest_visible_update", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      3U);
+
+    clock.nowMs = k_time_zero_ms;
+    tree.addData(yaha::Message{"sensor/missing_update", std::string{"steady"}});
+    clock.nowMs = k_time_one_second_ms;
+    tree.addData(yaha::Message{"sensor/missing_update", std::string{"steady"}});
+    clock.nowMs = k_time_five_seconds_ms;
+    tree.addData(yaha::Message{"sensor/missing_update", std::string{"steady"}});
+    clock.nowMs = k_time_nine_seconds_ms;
+    tree.addData(yaha::Message{"sensor/missing_update", std::string{"steady"}});
+
+    const auto nodes = tree.getSection("sensor/missing_update", 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+
+    const bool containsLatestPrevious = std::any_of(
+        nodes.front().history.begin(),
+        nodes.front().history.end(),
+        [](const yaha::MessageTreeHistoryEntry& entry) {
+            return entry.timeMs == k_time_five_seconds_ms;
+        });
+
+    REQUIRE(containsLatestPrevious);
+}
+
+TEST_CASE("history_interval_entry_reports_latest_previous_timestamp", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      3U);
+
+    clock.nowMs = k_time_zero_ms;
+    tree.addData(yaha::Message{"sensor/interval_visible_update", 1.0});
+    clock.nowMs = k_time_one_second_ms;
+    tree.addData(yaha::Message{"sensor/interval_visible_update", 1.0});
+    clock.nowMs = k_time_two_seconds_ms;
+    tree.addData(yaha::Message{"sensor/interval_visible_update", 1.0});
+    clock.nowMs = k_time_three_seconds_ms;
+    tree.addData(yaha::Message{"sensor/interval_visible_update", 1.0});
+    clock.nowMs = k_time_four_seconds_ms;
+    tree.addData(yaha::Message{"sensor/interval_visible_update", 1.0});
+
+    const auto nodes = tree.getSection("sensor/interval_visible_update", 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().history.size() == 1U);
+    REQUIRE(nodes.front().history[0].timeMs == k_time_three_seconds_ms);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -659,7 +847,7 @@ TEST_CASE("get_nodes_returns_only_changed_or_new_nodes", "[message_store]") {
     tree.addData(yaha::Message{"home/b", std::string{"new"}});
 
     std::vector<yaha::MessageTreeSnapshotNode> snapshot{};
-    snapshot.push_back({"home/a", std::string{"same"}, {}});
+    snapshot.push_back({"home/a", std::string{"same"}, {}, {}});
 
     const auto nodes = tree.getNodes(snapshot);
     REQUIRE(nodes.size() == 1U);

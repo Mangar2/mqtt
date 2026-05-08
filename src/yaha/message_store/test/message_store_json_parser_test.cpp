@@ -54,6 +54,21 @@ TEST_CASE("message_store_json_parser_skips_unknown_snapshot_fields", "[message_s
     REQUIRE(nodes[0].topic == "home/light");
 }
 
+TEST_CASE("message_store_json_parser_parses_optional_snapshot_time", "[message_store]") {
+    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+    const bool parseSucceeded = yaha::message_store_json::parseSnapshotBody(
+        "["
+        "{\"topic\":\"home/light\",\"value\":\"on\",\"time\":\"2024-03-21T10:15:30.123Z\"},"
+        "{\"topic\":\"home/temp\",\"value\":21.5,\"time\":\"invalid\"}"
+        "]",
+        nodes);
+
+    REQUIRE(parseSucceeded);
+    REQUIRE(nodes.size() == 2U);
+    REQUIRE(nodes[0].timeMs.has_value());
+    REQUIRE_FALSE(nodes[1].timeMs.has_value());
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("message_store_json_parser_parses_sensor_post_with_nodes_and_flags", "[message_store]") {
     yaha::message_store_json::SensorPostRequest request{};

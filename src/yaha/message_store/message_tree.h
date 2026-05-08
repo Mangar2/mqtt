@@ -44,6 +44,7 @@ struct MessageTreeSnapshotNode {
     std::string topic;                          ///< Full topic path.
     Value value{std::string{}};                 ///< Snapshot value.
     std::vector<ReasonEntry> reason;            ///< Snapshot reason chain.
+    std::optional<std::int64_t> timeMs;         ///< Optional snapshot timestamp for time-aware diff.
 };
 
 /**
@@ -407,7 +408,7 @@ private:
      * @brief Compares current node with snapshot node for diff mode.
      * @param current Current node.
      * @param snapshot Snapshot node.
-     * @return True when equivalent for topic/value/reason.
+      * @return True when equivalent for topic/value/reason and optional timestamp.
      */
     [[nodiscard]] static bool snapshotEquals(const MessageTreeNode& current,
                                              const MessageTreeSnapshotNode& snapshot);

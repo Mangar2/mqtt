@@ -19,6 +19,16 @@ constexpr std::uint16_t k_fallback_test_port{28110U};
 constexpr int k_wait_attempts{40};
 constexpr int k_http_ok_status{200};
 constexpr int k_wait_sleep_ms{10};
+constexpr int k_http_timeout_microseconds{500000};
+
+void configureHttpClientTimeouts(httplib::Client& client) {
+    client.set_connection_timeout(0, k_http_timeout_microseconds);
+    client.set_read_timeout(0, k_http_timeout_microseconds);
+}
+
+void forceCloseConnection(httplib::Response& response) {
+    response.set_header("Connection", "close");
+}
 
 [[nodiscard]] std::uint16_t reserveFreeLocalPort() {
     httplib::Server probeServer;
@@ -33,6 +43,7 @@ constexpr int k_wait_sleep_ms{10};
 
 bool waitForHttpServer(const std::uint16_t port) {
     httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
     for (int attempt = 0; attempt < k_wait_attempts; ++attempt) {
         if (const auto response = client.Get("/health")) {
             return response->status == k_http_ok_status;
@@ -49,12 +60,14 @@ public:
         server_.Get("/health", [](const httplib::Request&, httplib::Response& response) {
             response.status = k_http_ok_status;
             response.set_content("ok", "text/plain");
+            forceCloseConnection(response);
         });
 
         server_.Get("/automation/rules", [this](const httplib::Request&, httplib::Response& response) {
             std::lock_guard<std::mutex> lock{mutex_};
             response.status = k_http_ok_status;
             response.set_content(rulesJsonText_, "application/json");
+            forceCloseConnection(response);
         });
 
         server_.Post("/automation/rules", [this](const httplib::Request& request, httplib::Response& response) {
@@ -64,6 +77,7 @@ public:
             rulesJsonText_ = request.body;
             response.status = k_http_ok_status;
             response.set_content("", "text/plain");
+            forceCloseConnection(response);
         });
 
         serverThread_ = std::thread([this]() {

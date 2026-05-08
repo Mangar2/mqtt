@@ -21,6 +21,7 @@ constexpr std::uint16_t k_fallback_http_port{19090U};
 constexpr int k_http_timeout_microseconds{100000};
 constexpr int k_http_ready_max_attempts{50};
 constexpr int k_http_ready_sleep_ms{10};
+constexpr int k_update_gap_ms{2};
 constexpr std::int64_t k_millis_per_day{86400000};
 constexpr std::uint32_t k_periodic_interval_ms{20U};
 constexpr int k_periodic_wait_ms{70};
@@ -94,6 +95,22 @@ bool waitForHttpReady(std::uint16_t port) {
         std::this_thread::sleep_for(std::chrono::milliseconds{k_http_ready_sleep_ms});
     }
     return false;
+}
+
+std::string extractFirstTimeIso(const std::string& json) {
+    const std::string token{"\"time\":\""};
+    const std::size_t start = json.find(token);
+    if (start == std::string::npos) {
+        return {};
+    }
+
+    const std::size_t valueStart = start + token.size();
+    const std::size_t valueEnd = json.find('"', valueStart);
+    if (valueEnd == std::string::npos) {
+        return {};
+    }
+
+    return json.substr(valueStart, valueEnd - valueStart);
 }
 
 struct StoreCloseGuard {
@@ -546,6 +563,49 @@ TEST_CASE("http_get_store_snapshot_body_supports_escaped_strings", "[message_sto
 
     REQUIRE(response != nullptr);
     REQUIRE(response->status == 200);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("http_get_store_snapshot_body_detects_time_only_updates", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.handleMessage(yaha::Message{"home/lamp", std::string{"on"}});
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+
+    const auto baseResponse = client.Get("/store/home/lamp");
+    REQUIRE(baseResponse != nullptr);
+    REQUIRE(baseResponse->status == 200);
+
+    const std::string previousTimeIso = extractFirstTimeIso(baseResponse->body);
+    REQUIRE_FALSE(previousTimeIso.empty());
+
+    std::this_thread::sleep_for(std::chrono::milliseconds{k_update_gap_ms});
+    store.handleMessage(yaha::Message{"home/lamp", std::string{"on"}});
+
+    const std::string snapshotBody =
+        "[{\"topic\":\"home/lamp\",\"value\":\"on\",\"time\":\"" + previousTimeIso + "\"}]";
+
+    httplib::Request request{};
+    request.method = "GET";
+    request.path = "/store/home";
+    request.body = snapshotBody;
+    request.set_header("Content-Type", "application/json");
+    const auto diffResponse = client.send(request);
+
+    REQUIRE(diffResponse != nullptr);
+    REQUIRE(diffResponse->status == 200);
+    REQUIRE(diffResponse->body.find("\"topic\":\"home/lamp\"") != std::string::npos);
 }
 
 TEST_CASE("http_get_store_json_output_escapes_special_characters", "[message_store]") {

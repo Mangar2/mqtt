@@ -411,12 +411,12 @@ void MessageTree::appendIntervalHistoryEntry(std::vector<MessageTreeHistoryEntry
                                              const IntervalHistoryEntry& entry,
                                              bool includeReason) {
     MessageTreeHistoryEntry decompressedEntry{};
-    decompressedEntry.timeMs = entry.firstTimeMs;
+    decompressedEntry.timeMs = entry.lastTimeMs;
     decompressedEntry.value = entry.value;
     if (includeReason) {
         decompressedEntry.reason.push_back(ReasonEntry{
             .message = std::format("regular update, amount: {}", entry.amount),
-            .timestamp = toIsoTimestampMilliseconds(entry.firstTimeMs)
+            .timestamp = toIsoTimestampMilliseconds(entry.lastTimeMs)
         });
         decompressedEntry.reason.insert(decompressedEntry.reason.end(),
                                         entry.reason.begin(),
