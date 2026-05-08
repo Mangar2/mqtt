@@ -173,7 +173,18 @@ class FakeSourceHttpBroker:
                 "value": value,
             },
         }
-        body = json.dumps(payload)
+        return self.send_publish_body(
+            listener_port=listener_port,
+            body=json.dumps(payload),
+            qos=qos,
+            packet_id=packet_id,
+        )
+
+    def send_publish_body(self,
+                          listener_port: int,
+                          body: str,
+                          qos: int = 1,
+                          packet_id: int = 7) -> tuple[int, dict[str, str], str]:
         connection = HTTPConnection("127.0.0.1", listener_port, timeout=3.0)
         try:
             connection.request(
@@ -195,6 +206,10 @@ class FakeSourceHttpBroker:
             return response.status, headers, response_body
         finally:
             connection.close()
+
+    def receive_token(self) -> str:
+        with self._lock:
+            return self._receive_token
 
     def _wait_http_ready(self, timeout: float = 4.0) -> None:
         deadline = time.monotonic() + timeout
@@ -409,6 +424,16 @@ def _run_forwarding_case() -> tuple[bool, str]:
                 assert_connack(connack, reason_code=0x00, session_present=False)
                 subscriber.subscribe("bridge/test", qos=1)
 
+                expected_payload = json.dumps(
+                    {
+                        "token": source.receive_token(),
+                        "message": {
+                            "topic": "bridge/test",
+                            "value": "hello-bridge",
+                        },
+                    }
+                ).encode("utf-8")
+
                 status, headers, _ = source.send_publish(
                     listener_port=listener_port,
                     topic="bridge/test",
@@ -420,7 +445,7 @@ def _run_forwarding_case() -> tuple[bool, str]:
                     return False, f"source callback ack mismatch: status={status}, headers={headers}"
 
                 messages = subscriber.collect_messages(count=1, timeout=6.0)
-                assert_message(messages[0], topic="bridge/test", payload=b"hello-bridge", qos=1, retain=False)
+                assert_message(messages[0], topic="bridge/test", payload=expected_payload, qos=1, retain=False)
 
             _assert_process_alive(connector_handle, "forwarding case completion")
             return True, "source publish forwarded to target broker"
@@ -471,6 +496,16 @@ def _run_source_restart_case() -> tuple[bool, str]:
                 assert_connack(connack, reason_code=0x00, session_present=False)
                 subscriber.subscribe("bridge/restart", qos=1)
 
+                expected_payload = json.dumps(
+                    {
+                        "token": source.receive_token(),
+                        "message": {
+                            "topic": "bridge/restart",
+                            "value": "after-restart",
+                        },
+                    }
+                ).encode("utf-8")
+
                 status, headers, _ = source.send_publish(
                     listener_port=listener_port,
                     topic="bridge/restart",
@@ -482,7 +517,7 @@ def _run_source_restart_case() -> tuple[bool, str]:
                     return False, f"source callback ack mismatch after restart: status={status}, headers={headers}"
 
                 messages = subscriber.collect_messages(count=1, timeout=6.0)
-                assert_message(messages[0], topic="bridge/restart", payload=b"after-restart", qos=1, retain=False)
+                assert_message(messages[0], topic="bridge/restart", payload=expected_payload, qos=1, retain=False)
 
             _assert_process_alive(connector_handle, "source restart case completion")
             return True, "source restart triggers reconnect and resubscribe with forwarding still active"
@@ -538,6 +573,16 @@ def _run_target_outage_recovery_case() -> tuple[bool, str]:
                 assert_connack(connack, reason_code=0x00, session_present=False)
                 subscriber.subscribe("bridge/outage", qos=1)
 
+                expected_payload = json.dumps(
+                    {
+                        "token": source.receive_token(),
+                        "message": {
+                            "topic": "bridge/outage",
+                            "value": "after-target-recovery",
+                        },
+                    }
+                ).encode("utf-8")
+
                 status, headers, _ = source.send_publish(
                     listener_port=listener_port,
                     topic="bridge/outage",
@@ -549,10 +594,84 @@ def _run_target_outage_recovery_case() -> tuple[bool, str]:
                     return False, f"source callback ack mismatch after target recovery: status={status}, headers={headers}"
 
                 messages = subscriber.collect_messages(count=1, timeout=8.0)
-                assert_message(messages[0], topic="bridge/outage", payload=b"after-target-recovery", qos=1, retain=False)
+                assert_message(messages[0], topic="bridge/outage", payload=expected_payload, qos=1, retain=False)
 
             _assert_process_alive(connector_handle, "target outage recovery case completion")
             return True, "connector survives target outage and forwards again after broker recovery"
+        except Exception as exception_value:
+            return False, str(exception_value)
+        finally:
+            _stop_process(connector_handle)
+            _stop_process(broker_handle)
+            source.stop()
+
+
+def _run_payload_passthrough_case() -> tuple[bool, str]:
+    root, broker_exe, connector_exe = _build_paths()
+    if not broker_exe.exists() or not connector_exe.exists():
+        return False, "required debug binaries missing: build/debug/yahabroker or yahabrokerconnectorclient"
+
+    target_port = _reserve_port()
+    source_port = _reserve_port()
+    listener_port = _reserve_port()
+
+    with tempfile.TemporaryDirectory(prefix="yaha_connector_it_payload_passthrough_") as temp_dir_str:
+        temp_dir = Path(temp_dir_str)
+        broker_cfg = temp_dir / "broker.ini"
+        connector_cfg = temp_dir / "connector.ini"
+        _write_broker_config(broker_cfg, target_port)
+        _write_connector_config(connector_cfg, source_port, listener_port, target_port)
+
+        source = FakeSourceHttpBroker("127.0.0.1", source_port)
+        source.start()
+        broker_handle = _start_target_broker(root, broker_exe, broker_cfg, target_port)
+        connector_handle = _start_connector(root, connector_exe, connector_cfg)
+
+        try:
+            if not _wait_until(lambda: source.connect_calls() >= 1 and source.subscribe_calls() >= 1, 6.0):
+                _assert_process_alive(connector_handle, "waiting for source connect+subscribe")
+                return False, "connector did not complete source connect+subscribe"
+
+            receive_token = source.receive_token()
+            if not receive_token:
+                return False, "source receive token not available"
+
+            raw_body = (
+                "{\n"
+                f"  \"token\":\"{receive_token}\",\n"
+                "  \"message\":{\n"
+                "    \"topic\":\"bridge/raw\",\n"
+                "    \"value\":\"sensor\",\n"
+                "    \"reason\":[{\"message\":\"from-msgstore\",\"timestamp\":\"2026-05-08T10:00:00Z\"}]\n"
+                "  }\n"
+                "}"
+            )
+
+            with MqttClient(client_id="it-sub-raw-payload") as subscriber:
+                connack = subscriber.connect("127.0.0.1", target_port)
+                assert_connack(connack, reason_code=0x00, session_present=False)
+                subscriber.subscribe("bridge/raw", qos=1)
+
+                status, headers, _ = source.send_publish_body(
+                    listener_port=listener_port,
+                    body=raw_body,
+                    qos=1,
+                    packet_id=44,
+                )
+                if status != 204 or headers.get("packet") != "puback":
+                    return False, f"source callback ack mismatch for raw payload: status={status}, headers={headers}"
+
+                messages = subscriber.collect_messages(count=1, timeout=6.0)
+                assert_message(
+                    messages[0],
+                    topic="bridge/raw",
+                    payload=raw_body.encode("utf-8"),
+                    qos=1,
+                    retain=False,
+                )
+
+            _assert_process_alive(connector_handle, "raw payload passthrough case completion")
+            return True, "connector forwards source envelope payload bytes unchanged"
         except Exception as exception_value:
             return False, str(exception_value)
         finally:
@@ -576,5 +695,10 @@ TEST_CASES = [
         "name": "broker_connector/target_outage_recovery",
         "description": "Continues operating across temporary target broker outage and recovery.",
         "run": lambda _config: _run_target_outage_recovery_case(),
+    },
+    {
+        "name": "broker_connector/source_payload_passthrough_exact_bytes",
+        "description": "Forwards source HTTP envelope payload to MQTT unchanged when token and topic are valid.",
+        "run": lambda _config: _run_payload_passthrough_case(),
     },
 ]

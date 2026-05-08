@@ -423,8 +423,9 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
 
     CHECK(received_messages[3].topic() == "transport/forwarded");
     REQUIRE(std::holds_alternative<std::string>(received_messages[3].value()));
-    CHECK(std::get<std::string>(received_messages[3].value()) == k_forwarded_inbound_payload);
-    CHECK(received_messages[3].reason().empty());
+    CHECK(std::get<std::string>(received_messages[3].value()) == "sensor");
+    REQUIRE(received_messages[3].reason().size() == 1U);
+    CHECK(received_messages[3].reason().front().message == "src");
     REQUIRE(received_messages[3].rawPayload().has_value());
     CHECK(*received_messages[3].rawPayload() == k_forwarded_inbound_payload);
 

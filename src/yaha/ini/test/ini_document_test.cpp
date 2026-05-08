@@ -107,3 +107,22 @@ TEST_CASE("load_ini_rejects_empty_section_name", "[ini]") {
 
     removeDirectoryQuiet(tempDir);
 }
+
+TEST_CASE("load_ini_supports_hash_and_inline_comments", "[ini]") {
+    const auto tempDir = makeTempDirectory();
+    const auto iniPath = writeIniFile(tempDir,
+        "# top-level comment\n"
+        "[mqtt] ; section comment\n"
+        "host = broker.local\n"
+        "topicFilter = #\n"
+        "password = abc#123\n"
+        "topic = \"a#b\" ; quoted hash must not start comment\n");
+
+    const auto document = yaha::IniDocument::loadFromFile(iniPath);
+    REQUIRE(document.lastValue("mqtt", "host").value_or("") == "broker.local");
+    REQUIRE(document.lastValue("mqtt", "topicFilter").value_or("") == "#");
+    REQUIRE(document.lastValue("mqtt", "password").value_or("") == "abc#123");
+    REQUIRE(document.lastValue("mqtt", "topic").value_or("") == "\"a#b\"");
+
+    removeDirectoryQuiet(tempDir);
+}

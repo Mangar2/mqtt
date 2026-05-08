@@ -28,10 +28,36 @@ std::string trimCopy(std::string value) {
 }
 
 std::string stripComment(std::string line) {
-    const std::size_t semicolonPosition = line.find(';');
-    const std::size_t commentPosition =
-        semicolonPosition == std::string::npos ? line.size() : semicolonPosition;
-    return line.substr(0U, commentPosition);
+    const auto firstNonWhitespace = std::find_if(
+        line.begin(),
+        line.end(),
+        [](unsigned char character) { return std::isspace(character) == 0; });
+    if (firstNonWhitespace != line.end() && *firstNonWhitespace == '#') {
+        const std::size_t assignmentPos = line.find('=');
+        if (assignmentPos == std::string::npos) {
+            return line.substr(0U, static_cast<std::size_t>(firstNonWhitespace - line.begin()));
+        }
+    }
+
+    bool inQuotes = false;
+    for (std::size_t index = 0U; index < line.size(); ++index) {
+        const char currentChar = line[index];
+        if (currentChar == '"') {
+            inQuotes = !inQuotes;
+            continue;
+        }
+
+        if (!inQuotes && currentChar == ';') {
+            const bool atLineStart = index == 0U;
+            const bool afterWhitespace = !atLineStart &&
+                std::isspace(static_cast<unsigned char>(line[index - 1U])) != 0;
+            if (atLineStart || afterWhitespace) {
+                return line.substr(0U, index);
+            }
+        }
+    }
+
+    return line;
 }
 
 [[nodiscard]] std::string makeFieldName(

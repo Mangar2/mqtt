@@ -61,7 +61,7 @@ the callback contract into real TCP MQTT packet I/O.
 - During `close()`, unsubscribes active filters before transport disconnect for deterministic broker-side teardown.
 - Inbound polling forwards only messages that match active subscriptions.
 - Broker transport publish path forwards `Message.rawPayload()` bytes unchanged when present; otherwise it encodes from `Message.value()`.
-- Broker transport inbound path does not split or reconstruct payload envelopes; it keeps received payload text unchanged in `Message.rawPayload()` and forwards `Message.value()` directly from payload decoding.
+- Broker transport inbound path parses forwarded payload envelopes into internal `Message.topic()/value()/reason()` fields for runtime semantics while preserving the exact original payload text in `Message.rawPayload()` for lossless forwarding.
 - Keep-alive sends `ping()` every `keepAliveInterval` while connected.
 - On external disconnect (`isConnected() == false`), marks disconnected and reconnects.
 - Exceptions raised by transport callbacks during the worker loop are treated as transient disconnects; the loop keeps running and retries connect after `reconnectDelay`.
