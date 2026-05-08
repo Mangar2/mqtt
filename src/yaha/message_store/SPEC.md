@@ -61,7 +61,11 @@ struct MessageTreeNode;
   (for example server port, history limits, retention count) to avoid literal coupling.
 
 - Tree keys are topic path segments split by `/`.
-- Every update moves previous `{time,value,reason}` into history.
+- Every update moves previous `{timeMs,value,reason}` into history.
+- Node timestamp source on `addData(message)`:
+  - prefer `message.reason().front().timestamp` when it is a valid ISO-8601 timestamp with timezone,
+  - otherwise fallback to current wall-clock from `nowMillisecondsProvider`.
+- Tree and persistence keep timestamps internally as Unix epoch milliseconds (`timeMs`).
 - History is compressed internally by grouping consecutive equal `value` and `reason`.
 - History is decompressed for output APIs.
 - Bounded history policy:
@@ -122,6 +126,11 @@ struct MessageTreeNode;
 - Unknown path -> status 404 with `YahaError` payload code `YAHA_MESSAGE_STORE_HTTP_NOT_FOUND`.
 - Invalid percent-encoding in topic prefix -> status 400 with `YahaError` payload code `YAHA_MESSAGE_STORE_HTTP_INVALID_PERCENT_ENCODING`.
 - Response is JSON array with `application/json`.
+- HTTP JSON node shape uses ISO UTC timestamps with trailing `Z`:
+  - node field `time` (string, ISO-8601 UTC),
+  - `history[].time` (string, ISO-8601 UTC),
+  - `reason[].timestamp` passthrough from message reasons.
+- HTTP response does not expose internal `timeMs` fields.
 
 ## Files
 

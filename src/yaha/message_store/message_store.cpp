@@ -7,7 +7,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <ctime>
 #include <cstdlib>
+#include <iomanip>
 #include <sstream>
 #include <utility>
 
@@ -20,6 +22,8 @@ constexpr int k_http_status_ok{200};
 constexpr int k_http_status_bad_request{400};
 constexpr int k_http_status_not_found{404};
 constexpr std::uint32_t k_default_level_amount{1U};
+constexpr std::int64_t k_millis_per_second{1000};
+constexpr int k_tm_year_offset{1900};
 
 std::string trim(const std::string& value) {
     std::size_t begin = 0U;
@@ -120,6 +124,39 @@ bool tryParseUnsignedHeader(const std::string& text, std::uint32_t defaultValue,
     return true;
 }
 
+std::string toIsoTimestamp(std::int64_t millisecondsSinceEpoch) {
+    std::int64_t secondsSinceEpoch = millisecondsSinceEpoch / k_millis_per_second;
+    std::int64_t millisecondPart = millisecondsSinceEpoch % k_millis_per_second;
+    if (millisecondPart < 0) {
+        millisecondPart += k_millis_per_second;
+        secondsSinceEpoch -= 1;
+    }
+
+    const std::time_t rawTime = static_cast<std::time_t>(secondsSinceEpoch);
+    std::tm utc{};
+#if defined(_WIN32)
+    if (gmtime_s(&utc, &rawTime) != 0) {
+        return "1970-01-01T00:00:00.000Z";
+    }
+#else
+    if (gmtime_r(&rawTime, &utc) == nullptr) {
+        return "1970-01-01T00:00:00.000Z";
+    }
+#endif
+
+    std::ostringstream stream{};
+    stream << std::setfill('0')
+            << std::setw(4) << (utc.tm_year + k_tm_year_offset)
+           << '-' << std::setw(2) << (utc.tm_mon + 1)
+           << '-' << std::setw(2) << utc.tm_mday
+           << 'T' << std::setw(2) << utc.tm_hour
+           << ':' << std::setw(2) << utc.tm_min
+           << ':' << std::setw(2) << utc.tm_sec
+           << '.' << std::setw(3) << millisecondPart
+           << 'Z';
+    return stream.str();
+}
+
 std::string jsonEscape(const std::string& text) {
     std::string result;
     result.reserve(text.size());
@@ -178,7 +215,7 @@ std::string historyToJson(const std::vector<MessageTreeHistoryEntry>& history) {
             result += ',';
         }
         const MessageTreeHistoryEntry& item = history[i];
-        result += "{\"timeMs\":" + std::to_string(item.timeMs) + ",\"value\":"
+        result += "{\"time\":\"" + jsonEscape(toIsoTimestamp(item.timeMs)) + "\",\"value\":"
             + valueToJson(item.value) + ",\"reason\":" + reasonsToJson(item.reason) + '}';
     }
     result += "]";
@@ -189,7 +226,7 @@ std::string nodeToJson(const MessageTreeNode& node) {
     std::string result{"{"};
     result += "\"topic\":\"" + jsonEscape(node.topic) + "\"";
     result += ",\"value\":" + valueToJson(node.value);
-    result += ",\"timeMs\":" + std::to_string(node.timeMs);
+    result += ",\"time\":\"" + jsonEscape(toIsoTimestamp(node.timeMs)) + "\"";
     result += ",\"reason\":" + reasonsToJson(node.reason);
     result += ",\"history\":" + historyToJson(node.history);
     result += '}';

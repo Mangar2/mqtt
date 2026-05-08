@@ -20,7 +20,7 @@ directly here — each sub-topic has its own subdirectory.
 | `file_store_client/` | filestore phase 2 | Standalone FileStore process config mapping and runtime composition wiring. |
 | `value_service/` | valueservice phase 2 | ValueService IMqttComponent with startup FileStore load, `/set` handling, retained replay publish, and monitor-triggered reload. |
 | `value_service_client/` | valueservice phase 3 | Standalone ValueService runtime config mapping and process composition via `yaha_valueserviceclient_main.cpp`. |
-| `message_store/` | 4-7 | Internal MessageTree plus persistence and MessageStore IMqttComponent logic for state/history queries, cleanup, disk restore/save, and HTTP query interface. |
+| `message_store/` | 4-7 | Internal MessageTree plus persistence and MessageStore IMqttComponent logic for state/history queries, cleanup, disk restore/save, and HTTP query interface with ISO-8601 UTC `time` output fields. |
 | `message_store_client/` | 8 | Standalone MessageStore process composition, runtime config loader, and lifecycle orchestration for executable wiring. |
 | `automation/` | automation step 1 | Expression DSL tokenizer for YAHA automation rules engine. |
 | `automation_client/` | automation step 2 | Standalone Automation IMqttComponent runtime config mapping, FileStore startup load, and MQTT-driven rule update synchronization. |

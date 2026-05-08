@@ -12,6 +12,13 @@ namespace {
 
 constexpr std::int64_t k_initial_now_ms{1000};
 constexpr std::int64_t k_tick_ms{1000};
+constexpr std::int64_t k_reason_timestamp_fallback_clock_ms{999999};
+constexpr std::int64_t k_invalid_reason_fallback_clock_ms{7777};
+constexpr std::int64_t k_reason_timestamp_expected_ms{1250};
+constexpr std::int64_t k_positive_offset_expected_ms{1800000};
+constexpr std::int64_t k_negative_offset_expected_ms{3601500};
+constexpr std::int64_t k_invalid_timezone_fallback_clock_ms{8888};
+constexpr std::int64_t k_invalid_fraction_fallback_clock_ms{9999};
 constexpr double k_temperature_before{21.0};
 constexpr double k_temperature_after{22.0};
 constexpr int k_history_last_step{6};
@@ -69,6 +76,98 @@ TEST_CASE("add_data_updates_move_previous_value_into_history", "[message_store]"
     REQUIRE(std::get<double>(nodes.front().value) == k_temperature_after);
     REQUIRE(nodes.front().history.size() == 1U);
     REQUIRE(std::get<double>(nodes.front().history.front().value) == k_temperature_before);
+}
+
+TEST_CASE("add_data_prefers_first_reason_timestamp_when_valid_iso", "[message_store]") {
+    FakeClock clock{};
+    clock.nowMs = k_reason_timestamp_fallback_clock_ms;
+    yaha::MessageTree tree = makeTree(clock);
+
+    yaha::Message message{"sensor/with_reason", std::string{"v"}};
+    message.addReason("older", "1970-01-01T00:00:00.500Z");
+    message.addReason("newest", "1970-01-01T00:00:01.250Z");
+
+    tree.addData(message);
+
+    const auto nodes = tree.getSection("sensor/with_reason", 0U, false, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().timeMs == k_reason_timestamp_expected_ms);
+}
+
+TEST_CASE("add_data_falls_back_to_clock_when_first_reason_timestamp_invalid", "[message_store]") {
+    FakeClock clock{};
+    clock.nowMs = k_invalid_reason_fallback_clock_ms;
+    yaha::MessageTree tree = makeTree(clock);
+
+    yaha::Message message{"sensor/with_invalid_reason", std::string{"v"}};
+    message.addReason("older-valid", "1970-01-01T00:00:01.250Z");
+    message.addReason("newest-invalid", "not-an-iso-timestamp");
+
+    tree.addData(message);
+
+    const auto nodes = tree.getSection("sensor/with_invalid_reason", 0U, false, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().timeMs == k_invalid_reason_fallback_clock_ms);
+}
+
+TEST_CASE("add_data_parses_reason_timestamp_with_positive_timezone_offset", "[message_store]") {
+    FakeClock clock{};
+    clock.nowMs = k_invalid_timezone_fallback_clock_ms;
+    yaha::MessageTree tree = makeTree(clock);
+
+    yaha::Message message{"sensor/offset_positive", std::string{"v"}};
+    message.addReason("offset", "1970-01-01T01:30:00+01:00");
+
+    tree.addData(message);
+
+    const auto nodes = tree.getSection("sensor/offset_positive", 0U, false, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().timeMs == k_positive_offset_expected_ms);
+}
+
+TEST_CASE("add_data_parses_reason_timestamp_with_negative_offset_and_fraction", "[message_store]") {
+    FakeClock clock{};
+    clock.nowMs = k_invalid_timezone_fallback_clock_ms;
+    yaha::MessageTree tree = makeTree(clock);
+
+    yaha::Message message{"sensor/offset_negative", std::string{"v"}};
+    message.addReason("offset", "1970-01-01T00:00:01.5-01:00");
+
+    tree.addData(message);
+
+    const auto nodes = tree.getSection("sensor/offset_negative", 0U, false, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().timeMs == k_negative_offset_expected_ms);
+}
+
+TEST_CASE("add_data_falls_back_to_clock_for_invalid_reason_timezone_format", "[message_store]") {
+    FakeClock clock{};
+    clock.nowMs = k_invalid_timezone_fallback_clock_ms;
+    yaha::MessageTree tree = makeTree(clock);
+
+    yaha::Message message{"sensor/invalid_tz", std::string{"v"}};
+    message.addReason("bad", "1970-01-01T00:00:01+0100");
+
+    tree.addData(message);
+
+    const auto nodes = tree.getSection("sensor/invalid_tz", 0U, false, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().timeMs == k_invalid_timezone_fallback_clock_ms);
+}
+
+TEST_CASE("add_data_falls_back_to_clock_for_invalid_reason_fraction_format", "[message_store]") {
+    FakeClock clock{};
+    clock.nowMs = k_invalid_fraction_fallback_clock_ms;
+    yaha::MessageTree tree = makeTree(clock);
+
+    yaha::Message message{"sensor/invalid_fraction", std::string{"v"}};
+    message.addReason("bad", "1970-01-01T00:00:01.Z");
+
+    tree.addData(message);
+
+    const auto nodes = tree.getSection("sensor/invalid_fraction", 0U, false, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().timeMs == k_invalid_fraction_fallback_clock_ms);
 }
 
 TEST_CASE("history_is_trimmed_with_hysteresis", "[message_store]") {

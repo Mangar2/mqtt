@@ -26,6 +26,7 @@ constexpr std::uint32_t k_periodic_interval_ms{20U};
 constexpr int k_periodic_wait_ms{70};
 constexpr double k_room_temperature_celsius{21.5};
 constexpr double k_snapshot_temperature_celsius{20.0};
+constexpr std::int64_t k_reason_time_fallback_now_ms{999999};
 
 struct FakeClock {
     std::int64_t nowMs{k_initial_now_ms};
@@ -568,6 +569,46 @@ TEST_CASE("http_get_store_json_output_escapes_special_characters", "[message_sto
     REQUIRE(response != nullptr);
     REQUIRE(response->status == 200);
     REQUIRE(response->body.find("line1\\nline2\\r\\t\\\"q\\\"\\\\x") != std::string::npos);
+}
+
+TEST_CASE("http_get_store_outputs_iso_time_and_reason_timestamps", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    FakeClock clock{};
+    clock.nowMs = k_reason_time_fallback_now_ms;
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+    config.treeConfig.nowMillisecondsProvider = [&clock]() {
+        return clock.nowMs;
+    };
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+
+    yaha::Message first{"device/state", std::string{"off"}};
+    first.addReason("initial", "1970-01-01T00:00:00.500Z");
+    store.handleMessage(first);
+
+    yaha::Message second{"device/state", std::string{"on"}};
+    second.addReason("updated", "1970-01-01T00:00:01.250Z");
+    store.handleMessage(second);
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    httplib::Headers headers{{"history", "true"}};
+    const auto response = client.Get("/store/device/state", headers);
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 200);
+    REQUIRE(response->body.find("\"time\":\"1970-01-01T00:00:01.250Z\"") != std::string::npos);
+    REQUIRE(response->body.find("\"time\":\"1970-01-01T00:00:00.500Z\"") != std::string::npos);
+    REQUIRE(response->body.find("\"timestamp\":\"1970-01-01T00:00:01.250Z\"") != std::string::npos);
+    REQUIRE(response->body.find("\"timeMs\":") == std::string::npos);
 }
 
 TEST_CASE("http_post_store_sensor_payload_uses_topic_and_query_flags", "[message_store]") {

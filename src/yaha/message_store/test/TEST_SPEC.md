@@ -10,6 +10,12 @@ Unit tests for MessageTree behavior required by step 4.
 |------|----------|-------|----------|
 | `add_data_creates_node_and_get_section_returns_it` | First insert creates node | one message, query root depth 3 | one node with topic/value |
 | `add_data_updates_move_previous_value_into_history` | Updating topic records previous state | two messages same topic | current value is second, history has first |
+| `add_data_prefers_first_reason_timestamp_when_valid_iso` | Node timestamp should use first reason timestamp when parseable | message with reason[0].timestamp ISO string and divergent clock | node timeMs equals parsed reason timestamp |
+| `add_data_falls_back_to_clock_when_first_reason_timestamp_invalid` | Invalid first reason timestamp must not override clock | message with invalid reason[0].timestamp and valid older reason entry | node timeMs equals injected clock time |
+| `add_data_parses_reason_timestamp_with_positive_timezone_offset` | Positive timezone offset must be converted to UTC milliseconds | reason[0].timestamp with `+HH:MM` offset | node timeMs equals expected UTC epoch milliseconds |
+| `add_data_parses_reason_timestamp_with_negative_offset_and_fraction` | Negative timezone offset and fractional seconds must parse | reason[0].timestamp with fraction and `-HH:MM` offset | node timeMs equals expected UTC epoch milliseconds |
+| `add_data_falls_back_to_clock_for_invalid_reason_timezone_format` | Unsupported timezone format must fallback | reason[0].timestamp without colon in offset | node timeMs equals injected clock time |
+| `add_data_falls_back_to_clock_for_invalid_reason_fraction_format` | Malformed fractional part must fallback | reason[0].timestamp with empty fraction | node timeMs equals injected clock time |
 | `history_is_trimmed_with_hysteresis` | Bounded history applies batch trim | max=3 hysterese=1 with repeated updates | history size <= 3 and not empty |
 | `history_compresses_repeated_equal_values` | Repeated equal updates use compressed buckets | maxValuesPerHistoryEntry=2 with repeated same value | decompressed history shows merged timestamps for compressed repeats |
 | `get_section_respects_depth` | Depth-limited query | multi-level topics, depth 0 and 1 | deeper nodes excluded for smaller depth |
@@ -51,4 +57,5 @@ Unit tests for MessageTree behavior required by step 4.
 | `http_get_store_malformed_snapshot_returns_empty_array` | Malformed body fallback path | GET body `not-json` | status 200 and `[]` |
 | `http_unknown_path_returns_404` | Non-store endpoint is rejected | GET `/unknown/path` | status 404 with YahaError payload code `YAHA_MESSAGE_STORE_HTTP_NOT_FOUND` |
 | `http_get_store_json_output_escapes_special_characters` | JSON escaping branch coverage | store string payload with quote/backslash/newline/carriage-return/tab | response payload contains escaped JSON control sequences |
+| `http_get_store_outputs_iso_time_and_reason_timestamps` | HTTP response should expose ISO UTC time fields and preserve reason timestamps | two updates with explicit reason timestamps and history enabled | response uses `time` ISO strings (including history), contains reason timestamps, and contains no `timeMs` field |
 | `handle_message_cleanup_topic_accepts_numeric_string_payload` | Cleanup path string-number conversion | cleanup message with payload "1" | stale nodes are removed |
