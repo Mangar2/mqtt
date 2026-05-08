@@ -157,7 +157,7 @@ Ack behavior for callback listener:
 ## Data model
 
 Incoming callback payload is normalized to YAHA `Message` and `SourcePublishMeta`.
-Reason-chain content in callback payload is currently ignored in this phase and does not alter `Message.reason()`.
+If callback payload contains a `reason` field, reason entries are mapped into `Message.reason()` and forwarded unchanged through relay + receiver publish port.
 
 ## Runtime behavior
 

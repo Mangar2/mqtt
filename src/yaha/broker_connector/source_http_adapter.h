@@ -26,11 +26,14 @@ namespace yaha {
  * @brief Source broker connectivity configuration.
  */
 struct SourceHttpBrokerConfig {
+    static constexpr std::uint16_t k_default_broker_port{1883U};
+    static constexpr std::uint32_t k_default_keep_alive_seconds{30U};
+
     std::string brokerHost{"127.0.0.1"};
-    std::uint16_t brokerPort{1883U};
+    std::uint16_t brokerPort{k_default_broker_port};
     std::string clientId{"broker-connector-source"};
     bool clean{true};
-    std::uint32_t keepAliveSeconds{30U};
+    std::uint32_t keepAliveSeconds{k_default_keep_alive_seconds};
     std::string listenerHost{"127.0.0.1"};
     std::string listenerBindHost{"127.0.0.1"};
     std::uint16_t listenerPort{0U};
@@ -114,7 +117,7 @@ private:
 
     bool sendConnect(std::string& errorMessage, std::string& responseSummary);
     bool sendSubscribe(std::string& errorMessage, std::string& responseSummary);
-    bool sendDisconnect();
+    bool sendDisconnect() const;
 
     [[nodiscard]] static std::string buildConnectPayload(const SourceHttpBrokerConfig& config,
                                                          std::uint16_t effectiveListenerPort);

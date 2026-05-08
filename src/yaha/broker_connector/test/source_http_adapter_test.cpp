@@ -13,12 +13,26 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
 namespace {
+
+constexpr int k_http_status_ok{200};
+constexpr int k_http_status_no_content{204};
+constexpr int k_http_status_bad_request{400};
+constexpr int k_http_status_service_unavailable{503};
+constexpr int k_http_status_internal_server_error{500};
+constexpr std::uint32_t k_keep_alive_seconds{15U};
+constexpr int k_ready_poll_sleep_ms{5};
+constexpr int k_lifecycle_reconnect_ms{20};
+constexpr int k_lifecycle_loop_sleep_ms{10};
+constexpr int k_lifecycle_keep_alive_ms{30};
+constexpr int k_wait_timeout_ms{500};
+constexpr int k_wait_sleep_step_ms{10};
 
 class FakeSourceHttpBroker {
 public:
@@ -65,12 +79,12 @@ public:
             lastConnectBody_ = request.body;
 
             if (failFirstConnect_ && connectCalls_.load() == 1) {
-                response.status = 503;
+                response.status = k_http_status_service_unavailable;
                 response.set_content("{\"error\":\"unavailable\"}", "application/json");
                 return;
             }
 
-            response.status = 200;
+            response.status = k_http_status_ok;
             response.set_header("content-type", "application/json; charset=UTF-8");
             response.set_header("packet", "connack");
             response.set_header("version", "1.0");
@@ -85,12 +99,12 @@ public:
         server_->Put("/subscribe", [this](const httplib::Request& request, httplib::Response& response) {
             subscribeCalls_.fetch_add(1);
             lastSubscribeBody_ = request.body;
-            if (subscribeStatusCode_ != 200) {
+            if (subscribeStatusCode_ != k_http_status_ok) {
                 response.status = subscribeStatusCode_;
                 response.set_content("{\"error\":\"subscribe_failed\"}", "application/json");
                 return;
             }
-            response.status = 200;
+            response.status = k_http_status_ok;
             response.set_header("content-type", "application/json; charset=UTF-8");
             response.set_header("packet", "suback");
             response.set_header("packetid", request.get_header_value("packetid"));
@@ -106,23 +120,23 @@ public:
             lastPingBody_ = request.body;
             if (requireSendTokenForPing_ &&
                 request.body.find("\"token\":\"send-token\"") == std::string::npos) {
-                response.status = 400;
+                response.status = k_http_status_bad_request;
                 response.set_content("{\"error\":\"invalid_token\"}", "application/json");
                 return;
             }
-            response.status = 204;
+            response.status = k_http_status_no_content;
             response.set_header("content-type", "application/json; charset=UTF-8");
             response.set_header("packet", pingPacketHeader_);
         });
 
         server_->Put("/disconnect", [this](const httplib::Request&, httplib::Response& response) {
             disconnectCalls_.fetch_add(1);
-            response.status = 204;
+            response.status = k_http_status_no_content;
             response.set_header("content-type", "application/json; charset=UTF-8");
         });
 
         server_->Get("/health", [](const httplib::Request&, httplib::Response& response) {
-            response.status = 200;
+            response.status = k_http_status_ok;
             response.set_content("ok", "text/plain");
         });
 
@@ -136,14 +150,15 @@ public:
             }
         });
 
-        const auto readyDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{500};
+        const auto readyDeadline =
+            std::chrono::steady_clock::now() + std::chrono::milliseconds{k_wait_timeout_ms};
         httplib::Client client{"127.0.0.1", static_cast<int>(port_)};
         while (std::chrono::steady_clock::now() < readyDeadline) {
             const auto health = client.Get("/health");
-            if (health && health->status == 200) {
+            if (health && health->status == k_http_status_ok) {
                 break;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds{5});
+            std::this_thread::sleep_for(std::chrono::milliseconds{k_ready_poll_sleep_ms});
         }
     }
 
@@ -190,12 +205,12 @@ public:
         return lastSubscribeBody_;
     }
 
-    httplib::Result sendPublishTo(const std::uint16_t listenerPort,
-                                  const std::string& qos,
-                                  const std::string& packetId,
-                                  const std::string& payload,
-                                  const std::string& retain = "0",
-                                  const std::string& dup = "0") {
+    static httplib::Result sendPublishTo(const std::uint16_t listenerPort,
+                                         const std::string& qos,
+                                         const std::string& packetId,
+                                         const std::string& payload,
+                                         const std::string& retain = "0",
+                                         const std::string& dup = "0") {
         httplib::Client client{"127.0.0.1", static_cast<int>(listenerPort)};
         httplib::Headers headers{
             {"content-type", "application/json; charset=UTF-8"},
@@ -208,8 +223,8 @@ public:
         return client.Put("/publish", headers, payload, "application/json");
     }
 
-    httplib::Result sendPubrelTo(const std::uint16_t listenerPort,
-                                 const std::string& packetId) {
+    static httplib::Result sendPubrelTo(const std::uint16_t listenerPort,
+                                        const std::string& packetId) {
         httplib::Client client{"127.0.0.1", static_cast<int>(listenerPort)};
         httplib::Headers headers{
             {"content-type", "text/plain; charset=UTF-8"},
@@ -275,7 +290,7 @@ private:
     std::uint16_t port_{0U};
 
     bool failFirstConnect_{false};
-    int subscribeStatusCode_{200};
+    int subscribeStatusCode_{k_http_status_ok};
     std::string subscribeResponseBody_{};
     bool requireSendTokenForPing_{false};
     std::string pingPacketHeader_{"pingresp"};
@@ -293,7 +308,8 @@ private:
 
 bool waitUntil(const std::function<bool()>& condition,
                const std::chrono::milliseconds timeout,
-               const std::chrono::milliseconds sleepStep = std::chrono::milliseconds{10}) {
+               const std::chrono::milliseconds sleepStep =
+                   std::chrono::milliseconds{k_wait_sleep_step_ms}) {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (std::chrono::steady_clock::now() < deadline) {
         if (condition()) {
@@ -306,6 +322,7 @@ bool waitUntil(const std::function<bool()>& condition,
 
 } // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("source_adapter_connect_subscribe_and_callback_publish", "[broker_connector]") {
     FakeSourceHttpBroker sourceBroker{};
     sourceBroker.start();
@@ -314,7 +331,7 @@ TEST_CASE("source_adapter_connect_subscribe_and_callback_publish", "[broker_conn
         httplib::Client healthClient{"127.0.0.1", static_cast<int>(sourceBroker.port())};
         const auto health = healthClient.Get("/health");
         REQUIRE(health != nullptr);
-        REQUIRE(health->status == 200);
+        REQUIRE(health->status == k_http_status_ok);
     }
 
     yaha::SourceHttpBrokerConfig config{};
@@ -322,7 +339,7 @@ TEST_CASE("source_adapter_connect_subscribe_and_callback_publish", "[broker_conn
     config.brokerPort = sourceBroker.port();
     config.clientId = "connector-test-client";
     config.clean = true;
-    config.keepAliveSeconds = 15U;
+    config.keepAliveSeconds = k_keep_alive_seconds;
     config.listenerHost = "127.0.0.1";
     config.listenerPort = 0U;
     config.subscribeTopics = {{"home/#", yaha::Qos::AtLeastOnce}};
@@ -352,27 +369,30 @@ TEST_CASE("source_adapter_connect_subscribe_and_callback_publish", "[broker_conn
     REQUIRE_FALSE(adapter.listenerPort() == 0U);
     REQUIRE(sourceBroker.lastConnectBody().find("\"keepAlive\":15000") != std::string::npos);
 
-    const auto publishResponse = sourceBroker.sendPublishTo(
+    const auto publishResponse = FakeSourceHttpBroker::sendPublishTo(
         adapter.listenerPort(),
         "1",
         "7",
-        "{\"token\":\"send-token\",\"message\":{\"topic\":\"home/kitchen/temp\",\"value\":21.5}}"
+        "{\"token\":\"send-token\",\"message\":{\"topic\":\"home/kitchen/temp\",\"value\":21.5,\"reason\":[{\"message\":\"sensor update\",\"timestamp\":\"2026-05-08T10:00:00Z\"}]}}"
     );
 
     REQUIRE(publishResponse != nullptr);
-    REQUIRE(publishResponse->status == 204);
+    REQUIRE(publishResponse->status == k_http_status_no_content);
     REQUIRE(publishResponse->get_header_value("packet") == "puback");
 
     REQUIRE(waitUntil([&callbackMutex, &callbackMessages]() {
         std::lock_guard<std::mutex> lock{callbackMutex};
         return !callbackMessages.empty();
-    }, std::chrono::milliseconds{500}));
+    }, std::chrono::milliseconds{k_wait_timeout_ms}));
 
     {
         std::lock_guard<std::mutex> lock{callbackMutex};
         REQUIRE(callbackMessages.size() == 1U);
         REQUIRE(callbackMessages.front().topic() == "home/kitchen/temp");
         REQUIRE(std::holds_alternative<double>(callbackMessages.front().value()));
+        REQUIRE(callbackMessages.front().reason().size() == 1U);
+        REQUIRE(callbackMessages.front().reason().front().message == "sensor update");
+        REQUIRE(callbackMessages.front().reason().front().timestamp == "2026-05-08T10:00:00Z");
         REQUIRE(callbackMeta.size() == 1U);
         REQUIRE(callbackMeta.front().qos == yaha::Qos::AtLeastOnce);
         REQUIRE(callbackMeta.front().packetId.has_value());
@@ -384,6 +404,7 @@ TEST_CASE("source_adapter_connect_subscribe_and_callback_publish", "[broker_conn
     sourceBroker.stop();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("source_adapter_qos2_publish_and_pubrel_ack_sequence", "[broker_connector]") {
     FakeSourceHttpBroker sourceBroker{};
     sourceBroker.start();
@@ -402,7 +423,7 @@ TEST_CASE("source_adapter_qos2_publish_and_pubrel_ack_sequence", "[broker_connec
     std::string errorMessage{};
     REQUIRE(adapter.connectAndSubscribe(errorMessage));
 
-    const auto publishResponse = sourceBroker.sendPublishTo(
+    const auto publishResponse = FakeSourceHttpBroker::sendPublishTo(
         adapter.listenerPort(),
         "2",
         "42",
@@ -410,13 +431,13 @@ TEST_CASE("source_adapter_qos2_publish_and_pubrel_ack_sequence", "[broker_connec
     );
 
     REQUIRE(publishResponse != nullptr);
-    REQUIRE(publishResponse->status == 204);
+    REQUIRE(publishResponse->status == k_http_status_no_content);
     REQUIRE(publishResponse->get_header_value("packet") == "pubrec");
     REQUIRE(publishResponse->get_header_value("packetid") == "42");
 
-    const auto pubrelResponse = sourceBroker.sendPubrelTo(adapter.listenerPort(), "42");
+    const auto pubrelResponse = FakeSourceHttpBroker::sendPubrelTo(adapter.listenerPort(), "42");
     REQUIRE(pubrelResponse != nullptr);
-    REQUIRE(pubrelResponse->status == 204);
+    REQUIRE(pubrelResponse->status == k_http_status_no_content);
     REQUIRE(pubrelResponse->get_header_value("packet") == "pubcomp");
     REQUIRE(pubrelResponse->get_header_value("packetid") == "42");
 
@@ -442,9 +463,9 @@ TEST_CASE("source_lifecycle_retries_connect_and_replays_subscribe", "[broker_con
     adapter.setIncomingPublishCallback([](const yaha::Message&, const yaha::SourcePublishMeta&) {});
 
     yaha::SourceLifecycleConfig lifecycleConfig{};
-    lifecycleConfig.reconnectDelay = std::chrono::milliseconds{20};
-    lifecycleConfig.loopSleep = std::chrono::milliseconds{10};
-    lifecycleConfig.keepAliveInterval = std::chrono::milliseconds{30};
+    lifecycleConfig.reconnectDelay = std::chrono::milliseconds{k_lifecycle_reconnect_ms};
+    lifecycleConfig.loopSleep = std::chrono::milliseconds{k_lifecycle_loop_sleep_ms};
+    lifecycleConfig.keepAliveInterval = std::chrono::milliseconds{k_lifecycle_keep_alive_ms};
     lifecycleConfig.enableTrace = false;
 
     yaha::SourceLifecycleManager manager{adapter, lifecycleConfig};
@@ -468,6 +489,7 @@ TEST_CASE("source_lifecycle_retries_connect_and_replays_subscribe", "[broker_con
     sourceBroker.stop();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("source_adapter_qos0_publish_with_dup_retain_flags", "[broker_connector]") {
     FakeSourceHttpBroker sourceBroker{};
     sourceBroker.start();
@@ -493,7 +515,7 @@ TEST_CASE("source_adapter_qos0_publish_with_dup_retain_flags", "[broker_connecto
     std::string errorMessage{};
     REQUIRE(adapter.connectAndSubscribe(errorMessage));
 
-    const auto publishResponse = sourceBroker.sendPublishTo(
+    const auto publishResponse = FakeSourceHttpBroker::sendPublishTo(
         adapter.listenerPort(),
         "0",
         "abc",
@@ -502,13 +524,13 @@ TEST_CASE("source_adapter_qos0_publish_with_dup_retain_flags", "[broker_connecto
         "1");
 
     REQUIRE(publishResponse != nullptr);
-    REQUIRE(publishResponse->status == 204);
+    REQUIRE(publishResponse->status == k_http_status_no_content);
     REQUIRE(publishResponse->get_header_value("packet").empty());
 
     REQUIRE(waitUntil([&callbackMutex, &metaValues]() {
         std::lock_guard<std::mutex> lock{callbackMutex};
         return !metaValues.empty();
-    }, std::chrono::milliseconds{500}));
+    }, std::chrono::milliseconds{k_wait_timeout_ms}));
 
     {
         std::lock_guard<std::mutex> lock{callbackMutex};
@@ -545,7 +567,7 @@ TEST_CASE("source_adapter_invalid_publish_payload_returns_400", "[broker_connect
     std::string errorMessage{};
     REQUIRE(adapter.connectAndSubscribe(errorMessage));
 
-    const auto publishResponse = sourceBroker.sendPublishTo(
+    const auto publishResponse = FakeSourceHttpBroker::sendPublishTo(
         adapter.listenerPort(),
         "1",
         "9",
@@ -553,7 +575,7 @@ TEST_CASE("source_adapter_invalid_publish_payload_returns_400", "[broker_connect
     );
 
     REQUIRE(publishResponse != nullptr);
-    REQUIRE(publishResponse->status == 400);
+    REQUIRE(publishResponse->status == k_http_status_bad_request);
     REQUIRE(callbackCount.load() == 0);
 
     adapter.close();
@@ -584,7 +606,7 @@ TEST_CASE("source_adapter_publish_invalid_bool_headers_fallback_to_false", "[bro
     std::string errorMessage{};
     REQUIRE(adapter.connectAndSubscribe(errorMessage));
 
-    const auto publishResponse = sourceBroker.sendPublishTo(
+    const auto publishResponse = FakeSourceHttpBroker::sendPublishTo(
         adapter.listenerPort(),
         "0",
         "",
@@ -593,7 +615,7 @@ TEST_CASE("source_adapter_publish_invalid_bool_headers_fallback_to_false", "[bro
         "  ???  ");
 
     REQUIRE(publishResponse != nullptr);
-    REQUIRE(publishResponse->status == 204);
+    REQUIRE(publishResponse->status == k_http_status_no_content);
 
     {
         std::lock_guard<std::mutex> lock{callbackMutex};
@@ -643,7 +665,7 @@ TEST_CASE("source_adapter_connect_fails_when_broker_unreachable", "[broker_conne
 
 TEST_CASE("source_adapter_subscribe_status_error_propagates", "[broker_connector]") {
     FakeSourceHttpBroker sourceBroker{};
-    sourceBroker.setSubscribeStatusCode(500);
+    sourceBroker.setSubscribeStatusCode(k_http_status_internal_server_error);
     sourceBroker.start();
 
     yaha::SourceHttpBrokerConfig config{};
@@ -659,7 +681,9 @@ TEST_CASE("source_adapter_subscribe_status_error_propagates", "[broker_connector
 
     std::string errorMessage{};
     REQUIRE_FALSE(adapter.connectAndSubscribe(errorMessage));
-    REQUIRE(errorMessage == "source subscribe failed with status 500");
+    REQUIRE(errorMessage ==
+            ("source subscribe failed with status " +
+             std::to_string(k_http_status_internal_server_error)));
     REQUIRE_FALSE(adapter.isConnected());
 
     adapter.close();

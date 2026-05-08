@@ -1,5 +1,6 @@
 #include "yaha/mqtt_client/mqtt_client.h"
 
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -281,13 +282,9 @@ void YahaMqttClient::processKeepAlive() {
 
 bool YahaMqttClient::isTopicSubscribed(const std::string& topic) const {
     std::lock_guard<std::mutex> lock{stateMutex_};
-    for (const auto& [topic_filter, qos_level] : activeSubscriptions_) {
-        (void)qos_level;
-        if (topicMatchesFilter(topic_filter, topic)) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(activeSubscriptions_, [&topic](const auto& subscription) {
+        return topicMatchesFilter(subscription.first, topic);
+    });
 }
 
 bool YahaMqttClient::topicMatchesFilter(const std::string& filter,
@@ -332,10 +329,17 @@ void YahaMqttClient::traceMessage(const std::string& direction, const Message& m
         return;
     }
 
+    std::string reasonText{"none"};
+    if (!message.reason().empty()) {
+        reasonText = "count=" + std::to_string(message.reason().size()) +
+            " latest=\"" + message.reason().front().message + "\"";
+    }
+
     std::cout << "  broker: " << direction << " topic=" << message.topic()
               << " qos=" << qosToText(message.qos())
               << " retain=" << (message.retain() ? "1" : "0")
               << " value=" << valueToText(message.value())
+              << " reason=" << reasonText
               << '\n' << std::flush;
 }
 

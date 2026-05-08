@@ -10,7 +10,6 @@
 #include <iostream>
 #include <memory>
 #include <sstream>
-#include <stdexcept>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -18,6 +17,16 @@
 namespace yaha {
 
 namespace {
+
+constexpr std::size_t k_escape_capacity_padding{8U};
+constexpr unsigned int k_uint16_max_value{65535U};
+constexpr int k_http_status_ok{200};
+constexpr int k_http_status_no_content{204};
+constexpr int k_http_status_bad_request{400};
+constexpr int k_connect_retry_count{50};
+constexpr int k_connect_retry_delay_ms{20};
+constexpr int k_suback_qos_reject_code{128};
+constexpr int k_decimal_base{10};
 
 std::string trim(const std::string& text) {
     std::size_t first = 0U;
@@ -42,7 +51,7 @@ std::string toLower(std::string text) {
 
 std::string escapeJson(const std::string& text) {
     std::string escaped{};
-    escaped.reserve(text.size() + 8U);
+    escaped.reserve(text.size() + k_escape_capacity_padding);
     for (const char chr : text) {
         switch (chr) {
             case '"':
@@ -89,7 +98,7 @@ bool parseUnsigned16(const std::string& text, std::uint16_t& outValue) {
     const auto* begin = text.data();
     const auto* end = text.data() + text.size();
     const auto result = std::from_chars(begin, end, parsed);
-    if (result.ec != std::errc{} || result.ptr != end || parsed > 65535U) {
+    if (result.ec != std::errc{} || result.ptr != end || parsed > k_uint16_max_value) {
         return false;
     }
 
@@ -141,6 +150,47 @@ bool tryFindObjectRange(const std::string& text,
             if (depth == 0) {
                 objectStart = cursor;
                 objectEnd = pos;
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool tryFindArrayRange(const std::string& text,
+                       const std::string& key,
+                       std::size_t& arrayStart,
+                       std::size_t& arrayEnd) {
+    const std::string keyToken = "\"" + key + "\"";
+    const std::size_t keyPos = text.find(keyToken);
+    if (keyPos == std::string::npos) {
+        return false;
+    }
+
+    std::size_t cursor = text.find(':', keyPos + keyToken.size());
+    if (cursor == std::string::npos) {
+        return false;
+    }
+    ++cursor;
+
+    while (cursor < text.size() && std::isspace(static_cast<unsigned char>(text[cursor])) != 0) {
+        ++cursor;
+    }
+    if (cursor >= text.size() || text[cursor] != '[') {
+        return false;
+    }
+
+    int depth = 0;
+    for (std::size_t pos = cursor; pos < text.size(); ++pos) {
+        const char chr = text[pos];
+        if (chr == '[') {
+            ++depth;
+        } else if (chr == ']') {
+            --depth;
+            if (depth == 0) {
+                arrayStart = cursor;
+                arrayEnd = pos;
                 return true;
             }
         }
@@ -283,6 +333,105 @@ bool tryParseValueToken(const std::string& objectText,
     return true;
 }
 
+std::size_t skipReasonSeparators(const std::string& arrayText, std::size_t cursorPos) {
+    while (cursorPos + 1U < arrayText.size() &&
+           (std::isspace(static_cast<unsigned char>(arrayText[cursorPos])) != 0 ||
+            arrayText[cursorPos] == ',')) {
+        ++cursorPos;
+    }
+
+    return cursorPos;
+}
+
+std::optional<std::size_t> findObjectEnd(const std::string& text,
+                                         const std::size_t objectStart) {
+    if (objectStart >= text.size() || text[objectStart] != '{') {
+        return std::nullopt;
+    }
+
+    int depth = 0;
+    for (std::size_t cursorPos = objectStart; cursorPos < text.size(); ++cursorPos) {
+        const char currentChar = text[cursorPos];
+        if (currentChar == '{') {
+            ++depth;
+        } else if (currentChar == '}') {
+            --depth;
+            if (depth == 0) {
+                return cursorPos;
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<ReasonEntry> tryParseReasonEntryObject(const std::string& objectText) {
+    std::string messageText{};
+    if (!tryExtractKeyStringValue(objectText, "message", messageText) || messageText.empty()) {
+        return std::nullopt;
+    }
+
+    std::string timestampText{};
+    if (!tryExtractKeyStringValue(objectText, "timestamp", timestampText)) {
+        timestampText.clear();
+    }
+
+    return ReasonEntry{std::move(messageText), std::move(timestampText)};
+}
+
+std::optional<std::vector<ReasonEntry>> tryParseReasonArray(const std::string& arrayText) {
+    if (arrayText.size() < 2U || arrayText.front() != '[' || arrayText.back() != ']') {
+        return std::nullopt;
+    }
+
+    std::vector<ReasonEntry> reasonEntries{};
+    std::size_t cursorPos = 1U;
+    while (cursorPos + 1U < arrayText.size()) {
+        cursorPos = skipReasonSeparators(arrayText, cursorPos);
+        if (cursorPos + 1U >= arrayText.size() || arrayText[cursorPos] == ']') {
+            break;
+        }
+
+        const std::optional<std::size_t> objectEnd = findObjectEnd(arrayText, cursorPos);
+        if (!objectEnd.has_value()) {
+            return std::nullopt;
+        }
+
+        const std::string objectText = arrayText.substr(cursorPos,
+                                                        *objectEnd - cursorPos + 1U);
+        const std::optional<ReasonEntry> reasonEntry = tryParseReasonEntryObject(objectText);
+        if (!reasonEntry.has_value()) {
+            return std::nullopt;
+        }
+
+        reasonEntries.push_back(*reasonEntry);
+        cursorPos = *objectEnd + 1U;
+    }
+
+    return reasonEntries;
+}
+
+void appendReasonsPreservingOrder(const std::vector<ReasonEntry>& reasonEntries,
+                                  Message& messageOut) {
+    for (std::size_t reverseIndex = reasonEntries.size(); reverseIndex > 0U; --reverseIndex) {
+        const ReasonEntry& entry = reasonEntries[reverseIndex - 1U];
+        if (entry.timestamp.empty()) {
+            messageOut.addReason(entry.message);
+        } else {
+            messageOut.addReason(entry.message, entry.timestamp);
+        }
+    }
+}
+
+std::string reasonSummary(const Message& message) {
+    if (message.reason().empty()) {
+        return "count=0";
+    }
+
+    return "count=" + std::to_string(message.reason().size()) +
+        " latest=\"" + message.reason().front().message + "\"";
+}
+
 bool parseIncomingMessageBody(const std::string& payload,
                               const Qos qos,
                               const bool retain,
@@ -311,69 +460,77 @@ bool parseIncomingMessageBody(const std::string& payload,
     }
 
     messageOut = Message{topic, std::move(value), qos, retain};
+
+    std::size_t reasonArrayStart = 0U;
+    std::size_t reasonArrayEnd = 0U;
+    if (tryFindArrayRange(body, "reason", reasonArrayStart, reasonArrayEnd)) {
+        const std::string reasonArray = body.substr(reasonArrayStart,
+                                                    reasonArrayEnd - reasonArrayStart + 1U);
+        const std::optional<std::vector<ReasonEntry>> reasonEntries =
+            tryParseReasonArray(reasonArray);
+        if (!reasonEntries.has_value()) {
+            return false;
+        }
+        appendReasonsPreservingOrder(*reasonEntries, messageOut);
+        return true;
+    }
+
+    if (tryExtractKeyValueToken(body, "reason", tokenStart, tokenEnd)) {
+        Value reasonValue{};
+        if (!tryParseValueToken(body, tokenStart, tokenEnd, reasonValue)) {
+            return false;
+        }
+        if (std::holds_alternative<std::string>(reasonValue)) {
+            const std::string& reasonText = std::get<std::string>(reasonValue);
+            if (!reasonText.empty()) {
+                messageOut.addReason(reasonText);
+            }
+        }
+    }
+
     return true;
 }
 
-bool tryParseQosArray(const std::string& payload, std::vector<int>& qosValues) {
+std::optional<std::vector<int>> tryParseQosArray(const std::string& payload) {
     const std::size_t qosKeyPos = payload.find("\"qos\"");
     if (qosKeyPos == std::string::npos) {
-        return false;
+        return std::nullopt;
     }
 
-    std::size_t cursor = payload.find('[', qosKeyPos);
-    if (cursor == std::string::npos) {
-        return false;
+    const std::size_t arrayStart = payload.find('[', qosKeyPos);
+    if (arrayStart == std::string::npos) {
+        return std::nullopt;
     }
-    ++cursor;
 
-    while (cursor < payload.size()) {
-        while (cursor < payload.size() &&
-               std::isspace(static_cast<unsigned char>(payload[cursor])) != 0) {
-            ++cursor;
-        }
+    const std::size_t arrayEnd = payload.find(']', arrayStart);
+    if (arrayEnd == std::string::npos || arrayEnd < arrayStart) {
+        return std::nullopt;
+    }
 
-        if (cursor >= payload.size()) {
-            return false;
-        }
-        if (payload[cursor] == ']') {
-            return true;
-        }
+    const std::string arrayBody = payload.substr(arrayStart + 1U, arrayEnd - arrayStart - 1U);
 
-        bool negative = false;
-        if (payload[cursor] == '-') {
-            negative = true;
-            ++cursor;
-        }
-        if (cursor >= payload.size() || !std::isdigit(static_cast<unsigned char>(payload[cursor]))) {
-            return false;
-        }
+    std::vector<int> qosValues{};
 
-        int parsed = 0;
-        while (cursor < payload.size() && std::isdigit(static_cast<unsigned char>(payload[cursor]))) {
-            parsed = (parsed * 10) + (payload[cursor] - '0');
-            ++cursor;
-        }
-        qosValues.push_back(negative ? -parsed : parsed);
-
-        while (cursor < payload.size() &&
-               std::isspace(static_cast<unsigned char>(payload[cursor])) != 0) {
-            ++cursor;
-        }
-
-        if (cursor >= payload.size()) {
-            return false;
-        }
-        if (payload[cursor] == ',') {
-            ++cursor;
+    std::stringstream stream{arrayBody};
+    std::string token{};
+    while (std::getline(stream, token, ',')) {
+        const std::string cleaned = trim(token);
+        if (cleaned.empty()) {
             continue;
         }
-        if (payload[cursor] == ']') {
-            return true;
+
+        int parsedValue = 0;
+        const char* begin = cleaned.data();
+        const char* end = cleaned.data() + cleaned.size();
+        const auto result = std::from_chars(begin, end, parsedValue, k_decimal_base);
+        if (result.ec != std::errc{} || result.ptr != end) {
+            return std::nullopt;
         }
-        return false;
+
+        qosValues.push_back(parsedValue);
     }
 
-    return false;
+    return qosValues;
 }
 
 std::string valueToText(const Value& value) {
@@ -416,6 +573,41 @@ httplib::Headers makeStandardJsonHeaders() {
         {"accept-charset", "UTF-8"},
         {"version", "1.0"}
     };
+}
+
+bool tryBindListener(httplib::Server& server,
+                     const SourceHttpBrokerConfig& config,
+                     std::uint16_t& boundPort,
+                     std::string& errorMessage) {
+    std::string host = config.listenerBindHost;
+    if (host.empty()) {
+        host = config.listenerHost;
+    }
+    if (host.empty()) {
+        host = "127.0.0.1";
+    }
+
+    if (config.listenerPort == 0U) {
+        const int boundResult = server.bind_to_any_port(host);
+        if (boundResult <= 0) {
+            errorMessage = "unable to bind source callback listener to " + host + ":" +
+                std::to_string(config.listenerPort);
+            return false;
+        }
+
+        boundPort = static_cast<std::uint16_t>(boundResult);
+        return true;
+    }
+
+    const bool isBound = server.bind_to_port(host, static_cast<int>(config.listenerPort));
+    if (!isBound) {
+        errorMessage = "unable to bind source callback listener to " + host + ":" +
+            std::to_string(config.listenerPort);
+        return false;
+    }
+
+    boundPort = config.listenerPort;
+    return true;
 }
 
 } // namespace
@@ -477,7 +669,7 @@ bool SourceHttpBrokerAdapter::ping(std::string& errorMessage) {
             return false;
         }
 
-        if (response->status != 204) {
+        if (response->status != k_http_status_no_content) {
             failureText = "ping failed with status " + std::to_string(response->status) +
                 " using " + tokenLabel + " token";
             return false;
@@ -559,7 +751,7 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
         if (!parseIncomingMessageBody(request.body, meta.qos, meta.retain, message)) {
             std::cout << "  source: publish rejected bad payload body=" << request.body
                       << '\n' << std::flush;
-            response.status = 400;
+            response.status = k_http_status_bad_request;
             response.set_content("{\"error\":\"bad_publish_payload\"}", "application/json");
             return;
         }
@@ -568,6 +760,7 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
                   << " qos=" << static_cast<int>(meta.qos)
                   << " retain=" << (meta.retain ? "1" : "0")
                   << " value=" << valueToText(message.value())
+                  << " reason=" << reasonSummary(message)
                   << '\n' << std::flush;
 
         SourcePublishCallback callback{};
@@ -579,7 +772,7 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
             callback(message, meta);
         }
 
-        response.status = 204;
+        response.status = k_http_status_no_content;
         response.set_header("content-type", "application/json; charset=UTF-8");
         response.set_header("version", "1.0");
         response.set_header("qos", request.get_header_value("qos"));
@@ -595,7 +788,7 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
     });
 
     server_->Put("/pubrel", [](const httplib::Request& request, httplib::Response& response) {
-        response.status = 204;
+        response.status = k_http_status_no_content;
         response.set_header("content-type", "application/json; charset=UTF-8");
         response.set_header("version", "1.0");
         response.set_header("packet", "pubcomp");
@@ -605,38 +798,11 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
         }
     });
 
-    std::string host = config_.listenerBindHost;
-    if (host.empty()) {
-        host = config_.listenerHost;
+    if (!tryBindListener(*server_, config_, boundListenerPort_, errorMessage)) {
+        server_.reset();
+        return false;
     }
-    if (host.empty()) {
-        host = "127.0.0.1";
-    }
-    if (config_.listenerPort == 0U) {
-        const int bound = server_->bind_to_any_port(host);
-        if (bound <= 0) {
-            errorMessage =
-                "unable to bind source callback listener to " + host + ":" +
-                std::to_string(config_.listenerPort);
-            server_.reset();
-            return false;
-        }
 
-        boundListenerPort_ = static_cast<std::uint16_t>(bound);
-    } else {
-        const bool bound =
-            server_->bind_to_port(host, static_cast<int>(config_.listenerPort));
-        if (!bound) {
-            errorMessage =
-                "unable to bind source callback listener to " + host + ":" +
-                std::to_string(config_.listenerPort);
-            server_.reset();
-            return false;
-        }
-
-        // For fixed ports we advertise exactly the configured listenerPort.
-        boundListenerPort_ = config_.listenerPort;
-    }
     listenerThread_ = std::thread([this]() {
         if (server_ != nullptr) {
             server_->listen_after_bind();
@@ -669,20 +835,20 @@ bool SourceHttpBrokerAdapter::sendConnect(std::string& errorMessage, std::string
     const std::string payload = buildConnectPayload(config_, boundListenerPort_);
 
     httplib::Result response{};
-    for (int attempt = 0; attempt < 50; ++attempt) {
+    for (int attempt = 0; attempt < k_connect_retry_count; ++attempt) {
         httplib::Client client{config_.brokerHost, static_cast<int>(config_.brokerPort)};
         response = client.Put("/connect", headers, payload, "application/json");
         if (response) {
             break;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds{20});
+        std::this_thread::sleep_for(std::chrono::milliseconds{k_connect_retry_delay_ms});
     }
 
     if (!response) {
         errorMessage = "source connect request failed";
         return false;
     }
-    if (response->status != 200) {
+    if (response->status != k_http_status_ok) {
         errorMessage = "source connect failed with status " + std::to_string(response->status);
         return false;
     }
@@ -730,7 +896,7 @@ bool SourceHttpBrokerAdapter::sendSubscribe(std::string& errorMessage, std::stri
         errorMessage = "source subscribe request failed";
         return false;
     }
-    if (response->status != 200) {
+    if (response->status != k_http_status_ok) {
         errorMessage = "source subscribe failed with status " + std::to_string(response->status);
         return false;
     }
@@ -748,18 +914,18 @@ bool SourceHttpBrokerAdapter::sendSubscribe(std::string& errorMessage, std::stri
         return false;
     }
 
-    std::vector<int> qosValues{};
-    if (!tryParseQosArray(response->body, qosValues)) {
+    const std::optional<std::vector<int>> qosValues = tryParseQosArray(response->body);
+    if (!qosValues.has_value()) {
         errorMessage = "source subscribe response missing qos array";
         return false;
     }
-    if (qosValues.size() != config_.subscribeTopics.size()) {
+    if (qosValues->size() != config_.subscribeTopics.size()) {
         errorMessage = "source subscribe response qos count mismatch";
         return false;
     }
-    for (std::size_t idx = 0U; idx < qosValues.size(); ++idx) {
-        const int qosValue = qosValues[idx];
-        if (qosValue == 128) {
+    for (std::size_t idx = 0U; idx < qosValues->size(); ++idx) {
+        const int qosValue = (*qosValues)[idx];
+        if (qosValue == k_suback_qos_reject_code) {
             errorMessage =
                 "source subscribe rejected topic index " + std::to_string(idx);
             return false;
@@ -772,18 +938,18 @@ bool SourceHttpBrokerAdapter::sendSubscribe(std::string& errorMessage, std::stri
 
     responseSummary = "subscribe_response status=" + std::to_string(response->status) +
         " packet=" + *packet + " packetid=" + std::to_string(responsePacketId) +
-        " qos=" + qosValuesToText(qosValues) + " body=" + response->body;
+        " qos=" + qosValuesToText(*qosValues) + " body=" + response->body;
 
     return true;
 }
 
-bool SourceHttpBrokerAdapter::sendDisconnect() {
+bool SourceHttpBrokerAdapter::sendDisconnect() const {
     httplib::Client client{config_.brokerHost, static_cast<int>(config_.brokerPort)};
     httplib::Headers headers = makeStandardJsonHeaders();
 
     const std::string payload = "{\"clientId\":\"" + escapeJson(config_.clientId) + "\"}";
     const auto response = client.Put("/disconnect", headers, payload, "application/json");
-    return response && response->status == 204;
+    return response && response->status == k_http_status_no_content;
 }
 
 std::string SourceHttpBrokerAdapter::buildConnectPayload(const SourceHttpBrokerConfig& config,
