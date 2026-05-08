@@ -756,6 +756,8 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
             return;
         }
 
+        message.setRawPayload(request.body);
+
         std::cout << "  source: publish recv topic=" << message.topic()
                   << " qos=" << static_cast<int>(meta.qos)
                   << " retain=" << (meta.retain ? "1" : "0")

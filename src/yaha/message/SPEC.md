@@ -35,9 +35,12 @@ using Value = std::variant<std::string, double>;
 | `qos()` | `Qos () const` | QoS level |
 | `retain()` | `bool () const` | retain flag |
 | `reason()` | `const vector<ReasonEntry>& () const` | reason chain, most-recent first |
+| `rawPayload()` | `const optional<string>& () const` | optional original transport payload for lossless forwarding |
 | `isOn()` | `bool () const noexcept` | true for value == 1.0, "on", "ON", "true" |
 | `addReason(text)` | `void (string)` | prepends entry with auto-generated ISO 8601 UTC timestamp |
 | `addReason(text, ts)` | `void (string, string)` | prepends entry with caller-supplied timestamp |
+| `setRawPayload(payload)` | `void (string)` | stores original transport payload bytes as string |
+| `clearRawPayload()` | `void () noexcept` | removes optional raw payload |
 | `clone()` | `Message () const` | returns a deep copy (value semantics) |
 | `validate(msg)` | `static void (const Message&)` | throws `std::invalid_argument` on invalid message |
 
@@ -45,6 +48,7 @@ using Value = std::variant<std::string, double>;
 
 - Value semantics: `Message` is copyable and movable; pass by `const&` for reading, by value when modifying.
 - Reason list: index 0 is the most recent entry; each `addReason` call inserts at the front.
+- `rawPayload()` is optional and carries exact original payload text when an adapter chooses lossless forwarding.
 - `validate()` rejects: empty topic, ReasonEntry with empty message field.
 - No external dependencies. Header includes only: `<string>`, `<variant>`, `<vector>`, `<cstdint>`.
 

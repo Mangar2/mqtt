@@ -133,6 +133,9 @@ Message BrokerConnectorComponent::toForwardMessage(const Message& message,
     const bool targetRetain = config_.retainPassthrough ? sourceMeta.retain : false;
 
     Message mapped{message.topic(), message.value(), targetQos, targetRetain};
+    if (message.rawPayload().has_value()) {
+        mapped.setRawPayload(*message.rawPayload());
+    }
     for (const auto& reasonEntry : message.reason()) {
         mapped.addReason(reasonEntry.message, reasonEntry.timestamp);
     }

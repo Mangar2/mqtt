@@ -5,7 +5,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -16,6 +15,13 @@
 #include <vector>
 
 namespace {
+
+constexpr int k_wait_timeout_ms{500};
+constexpr int k_keep_alive_ms{10};
+constexpr int k_loop_sleep_ms{5};
+constexpr double k_temperature_21_5{21.5};
+constexpr double k_temperature_20_0{20.0};
+constexpr int k_non_std_exception_value{7};
 
 bool waitUntil(const std::function<bool()>& condition,
                const std::chrono::milliseconds timeout,
@@ -140,14 +146,15 @@ private:
 
 } // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("receiver_publish_port_start_publish_and_close", "[broker_connector]") {
     TransportState transportState{};
     transportState.connectResult = true;
 
     yaha::ReceiverMqttBrokerConfig config{};
     config.enableLifecycleTrace = false;
-    config.keepAliveInterval = std::chrono::milliseconds{10};
-    config.loopSleep = std::chrono::milliseconds{5};
+    config.keepAliveInterval = std::chrono::milliseconds{k_keep_alive_ms};
+    config.loopSleep = std::chrono::milliseconds{k_loop_sleep_ms};
 
     yaha::ReceiverMqttPublishPort port{config, makeFakeTransport(transportState)};
 
@@ -156,9 +163,9 @@ TEST_CASE("receiver_publish_port_start_publish_and_close", "[broker_connector]")
 
     REQUIRE(waitUntil([&port]() {
         return port.isConnected();
-    }, std::chrono::milliseconds{500}));
+    }, std::chrono::milliseconds{k_wait_timeout_ms}));
 
-    yaha::Message message{"home/sensor/temp", 21.5, yaha::Qos::AtMostOnce, false};
+    yaha::Message message{"home/sensor/temp", k_temperature_21_5, yaha::Qos::AtMostOnce, false};
     yaha::ReceiverPublishOptions options{};
     options.qos = yaha::Qos::ExactlyOnce;
     options.retain = true;
@@ -185,15 +192,15 @@ TEST_CASE("receiver_publish_port_disconnected_publish_returns_false", "[broker_c
 
     yaha::ReceiverMqttBrokerConfig config{};
     config.enableLifecycleTrace = false;
-    config.reconnectDelay = std::chrono::milliseconds{5};
-    config.loopSleep = std::chrono::milliseconds{5};
+    config.reconnectDelay = std::chrono::milliseconds{k_loop_sleep_ms};
+    config.loopSleep = std::chrono::milliseconds{k_loop_sleep_ms};
 
     yaha::ReceiverMqttPublishPort port{config, makeFakeTransport(transportState)};
 
     std::string errorMessage{};
     REQUIRE(port.start(errorMessage));
 
-    yaha::Message message{"home/sensor/temp", 21.5};
+    yaha::Message message{"home/sensor/temp", k_temperature_21_5};
     yaha::ReceiverPublishOptions options{};
     REQUIRE_FALSE(port.publish(message, options, errorMessage));
     REQUIRE(errorMessage.find("receiver publish failed") != std::string::npos);
@@ -211,7 +218,7 @@ TEST_CASE("receiver_publish_port_publish_before_start_returns_false", "[broker_c
     yaha::ReceiverMqttPublishPort port{config, makeFakeTransport(transportState)};
 
     std::string errorMessage{};
-    yaha::Message message{"home/sensor/temp", 20.0};
+    yaha::Message message{"home/sensor/temp", k_temperature_20_0};
     yaha::ReceiverPublishOptions options{};
     REQUIRE_FALSE(port.publish(message, options, errorMessage));
     REQUIRE(errorMessage == "receiver publish runtime not started");
@@ -219,6 +226,7 @@ TEST_CASE("receiver_publish_port_publish_before_start_returns_false", "[broker_c
     port.close();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("receiver_publish_port_start_is_idempotent_and_preserves_reason", "[broker_connector]") {
     TransportState transportState{};
     transportState.connectResult = true;
@@ -233,10 +241,11 @@ TEST_CASE("receiver_publish_port_start_is_idempotent_and_preserves_reason", "[br
 
     REQUIRE(waitUntil([&port]() {
         return port.isConnected();
-    }, std::chrono::milliseconds{500}));
+    }, std::chrono::milliseconds{k_wait_timeout_ms}));
 
     yaha::Message message{"home/sensor/temp", std::string{"ok"}, yaha::Qos::AtLeastOnce, false};
     message.addReason("updated", "2026-05-01T12:00:00Z");
+    message.setRawPayload("{\"token\":\"send-token\",\"message\":{\"topic\":\"home/sensor/temp\",\"value\":\"ok\",\"reason\":[{\"message\":\"updated\",\"timestamp\":\"2026-05-01T12:00:00Z\"}]}}");
 
     yaha::ReceiverPublishOptions options{};
     options.qos = yaha::Qos::AtLeastOnce;
@@ -248,11 +257,15 @@ TEST_CASE("receiver_publish_port_start_is_idempotent_and_preserves_reason", "[br
         REQUIRE_FALSE(transportState.publishedMessages.empty());
         REQUIRE(transportState.publishedMessages.back().reason().size() == 1U);
         REQUIRE(transportState.publishedMessages.back().reason().front().message == "updated");
+        REQUIRE(transportState.publishedMessages.back().rawPayload().has_value());
+        REQUIRE(*transportState.publishedMessages.back().rawPayload() ==
+            "{\"token\":\"send-token\",\"message\":{\"topic\":\"home/sensor/temp\",\"value\":\"ok\",\"reason\":[{\"message\":\"updated\",\"timestamp\":\"2026-05-01T12:00:00Z\"}]}}");
     }
 
     port.close();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("relay_component_forwards_message_with_mapped_options", "[broker_connector]") {
     struct PublishSink {
         std::vector<yaha::Message> messages{};
@@ -291,6 +304,7 @@ TEST_CASE("relay_component_forwards_message_with_mapped_options", "[broker_conne
 
     yaha::Message sourceMessage{"home/door/state", std::string{"open"}, yaha::Qos::ExactlyOnce, true};
     sourceMessage.addReason("src-reason", "2026-05-01T12:00:00Z");
+    sourceMessage.setRawPayload("{\"token\":\"send-token\",\"message\":{\"topic\":\"home/door/state\",\"value\":\"open\",\"reason\":[{\"message\":\"src-reason\",\"timestamp\":\"2026-05-01T12:00:00Z\"}]}}");
 
     REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
     REQUIRE(sink.callCount == 1);
@@ -299,6 +313,9 @@ TEST_CASE("relay_component_forwards_message_with_mapped_options", "[broker_conne
     REQUIRE(sink.messages.front().retain());
     REQUIRE(sink.messages.front().reason().size() == 1U);
     REQUIRE(sink.messages.front().reason().front().message == "src-reason");
+    REQUIRE(sink.messages.front().rawPayload().has_value());
+    REQUIRE(*sink.messages.front().rawPayload() ==
+        "{\"token\":\"send-token\",\"message\":{\"topic\":\"home/door/state\",\"value\":\"open\",\"reason\":[{\"message\":\"src-reason\",\"timestamp\":\"2026-05-01T12:00:00Z\"}]}}");
 
     const yaha::RelayCounters counters = component.getStats();
     REQUIRE(counters.received == 1U);
@@ -313,7 +330,8 @@ TEST_CASE("relay_component_retries_then_succeeds", "[broker_connector]") {
         std::vector<bool> outcomes{};
         int callCount{0};
 
-        void publish(const yaha::Message&) {
+        void publish(const yaha::Message& message) {
+            (void)message;
             callCount += 1;
             const bool outcome = outcomes.front();
             outcomes.erase(outcomes.begin());
@@ -353,7 +371,8 @@ TEST_CASE("relay_component_counts_failed_after_retry_budget", "[broker_connector
     struct PublishSink {
         int callCount{0};
 
-        void publish(const yaha::Message&) {
+        void publish(const yaha::Message& message) {
+            (void)message;
             callCount += 1;
             throw std::runtime_error{"publish failed"};
         }
@@ -402,6 +421,7 @@ TEST_CASE("relay_component_rejects_when_not_running", "[broker_connector]") {
     REQUIRE(counters.failed == 0U);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("relay_component_supports_passthrough_qos_with_backoff", "[broker_connector]") {
     struct PublishSink {
         std::vector<yaha::Message> messages{};
@@ -458,7 +478,7 @@ TEST_CASE("relay_component_with_source_adapter_covers_lifecycle_and_reason_copy"
     component.handleMessage(yaha::Message{"ignored/topic", std::string{"value"}});
 
     component.setPublishCallback([](const yaha::Message&) {
-        throw 7;
+        throw k_non_std_exception_value;
     });
 
     component.run();
@@ -520,7 +540,7 @@ TEST_CASE("relay_component_retries_on_non_std_exception", "[broker_connector]") 
     component.setPublishCallback([&callCount](const yaha::Message&) {
         callCount += 1;
         if (callCount == 1) {
-            throw 7;
+            throw k_non_std_exception_value;
         }
     });
     component.run();

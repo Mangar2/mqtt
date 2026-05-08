@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -30,11 +31,14 @@ public:
     [[nodiscard]] Qos                             qos()    const noexcept;
     [[nodiscard]] bool                            retain() const noexcept;
     [[nodiscard]] const std::vector<ReasonEntry>& reason() const noexcept;
+    [[nodiscard]] const std::optional<std::string>& rawPayload() const noexcept;
 
     [[nodiscard]] bool isOn() const noexcept;
 
     void addReason(std::string text);
     void addReason(std::string text, std::string timestamp);
+    void setRawPayload(std::string payload);
+    void clearRawPayload() noexcept;
 
     [[nodiscard]] Message clone() const;
 
@@ -46,6 +50,7 @@ private:
     Qos                      qos_;
     bool                     retain_;
     std::vector<ReasonEntry> reason_;
+    std::optional<std::string> raw_payload_;
 };
 
 } // namespace yaha

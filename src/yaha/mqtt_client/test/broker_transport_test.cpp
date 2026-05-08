@@ -12,6 +12,7 @@
 #include "network/stream_buffer.h"
 #include "network/tcp_listener.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -21,12 +22,34 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <type_traits>
+#include <variant>
 #include <vector>
 
 namespace {
 
+constexpr std::size_t k_read_buffer_size{2048U};
+constexpr std::uint16_t k_server_pubrel_packet_id{77U};
+constexpr std::uint16_t k_server_number_packet_id{101U};
+constexpr std::uint16_t k_server_text_packet_id{102U};
+constexpr std::uint16_t k_server_forwarded_packet_id{103U};
+constexpr int k_keep_alive_seconds{5};
+constexpr double k_outgoing_qos2_value{42.0};
+constexpr std::uint32_t k_fake_read_timeout_ms{100U};
+constexpr int k_poll_deadline_ms{1000};
+
+const std::string k_forwarded_inbound_payload =
+    "{\"token\":\"abc\",\"message\":{\"topic\":\"transport/forwarded\",\"value\":\"sensor\",\"reason\":[{\"message\":\"src\",\"timestamp\":\"2026-05-08T10:00:00Z\"}]}}";
+const std::string k_forwarded_outbound_payload =
+    "{\"token\":\"forward\",\"message\":{\"topic\":\"out/raw\",\"value\":\"keep\",\"reason\":[{\"message\":\"why\",\"timestamp\":\"2026-05-08T10:00:00Z\"}]}}";
+
 class FakeBrokerForTransportTest {
 public:
+    struct PublishedRecord {
+        std::string topic{};
+        std::string payload{};
+    };
+
     FakeBrokerForTransportTest() = default;
 
     ~FakeBrokerForTransportTest() {
@@ -71,12 +94,17 @@ public:
         return listener_->port();
     }
 
+    [[nodiscard]] std::vector<PublishedRecord> publishedRecords() const {
+        std::lock_guard<std::mutex> lock{published_records_mutex_};
+        return published_records_;
+    }
+
 private:
     static std::optional<mqtt::AnyPacket> read_next_packet(
         mqtt::TcpConnection& connection,
         mqtt::StreamBuffer& stream_buffer,
         const std::uint32_t timeout_ms) {
-        std::array<std::uint8_t, 2048U> read_buffer{};
+        std::array<std::uint8_t, k_read_buffer_size> read_buffer{};
 
         while (true) {
             if (stream_buffer.has_complete_packet()) {
@@ -195,6 +223,111 @@ private:
         return connection.write(std::span<const std::uint8_t>(frame.data(), frame.size()));
     }
 
+    [[nodiscard]] static bool handle_subscribe_packet(mqtt::TcpConnection& connection,
+                                                      const mqtt::SubscribePacket& subscribe_packet) {
+        if (!send_suback(connection, subscribe_packet.packet_id)) {
+            return false;
+        }
+
+        if (!send_pingresp(connection)) {
+            return false;
+        }
+        if (!send_pubrel(connection, k_server_pubrel_packet_id)) {
+            return false;
+        }
+        if (!send_publish(connection,
+                          "transport/number",
+                          "12.5",
+                          mqtt::QoS::AtLeastOnce,
+                          k_server_number_packet_id)) {
+            return false;
+        }
+        if (!send_publish(connection,
+                          "transport/text",
+                          "hello",
+                          mqtt::QoS::ExactlyOnce,
+                          k_server_text_packet_id)) {
+            return false;
+        }
+        if (!send_publish(connection,
+                          "transport/empty",
+                          "",
+                          mqtt::QoS::AtMostOnce,
+                          std::nullopt)) {
+            return false;
+        }
+        if (!send_publish(connection,
+                          "transport/forwarded",
+                          k_forwarded_inbound_payload,
+                          mqtt::QoS::AtLeastOnce,
+                          k_server_forwarded_packet_id)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    void store_published_record(const mqtt::PublishPacket& publish_packet) {
+        PublishedRecord publishedRecord{};
+        publishedRecord.topic = publish_packet.topic.value;
+        publishedRecord.payload.assign(publish_packet.payload.data.begin(),
+                                       publish_packet.payload.data.end());
+        std::lock_guard<std::mutex> lock{published_records_mutex_};
+        published_records_.push_back(std::move(publishedRecord));
+    }
+
+    [[nodiscard]] static bool acknowledge_publish_if_needed(mqtt::TcpConnection& connection,
+                                                             const mqtt::PublishPacket& publish_packet) {
+        if (!publish_packet.packet_id.has_value()) {
+            return true;
+        }
+
+        if (publish_packet.qos == mqtt::QoS::AtLeastOnce) {
+            return send_puback(connection, *publish_packet.packet_id);
+        }
+        if (publish_packet.qos == mqtt::QoS::ExactlyOnce) {
+            return send_pubrec(connection, *publish_packet.packet_id);
+        }
+
+        return true;
+    }
+
+    bool handle_packet(mqtt::TcpConnection& connection,
+                       const mqtt::AnyPacket& packet,
+                       bool& active) {
+        return std::visit(
+            [this, &connection, &active](const auto& concretePacket) -> bool {
+                using PacketType = std::decay_t<decltype(concretePacket)>;
+
+                if constexpr (std::is_same_v<PacketType, mqtt::ConnectPacket>) {
+                    return send_connack(connection);
+                }
+                if constexpr (std::is_same_v<PacketType, mqtt::SubscribePacket>) {
+                    return handle_subscribe_packet(connection, concretePacket);
+                }
+                if constexpr (std::is_same_v<PacketType, mqtt::UnsubscribePacket>) {
+                    return send_unsuback(connection, concretePacket.packet_id);
+                }
+                if constexpr (std::is_same_v<PacketType, mqtt::PublishPacket>) {
+                    store_published_record(concretePacket);
+                    return acknowledge_publish_if_needed(connection, concretePacket);
+                }
+                if constexpr (std::is_same_v<PacketType, mqtt::PubrelPacket>) {
+                    return send_pubcomp(connection, concretePacket.packet_id);
+                }
+                if constexpr (std::is_same_v<PacketType, mqtt::PingreqPacket>) {
+                    return send_pingresp(connection);
+                }
+                if constexpr (std::is_same_v<PacketType, mqtt::DisconnectPacket>) {
+                    active = false;
+                    connection.close();
+                    return true;
+                }
+                return true;
+            },
+            packet);
+    }
+
     void handle_client(std::unique_ptr<mqtt::TcpConnection> connection) {
         if (connection == nullptr) {
             return;
@@ -205,101 +338,13 @@ private:
 
         while (active && running_.load()) {
             const std::optional<mqtt::AnyPacket> maybe_packet =
-                read_next_packet(*connection, stream_buffer, 100U);
+                read_next_packet(*connection, stream_buffer, k_fake_read_timeout_ms);
             if (!maybe_packet.has_value()) {
                 continue;
             }
 
-            if (std::holds_alternative<mqtt::ConnectPacket>(*maybe_packet)) {
-                if (!send_connack(*connection)) {
-                    break;
-                }
-                continue;
-            }
-
-            if (std::holds_alternative<mqtt::SubscribePacket>(*maybe_packet)) {
-                const mqtt::SubscribePacket& subscribe_packet =
-                    std::get<mqtt::SubscribePacket>(*maybe_packet);
-                if (!send_suback(*connection, subscribe_packet.packet_id)) {
-                    break;
-                }
-
-                if (!send_pingresp(*connection)) {
-                    break;
-                }
-                if (!send_pubrel(*connection, 77U)) {
-                    break;
-                }
-                if (!send_publish(*connection,
-                                  "transport/number",
-                                  "12.5",
-                                  mqtt::QoS::AtLeastOnce,
-                                  101U)) {
-                    break;
-                }
-                if (!send_publish(*connection,
-                                  "transport/text",
-                                  "hello",
-                                  mqtt::QoS::ExactlyOnce,
-                                  102U)) {
-                    break;
-                }
-                if (!send_publish(*connection,
-                                  "transport/empty",
-                                  "",
-                                  mqtt::QoS::AtMostOnce,
-                                  std::nullopt)) {
-                    break;
-                }
-                continue;
-            }
-
-            if (std::holds_alternative<mqtt::UnsubscribePacket>(*maybe_packet)) {
-                const mqtt::UnsubscribePacket& unsubscribe_packet =
-                    std::get<mqtt::UnsubscribePacket>(*maybe_packet);
-                if (!send_unsuback(*connection, unsubscribe_packet.packet_id)) {
-                    break;
-                }
-                continue;
-            }
-
-            if (std::holds_alternative<mqtt::PublishPacket>(*maybe_packet)) {
-                const mqtt::PublishPacket& publish_packet =
-                    std::get<mqtt::PublishPacket>(*maybe_packet);
-                if (publish_packet.qos == mqtt::QoS::AtLeastOnce &&
-                    publish_packet.packet_id.has_value()) {
-                    if (!send_puback(*connection, *publish_packet.packet_id)) {
-                        break;
-                    }
-                }
-                if (publish_packet.qos == mqtt::QoS::ExactlyOnce &&
-                    publish_packet.packet_id.has_value()) {
-                    if (!send_pubrec(*connection, *publish_packet.packet_id)) {
-                        break;
-                    }
-                }
-                continue;
-            }
-
-            if (std::holds_alternative<mqtt::PubrelPacket>(*maybe_packet)) {
-                const mqtt::PubrelPacket& pubrel_packet =
-                    std::get<mqtt::PubrelPacket>(*maybe_packet);
-                if (!send_pubcomp(*connection, pubrel_packet.packet_id)) {
-                    break;
-                }
-                continue;
-            }
-
-            if (std::holds_alternative<mqtt::PingreqPacket>(*maybe_packet)) {
-                if (!send_pingresp(*connection)) {
-                    break;
-                }
-                continue;
-            }
-
-            if (std::holds_alternative<mqtt::DisconnectPacket>(*maybe_packet)) {
-                active = false;
-                connection->close();
+            if (!handle_packet(*connection, *maybe_packet, active)) {
+                break;
             }
         }
     }
@@ -329,10 +374,13 @@ private:
     std::thread accept_thread_{};
     std::mutex client_threads_mutex_{};
     std::vector<std::thread> client_threads_{};
+    mutable std::mutex published_records_mutex_{};
+    std::vector<PublishedRecord> published_records_{};
 };
 
 } // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
           "[mqtt_client]") {
     FakeBrokerForTransportTest fake_broker{};
@@ -344,7 +392,7 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
     config.brokerHost = "127.0.0.1";
     config.brokerPort = fake_broker.port();
     config.clientId = "transport-test-client";
-    config.keepAliveInterval = std::chrono::seconds{5};
+    config.keepAliveInterval = std::chrono::seconds{k_keep_alive_seconds};
 
     REQUIRE(transport.connect(config));
     REQUIRE(transport.isConnected());
@@ -352,15 +400,16 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
     transport.subscribe("transport/#", yaha::Qos::AtLeastOnce);
 
     std::vector<yaha::Message> received_messages{};
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{1000};
-    while (received_messages.size() < 3U && std::chrono::steady_clock::now() < deadline) {
+    const auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds{k_poll_deadline_ms};
+    while (received_messages.size() < 4U && std::chrono::steady_clock::now() < deadline) {
         const std::optional<yaha::Message> maybe_message = transport.pollIncoming();
         if (maybe_message.has_value()) {
             received_messages.push_back(*maybe_message);
         }
     }
 
-    REQUIRE(received_messages.size() == 3U);
+    REQUIRE(received_messages.size() == 4U);
     CHECK(received_messages[0].topic() == "transport/number");
     REQUIRE(std::holds_alternative<double>(received_messages[0].value()));
 
@@ -372,13 +421,32 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
     REQUIRE(std::holds_alternative<std::string>(received_messages[2].value()));
     CHECK(std::get<std::string>(received_messages[2].value()).empty());
 
+    CHECK(received_messages[3].topic() == "transport/forwarded");
+    REQUIRE(std::holds_alternative<std::string>(received_messages[3].value()));
+    CHECK(std::get<std::string>(received_messages[3].value()) == k_forwarded_inbound_payload);
+    CHECK(received_messages[3].reason().empty());
+    REQUIRE(received_messages[3].rawPayload().has_value());
+    CHECK(*received_messages[3].rawPayload() == k_forwarded_inbound_payload);
+
     transport.publish(yaha::Message{"out/qos0", std::string{"a"}, yaha::Qos::AtMostOnce, false});
     transport.publish(yaha::Message{"out/qos1", std::string{"b"}, yaha::Qos::AtLeastOnce, true});
-    transport.publish(yaha::Message{"out/qos2", 42.0, yaha::Qos::ExactlyOnce, false});
+    transport.publish(yaha::Message{"out/qos2", k_outgoing_qos2_value, yaha::Qos::ExactlyOnce, false});
+    yaha::Message rawPublish{"out/raw", std::string{"fallback"}, yaha::Qos::AtLeastOnce, false};
+    rawPublish.setRawPayload(k_forwarded_outbound_payload);
+    transport.publish(rawPublish);
 
     transport.ping();
     transport.unsubscribe("transport/#");
     transport.disconnect();
+
+    const auto publishedRecords = fake_broker.publishedRecords();
+    REQUIRE(publishedRecords.size() >= 4U);
+    const auto rawRecord = std::find_if(publishedRecords.begin(), publishedRecords.end(),
+                                        [](const auto& item) {
+        return item.topic == "out/raw";
+    });
+    REQUIRE(rawRecord != publishedRecords.end());
+    CHECK(rawRecord->payload == k_forwarded_outbound_payload);
 
     CHECK_FALSE(transport.isConnected());
 

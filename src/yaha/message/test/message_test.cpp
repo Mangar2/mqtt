@@ -9,6 +9,13 @@ using yaha::Qos;
 using yaha::ReasonEntry;
 using yaha::Value;
 
+namespace {
+
+constexpr double k_temperature_21_5{21.5};
+constexpr double k_is_on_non_matching_value{2.0};
+
+} // namespace
+
 TEST_CASE("Message construction with string value", "[message]") {
     Message msg{"home/light", std::string{"on"}};
 
@@ -20,14 +27,15 @@ TEST_CASE("Message construction with string value", "[message]") {
 }
 
 TEST_CASE("Message construction with double value", "[message]") {
-    Message msg{"sensor/temp", 21.5, Qos::ExactlyOnce, true};
+    Message msg{"sensor/temp", k_temperature_21_5, Qos::ExactlyOnce, true};
 
     REQUIRE(msg.topic() == "sensor/temp");
-    REQUIRE(std::get<double>(msg.value()) == 21.5);
+    REQUIRE(std::get<double>(msg.value()) == k_temperature_21_5);
     REQUIRE(msg.qos() == Qos::ExactlyOnce);
     REQUIRE(msg.retain());
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("Message isOn string values", "[message]") {
     REQUIRE(Message{"t", std::string{"on"}}.isOn());
     REQUIRE(Message{"t", std::string{"ON"}}.isOn());
@@ -43,7 +51,7 @@ TEST_CASE("Message isOn double values", "[message]") {
     REQUIRE(Message{"t", 1.0}.isOn());
 
     REQUIRE_FALSE(Message{"t", 0.0}.isOn());
-    REQUIRE_FALSE(Message{"t", 2.0}.isOn());
+    REQUIRE_FALSE(Message{"t", k_is_on_non_matching_value}.isOn());
     REQUIRE_FALSE(Message{"t", -1.0}.isOn());
 }
 
@@ -88,6 +96,23 @@ TEST_CASE("Message clone is independent copy", "[message]") {
 
     REQUIRE(copy.reason().size()     == 2U);
     REQUIRE(original.reason().size() == 1U);
+}
+
+TEST_CASE("Message raw payload can be stored copied and cleared", "[message]") {
+    Message original{"topic/raw", std::string{"payload"}};
+    original.setRawPayload("{\"token\":\"abc\",\"message\":{\"topic\":\"topic/raw\",\"value\":\"payload\"}}");
+
+    REQUIRE(original.rawPayload().has_value());
+    REQUIRE(*original.rawPayload() ==
+            "{\"token\":\"abc\",\"message\":{\"topic\":\"topic/raw\",\"value\":\"payload\"}}");
+
+    Message cloned = original.clone();
+    REQUIRE(cloned.rawPayload().has_value());
+    REQUIRE(*cloned.rawPayload() == *original.rawPayload());
+
+    cloned.clearRawPayload();
+    REQUIRE_FALSE(cloned.rawPayload().has_value());
+    REQUIRE(original.rawPayload().has_value());
 }
 
 TEST_CASE("Message validate passes for valid message", "[message]") {

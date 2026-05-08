@@ -4,11 +4,12 @@
 #include <ctime>
 #include <stdexcept>
 #include <type_traits>
-#include <type_traits>
 
 namespace yaha {
 
 namespace {
+
+constexpr std::size_t k_iso_timestamp_buffer_size{32U};
 
 std::string current_iso_timestamp() {
     auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -18,7 +19,7 @@ std::string current_iso_timestamp() {
     if (ptr != nullptr) {
         utc = *ptr;
     }
-    char buf[32];
+    char buf[k_iso_timestamp_buffer_size];
     std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &utc);
     return std::string{buf};
 }
@@ -37,6 +38,7 @@ Qos                Message::qos()    const noexcept { return qos_; }
 bool               Message::retain() const noexcept { return retain_; }
 
 const std::vector<ReasonEntry>& Message::reason() const noexcept { return reason_; }
+const std::optional<std::string>& Message::rawPayload() const noexcept { return raw_payload_; }
 
 bool Message::isOn() const noexcept {
     return std::visit([](const auto& val) -> bool {
@@ -56,6 +58,14 @@ void Message::addReason(std::string text) {
 void Message::addReason(std::string text, std::string timestamp) {
     reason_.insert(reason_.begin(),
                    ReasonEntry{std::move(text), std::move(timestamp)});
+}
+
+void Message::setRawPayload(std::string payload) {
+    raw_payload_ = std::move(payload);
+}
+
+void Message::clearRawPayload() noexcept {
+    raw_payload_.reset();
 }
 
 Message Message::clone() const {

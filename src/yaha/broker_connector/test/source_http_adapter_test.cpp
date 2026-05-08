@@ -393,6 +393,9 @@ TEST_CASE("source_adapter_connect_subscribe_and_callback_publish", "[broker_conn
         REQUIRE(callbackMessages.front().reason().size() == 1U);
         REQUIRE(callbackMessages.front().reason().front().message == "sensor update");
         REQUIRE(callbackMessages.front().reason().front().timestamp == "2026-05-08T10:00:00Z");
+        REQUIRE(callbackMessages.front().rawPayload().has_value());
+        REQUIRE(*callbackMessages.front().rawPayload() ==
+            "{\"token\":\"send-token\",\"message\":{\"topic\":\"home/kitchen/temp\",\"value\":21.5,\"reason\":[{\"message\":\"sensor update\",\"timestamp\":\"2026-05-08T10:00:00Z\"}]}}");
         REQUIRE(callbackMeta.size() == 1U);
         REQUIRE(callbackMeta.front().qos == yaha::Qos::AtLeastOnce);
         REQUIRE(callbackMeta.front().packetId.has_value());

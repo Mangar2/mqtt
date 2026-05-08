@@ -2,7 +2,6 @@
 
 #include "client/connection_negotiator.h"
 #include "client_api/client_config.h"
-#include "codec/packet/connect_codec.h"
 #include "codec/packet/control_codec.h"
 #include "codec/packet/publish_codec.h"
 #include "codec/packet/subscribe_codec.h"
@@ -12,8 +11,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -26,6 +27,11 @@
 namespace yaha {
 
 namespace {
+
+constexpr std::uint32_t k_connect_timeout_ms{5000U};
+constexpr std::uint32_t k_ack_timeout_ms{5000U};
+constexpr std::uint32_t k_poll_timeout_ms{20U};
+constexpr std::size_t k_receive_buffer_size{4096U};
 
 mqtt::QoS toMqttQos(const Qos qos) {
     switch (qos) {
@@ -54,7 +60,7 @@ Qos toYahaQos(const mqtt::QoS qos) {
 }
 
 Value decodePayloadValue(const mqtt::BinaryData& payload) {
-    const std::string text(payload.data.begin(), payload.data.end());
+    std::string text(payload.data.begin(), payload.data.end());
     if (text.empty()) {
         return std::string{};
     }
@@ -97,7 +103,7 @@ public:
 
         connection_ = std::make_unique<mqtt::TcpConnection>(
             mqtt::ConnectionNegotiator::dial_tcp(config.brokerHost, config.brokerPort));
-        (void)mqtt::ConnectionNegotiator::negotiate(*connection_, connectPacket, 5000U);
+        (void)mqtt::ConnectionNegotiator::negotiate(*connection_, connectPacket, k_connect_timeout_ms);
 
         streamBuffer_ = mqtt::StreamBuffer{};
         connected_ = true;
@@ -117,9 +123,13 @@ public:
 
         mqtt::PublishPacket packet{};
         packet.topic = mqtt::Utf8String{message.topic()};
-        packet.payload = std::holds_alternative<std::string>(message.value())
-            ? mqtt::BinaryData::from_string(std::get<std::string>(message.value()))
-            : mqtt::BinaryData::from_string(std::to_string(std::get<double>(message.value())));
+        if (message.rawPayload().has_value()) {
+            packet.payload = mqtt::BinaryData::from_string(*message.rawPayload());
+        } else {
+            packet.payload = std::holds_alternative<std::string>(message.value())
+                ? mqtt::BinaryData::from_string(std::get<std::string>(message.value()))
+                : mqtt::BinaryData::from_string(std::to_string(std::get<double>(message.value())));
+        }
         packet.qos = toMqttQos(message.qos());
         packet.retain = message.retain();
         if (packet.qos != mqtt::QoS::AtMostOnce) {
@@ -160,7 +170,7 @@ public:
         }
 
         try {
-            const std::optional<mqtt::AnyPacket> maybePacket = readNextPacketLocked(5000U);
+            const std::optional<mqtt::AnyPacket> maybePacket = readNextPacketLocked(k_ack_timeout_ms);
             if (!maybePacket.has_value() || !std::holds_alternative<mqtt::SubackPacket>(*maybePacket)) {
                 disconnectLocked();
             }
@@ -190,7 +200,7 @@ public:
         }
 
         try {
-            const std::optional<mqtt::AnyPacket> maybePacket = readNextPacketLocked(5000U);
+            const std::optional<mqtt::AnyPacket> maybePacket = readNextPacketLocked(k_ack_timeout_ms);
             if (!maybePacket.has_value() || !std::holds_alternative<mqtt::UnsubackPacket>(*maybePacket)) {
                 disconnectLocked();
             }
@@ -207,7 +217,7 @@ public:
 
         std::optional<mqtt::AnyPacket> maybePacket{};
         try {
-            maybePacket = readNextPacketLocked(20U);
+            maybePacket = readNextPacketLocked(k_poll_timeout_ms);
         } catch (...) {
             disconnectLocked();
             return std::nullopt;
@@ -256,12 +266,10 @@ public:
             }
         }
 
-        return Message{
-            packet.topic.value,
-            decodePayloadValue(packet.payload),
-            toYahaQos(packet.qos),
-            packet.retain
-        };
+        const Qos qosLevel = toYahaQos(packet.qos);
+        Message incomingMessage{packet.topic.value, decodePayloadValue(packet.payload), qosLevel, packet.retain};
+        incomingMessage.setRawPayload(std::string(packet.payload.data.begin(), packet.payload.data.end()));
+        return incomingMessage;
     }
 
     void ping() {
@@ -288,7 +296,7 @@ private:
             return std::nullopt;
         }
 
-        std::array<std::uint8_t, 4096U> receiveBuffer{};
+        std::array<std::uint8_t, k_receive_buffer_size> receiveBuffer{};
 
         while (true) {
             if (streamBuffer_.has_complete_packet()) {

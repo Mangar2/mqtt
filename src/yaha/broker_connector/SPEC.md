@@ -158,6 +158,7 @@ Ack behavior for callback listener:
 
 Incoming callback payload is normalized to YAHA `Message` and `SourcePublishMeta`.
 If callback payload contains a `reason` field, reason entries are mapped into `Message.reason()` and forwarded unchanged through relay + receiver publish port.
+The original callback JSON body is additionally preserved in `Message.rawPayload()` and forwarded unchanged to the receiver broker publish path.
 
 ## Runtime behavior
 

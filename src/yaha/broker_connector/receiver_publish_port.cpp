@@ -144,6 +144,9 @@ ReceiverMqttPublishPort::toClientConfig(const ReceiverMqttBrokerConfig& config) 
 Message ReceiverMqttPublishPort::applyPublishOptions(const Message& message,
                                                      const ReceiverPublishOptions& options) {
     Message mapped{message.topic(), message.value(), options.qos, options.retain};
+    if (message.rawPayload().has_value()) {
+        mapped.setRawPayload(*message.rawPayload());
+    }
     for (const auto& reasonEntry : message.reason()) {
         mapped.addReason(reasonEntry.message, reasonEntry.timestamp);
     }
