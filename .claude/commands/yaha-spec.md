@@ -13,6 +13,11 @@ Only code counts.
 Use only executable code files as source of truth.
 Ignore README, CODE_README, CHANGELOG, docs, comments, and any documentation text outside executable code.
 
+Spec must reproduce source capabilities fully.
+Spec must preserve source behavior unchanged in all aspects.
+No source feature may be omitted.
+No source behavior may be weakened, expanded, or reinterpreted.
+
 If documentation conflicts with code, code wins always.
 If documentation adds behavior not present in code, do not include it in spec.
 If code is unclear, mark as open question instead of guessing from docs.
@@ -132,6 +137,8 @@ After writing:
 2. Check: does every section answer "what" and "why", not "how"?
 3. Check: are all cross-cutting concerns moved to their own SPEC files and only referenced here?
 4. Check: is the standalone-program structure clear — how main composes mqtt client + component?
+5. Check full source code again against final spec.
+6. Verify there is not one single source property, behavior, interface, topic, data field, persistence rule, config rule, or error case missing from spec.
 
 ### Step 5 — Output to user
 

@@ -10,6 +10,9 @@
 
 namespace {
 
+constexpr double k_upper_bound_factor{1.7};
+constexpr double k_lower_bound_factor{0.6};
+
 std::filesystem::path makeTempDirectory() {
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto path = std::filesystem::temp_directory_path() /
@@ -159,6 +162,57 @@ TEST_CASE("load_config_rejects_invalid_numeric_fields", "[message_store_client]"
 
     REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
     REQUIRE(errorMessage.find("mqtt.port") != std::string::npos);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("load_config_parses_tree_compression_parameters", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[tree]\n"
+        "maxHistoryLength = 70\n"
+        "historyHysterese = 9\n"
+        "maxValuesPerHistoryEntry = 77\n"
+        "lengthForFurtherCompression = 8\n"
+        "upperBoundFactor = 1.7\n"
+        "upperBoundAddInMilliseconds = 2500\n"
+        "lowerBoundFactor = 0.6\n"
+        "lowerBoundSubInMilliseconds = 1500\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(config.storeConfig.treeConfig.maxHistoryLength == 70U);
+    REQUIRE(config.storeConfig.treeConfig.historyHysterese == 9U);
+    REQUIRE(config.storeConfig.treeConfig.maxValuesPerHistoryEntry == 77U);
+    REQUIRE(config.storeConfig.treeConfig.lengthForFurtherCompression == 8U);
+    REQUIRE(config.storeConfig.treeConfig.upperBoundFactor == k_upper_bound_factor);
+    REQUIRE(config.storeConfig.treeConfig.upperBoundAddInMilliseconds == 2500U);
+    REQUIRE(config.storeConfig.treeConfig.lowerBoundFactor == k_lower_bound_factor);
+    REQUIRE(config.storeConfig.treeConfig.lowerBoundSubInMilliseconds == 1500U);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_config_rejects_invalid_tree_factor_values", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[tree]\n"
+        "upperBoundFactor = not-a-number\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.find("tree.upperBoundFactor") != std::string::npos);
 
     removeDirectoryQuiet(tempDir);
 }

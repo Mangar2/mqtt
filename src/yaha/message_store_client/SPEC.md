@@ -36,6 +36,11 @@ Parsing is composed from reusable shared modules:
   - `directory`, `filename`, `intervalMs`, `keepFiles`
 - `[messagestore]`
   - `cleanupTopic`
+- `[tree]`
+  - `maxHistoryLength`, `historyHysterese`, `maxValuesPerHistoryEntry`
+  - `lengthForFurtherCompression`
+  - `upperBoundFactor`, `upperBoundAddInMilliseconds`
+  - `lowerBoundFactor`, `lowerBoundSubInMilliseconds`
 - `[subscription]` (repeatable)
   - `topic` topic filter
   - `qos` (`0`, `1`, `2`)

@@ -66,11 +66,30 @@ struct MessageTreeNode;
   - prefer `message.reason().front().timestamp` when it is a valid ISO-8601 timestamp with timezone,
   - otherwise fallback to current wall-clock from `nowMillisecondsProvider`.
 - Tree and persistence keep timestamps internally as Unix epoch milliseconds (`timeMs`).
-- History is compressed internally by grouping consecutive equal `value` and `reason`.
-- History is decompressed for output APIs.
+- History is compressed internally with original MessageTree-compatible entry types:
+  - `single`: one `{time,value,reason}` entry.
+  - `timeValue`: multiple `{time,value}` entries with equal reason-message chain.
+  - `time`: multiple timestamps with one shared value and equal reason-message chain.
+  - `interval`: regular updates with one shared value, represented by `{firstTime,lastTime,amount}`.
+- Compression grouping uses reason message text equality (timestamp differences in reasons do not break grouping).
+- Internal compressed history order is newest-first.
+- History is decompressed for output APIs in newest-first order.
+- `getSection(..., includeHistory=true, includeReason=false)` keeps history reasons unchanged (legacy behavior);
+  the flag only removes node-level `reason`.
+- `interval` decompression follows legacy behavior and emits a synthetic reason entry:
+  `regular update, amount: <N>`.
 - Bounded history policy:
-  - trim triggers when decompressed count > `maxHistoryLength`
-  - trim target becomes `maxHistoryLength - historyHysterese`
+  - trim triggers when compressed entry count reaches `maxHistoryLength`
+  - trim target becomes `maxHistoryLength - historyHysterese` (minimum `1`)
+- Additional compression tuning parameters are supported:
+  - `lengthForFurtherCompression`
+  - `upperBoundFactor`
+  - `upperBoundAddInMilliseconds`
+  - `lowerBoundFactor`
+  - `lowerBoundSubInMilliseconds`
+- Legacy compatibility for `lengthForFurtherCompression` is preserved:
+  - configured values `1` and `2` are coerced to `3`,
+  - configured value `0` remains `0`.
 
 ## Query behavior
 
@@ -130,6 +149,7 @@ struct MessageTreeNode;
   - node field `time` (string, ISO-8601 UTC),
   - `history[].time` (string, ISO-8601 UTC),
   - `reason[].timestamp` passthrough from message reasons.
+- `history[]` in HTTP responses is ordered newest-first (`history[0]` is the newest historic entry).
 - HTTP response does not expose internal `timeMs` fields.
 
 ## Files
@@ -137,7 +157,10 @@ struct MessageTreeNode;
 | File | Role |
 |------|------|
 | `message_tree.h` | Public declarations |
-| `message_tree.cpp` | Implementation |
+| `message_tree.cpp` | Core tree implementation (path traversal, query, lifecycle helpers) |
+| `message_tree_compression.cpp` | Original MessageTree-compatible history compression implementation |
+| `iso_timestamp_parser.h` | ISO-8601 timestamp parse/format helper declarations |
+| `iso_timestamp_parser.cpp` | ISO-8601 timestamp parse/format helper implementation |
 | `message_tree_persistence.h` | Persistence declarations |
 | `message_tree_persistence.cpp` | Persistence implementation |
 | `message_store.h` | MessageStore component declarations |

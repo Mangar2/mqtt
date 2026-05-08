@@ -3,13 +3,20 @@
 #include "yaha/ini/ini_document.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
+#include <cerrno>
 #include <cstdint>
+#include <cstdlib>
 #include <optional>
 #include <utility>
 
 namespace yaha {
 
 namespace {
+
+constexpr std::uint64_t k_tree_uint_max{100000U};
+constexpr std::uint64_t k_tree_interval_adjustment_max{100000000U};
+constexpr double k_tree_factor_min{0.0};
+constexpr double k_tree_factor_max{1000.0};
 
 bool tryLoadMessageStoreSubscriptionsFromIni(
     const IniDocument& document,
@@ -64,6 +71,51 @@ bool tryLoadMessageStoreSubscriptionsFromIni(
     }
 
     output = std::move(parsed);
+    return true;
+}
+
+bool tryReadTreeUnsigned(const IniDocument& document,
+                         const std::string& key,
+                         std::uint64_t minValue,
+                         std::uint64_t maxValue,
+                         std::uint32_t& output,
+                         std::string& errorMessage) {
+    const auto readResult = document.readUnsigned("tree", key, minValue, maxValue);
+    if (!readResult.second.empty()) {
+        errorMessage = readResult.second;
+        return false;
+    }
+    if (readResult.first.has_value()) {
+        output = static_cast<std::uint32_t>(*readResult.first);
+    }
+    return true;
+}
+
+bool tryReadTreeDouble(const IniDocument& document,
+                       const std::string& key,
+                       double minValue,
+                       double maxValue,
+                       double& output,
+                       std::string& errorMessage) {
+    const auto configuredValue = document.lastValue("tree", key);
+    if (!configuredValue.has_value()) {
+        return true;
+    }
+
+    errno = 0;
+    char* endPtr = nullptr;
+    const double parsedValue = std::strtod(configuredValue->c_str(), &endPtr);
+    if (endPtr == configuredValue->c_str() || (endPtr != nullptr && *endPtr != '\0')) {
+        errorMessage = "tree." + key + " must be a floating-point number";
+        return false;
+    }
+    if (errno == ERANGE || parsedValue < minValue || parsedValue > maxValue) {
+        errorMessage = "tree." + key + " must be in range ["
+            + std::to_string(minValue) + ", " + std::to_string(maxValue) + "]";
+        return false;
+    }
+
+    output = parsedValue;
     return true;
 }
 
@@ -123,6 +175,71 @@ bool tryLoadMessageStoreConfigFromIni(
     }
     if (keepFilesResult.first.has_value()) {
         output.persistenceConfig.keepFiles = static_cast<std::uint32_t>(*keepFilesResult.first);
+    }
+
+    if (!tryReadTreeUnsigned(document,
+                             "maxHistoryLength",
+                             1U,
+                             k_tree_uint_max,
+                             output.treeConfig.maxHistoryLength,
+                             errorMessage)) {
+        return false;
+    }
+    if (!tryReadTreeUnsigned(document,
+                             "historyHysterese",
+                             0U,
+                             k_tree_uint_max,
+                             output.treeConfig.historyHysterese,
+                             errorMessage)) {
+        return false;
+    }
+    if (!tryReadTreeUnsigned(document,
+                             "maxValuesPerHistoryEntry",
+                             1U,
+                             k_tree_uint_max,
+                             output.treeConfig.maxValuesPerHistoryEntry,
+                             errorMessage)) {
+        return false;
+    }
+    if (!tryReadTreeUnsigned(document,
+                             "lengthForFurtherCompression",
+                             1U,
+                             k_tree_uint_max,
+                             output.treeConfig.lengthForFurtherCompression,
+                             errorMessage)) {
+        return false;
+    }
+    if (!tryReadTreeUnsigned(document,
+                             "upperBoundAddInMilliseconds",
+                             0U,
+                             k_tree_interval_adjustment_max,
+                             output.treeConfig.upperBoundAddInMilliseconds,
+                             errorMessage)) {
+        return false;
+    }
+    if (!tryReadTreeUnsigned(document,
+                             "lowerBoundSubInMilliseconds",
+                             0U,
+                             k_tree_interval_adjustment_max,
+                             output.treeConfig.lowerBoundSubInMilliseconds,
+                             errorMessage)) {
+        return false;
+    }
+    if (!tryReadTreeDouble(document,
+                           "upperBoundFactor",
+                           k_tree_factor_min,
+                           k_tree_factor_max,
+                           output.treeConfig.upperBoundFactor,
+                           errorMessage)) {
+        return false;
+    }
+    if (!tryReadTreeDouble(document,
+                           "lowerBoundFactor",
+                           k_tree_factor_min,
+                           k_tree_factor_max,
+                           output.treeConfig.lowerBoundFactor,
+                           errorMessage)) {
+        return false;
     }
 
     SubscriptionMap parsedSubscriptions{};

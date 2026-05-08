@@ -54,7 +54,7 @@ Returns the current state of one or more nodes from the message tree.
 
 **Request body (optional):** a JSON array of snapshot nodes `[{topic, value, reason}, ...]`. When provided, only nodes whose current state differs from the snapshot are returned (change-detection mode). When omitted, all nodes under the requested topic path up to `levelamount` depth are returned.
 
-**Response:** `200 OK`, `Content-Type: application/json`. Body is a JSON array of message nodes. Each node contains at minimum `topic` and `value`; `time`, `reason`, and `history` are included based on headers.
+**Response:** `200 OK`, `Content-Type: application/json`. Body is a JSON array of message nodes. Each node contains at minimum `topic` and `value`; `time`, `reason`, and `history` are included based on headers. When `history` is included, the list is ordered newest-first (`history[0]` is the newest historic entry).
 
 **Error:** any path that is not the configured store path returns an error. HTTP status code for errors is implementation-defined.
 

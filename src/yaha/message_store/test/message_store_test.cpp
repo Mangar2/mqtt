@@ -571,6 +571,7 @@ TEST_CASE("http_get_store_json_output_escapes_special_characters", "[message_sto
     REQUIRE(response->body.find("line1\\nline2\\r\\t\\\"q\\\"\\\\x") != std::string::npos);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("http_get_store_outputs_iso_time_and_reason_timestamps", "[message_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};
@@ -596,6 +597,11 @@ TEST_CASE("http_get_store_outputs_iso_time_and_reason_timestamps", "[message_sto
     yaha::Message second{"device/state", std::string{"on"}};
     second.addReason("updated", "1970-01-01T00:00:01.250Z");
     store.handleMessage(second);
+
+    yaha::Message third{"device/state", std::string{"auto"}};
+    third.addReason("updated-again", "1970-01-01T00:00:02.000Z");
+    store.handleMessage(third);
+
     store.run();
 
     REQUIRE(waitForHttpReady(config.serverPort));
@@ -605,12 +611,22 @@ TEST_CASE("http_get_store_outputs_iso_time_and_reason_timestamps", "[message_sto
 
     REQUIRE(response != nullptr);
     REQUIRE(response->status == 200);
+    REQUIRE(response->body.find("\"time\":\"1970-01-01T00:00:02.000Z\"") != std::string::npos);
     REQUIRE(response->body.find("\"time\":\"1970-01-01T00:00:01.250Z\"") != std::string::npos);
     REQUIRE(response->body.find("\"time\":\"1970-01-01T00:00:00.500Z\"") != std::string::npos);
-    REQUIRE(response->body.find("\"timestamp\":\"1970-01-01T00:00:01.250Z\"") != std::string::npos);
+    REQUIRE(response->body.find("\"timestamp\":\"1970-01-01T00:00:02.000Z\"") != std::string::npos);
+
+    const std::string newestHistoryPrefix = "\"history\":[{\"time\":\"1970-01-01T00:00:01.250Z\"";
+    const std::size_t newestPosition = response->body.find(newestHistoryPrefix);
+    const std::size_t oldestPosition = response->body.find("\"time\":\"1970-01-01T00:00:00.500Z\"");
+    REQUIRE(newestPosition != std::string::npos);
+    REQUIRE(oldestPosition != std::string::npos);
+    REQUIRE(newestPosition < oldestPosition);
+
     REQUIRE(response->body.find("\"timeMs\":") == std::string::npos);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("http_post_store_sensor_payload_uses_topic_and_query_flags", "[message_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};
@@ -678,6 +694,7 @@ TEST_CASE("http_post_store_sensor_payload_nodes_activates_diff_mode", "[message_
     REQUIRE(response->body.find("\"topic\":\"home/temp\"") == std::string::npos);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("http_post_store_sensor_payload_empty_nodes_uses_section_query", "[message_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};
@@ -714,6 +731,7 @@ TEST_CASE("http_post_store_sensor_payload_empty_nodes_uses_section_query", "[mes
     REQUIRE(response->body.find("\"reason\":[]") != std::string::npos);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("http_post_store_sensor_payload_accepts_json_boolean_flags", "[message_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};
