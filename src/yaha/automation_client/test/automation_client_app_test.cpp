@@ -39,8 +39,6 @@ TEST_CASE("load_automation_client_runtime_config_from_ini", "[automation_client]
         "host=127.0.0.1\n"
         "port=8210\n"
         "path=/automation/rules\n"
-        "\n"
-        "[monitoring]\n"
         "topicPrefix=$MONITOR/FileStore\n"
         "\n"
         "[automation]\n"

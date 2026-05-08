@@ -11,7 +11,7 @@ bool tryLoadValueServiceConfigFromIni(
     const IniDocument& document,
     ValueServiceConfig& output,
     std::string& errorMessage) {
-    if (const auto keyPath = document.lastValue("filestore", "path"); keyPath.has_value()) {
+    if (const auto keyPath = document.lastValue("filestore", "filename"); keyPath.has_value()) {
         output.valuesKeyPath = *keyPath;
     }
 
@@ -37,7 +37,7 @@ bool tryLoadValueServiceConfigFromIni(
         output.fileStoreEnabled = *useResult.first;
     }
 
-    if (const auto monitorPrefix = document.lastValue("monitoring", "topicPrefix");
+    if (const auto monitorPrefix = document.lastValue("filestore", "topicPrefix");
         monitorPrefix.has_value()) {
         output.monitorTopicPrefix = *monitorPrefix;
     }
@@ -45,16 +45,6 @@ bool tryLoadValueServiceConfigFromIni(
     if (const auto legacyValuesFile = document.lastValue("valueservice", "valuesFileName");
         legacyValuesFile.has_value()) {
         output.legacyValuesFileName = *legacyValuesFile;
-    }
-
-    if (const auto explicitKeyPath = document.lastValue("valueservice", "valuesKeyPath");
-        explicitKeyPath.has_value()) {
-        output.valuesKeyPath = *explicitKeyPath;
-    }
-
-    if (const auto explicitMonitorPrefix = document.lastValue("valueservice", "monitorTopicPrefix");
-        explicitMonitorPrefix.has_value()) {
-        output.monitorTopicPrefix = *explicitMonitorPrefix;
     }
 
     const auto qosResult = document.readUnsigned("valueservice", "subscribeQoS", 0U, 2U);

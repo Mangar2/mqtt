@@ -54,6 +54,7 @@ TEST_CASE("message_store_json_parser_skips_unknown_snapshot_fields", "[message_s
     REQUIRE(nodes[0].topic == "home/light");
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("message_store_json_parser_parses_sensor_post_with_nodes_and_flags", "[message_store]") {
     yaha::message_store_json::SensorPostRequest request{};
     const bool parseSucceeded = yaha::message_store_json::parseSensorPostBody(
@@ -75,6 +76,7 @@ TEST_CASE("message_store_json_parser_parses_sensor_post_with_nodes_and_flags", "
     REQUIRE(request.nodesJson.find("house/light") != std::string::npos);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("message_store_json_parser_applies_defaults_for_invalid_sensor_values", "[message_store]") {
     yaha::message_store_json::SensorPostRequest request{};
     const bool parseSucceeded = yaha::message_store_json::parseSensorPostBody(

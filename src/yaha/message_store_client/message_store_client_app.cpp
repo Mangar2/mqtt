@@ -4,9 +4,70 @@
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <cstdint>
+#include <optional>
 #include <utility>
 
 namespace yaha {
+
+namespace {
+
+bool tryLoadMessageStoreSubscriptionsFromIni(
+    const IniDocument& document,
+    SubscriptionMap& output,
+    std::string& errorMessage) {
+    if (document.findSection("subscriptions") != nullptr) {
+        errorMessage = "legacy section 'subscriptions' is not supported; use repeated [subscription] with topic/qos";
+        return false;
+    }
+
+    const IniDocument::Section* section = document.findSection("subscription");
+    if (section == nullptr || section->entries().empty()) {
+        return true;
+    }
+
+    SubscriptionMap parsed{};
+    std::optional<std::string> pendingTopic{};
+    for (const auto& entry : section->entries()) {
+        if (entry.key == "topic") {
+            if (entry.value.empty()) {
+                errorMessage = "subscription.topic must not be empty";
+                return false;
+            }
+            pendingTopic = entry.value;
+            continue;
+        }
+
+        if (entry.key == "qos") {
+            if (!pendingTopic.has_value()) {
+                errorMessage = "subscription.qos requires a preceding subscription.topic";
+                return false;
+            }
+
+            const auto qosValue = IniDocument::parseUnsigned(entry.value, 0U, 2U);
+            if (!qosValue.has_value()) {
+                errorMessage = "invalid qos for subscription '" + *pendingTopic + "'";
+                return false;
+            }
+
+            parsed[*pendingTopic] = static_cast<Qos>(*qosValue);
+            pendingTopic.reset();
+            continue;
+        }
+
+        errorMessage = "unknown key in [subscription]: '" + entry.key + "' (expected topic or qos)";
+        return false;
+    }
+
+    if (pendingTopic.has_value()) {
+        errorMessage = "subscription.topic '" + *pendingTopic + "' is missing subscription.qos";
+        return false;
+    }
+
+    output = std::move(parsed);
+    return true;
+}
+
+} // namespace
 
 bool tryLoadMessageStoreConfigFromIni(
     const IniDocument& document,
@@ -65,7 +126,7 @@ bool tryLoadMessageStoreConfigFromIni(
     }
 
     SubscriptionMap parsedSubscriptions{};
-    if (!tryLoadSubscriptionsFromIni(document, "subscriptions", parsedSubscriptions, errorMessage)) {
+    if (!tryLoadMessageStoreSubscriptionsFromIni(document, parsedSubscriptions, errorMessage)) {
         return false;
     }
 

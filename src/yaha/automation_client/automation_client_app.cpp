@@ -51,9 +51,12 @@ bool tryLoadAutomationClientConfigFromIni(
         output.fileStoreEnabled = *useResult.first;
     }
 
-    if (const auto monitorPrefix = document.lastValue("monitoring", "topicPrefix");
+    if (const auto monitorPrefix = document.lastValue("filestore", "topicPrefix");
         monitorPrefix.has_value()) {
         output.monitorTopicPrefix = *monitorPrefix;
+    } else if (const auto legacyMonitorPrefix = document.lastValue("monitoring", "topicPrefix");
+               legacyMonitorPrefix.has_value()) {
+        output.monitorTopicPrefix = *legacyMonitorPrefix;
     }
 
     if (const auto managementPrefix = document.lastValue("automation", "managementTopicPrefix");

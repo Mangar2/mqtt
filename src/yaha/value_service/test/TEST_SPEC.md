@@ -15,6 +15,6 @@ Unit tests for ValueService phase 2 component behavior.
 | `value_service_monitoring_non_matching_keypath_does_not_reload` | monitor payload for different keyPath must not reload | monitor message with `keyPath=/other/path` after initial load | map remains unchanged and no additional replay publish happens |
 | `value_service_rejects_non_integral_numeric_set_value` | invalid numeric value type for `/set` | inbound `house/temp/set` with value `21.5` | no publish, no FileStore POST, map unchanged |
 | `value_service_get_subscriptions_contains_monitor_and_set_topics` | subscription projection | loaded map with two keys | subscriptions contain monitor `/#` and both `<key>/set` topics |
-| `value_service_runtime_config_parses_all_sections` | full runtime mapping for standalone composition | ini with mqtt, filestore, monitoring, valueservice sections | parsed runtime config contains mapped values and override precedence |
+| `value_service_runtime_config_parses_all_sections` | full runtime mapping for standalone composition | ini with mqtt, filestore and valueservice sections | parsed runtime config contains mapped values from single-source filestore filename/topicPrefix and valueservice qos |
 | `value_service_runtime_config_rejects_invalid_subscribe_qos` | invalid qos parser path | ini with `valueservice.subscribeQoS=9` | load fails with field-specific error |
 | `value_service_runtime_config_rejects_invalid_filestore_use` | invalid bool parser path | ini with `filestore.use=maybe` | load fails with field-specific error |

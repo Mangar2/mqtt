@@ -3,7 +3,6 @@
 #include "yaha/message_store_client/message_store_client_app.h"
 
 #include <chrono>
-#include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -47,7 +46,7 @@ bool tryLoadRuntimeConfigFromFile(const std::filesystem::path& configPath,
 }
 
 } // namespace
-
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("load_config_parses_mqtt_server_persist_and_subscriptions", "[message_store_client]") {
     const auto tempDir = makeTempDirectory();
 
@@ -73,9 +72,12 @@ TEST_CASE("load_config_parses_mqtt_server_persist_and_subscriptions", "[message_
         "[messagestore]\n"
         "cleanupTopic = $MONITORING/messages/cleanup\n"
         "\n"
-        "[subscriptions]\n"
-        "# = 1\n"
-        "home/+/state = 0\n");
+        "[subscription]\n"
+        "topic = #\n"
+        "qos = 1\n"
+        "[subscription]\n"
+        "topic = home/+/state\n"
+        "qos = 0\n");
 
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
@@ -118,14 +120,30 @@ TEST_CASE("load_config_uses_default_subscription_when_missing", "[message_store_
 TEST_CASE("load_config_rejects_invalid_subscription_qos", "[message_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
-        "[subscriptions]\n"
-        "# = 9\n");
+        "[subscription]\n"
+        "topic = #\n"
+        "qos = 9\n");
 
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
 
     REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
     REQUIRE_FALSE(errorMessage.empty());
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_config_rejects_legacy_subscriptions_section", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[subscriptions]\n"
+        "# = 1\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.find("legacy section 'subscriptions'") != std::string::npos);
 
     removeDirectoryQuiet(tempDir);
 }

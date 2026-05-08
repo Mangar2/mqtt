@@ -41,6 +41,7 @@ bool tryLoadRuntimeConfigFromIniText(
 
 } // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("value_service_runtime_config_parses_all_sections", "[value_service]") {
     const std::string iniText =
         "[mqtt]\n"
@@ -55,15 +56,11 @@ TEST_CASE("value_service_runtime_config_parses_all_sections", "[value_service]")
         "use=true\n"
         "host=127.0.0.2\n"
         "port=8211\n"
-        "path=/values/from/filestore\n"
-        "\n"
-        "[monitoring]\n"
-        "topicPrefix=$MONITOR/FileStore\n"
+        "filename=/values/from/filestore\n"
+        "topicPrefix=$MONITOR/FS\n"
         "\n"
         "[valueservice]\n"
         "subscribeQoS=2\n"
-        "valuesKeyPath=/values/explicit\n"
-        "monitorTopicPrefix=$MONITOR/VS\n"
         "valuesFileName=legacy.json\n";
 
     yaha::ValueServiceClientRuntimeConfig runtimeConfig{};
@@ -79,8 +76,8 @@ TEST_CASE("value_service_runtime_config_parses_all_sections", "[value_service]")
     REQUIRE(runtimeConfig.valueServiceConfig.fileStoreEnabled);
     REQUIRE(runtimeConfig.valueServiceConfig.fileStoreHost == "127.0.0.2");
     REQUIRE(runtimeConfig.valueServiceConfig.fileStorePort == 8211U);
-    REQUIRE(runtimeConfig.valueServiceConfig.valuesKeyPath == "/values/explicit");
-    REQUIRE(runtimeConfig.valueServiceConfig.monitorTopicPrefix == "$MONITOR/VS");
+    REQUIRE(runtimeConfig.valueServiceConfig.valuesKeyPath == "/values/from/filestore");
+    REQUIRE(runtimeConfig.valueServiceConfig.monitorTopicPrefix == "$MONITOR/FS");
     REQUIRE(runtimeConfig.valueServiceConfig.subscribeQos == yaha::Qos::ExactlyOnce);
     REQUIRE(runtimeConfig.valueServiceConfig.legacyValuesFileName == "legacy.json");
 }

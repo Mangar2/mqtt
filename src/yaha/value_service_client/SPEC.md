@@ -18,7 +18,7 @@ INI mapping used by standalone composition.
 
 | Function | Signature | Notes |
 |---------|-----------|-------|
-| `tryLoadValueServiceConfigFromIni` | `(const IniDocument&, ValueServiceConfig&, std::string&) -> bool` | Maps ValueService + FileStore + monitoring fields |
+| `tryLoadValueServiceConfigFromIni` | `(const IniDocument&, ValueServiceConfig&, std::string&) -> bool` | Maps ValueService + FileStore fields |
 | `tryLoadValueServiceClientRuntimeConfigFromIni` | `(const IniDocument&, ValueServiceClientRuntimeConfig&, std::string&) -> bool` | Maps full runtime config |
 
 ## Runtime composition behavior
@@ -44,15 +44,13 @@ Supported INI sections:
 - `[mqtt]`
   - `host`, `port`, `clientId`, `reconnectDelayMs`, `keepAliveIntervalMs`, `loopSleepMs`
 - `[filestore]`
-  - `host`, `port`, `path`, `use`
-- `[monitoring]`
-  - `topicPrefix`
+  - `host`, `port`, `filename`, `use`, `topicPrefix`
 - `[valueservice]`
-  - `subscribeQoS`, `valuesKeyPath`, `monitorTopicPrefix`, `valuesFileName`
+  - `subscribeQoS`, `valuesFileName`
 
-Precedence rules:
-- `valueservice.valuesKeyPath` overrides `filestore.path`.
-- `valueservice.monitorTopicPrefix` overrides `monitoring.topicPrefix`.
+Semantics:
+- `filestore.filename` is the single source for ValueService value-map key name.
+- `filestore.topicPrefix` is the single source for FileStore monitoring event subscription prefix.
 
 Validation rules:
 - `filestore.port` must be `1..65535`.

@@ -49,7 +49,7 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
 
 | Function | Signature | Notes |
 |---------|-----------|-------|
-| `tryLoadAutomationClientConfigFromIni` | `(const IniDocument&, AutomationClientConfig&, std::string&) -> bool` | Maps automation + filestore + monitoring fields |
+| `tryLoadAutomationClientConfigFromIni` | `(const IniDocument&, AutomationClientConfig&, std::string&) -> bool` | Maps automation + filestore fields; supports legacy `monitoring.topicPrefix` fallback |
 | `tryLoadAutomationClientRuntimeConfigFromIni` | `(const IniDocument&, AutomationClientRuntimeConfig&, std::string&) -> bool` | Maps full runtime config |
 
 ## Behavior

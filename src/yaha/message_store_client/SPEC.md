@@ -36,10 +36,12 @@ Parsing is composed from reusable shared modules:
   - `directory`, `filename`, `intervalMs`, `keepFiles`
 - `[messagestore]`
   - `cleanupTopic`
-- `[subscriptions]`
-  - each key is topic filter, each value is QoS (`0`, `1`, `2`)
+- `[subscription]` (repeatable)
+  - `topic` topic filter
+  - `qos` (`0`, `1`, `2`)
 
-When `[subscriptions]` is missing or empty, default subscription is `#` with QoS 1.
+When `[subscription]` is missing or empty, default subscription is `#` with QoS 1.
+Legacy `[subscriptions]` format is rejected.
 
 ## Runtime composition behavior
 

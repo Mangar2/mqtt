@@ -148,6 +148,7 @@ TEST_CASE("value_service_run_loads_values_and_publishes_replay", "[value_service
     component.close();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("value_service_set_updates_map_publishes_and_persists", "[value_service]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
@@ -345,6 +346,7 @@ TEST_CASE("value_service_rejects_non_integral_numeric_set_value", "[value_servic
     component.close();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("value_service_accepts_integral_double_and_persists_number", "[value_service]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
