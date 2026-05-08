@@ -470,6 +470,36 @@ TEST_CASE("http_get_store_header_defaults_apply_for_blank_or_invalid_values", "[
     REQUIRE(response->status == 200);
 }
 
+TEST_CASE("http_get_store_invalid_levelamount_with_whitespace_uses_default", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.handleMessage(yaha::Message{"home/zone/light", std::string{"on"}});
+    store.handleMessage(yaha::Message{"home/zone/light/state", std::string{"stable"}});
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    httplib::Headers headers{
+        {"levelamount", "  invalid  "},
+        {"history", "true"},
+        {"reason", "true"}
+    };
+    const auto response = client.Get("/store/home", headers);
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 200);
+    REQUIRE(response->body == "[]");
+}
+
 TEST_CASE("http_get_store_snapshot_body_uses_diff_mode", "[message_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};

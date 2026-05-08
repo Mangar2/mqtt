@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <string>
 #include <unordered_set>
@@ -50,6 +51,8 @@ constexpr double k_interval_upper_bound_factor{1.01};
 constexpr double k_interval_lower_bound_factor{0.99};
 constexpr std::uint32_t k_length_for_time_value_only{10U};
 constexpr int k_history_last_step{6};
+constexpr int k_count_integrity_steps{8};
+constexpr int k_decimal_base{10};
 
 struct FakeClock {
     std::int64_t nowMs{k_initial_now_ms};
@@ -108,6 +111,34 @@ yaha::Message makeReasonedMessage(const std::string& topic,
     yaha::Message message{topic, value};
     message.addReason(reasonMessage, reasonTimestamp);
     return message;
+}
+
+void requireTotalEntryCount(const yaha::MessageTree& tree,
+                            const std::string& topic,
+                            const std::size_t insertedMessages) {
+    const auto representedHistoryCount = [](const yaha::MessageTreeHistoryEntry& entry) {
+        static const std::string k_interval_prefix{"regular update, amount: "};
+
+        if (!entry.reason.empty() && entry.reason.front().message.rfind(k_interval_prefix, 0U) == 0U) {
+            const std::string amountText = entry.reason.front().message.substr(k_interval_prefix.size());
+            if (!amountText.empty() &&
+                std::all_of(amountText.begin(), amountText.end(), [](unsigned char character) {
+                    return std::isdigit(character) != 0;
+                })) {
+                return static_cast<std::size_t>(std::strtoul(amountText.c_str(), nullptr, k_decimal_base));
+            }
+        }
+
+        return static_cast<std::size_t>(1U);
+    };
+
+    const auto nodes = tree.getSection(topic, 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+    std::size_t logicalMessageCount = 1U;
+    for (const auto& entry : nodes.front().history) {
+        logicalMessageCount += representedHistoryCount(entry);
+    }
+    REQUIRE(logicalMessageCount == insertedMessages);
 }
 
 } // namespace
@@ -778,6 +809,133 @@ TEST_CASE("history_grouping_compares_reason_messages_only", "[message_store]") {
     REQUIRE(nodes.front().history.size() == 2U);
     REQUIRE(nodes.front().history[1].reason.size() == 1U);
     REQUIRE(nodes.front().history[1].reason[0].timestamp == "2026-01-01T00:00:00Z");
+}
+
+TEST_CASE("history_single_compression_keeps_total_entry_count", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      1U,
+                                      yaha::MessageTreeConfig::k_default_length_for_further_compression);
+
+    std::size_t insertedMessages = 0U;
+    const std::string topic{"sensor/count_single"};
+
+    for (int step = 0; step < k_count_integrity_steps; ++step) {
+        clock.nowMs = static_cast<std::int64_t>(step) * k_tick_ms;
+        const double value = (step % 2 == 0) ? 1.0 : k_value_two;
+        tree.addData(yaha::Message{topic, value});
+        insertedMessages += 1U;
+        requireTotalEntryCount(tree, topic, insertedMessages);
+    }
+}
+
+TEST_CASE("history_time_value_compression_keeps_total_entry_count", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      k_length_for_time_value_only);
+
+    std::size_t insertedMessages = 0U;
+    const std::string topic{"sensor/count_time_value"};
+
+    for (int step = 0; step < k_count_integrity_steps; ++step) {
+        clock.nowMs = static_cast<std::int64_t>(step) * k_tick_ms;
+        tree.addData(makeReasonedMessage(topic,
+                                         static_cast<double>(step + 1),
+                                         "source",
+                                         "1970-01-01T00:00:00.000Z"));
+        insertedMessages += 1U;
+        requireTotalEntryCount(tree, topic, insertedMessages);
+    }
+}
+
+TEST_CASE("history_time_compression_keeps_total_entry_count", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      3U,
+                                      k_interval_upper_bound_factor,
+                                      0U,
+                                      k_interval_lower_bound_factor,
+                                      0U);
+
+    const std::vector<std::int64_t> timestamps{
+        k_time_zero_ms,
+        k_time_one_second_ms,
+        k_time_four_seconds_ms,
+        k_time_nine_seconds_ms,
+        k_time_fifteen_seconds_ms,
+        k_time_twenty_seconds_ms,
+    };
+
+    std::size_t insertedMessages = 0U;
+    const std::string topic{"sensor/count_time"};
+    for (const auto timestamp : timestamps) {
+        clock.nowMs = timestamp;
+        tree.addData(makeReasonedMessage(topic,
+                                         std::string{"steady"},
+                                         "origin",
+                                         "1970-01-01T00:00:00.000Z"));
+        insertedMessages += 1U;
+        requireTotalEntryCount(tree, topic, insertedMessages);
+    }
+}
+
+TEST_CASE("history_interval_compression_keeps_total_entry_count", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      3U);
+
+    std::size_t insertedMessages = 0U;
+    const std::string topic{"sensor/count_interval"};
+    for (int step = 0; step < k_count_integrity_steps; ++step) {
+        clock.nowMs = static_cast<std::int64_t>(step) * k_tick_ms;
+        tree.addData(makeReasonedMessage(topic,
+                                         k_value_five,
+                                         "source",
+                                         "1970-01-01T00:00:00.000Z"));
+        insertedMessages += 1U;
+        requireTotalEntryCount(tree, topic, insertedMessages);
+    }
+}
+
+TEST_CASE("history_time_to_interval_transition_keeps_total_entry_count", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      3U);
+
+    const std::vector<std::int64_t> timestamps{
+        k_time_zero_ms,
+        k_time_one_second_ms,
+        k_time_five_seconds_ms,
+        k_time_nine_seconds_ms,
+        k_time_thirteen_seconds_ms,
+        k_time_fifteen_seconds_ms,
+    };
+
+    std::size_t insertedMessages = 0U;
+    const std::string topic{"sensor/count_transition"};
+    for (const auto timestamp : timestamps) {
+        clock.nowMs = timestamp;
+        tree.addData(makeReasonedMessage(topic,
+                                         std::string{"steady"},
+                                         "source",
+                                         "1970-01-01T00:00:00.000Z"));
+        insertedMessages += 1U;
+        requireTotalEntryCount(tree, topic, insertedMessages);
+    }
 }
 
 TEST_CASE("get_section_respects_depth", "[message_store]") {
