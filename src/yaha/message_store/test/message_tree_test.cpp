@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "yaha/message/message.h"
@@ -20,12 +21,22 @@ constexpr std::int64_t k_negative_offset_expected_ms{3601500};
 constexpr std::int64_t k_invalid_timezone_fallback_clock_ms{8888};
 constexpr std::int64_t k_invalid_fraction_fallback_clock_ms{9999};
 constexpr std::int64_t k_time_zero_ms{0};
+constexpr std::int64_t k_time_half_second_ms{500};
 constexpr std::int64_t k_time_one_second_ms{1000};
 constexpr std::int64_t k_time_two_seconds_ms{2000};
 constexpr std::int64_t k_time_three_seconds_ms{3000};
 constexpr std::int64_t k_time_four_seconds_ms{4000};
+constexpr std::int64_t k_time_four_point_five_seconds_ms{4500};
+constexpr std::int64_t k_time_five_seconds_ms{5000};
 constexpr std::int64_t k_time_nine_seconds_ms{9000};
+constexpr std::int64_t k_time_ten_seconds_ms{10000};
+constexpr std::int64_t k_time_thirteen_seconds_ms{13000};
 constexpr std::int64_t k_time_fifteen_seconds_ms{15000};
+constexpr std::int64_t k_time_twenty_seconds_ms{20000};
+constexpr std::int64_t k_time_thirty_seconds_ms{30000};
+constexpr std::int64_t k_time_forty_seconds_ms{40000};
+constexpr std::int64_t k_time_fifty_seconds_ms{50000};
+constexpr std::int64_t k_time_sixty_seconds_ms{60000};
 constexpr std::int64_t k_time_one_hundred_one_seconds_ms{101000};
 constexpr std::int64_t k_time_one_hundred_two_seconds_ms{102000};
 constexpr double k_temperature_before{21.0};
@@ -37,6 +48,7 @@ constexpr double k_value_five{5.0};
 constexpr double k_value_seven{7.0};
 constexpr double k_interval_upper_bound_factor{1.01};
 constexpr double k_interval_lower_bound_factor{0.99};
+constexpr std::uint32_t k_length_for_time_value_only{10U};
 constexpr int k_history_last_step{6};
 
 struct FakeClock {
@@ -76,6 +88,17 @@ bool containsTopic(const std::vector<yaha::MessageTreeNode>& nodes,
                        [&topic](const yaha::MessageTreeNode& node) {
         return node.topic == topic;
     });
+}
+
+bool historyHasUniqueTimestamps(const std::vector<yaha::MessageTreeHistoryEntry>& history) {
+    std::unordered_set<std::int64_t> seen{};
+    seen.reserve(history.size());
+    for (const auto& entry : history) {
+        if (!seen.insert(entry.timeMs).second) {
+            return false;
+        }
+    }
+    return true;
 }
 
 yaha::Message makeReasonedMessage(const std::string& topic,
@@ -376,6 +399,163 @@ TEST_CASE("history_interval_entry_rejects_irregular_updates", "[message_store]")
     REQUIRE(nodes.front().history[0].timeMs == k_time_nine_seconds_ms);
     REQUIRE(nodes.front().history[1].reason.empty() == false);
     REQUIRE(nodes.front().history[1].reason[0].message.find("regular update, amount:") == 0U);
+}
+
+TEST_CASE("history_single_entries_do_not_duplicate_timestamps", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      1U,
+                                      yaha::MessageTreeConfig::k_default_length_for_further_compression);
+
+    tree.addData(yaha::Message{"sensor/no_dup_single", 1.0});
+    clock.nowMs += k_tick_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_single", k_value_two});
+    clock.nowMs += k_tick_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_single", k_value_three});
+    clock.nowMs += k_tick_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_single", k_value_four});
+
+    const auto nodes = tree.getSection("sensor/no_dup_single", 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(historyHasUniqueTimestamps(nodes.front().history));
+}
+
+TEST_CASE("history_time_value_entries_do_not_duplicate_timestamps", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      k_length_for_time_value_only);
+
+    tree.addData(yaha::Message{"sensor/no_dup_time_value", 1.0});
+    clock.nowMs += k_tick_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_time_value", k_value_two});
+    clock.nowMs += k_tick_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_time_value", k_value_three});
+    clock.nowMs += k_tick_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_time_value", k_value_four});
+    clock.nowMs += k_tick_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_time_value", k_value_five});
+
+    const auto nodes = tree.getSection("sensor/no_dup_time_value", 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(historyHasUniqueTimestamps(nodes.front().history));
+}
+
+TEST_CASE("history_time_entries_do_not_duplicate_timestamps", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      3U);
+
+    clock.nowMs = 0;
+    tree.addData(yaha::Message{"sensor/no_dup_time", std::string{"steady"}});
+    clock.nowMs = k_time_one_second_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_time", std::string{"steady"}});
+    clock.nowMs = k_time_five_seconds_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_time", std::string{"steady"}});
+    clock.nowMs = k_time_nine_seconds_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_time", std::string{"steady"}});
+    clock.nowMs = k_time_thirteen_seconds_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_time", std::string{"steady"}});
+
+    const auto nodes = tree.getSection("sensor/no_dup_time", 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(historyHasUniqueTimestamps(nodes.front().history));
+}
+
+TEST_CASE("history_interval_entries_do_not_duplicate_timestamps", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      3U);
+
+    clock.nowMs = 0;
+    tree.addData(yaha::Message{"sensor/no_dup_interval", 1.0});
+    clock.nowMs = k_time_ten_seconds_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_interval", 1.0});
+    clock.nowMs = k_time_twenty_seconds_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_interval", 1.0});
+    clock.nowMs = k_time_thirty_seconds_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_interval", 1.0});
+    clock.nowMs = k_time_forty_seconds_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_interval", 1.0});
+    clock.nowMs = k_time_fifty_seconds_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_interval", 1.0});
+    clock.nowMs = k_time_sixty_seconds_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_interval", 1.0});
+
+    const auto nodes = tree.getSection("sensor/no_dup_interval", 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(historyHasUniqueTimestamps(nodes.front().history));
+}
+
+TEST_CASE("history_time_to_interval_transition_does_not_duplicate_timestamps", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      3U);
+
+    clock.nowMs = 0;
+    tree.addData(yaha::Message{"sensor/no_dup_transition", std::string{"steady"}});
+    clock.nowMs = k_time_one_second_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_transition", std::string{"steady"}});
+    clock.nowMs = k_time_five_seconds_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_transition", std::string{"steady"}});
+    clock.nowMs = k_time_nine_seconds_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_transition", std::string{"steady"}});
+    clock.nowMs = k_time_thirteen_seconds_ms;
+    tree.addData(yaha::Message{"sensor/no_dup_transition", std::string{"steady"}});
+
+    const auto nodes = tree.getSection("sensor/no_dup_transition", 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(historyHasUniqueTimestamps(nodes.front().history));
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("history_no_duplicate_timestamp_pattern_search", "[message_store]") {
+    const std::vector<std::vector<std::int64_t>> scenarios{
+        {k_time_one_second_ms, k_time_four_seconds_ms, k_time_four_seconds_ms, k_time_four_seconds_ms},
+        {k_time_one_second_ms, k_time_four_seconds_ms, k_time_four_seconds_ms, k_time_four_seconds_ms, k_time_four_seconds_ms},
+        {k_time_one_second_ms, k_time_two_seconds_ms, k_time_two_seconds_ms, k_time_two_seconds_ms, k_time_two_seconds_ms},
+        {k_time_one_second_ms, k_time_three_seconds_ms, k_time_three_seconds_ms, k_time_three_seconds_ms, k_time_three_seconds_ms},
+        {k_time_half_second_ms, k_time_four_point_five_seconds_ms, k_time_four_point_five_seconds_ms, k_time_four_point_five_seconds_ms, k_time_four_point_five_seconds_ms},
+        {k_time_one_second_ms, k_time_one_second_ms, k_time_three_seconds_ms, k_time_three_seconds_ms, k_time_three_seconds_ms, k_time_three_seconds_ms},
+        {k_time_one_second_ms, k_time_one_second_ms, k_time_five_seconds_ms, k_time_five_seconds_ms, k_time_five_seconds_ms, k_time_five_seconds_ms}
+    };
+
+    for (const auto& deltasMs : scenarios) {
+        FakeClock clock{};
+        yaha::MessageTree tree = makeTree(clock,
+                                          yaha::MessageTreeConfig::k_default_max_history_length,
+                                          yaha::MessageTreeConfig::k_default_history_hysterese,
+                                          yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                          3U);
+
+        clock.nowMs = 0;
+        tree.addData(yaha::Message{"sensor/no_dup_search", std::string{"steady"}});
+
+        std::int64_t accumulatedMs = 0;
+        for (const std::int64_t deltaMs : deltasMs) {
+            accumulatedMs += deltaMs;
+            clock.nowMs = accumulatedMs;
+            tree.addData(yaha::Message{"sensor/no_dup_search", std::string{"steady"}});
+        }
+
+        const auto nodes = tree.getSection("sensor/no_dup_search", 0U, true, true);
+        REQUIRE(nodes.size() == 1U);
+        CAPTURE(deltasMs);
+        REQUIRE(historyHasUniqueTimestamps(nodes.front().history));
+    }
 }
 
 TEST_CASE("history_is_returned_newest_first", "[message_store]") {

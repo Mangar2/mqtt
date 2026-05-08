@@ -74,6 +74,8 @@ struct MessageTreeNode;
 - Compression grouping uses reason message text equality (timestamp differences in reasons do not break grouping).
 - Internal compressed history order is newest-first.
 - History is decompressed for output APIs in newest-first order.
+- Compression transitions from `time` to `interval` must not overlap timestamps between entries;
+  for monotonic input timestamps, each historic timestamp appears at most once in decompressed history.
 - `getSection(..., includeHistory=true, includeReason=false)` keeps history reasons unchanged (legacy behavior);
   the flag only removes node-level `reason`.
 - `interval` decompression follows legacy behavior and emits a synthetic reason entry:

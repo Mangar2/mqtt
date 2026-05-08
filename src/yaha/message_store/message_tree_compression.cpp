@@ -291,19 +291,27 @@ MessageTree::newestIntervalCandidate(const TimeHistoryEntry& entry) const {
 
     const std::size_t entryAmount = entry.timestamps.size();
     const std::size_t minAmount = config_.lengthForFurtherCompression;
-    result.firstTimeMs = entry.timestamps[entryAmount - minAmount];
+    const std::size_t minStartIndex = entryAmount - minAmount;
+    result.firstTimeMs = entry.timestamps[minStartIndex];
 
     const std::int64_t expectedIntervalMs =
         (result.lastTimeMs - result.firstTimeMs) / static_cast<std::int64_t>(minAmount - 1U);
 
+    std::size_t firstIncludedIndex = entryAmount - 1U;
+    std::uint32_t includedAmount = 1U;
+
     for (std::size_t idx = entryAmount - 1U; idx > 0U; --idx) {
-        result.firstTimeMs = entry.timestamps[idx - 1U];
         const std::int64_t newIntervalMs = entry.timestamps[idx] - entry.timestamps[idx - 1U];
         if (!isMatchingInterval(newIntervalMs, expectedIntervalMs)) {
             break;
         }
-        result.amount += 1U;
+
+        firstIncludedIndex = idx - 1U;
+        includedAmount += 1U;
     }
+
+    result.firstTimeMs = entry.timestamps[firstIncludedIndex];
+    result.amount = includedAmount;
 
     return result;
 }
