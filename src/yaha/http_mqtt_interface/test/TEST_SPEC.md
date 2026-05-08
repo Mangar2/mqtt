@@ -28,6 +28,7 @@ Unit tests for shared HTTP MQTT contract types, validation helpers, and phase-2 
 | `connect_v1_result_check_throws_for_mqtt_error_code` | Connect validator maps mqtt error codes | response payload with `mqttcode=4` | result check throws mapped connect error |
 | `disconnect_v1_request_and_on_disconnect_response` | Disconnect request and response contract | call `disconnect` and `onDisconnect` for `1.0` | request has version header, response is `204` and empty payload |
 | `publish_v1_request_and_result_check_qos1` | Publish v1 request and qos1 ack validation | qos1 message and response `packet=puback` | result check does not throw |
+| `publish_v1_request_preserves_raw_payload_without_rebuild` | Publish v1 request keeps full mapped payload untouched when raw payload exists | message with `rawPayload` containing full JSON envelope | request payload equals `rawPayload` exactly without serializer rewrite |
 | `on_publish_v1_maps_ack_headers_by_qos` | onPublish maps ack packet by qos | qos headers `1` and `2` | returns `puback` for qos1 and `pubrec` for qos2 |
 | `pubrel_v1_request_result_and_response` | Pubrel builder and response contract | call `pubrel`, validate `packet=pubcomp`, call `onPubrel` | request and response satisfy v1 rules |
 | `subscribe_v1_request_result_and_response` | Subscribe builder and validation contract | subscribe response with qos array and matching packetid | result check passes and onSubscribe returns suback payload |

@@ -278,6 +278,24 @@ TEST_CASE("publish_v1_request_and_result_check_qos1", "[http_mqtt_interface]") {
     REQUIRE_NOTHROW(requestData.resultCheck(response));
 }
 
+TEST_CASE("publish_v1_request_preserves_raw_payload_without_rebuild", "[http_mqtt_interface]") {
+    const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
+    yaha::Message message{"topic/demo", std::string{"fallback"}, yaha::Qos::AtLeastOnce, false};
+    const std::string rawPayload =
+        "{\"token\":\"send-token\",\"message\":{\"topic\":\"topic/demo\",\"value\":\"keep\",\"reason\":[{\"message\":\"source\",\"timestamp\":\"2026-05-08T10:00:00Z\"}],\"extra\":{\"x\":1}}}";
+    message.setRawPayload(rawPayload);
+
+    const yaha::HttpMqttPublishOptions options{
+        .token = "token-a",
+        .message = message,
+        .dup = false,
+        .packetId = 7U};
+
+    const yaha::HttpMqttRequestData requestData = interfaces.publish("1.0", options);
+
+    REQUIRE(requestData.payload == rawPayload);
+}
+
 TEST_CASE("on_publish_v1_maps_ack_headers_by_qos", "[http_mqtt_interface]") {
     const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
 

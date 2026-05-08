@@ -343,6 +343,7 @@ connect_v1_result_check_accepts_valid_connack
 connect_v1_result_check_throws_for_mqtt_error_code
 disconnect_v1_request_and_on_disconnect_response
 publish_v1_request_and_result_check_qos1
+publish_v1_request_preserves_raw_payload_without_rebuild
 on_publish_v1_maps_ack_headers_by_qos
 pubrel_v1_request_result_and_response
 subscribe_v1_request_result_and_response
@@ -381,6 +382,7 @@ Message addReason with explicit timestamp
 Message addReason prepends\, most recent at front
 Message addReason auto-generates timestamp
 Message clone is independent copy
+Message raw payload can be stored copied and cleared
 Message validate passes for valid message
 Message validate rejects empty topic
 Message validate rejects ReasonEntry with empty message
@@ -442,6 +444,7 @@ wildcard_filter_matching_not_used_in_tree_queries
 load_config_parses_mqtt_server_persist_and_subscriptions
 load_config_uses_default_subscription_when_missing
 load_config_rejects_invalid_subscription_qos
+load_config_rejects_legacy_subscriptions_section
 load_config_rejects_invalid_numeric_fields
 broker_transport_connect_poll_publish_and_unsubscribe_roundtrip
 mqtt_client_config_maps_optional_mqtt_fields

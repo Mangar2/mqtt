@@ -1016,12 +1016,16 @@ void validatePacketIdMatch(
         requestData.headers["packetid"] = std::to_string(*optionsInput.packetId);
     }
 
-    requestData.payload = std::format(
-        "{{\"token\":\"{}\",\"message\":{{\"topic\":\"{}\",\"value\":{},\"reason\":{}}}}}",
-        escapeJsonString(optionsInput.token),
-        escapeJsonString(optionsInput.message.topic()),
-        messageValueToJson(optionsInput.message.value()),
-        reasonToJson(optionsInput.message));
+    if (optionsInput.message.rawPayload().has_value()) {
+        requestData.payload = *optionsInput.message.rawPayload();
+    } else {
+        requestData.payload = std::format(
+            "{{\"token\":\"{}\",\"message\":{{\"topic\":\"{}\",\"value\":{},\"reason\":{}}}}}",
+            escapeJsonString(optionsInput.token),
+            escapeJsonString(optionsInput.message.topic()),
+            messageValueToJson(optionsInput.message.value()),
+            reasonToJson(optionsInput.message));
+    }
 
     requestData.resultCheck = [expectedQos = qosNumber, expectedPacketId = optionsInput.packetId](
                                   const HttpMqttResult& resultInput) {
