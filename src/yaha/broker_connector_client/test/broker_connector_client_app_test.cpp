@@ -71,7 +71,8 @@ TEST_CASE("load_runtime_config_parses_source_receiver_and_automation", "[broker_
         "retainPassthrough=false\n"
         "\n"
         "[monitoring]\n"
-        "sourceLifecycleTrace=false\n";
+        "sourceLifecycleTrace=false\n"
+        "logReason=false\n";
 
     yaha::IniDocument document{};
     std::string errorMessage{};
@@ -104,6 +105,8 @@ TEST_CASE("load_runtime_config_parses_source_receiver_and_automation", "[broker_
     REQUIRE(config.sourceLifecycleConfig.loopSleep.count() == 30);
     REQUIRE(config.sourceLifecycleConfig.keepAliveInterval.count() == 5000);
     REQUIRE_FALSE(config.sourceLifecycleConfig.enableTrace);
+    REQUIRE_FALSE(config.sourceConfig.logReason);
+    REQUIRE_FALSE(config.receiverConfig.logReason);
 
     REQUIRE(config.relayPolicyConfig.maxPublishRetries == 5U);
     REQUIRE(config.relayPolicyConfig.publishRetryBackoff.count() == 350);
@@ -131,10 +134,12 @@ TEST_CASE("load_runtime_config_uses_defaults_when_optional_keys_missing", "[brok
 
     REQUIRE(config.sourceConfig.clientId == "broker-connector-source");
     REQUIRE(config.sourceConfig.clean);
+    REQUIRE(config.sourceConfig.logReason);
     REQUIRE(config.sourceConfig.subscribeTopics.size() == 1U);
     REQUIRE(config.sourceConfig.subscribeTopics.count("#") == 1U);
 
     REQUIRE(config.receiverConfig.clientId == "broker-connector-receiver");
+    REQUIRE(config.receiverConfig.logReason);
     REQUIRE(config.relayPolicyConfig.maxPublishRetries == 3U);
     REQUIRE(config.relayPolicyConfig.normalizeQosToAtLeastOnce);
 }
@@ -181,4 +186,26 @@ TEST_CASE("load_runtime_config_rejects_incomplete_subscription_entry", "[broker_
     const auto runtimeConfigResult = yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document);
     REQUIRE_FALSE(runtimeConfigResult.config.has_value());
     REQUIRE(runtimeConfigResult.errorMessage.find("incomplete [subscription] entry") != std::string::npos);
+}
+
+TEST_CASE("load_runtime_config_rejects_invalid_monitoring_log_reason", "[broker_connector_client]") {
+    const std::string iniText =
+        "[sourceHttpBroker]\n"
+        "host=127.0.0.1\n"
+        "port=8080\n"
+        "\n"
+        "[receiverMqttBroker]\n"
+        "host=127.0.0.1\n"
+        "port=1883\n"
+        "\n"
+        "[monitoring]\n"
+        "logReason=maybe\n";
+
+    yaha::IniDocument document{};
+    std::string errorMessage{};
+    REQUIRE(loadDocumentFromText(iniText, document, errorMessage));
+
+    const auto runtimeConfigResult = yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document);
+    REQUIRE_FALSE(runtimeConfigResult.config.has_value());
+    REQUIRE(runtimeConfigResult.errorMessage.find("monitoring.logReason") != std::string::npos);
 }

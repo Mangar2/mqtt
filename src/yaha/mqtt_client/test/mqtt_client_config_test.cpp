@@ -54,7 +54,8 @@ TEST_CASE("mqtt_client_config_maps_optional_mqtt_fields", "[mqtt_client]") {
         "clientId = my-client\n"
         "reconnectDelayMs = 1234\n"
         "keepAliveIntervalMs = 4321\n"
-        "loopSleepMs = 25\n");
+        "loopSleepMs = 25\n"
+        "logReason = false\n");
 
     yaha::IniDocument document{};
     std::string errorMessage{};
@@ -68,6 +69,7 @@ TEST_CASE("mqtt_client_config_maps_optional_mqtt_fields", "[mqtt_client]") {
     REQUIRE(config.reconnectDelay.count() == 1234);
     REQUIRE(config.keepAliveInterval.count() == 4321);
     REQUIRE(config.loopSleep.count() == 25);
+    REQUIRE_FALSE(config.logReason);
 
     removeDirectoryQuiet(tempDir);
 }
@@ -85,6 +87,24 @@ TEST_CASE("mqtt_client_config_rejects_invalid_numeric_values", "[mqtt_client]") 
     yaha::YahaMqttClient::Config config{};
     REQUIRE_FALSE(yaha::tryLoadMqttClientConfigFromIni(document, config, errorMessage));
     REQUIRE(errorMessage == "invalid unsigned value for 'mqtt.port' (expected 1..65535, got 'abc')");
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("mqtt_client_config_rejects_invalid_log_reason_value", "[mqtt_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto iniPath = writeIniFile(tempDir,
+        "[mqtt]\n"
+        "host = broker.local\n"
+        "logReason = maybe\n");
+
+    yaha::IniDocument document{};
+    std::string errorMessage{};
+    REQUIRE(loadDocument(iniPath, document, errorMessage));
+
+    yaha::YahaMqttClient::Config config{};
+    REQUIRE_FALSE(yaha::tryLoadMqttClientConfigFromIni(document, config, errorMessage));
+    REQUIRE(errorMessage.find("mqtt.logReason") != std::string::npos);
 
     removeDirectoryQuiet(tempDir);
 }

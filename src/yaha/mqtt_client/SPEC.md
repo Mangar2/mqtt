@@ -69,6 +69,8 @@ the callback contract into real TCP MQTT packet I/O.
 - `close()` ignores transport disconnect exceptions to preserve no-throw shutdown behavior.
 - Lifecycle tracing is handled in this generic layer (`connect`, `connected`, `reconnect`, `reconnected`, `subscribe`, `unsubscribe`, `disconnect`, `connection lost`, `reconnecting`).
 - Optional message tracing (`sent`/`recv`) is controlled by config flag `enableMessageTrace`.
+- Trace reason output is controlled by config flag `logReason` (default `true`); when enabled, output contains a plain single reason string (no count/summary metadata).
+- `sent` trace output prints `Message.rawPayload()` as `raw="..."` when available, so forwarded payload bytes are visible unchanged at send point.
 
 ## Topic matching
 

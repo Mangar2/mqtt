@@ -423,15 +423,6 @@ void appendReasonsPreservingOrder(const std::vector<ReasonEntry>& reasonEntries,
     }
 }
 
-std::string reasonSummary(const Message& message) {
-    if (message.reason().empty()) {
-        return "count=0";
-    }
-
-    return "count=" + std::to_string(message.reason().size()) +
-        " latest=\"" + message.reason().front().message + "\"";
-}
-
 bool parseIncomingMessageBody(const std::string& payload,
                               const Qos qos,
                               const bool retain,
@@ -531,16 +522,6 @@ std::optional<std::vector<int>> tryParseQosArray(const std::string& payload) {
     }
 
     return qosValues;
-}
-
-std::string valueToText(const Value& value) {
-    if (std::holds_alternative<std::string>(value)) {
-        return std::get<std::string>(value);
-    }
-
-    std::ostringstream stream{};
-    stream << std::get<double>(value);
-    return stream.str();
 }
 
 std::string qosValuesToText(const std::vector<int>& qosValues) {
@@ -758,12 +739,17 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
 
         message.setRawPayload(request.body);
 
-        std::cout << "  source: publish recv topic=" << message.topic()
-                  << " qos=" << static_cast<int>(meta.qos)
+        std::cout << "  source: publish recv qos=" << static_cast<int>(meta.qos)
                   << " retain=" << (meta.retain ? "1" : "0")
-                  << " value=" << valueToText(message.value())
-                  << " reason=" << reasonSummary(message)
-                  << '\n' << std::flush;
+                  << " raw=\"" << escapeJson(request.body) << '\"';
+
+        if (config_.logReason) {
+            const std::string reasonText =
+                message.reason().empty() ? "none" : message.reason().front().message;
+            std::cout << " reason=\"" << escapeJson(reasonText) << '\"';
+        }
+
+        std::cout << '\n' << std::flush;
 
         SourcePublishCallback callback{};
         {

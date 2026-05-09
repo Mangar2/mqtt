@@ -186,7 +186,8 @@ ReceiverMqttBrokerConfigLoadResult tryLoadReceiverMqttBrokerConfigFromIni(
         .keepAliveInterval = std::chrono::milliseconds{30000},
         .loopSleep = std::chrono::milliseconds{20},
         .enableLifecycleTrace = true,
-        .enableMessageTrace = false};
+        .enableMessageTrace = false,
+        .logReason = true};
 
     if (const auto host = document.lastValue("receiverMqttBroker", "host"); host.has_value()) {
         parsed.brokerHost = *host;
@@ -329,6 +330,15 @@ BrokerConnectorClientRuntimeConfigLoadResult tryLoadBrokerConnectorClientRuntime
     }
     if (sourceTraceResult.first.has_value()) {
         parsed.sourceLifecycleConfig.enableTrace = *sourceTraceResult.first;
+    }
+
+    const auto logReasonResult = document.readBool("monitoring", "logReason");
+    if (!logReasonResult.second.empty()) {
+        return {.config = std::nullopt, .errorMessage = logReasonResult.second};
+    }
+    if (logReasonResult.first.has_value()) {
+        parsed.sourceConfig.logReason = *logReasonResult.first;
+        parsed.receiverConfig.logReason = *logReasonResult.first;
     }
 
     return {.config = std::move(parsed), .errorMessage = ""};

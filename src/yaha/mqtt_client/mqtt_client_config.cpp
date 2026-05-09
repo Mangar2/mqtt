@@ -57,6 +57,15 @@ bool tryLoadMqttClientConfigFromIni(
         output.loopSleep = std::chrono::milliseconds{*loopSleepResult.first};
     }
 
+    const auto logReasonResult = document.readBool("mqtt", "logReason");
+    if (!logReasonResult.second.empty()) {
+        errorMessage = logReasonResult.second;
+        return false;
+    }
+    if (logReasonResult.first.has_value()) {
+        output.logReason = *logReasonResult.first;
+    }
+
     return true;
 }
 

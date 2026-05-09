@@ -9,12 +9,13 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace {
 
 #ifndef YAHA_MSGSTORECLIENT_VERSION
-#define YAHA_MSGSTORECLIENT_VERSION "0.1.0"
+#define YAHA_MSGSTORECLIENT_VERSION "0.1.10"
 #endif
 
 constexpr const char* k_msgstore_client_name{"yahamsgstoreclient"};
@@ -98,32 +99,61 @@ std::string valueToText(const yaha::Value& value) {
     return stream.str();
 }
 
-void traceIncomingMessage(const yaha::Message& message) {
-    std::string reasonText{"none"};
-    if (!message.reason().empty()) {
-        reasonText = "count=" + std::to_string(message.reason().size()) +
-            " latest=\"" + message.reason().front().message + "\"";
+std::string escapeLogText(const std::string_view text) {
+    std::string escaped{};
+    escaped.reserve(text.size());
+    for (const char character : text) {
+        switch (character) {
+            case '\\':
+                escaped += "\\\\";
+                break;
+            case '"':
+                escaped += "\\\"";
+                break;
+            case '\n':
+                escaped += "\\n";
+                break;
+            case '\r':
+                escaped += "\\r";
+                break;
+            case '\t':
+                escaped += "\\t";
+                break;
+            default:
+                escaped.push_back(character);
+                break;
+        }
     }
+    return escaped;
+}
 
+void traceIncomingMessage(const yaha::Message& message, const bool includeReason) {
     std::cout << "  broker: recv topic=" << message.topic()
               << " qos=" << qosToText(message.qos())
               << " retain=" << (message.retain() ? "1" : "0")
-              << " value=" << valueToText(message.value())
-              << " reason=" << reasonText
-              << '\n' << std::flush;
+              << " value=" << valueToText(message.value());
+
+    if (includeReason) {
+        const std::string reasonText =
+            message.reason().empty() ? "none" : escapeLogText(message.reason().front().message);
+        std::cout << " reason=\"" << reasonText << '"';
+    }
+
+    std::cout << '\n' << std::flush;
 }
 
 class IncomingMessageLoggingComponent final : public yaha::IMqttComponent {
 public:
-    explicit IncomingMessageLoggingComponent(yaha::MessageStore& store)
-        : store_(store) {}
+    explicit IncomingMessageLoggingComponent(yaha::MessageStore& store, const bool includeReason)
+        : store_(store)
+        , includeReason_(includeReason) {}
 
     [[nodiscard]] yaha::SubscriptionMap getSubscriptions() const override {
         return store_.getSubscriptions();
     }
 
     void handleMessage(const yaha::Message& message) override {
-        traceIncomingMessage(message);
+        traceIncomingMessage(message, includeReason_);
         store_.handleMessage(message);
     }
 
@@ -141,6 +171,7 @@ public:
 
 private:
     yaha::MessageStore& store_;
+    bool includeReason_{true};
 };
 
 void printStartupConfiguration(const std::filesystem::path& configPath,
@@ -229,7 +260,7 @@ int main(int argc, char* argv[]) {
     std::optional<IncomingMessageLoggingComponent> incomingLogComponent{};
     yaha::IMqttComponent* mqttComponent = &store;
     if (useIncomingLogAdapter) {
-        incomingLogComponent.emplace(store);
+        incomingLogComponent.emplace(store, runtimeConfig.logReason);
         mqttComponent = &*incomingLogComponent;
     }
 

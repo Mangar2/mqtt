@@ -141,11 +141,17 @@ Automation client INI sections:
 
 BrokerConnector INI sections:
 
-- `[sourceHttpBroker]`: `host`, `port`, `clientId`, `clean`, `keepAliveSeconds`, `listenerHost`, `listenerBindHost`, `listenerPort`
+- `[sourceHttpBroker]`: `host`, `port`, `clientId`, `clean`, `keepAliveSeconds`, `listenerHost`, `listenerBindHost`, `listenerPort`, `logReason` (`true/false`, default `true`)
 - repeated `[subscription]`: `topic` and `qos` (`0`, `1`, `2`), default `topic=#` with `qos=1` when missing
-- `[receiverMqttBroker]`: `host`, `port`, `clientId`, `reconnectDelayMs`, `keepAliveSeconds`, `loopSleepMs`, `enableLifecycleTrace`, `enableMessageTrace`
+- `[receiverMqttBroker]`: `host`, `port`, `clientId`, `reconnectDelayMs`, `keepAliveSeconds`, `loopSleepMs`, `enableLifecycleTrace`, `enableMessageTrace`, `logReason`
 - `[automation]`: `reconnectDelayMs`, `sourceLoopSleepMs`, `sourceKeepAliveIntervalMs`, `maxPublishRetries`, `publishRetryBackoffMs`, `normalizeQosToAtLeastOnce`, `retainPassthrough`
-- `[monitoring]`: `sourceLifecycleTrace`
+- `[monitoring]`: `sourceLifecycleTrace`, `logReason` (`true/false`, default `true`)
+
+BrokerConnector runtime logging details:
+
+- inbound source callback logging prints the raw HTTP `/publish` request body at receive point (`raw="..."`)
+- outbound receiver publish logging prints raw payload at send point when available (`raw="..."`)
+- `logReason=true` adds one plain reason string (`reason="..."`) without count/latest summary
 
 MessageStore client INI sections:
 
@@ -153,7 +159,7 @@ MessageStore client INI sections:
 - `[server]`: `host`, `port`, `path`
 - `[persist]`: `directory`, `filename`, `intervalMs`, `keepFiles`
 - repeated `[subscription]`: `topic` and `qos` (`0`, `1`, `2`), default `topic=#` with `qos=1` when missing
-- `[messagestore]`: `cleanupTopic`, `logIncomingMessages` (`true/false`, `1/0`, `yes/no`, `on/off`)
+- `[messagestore]`: `cleanupTopic`, `logIncomingMessages`, `logReason` (`true/false`, `1/0`, `yes/no`, `on/off`, default `true`)
 - `[tree]`: `maxHistoryLength`, `historyHysterese`, `maxValuesPerHistoryEntry`, `lengthForFurtherCompression`, `upperBoundFactor`, `upperBoundAddInMilliseconds`, `lowerBoundFactor`, `lowerBoundSubInMilliseconds`
 
 HTTP MQTT interface client INI sections:

@@ -20,6 +20,7 @@ struct MessageStoreClientRuntimeConfig {
     MessageStoreConfig storeConfig{};             ///< MessageStore component configuration.
     YahaMqttClient::Config mqttConfig{};          ///< MQTT session configuration.
     bool logIncomingMessages{false};              ///< Enable inbound MQTT message logs in broker-format.
+    bool logReason{true};                         ///< Include reason text in inbound MQTT message logs.
 };
 
 /**

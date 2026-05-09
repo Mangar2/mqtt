@@ -49,6 +49,34 @@ std::string valueToText(const Value& value) {
     return stream.str();
 }
 
+std::string escapeLogText(const std::string& text) {
+    std::string escaped{};
+    escaped.reserve(text.size());
+    for (const char chr : text) {
+        switch (chr) {
+            case '\\':
+                escaped += "\\\\";
+                break;
+            case '"':
+                escaped += "\\\"";
+                break;
+            case '\n':
+                escaped += "\\n";
+                break;
+            case '\r':
+                escaped += "\\r";
+                break;
+            case '\t':
+                escaped += "\\t";
+                break;
+            default:
+                escaped.push_back(chr);
+                break;
+        }
+    }
+    return escaped;
+}
+
 } // namespace
 
 YahaMqttClient::YahaMqttClient(Config config, IMqttComponent& component, Transport transport)
@@ -329,18 +357,23 @@ void YahaMqttClient::traceMessage(const std::string& direction, const Message& m
         return;
     }
 
-    std::string reasonText{"none"};
-    if (!message.reason().empty()) {
-        reasonText = "count=" + std::to_string(message.reason().size()) +
-            " latest=\"" + message.reason().front().message + "\"";
-    }
-
     std::cout << "  broker: " << direction << " topic=" << message.topic()
               << " qos=" << qosToText(message.qos())
-              << " retain=" << (message.retain() ? "1" : "0")
-              << " value=" << valueToText(message.value())
-              << " reason=" << reasonText
-              << '\n' << std::flush;
+              << " retain=" << (message.retain() ? "1" : "0");
+
+    if (direction == "sent" && message.rawPayload().has_value()) {
+        std::cout << " raw=\"" << escapeLogText(*message.rawPayload()) << '\"';
+    } else {
+        std::cout << " value=" << valueToText(message.value());
+    }
+
+    if (config_.logReason) {
+        const std::string reasonText =
+            message.reason().empty() ? "none" : message.reason().front().message;
+        std::cout << " reason=\"" << reasonText << '"';
+    }
+
+    std::cout << '\n' << std::flush;
 }
 
 } // namespace yaha

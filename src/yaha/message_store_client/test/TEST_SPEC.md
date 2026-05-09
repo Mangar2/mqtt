@@ -23,3 +23,6 @@ Unit tests for MessageStore runtime config parsing.
 | `load_config_parses_server_host_when_set` | optional server host parsing | `[server]` with explicit `host` | parsed server host matches input |
 | `load_config_parses_log_incoming_messages_when_enabled` | optional incoming-message log flag parsing | `[messagestore]` with `logIncomingMessages = true` | parser enables runtime incoming log flag |
 | `load_config_rejects_invalid_log_incoming_messages_value` | strict bool validation for incoming-message log flag | `[messagestore]` with non-bool `logIncomingMessages` | parser fails with key-specific bool error |
+| `load_config_defaults_log_reason_to_enabled` | reason logging should be enabled when not configured | minimal valid config without `messagestore.logReason` | runtime keeps reason logging enabled |
+| `load_config_parses_log_reason_when_disabled` | optional reason logging flag parsing | `[messagestore]` with `logReason = false` | runtime disables reason logging for inbound logs and mqtt message trace |
+| `load_config_rejects_invalid_log_reason_value` | strict bool validation for reason log flag | `[messagestore]` with non-bool `logReason` | parser fails with key-specific bool error |

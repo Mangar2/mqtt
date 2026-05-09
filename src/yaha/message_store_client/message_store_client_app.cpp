@@ -277,6 +277,16 @@ bool tryLoadMessageStoreClientRuntimeConfigFromIni(
         parsed.logIncomingMessages = *logIncomingResult.first;
     }
 
+    const auto logReasonResult = document.readBool("messagestore", "logReason");
+    if (!logReasonResult.second.empty()) {
+        errorMessage = logReasonResult.second;
+        return false;
+    }
+    if (logReasonResult.first.has_value()) {
+        parsed.logReason = *logReasonResult.first;
+        parsed.mqttConfig.logReason = *logReasonResult.first;
+    }
+
     output = std::move(parsed);
     return true;
 }

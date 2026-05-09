@@ -23,6 +23,7 @@ This module now provides complete source-to-receiver forwarding logic through `I
 | `listenerHost` | `std::string` | Callback host advertised to source broker |
 | `listenerBindHost` | `std::string` | Local callback listener bind host |
 | `listenerPort` | `std::uint16_t` | Local callback listener port (`0` allowed) |
+| `logReason` | `bool` | Enables plain reason string in source `publish recv` logs |
 | `subscribeTopics` | `SubscriptionMap` | Topic->QoS map for source subscribe |
 
 ### Struct `SourcePublishMeta`
@@ -148,6 +149,9 @@ Token usage from `/connect` response:
 Adapter listener handles callbacks:
 - PUT `/publish`
 - PUT `/pubrel`
+
+Inbound `/publish` trace output is emitted directly at receive-point and contains the original HTTP payload body as raw string (`raw="..."`).
+When `SourceHttpBrokerConfig.logReason` is enabled, trace output includes one plain reason string (`reason="..."`) derived from the latest reason entry.
 
 Ack behavior for callback listener:
 - qos 1 publish -> 204 with `packet=puback`

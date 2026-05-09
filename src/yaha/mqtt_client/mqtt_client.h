@@ -36,6 +36,7 @@ public:
         std::chrono::milliseconds loopSleep{20};
         bool enableLifecycleTrace{true};
         bool enableMessageTrace{false};
+        bool logReason{true};
     };
 
     /**

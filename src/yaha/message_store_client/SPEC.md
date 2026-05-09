@@ -37,6 +37,7 @@ Parsing is composed from reusable shared modules:
 - `[messagestore]`
   - `cleanupTopic`
   - `logIncomingMessages`
+  - `logReason` (optional, default `true`)
 - `[tree]`
   - `maxHistoryLength`, `historyHysterese`, `maxValuesPerHistoryEntry`
   - `lengthForFurtherCompression`
@@ -67,7 +68,7 @@ all YAHA apps can share the same non-domain runtime behavior.
 - HTTP endpoint status (`listening` or `disabled` when `server.port=0`)
 - MQTT lifecycle logs from generic client (`connect`, `connected`, `reconnect`, `reconnected`, `subscribe`, `unsubscribe`, `disconnect`)
 - optional MQTT message logs (`sent`, `recv`) when enabled by CLI flag `--trace-messages`
-- optional incoming-only logs (`recv`) in broker trace format when INI key `[messagestore] logIncomingMessages=true` and CLI message tracing is off
+- optional incoming-only logs (`recv`) in broker trace format when INI key `[messagestore] logIncomingMessages=true` and CLI message tracing is off; `reason=` logs only one plain reason string
 - signal handling and shutdown progress lines (`received`, `disconnecting`, `shutting down`, `stopped`)
 
 ## CLI behavior

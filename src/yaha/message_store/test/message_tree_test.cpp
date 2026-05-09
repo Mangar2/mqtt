@@ -980,6 +980,81 @@ TEST_CASE("history_multi_reason_same_device_timestamp_adds_exactly_one_logical_e
     REQUIRE(allHistoryTimestampsEqual);
 }
 
+TEST_CASE("history_stale_first_reason_timestamp_does_not_collapse_new_updates", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      k_length_for_time_value_only);
+
+    const std::string topic{"first/study/main/light/light on time"};
+    const std::string staleFirstReasonTimestamp{"2026-05-09T07:16:43+02:00"};
+    const std::vector<std::string> brokerTimestamps{
+        "2026-05-09T05:16:44.220Z",
+        "2026-05-09T05:16:54.220Z",
+        "2026-05-09T05:17:04.220Z",
+    };
+
+    for (std::size_t index = 0U; index < brokerTimestamps.size(); ++index) {
+        clock.nowMs = static_cast<std::int64_t>(index) * k_time_ten_seconds_ms;
+
+        yaha::Message message{topic, std::string{"off"}};
+        message.addReason("received by broker", brokerTimestamps[index]);
+        message.addReason("Request by browser", staleFirstReasonTimestamp);
+
+        tree.addData(message);
+
+        const auto nodes = tree.getSection(topic, 0U, true, true);
+        REQUIRE(nodes.size() == 1U);
+
+        std::unordered_set<std::int64_t> projectedTimes{};
+        projectedTimes.insert(nodes.front().timeMs);
+        for (const auto& historyEntry : nodes.front().history) {
+            projectedTimes.insert(historyEntry.timeMs);
+        }
+
+        REQUIRE(projectedTimes.size() == (index + 1U));
+    }
+}
+
+TEST_CASE("history_distinct_first_reason_timestamps_keep_distinct_projected_times", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      k_length_for_time_value_only);
+
+    const std::string topic{"first/study/main/light/light on time"};
+    const std::vector<std::string> firstReasonTimestamps{
+        "2026-05-09T05:16:44.220Z",
+        "2026-05-09T05:16:54.220Z",
+        "2026-05-09T05:17:04.220Z",
+    };
+
+    for (std::size_t index = 0U; index < firstReasonTimestamps.size(); ++index) {
+        clock.nowMs = static_cast<std::int64_t>(index) * k_time_ten_seconds_ms;
+
+        yaha::Message message{topic, std::string{"off"}};
+        message.addReason("older metadata", "2026-05-09T05:16:40.000Z");
+        message.addReason("received by broker", firstReasonTimestamps[index]);
+
+        tree.addData(message);
+
+        const auto nodes = tree.getSection(topic, 0U, true, true);
+        REQUIRE(nodes.size() == 1U);
+
+        std::unordered_set<std::int64_t> projectedTimes{};
+        projectedTimes.insert(nodes.front().timeMs);
+        for (const auto& historyEntry : nodes.front().history) {
+            projectedTimes.insert(historyEntry.timeMs);
+        }
+
+        REQUIRE(projectedTimes.size() == (index + 1U));
+    }
+}
+
 TEST_CASE("get_section_respects_depth", "[message_store]") {
     FakeClock clock{};
     yaha::MessageTree tree = makeTree(clock);

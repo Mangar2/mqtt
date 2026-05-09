@@ -345,6 +345,41 @@ TEST_CASE("load_config_parses_log_incoming_messages_when_enabled", "[message_sto
     removeDirectoryQuiet(tempDir);
 }
 
+TEST_CASE("load_config_defaults_log_reason_to_enabled", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(config.logReason);
+    REQUIRE(config.mqttConfig.logReason);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_config_parses_log_reason_when_disabled", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[messagestore]\n"
+        "logReason = false\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE_FALSE(config.logReason);
+    REQUIRE_FALSE(config.mqttConfig.logReason);
+
+    removeDirectoryQuiet(tempDir);
+}
+
 TEST_CASE("load_config_rejects_invalid_log_incoming_messages_value", "[message_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
@@ -359,6 +394,24 @@ TEST_CASE("load_config_rejects_invalid_log_incoming_messages_value", "[message_s
 
     REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
     REQUIRE(errorMessage.find("messagestore.logIncomingMessages") != std::string::npos);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_config_rejects_invalid_log_reason_value", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[messagestore]\n"
+        "logReason = maybe\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.find("messagestore.logReason") != std::string::npos);
 
     removeDirectoryQuiet(tempDir);
 }
