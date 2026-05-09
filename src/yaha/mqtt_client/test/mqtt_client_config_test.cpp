@@ -45,6 +45,7 @@ bool loadDocument(const std::filesystem::path& path,
 
 } // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("mqtt_client_config_maps_optional_mqtt_fields", "[mqtt_client]") {
     const auto tempDir = makeTempDirectory();
     const auto iniPath = writeIniFile(tempDir,

@@ -61,6 +61,8 @@ CLIENT_SCOPE_PREFIXES = (
 CTEST_TOTAL_TIMEOUT_SECONDS = int(os.environ.get("MQTT_CTEST_TOTAL_TIMEOUT", "1800"))
 CTEST_NO_OUTPUT_TIMEOUT_SECONDS = int(os.environ.get("MQTT_CTEST_NO_OUTPUT_TIMEOUT", "300"))
 COVERAGE_TEST_TIMEOUT_SECONDS = int(os.environ.get("MQTT_COVERAGE_TEST_TIMEOUT", "600"))
+PER_TEST_TIMEOUT_SECONDS = int(os.environ.get("MQTT_PER_TEST_TIMEOUT", "60"))
+SLOW_TEST_WARNING_SECONDS = float(os.environ.get("MQTT_SLOW_TEST_WARNING", "2"))
 
 _log_fh = None
 _run_id = None
@@ -322,32 +324,81 @@ def _write_selection_file(test_names: list[str]) -> None:
             fh.write("\n")
 
 
-def _run_selected_tests(label: str, binary: Path, test_names: list[str], env: dict | None = None, total_timeout_seconds: int | None = None) -> str:
-    _write_selection_file(test_names)
-    command = [str(binary), "--input-file", str(SELECTION_FILE), "--reporter", "compact", "--colour-mode", "none"]
-    rc, output = _run_captured_live(
-        command,
-        env=env,
-        total_timeout_seconds=total_timeout_seconds,
-        no_output_timeout_seconds=CTEST_NO_OUTPUT_TIMEOUT_SECONDS,
-    )
-    if rc == 0:
-        return output
+def _catch2_exact_filter(name: str) -> str:
+    escaped = name.replace("\\", "\\\\").replace('"', '\\"').replace(",", "\\,")
+    return f'"{escaped}"'
 
-    print(f"\n[FAILED] {label}")
-    if rc == 124:
-        print(f"  timeout : {total_timeout_seconds}s")
-    failed = [
-        line.strip() for line in output.splitlines()
-        if re.search(r"failed|FAILED|error", line, re.IGNORECASE)
-    ]
-    if failed:
-        print("\n  --- failed tests ---")
-        for line in failed[:40]:
-            print(f"  {line}")
-    print(f"\n  Full log: {LOG_FILE}")
-    _close_log()
-    sys.exit(rc)
+
+def _run_selected_tests(label: str, binary: Path, test_names: list[str], env: dict | None = None, total_timeout_seconds: int | None = None) -> str:
+    combined_output: list[str] = []
+    slow_tests: list[tuple[str, float]] = []
+    passed_count = 0
+
+    for index, test_name in enumerate(test_names, start=1):
+        if index % 50 == 0:
+            print(f"      progress: {index}/{len(test_names)} tests")
+
+        command = [
+            str(binary),
+            _catch2_exact_filter(test_name),
+            "--reporter",
+            "compact",
+            "--colour-mode",
+            "none",
+        ]
+        started = time.monotonic()
+        rc, output = _run_captured(
+            command,
+            env=env,
+            timeout_seconds=PER_TEST_TIMEOUT_SECONDS,
+        )
+        duration_seconds = time.monotonic() - started
+
+        combined_output.append(output)
+
+        if duration_seconds > SLOW_TEST_WARNING_SECONDS:
+            print(f"[WARN] slow test: {duration_seconds:.3f}s  {test_name}")
+            slow_tests.append((test_name, duration_seconds))
+
+        if rc == 124:
+            print(f"\n[FAILED] {label}")
+            print(f"  timeout             : {PER_TEST_TIMEOUT_SECONDS}s")
+            print(f"  long running test   : {test_name}")
+            print("  action              : please identify and fix this long-running unit test")
+            tail = "\n".join(output.splitlines()[-20:])
+            if tail:
+                print("\n  --- last output ---")
+                print(tail)
+            print(f"\n  Full log: {LOG_FILE}")
+            _close_log()
+            sys.exit(124)
+
+        if rc != 0:
+            print(f"\n[FAILED] {label}")
+            print(f"  failing test        : {test_name}")
+            print(f"  exit                : {rc}")
+            failed = [
+                line.strip() for line in output.splitlines()
+                if re.search(r"failed|FAILED|error", line, re.IGNORECASE)
+            ]
+            if failed:
+                print("\n  --- relevant output ---")
+                for line in failed[:40]:
+                    print(f"  {line}")
+            print(f"\n  Full log: {LOG_FILE}")
+            _close_log()
+            sys.exit(rc)
+
+        passed_count += 1
+
+    combined_output.append(
+        f"test cases:  {len(test_names)} |  {passed_count} passed | 0 failed"
+    )
+
+    if slow_tests:
+        print(f"      slow tests (> {SLOW_TEST_WARNING_SECONDS:.1f}s): {len(slow_tests)}")
+
+    return "\n".join(combined_output)
 
 
 def _default_coverage_targets() -> list[str]:

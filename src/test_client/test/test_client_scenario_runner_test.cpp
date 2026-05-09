@@ -417,6 +417,8 @@ TEST_CASE("test_client_scenario_command_step32_mass_connect_mode_returns_failure
     TestClientProfile profile;
     profile.host = "127.0.0.1";
     profile.port = 1U;
+    profile.maximum_reconnect_times = 1U;
+    profile.reconnect_period_ms = 50U;
 
     CHECK(run_test_client_scenario_command(options, profile, "ignored") == 1);
 }
@@ -449,6 +451,8 @@ TEST_CASE("test_client_scenario_command_step32_publish_rate_mode_returns_failure
     TestClientProfile profile;
     profile.host = "127.0.0.1";
     profile.port = 1U;
+    profile.maximum_reconnect_times = 1U;
+    profile.reconnect_period_ms = 50U;
 
     CHECK(run_test_client_scenario_command(options, profile, "ignored") == 1);
 }
@@ -466,6 +470,8 @@ TEST_CASE("test_client_scenario_command_step32_multi_subscribe_mode_returns_fail
     TestClientProfile profile;
     profile.host = "127.0.0.1";
     profile.port = 1U;
+    profile.maximum_reconnect_times = 1U;
+    profile.reconnect_period_ms = 50U;
 
     CHECK(run_test_client_scenario_command(options, profile, "ignored") == 1);
 }

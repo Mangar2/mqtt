@@ -13,11 +13,14 @@ namespace yaha {
 
 namespace {
 
+constexpr std::uint64_t k_milliseconds_per_second{1000U};
+
 struct SubscriptionMapLoadResult {
     std::optional<SubscriptionMap> subscriptions{};
     std::string errorMessage{};
 };
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 [[nodiscard]] SubscriptionMapLoadResult tryLoadStructuredSourceSubscriptionsFromIni(
     const IniDocument& document) {
     const IniDocument::Section* section = document.findSection("subscription");
@@ -180,11 +183,7 @@ ReceiverMqttBrokerConfigLoadResult tryLoadReceiverMqttBrokerConfigFromIni(
     const IniDocument& document) {
     YahaMqttClient::Config parsed{
         .brokerHost = "127.0.0.1",
-        .brokerPort = 1883U,
         .clientId = "broker-connector-receiver",
-        .reconnectDelay = std::chrono::milliseconds{1000},
-        .keepAliveInterval = std::chrono::milliseconds{30000},
-        .loopSleep = std::chrono::milliseconds{20},
         .enableLifecycleTrace = true,
         .enableMessageTrace = false,
         .logReason = true};
@@ -219,7 +218,8 @@ ReceiverMqttBrokerConfigLoadResult tryLoadReceiverMqttBrokerConfigFromIni(
         return {.config = std::nullopt, .errorMessage = keepAliveSecondsResult.second};
     }
     if (keepAliveSecondsResult.first.has_value()) {
-        parsed.keepAliveInterval = std::chrono::milliseconds{*keepAliveSecondsResult.first * 1000U};
+        parsed.keepAliveInterval = std::chrono::milliseconds{
+            *keepAliveSecondsResult.first * k_milliseconds_per_second};
     }
 
     const auto loopSleepResult = document.readUnsigned("receiverMqttBroker", "loopSleepMs", 1U, 1000U);
@@ -289,7 +289,7 @@ BrokerConnectorClientRuntimeConfigLoadResult tryLoadBrokerConnectorClientRuntime
         parsed.sourceLifecycleConfig.keepAliveInterval = std::chrono::milliseconds{*sourceKeepAliveResult.first};
     } else {
         parsed.sourceLifecycleConfig.keepAliveInterval = std::chrono::milliseconds{
-            static_cast<std::uint64_t>(parsed.sourceConfig.keepAliveSeconds) * 1000U};
+            static_cast<std::uint64_t>(parsed.sourceConfig.keepAliveSeconds) * k_milliseconds_per_second};
     }
 
     const auto maxRetryResult = document.readUnsigned("automation", "maxPublishRetries", 0U, 1000U);

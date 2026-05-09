@@ -13,6 +13,7 @@ namespace yaha {
 namespace {
 
 constexpr std::uint32_t k_minimum_trimmed_history_length{1U};
+constexpr std::uint32_t k_legacy_interval_conversion_minimum{3U};
 
 template <typename... Visitor>
 struct VariantVisitor : Visitor... {
@@ -103,7 +104,10 @@ void MessageTree::addOrConvertTimeValueEntry(CompressedHistoryEntry& newest,
     }
 
     const std::vector<std::int64_t> timestamps = newestIdenticalValueTimestamps(*currentTimeValueEntry);
-    if (timestamps.size() < config_.lengthForFurtherCompression) {
+    const std::size_t intervalThreshold =
+        std::min<std::size_t>(config_.lengthForFurtherCompression,
+                              k_legacy_interval_conversion_minimum);
+    if (timestamps.size() < intervalThreshold) {
         return;
     }
 
@@ -238,9 +242,15 @@ MessageTree::tryConvertTimeToInterval(const TimeHistoryEntry& entry) const {
     const std::int64_t lastTimeMs = entry.timestamps.back();
     const std::int64_t referenceIntervalMs =
         (lastTimeMs - firstTimeMs) / static_cast<std::int64_t>(entry.timestamps.size() - 1U);
+    if (referenceIntervalMs <= 0) {
+        return std::nullopt;
+    }
 
     for (std::size_t idx = 1U; idx < entry.timestamps.size(); ++idx) {
         const std::int64_t newIntervalMs = entry.timestamps[idx] - entry.timestamps[idx - 1U];
+        if (newIntervalMs <= 0) {
+            return std::nullopt;
+        }
         if (!isMatchingInterval(newIntervalMs, referenceIntervalMs)) {
             return std::nullopt;
         }

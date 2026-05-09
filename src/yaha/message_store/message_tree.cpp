@@ -58,6 +58,7 @@ MessageTree::MessageTree(MessageTreeConfig config)
     }
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void MessageTree::addData(const Message& message) {
     Message::validate(message);
 
@@ -77,6 +78,20 @@ void MessageTree::addData(const Message& message) {
         std::int64_t reasonTimeMs = 0;
         if (tryParseIsoTimestampMilliseconds(reasons.front().timestamp, reasonTimeMs)) {
             effectiveTimeMs = reasonTimeMs;
+
+            if (node->hasData && effectiveTimeMs <= node->data.timeMs) {
+                std::int64_t newestReasonTimeMs = effectiveTimeMs;
+                for (std::size_t idx = 1U; idx < reasons.size(); ++idx) {
+                    std::int64_t candidateTimeMs = 0;
+                    if (!tryParseIsoTimestampMilliseconds(reasons[idx].timestamp, candidateTimeMs)) {
+                        continue;
+                    }
+                    newestReasonTimeMs = std::max(newestReasonTimeMs, candidateTimeMs);
+                }
+                if (newestReasonTimeMs > node->data.timeMs) {
+                    effectiveTimeMs = newestReasonTimeMs;
+                }
+            }
         }
     }
     node->hasData = true;

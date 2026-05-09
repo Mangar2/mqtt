@@ -707,6 +707,7 @@ std::uint16_t SourceHttpBrokerAdapter::listenerPort() const {
     return boundListenerPort_;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
     if (server_ != nullptr) {
         return true;

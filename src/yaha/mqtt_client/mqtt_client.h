@@ -11,7 +11,6 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
-#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -24,16 +23,21 @@ namespace yaha {
  */
 class YahaMqttClient {
 public:
+    static constexpr std::uint16_t k_default_broker_port{1883U};
+    static constexpr std::int64_t k_default_reconnect_delay_ms{1000};
+    static constexpr std::int64_t k_default_keep_alive_interval_ms{30000};
+    static constexpr std::int64_t k_default_loop_sleep_ms{20};
+
     /**
      * @brief Runtime configuration for one client session.
      */
     struct Config {
         std::string brokerHost{"127.0.0.1"};
-        std::uint16_t brokerPort{1883U};
+        std::uint16_t brokerPort{k_default_broker_port};
         std::string clientId{"yaha-client"};
-        std::chrono::milliseconds reconnectDelay{1000};
-        std::chrono::milliseconds keepAliveInterval{30000};
-        std::chrono::milliseconds loopSleep{20};
+        std::chrono::milliseconds reconnectDelay{k_default_reconnect_delay_ms};
+        std::chrono::milliseconds keepAliveInterval{k_default_keep_alive_interval_ms};
+        std::chrono::milliseconds loopSleep{k_default_loop_sleep_ms};
         bool enableLifecycleTrace{true};
         bool enableMessageTrace{false};
         bool logReason{true};

@@ -31,6 +31,7 @@ bool loadDocumentFromText(const std::string& text,
 
 } // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("load_runtime_config_parses_source_receiver_and_automation", "[broker_connector_client]") {
     const std::string iniText =
         "[sourceHttpBroker]\n"
@@ -114,6 +115,7 @@ TEST_CASE("load_runtime_config_parses_source_receiver_and_automation", "[broker_
     REQUIRE_FALSE(config.relayPolicyConfig.retainPassthrough);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("load_runtime_config_uses_defaults_when_optional_keys_missing", "[broker_connector_client]") {
     const std::string iniText =
         "[sourceHttpBroker]\n"

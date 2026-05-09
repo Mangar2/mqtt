@@ -4,7 +4,9 @@
 #include <chrono>
 #include <csignal>
 #include <deque>
+#include <iostream>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -14,6 +16,7 @@
 #include "yaha/mqtt_client/mqtt_client.h"
 #include "yaha/mqtt_client/mqtt_client_runtime.h"
 
+// NOLINTBEGIN(readability-magic-numbers)
 namespace {
 
 class RecordingComponent final : public yaha::IMqttComponent {
@@ -277,6 +280,78 @@ TEST_CASE("transport_poll_exception_triggers_reconnect_without_crash", "[mqtt_cl
     REQUIRE(state.disconnect_calls.load() >= 1);
 }
 
+TEST_CASE("run_throws_when_transport_callbacks_are_missing", "[mqtt_client]") {
+    RecordingComponent component{{{"home/#", yaha::Qos::AtLeastOnce}}};
+
+    yaha::YahaMqttClient::Config config{};
+    yaha::YahaMqttClient::Transport brokenTransport{};
+
+    yaha::YahaMqttClient client{config, component, std::move(brokenTransport)};
+    REQUIRE_THROWS_AS(client.run(), std::invalid_argument);
+}
+
+TEST_CASE("connect_trace_renders_qos2_subscription", "[mqtt_client]") {
+    TransportState state{};
+    RecordingComponent component{{{"home/qos2/#", yaha::Qos::ExactlyOnce}}};
+
+    yaha::YahaMqttClient::Config config{};
+    config.loopSleep = std::chrono::milliseconds{5};
+    config.reconnectDelay = std::chrono::milliseconds{5};
+    config.enableLifecycleTrace = true;
+    config.enableMessageTrace = false;
+
+    std::ostringstream captured{};
+    auto* oldBuffer = std::cout.rdbuf(captured.rdbuf());
+
+    {
+        yaha::YahaMqttClient client{config, component, makeTransport(state)};
+        client.run();
+        std::this_thread::sleep_for(std::chrono::milliseconds{30});
+        client.close();
+    }
+
+    std::cout.rdbuf(oldBuffer);
+
+    REQUIRE(state.subscribe_calls.load() == 1);
+    REQUIRE(captured.str().find("qos=2") != std::string::npos);
+}
+
+TEST_CASE("message_trace_escapes_string_and_formats_numeric_values", "[mqtt_client]") {
+    TransportState state{};
+    state.inbox.emplace_back("home/trace/in", 21.5);
+
+    RecordingComponent component{{{"home/trace/#", yaha::Qos::AtLeastOnce}}};
+    yaha::YahaMqttClient::Config config{};
+    config.loopSleep = std::chrono::milliseconds{5};
+    config.reconnectDelay = std::chrono::milliseconds{5};
+    config.enableLifecycleTrace = true;
+    config.enableMessageTrace = true;
+
+    std::ostringstream captured{};
+    auto* oldBuffer = std::cout.rdbuf(captured.rdbuf());
+
+    {
+        yaha::YahaMqttClient client{config, component, makeTransport(state)};
+        client.run();
+        std::this_thread::sleep_for(std::chrono::milliseconds{30});
+
+        yaha::Message outbound{"home/trace/out", std::string{"payload"}};
+        outbound.setRawPayload("line1\n\"x\"\\tab\t");
+        component.publishFromComponent(outbound);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds{20});
+        client.close();
+    }
+
+    std::cout.rdbuf(oldBuffer);
+
+    const std::string output = captured.str();
+    REQUIRE(output.find("broker: recv topic=home/trace/in") != std::string::npos);
+    REQUIRE(output.find("value=21.5") != std::string::npos);
+    REQUIRE(output.find("broker: sent topic=home/trace/out") != std::string::npos);
+    REQUIRE(output.find("raw=\"line1\\n\\\"x\\\"\\\\tab\\t\"") != std::string::npos);
+}
+
 TEST_CASE("mqtt_client_runtime_run_until_signal_starts_and_stops_component",
           "[mqtt_client]") {
     class RuntimeRecordingComponent final : public yaha::IMqttComponent {
@@ -285,7 +360,7 @@ TEST_CASE("mqtt_client_runtime_run_until_signal_starts_and_stops_component",
             return {};
         }
 
-        void handleMessage(const yaha::Message&) override {
+        void handleMessage([[maybe_unused]] const yaha::Message& message) override {
         }
 
         void setPublishCallback(yaha::PublishCallback callback) override {
@@ -342,3 +417,4 @@ TEST_CASE("mqtt_client_runtime_run_until_signal_starts_and_stops_component",
     CHECK(component.runCalls() == 1);
     CHECK(component.closeCalls() == 1);
 }
+// NOLINTEND(readability-magic-numbers)
