@@ -34,6 +34,7 @@ PROJECT_ROOT = _detect_project_root()
 DEFAULT_PRESET = "armv7-zig-release"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "deployment" / "yaha"
 INI_DIR = PROJECT_ROOT / "cmake" / "ini"
+NGINX_CONTROLAPP_SOURCE = PROJECT_ROOT / "deployment" / "yaha" / "nginx" / "controlapp.conf"
 
 SERVICE_COMPONENTS = (
     {
@@ -145,6 +146,9 @@ def ensure_ini_templates() -> None:
         if not tool_component["source"].exists():
             missing.append(tool_component["source"])
 
+    if not NGINX_CONTROLAPP_SOURCE.exists():
+        missing.append(NGINX_CONTROLAPP_SOURCE)
+
     if missing:
         missing_lines = "\n".join(str(path) for path in missing)
         raise RuntimeError(f"Missing tool files:\n{missing_lines}")
@@ -236,6 +240,56 @@ def render_root_install_script() -> str:
             "set -euo pipefail",
             "",
             "SCRIPT_DIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"",
+            "SUDO=\"\"",
+            "if [[ ${EUID} -ne 0 ]]; then",
+            "  SUDO=\"sudo\"",
+            "fi",
+            "",
+            "install_nginx_config() {",
+            "  local src_conf=\"${SCRIPT_DIR}/nginx/controlapp.conf\"",
+            "  local target_conf=\"/etc/nginx/sites-available/controlapp.conf\"",
+            "  local enabled_link=\"/etc/nginx/sites-enabled/controlapp.conf\"",
+            "",
+            "  if [[ ! -f \"${src_conf}\" ]]; then",
+            "    echo \"Skipping nginx setup (missing ${src_conf}).\"",
+            "    return 0",
+            "  fi",
+            "",
+            "  ${SUDO} mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled",
+            "",
+            "  local changed=0",
+            "  local had_backup=0",
+            "  local backup_conf=\"\"",
+            "  if [[ ! -f \"${target_conf}\" ]] || ! cmp -s \"${src_conf}\" \"${target_conf}\"; then",
+            "    changed=1",
+            "    if [[ -f \"${target_conf}\" ]]; then",
+            "      backup_conf=\"${target_conf}.bak.$(date +%Y%m%d%H%M%S)\"",
+            "      ${SUDO} cp \"${target_conf}\" \"${backup_conf}\"",
+            "      had_backup=1",
+            "    fi",
+            "    ${SUDO} cp \"${src_conf}\" \"${target_conf}\"",
+            "  fi",
+            "",
+            "  ${SUDO} ln -sfn \"${target_conf}\" \"${enabled_link}\"",
+            "",
+            "  if ! ${SUDO} nginx -t >/dev/null 2>&1; then",
+            "    echo \"nginx -t failed, rolling back controlapp.conf\" >&2",
+            "    if [[ ${had_backup} -eq 1 ]]; then",
+            "      ${SUDO} cp \"${backup_conf}\" \"${target_conf}\"",
+            "    elif [[ ${changed} -eq 1 ]]; then",
+            "      ${SUDO} rm -f \"${target_conf}\"",
+            "    fi",
+            "    ${SUDO} nginx -t >/dev/null 2>&1 || true",
+            "    return 1",
+            "  fi",
+            "",
+            "  if [[ ${changed} -eq 1 ]]; then",
+            "    ${SUDO} systemctl reload nginx",
+            "    echo \"Installed nginx controlapp.conf and reloaded nginx.\"",
+            "  else",
+            "    echo \"nginx controlapp.conf unchanged; no reload needed.\"",
+            "  fi",
+            "}",
             "",
             "for component in " + " ".join(install_order) + "; do",
             "  installer=\"${SCRIPT_DIR}/${component}/install.sh\"",
@@ -246,6 +300,8 @@ def render_root_install_script() -> str:
             "  echo \"Installing ${component}...\"",
             "  bash \"${installer}\"",
             "done",
+            "",
+            "install_nginx_config",
             "",
             "echo \"YAHA installation completed.\"",
         ]
@@ -292,6 +348,7 @@ def main() -> int:
             else PROJECT_ROOT / "build" / args.preset
         )
         output_dir = Path(args.output_dir).expanduser()
+        nginx_controlapp_content = NGINX_CONTROLAPP_SOURCE.read_text(encoding="utf-8")
 
         if args.build:
             run_or_fail(
@@ -307,6 +364,10 @@ def main() -> int:
         if output_dir.exists():
             shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
+
+        nginx_dir = output_dir / "nginx"
+        nginx_dir.mkdir(parents=True, exist_ok=True)
+        (nginx_dir / "controlapp.conf").write_text(nginx_controlapp_content, encoding="utf-8")
 
         for component in SERVICE_COMPONENTS:
             component_dir = output_dir / component["name"]

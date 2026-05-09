@@ -6,8 +6,9 @@ from __future__ import annotations
 Features:
 - Creates missing remote directories.
 - Compares file hashes before copying and skips identical files.
-- Prompts before overwriting changed .ini and .service files.
+- Prompts before overwriting changed .ini, .service, and .conf files.
 - Optional remote install/restart for selected service components.
+- Optional remote execution of root install.sh.
 """
 
 import argparse
@@ -123,7 +124,7 @@ def remote_sha256(*, remote_host: str, remote_path: str, cwd: Path) -> str | Non
 
 def is_protected_config_file(path: Path) -> bool:
     suffix = path.suffix.lower()
-    return suffix in {".ini", ".service"}
+    return suffix in {".ini", ".service", ".conf"}
 
 
 def list_local_files(local_root: Path) -> list[Path]:
@@ -235,11 +236,32 @@ def run_remote_component_install(
     )
 
 
+def run_remote_root_install(
+    *,
+    remote_host: str,
+    remote_root: str,
+    cwd: Path,
+) -> None:
+    install_script = build_remote_path(remote_root, Path("install.sh"))
+    command = (
+        f"if [ ! -x {remote_shell_path(install_script)} ]; then "
+        f"echo 'missing root installer: {install_script}' >&2; "
+        "exit 1; "
+        "fi; "
+        f"bash {remote_shell_path(install_script)}"
+    )
+    run_or_fail(
+        ["ssh", "-n", "-o", "BatchMode=yes", remote_host, command],
+        cwd=cwd,
+        label="remote root install",
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Copy deployment/yaha to a remote system via scp with checksum-based "
-            "skip and overwrite prompts for .ini/.service files."
+            "skip and overwrite prompts for .ini/.service/.conf files."
         )
     )
     parser.add_argument(
@@ -274,6 +296,14 @@ def parse_args() -> argparse.Namespace:
         help=(
             "After copy, run remote <component>/install.sh for this component. "
             "Repeatable, e.g. --install-component automation"
+        ),
+    )
+    parser.add_argument(
+        "--install-root",
+        action="store_true",
+        help=(
+            "After copy, run remote root install.sh from deployment directory. "
+            "This installs all component services and nginx config logic."
         ),
     )
     return parser.parse_args()
@@ -385,6 +415,14 @@ def main() -> int:
                 cwd=PROJECT_ROOT,
             )
             print(f"INSTALL remote component={cleaned_component}")
+
+        if args.install_root:
+            run_remote_root_install(
+                remote_host=remote_host,
+                remote_root=remote_root,
+                cwd=PROJECT_ROOT,
+            )
+            print("INSTALL remote root=install.sh")
 
         return 0
     except Exception as error:
