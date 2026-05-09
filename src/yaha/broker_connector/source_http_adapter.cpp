@@ -719,9 +719,20 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
         meta.qos = parseHeaderQos(request);
         meta.retain = parseBool(request.get_header_value("retain"), false);
         meta.dup = parseBool(request.get_header_value("dup"), false);
+        const std::string rawPacketIdHeader = request.get_header_value("packetid");
+        const std::string cleanedPacketIdHeader = trim(rawPacketIdHeader);
         std::uint16_t packetId = 0U;
-        if (parseUnsigned16(request.get_header_value("packetid"), packetId)) {
+        if (parseUnsigned16(cleanedPacketIdHeader, packetId)) {
             meta.packetId = packetId;
+        }
+
+        if (meta.qos != Qos::AtMostOnce && !meta.packetId.has_value()) {
+            std::cout << "  source: publish rejected invalid packetid header=\""
+                      << escapeJson(rawPacketIdHeader) << "\" qos=" << static_cast<int>(meta.qos)
+                      << '\n' << std::flush;
+            response.status = k_http_status_bad_request;
+            response.set_content("{\"error\":\"bad_publish_packetid\"}", "application/json");
+            return;
         }
 
         Message message{"", std::string{}};
@@ -767,8 +778,8 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
         response.set_header("version", "1.0");
         response.set_header("qos", request.get_header_value("qos"));
         response.set_header("retain", request.get_header_value("retain"));
-        if (meta.packetId.has_value()) {
-            response.set_header("packetid", std::to_string(*meta.packetId));
+        if (!rawPacketIdHeader.empty()) {
+            response.set_header("packetid", rawPacketIdHeader);
         }
         if (meta.qos == Qos::AtLeastOnce) {
             response.set_header("packet", "puback");

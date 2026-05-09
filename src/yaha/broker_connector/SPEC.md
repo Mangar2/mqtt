@@ -157,6 +157,8 @@ Ack behavior for callback listener:
 - qos 1 publish -> 204 with `packet=puback`
 - qos 2 publish -> 204 with `packet=pubrec`
 - pubrel -> 204 with `packet=pubcomp`
+- For qos 1/2 callbacks, `packetid` must be present and parseable as uint16; otherwise `/publish` returns 400 (`bad_publish_packetid`).
+- For qos 1/2 callback acknowledgements, response `packetid` echoes the exact incoming header text to preserve legacy broker matching behavior.
 
 ## Data model
 

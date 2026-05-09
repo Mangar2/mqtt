@@ -125,3 +125,107 @@ Sets a callback .
 `run ()`
 
 Starts the broker . It will listen to message , send messages and periodically store its status
+
+## QoS Acknowledge Chain (Detailed)
+
+This section documents how acknowledge handling works end-to-end for the legacy broker in
+`spec/@mangar2/broker`, based on:
+
+- request handling in `src/mqtt/mqtt.js` (`onPublish`, `onPubrel`, `onPingreq`)
+- broker HTTP entrypoint in `broker.js` (`server.on('put', ...)`)
+- behavioral tests in `test/` (especially publish/ack/retry cases)
+
+### 1. Incoming publish to broker (`PUT /publish`)
+
+#### 1.1 Common request mapping
+
+- `onPublish(payload, headers)` extracts QoS from header `qos` (`0|1|2`), DUP from header `dup` (`'1'|'true'`), and RETAIN from header `retain`.
+- For interface version `1.0` (not `0.0`) with token present:
+    - token is checked
+    - client activity timestamp is refreshed
+    - duplicate check for QoS2 path is performed using topic, qos, dup, packetid
+
+#### 1.2 Ack response generation
+
+The broker builds the HTTP response via `Interfaces.onPublish(headers)` and returns that response directly.
+
+For interface `1.0`, tests and interface checks require:
+
+- QoS0 incoming publish:
+    - HTTP 204
+    - no MQTT ack packet semantics required
+- QoS1 incoming publish:
+    - HTTP 204
+    - header `packet=puback`
+    - header `packetid` must match request packet id
+- QoS2 incoming publish:
+    - HTTP 204
+    - header `packet=pubrec`
+    - header `packetid` must match request packet id
+
+### 2. Incoming QoS2 second step (`PUT /pubrel`)
+
+- `onPubrel(payload, headers)` validates through `Interfaces.onPubrel(headers)`.
+- Broker finalizes QoS2 state by calling `connections.onPubrel(payload.token, packetid)`.
+- Response semantics (1.0):
+    - HTTP 204
+    - header `packet=pubcomp`
+    - header `packetid` matching pubrel packet id
+
+### 3. Internal forwarding from broker to subscribers
+
+After accepting an incoming publish, broker enqueues/distributes via `connections.publishMessage(message)`.
+Actual transmission is performed asynchronously in broker main loop (`_processMessages`), which repeatedly calls `mqtt.processSendMessage()`.
+
+### 4. Outgoing QoS handshake expected by broker when it sends to clients
+
+Behavior verified by tests (`test-mqtt-send-cases.js`, `test-no-acknowledge-cases.js`, `test-publish-cases.js`):
+
+- Outgoing QoS0:
+    - sent once
+    - no ack required
+- Outgoing QoS1:
+    - first send has `dup=0`
+    - broker expects `packet=puback` and matching `packetid`
+    - on missing/wrong ack: retry send with same `packetid` and `dup=1`
+- Outgoing QoS2:
+    - first send has `dup=0`, expects `packet=pubrec` with matching `packetid`
+    - then sends `pubrel` and expects `packet=pubcomp` with matching `packetid`
+    - on missing/wrong ack in either step: retry according to retry policy
+
+Queue status transitions visible in tests:
+
+- QoS1 path: `sending` -> `duplicate` (on resend)
+- QoS2 path: `sending` -> `duplicate` (if needed) -> `pubrel`
+
+### 5. Effective QoS to subscriber
+
+Delivered QoS is bounded by publish QoS and subscription QoS (min rule), as validated in publish-case tests:
+
+- publish QoS2 to subscriber subscribed with QoS1 is sent as QoS1
+- publish QoS1 to subscriber subscribed with QoS0 is sent as QoS0
+- publish QoS0 remains QoS0 regardless of higher subscription QoS
+
+### 6. Version-specific payload/header shape
+
+For `1.0` paths (used by brokerconnector and modern clients), messages are wrapped as:
+
+- payload: `{ token, message: { topic, value, ... } }`
+- headers include `qos`, `dup`, `retain`, `version`, and for QoS>0 `packetid`
+
+For `0.0` compatibility mode, older payload/header forms are accepted by interface helpers, but `1.0` is the strict reference for ack semantics above.
+
+### 7. Ping acknowledge semantics
+
+- `onPingreq(payload)` resolves client by token.
+- Invalid token throws and returns HTTP 400 with error.
+- Valid token returns HTTP 204 + header `packet=pingresp` while client is connected.
+
+### 8. Normative ack requirements for interoperability
+
+Any bridge/client talking to this legacy broker in `1.0` mode must satisfy all of the following:
+
+- QoS1 publish response must include `packet=puback` and the exact corresponding packet id.
+- QoS2 publish response must include `packet=pubrec` and the exact corresponding packet id.
+- QoS2 pubrel response must include `packet=pubcomp` and the exact corresponding packet id.
+- Missing/incorrect packet type or packet id is treated as not acknowledged and triggers retries with DUP behavior.
