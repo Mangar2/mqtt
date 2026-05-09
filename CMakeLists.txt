@@ -142,6 +142,7 @@ target_link_options(yahamsgstoreclient    PRIVATE ${MQTT_LINK_OPTIONS})
 target_include_directories(yahamsgstoreclient PRIVATE src)
 target_include_directories(yahamsgstoreclient PRIVATE ${httplib_SOURCE_DIR})
 target_compile_definitions(yahamsgstoreclient PRIVATE
+    YAHA_MSGSTORECLIENT_VERSION="${PROJECT_VERSION}"
     $<$<BOOL:${MQTT_TRACING_DISABLED}>:MQTT_TRACING_DISABLED>)
 if(WIN32)
     target_link_libraries(yahamsgstoreclient PRIVATE ws2_32)

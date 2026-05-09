@@ -19,6 +19,7 @@ namespace yaha {
 struct MessageStoreClientRuntimeConfig {
     MessageStoreConfig storeConfig{};             ///< MessageStore component configuration.
     YahaMqttClient::Config mqttConfig{};          ///< MQTT session configuration.
+    bool logIncomingMessages{false};              ///< Enable inbound MQTT message logs in broker-format.
 };
 
 /**

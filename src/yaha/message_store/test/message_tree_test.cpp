@@ -47,6 +47,7 @@ constexpr double k_value_three{3.0};
 constexpr double k_value_four{4.0};
 constexpr double k_value_five{5.0};
 constexpr double k_value_seven{7.0};
+constexpr double k_light_on_time_seconds{1200.0};
 constexpr double k_interval_upper_bound_factor{1.01};
 constexpr double k_interval_lower_bound_factor{0.99};
 constexpr std::uint32_t k_length_for_time_value_only{10U};
@@ -389,7 +390,7 @@ TEST_CASE("history_interval_compression_merges_regular_updates", "[message_store
                                       yaha::MessageTreeConfig::k_default_max_history_length,
                                       yaha::MessageTreeConfig::k_default_history_hysterese,
                                       yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
-                                      3U);
+                                      k_length_for_time_value_only);
 
     clock.nowMs = k_time_zero_ms;
     tree.addData(makeReasonedMessage("sensor/compression_interval", k_value_five, "source", "1970-01-01T00:00:00.000Z"));
@@ -936,6 +937,47 @@ TEST_CASE("history_time_to_interval_transition_keeps_total_entry_count", "[messa
         insertedMessages += 1U;
         requireTotalEntryCount(tree, topic, insertedMessages);
     }
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("history_multi_reason_same_device_timestamp_adds_exactly_one_logical_entry_per_update", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock,
+                                      yaha::MessageTreeConfig::k_default_max_history_length,
+                                      yaha::MessageTreeConfig::k_default_history_hysterese,
+                                      yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
+                                      k_length_for_time_value_only);
+
+    const std::string topic{"first/study/main/light/light on time"};
+    const std::string deviceTimestamp{"2026-05-08T23:18:38.492Z"};
+    const std::string brokerTimestamp{"2026-05-08T23:18:38.496Z"};
+
+    std::size_t insertedMessages = 0U;
+    for (int step = 0; step < k_count_integrity_steps; ++step) {
+        clock.nowMs = static_cast<std::int64_t>(step) * k_time_ten_seconds_ms;
+
+        yaha::Message message{topic, k_light_on_time_seconds};
+        message.addReason("received from arduino", deviceTimestamp);
+        message.addReason("received by broker", brokerTimestamp);
+
+        tree.addData(message);
+        insertedMessages += 1U;
+
+        requireTotalEntryCount(tree, topic, insertedMessages);
+    }
+
+    const auto nodes = tree.getSection(topic, 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().history.size() >= 2U);
+
+    const std::int64_t repeatedTimestamp = nodes.front().history.front().timeMs;
+    const bool allHistoryTimestampsEqual = std::all_of(
+        nodes.front().history.begin(),
+        nodes.front().history.end(),
+        [repeatedTimestamp](const yaha::MessageTreeHistoryEntry& entry) {
+            return entry.timeMs == repeatedTimestamp;
+        });
+    REQUIRE(allHistoryTimestampsEqual);
 }
 
 TEST_CASE("get_section_respects_depth", "[message_store]") {

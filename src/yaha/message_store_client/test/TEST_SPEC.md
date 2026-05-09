@@ -21,3 +21,5 @@ Unit tests for MessageStore runtime config parsing.
 | `load_config_rejects_subscription_topic_without_qos` | enforce topic/qos pair completeness | `[subscription]` has `topic` only | parser fails with missing-qos error |
 | `load_config_rejects_empty_subscription_topic` | reject empty topic values | `[subscription]` with empty `topic` and valid `qos` | parser fails with empty-topic error |
 | `load_config_parses_server_host_when_set` | optional server host parsing | `[server]` with explicit `host` | parsed server host matches input |
+| `load_config_parses_log_incoming_messages_when_enabled` | optional incoming-message log flag parsing | `[messagestore]` with `logIncomingMessages = true` | parser enables runtime incoming log flag |
+| `load_config_rejects_invalid_log_incoming_messages_value` | strict bool validation for incoming-message log flag | `[messagestore]` with non-bool `logIncomingMessages` | parser fails with key-specific bool error |

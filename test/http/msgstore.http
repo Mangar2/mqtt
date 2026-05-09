@@ -1,4 +1,4 @@
-GET http://192.168.0.183:8090/store/first/bathroom/main/light/light on time
+GET http://192.168.0.183:8090/store/first/study/main/light/light on time
 levelamount: 5
 history: true
 reason: true

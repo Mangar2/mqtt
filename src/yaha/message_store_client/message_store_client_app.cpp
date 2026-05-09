@@ -268,6 +268,15 @@ bool tryLoadMessageStoreClientRuntimeConfigFromIni(
         return false;
     }
 
+    const auto logIncomingResult = document.readBool("messagestore", "logIncomingMessages");
+    if (!logIncomingResult.second.empty()) {
+        errorMessage = logIncomingResult.second;
+        return false;
+    }
+    if (logIncomingResult.first.has_value()) {
+        parsed.logIncomingMessages = *logIncomingResult.first;
+    }
+
     output = std::move(parsed);
     return true;
 }

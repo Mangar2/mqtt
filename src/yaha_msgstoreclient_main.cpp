@@ -6,22 +6,36 @@
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <utility>
 
 namespace {
+
+#ifndef YAHA_MSGSTORECLIENT_VERSION
+#define YAHA_MSGSTORECLIENT_VERSION "0.1.0"
+#endif
+
+constexpr const char* k_msgstore_client_name{"yahamsgstoreclient"};
 
 struct CliOptions {
     std::filesystem::path configPath{"broker.ini"};
     bool configPathProvided{false};
     bool enableMessageTrace{false};
     bool showHelp{false};
+    bool showVersion{false};
 };
 
+void printVersion() {
+    std::cout << k_msgstore_client_name << ' ' << YAHA_MSGSTORECLIENT_VERSION << '\n' << std::flush;
+}
+
 void printUsage() {
-    std::cout << "Usage: yahamsgstoreclient [config-path] [--trace-messages] [--help]\n"
+    std::cout << "Usage: yahamsgstoreclient [config-path] [--trace-messages] [--version] [--help]\n"
               << "  config-path         optional INI config file (default: broker.ini)\n"
               << "  --trace-messages    print sent/received MQTT messages\n"
+              << "  --version           print version and exit\n"
               << "  --help              print this help and exit\n"
               << std::flush;
 }
@@ -31,6 +45,11 @@ bool tryParseCli(int argc, char* argv[], CliOptions& options, std::string& error
         const std::string argument{argv[argIndex]};
         if (argument == "--help" || argument == "-h") {
             options.showHelp = true;
+            continue;
+        }
+
+        if (argument == "--version" || argument == "-V") {
+            options.showVersion = true;
             continue;
         }
 
@@ -69,9 +88,65 @@ const char* qosToText(const yaha::Qos qos) {
     return "0";
 }
 
+std::string valueToText(const yaha::Value& value) {
+    if (std::holds_alternative<std::string>(value)) {
+        return std::get<std::string>(value);
+    }
+
+    std::ostringstream stream{};
+    stream << std::get<double>(value);
+    return stream.str();
+}
+
+void traceIncomingMessage(const yaha::Message& message) {
+    std::string reasonText{"none"};
+    if (!message.reason().empty()) {
+        reasonText = "count=" + std::to_string(message.reason().size()) +
+            " latest=\"" + message.reason().front().message + "\"";
+    }
+
+    std::cout << "  broker: recv topic=" << message.topic()
+              << " qos=" << qosToText(message.qos())
+              << " retain=" << (message.retain() ? "1" : "0")
+              << " value=" << valueToText(message.value())
+              << " reason=" << reasonText
+              << '\n' << std::flush;
+}
+
+class IncomingMessageLoggingComponent final : public yaha::IMqttComponent {
+public:
+    explicit IncomingMessageLoggingComponent(yaha::MessageStore& store)
+        : store_(store) {}
+
+    [[nodiscard]] yaha::SubscriptionMap getSubscriptions() const override {
+        return store_.getSubscriptions();
+    }
+
+    void handleMessage(const yaha::Message& message) override {
+        traceIncomingMessage(message);
+        store_.handleMessage(message);
+    }
+
+    void run() override {
+        store_.run();
+    }
+
+    void close() override {
+        store_.close();
+    }
+
+    void setPublishCallback(yaha::PublishCallback callback) override {
+        store_.setPublishCallback(std::move(callback));
+    }
+
+private:
+    yaha::MessageStore& store_;
+};
+
 void printStartupConfiguration(const std::filesystem::path& configPath,
-                               const yaha::MessageStoreClientRuntimeConfig& runtimeConfig) {
-    std::cout << "yahamsgstoreclient\n";
+                               const yaha::MessageStoreClientRuntimeConfig& runtimeConfig,
+                               const bool useIncomingLogAdapter) {
+    std::cout << k_msgstore_client_name << ' ' << YAHA_MSGSTORECLIENT_VERSION << '\n';
     std::cout << "  config: " << configPath.string() << '\n';
     std::cout << "  mqtt: " << runtimeConfig.mqttConfig.brokerHost << ':'
               << runtimeConfig.mqttConfig.brokerPort
@@ -87,6 +162,14 @@ void printStartupConfiguration(const std::filesystem::path& configPath,
         std::cout << " [" << subscription.first << "=>qos" << qosToText(subscription.second) << ']';
     }
     std::cout << '\n';
+    std::cout << "  startup: connecting broker and applying configured subscriptions\n";
+    std::cout << "  startup: broker connection/subscription errors are logged by mqtt runtime\n";
+    if (runtimeConfig.mqttConfig.enableMessageTrace) {
+        std::cout << "  startup: mqtt sent/received trace enabled\n";
+    }
+    if (useIncomingLogAdapter) {
+        std::cout << "  startup: incoming message logging enabled via messagestore.logIncomingMessages\n";
+    }
 }
 
 } // namespace
@@ -102,6 +185,11 @@ int main(int argc, char* argv[]) {
 
     if (cliOptions.showHelp) {
         printUsage();
+        return 0;
+    }
+
+    if (cliOptions.showVersion) {
+        printVersion();
         return 0;
     }
 
@@ -128,17 +216,26 @@ int main(int argc, char* argv[]) {
     }
 
     runtimeConfig.mqttConfig.enableMessageTrace = cliOptions.enableMessageTrace;
+    const bool useIncomingLogAdapter =
+        runtimeConfig.logIncomingMessages && !runtimeConfig.mqttConfig.enableMessageTrace;
 
     const std::string configuredHttpHost = runtimeConfig.storeConfig.serverHost;
     const std::string configuredHttpPath = runtimeConfig.storeConfig.serverPath;
     const std::uint16_t configuredHttpPort = runtimeConfig.storeConfig.serverPort;
 
-    printStartupConfiguration(configPath, runtimeConfig);
+    printStartupConfiguration(configPath, runtimeConfig, useIncomingLogAdapter);
 
     yaha::MessageStore store{std::move(runtimeConfig.storeConfig)};
+    std::optional<IncomingMessageLoggingComponent> incomingLogComponent{};
+    yaha::IMqttComponent* mqttComponent = &store;
+    if (useIncomingLogAdapter) {
+        incomingLogComponent.emplace(store);
+        mqttComponent = &*incomingLogComponent;
+    }
+
     yaha::YahaMqttClient mqttClient{
         std::move(runtimeConfig.mqttConfig),
-        store,
+        *mqttComponent,
         yaha::makeBrokerTransport()};
 
     std::cout << "  runtime: started\n";

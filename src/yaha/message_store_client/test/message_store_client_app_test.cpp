@@ -327,3 +327,39 @@ TEST_CASE("load_config_parses_server_host_when_set", "[message_store_client]") {
     removeDirectoryQuiet(tempDir);
 }
 
+TEST_CASE("load_config_parses_log_incoming_messages_when_enabled", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[messagestore]\n"
+        "logIncomingMessages = true\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(config.logIncomingMessages);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_config_rejects_invalid_log_incoming_messages_value", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[messagestore]\n"
+        "logIncomingMessages = maybe\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.find("messagestore.logIncomingMessages") != std::string::npos);
+
+    removeDirectoryQuiet(tempDir);
+}
+

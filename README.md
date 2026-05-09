@@ -45,6 +45,9 @@ A fully specification-compliant MQTT 5.0 broker written in C++20.
 # Enable MQTT sent/received message tracing (lifecycle tracing is always on)
 ./build/release/yahamsgstoreclient path/to/broker.ini --trace-messages
 
+# Print YAHA MessageStore client version
+./build/release/yahamsgstoreclient --version
+
 # Run the Step 27 test-client shell
 ./build/release/yahatestclient --help
 
@@ -98,12 +101,13 @@ Startup precedence is deterministic:
 
 Any unknown CLI flag causes startup failure.
 
-`yahamsgstoreclient` accepts one optional positional config path and one optional flag:
+`yahamsgstoreclient` accepts one optional positional config path and optional flags:
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
 | `<config-path>` | positional path | `broker.ini` | Optional path to MessageStore INI config. |
 | `--trace-messages` | flag | off | Enables printing MQTT sent/received message lines to stdout. |
+| `--version`, `-V` | flag | off | Prints executable version and exits successfully. |
 | `-h`, `--help` | flag | off | Prints CLI usage and exits successfully. |
 
 `yahabrokerconnectorclient` accepts one optional positional config path:
@@ -142,6 +146,15 @@ BrokerConnector INI sections:
 - `[receiverMqttBroker]`: `host`, `port`, `clientId`, `reconnectDelayMs`, `keepAliveSeconds`, `loopSleepMs`, `enableLifecycleTrace`, `enableMessageTrace`
 - `[automation]`: `reconnectDelayMs`, `sourceLoopSleepMs`, `sourceKeepAliveIntervalMs`, `maxPublishRetries`, `publishRetryBackoffMs`, `normalizeQosToAtLeastOnce`, `retainPassthrough`
 - `[monitoring]`: `sourceLifecycleTrace`
+
+MessageStore client INI sections:
+
+- `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs, enableLifecycleTrace)
+- `[server]`: `host`, `port`, `path`
+- `[persist]`: `directory`, `filename`, `intervalMs`, `keepFiles`
+- repeated `[subscription]`: `topic` and `qos` (`0`, `1`, `2`), default `topic=#` with `qos=1` when missing
+- `[messagestore]`: `cleanupTopic`, `logIncomingMessages` (`true/false`, `1/0`, `yes/no`, `on/off`)
+- `[tree]`: `maxHistoryLength`, `historyHysterese`, `maxValuesPerHistoryEntry`, `lengthForFurtherCompression`, `upperBoundFactor`, `upperBoundAddInMilliseconds`, `lowerBoundFactor`, `lowerBoundSubInMilliseconds`
 
 HTTP MQTT interface client INI sections:
 

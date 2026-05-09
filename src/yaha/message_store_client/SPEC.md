@@ -36,6 +36,7 @@ Parsing is composed from reusable shared modules:
   - `directory`, `filename`, `intervalMs`, `keepFiles`
 - `[messagestore]`
   - `cleanupTopic`
+  - `logIncomingMessages`
 - `[tree]`
   - `maxHistoryLength`, `historyHysterese`, `maxValuesPerHistoryEntry`
   - `lengthForFurtherCompression`
@@ -62,10 +63,21 @@ Broker session lifecycle output is emitted by the generic `YahaMqttClient` layer
 all YAHA apps can share the same non-domain runtime behavior.
 
 - startup banner with config path and effective MQTT/HTTP/persistence/subscription settings
+- startup banner includes executable version and startup activity summary
 - HTTP endpoint status (`listening` or `disabled` when `server.port=0`)
 - MQTT lifecycle logs from generic client (`connect`, `connected`, `reconnect`, `reconnected`, `subscribe`, `unsubscribe`, `disconnect`)
 - optional MQTT message logs (`sent`, `recv`) when enabled by CLI flag `--trace-messages`
+- optional incoming-only logs (`recv`) in broker trace format when INI key `[messagestore] logIncomingMessages=true` and CLI message tracing is off
 - signal handling and shutdown progress lines (`received`, `disconnecting`, `shutting down`, `stopped`)
+
+## CLI behavior
+
+`src/yaha_msgstoreclient_main.cpp` supports:
+
+- optional positional `<config-path>` (default `broker.ini`)
+- `--trace-messages` for transport-level sent/recv traces
+- `--version` (`-V`) to print executable name and semantic version, then exit
+- `--help` (`-h`) to print usage
 
 ## Transport behavior
 
