@@ -524,6 +524,16 @@ std::optional<std::vector<int>> tryParseQosArray(const std::string& payload) {
     return qosValues;
 }
 
+std::string valueToText(const Value& value) {
+    if (std::holds_alternative<std::string>(value)) {
+        return std::get<std::string>(value);
+    }
+
+    std::ostringstream stream{};
+    stream << std::get<double>(value);
+    return stream.str();
+}
+
 std::string qosValuesToText(const std::vector<int>& qosValues) {
     std::ostringstream stream{};
     stream << '[';
@@ -637,29 +647,26 @@ bool SourceHttpBrokerAdapter::ping(std::string& errorMessage) {
         return false;
     }
 
-    const auto tryPingWithToken = [this](const std::string& token,
-                                         const char* tokenLabel,
-                                         std::string& failureText) -> bool {
+    const auto tryPingWithSendToken = [this](std::string& failureText) -> bool {
         httplib::Client client{config_.brokerHost, static_cast<int>(config_.brokerPort)};
-        const std::string payload = "{\"token\":\"" + escapeJson(token) + "\"}";
+        const std::string payload = "{\"token\":\"" + escapeJson(sendToken_) + "\"}";
         httplib::Headers headers = makeStandardJsonHeaders();
 
         const auto response = client.Put("/pingreq", headers, payload, "application/json");
         if (!response) {
-            failureText = std::string{"ping request failed using "} + tokenLabel + " token";
+            failureText = "ping request failed using send token";
             return false;
         }
 
         if (response->status != k_http_status_no_content) {
             failureText = "ping failed with status " + std::to_string(response->status) +
-                " using " + tokenLabel + " token";
+                " using send token";
             return false;
         }
 
         const std::optional<std::string> packet = responseHeader(*response, "packet");
         if (!packet.has_value() || *packet != "pingresp") {
-            failureText = std::string{"ping response missing packet=pingresp using "} + tokenLabel +
-                " token";
+            failureText = "ping response missing packet=pingresp using send token";
             return false;
         }
 
@@ -667,19 +674,8 @@ bool SourceHttpBrokerAdapter::ping(std::string& errorMessage) {
     };
 
     std::string sendFailure{};
-    if (tryPingWithToken(sendToken_, "send", sendFailure)) {
+    if (tryPingWithSendToken(sendFailure)) {
         return true;
-    }
-
-    if (!receiveToken_.empty() && receiveToken_ != sendToken_) {
-        std::string receiveFailure{};
-        if (tryPingWithToken(receiveToken_, "receive", receiveFailure)) {
-            return true;
-        }
-
-        connected_ = false;
-        errorMessage = sendFailure + "; fallback failed: " + receiveFailure;
-        return false;
     }
 
     connected_ = false;
@@ -739,9 +735,15 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
 
         message.setRawPayload(request.body);
 
-        std::cout << "  source: publish recv qos=" << static_cast<int>(meta.qos)
+        std::cout << "  source: publish recv topic=" << message.topic()
+                  << " qos=" << static_cast<int>(meta.qos)
                   << " retain=" << (meta.retain ? "1" : "0")
-                  << " raw=\"" << escapeJson(request.body) << '\"';
+                  << " dup=" << (meta.dup ? "1" : "0")
+                  << " value=" << valueToText(message.value());
+
+        if (meta.packetId.has_value()) {
+            std::cout << " packetid=" << *meta.packetId;
+        }
 
         if (config_.logReason) {
             const std::string reasonText =

@@ -26,16 +26,18 @@ std::string current_iso_timestamp() {
 
 } // namespace
 
-Message::Message(std::string topic, Value value, Qos qos, bool retain)
+Message::Message(std::string topic, Value value, Qos qos, bool retain, bool dup)
     : topic_(std::move(topic))
     , value_(std::move(value))
     , qos_(qos)
-    , retain_(retain) {}
+    , retain_(retain)
+    , dup_(dup) {}
 
 const std::string& Message::topic()  const noexcept { return topic_; }
 const Value&       Message::value()  const noexcept { return value_; }
 Qos                Message::qos()    const noexcept { return qos_; }
 bool               Message::retain() const noexcept { return retain_; }
+bool               Message::dup()    const noexcept { return dup_; }
 
 const std::vector<ReasonEntry>& Message::reason() const noexcept { return reason_; }
 const std::optional<std::string>& Message::rawPayload() const noexcept { return raw_payload_; }
@@ -58,6 +60,10 @@ void Message::addReason(std::string text) {
 void Message::addReason(std::string text, std::string timestamp) {
     reason_.insert(reason_.begin(),
                    ReasonEntry{std::move(text), std::move(timestamp)});
+}
+
+void Message::setDup(const bool dup) noexcept {
+    dup_ = dup;
 }
 
 void Message::setRawPayload(std::string payload) {

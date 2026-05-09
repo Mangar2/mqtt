@@ -29,16 +29,18 @@ using Value = std::variant<std::string, double>;
 
 | Member | Signature | Notes |
 |--------|-----------|-------|
-| Constructor | `Message(string topic, Value value, Qos qos = AtLeastOnce, bool retain = false)` | Defaults: qos=1, retain=false |
+| Constructor | `Message(string topic, Value value, Qos qos = AtLeastOnce, bool retain = false, bool dup = false)` | Defaults: qos=1, retain=false, dup=false |
 | `topic()` | `const string& () const` | MQTT topic path |
 | `value()` | `const Value& () const` | string or double |
 | `qos()` | `Qos () const` | QoS level |
 | `retain()` | `bool () const` | retain flag |
+| `dup()` | `bool () const` | MQTT DUP flag for publish semantics |
 | `reason()` | `const vector<ReasonEntry>& () const` | reason chain, most-recent first |
 | `rawPayload()` | `const optional<string>& () const` | optional original transport payload for lossless forwarding |
 | `isOn()` | `bool () const noexcept` | true for value == 1.0, "on", "ON", "true" |
 | `addReason(text)` | `void (string)` | prepends entry with auto-generated ISO 8601 UTC timestamp |
 | `addReason(text, ts)` | `void (string, string)` | prepends entry with caller-supplied timestamp |
+| `setDup(dup)` | `void (bool)` | updates MQTT DUP flag |
 | `setRawPayload(payload)` | `void (string)` | stores original transport payload bytes as string |
 | `clearRawPayload()` | `void () noexcept` | removes optional raw payload |
 | `clone()` | `Message () const` | returns a deep copy (value semantics) |
@@ -48,6 +50,7 @@ using Value = std::variant<std::string, double>;
 
 - Value semantics: `Message` is copyable and movable; pass by `const&` for reading, by value when modifying.
 - Reason list: index 0 is the most recent entry; each `addReason` call inserts at the front.
+- DUP flag is part of message state and can be propagated by transports for QoS>0 duplicate-delivery semantics.
 - `rawPayload()` is optional and carries exact original payload text when an adapter chooses lossless forwarding.
 - `validate()` rejects: empty topic, ReasonEntry with empty message field.
 - No external dependencies. Header includes only: `<string>`, `<variant>`, `<vector>`, `<cstdint>`.

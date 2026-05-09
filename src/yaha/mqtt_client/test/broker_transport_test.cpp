@@ -58,6 +58,7 @@ public:
     struct PublishedRecord {
         std::string topic{};
         std::string payload{};
+        bool dup{false};
     };
 
     FakeBrokerForTransportTest() = default;
@@ -191,12 +192,14 @@ private:
                              const std::string& topic,
                              const std::string& payload,
                              const mqtt::QoS qos,
-                             const std::optional<std::uint16_t> packet_id) {
+                             const std::optional<std::uint16_t> packet_id,
+                             const bool dup = false) {
         mqtt::PublishPacket publish_packet{};
         publish_packet.topic = mqtt::Utf8String{topic};
         publish_packet.payload = mqtt::BinaryData::from_string(payload);
         publish_packet.qos = qos;
         publish_packet.packet_id = packet_id;
+        publish_packet.dup = dup;
 
         mqtt::WriteBuffer frame{};
         mqtt::encode_publish(frame, publish_packet);
@@ -256,7 +259,8 @@ private:
                           "transport/text",
                           "hello",
                           mqtt::QoS::ExactlyOnce,
-                          k_server_text_packet_id)) {
+                          k_server_text_packet_id,
+                          true)) {
             return false;
         }
         if (!send_publish(connection,
@@ -310,6 +314,7 @@ private:
         publishedRecord.topic = publish_packet.topic.value;
         publishedRecord.payload.assign(publish_packet.payload.data.begin(),
                                        publish_packet.payload.data.end());
+        publishedRecord.dup = publish_packet.dup;
         std::lock_guard<std::mutex> lock{published_records_mutex_};
         published_records_.push_back(std::move(publishedRecord));
     }
@@ -455,6 +460,7 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
     CHECK(received_messages[1].topic() == "transport/text");
     REQUIRE(std::holds_alternative<std::string>(received_messages[1].value()));
     CHECK(std::get<std::string>(received_messages[1].value()) == "hello");
+    CHECK(received_messages[1].dup());
 
     CHECK(received_messages[2].topic() == "transport/empty");
     REQUIRE(std::holds_alternative<std::string>(received_messages[2].value()));
@@ -499,7 +505,7 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
     CHECK(*received_messages[7].rawPayload() == k_forwarded_invalid_value_payload);
 
     transport.publish(yaha::Message{"out/qos0", std::string{"a"}, yaha::Qos::AtMostOnce, false});
-    transport.publish(yaha::Message{"out/qos1", std::string{"b"}, yaha::Qos::AtLeastOnce, true});
+    transport.publish(yaha::Message{"out/qos1", std::string{"b"}, yaha::Qos::AtLeastOnce, true, true});
     transport.publish(yaha::Message{"out/qos2", k_outgoing_qos2_value, yaha::Qos::ExactlyOnce, false});
     yaha::Message rawPublish{"out/raw", std::string{"fallback"}, yaha::Qos::AtLeastOnce, false};
     rawPublish.setRawPayload(k_forwarded_outbound_payload);
@@ -517,6 +523,13 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
     });
     REQUIRE(rawRecord != publishedRecords.end());
     CHECK(rawRecord->payload == k_forwarded_outbound_payload);
+
+    const auto qos1Record = std::find_if(publishedRecords.begin(), publishedRecords.end(),
+                                         [](const auto& item) {
+        return item.topic == "out/qos1";
+    });
+    REQUIRE(qos1Record != publishedRecords.end());
+    CHECK(qos1Record->dup);
 
     CHECK_FALSE(transport.isConnected());
 

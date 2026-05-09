@@ -131,8 +131,9 @@ Message BrokerConnectorComponent::toForwardMessage(const Message& message,
     }
 
     const bool targetRetain = config_.retainPassthrough ? sourceMeta.retain : false;
+    const bool targetDup = sourceMeta.dup && targetQos != Qos::AtMostOnce;
 
-    Message mapped{message.topic(), message.value(), targetQos, targetRetain};
+    Message mapped{message.topic(), message.value(), targetQos, targetRetain, targetDup};
     if (message.rawPayload().has_value()) {
         mapped.setRawPayload(*message.rawPayload());
     }

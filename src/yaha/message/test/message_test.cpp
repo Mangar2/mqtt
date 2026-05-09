@@ -137,3 +137,11 @@ TEST_CASE("Message qos AtMostOnce construction", "[message]") {
     Message msg{"t", std::string{"v"}, Qos::AtMostOnce};
     REQUIRE(msg.qos() == Qos::AtMostOnce);
 }
+
+TEST_CASE("Message dup flag can be constructed and updated", "[message]") {
+    Message msg{"dup/topic", std::string{"v"}, Qos::AtLeastOnce, false, true};
+    REQUIRE(msg.dup());
+
+    msg.setDup(false);
+    REQUIRE_FALSE(msg.dup());
+}

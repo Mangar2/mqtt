@@ -24,12 +24,13 @@ using Value = std::variant<std::string, double>;
 class Message {
 public:
     Message(std::string topic, Value value,
-            Qos qos = Qos::AtLeastOnce, bool retain = false);
+            Qos qos = Qos::AtLeastOnce, bool retain = false, bool dup = false);
 
     [[nodiscard]] const std::string&              topic()  const noexcept;
     [[nodiscard]] const Value&                    value()  const noexcept;
     [[nodiscard]] Qos                             qos()    const noexcept;
     [[nodiscard]] bool                            retain() const noexcept;
+    [[nodiscard]] bool                            dup()    const noexcept;
     [[nodiscard]] const std::vector<ReasonEntry>& reason() const noexcept;
     [[nodiscard]] const std::optional<std::string>& rawPayload() const noexcept;
 
@@ -37,6 +38,7 @@ public:
 
     void addReason(std::string text);
     void addReason(std::string text, std::string timestamp);
+    void setDup(bool dup) noexcept;
     void setRawPayload(std::string payload);
     void clearRawPayload() noexcept;
 
@@ -49,6 +51,7 @@ private:
     Value                    value_;
     Qos                      qos_;
     bool                     retain_;
+    bool                     dup_;
     std::vector<ReasonEntry> reason_;
     std::optional<std::string> raw_payload_;
 };

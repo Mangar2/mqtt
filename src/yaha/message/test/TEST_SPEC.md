@@ -21,3 +21,4 @@ Unit tests for Message value-type behavior and validation guarantees.
 | `Message validate rejects empty topic` | required topic validation | empty topic | throws invalid_argument |
 | `Message validate rejects ReasonEntry with empty message` | reason validation | reason entry with empty message | throws invalid_argument |
 | `Message qos AtMostOnce construction` | QoS enum path | qos=AtMostOnce | qos getter returns enum value |
+| `Message dup flag can be constructed and updated` | DUP state API | construct with dup=true then setDup(false) | dup getter reflects both states |

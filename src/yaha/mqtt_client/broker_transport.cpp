@@ -388,7 +388,8 @@ void appendReasonEntries(const std::vector<ReasonEntry>& reasonEntries,
 std::optional<Message> tryParseForwardedEnvelope(const std::string& payloadText,
                                                  const std::string& mqttTopic,
                                                  const Qos qosLevel,
-                                                 const bool retainFlag) {
+                                                 const bool retainFlag,
+                                                 const bool dupFlag) {
     const std::optional<ParsedRange> messageRange =
         tryFindObjectRange(payloadText, "message");
     if (!messageRange.has_value()) {
@@ -419,7 +420,7 @@ std::optional<Message> tryParseForwardedEnvelope(const std::string& payloadText,
         return std::nullopt;
     }
 
-    Message parsedMessage{*parsedTopic, *parsedValue, qosLevel, retainFlag};
+    Message parsedMessage{*parsedTopic, *parsedValue, qosLevel, retainFlag, dupFlag};
 
     const std::optional<ParsedRange> reasonArrayRange =
         tryFindArrayRange(bodyText, "reason");
@@ -512,6 +513,7 @@ public:
         }
         packet.qos = toMqttQos(message.qos());
         packet.retain = message.retain();
+        packet.dup = message.dup() && packet.qos != mqtt::QoS::AtMostOnce;
         if (packet.qos != mqtt::QoS::AtMostOnce) {
             packet.packet_id = nextPacketId_++;
             if (nextPacketId_ == 0U) {
@@ -650,12 +652,20 @@ public:
         const Qos qosLevel = toYahaQos(packet.qos);
 
         const std::optional<Message> forwardedEnvelope =
-            tryParseForwardedEnvelope(payloadText, packet.topic.value, qosLevel, packet.retain);
+            tryParseForwardedEnvelope(payloadText,
+                                      packet.topic.value,
+                                      qosLevel,
+                                      packet.retain,
+                                      packet.dup);
         if (forwardedEnvelope.has_value()) {
             return *forwardedEnvelope;
         }
 
-        Message incomingMessage{packet.topic.value, decodePayloadValue(packet.payload), qosLevel, packet.retain};
+        Message incomingMessage{packet.topic.value,
+                                decodePayloadValue(packet.payload),
+                                qosLevel,
+                                packet.retain,
+                                packet.dup};
         incomingMessage.setRawPayload(payloadText);
         return incomingMessage;
     }

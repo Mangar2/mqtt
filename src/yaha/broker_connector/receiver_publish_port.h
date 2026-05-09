@@ -22,19 +22,24 @@ namespace yaha {
 struct ReceiverPublishOptions {
     Qos qos{Qos::AtLeastOnce};            ///< Effective outgoing qos.
     bool retain{false};                   ///< Effective outgoing retain flag.
-    bool dup{false};                      ///< Effective outgoing dup flag.
+    bool dup{false};                      ///< Effective outgoing dup flag (QoS > 0 only).
 };
 
 /**
  * @brief Receiver broker runtime configuration mapped to YahaMqttClient.
  */
 struct ReceiverMqttBrokerConfig {
+    static constexpr std::uint16_t k_default_broker_port{1883U};
+    static constexpr std::chrono::milliseconds k_default_reconnect_delay{1000};
+    static constexpr std::chrono::milliseconds k_default_keep_alive_interval{30000};
+    static constexpr std::chrono::milliseconds k_default_loop_sleep{20};
+
     std::string brokerHost{"127.0.0.1"};                     ///< Receiver broker host.
-    std::uint16_t brokerPort{1883U};                           ///< Receiver broker port.
+    std::uint16_t brokerPort{k_default_broker_port};           ///< Receiver broker port.
     std::string clientId{"broker-connector-receiver"};       ///< Receiver client id.
-    std::chrono::milliseconds reconnectDelay{1000};            ///< Reconnect delay after disconnect.
-    std::chrono::milliseconds keepAliveInterval{30000};        ///< Ping interval while connected.
-    std::chrono::milliseconds loopSleep{20};                   ///< Worker sleep interval.
+    std::chrono::milliseconds reconnectDelay{k_default_reconnect_delay};      ///< Reconnect delay after disconnect.
+    std::chrono::milliseconds keepAliveInterval{k_default_keep_alive_interval};///< Ping interval while connected.
+    std::chrono::milliseconds loopSleep{k_default_loop_sleep};                 ///< Worker sleep interval.
     bool enableLifecycleTrace{true};                           ///< Enable lifecycle trace output.
     bool enableMessageTrace{false};                            ///< Enable message trace output.
 };

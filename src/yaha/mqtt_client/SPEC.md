@@ -62,6 +62,8 @@ the callback contract into real TCP MQTT packet I/O.
 - Inbound polling forwards only messages that match active subscriptions.
 - Broker transport publish path forwards `Message.rawPayload()` bytes unchanged when present; otherwise it encodes from `Message.value()`.
 - Broker transport inbound path parses forwarded payload envelopes into internal `Message.topic()/value()/reason()` fields for runtime semantics while preserving the exact original payload text in `Message.rawPayload()` for lossless forwarding.
+- Broker transport maps `Message.dup()` to MQTT PUBLISH DUP on outgoing packets for QoS>0 and normalizes DUP to false for QoS0.
+- Broker transport preserves incoming MQTT PUBLISH DUP in the produced `Message` objects.
 - Keep-alive sends `ping()` every `keepAliveInterval` while connected.
 - On external disconnect (`isConnected() == false`), marks disconnected and reconnects.
 - Exceptions raised by transport callbacks during the worker loop are treated as transient disconnects; the loop keeps running and retries connect after `reconnectDelay`.

@@ -143,7 +143,8 @@ ReceiverMqttPublishPort::toClientConfig(const ReceiverMqttBrokerConfig& config) 
 
 Message ReceiverMqttPublishPort::applyPublishOptions(const Message& message,
                                                      const ReceiverPublishOptions& options) {
-    Message mapped{message.topic(), message.value(), options.qos, options.retain};
+    const bool targetDup = options.dup && options.qos != Qos::AtMostOnce;
+    Message mapped{message.topic(), message.value(), options.qos, options.retain, targetDup};
     if (message.rawPayload().has_value()) {
         mapped.setRawPayload(*message.rawPayload());
     }

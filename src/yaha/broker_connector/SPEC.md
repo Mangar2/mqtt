@@ -64,7 +64,7 @@ This module now provides complete source-to-receiver forwarding logic through `I
 |------|------|---------|
 | `qos` | `Qos` | Effective outgoing receiver qos |
 | `retain` | `bool` | Effective outgoing retain flag |
-| `dup` | `bool` | Source dup flag for diagnostics |
+| `dup` | `bool` | Effective outgoing dup flag (QoS>0 only) |
 
 ### Struct `ReceiverMqttBrokerConfig`
 
@@ -150,7 +150,7 @@ Adapter listener handles callbacks:
 - PUT `/publish`
 - PUT `/pubrel`
 
-Inbound `/publish` trace output is emitted directly at receive-point and contains the original HTTP payload body as raw string (`raw="..."`).
+Inbound `/publish` trace output is emitted directly at receive-point and prints parsed `topic`, `qos`, `retain`, `dup`, and `value` fields.
 When `SourceHttpBrokerConfig.logReason` is enabled, trace output includes one plain reason string (`reason="..."`) derived from the latest reason entry.
 
 Ack behavior for callback listener:
@@ -184,6 +184,7 @@ On successful handshake, lifecycle trace logs include concrete source broker res
 3. Maps source metadata to outgoing `Message` fields:
 	- qos mapping: `0 -> 0`, `1/2 -> 1` when normalization is enabled
 	- retain mapping: source retain passthrough or forced false
+	- dup mapping: source `dup` is forwarded for QoS>0, forced false for QoS0
 4. Calls `PublishCallback` (generic mqtt client boundary) with bounded retries.
 5. Increments `forwarded` on success or `failed` after retry budget is exhausted.
 

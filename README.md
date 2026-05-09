@@ -149,7 +149,7 @@ BrokerConnector INI sections:
 
 BrokerConnector runtime logging details:
 
-- inbound source callback logging prints the raw HTTP `/publish` request body at receive point (`raw="..."`)
+- inbound source callback logging prints parsed receive fields (`topic`, `qos`, `retain`, `dup`, `value`)
 - outbound receiver publish logging prints raw payload at send point when available (`raw="..."`)
 - `logReason=true` adds one plain reason string (`reason="..."`) without count/latest summary
 

@@ -169,6 +169,7 @@ TEST_CASE("receiver_publish_port_start_publish_and_close", "[broker_connector]")
     yaha::ReceiverPublishOptions options{};
     options.qos = yaha::Qos::ExactlyOnce;
     options.retain = true;
+    options.dup = true;
 
     REQUIRE(port.publish(message, options, errorMessage));
     REQUIRE(transportState.publishCalls.load() == 1);
@@ -179,6 +180,7 @@ TEST_CASE("receiver_publish_port_start_publish_and_close", "[broker_connector]")
         REQUIRE(transportState.publishedMessages.front().topic() == "home/sensor/temp");
         REQUIRE(transportState.publishedMessages.front().qos() == yaha::Qos::ExactlyOnce);
         REQUIRE(transportState.publishedMessages.front().retain());
+        REQUIRE(transportState.publishedMessages.front().dup());
     }
 
     port.close();
@@ -311,6 +313,7 @@ TEST_CASE("relay_component_forwards_message_with_mapped_options", "[broker_conne
     REQUIRE(sink.messages.size() == 1U);
     REQUIRE(sink.messages.front().qos() == yaha::Qos::AtLeastOnce);
     REQUIRE(sink.messages.front().retain());
+    REQUIRE(sink.messages.front().dup());
     REQUIRE(sink.messages.front().reason().size() == 1U);
     REQUIRE(sink.messages.front().reason().front().message == "src-reason");
     REQUIRE(sink.messages.front().rawPayload().has_value());
@@ -452,13 +455,14 @@ TEST_CASE("relay_component_supports_passthrough_qos_with_backoff", "[broker_conn
     yaha::SourcePublishMeta sourceMeta{};
     sourceMeta.qos = yaha::Qos::ExactlyOnce;
     sourceMeta.retain = true;
-    sourceMeta.dup = false;
+    sourceMeta.dup = true;
 
     yaha::Message sourceMessage{"home/scene", std::string{"movie"}, yaha::Qos::ExactlyOnce, true};
     REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
     REQUIRE(sink.messages.size() == 2U);
     REQUIRE(sink.messages.back().qos() == yaha::Qos::ExactlyOnce);
     REQUIRE_FALSE(sink.messages.back().retain());
+    REQUIRE(sink.messages.back().dup());
 
     component.close();
     REQUIRE_FALSE(component.isRunning());
@@ -551,6 +555,33 @@ TEST_CASE("relay_component_retries_on_non_std_exception", "[broker_connector]") 
 
     REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
     REQUIRE(callCount == 2);
+
+    component.close();
+}
+
+TEST_CASE("relay_component_clears_dup_for_qos0_output", "[broker_connector]") {
+    yaha::RelayPolicyConfig config{};
+    config.normalizeQosToAtLeastOnce = true;
+    config.retainPassthrough = true;
+    config.maxPublishRetries = 0U;
+
+    std::vector<yaha::Message> published{};
+    yaha::BrokerConnectorComponent component{config};
+    component.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message);
+    });
+    component.run();
+
+    yaha::SourcePublishMeta sourceMeta{};
+    sourceMeta.qos = yaha::Qos::AtMostOnce;
+    sourceMeta.retain = false;
+    sourceMeta.dup = true;
+
+    yaha::Message sourceMessage{"home/qos0", std::string{"v"}, yaha::Qos::AtMostOnce, false};
+    REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
+    REQUIRE(published.size() == 1U);
+    REQUIRE(published.front().qos() == yaha::Qos::AtMostOnce);
+    REQUIRE_FALSE(published.front().dup());
 
     component.close();
 }
