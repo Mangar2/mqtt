@@ -727,8 +727,8 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
             meta.packetId = packetId;
         }
 
-        if (meta.qos != Qos::AtMostOnce && !meta.packetId.has_value()) {
-            std::cout << "  source: publish rejected invalid packetid header=\""
+        if (meta.qos != Qos::AtMostOnce && cleanedPacketIdHeader.empty()) {
+            std::cout << "  source: publish rejected missing packetid header=\""
                       << escapeJson(rawPacketIdHeader) << "\" qos=" << static_cast<int>(meta.qos)
                       << '\n' << std::flush;
             response.status = k_http_status_bad_request;

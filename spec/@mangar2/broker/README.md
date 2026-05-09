@@ -229,3 +229,10 @@ Any bridge/client talking to this legacy broker in `1.0` mode must satisfy all o
 - QoS2 publish response must include `packet=pubrec` and the exact corresponding packet id.
 - QoS2 pubrel response must include `packet=pubcomp` and the exact corresponding packet id.
 - Missing/incorrect packet type or packet id is treated as not acknowledged and triggers retries with DUP behavior.
+
+### 9. PacketId Standard Deviation (Legacy HTTP Bridge)
+
+- MQTT protocol packet identifiers are 16-bit values on the wire.
+- In this legacy broker HTTP interface (`/publish`, `/pubrel`), `packetid` is transported as a JavaScript-readable header string and matched by textual value.
+- As a consequence, broker interop may involve `packetid` values beyond 16-bit (and beyond 32-bit) numeric ranges.
+- Bridge implementations must preserve and echo the exact incoming `packetid` text in acknowledgements to avoid false negative ack matching and retry storms.

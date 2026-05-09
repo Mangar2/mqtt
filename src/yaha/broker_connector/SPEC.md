@@ -157,8 +157,15 @@ Ack behavior for callback listener:
 - qos 1 publish -> 204 with `packet=puback`
 - qos 2 publish -> 204 with `packet=pubrec`
 - pubrel -> 204 with `packet=pubcomp`
-- For qos 1/2 callbacks, `packetid` must be present and parseable as uint16; otherwise `/publish` returns 400 (`bad_publish_packetid`).
+- For qos 1/2 callbacks, `packetid` must be present (non-empty after trim); otherwise `/publish` returns 400 (`bad_publish_packetid`).
+- If `packetid` cannot be represented as uint16, callback processing continues with `packetId` unset, but acknowledgement still echoes the exact raw header value.
 - For qos 1/2 callback acknowledgements, response `packetid` echoes the exact incoming header text to preserve legacy broker matching behavior.
+
+Compatibility note (legacy broker deviation):
+- MQTT wire protocol defines Packet Identifier as a 16-bit value.
+- The legacy HTTP broker path (`version=1.0`) carries `packetid` as plain text over HTTP headers and compares it as text for acknowledgement matching.
+- Because the legacy broker is implemented in JavaScript, incoming header values can exceed 16-bit (and even 32-bit) numeric ranges.
+- Broker connector intentionally accepts non-empty large `packetid` header values for QoS1/2 and echoes them unchanged in acks, even when they are not parseable as uint16.
 
 ## Data model
 

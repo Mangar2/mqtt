@@ -543,6 +543,60 @@ TEST_CASE("source_adapter_qos1_publish_without_valid_packetid_returns_400", "[br
     sourceBroker.stop();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("source_adapter_qos1_publish_with_large_packetid_echoes_and_acks", "[broker_connector]") {
+    FakeSourceHttpBroker sourceBroker{};
+    sourceBroker.start();
+
+    yaha::SourceHttpBrokerConfig config{};
+    config.brokerHost = "127.0.0.1";
+    config.brokerPort = sourceBroker.port();
+    config.clientId = "connector-test-client";
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = 0U;
+    config.subscribeTopics = {{"home/#", yaha::Qos::AtLeastOnce}};
+
+    yaha::SourceHttpBrokerAdapter adapter{config};
+
+    std::mutex callbackMutex{};
+    std::optional<yaha::SourcePublishMeta> callbackMeta{};
+    adapter.setIncomingPublishCallback(
+        [&callbackMutex, &callbackMeta](const yaha::Message&, const yaha::SourcePublishMeta& meta) {
+            std::lock_guard<std::mutex> lock{callbackMutex};
+            callbackMeta = meta;
+        });
+
+    std::string errorMessage{};
+    REQUIRE(adapter.connectAndSubscribe(errorMessage));
+
+    const auto publishResponse = FakeSourceHttpBroker::sendPublishTo(
+        adapter.listenerPort(),
+        "1",
+        "342524",
+        "{\"token\":\"send-token\",\"message\":{\"topic\":\"home/qos1\",\"value\":\"on\"}}",
+        "0",
+        "0");
+
+    REQUIRE(publishResponse != nullptr);
+    REQUIRE(publishResponse->status == k_http_status_no_content);
+    REQUIRE(publishResponse->get_header_value("packet") == "puback");
+    REQUIRE(publishResponse->get_header_value("packetid") == "342524");
+
+    REQUIRE(waitUntil([&callbackMutex, &callbackMeta]() {
+        std::lock_guard<std::mutex> lock{callbackMutex};
+        return callbackMeta.has_value();
+    }, std::chrono::milliseconds{k_wait_timeout_ms}));
+
+    {
+        std::lock_guard<std::mutex> lock{callbackMutex};
+        REQUIRE(callbackMeta.has_value());
+        REQUIRE_FALSE(callbackMeta->packetId.has_value());
+    }
+
+    adapter.close();
+    sourceBroker.stop();
+}
+
 TEST_CASE("source_lifecycle_retries_connect_and_replays_subscribe", "[broker_connector]") {
     FakeSourceHttpBroker sourceBroker{};
     sourceBroker.setFailFirstConnect(true);
