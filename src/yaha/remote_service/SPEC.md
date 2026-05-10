@@ -130,6 +130,11 @@ Member function:
 - Callback missing or callback exception returns `PublishFailed`.
 - Callback success returns `Success`.
 
+Phase-4 integration note:
+
+- `remote_service_http` module delegates HTTP request inputs to
+	`publishCommand()` and maps domain status to HTTP response contract.
+
 ## Files
 
 | File | Role |
