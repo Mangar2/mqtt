@@ -9,6 +9,7 @@
 #include "yaha/remote_service/remote_service_config.h"
 
 #include <map>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -28,6 +29,39 @@ struct RemoteServiceServiceMapping {
  * @brief Service lookup map indexed by exact HTTP path.
  */
 using RemoteServiceMap = std::map<std::string, RemoteServiceServiceMapping>;
+
+/**
+ * @brief Domain request DTO for one RemoteService command invocation.
+ */
+struct RemoteServiceCommandRequest {
+    std::string path{};     ///< Exact service path key.
+    std::string deviceId{}; ///< Device id key in selected service mapping.
+    Value state{};          ///< Command state payload forwarded to MQTT publish.
+    std::string token{};    ///< Token field passed through HTTP adapter contract.
+};
+
+/**
+ * @brief Domain command execution status.
+ */
+enum class RemoteServiceCommandStatus : std::uint8_t {
+    Success = 0U,       ///< Command resolved and publish succeeded.
+    ServiceNotFound = 1U, ///< Service path or device id was not found.
+    PublishFailed = 2U, ///< Publish callback missing or publish callback threw.
+};
+
+/**
+ * @brief Domain command result with optional resolved MQTT message.
+ */
+struct RemoteServiceCommandResult {
+    RemoteServiceCommandStatus status{RemoteServiceCommandStatus::Success}; ///< Resolution/publish status.
+    std::optional<Message> resolvedMessage{}; ///< Resolved MQTT message when available.
+
+    /**
+     * @brief Returns true when status equals success.
+     * @return True when command completed successfully.
+     */
+    [[nodiscard]] bool isSuccess() const;
+};
 
 /**
  * @brief Parses FileStore mapping payload for RemoteService.
@@ -123,6 +157,22 @@ public:
     [[nodiscard]] std::optional<std::string> mappedTopicFor(
         const std::string& servicePath,
         const std::string& deviceId) const;
+
+    /**
+     * @brief Resolves one domain command into outbound MQTT publish message.
+     * @param request Command request DTO.
+     * @return Resolution result including resolved message on success.
+     */
+    [[nodiscard]] RemoteServiceCommandResult resolveCommand(
+        const RemoteServiceCommandRequest& request) const;
+
+    /**
+     * @brief Resolves and publishes one domain command through callback.
+     * @param request Command request DTO.
+     * @return Publish result translated to domain command status.
+     */
+    [[nodiscard]] RemoteServiceCommandResult publishCommand(
+        const RemoteServiceCommandRequest& request);
 
 private:
     [[nodiscard]] bool reloadMappingFromFileStore();

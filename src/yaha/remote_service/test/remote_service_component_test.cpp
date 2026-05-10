@@ -5,9 +5,11 @@
 #include <chrono>
 #include <cstdint>
 #include <mutex>
+#include <stdexcept>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "yaha/remote_service/remote_service_component.h"
 
@@ -260,6 +262,167 @@ TEST_CASE("remote_service_component_monitor_invalid_reload_payload_keeps_previou
 
     REQUIRE(component.hasServicePath("/light"));
     REQUIRE(component.mappedTopicFor("/light", "kitchen") == std::optional<std::string>{"topic/old"});
+
+    component.close();
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("remote_service_component_resolve_command_builds_outbound_message", "[remote_service]") {
+    const std::uint16_t listenPort = reserveFreeLocalPort();
+    FileStoreMappingMockServer fileStore{listenPort, "/remoteservice/mapping"};
+    fileStore.setPayload(
+        R"({"services":[{"path":"/light","devices":{"kitchen":"house/kitchen/light/set"},"qos":2,"reason":"switch"}]})");
+
+    yaha::RemoteServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = listenPort;
+    config.mappingKeyPath = "/remoteservice/mapping";
+
+    yaha::RemoteServiceComponent component{config};
+    component.run();
+
+    const yaha::RemoteServiceCommandRequest requestData{
+        .path = "/light",
+        .deviceId = "kitchen",
+        .state = std::string{"on"},
+        .token = "token-1"};
+
+    const yaha::RemoteServiceCommandResult result = component.resolveCommand(requestData);
+    REQUIRE(result.isSuccess());
+    REQUIRE(result.resolvedMessage.has_value());
+
+    const yaha::Message resolved = result.resolvedMessage->clone();
+    REQUIRE(resolved.topic() == "house/kitchen/light/set");
+    REQUIRE(resolved.qos() == yaha::Qos::ExactlyOnce);
+    REQUIRE_FALSE(resolved.retain());
+    REQUIRE(std::get<std::string>(resolved.value()) == "on");
+    REQUIRE(resolved.reason().size() == 1U);
+    REQUIRE(resolved.reason()[0].message == "switch");
+
+    component.close();
+}
+
+TEST_CASE("remote_service_component_resolve_command_returns_service_not_found_for_unknown_device", "[remote_service]") {
+    const std::uint16_t listenPort = reserveFreeLocalPort();
+    FileStoreMappingMockServer fileStore{listenPort, "/remoteservice/mapping"};
+    fileStore.setPayload(
+        R"({"services":[{"path":"/light","devices":{"kitchen":"house/kitchen/light/set"}}]})");
+
+    yaha::RemoteServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = listenPort;
+    config.mappingKeyPath = "/remoteservice/mapping";
+
+    yaha::RemoteServiceComponent component{config};
+    component.run();
+
+    const yaha::RemoteServiceCommandRequest requestData{
+        .path = "/light",
+        .deviceId = "missing-device",
+        .state = std::string{"on"},
+        .token = "token-2"};
+
+    const yaha::RemoteServiceCommandResult result = component.resolveCommand(requestData);
+    REQUIRE(result.status == yaha::RemoteServiceCommandStatus::ServiceNotFound);
+    REQUIRE_FALSE(result.resolvedMessage.has_value());
+
+    component.close();
+}
+
+TEST_CASE("remote_service_component_publish_command_calls_callback_with_resolved_message", "[remote_service]") {
+    const std::uint16_t listenPort = reserveFreeLocalPort();
+    FileStoreMappingMockServer fileStore{listenPort, "/remoteservice/mapping"};
+    fileStore.setPayload(
+        R"({"services":[{"path":"/light","devices":{"kitchen":"house/kitchen/light/set"},"reason":"switch"}]})");
+
+    yaha::RemoteServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = listenPort;
+    config.mappingKeyPath = "/remoteservice/mapping";
+
+    yaha::RemoteServiceComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    const yaha::RemoteServiceCommandRequest requestData{
+        .path = "/light",
+        .deviceId = "kitchen",
+        .state = std::string{"on"},
+        .token = "token-3"};
+
+    const yaha::RemoteServiceCommandResult result = component.publishCommand(requestData);
+    REQUIRE(result.isSuccess());
+
+    {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        REQUIRE(published.size() == 1U);
+        REQUIRE(published[0].topic() == "house/kitchen/light/set");
+        REQUIRE(std::get<std::string>(published[0].value()) == "on");
+    }
+
+    component.close();
+}
+
+TEST_CASE("remote_service_component_publish_command_returns_publish_failed_when_callback_missing", "[remote_service]") {
+    const std::uint16_t listenPort = reserveFreeLocalPort();
+    FileStoreMappingMockServer fileStore{listenPort, "/remoteservice/mapping"};
+    fileStore.setPayload(
+        R"({"services":[{"path":"/light","devices":{"kitchen":"house/kitchen/light/set"}}]})");
+
+    yaha::RemoteServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = listenPort;
+    config.mappingKeyPath = "/remoteservice/mapping";
+
+    yaha::RemoteServiceComponent component{config};
+    component.run();
+
+    const yaha::RemoteServiceCommandRequest requestData{
+        .path = "/light",
+        .deviceId = "kitchen",
+        .state = std::string{"on"},
+        .token = "token-4"};
+
+    const yaha::RemoteServiceCommandResult result = component.publishCommand(requestData);
+    REQUIRE(result.status == yaha::RemoteServiceCommandStatus::PublishFailed);
+    REQUIRE(result.resolvedMessage.has_value());
+
+    component.close();
+}
+
+TEST_CASE("remote_service_component_publish_command_returns_publish_failed_when_callback_throws", "[remote_service]") {
+    const std::uint16_t listenPort = reserveFreeLocalPort();
+    FileStoreMappingMockServer fileStore{listenPort, "/remoteservice/mapping"};
+    fileStore.setPayload(
+        R"({"services":[{"path":"/light","devices":{"kitchen":"house/kitchen/light/set"}}]})");
+
+    yaha::RemoteServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = listenPort;
+    config.mappingKeyPath = "/remoteservice/mapping";
+
+    yaha::RemoteServiceComponent component{config};
+    component.run();
+
+    component.setPublishCallback([](const yaha::Message&) {
+        throw std::runtime_error{"publish failure"};
+    });
+
+    const yaha::RemoteServiceCommandRequest requestData{
+        .path = "/light",
+        .deviceId = "kitchen",
+        .state = std::string{"on"},
+        .token = "token-5"};
+
+    const yaha::RemoteServiceCommandResult result = component.publishCommand(requestData);
+    REQUIRE(result.status == yaha::RemoteServiceCommandStatus::PublishFailed);
+    REQUIRE(result.resolvedMessage.has_value());
 
     component.close();
 }

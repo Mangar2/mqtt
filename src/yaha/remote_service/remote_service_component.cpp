@@ -768,4 +768,64 @@ bool RemoteServiceComponent::isMatchingMappingReloadEvent(const Message& message
     return keyPath.has_value() && *keyPath == config_.mappingKeyPath;
 }
 
+bool RemoteServiceCommandResult::isSuccess() const {
+    return status == RemoteServiceCommandStatus::Success;
+}
+
+RemoteServiceCommandResult RemoteServiceComponent::resolveCommand(
+    const RemoteServiceCommandRequest& request) const {
+    std::lock_guard<std::mutex> lock{stateMutex_};
+
+    const auto serviceIterator = servicesByPath_.find(request.path);
+    if (serviceIterator == servicesByPath_.end()) {
+        return {.status = RemoteServiceCommandStatus::ServiceNotFound};
+    }
+
+    const auto topicIterator = serviceIterator->second.devices.find(request.deviceId);
+    if (topicIterator == serviceIterator->second.devices.end()) {
+        return {.status = RemoteServiceCommandStatus::ServiceNotFound};
+    }
+
+    Message outboundMessage{
+        topicIterator->second,
+        request.state,
+        serviceIterator->second.qos,
+        false};
+    outboundMessage.addReason(serviceIterator->second.reason);
+
+    return {
+        .status = RemoteServiceCommandStatus::Success,
+        .resolvedMessage = std::move(outboundMessage)};
+}
+
+RemoteServiceCommandResult RemoteServiceComponent::publishCommand(
+    const RemoteServiceCommandRequest& request) {
+    RemoteServiceCommandResult resolutionResult = resolveCommand(request);
+    if (!resolutionResult.isSuccess()) {
+        return resolutionResult;
+    }
+
+    PublishCallback publishCallback{};
+    {
+        std::lock_guard<std::mutex> lock{publishCallbackMutex_};
+        publishCallback = publishCallback_;
+    }
+
+    if (!publishCallback || !resolutionResult.resolvedMessage.has_value()) {
+        return {
+            .status = RemoteServiceCommandStatus::PublishFailed,
+            .resolvedMessage = resolutionResult.resolvedMessage};
+    }
+
+    try {
+        publishCallback(*resolutionResult.resolvedMessage);
+    } catch (...) {
+        return {
+            .status = RemoteServiceCommandStatus::PublishFailed,
+            .resolvedMessage = resolutionResult.resolvedMessage};
+    }
+
+    return resolutionResult;
+}
+
 } // namespace yaha

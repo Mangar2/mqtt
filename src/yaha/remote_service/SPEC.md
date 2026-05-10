@@ -1,10 +1,10 @@
-# remote_service — YAHA RemoteService Domain Config and Mapping Lifecycle
+# remote_service — YAHA RemoteService Domain Config, Mapping Lifecycle, and Command Resolution
 
 ## Purpose
 
 Defines RemoteService domain-level configuration, FileStore mapping payload
-parser helpers, and IMqttComponent lifecycle behavior for startup load and
-monitor-triggered reload.
+parser helpers, IMqttComponent lifecycle behavior for startup load and
+monitor-triggered reload, and phase-3 command resolution/publish handoff API.
 
 ## Public API
 
@@ -34,6 +34,34 @@ monitor-triggered reload.
 
 Exact-path lookup map from HTTP service path to parsed service mapping entry.
 
+### Struct `RemoteServiceCommandRequest`
+
+| Field | Type | Notes |
+|------|------|-------|
+| `path` | `std::string` | Exact service path key |
+| `deviceId` | `std::string` | Device key inside selected service mapping |
+| `state` | `Value` | Requested command state payload |
+| `token` | `std::string` | Token field from HTTP contract carried into domain API |
+
+### Enum `RemoteServiceCommandStatus`
+
+| Value | Meaning |
+|------|---------|
+| `Success` | Resolution succeeded and publish handoff succeeded |
+| `ServiceNotFound` | Unknown service path or unknown device id |
+| `PublishFailed` | Publish callback missing or callback threw |
+
+### Struct `RemoteServiceCommandResult`
+
+| Field | Type | Notes |
+|------|------|-------|
+| `status` | `RemoteServiceCommandStatus` | Domain result code |
+| `resolvedMessage` | `std::optional<Message>` | Outbound MQTT message when resolution succeeded |
+
+Member function:
+
+- `isSuccess() -> bool`: returns `true` for `status == Success`.
+
 ### Parser helper functions
 
 | Function | Signature | Notes |
@@ -55,6 +83,8 @@ Exact-path lookup map from HTTP service path to parsed service mapping entry.
 | `serviceCount` | `std::size_t() const` | Loaded mapping entry count |
 | `hasServicePath` | `bool(const std::string&) const` | Exact path existence helper |
 | `mappedTopicFor` | `std::optional<std::string>(const std::string&, const std::string&) const` | Device topic lookup helper |
+| `resolveCommand` | `RemoteServiceCommandResult(const RemoteServiceCommandRequest&) const` | Resolves one request into outbound MQTT message |
+| `publishCommand` | `RemoteServiceCommandResult(const RemoteServiceCommandRequest&)` | Resolves and publishes through callback with domain error mapping |
 
 ## Behavior
 
@@ -83,6 +113,22 @@ Exact-path lookup map from HTTP service path to parsed service mapping entry.
 - `handleMessage()` inspects monitor payloads on `<monitorTopicPrefix>/#`.
 - Only monitor events with matching `keyPath == mappingKeyPath` trigger reload.
 - Failed reload keeps previous valid map unchanged.
+
+### Command resolution and publish handoff
+
+- `resolveCommand()` performs deterministic mapping:
+	- exact service lookup by `request.path`
+	- exact device lookup by `request.deviceId`
+	- builds outbound message with:
+		- mapped topic from service devices map
+		- payload from `request.state`
+		- qos from service entry (or default from mapping model)
+		- reason entry from service reason text
+		- retain set to `false`
+- Unknown service path or device id returns `ServiceNotFound`.
+- `publishCommand()` calls `resolveCommand()` and publishes resolved message via injected callback.
+- Callback missing or callback exception returns `PublishFailed`.
+- Callback success returns `Success`.
 
 ## Files
 
