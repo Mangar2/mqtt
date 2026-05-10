@@ -111,6 +111,17 @@ SERVICE_COMPONENTS = (
             "__INSTALL_ROOT__/httpmqttinterface/httpmqttinterface.ini"
         ),
     },
+    {
+        "name": "remoteservice",
+        "binary": "yaharemoteserviceclient",
+        "ini": "remoteservice.ini",
+        "service": "yaharemoteserviceclient.service",
+        "description": "Yaha RemoteService Client",
+        "exec": (
+            "__INSTALL_ROOT__/remoteservice/yaharemoteserviceclient "
+            "__INSTALL_ROOT__/remoteservice/remoteservice.ini"
+        ),
+    },
 )
 
 ROOT_TOOLS = (
@@ -233,6 +244,7 @@ def render_root_install_script() -> str:
         "valueservice",
         "brokerconnector",
         "httpmqttinterface",
+        "remoteservice",
     ]
     return "\n".join(
         [

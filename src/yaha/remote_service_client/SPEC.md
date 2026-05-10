@@ -59,6 +59,20 @@ Mapping rules:
 - start HTTP listener for dynamic path routing
 - run until signal and perform clean shutdown
 
+## Deployment integration
+
+Phase 6 deployment artifacts for RemoteService are wired through packaging scripts:
+
+- INI template: `cmake/ini/remoteservice.ini`
+- deployment component name: `remoteservice`
+- packaged binary: `yaharemoteserviceclient`
+- packaged service unit: `yaharemoteserviceclient.service`
+
+`cmake/create_yaha_deployment.py` includes `remoteservice` in component packaging
+and root install order. `cmake/deploy_yaha_scp.py` supports remote component install
+via `--install-component remoteservice` and treats RemoteService `.ini` and `.service`
+files as protected config overwrite prompts.
+
 ## Files
 
 | File | Role |
