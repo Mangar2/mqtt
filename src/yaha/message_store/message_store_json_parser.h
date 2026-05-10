@@ -21,6 +21,7 @@ struct SensorPostRequest {
     bool includeHistory{false};
     bool includeReason{true};
     std::uint32_t levelAmount{1U};
+    bool hasLevelAmount{false};
     bool hasNodes{false};
     std::string nodesJson{};
 };

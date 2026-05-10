@@ -1,16 +1,54 @@
-GET http://192.168.0.183:8090/store/first/study/main/light/light on time
+@host = 192.168.0.183
+@port = 8090
+@storePath = /store
+@topicPath = /first/study/main/light/light on time
+@baseUrl = http://{{host}}:{{port}}{{storePath}}
+@baseUrlNginx = http://{{host}}{{storePath}}
+
+GET {{baseUrl}}{{topicPath}}
 levelamount: 5
-history: true
-reason: true
+history: false
+reason: false
 
 ### Legacy PHP-style MsgStore body (direct)
-POST http://192.168.0.183:8090/store
+POST {{baseUrl}}
 content-type: application/json
 
-{"topic":"first/bathroom/main/light/light on time","history":"true","reason":"true","nodes":[],"levelAmount":7}
+{"topic":"first/bathroom/main/light/light on time","history":"false","reason":"false","nodes":[],"levelAmount":7}
+
+### Direct MsgStore POST via nginx /store route
+POST {{baseUrlNginx}}
+content-type: application/json
+
+{"topic":"ground/wardrobe/floorHeating/lowtemperature","history":"false","reason":"true",
+"nodes":[{
+      "topic": "ground/wardrobe/floorHeating/lowtemperature",
+      "value": "22",
+      "time": "2025-12-11T21:56:03.488Z",
+      "reason": [
+        {
+          "message": "Request by browser",
+          "timestamp": "2025-12-11T22:56:03+01:00"
+        },
+        {
+          "message": "received by broker",
+          "timestamp": "2025-12-11T21:56:03.400Z"
+        },
+        {
+          "message": "Received by broker",
+          "timestamp": "2025-12-11T21:56:03.471Z"
+        },
+        {
+          "message": "received by broker",
+          "timestamp": "2025-12-11T21:56:03.488Z"
+        }
+      ],
+      "history": []
+    }
+  ],"levelAmount":7}
 
 ### Legacy PHP route via nginx (sensor.php -> msgstore)
-POST http://192.168.0.183/yahagui/angular/api/sensor.php
+POST http://{{host}}/yahagui/angular/api/sensor.php
 content-type: application/json
 
 {"topic":"first/bathroom/main/light/light on time","history":"false","reason":"false","nodes":[],"levelAmount":7}

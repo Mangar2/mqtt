@@ -170,7 +170,90 @@ private:
             return parseSnapshotTime(node.timeMs);
         }
 
+        if (key == "reason") {
+            std::vector<ReasonEntry> parsedReasons{};
+            if (!parseReasonArray(parsedReasons)) {
+                return false;
+            }
+            node.reason = std::move(parsedReasons);
+            node.hasReason = true;
+            return true;
+        }
+
         return skipValue();
+    }
+
+    bool parseReasonArray(std::vector<ReasonEntry>& output) {
+        skipWs();
+        if (!consume('[')) {
+            return false;
+        }
+
+        skipWs();
+        if (consume(']')) {
+            return true;
+        }
+
+        while (true) {
+            ReasonEntry entry{};
+            if (!parseReasonObject(entry)) {
+                return false;
+            }
+            output.push_back(std::move(entry));
+
+            skipWs();
+            if (consume(']')) {
+                return true;
+            }
+            if (!consume(',')) {
+                return false;
+            }
+        }
+    }
+
+    bool parseReasonObject(ReasonEntry& output) {
+        if (!consume('{')) {
+            return false;
+        }
+
+        bool hasMessage = false;
+        bool hasTimestamp = false;
+        skipWs();
+        if (consume('}')) {
+            return false;
+        }
+
+        while (true) {
+            std::string key{};
+            if (!parseString(key)) {
+                return false;
+            }
+            if (!consume(':')) {
+                return false;
+            }
+
+            if (key == "message") {
+                if (!parseString(output.message)) {
+                    return false;
+                }
+                hasMessage = true;
+            } else if (key == "timestamp") {
+                if (!parseString(output.timestamp)) {
+                    return false;
+                }
+                hasTimestamp = true;
+            } else if (!skipValue()) {
+                return false;
+            }
+
+            skipWs();
+            if (consume('}')) {
+                return hasMessage && hasTimestamp;
+            }
+            if (!consume(',')) {
+                return false;
+            }
+        }
     }
 
     bool parseValue(Value& output) {
@@ -436,6 +519,7 @@ private:
             if (!captureRawValue(levelAmountRaw)) {
                 return false;
             }
+            output.hasLevelAmount = true;
             applyLevelAmount(levelAmountRaw, output.levelAmount);
             return true;
         }

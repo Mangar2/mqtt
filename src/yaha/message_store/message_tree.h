@@ -44,6 +44,7 @@ struct MessageTreeSnapshotNode {
     std::string topic;                          ///< Full topic path.
     Value value{std::string{}};                 ///< Snapshot value.
     std::vector<ReasonEntry> reason;            ///< Snapshot reason chain.
+    bool hasReason{false};                      ///< True when reason field was explicitly provided.
     std::optional<std::int64_t> timeMs;         ///< Optional snapshot timestamp for time-aware diff.
 };
 
@@ -108,7 +109,9 @@ public:
      * @return Changed or new nodes.
      */
     [[nodiscard]] std::vector<MessageTreeNode>
-    getNodes(const std::vector<MessageTreeSnapshotNode>& snapshot) const;
+    getNodes(const std::vector<MessageTreeSnapshotNode>& snapshot,
+             bool includeHistory,
+             bool includeReason) const;
 
     /**
      * @brief Replaces full tree content with provided nodes.
@@ -397,18 +400,10 @@ private:
                         std::vector<MessageTreeNode>& output) const;
 
     /**
-     * @brief Collects all current data nodes in full tree.
-     * @param node Current traversal node.
-     * @param output Result sink.
-     */
-    void collectAllNodes(const TreeNode& node,
-                         std::vector<MessageTreeNode>& output) const;
-
-    /**
-     * @brief Compares current node with snapshot node for diff mode.
+    * @brief Compares current node with snapshot node for diff mode.
      * @param current Current node.
      * @param snapshot Snapshot node.
-      * @return True when equivalent for topic/value/reason and optional timestamp.
+     * @return True when equivalent for value and optional reason/timestamp checks.
      */
     [[nodiscard]] static bool snapshotEquals(const MessageTreeNode& current,
                                              const MessageTreeSnapshotNode& snapshot);

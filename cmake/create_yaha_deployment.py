@@ -34,7 +34,7 @@ PROJECT_ROOT = _detect_project_root()
 DEFAULT_PRESET = "armv7-zig-release"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "deployment" / "yaha"
 INI_DIR = PROJECT_ROOT / "cmake" / "ini"
-NGINX_CONTROLAPP_SOURCE = PROJECT_ROOT / "deployment" / "yaha" / "nginx" / "controlapp.conf"
+NGINX_CONTROLAPP_SOURCE = PROJECT_ROOT / "cmake" / "nginx" / "controlapp.conf"
 
 SERVICE_COMPONENTS = (
     {
@@ -247,8 +247,9 @@ def render_root_install_script() -> str:
             "",
             "install_nginx_config() {",
             "  local src_conf=\"${SCRIPT_DIR}/nginx/controlapp.conf\"",
-            "  local target_conf=\"/etc/nginx/sites-available/controlapp.conf\"",
-            "  local enabled_link=\"/etc/nginx/sites-enabled/controlapp.conf\"",
+            "  local target_conf=\"/etc/nginx/sites-available/controlapp\"",
+            "  local enabled_link=\"/etc/nginx/sites-enabled/controlapp\"",
+            "  local obsolete_link=\"/etc/nginx/sites-enabled/controlapp.conf\"",
             "",
             "  if [[ ! -f \"${src_conf}\" ]]; then",
             "    echo \"Skipping nginx setup (missing ${src_conf}).\"",
@@ -256,6 +257,7 @@ def render_root_install_script() -> str:
             "  fi",
             "",
             "  ${SUDO} mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled",
+            "  ${SUDO} rm -f \"${obsolete_link}\"",
             "",
             "  local changed=0",
             "  local had_backup=0",
@@ -272,14 +274,15 @@ def render_root_install_script() -> str:
             "",
             "  ${SUDO} ln -sfn \"${target_conf}\" \"${enabled_link}\"",
             "",
-            "  if ! ${SUDO} nginx -t >/dev/null 2>&1; then",
+            "  if ! ${SUDO} nginx -t; then",
             "    echo \"nginx -t failed, rolling back controlapp.conf\" >&2",
             "    if [[ ${had_backup} -eq 1 ]]; then",
             "      ${SUDO} cp \"${backup_conf}\" \"${target_conf}\"",
             "    elif [[ ${changed} -eq 1 ]]; then",
             "      ${SUDO} rm -f \"${target_conf}\"",
+            "      ${SUDO} rm -f \"${enabled_link}\"",
             "    fi",
-            "    ${SUDO} nginx -t >/dev/null 2>&1 || true",
+            "    ${SUDO} nginx -t || true",
             "    return 1",
             "  fi",
             "",

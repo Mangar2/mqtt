@@ -12,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -104,16 +105,20 @@ public:
     /**
      * @brief Returns changed/new nodes relative to a snapshot list.
      * @param snapshot Snapshot baseline used for diff mode.
+        * @param includeHistory Include history entries in result.
+        * @param includeReason Include reason lists in result.
      * @return Flat node list that changed since snapshot.
      */
     [[nodiscard]] std::vector<MessageTreeNode>
-    queryNodes(const std::vector<MessageTreeSnapshotNode>& snapshot) const;
+        queryNodes(const std::vector<MessageTreeSnapshotNode>& snapshot,
+                bool includeHistory,
+                bool includeReason) const;
 
 private:
     void startHttpServer();
     void stopHttpServer();
 
-    [[nodiscard]] static bool tryParseCleanupDays(const Value& value, std::uint32_t& days);
+    [[nodiscard]] static std::optional<std::uint32_t> parseCleanupDays(const Value& value);
     [[nodiscard]] static bool parseBoolHeaderValue(const std::string& value, bool defaultValue);
 
     static void handleHttpRequest(MessageStore& store,

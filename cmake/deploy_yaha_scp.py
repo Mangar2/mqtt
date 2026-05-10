@@ -9,6 +9,7 @@ Features:
 - Prompts before overwriting changed .ini, .service, and .conf files.
 - Optional remote install/restart for selected service components.
 - Optional remote execution of root install.sh.
+- Remote install can run with interactive TTY for sudo password prompts.
 """
 
 import argparse
@@ -220,6 +221,7 @@ def run_remote_component_install(
     remote_root: str,
     component_name: str,
     cwd: Path,
+    interactive: bool,
 ) -> None:
     install_script = build_remote_path(remote_root, Path(component_name) / "install.sh")
     command = (
@@ -229,11 +231,10 @@ def run_remote_component_install(
         "fi; "
         f"bash {remote_shell_path(install_script)}"
     )
-    run_or_fail(
-        ["ssh", "-n", "-o", "BatchMode=yes", remote_host, command],
-        cwd=cwd,
-        label=f"remote install {component_name}",
-    )
+    ssh_command = ["ssh", "-tt", remote_host, command] if interactive else [
+        "ssh", "-n", "-o", "BatchMode=yes", remote_host, command
+    ]
+    run_or_fail(ssh_command, cwd=cwd, label=f"remote install {component_name}")
 
 
 def run_remote_root_install(
@@ -241,6 +242,7 @@ def run_remote_root_install(
     remote_host: str,
     remote_root: str,
     cwd: Path,
+    interactive: bool,
 ) -> None:
     install_script = build_remote_path(remote_root, Path("install.sh"))
     command = (
@@ -250,11 +252,10 @@ def run_remote_root_install(
         "fi; "
         f"bash {remote_shell_path(install_script)}"
     )
-    run_or_fail(
-        ["ssh", "-n", "-o", "BatchMode=yes", remote_host, command],
-        cwd=cwd,
-        label="remote root install",
-    )
+    ssh_command = ["ssh", "-tt", remote_host, command] if interactive else [
+        "ssh", "-n", "-o", "BatchMode=yes", remote_host, command
+    ]
+    run_or_fail(ssh_command, cwd=cwd, label="remote root install")
 
 
 def parse_args() -> argparse.Namespace:
@@ -306,6 +307,14 @@ def parse_args() -> argparse.Namespace:
             "This installs all component services and nginx config logic."
         ),
     )
+    parser.add_argument(
+        "--non-interactive-install",
+        action="store_true",
+        help=(
+            "Run remote install commands without TTY and with SSH BatchMode. "
+            "Use this only when passwordless sudo is configured."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -341,6 +350,7 @@ def main() -> int:
 
         stats = CopyStats()
         overwrite_mode = "ask"
+        interactive_install = not args.non_interactive_install
         if args.yes_overwrite_config:
             overwrite_mode = "all"
         elif args.no_overwrite_config:
@@ -413,6 +423,7 @@ def main() -> int:
                 remote_root=remote_root,
                 component_name=cleaned_component,
                 cwd=PROJECT_ROOT,
+                interactive=interactive_install,
             )
             print(f"INSTALL remote component={cleaned_component}")
 
@@ -421,6 +432,7 @@ def main() -> int:
                 remote_host=remote_host,
                 remote_root=remote_root,
                 cwd=PROJECT_ROOT,
+                interactive=interactive_install,
             )
             print("INSTALL remote root=install.sh")
 

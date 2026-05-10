@@ -29,7 +29,7 @@ struct MessageTreeNode;
 | ctor | `MessageTree(MessageTreeConfig)` | configuration + time provider |
 | `addData` | `void(const Message&)` | insert/update one topic node |
 | `getSection` | `vector<MessageTreeNode>(const string&, uint32_t, bool, bool) const` | prefix + depth query |
-| `getNodes` | `vector<MessageTreeNode>(const vector<MessageTreeSnapshotNode>&) const` | returns changed nodes only |
+| `getNodes` | `vector<MessageTreeNode>(const vector<MessageTreeSnapshotNode>&, bool, bool) const` | returns changed nodes for provided snapshot topics only |
 | `cleanup` | `size_t(uint32_t)` | removes stale nodes older than N days |
 | `replaceAllNodes` | `void(const vector<MessageTreeNode>&)` | replaces full tree from persisted snapshot |
 
@@ -53,7 +53,7 @@ struct MessageTreeNode;
 | `run` | `void()` | restore, start HTTP callback, start periodic persistence |
 | `close` | `void()` | stop HTTP callback, stop periodic persistence, final persist |
 | `querySection` | `vector<MessageTreeNode>(...) const` | read API used by future HTTP step |
-| `queryNodes` | `vector<MessageTreeNode>(const vector<MessageTreeSnapshotNode>&) const` | snapshot diff read API |
+| `queryNodes` | `vector<MessageTreeNode>(const vector<MessageTreeSnapshotNode>&, bool, bool) const` | snapshot diff read API |
 
 ## Data behavior
 
@@ -99,8 +99,11 @@ struct MessageTreeNode;
 
 - `getSection(prefix, depth, includeHistory, includeReason)` returns flat nodes below prefix.
 - Depth is relative to prefix (`0` means only prefix node).
-- `getNodes(snapshot)` compares topic/value/reason against snapshot and returns changed/new nodes.
-- If snapshot entries include `time`, `getNodes(snapshot)` also treats differing timestamps as changed.
+- `getNodes(snapshot, includeHistory, includeReason)` iterates only snapshot entries (legacy JS behavior).
+- Nodes that exist only on server side but are absent in snapshot are not returned.
+- Snapshot equality checks value first; optional `time` mismatch also marks changed.
+- `reason` is compared only when the snapshot entry explicitly provides `reason`.
+- When snapshot `reason` is omitted, reason differences are ignored.
 
 ## Cleanup behavior
 
@@ -143,6 +146,9 @@ struct MessageTreeNode;
   - `history` and `reason` accept string and JSON boolean literals (`"true"`/`true` enables; `"false"`/`false` disables).
   - `levelAmount` and legacy alias `levelamount` support integer number or integer string; invalid values fall back to 1.
   - `nodes` property activates snapshot diff mode only for non-empty payload values. Empty `[]` and `null` keep section query mode.
+  - In snapshot diff mode, `levelAmount` is applied only when explicitly present in request payload;
+    then snapshot nodes are filtered to `topic` prefix and relative depth before diff evaluation.
+  - In snapshot diff mode, `history` and `reason` flags still control response projection for changed nodes.
   - response for successfully parsed sensor-compatible POST body is wrapped as JSON object
     with `payload` array field for legacy `sensor.php` compatibility.
   - Invalid POST JSON falls back to section query defaults (legacy bridge behavior).

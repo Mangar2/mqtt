@@ -6,7 +6,6 @@
 #include <chrono>
 #include <cstdint>
 #include <stdexcept>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -117,22 +116,31 @@ MessageTree::getSection(const std::string& topicPrefix,
 }
 
 std::vector<MessageTreeNode>
-MessageTree::getNodes(const std::vector<MessageTreeSnapshotNode>& snapshot) const {
-    std::vector<MessageTreeNode> currentNodes{};
-    collectAllNodes(root_, currentNodes);
-
-    std::unordered_map<std::string, const MessageTreeSnapshotNode*> snapshotIndex{};
-    snapshotIndex.reserve(snapshot.size());
-    for (const auto& node : snapshot) {
-        snapshotIndex[node.topic] = &node;
-    }
-
+MessageTree::getNodes(const std::vector<MessageTreeSnapshotNode>& snapshot,
+                      bool includeHistory,
+                      bool includeReason) const {
     std::vector<MessageTreeNode> diff{};
-    for (auto& node : currentNodes) {
-        auto iter = snapshotIndex.find(node.topic);
-        if (iter == snapshotIndex.end() || !snapshotEquals(node, *iter->second)) {
-            node.history.clear();
-            diff.push_back(std::move(node));
+    diff.reserve(snapshot.size());
+    for (const auto& requiredNode : snapshot) {
+        const TreeNode* current = findPath(requiredNode.topic);
+        if (current == nullptr || !current->hasData) {
+            continue;
+        }
+
+        MessageTreeNode currentNode{};
+        currentNode.topic = current->topicPath;
+        currentNode.timeMs = current->data.timeMs;
+        currentNode.value = current->data.value;
+        currentNode.reason = current->data.reason;
+        currentNode.history = includeHistory
+            ? decompressHistory(current->data.compressedHistory, true)
+            : std::vector<MessageTreeHistoryEntry>{};
+
+        if (!snapshotEquals(currentNode, requiredNode)) {
+            if (!includeReason) {
+                currentNode.reason.clear();
+            }
+            diff.push_back(std::move(currentNode));
         }
     }
 
@@ -266,31 +274,21 @@ void MessageTree::collectSection(const TreeNode& node,
     }
 }
 
-void MessageTree::collectAllNodes(const TreeNode& node,
-                                  std::vector<MessageTreeNode>& output) const {
-    if (node.hasData) {
-        MessageTreeNode result{};
-        result.topic = node.topicPath;
-        result.timeMs = node.data.timeMs;
-        result.value = node.data.value;
-        result.reason = node.data.reason;
-        output.push_back(std::move(result));
-    }
-
-    for (const auto& child : node.children) {
-        collectAllNodes(child.second, output);
-    }
-}
-
 bool MessageTree::snapshotEquals(const MessageTreeNode& current,
                                  const MessageTreeSnapshotNode& snapshot) {
     if (snapshot.timeMs.has_value() && current.timeMs != *snapshot.timeMs) {
         return false;
     }
 
-    return current.topic == snapshot.topic &&
-           current.value == snapshot.value &&
-           reasonListsEqual(current.reason, snapshot.reason);
+    if (current.value != snapshot.value) {
+        return false;
+    }
+
+    if (!snapshot.hasReason) {
+        return true;
+    }
+
+    return reasonListsEqual(current.reason, snapshot.reason);
 }
 
 std::size_t MessageTree::cleanupNode(TreeNode& node, std::int64_t cutoffMs) {

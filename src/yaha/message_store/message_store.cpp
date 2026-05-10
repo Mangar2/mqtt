@@ -5,11 +5,13 @@
 #include "yaha/error_handling/yaha_error.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cctype>
 #include <cmath>
 #include <ctime>
 #include <cstdlib>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <utility>
 
@@ -47,8 +49,11 @@ std::string toLower(std::string value) {
 }
 
 bool startsWith(const std::string& text, const std::string& prefix) {
-    return text.size() >= prefix.size() && text.compare(0U, prefix.size(), prefix) == 0;
+    return text.starts_with(prefix);
 }
+
+std::uint32_t parseUnsignedHeaderOrDefault(const std::string& text, std::uint32_t defaultValue);
+bool parseBoolHeaderToken(const std::string& value, bool defaultValue);
 
 bool isHexDigit(char currentChar) {
     return (currentChar >= '0' && currentChar <= '9')
@@ -66,8 +71,8 @@ int hexValue(char currentChar) {
     return k_hex_alpha_offset + (currentChar - 'A');
 }
 
-bool tryDecodePercentEncoding(const std::string& encoded, std::string& decoded) {
-    decoded.clear();
+std::optional<std::string> decodePercentEncoding(const std::string& encoded) {
+    std::string decoded{};
     decoded.reserve(encoded.size());
 
     for (std::size_t i = 0U; i < encoded.size(); ++i) {
@@ -78,13 +83,13 @@ bool tryDecodePercentEncoding(const std::string& encoded, std::string& decoded) 
         }
 
         if ((i + 2U) >= encoded.size()) {
-            return false;
+            return std::nullopt;
         }
 
         const char highNibbleChar = encoded[i + 1U];
         const char lowNibbleChar = encoded[i + 2U];
         if (!isHexDigit(highNibbleChar) || !isHexDigit(lowNibbleChar)) {
-            return false;
+            return std::nullopt;
         }
 
         const int value = (hexValue(highNibbleChar) << 4) | hexValue(lowNibbleChar);
@@ -92,7 +97,7 @@ bool tryDecodePercentEncoding(const std::string& encoded, std::string& decoded) 
         i += 2U;
     }
 
-    return true;
+    return decoded;
 }
 
 std::string normalizeBasePath(const std::string& configuredPath) {
@@ -106,22 +111,151 @@ std::string normalizeBasePath(const std::string& configuredPath) {
     return base;
 }
 
-bool tryParseUnsignedHeader(const std::string& text, std::uint32_t defaultValue, std::uint32_t& output) {
-    const std::string cleaned = trim(text);
-    if (cleaned.empty()) {
-        output = defaultValue;
-        return true;
+std::string normalizeTopicPath(std::string topic) {
+    while (!topic.empty() && topic.front() == '/') {
+        topic.erase(topic.begin());
+    }
+    while (!topic.empty() && topic.back() == '/') {
+        topic.pop_back();
+    }
+    return topic;
+}
+
+std::size_t countTopicLevels(const std::string& topicPath) {
+    if (topicPath.empty()) {
+        return 0U;
     }
 
-    char* endPtr = nullptr;
-    const unsigned long parsed = std::strtoul(cleaned.c_str(), &endPtr, 10);
-    if (endPtr == nullptr || *endPtr != '\0') {
-        output = defaultValue;
+    std::size_t levels = 1U;
+    for (char currentChar : topicPath) {
+        if (currentChar == '/') {
+            levels += 1U;
+        }
+    }
+    return levels;
+}
+
+bool isWithinRequestedLevel(const std::string& topic,
+                            const std::string& topicPrefix,
+                            std::uint32_t levelAmount) {
+    const std::string normalizedTopic = normalizeTopicPath(topic);
+    const std::string normalizedPrefix = normalizeTopicPath(topicPrefix);
+
+    if (normalizedTopic.empty()) {
         return false;
     }
 
-    output = static_cast<std::uint32_t>(parsed);
-    return true;
+    if (normalizedPrefix.empty()) {
+        return countTopicLevels(normalizedTopic) <= levelAmount;
+    }
+
+    if (normalizedTopic == normalizedPrefix) {
+        return true;
+    }
+
+    const std::string prefixedPath = normalizedPrefix + "/";
+    if (!startsWith(normalizedTopic, prefixedPath)) {
+        return false;
+    }
+
+    const std::size_t topicDepth = countTopicLevels(normalizedTopic);
+    const std::size_t prefixDepth = countTopicLevels(normalizedPrefix);
+    return (topicDepth - prefixDepth) <= levelAmount;
+}
+
+struct ParsedHttpQuery {
+    std::uint32_t levelAmount{k_default_level_amount};
+    bool includeHistory{false};
+    bool includeReason{true};
+    bool useSnapshotMode{false};
+    bool hasExplicitLevelAmount{false};
+    std::string snapshotBody{};
+    bool sensorPayloadParsed{false};
+};
+
+void applyPostQueryOptions(const httplib::Request& request,
+                           std::string& topicPrefix,
+                           ParsedHttpQuery& query) {
+    message_store_json::SensorPostRequest sensorRequest{};
+    if (!message_store_json::parseSensorPostBody(request.body, sensorRequest)) {
+        return;
+    }
+
+    query.sensorPayloadParsed = true;
+    topicPrefix = sensorRequest.topicPrefix.empty()
+        ? topicPrefix
+        : sensorRequest.topicPrefix;
+    query.includeHistory = sensorRequest.includeHistory;
+    query.includeReason = sensorRequest.includeReason;
+    query.levelAmount = sensorRequest.levelAmount;
+    query.hasExplicitLevelAmount = sensorRequest.hasLevelAmount;
+    query.useSnapshotMode = sensorRequest.hasNodes;
+    query.snapshotBody = sensorRequest.nodesJson;
+}
+
+void applyGetQueryOptions(const httplib::Request& request, ParsedHttpQuery& query) {
+    if (request.has_header("levelamount")) {
+        query.hasExplicitLevelAmount = true;
+        query.levelAmount = parseUnsignedHeaderOrDefault(request.get_header_value("levelamount"),
+                                                         k_default_level_amount);
+    }
+
+    if (request.has_header("history")) {
+        query.includeHistory = parseBoolHeaderToken(request.get_header_value("history"), false);
+    }
+
+    if (request.has_header("reason")) {
+        query.includeReason = parseBoolHeaderToken(request.get_header_value("reason"), true);
+    }
+
+    query.useSnapshotMode = !request.body.empty();
+    query.snapshotBody = request.body;
+}
+
+std::vector<MessageTreeSnapshotNode> filterSnapshotByLevel(const std::vector<MessageTreeSnapshotNode>& snapshot,
+                                                           const std::string& topicPrefix,
+                                                           std::uint32_t levelAmount) {
+    std::vector<MessageTreeSnapshotNode> filteredSnapshot{};
+    filteredSnapshot.reserve(snapshot.size());
+    for (const auto& snapshotNode : snapshot) {
+        if (isWithinRequestedLevel(snapshotNode.topic, topicPrefix, levelAmount)) {
+            filteredSnapshot.push_back(snapshotNode);
+        }
+    }
+    return filteredSnapshot;
+}
+
+std::uint32_t parseUnsignedHeaderOrDefault(const std::string& text, std::uint32_t defaultValue) {
+    const std::string cleaned = trim(text);
+    if (cleaned.empty()) {
+        return defaultValue;
+    }
+
+    std::uint32_t parsed = 0U;
+    const auto [endPtr, errorCode] = std::from_chars(cleaned.data(),
+                                                     cleaned.data() + cleaned.size(),
+                                                     parsed,
+                                                     10);
+    if (errorCode != std::errc{} || endPtr != cleaned.data() + cleaned.size()) {
+        return defaultValue;
+    }
+
+    return parsed;
+}
+
+bool parseBoolHeaderToken(const std::string& value, bool defaultValue) {
+    const std::string normalized = toLower(trim(value));
+    if (normalized.empty()) {
+        return defaultValue;
+    }
+
+    if (normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on") {
+        return true;
+    }
+    if (normalized == "0" || normalized == "false" || normalized == "no" || normalized == "off") {
+        return false;
+    }
+    return defaultValue;
 }
 
 std::string toIsoTimestamp(std::int64_t millisecondsSinceEpoch) {
@@ -273,10 +407,10 @@ void MessageStore::handleMessage(const Message& message) {
     Message::validate(message);
 
     if (message.topic() == config_.cleanupTopic) {
-        std::uint32_t days = 0U;
-        if (tryParseCleanupDays(message.value(), days)) {
+        const std::optional<std::uint32_t> days = parseCleanupDays(message.value());
+        if (days.has_value()) {
             std::lock_guard<std::mutex> lock{treeStateMutex_};
-            (void)tree_.cleanup(days);
+            (void)tree_.cleanup(*days);
         }
         return;
     }
@@ -347,9 +481,11 @@ MessageStore::querySection(const std::string& topicPrefix,
 }
 
 std::vector<MessageTreeNode>
-MessageStore::queryNodes(const std::vector<MessageTreeSnapshotNode>& snapshot) const {
+MessageStore::queryNodes(const std::vector<MessageTreeSnapshotNode>& snapshot,
+                         bool includeHistory,
+                         bool includeReason) const {
     std::lock_guard<std::mutex> lock{treeStateMutex_};
-    return tree_.getNodes(snapshot);
+    return tree_.getNodes(snapshot, includeHistory, includeReason);
 }
 
 void MessageStore::startHttpServer() {
@@ -409,8 +545,8 @@ void MessageStore::handleHttpRequest(MessageStore& store,
         return;
     }
 
-    std::string topicPrefix;
-    if (!tryDecodePercentEncoding(topicPrefixEncoded, topicPrefix)) {
+    const std::optional<std::string> topicPrefixDecoded = decodePercentEncoding(topicPrefixEncoded);
+    if (!topicPrefixDecoded.has_value()) {
         setHttpErrorResponse(response,
                              k_http_status_bad_request,
                              YahaError{"YAHA_MESSAGE_STORE_HTTP_INVALID_PERCENT_ENCODING",
@@ -419,59 +555,34 @@ void MessageStore::handleHttpRequest(MessageStore& store,
                                        "encoded_prefix=" + topicPrefixEncoded});
         return;
     }
+    std::string topicPrefix = *topicPrefixDecoded;
 
-    std::uint32_t levelAmount = k_default_level_amount;
-    bool includeHistory = false;
-    bool includeReason = true;
-
-    bool useSnapshotMode = false;
-    std::string snapshotBody{};
-    bool sensorPayloadParsed = false;
+    ParsedHttpQuery query{};
     if (isPostRequest) {
-        message_store_json::SensorPostRequest sensorRequest{};
-        if (message_store_json::parseSensorPostBody(request.body, sensorRequest)) {
-            sensorPayloadParsed = true;
-            topicPrefix = sensorRequest.topicPrefix.empty()
-                ? topicPrefix
-                : sensorRequest.topicPrefix;
-            includeHistory = sensorRequest.includeHistory;
-            includeReason = sensorRequest.includeReason;
-            levelAmount = sensorRequest.levelAmount;
-            useSnapshotMode = sensorRequest.hasNodes;
-            snapshotBody = sensorRequest.nodesJson;
-        }
+        applyPostQueryOptions(request, topicPrefix, query);
     } else {
-        if (request.has_header("levelamount")) {
-            (void)tryParseUnsignedHeader(request.get_header_value("levelamount"),
-                                         k_default_level_amount,
-                                         levelAmount);
-        }
-
-        if (request.has_header("history")) {
-            includeHistory = parseBoolHeaderValue(request.get_header_value("history"), false);
-        }
-
-        if (request.has_header("reason")) {
-            includeReason = parseBoolHeaderValue(request.get_header_value("reason"), true);
-        }
-
-        useSnapshotMode = !request.body.empty();
-        snapshotBody = request.body;
+        applyGetQueryOptions(request, query);
     }
 
     std::vector<MessageTreeNode> nodes{};
-    if (!useSnapshotMode) {
-        nodes = store.querySection(topicPrefix, levelAmount, includeHistory, includeReason);
+    if (!query.useSnapshotMode) {
+        nodes = store.querySection(topicPrefix,
+                                   query.levelAmount,
+                                   query.includeHistory,
+                                   query.includeReason);
     } else {
         std::vector<MessageTreeSnapshotNode> snapshot{};
-        if (message_store_json::parseSnapshotBody(snapshotBody, snapshot)) {
-            nodes = store.queryNodes(snapshot);
+        if (message_store_json::parseSnapshotBody(query.snapshotBody, snapshot)) {
+            if (query.hasExplicitLevelAmount) {
+                snapshot = filterSnapshotByLevel(snapshot, topicPrefix, query.levelAmount);
+            }
+            nodes = store.queryNodes(snapshot, query.includeHistory, query.includeReason);
         }
     }
 
     response.status = k_http_status_ok;
     const std::string nodesJson = nodesToJson(nodes);
-    if (isPostRequest && sensorPayloadParsed) {
+    if (isPostRequest && query.sensorPayloadParsed) {
         response.set_content(wrapPayloadObject(nodesJson), "application/json");
         return;
     }
@@ -479,29 +590,27 @@ void MessageStore::handleHttpRequest(MessageStore& store,
     response.set_content(nodesJson, "application/json");
 }
 
-bool MessageStore::tryParseCleanupDays(const Value& value, std::uint32_t& days) {
+std::optional<std::uint32_t> MessageStore::parseCleanupDays(const Value& value) {
     if (std::holds_alternative<double>(value)) {
         const double number = std::get<double>(value);
         if (!std::isfinite(number) || number < 0.0) {
-            return false;
+            return std::nullopt;
         }
-        days = static_cast<std::uint32_t>(number);
-        return true;
+        return static_cast<std::uint32_t>(number);
     }
 
     const std::string& text = std::get<std::string>(value);
     if (text.empty()) {
-        return false;
+        return std::nullopt;
     }
 
     char* endPtr = nullptr;
     const unsigned long parsed = std::strtoul(text.c_str(), &endPtr, 10);
     if (endPtr == nullptr || *endPtr != '\0') {
-        return false;
+        return std::nullopt;
     }
 
-    days = static_cast<std::uint32_t>(parsed);
-    return true;
+    return static_cast<std::uint32_t>(parsed);
 }
 
 bool MessageStore::parseBoolHeaderValue(const std::string& value, bool defaultValue) {

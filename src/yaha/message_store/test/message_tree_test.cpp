@@ -1114,7 +1114,7 @@ TEST_CASE("get_section_excludes_node_reason_but_keeps_history_reasons", "[messag
     REQUIRE(nodes.front().history[0].reason[0].message == "origin");
 }
 
-TEST_CASE("get_nodes_returns_only_changed_or_new_nodes", "[message_store]") {
+TEST_CASE("get_nodes_returns_only_changed_nodes_for_required_snapshot_topics", "[message_store]") {
     FakeClock clock{};
     yaha::MessageTree tree = makeTree(clock);
 
@@ -1122,11 +1122,10 @@ TEST_CASE("get_nodes_returns_only_changed_or_new_nodes", "[message_store]") {
     tree.addData(yaha::Message{"home/b", std::string{"new"}});
 
     std::vector<yaha::MessageTreeSnapshotNode> snapshot{};
-    snapshot.push_back({"home/a", std::string{"same"}, {}, {}});
+    snapshot.push_back({"home/a", std::string{"same"}, {}, false, std::nullopt});
 
-    const auto nodes = tree.getNodes(snapshot);
-    REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().topic == "home/b");
+    const auto nodes = tree.getNodes(snapshot, true, true);
+    REQUIRE(nodes.empty());
 }
 
 TEST_CASE("cleanup_removes_stale_nodes_and_prunes_empty_branches", "[message_store]") {
