@@ -18,9 +18,9 @@ directly here — each sub-topic has its own subdirectory.
 | `broker_connector_client/` | broker connector phase 4 | Standalone process config mapping for broker connector composition using generic mqtt runtime modules. |
 | `file_store/` | filestore phase 1 | FileStore IMqttComponent with HTTP key/value API and MQTT monitoring publishes for file changes. |
 | `file_store_client/` | filestore phase 2 | Standalone FileStore process config mapping and runtime composition wiring. |
-| `remote_service/` | remoteservice phase 3 | RemoteService mapping lifecycle plus domain command resolution and publish handoff API. |
+| `remote_service/` | remoteservice phase 5 | RemoteService mapping lifecycle, domain command resolution/publish API, and lifecycle logging hooks for standalone runtime. |
 | `remote_service_http/` | remoteservice phase 4 | HTTP GET/POST adapter with token validation hooks and domain publish response mapping. |
-| `remote_service_client/` | remoteservice phase 1 | Standalone RemoteService INI mapping and runtime config composition helpers. |
+| `remote_service_client/` | remoteservice phase 5 | Standalone RemoteService INI mapping plus executable composition and CLI/runtime wiring. |
 | `value_service/` | valueservice phase 2 | ValueService IMqttComponent with startup FileStore load, `/set` handling, retained replay publish, and monitor-triggered reload. |
 | `value_service_client/` | valueservice phase 3 | Standalone ValueService runtime config mapping and process composition via `yaha_valueserviceclient_main.cpp`. |
 | `message_store/` | 4-7 | Internal MessageTree plus persistence and MessageStore IMqttComponent logic for state/history queries, cleanup, disk restore/save, and HTTP query interface with ISO-8601 UTC `time` output fields. |

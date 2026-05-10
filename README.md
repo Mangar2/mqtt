@@ -39,6 +39,12 @@ A fully specification-compliant MQTT 5.0 broker written in C++20.
 # Run YAHA HTTP MQTT interface client with explicit config path
 ./build/release/yahahttpmqttinterfaceclient path/to/broker.ini
 
+# Run YAHA RemoteService client with default config path (broker.ini)
+./build/release/yaharemoteserviceclient
+
+# Run YAHA RemoteService client with explicit config path
+./build/release/yaharemoteserviceclient path/to/broker.ini
+
 # Run YAHA MessageStore client with explicit config path
 ./build/release/yahamsgstoreclient path/to/broker.ini
 
@@ -132,6 +138,14 @@ Any unknown CLI flag causes startup failure.
 | `<config-path>` | positional path | `broker.ini` | Optional path to HTTP MQTT interface client INI config. |
 | `-h`, `--help` | flag | off | Prints CLI usage and exits successfully. |
 
+`yaharemoteserviceclient` accepts one optional positional config path and one optional flag:
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `<config-path>` | positional path | `broker.ini` | Optional path to RemoteService INI config. |
+| `--trace-messages` | flag | off | Enables MQTT transport sent/received trace lines in runtime client. |
+| `-h`, `--help` | flag | off | Prints CLI usage and exits successfully. |
+
 Automation client INI sections:
 
 - `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs)
@@ -165,6 +179,12 @@ MessageStore client INI sections:
 HTTP MQTT interface client INI sections:
 
 - `[httpMqttInterface]`: `listenerHost`, `listenerPort`, `enablePublishPhpAlias`, `useLegacyPhpResponse`
+
+RemoteService client INI sections:
+
+- `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs)
+- `[filestore]`: `host`, `port`, `filename`, `topicPrefix`
+- `[remoteservice]`: `listenHost`, `listenPort`, `subscribeQoS`
 
 ## Prerequisites
 

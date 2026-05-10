@@ -1,9 +1,9 @@
-# remote_service_client — YAHA RemoteService Runtime Types and INI Mapping
+# remote_service_client — YAHA RemoteService Runtime Types, INI Mapping, and Standalone Composition
 
 ## Purpose
 
-Defines RemoteService standalone runtime config data types and RemoteService
-specific INI mapping behavior.
+Defines RemoteService standalone runtime config data types, RemoteService
+specific INI mapping behavior, and standalone process composition entrypoint.
 
 ## Public API
 
@@ -45,9 +45,27 @@ Mapping rules:
 - `filestore.filename -> RemoteServiceConfig.mappingKeyPath`
 - `filestore.topicPrefix -> RemoteServiceConfig.monitorTopicPrefix`
 
+## Standalone composition behavior
+
+`src/yaha_remoteserviceclient_main.cpp` composes runtime directly:
+
+- parse CLI args (`[config-path]`, `--trace-messages`, `--help`)
+- load INI config with `IniDocument`
+- map full runtime config with `tryLoadRemoteServiceClientRuntimeConfigFromIni`
+- construct `RemoteServiceComponent`
+- construct `RemoteServiceHttpAdapter`
+- construct `YahaMqttClient` with `makeBrokerTransport()`
+- start component and MQTT client lifecycle
+- start HTTP listener for dynamic path routing
+- run until signal and perform clean shutdown
+
 ## Files
 
 | File | Role |
 |------|------|
 | `remote_service_client_app.h` | Runtime config declarations and loader signatures |
 | `remote_service_client_app.cpp` | Runtime config parsing and validation implementation |
+
+Related runtime entrypoint:
+
+- `src/yaha_remoteserviceclient_main.cpp`

@@ -114,6 +114,13 @@ Member function:
 - Only monitor events with matching `keyPath == mappingKeyPath` trigger reload.
 - Failed reload keeps previous valid map unchanged.
 
+Lifecycle logging:
+
+- startup load logs one success/failure line with trigger `startup`
+- monitor reload logs one matched/ignored trigger line
+- monitor reload success/failure logs include trigger `monitor`
+- duplicate-path mapping warnings continue to log to `std::cerr`
+
 ### Command resolution and publish handoff
 
 - `resolveCommand()` performs deterministic mapping:

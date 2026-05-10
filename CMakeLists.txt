@@ -60,6 +60,7 @@ list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_filestoreclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_automationclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_httpmqttinterfaceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_valueserviceclient_main\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_remoteserviceclient_main\\.cpp$")
 
 if(WIN32)
     list(FILTER MQTT_ALL_SOURCES  EXCLUDE REGEX "_posix\\.cpp$")
@@ -228,6 +229,22 @@ if(WIN32)
     target_link_libraries(yahavalueserviceclient PRIVATE ws2_32)
 endif()
 
+#  YAHA RemoteService standalone executable
+add_executable(yaharemoteserviceclient
+    src/yaha_remoteserviceclient_main.cpp
+    ${MQTT_LIBRARY_SOURCES}
+)
+
+target_compile_options(yaharemoteserviceclient PRIVATE ${MQTT_COMPILE_OPTIONS})
+target_link_options(yaharemoteserviceclient    PRIVATE ${MQTT_LINK_OPTIONS})
+target_include_directories(yaharemoteserviceclient PRIVATE src)
+target_include_directories(yaharemoteserviceclient PRIVATE ${httplib_SOURCE_DIR})
+target_compile_definitions(yaharemoteserviceclient PRIVATE
+    $<$<BOOL:${MQTT_TRACING_DISABLED}>:MQTT_TRACING_DISABLED>)
+if(WIN32)
+    target_link_libraries(yaharemoteserviceclient PRIVATE ws2_32)
+endif()
+
 #  Unit tests 
 include(CTest)
 
@@ -279,5 +296,6 @@ install(TARGETS yahabroker
     yahaautomationclient
     yahahttpmqttinterfaceclient
     yahavalueserviceclient
+    yaharemoteserviceclient
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )

@@ -676,10 +676,13 @@ void RemoteServiceComponent::handleMessage(const Message& message) {
     }
 
     if (!isMatchingMappingReloadEvent(message)) {
+        std::cout << "remote_service reload ignored: monitor event keyPath mismatch\n" << std::flush;
         return;
     }
 
-    (void)reloadMappingFromFileStore();
+    std::cout << "remote_service reload trigger matched: keyPath=" << config_.mappingKeyPath << '\n'
+              << std::flush;
+    (void)reloadMappingFromFileStore("monitor");
 }
 
 void RemoteServiceComponent::run() {
@@ -691,7 +694,7 @@ void RemoteServiceComponent::run() {
         running_ = true;
     }
 
-    (void)reloadMappingFromFileStore();
+    (void)reloadMappingFromFileStore("startup");
 }
 
 void RemoteServiceComponent::close() {
@@ -736,21 +739,33 @@ std::optional<std::string> RemoteServiceComponent::mappedTopicFor(
     return topicIterator->second;
 }
 
-bool RemoteServiceComponent::reloadMappingFromFileStore() {
+bool RemoteServiceComponent::reloadMappingFromFileStore(const std::string& triggerText) {
     httplib::Client client{config_.fileStoreHost, static_cast<int>(config_.fileStorePort)};
     const auto response = client.Get(config_.mappingKeyPath);
     if (!response || response->status != kHttpStatusOk) {
+        const int statusCode = response ? response->status : -1;
+        std::cout << "remote_service reload failed: trigger=" << triggerText
+                  << " status=" << statusCode << '\n'
+                  << std::flush;
         return false;
     }
 
     RemoteServiceMap parsedMap{};
     std::string errorMessage{};
     if (!tryParseRemoteServiceMappingPayload(response->body, parsedMap, errorMessage)) {
+        std::cout << "remote_service reload failed: trigger=" << triggerText
+                  << " validation=" << errorMessage << '\n'
+                  << std::flush;
         return false;
     }
 
+    const std::size_t loadedServiceCount = parsedMap.size();
     std::lock_guard<std::mutex> lock{stateMutex_};
     servicesByPath_ = std::move(parsedMap);
+
+    std::cout << "remote_service reload success: trigger=" << triggerText
+              << " services=" << loadedServiceCount << '\n'
+              << std::flush;
     return true;
 }
 

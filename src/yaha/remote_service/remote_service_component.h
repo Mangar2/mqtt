@@ -175,7 +175,7 @@ public:
         const RemoteServiceCommandRequest& request);
 
 private:
-    [[nodiscard]] bool reloadMappingFromFileStore();
+    [[nodiscard]] bool reloadMappingFromFileStore(const std::string& triggerText);
     [[nodiscard]] bool isMonitoringTopic(const std::string& topicName) const;
     [[nodiscard]] bool isMatchingMappingReloadEvent(const Message& message) const;
 
