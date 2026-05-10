@@ -4,6 +4,17 @@
 @baseUrl = http://{{host}}:{{port}}{{keyPath}}
 @baseUrlNginx = http://{{host}}/kvstore{{keyPath}}
 
+### CORS preflight via nginx /kvstore route
+OPTIONS {{baseUrlNginx}}
+Origin: http://{{host}}
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: Content-Type, Authorization, X-Requested-With
+
+### CORS preflight for nginx FileStore GET
+OPTIONS {{baseUrlNginx}}
+Origin: http://{{host}}
+Access-Control-Request-Method: GET
+
 ### Write JSON value to FileStore
 POST {{baseUrl}}
 content-type: application/json

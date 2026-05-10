@@ -514,6 +514,20 @@ private:
             return true;
         }
 
+        if (key == "time") {
+            std::string timeRaw{};
+            if (!captureRawValue(timeRaw)) {
+                return false;
+            }
+            bool includeTime = false;
+            if (tryParseBoolValue(timeRaw, includeTime)) {
+                output.includeTime = includeTime;
+            } else {
+                output.includeTime = false;
+            }
+            return true;
+        }
+
         if (key == "levelAmount" || key == "levelamount") {
             std::string levelAmountRaw{};
             if (!captureRawValue(levelAmountRaw)) {

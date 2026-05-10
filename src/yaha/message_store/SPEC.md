@@ -139,16 +139,17 @@ struct MessageTreeNode;
   - `levelamount` (default 1)
   - `history` (default false)
   - `reason` (default true)
+  - `time` (default true)
 - Empty body -> section mode using `getSection`.
 - JSON array body -> snapshot diff mode using `getNodes`.
 - POST JSON object mode:
   - `topic` maps to topic prefix (`"/a/b"` normalized to `"a/b"`).
-  - `history` and `reason` accept string and JSON boolean literals (`"true"`/`true` enables; `"false"`/`false` disables).
+  - `history`, `reason`, and `time` accept string and JSON boolean literals (`"true"`/`true` enables; `"false"`/`false` disables).
   - `levelAmount` and legacy alias `levelamount` support integer number or integer string; invalid values fall back to 1.
   - `nodes` property activates snapshot diff mode only for non-empty payload values. Empty `[]` and `null` keep section query mode.
   - In snapshot diff mode, `levelAmount` is applied only when explicitly present in request payload;
     then snapshot nodes are filtered to `topic` prefix and relative depth before diff evaluation.
-  - In snapshot diff mode, `history` and `reason` flags still control response projection for changed nodes.
+  - In snapshot diff mode, `history`, `reason`, and `time` flags still control response projection for changed nodes.
   - response for successfully parsed sensor-compatible POST body is wrapped as JSON object
     with `payload` array field for legacy `sensor.php` compatibility.
   - Invalid POST JSON falls back to section query defaults (legacy bridge behavior).
@@ -156,10 +157,13 @@ struct MessageTreeNode;
 - Unknown path -> status 404 with `YahaError` payload code `YAHA_MESSAGE_STORE_HTTP_NOT_FOUND`.
 - Invalid percent-encoding in topic prefix -> status 400 with `YahaError` payload code `YAHA_MESSAGE_STORE_HTTP_INVALID_PERCENT_ENCODING`.
 - Response is JSON array with `application/json`.
-- HTTP JSON node shape uses ISO UTC timestamps with trailing `Z`:
-  - node field `time` (string, ISO-8601 UTC),
-  - `history[].time` (string, ISO-8601 UTC),
-  - `reason[].timestamp` passthrough from message reasons.
+- HTTP JSON node shape uses projection flags:
+  - node field `time` (string, ISO-8601 UTC) is included only when `time=true`,
+  - `history[]` is included only when `history=true`,
+  - `history[].time` (string, ISO-8601 UTC) is included only when `time=true`,
+  - node field `reason` and `history[].reason` are included only when `reason=true`,
+  - `reason[].timestamp` is passthrough from message reasons.
+- `time` projection is independent from `reason` projection.
 - `history[]` in HTTP responses is ordered newest-first (`history[0]` is the newest historic entry).
 - HTTP response does not expose internal `timeMs` fields.
 

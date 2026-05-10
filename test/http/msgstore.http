@@ -5,22 +5,29 @@
 @baseUrl = http://{{host}}:{{port}}{{storePath}}
 @baseUrlNginx = http://{{host}}{{storePath}}
 
+### CORS preflight via nginx /store route
+OPTIONS {{baseUrlNginx}}
+Origin: http://{{host}}
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: Content-Type, Authorization, X-Requested-With, history, levelamount, reason, time
+
 GET {{baseUrl}}{{topicPath}}
 levelamount: 5
 history: false
 reason: false
+time: false
 
 ### Legacy PHP-style MsgStore body (direct)
 POST {{baseUrl}}
 content-type: application/json
 
-{"topic":"first/bathroom/main/light/light on time","history":"false","reason":"false","nodes":[],"levelAmount":7}
+{"topic":"first/bathroom/main/light/light on time","history":"false","reason":"false","time":"false","nodes":[],"levelAmount":7}
 
 ### Direct MsgStore POST via nginx /store route
 POST {{baseUrlNginx}}
 content-type: application/json
 
-{"topic":"ground/wardrobe/floorHeating/lowtemperature","history":"false","reason":"true",
+{"topic":"ground/wardrobe/floorHeating/lowtemperature","history":"false","reason":"true","time":"true",
 "nodes":[{
       "topic": "ground/wardrobe/floorHeating/lowtemperature",
       "value": "22",
@@ -51,5 +58,5 @@ content-type: application/json
 POST http://{{host}}/yahagui/angular/api/sensor.php
 content-type: application/json
 
-{"topic":"first/bathroom/main/light/light on time","history":"false","reason":"false","nodes":[],"levelAmount":7}
+{"topic":"first/bathroom/main/light/light on time","history":"false","reason":"false","time":"false","nodes":[],"levelAmount":7}
 

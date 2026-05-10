@@ -167,6 +167,7 @@ struct ParsedHttpQuery {
     std::uint32_t levelAmount{k_default_level_amount};
     bool includeHistory{false};
     bool includeReason{true};
+    bool includeTime{true};
     bool useSnapshotMode{false};
     bool hasExplicitLevelAmount{false};
     std::string snapshotBody{};
@@ -187,6 +188,7 @@ void applyPostQueryOptions(const httplib::Request& request,
         : sensorRequest.topicPrefix;
     query.includeHistory = sensorRequest.includeHistory;
     query.includeReason = sensorRequest.includeReason;
+    query.includeTime = sensorRequest.includeTime;
     query.levelAmount = sensorRequest.levelAmount;
     query.hasExplicitLevelAmount = sensorRequest.hasLevelAmount;
     query.useSnapshotMode = sensorRequest.hasNodes;
@@ -206,6 +208,10 @@ void applyGetQueryOptions(const httplib::Request& request, ParsedHttpQuery& quer
 
     if (request.has_header("reason")) {
         query.includeReason = parseBoolHeaderToken(request.get_header_value("reason"), true);
+    }
+
+    if (request.has_header("time")) {
+        query.includeTime = parseBoolHeaderToken(request.get_header_value("time"), true);
     }
 
     query.useSnapshotMode = !request.body.empty();
@@ -342,38 +348,58 @@ std::string reasonsToJson(const std::vector<ReasonEntry>& reasons) {
     return result;
 }
 
-std::string historyToJson(const std::vector<MessageTreeHistoryEntry>& history) {
+std::string historyToJson(const std::vector<MessageTreeHistoryEntry>& history,
+                          const bool includeReason,
+                          const bool includeTime) {
     std::string result{"["};
     for (std::size_t i = 0U; i < history.size(); ++i) {
         if (i > 0U) {
             result += ',';
         }
         const MessageTreeHistoryEntry& item = history[i];
-        result += "{\"time\":\"" + jsonEscape(toIsoTimestamp(item.timeMs)) + "\",\"value\":"
-            + valueToJson(item.value) + ",\"reason\":" + reasonsToJson(item.reason) + '}';
+        result += "{\"value\":" + valueToJson(item.value);
+        if (includeTime) {
+            result += ",\"time\":\"" + jsonEscape(toIsoTimestamp(item.timeMs)) + "\"";
+        }
+        if (includeReason) {
+            result += ",\"reason\":" + reasonsToJson(item.reason);
+        }
+        result += '}';
     }
     result += "]";
     return result;
 }
 
-std::string nodeToJson(const MessageTreeNode& node) {
+std::string nodeToJson(const MessageTreeNode& node,
+                       const bool includeHistory,
+                       const bool includeReason,
+                       const bool includeTime) {
     std::string result{"{"};
     result += "\"topic\":\"" + jsonEscape(node.topic) + "\"";
     result += ",\"value\":" + valueToJson(node.value);
-    result += ",\"time\":\"" + jsonEscape(toIsoTimestamp(node.timeMs)) + "\"";
-    result += ",\"reason\":" + reasonsToJson(node.reason);
-    result += ",\"history\":" + historyToJson(node.history);
+    if (includeTime) {
+        result += ",\"time\":\"" + jsonEscape(toIsoTimestamp(node.timeMs)) + "\"";
+    }
+    if (includeReason) {
+        result += ",\"reason\":" + reasonsToJson(node.reason);
+    }
+    if (includeHistory) {
+        result += ",\"history\":" + historyToJson(node.history, includeReason, includeTime);
+    }
     result += '}';
     return result;
 }
 
-std::string nodesToJson(const std::vector<MessageTreeNode>& nodes) {
+std::string nodesToJson(const std::vector<MessageTreeNode>& nodes,
+                        const bool includeHistory,
+                        const bool includeReason,
+                        const bool includeTime) {
     std::string result{"["};
     for (std::size_t i = 0U; i < nodes.size(); ++i) {
         if (i > 0U) {
             result += ',';
         }
-        result += nodeToJson(nodes[i]);
+        result += nodeToJson(nodes[i], includeHistory, includeReason, includeTime);
     }
     result += "]";
     return result;
@@ -581,7 +607,10 @@ void MessageStore::handleHttpRequest(MessageStore& store,
     }
 
     response.status = k_http_status_ok;
-    const std::string nodesJson = nodesToJson(nodes);
+    const std::string nodesJson = nodesToJson(nodes,
+                                              query.includeHistory,
+                                              query.includeReason,
+                                              query.includeTime);
     if (isPostRequest && query.sensorPayloadParsed) {
         response.set_content(wrapPayloadObject(nodesJson), "application/json");
         return;

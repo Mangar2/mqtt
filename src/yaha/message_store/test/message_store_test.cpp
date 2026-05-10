@@ -430,7 +430,8 @@ TEST_CASE("http_get_store_applies_levelamount_history_reason_headers", "[message
     httplib::Headers headers{
         {"levelamount", "2"},
         {"history", "true"},
-        {"reason", "false"}
+        {"reason", "false"},
+        {"time", "false"}
     };
     const auto response = client.Get("/store/home", headers);
 
@@ -438,7 +439,10 @@ TEST_CASE("http_get_store_applies_levelamount_history_reason_headers", "[message
     REQUIRE(response->status == 200);
     REQUIRE(response->body.find("\"topic\":\"home/zone1/light\"") != std::string::npos);
     REQUIRE(response->body.find("\"history\":[") != std::string::npos);
-    REQUIRE(response->body.find("\"reason\":[]") != std::string::npos);
+    REQUIRE(response->body.find("\"reason\":") == std::string::npos);
+    REQUIRE(response->body.find("\"time\":") == std::string::npos);
+    REQUIRE(response->body.find('\n') == std::string::npos);
+    REQUIRE(response->body.find('\r') == std::string::npos);
 
 }
 
@@ -771,7 +775,7 @@ TEST_CASE("http_post_store_sensor_payload_uses_topic_and_query_flags", "[message
     httplib::Request request{};
     request.method = "POST";
     request.path = "/store";
-    request.body = R"({"topic":"home","history":"true","reason":"false","levelAmount":2})";
+    request.body = R"({"topic":"home","history":"true","reason":"false","time":"false","levelAmount":2})";
     request.set_header("Content-Type", "application/json");
     const auto response = client.send(request);
 
@@ -780,7 +784,10 @@ TEST_CASE("http_post_store_sensor_payload_uses_topic_and_query_flags", "[message
     REQUIRE(response->body.find("{\"payload\":[") == 0);
     REQUIRE(response->body.find("\"topic\":\"home/zone1/light\"") != std::string::npos);
     REQUIRE(response->body.find("\"history\":[") != std::string::npos);
-    REQUIRE(response->body.find("\"reason\":[]") != std::string::npos);
+    REQUIRE(response->body.find("\"reason\":") == std::string::npos);
+    REQUIRE(response->body.find("\"time\":") == std::string::npos);
+    REQUIRE(response->body.find('\n') == std::string::npos);
+    REQUIRE(response->body.find('\r') == std::string::npos);
 }
 
 TEST_CASE("http_post_store_sensor_payload_nodes_activates_diff_mode", "[message_store]") {
@@ -868,7 +875,7 @@ TEST_CASE("http_post_store_sensor_payload_empty_nodes_uses_section_query", "[mes
     request.method = "POST";
     request.path = "/store";
     request.body =
-        R"({"topic":"home","history":"true","reason":"false","levelAmount":2,"nodes":[]})";
+        R"({"topic":"home","history":"true","reason":"false","time":"false","levelAmount":2,"nodes":[]})";
     request.set_header("Content-Type", "application/json");
     const auto response = client.send(request);
 
@@ -878,7 +885,8 @@ TEST_CASE("http_post_store_sensor_payload_empty_nodes_uses_section_query", "[mes
     REQUIRE(response->body.find("\"topic\":\"home/zone1/light\"") != std::string::npos);
     REQUIRE(response->body.find("\"topic\":\"office/zone2/light\"") == std::string::npos);
     REQUIRE(response->body.find("\"history\":[") != std::string::npos);
-    REQUIRE(response->body.find("\"reason\":[]") != std::string::npos);
+    REQUIRE(response->body.find("\"reason\":") == std::string::npos);
+    REQUIRE(response->body.find("\"time\":") == std::string::npos);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -904,7 +912,7 @@ TEST_CASE("http_post_store_sensor_payload_accepts_json_boolean_flags", "[message
     request.method = "POST";
     request.path = "/store";
     request.body =
-        R"({"topic":"home","history":true,"reason":false,"levelamount":2,"nodes":[]})";
+        R"({"topic":"home","history":true,"reason":false,"time":false,"levelamount":2,"nodes":[]})";
     request.set_header("Content-Type", "application/json");
     const auto response = client.send(request);
 
@@ -913,7 +921,8 @@ TEST_CASE("http_post_store_sensor_payload_accepts_json_boolean_flags", "[message
     REQUIRE(response->body.find("{\"payload\":[") == 0);
     REQUIRE(response->body.find("\"topic\":\"home/zone1/light\"") != std::string::npos);
     REQUIRE(response->body.find("\"history\":[") != std::string::npos);
-    REQUIRE(response->body.find("\"reason\":[]") != std::string::npos);
+    REQUIRE(response->body.find("\"reason\":") == std::string::npos);
+    REQUIRE(response->body.find("\"time\":") == std::string::npos);
 }
 
 TEST_CASE("http_post_store_invalid_json_falls_back_to_section_query", "[message_store]") {

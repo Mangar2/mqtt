@@ -6,7 +6,7 @@ from __future__ import annotations
 Features:
 - Creates missing remote directories.
 - Compares file hashes before copying and skips identical files.
-- Prompts before overwriting changed .ini, .service, and .conf files.
+- Prompts before overwriting changed service .ini files.
 - Optional remote install/restart for selected service components.
 - Optional remote execution of root install.sh.
 - Remote install can run with interactive TTY for sudo password prompts.
@@ -123,9 +123,9 @@ def remote_sha256(*, remote_host: str, remote_path: str, cwd: Path) -> str | Non
     return first_line
 
 
-def is_protected_config_file(path: Path) -> bool:
+def is_service_ini_config_file(path: Path) -> bool:
     suffix = path.suffix.lower()
-    return suffix in {".ini", ".service", ".conf"}
+    return suffix == ".ini"
 
 
 def list_local_files(local_root: Path) -> list[Path]:
@@ -262,7 +262,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Copy deployment/yaha to a remote system via scp with checksum-based "
-            "skip and overwrite prompts for .ini/.service/.conf files."
+            "skip and overwrite prompts for service .ini files."
         )
     )
     parser.add_argument(
@@ -281,14 +281,14 @@ def parse_args() -> argparse.Namespace:
         help="Remote target directory",
     )
     parser.add_argument(
-        "--yes-overwrite-config",
+        "--yes-overwrite-ini",
         action="store_true",
-        help="Overwrite differing .ini/.service files without prompting",
+        help="Overwrite differing service .ini files without prompting",
     )
     parser.add_argument(
-        "--no-overwrite-config",
+        "--no-overwrite-ini",
         action="store_true",
-        help="Never overwrite differing .ini/.service files",
+        help="Never overwrite differing service .ini files",
     )
     parser.add_argument(
         "--install-component",
@@ -324,8 +324,11 @@ def main() -> int:
     remote_host = normalize_remote_host(args.remote_host)
     remote_root = args.remote_dir
 
-    if args.yes_overwrite_config and args.no_overwrite_config:
-        print("ERROR: --yes-overwrite-config and --no-overwrite-config are mutually exclusive", file=sys.stderr)
+    yes_overwrite_ini = args.yes_overwrite_ini
+    no_overwrite_ini = args.no_overwrite_ini
+
+    if yes_overwrite_ini and no_overwrite_ini:
+        print("ERROR: --yes-overwrite-ini and --no-overwrite-ini are mutually exclusive", file=sys.stderr)
         return 1
 
     if not local_root.exists() or not local_root.is_dir():
@@ -351,9 +354,9 @@ def main() -> int:
         stats = CopyStats()
         overwrite_mode = "ask"
         interactive_install = not args.non_interactive_install
-        if args.yes_overwrite_config:
+        if yes_overwrite_ini:
             overwrite_mode = "all"
-        elif args.no_overwrite_config:
+        elif no_overwrite_ini:
             overwrite_mode = "none"
 
         for local_file in files:
@@ -378,24 +381,24 @@ def main() -> int:
                 cwd=PROJECT_ROOT,
             )
 
-            if remote_exists and is_protected_config_file(relative):
+            if remote_exists and is_service_ini_config_file(relative):
                 if overwrite_mode == "none":
                     stats.skipped_prompt += 1
-                    print(f"SKIP protected {relative.as_posix()}")
+                    print(f"SKIP protected-ini {relative.as_posix()}")
                     continue
 
                 if overwrite_mode == "ask":
                     decision = prompt_overwrite(relative)
                     if decision == "n":
                         stats.skipped_prompt += 1
-                        print(f"SKIP protected {relative.as_posix()}")
+                        print(f"SKIP protected-ini {relative.as_posix()}")
                         continue
                     if decision == "a":
                         overwrite_mode = "all"
                     elif decision == "s":
                         overwrite_mode = "none"
                         stats.skipped_prompt += 1
-                        print(f"SKIP protected {relative.as_posix()}")
+                        print(f"SKIP protected-ini {relative.as_posix()}")
                         continue
 
             copy_file(

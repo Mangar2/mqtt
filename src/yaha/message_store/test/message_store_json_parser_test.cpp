@@ -77,6 +77,7 @@ TEST_CASE("message_store_json_parser_parses_sensor_post_with_nodes_and_flags", "
         "\"topic\":\"/house\","
         "\"history\":\"yes\","
         "\"reason\":true,"
+        "\"time\":\"true\","
         "\"levelAmount\":\"3\","
         "\"nodes\":[{\"topic\":\"house/light\",\"value\":\"on\"}]"
         "}",
@@ -86,6 +87,7 @@ TEST_CASE("message_store_json_parser_parses_sensor_post_with_nodes_and_flags", "
     REQUIRE(request.topicPrefix == "house");
     REQUIRE(request.includeHistory);
     REQUIRE(request.includeReason);
+    REQUIRE(request.includeTime);
     REQUIRE(request.levelAmount == 3U);
     REQUIRE(request.hasNodes);
     REQUIRE(request.nodesJson.find("house/light") != std::string::npos);
@@ -99,6 +101,7 @@ TEST_CASE("message_store_json_parser_applies_defaults_for_invalid_sensor_values"
         "\"topic\":\"home\","
         "\"history\":\"invalid\","
         "\"reason\":\"invalid\","
+        "\"time\":\"invalid\","
         "\"levelAmount\":\"abc\","
         "\"nodes\":null"
         "}",
@@ -108,6 +111,7 @@ TEST_CASE("message_store_json_parser_applies_defaults_for_invalid_sensor_values"
     REQUIRE(request.topicPrefix == "home");
     REQUIRE_FALSE(request.includeHistory);
     REQUIRE_FALSE(request.includeReason);
+    REQUIRE_FALSE(request.includeTime);
     REQUIRE(request.levelAmount == 1U);
     REQUIRE_FALSE(request.hasNodes);
     REQUIRE(request.nodesJson.empty());

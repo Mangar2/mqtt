@@ -3,6 +3,7 @@
 $topic ='';
 $history = 'false';
 $reason = 'true';
+$time = 'true';
 $levelAmount = 1;
 $nodes = '';
 
@@ -19,6 +20,9 @@ if (!empty($postdata)) {
         }
         if (property_exists($request, "reason")) {
             $reason =  $request->reason == 'true' ? 'true' : 'false';
+        }
+        if (property_exists($request, "time")) {
+            $time =  $request->time == 'true' ? 'true' : 'false';
         }
         if (property_exists($request, "levelAmount")) {
             $levelAmount = $request->levelAmount;
@@ -50,6 +54,7 @@ $opts = [
         "header" => 
             "history: " . $history . "\r\n".
             "reason: " . $reason . "\r\n".
+            "time: " . $time . "\r\n".
             "levelAmount: " . $levelAmount . "\r\n" .
             "content-type: application/json; charset=UTF-8 \r\n",
         "content" => $nodes

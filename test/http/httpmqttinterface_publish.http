@@ -3,6 +3,12 @@
 @baseUrl = http://{{host}}:{{port}}
 @baseUrlNginx = http://{{host}}
 
+### CORS preflight via nginx /publish route
+OPTIONS {{baseUrlNginx}}/publish
+Origin: http://{{host}}
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: Content-Type, Authorization, X-Requested-With
+
 ### Publish to broker HTTP facade on yaha2
 POST {{baseUrl}}/publish
 content-type: application/json

@@ -20,6 +20,7 @@ struct SensorPostRequest {
     std::string topicPrefix{};
     bool includeHistory{false};
     bool includeReason{true};
+    bool includeTime{true};
     std::uint32_t levelAmount{1U};
     bool hasLevelAmount{false};
     bool hasNodes{false};
