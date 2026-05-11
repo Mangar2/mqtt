@@ -1,43 +1,100 @@
-# zwave — YAHA ZWave Domain Configuration Contract
+# zwave — YAHA ZWave Domain Config and Service Component
 
 ## Purpose
 
-Defines the ZWave domain-level runtime configuration model used by the ZWave
-standalone process and later component/runtime phases.
+Provides ZWave domain configuration contracts and the phase-3 service component
+that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 
 ## Public API
 
-### Struct ZwaveUsbConfig
+### struct ZwaveUsbConfig
 
 | Field | Type | Notes |
 |------|------|-------|
-| `device` | `std::string` | USB device path or identifier |
-| `topic` | `std::string` | MQTT topic for USB/controller reporting |
+| `device` | `std::string` | USB device path |
+| `topic` | `std::string` | Controller status topic |
 
-### Struct ZwaveDeviceConfig
+### struct ZwaveDeviceConfig
 
 | Field | Type | Notes |
 |------|------|-------|
-| `topic` | `std::string` | MQTT topic prefix for this device |
-| `nodeId` | `std::uint16_t` | ZWave node id |
-| `classId` | `std::optional<std::uint16_t>` | Optional command class id |
-| `instance` | `std::optional<std::uint8_t>` | Optional instance id |
-| `index` | `std::optional<std::uint8_t>` | Optional value index |
-| `type` | `std::optional<std::string>` | Optional value type hint |
-| `label` | `std::optional<std::string>` | Optional label hint |
+| `topic` | `std::string` | Base MQTT topic |
+| `nodeId` | `std::uint16_t` | Node id (`1..255`) |
+| `classId` | `std::optional<std::uint16_t>` | Optional command class |
+| `instance` | `std::optional<std::uint8_t>` | Optional instance |
+| `index` | `std::optional<std::uint8_t>` | Optional index |
+| `type` | `std::optional<std::string>` | Optional type hint |
+| `label` | `std::optional<std::string>` | Optional label |
 
-### Struct ZwaveConfig
+### struct ZwaveConfig
 
-| Field | Type | Default | Notes |
-|------|------|---------|-------|
-| `subscribeQos` | `Qos` | `Qos::AtLeastOnce` | MQTT subscribe QoS for inbound commands |
-| `qos` | `Qos` | `Qos::AtLeastOnce` | MQTT publish QoS for outbound state updates |
-| `retain` | `bool` | `false` | MQTT retain flag for outbound state updates |
-| `usb` | `ZwaveUsbConfig` | empty fields | USB/controller endpoint configuration |
-| `devices` | `std::vector<ZwaveDeviceConfig>` | empty | Required list of configured device mappings |
+| Field | Type | Notes |
+|------|------|-------|
+| `subscribeQos` | `Qos` | Default `AtLeastOnce` |
+| `qos` | `Qos` | Default `AtLeastOnce` |
+| `retain` | `bool` | Default `false` |
+| `usb` | `ZwaveUsbConfig` | Required |
+| `devices` | `std::vector<ZwaveDeviceConfig>` | Required non-empty list |
+
+### class ZwaveServiceComponent
+
+| Function | Signature | Notes |
+|---------|-----------|-------|
+| constructor | `(ZwaveConfig, std::shared_ptr<IZwaveController>)` | Wires controller callback and initial device config |
+| `setDeviceConfiguration` | `(const std::vector<ZwaveDeviceConfig>&)` | Updates controller config and publishes reload info |
+| `getSubscriptions` | `() const -> SubscriptionMap` | Returns management + device `/set` subscriptions |
+| `handleMessage` | `(const Message&)` | Routes management commands and regular set messages |
+| `run` | `() -> void` | Publishes restart markers and requests all config params |
+| `close` | `() -> void` | Delegates close to controller |
+| `setPublishCallback` | `(PublishCallback)` | Stores outbound publish callback |
+
+## Behavior
+
+## Subscriptions
+
+- Fixed management topics with QoS 2:
+	- `$MONITORING/zwave/removefailednode/set`
+	- `$MONITORING/zwave/addnode/set`
+	- `$MONITORING/zwave/scan/set`
+- Device topics from config:
+	- with `classId`: `<topic>/set`
+	- without `classId`: `<topic>/+/set`
+	- qos = `subscribeQos`
+
+## Inbound routing
+
+`handleMessage(...)`:
+- remove-failed topic -> `controller.removeFailedNode(...)`
+- add-node topic -> `controller.addDevice()`
+- scan topic -> `controller.startScan()` with deterministic success/failure publish:
+	- success: `$MONITORING/zwave/notification` value `scan command accepted`
+	- failure: `$MONITORING/zwave/error` value `scan command failed`
+- other topics:
+	- adds reason `received by zwave service`
+	- stores incoming message in reply matcher
+	- routes to `controller.setValue(topic, value)`
+
+## Publish and matcher flow
+
+- Controller publishes are passed through reply-matcher update.
+- Outbound messages are emitted with configured publish flags:
+	- `qos = config.qos`
+	- `retain = config.retain`
+
+## Lifecycle
+
+- `setDeviceConfiguration(...)` publishes `$MONITORING/zwave/info` value `configuration reloaded`.
+- `run()` publishes startup markers:
+	- `$MONITORING/zwave/removefailednode` value `nop`
+	- `$MONITORING/zwave/addnode` value `nop`
+	- reason `zwave restarted`
+- `run()` then calls `controller.requestConfigParametersForAllNodes()`.
+- `close()` delegates to controller close.
 
 ## Files
 
 | File | Role |
 |------|------|
-| `zwave_config.h` | Domain configuration types for ZWave runtime |
+| `zwave_config.h` | Domain configuration contracts |
+| `zwave_service_component.h` | Service component declarations |
+| `zwave_service_component.cpp` | Service component implementation |
