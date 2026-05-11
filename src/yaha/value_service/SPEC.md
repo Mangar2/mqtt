@@ -39,6 +39,7 @@ for FileStore-backed value-map lifecycle.
 	- sets running state
 	- if FileStore enabled, loads full map from configured key path
 	- publishes retained replay for all loaded keys
+	- each startup replay message carries reason `loaded from valuestore on startup`
 - `/set` handling:
 	- accepts `<key>/set` topics
 	- accepts only string and integral numeric values
@@ -48,6 +49,10 @@ for FileStore-backed value-map lifecycle.
 	- listens to `<monitorTopicPrefix>/#`
 	- reloads from FileStore when payload `keyPath` matches `valuesKeyPath`
 	- on successful reload publishes full retained replay
+	- each reload replay message carries reason `reloaded after valuestore file change`
+- Message logging:
+	- logs every inbound message to `std::cout` before handling (`value_service[in] ...`)
+	- logs every outbound published message to `std::cout` before callback invocation (`value_service[out] ...`)
 - Persistence format:
 	- full JSON object map `key -> value`
 	- values restricted to `string` or integer numbers

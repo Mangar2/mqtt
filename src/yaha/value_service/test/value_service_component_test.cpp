@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -117,6 +118,7 @@ private:
 
 } // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("value_service_run_loads_values_and_publishes_replay", "[value_service]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
@@ -144,6 +146,10 @@ TEST_CASE("value_service_run_loads_values_and_publishes_replay", "[value_service
     REQUIRE(published.size() == 2U);
     REQUIRE(published[0].retain());
     REQUIRE(published[1].retain());
+    REQUIRE(published[0].reason().empty() == false);
+    REQUIRE(published[0].reason().front().message.find("startup") != std::string::npos);
+    REQUIRE(published[1].reason().empty() == false);
+    REQUIRE(published[1].reason().front().message.find("startup") != std::string::npos);
 
     component.close();
 }
@@ -226,6 +232,40 @@ TEST_CASE("value_service_monitoring_reload_replaces_values_and_replays", "[value
     std::lock_guard<std::mutex> lock{publishMutex};
     REQUIRE(published.size() >= 2U);
     REQUIRE(published.back().topic() == "house/heating");
+    REQUIRE(published.back().reason().empty() == false);
+    REQUIRE(published.back().reason().front().message.find("file change") != std::string::npos);
+
+    component.close();
+}
+
+TEST_CASE("value_service_logs_incoming_and_outgoing_messages", "[value_service]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setValuesJson("{}");
+
+    yaha::ValueServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::ValueServiceComponent component{config};
+    component.setPublishCallback([](const yaha::Message&) {
+    });
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    component.run();
+    component.handleMessage(yaha::Message{
+        "house/light/set",
+        std::string{"on"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    std::cout.rdbuf(previousBuffer);
+
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find("value_service[in] topic=house/light/set") != std::string::npos);
+    REQUIRE(logText.find("value_service[out] topic=house/light") != std::string::npos);
 
     component.close();
 }

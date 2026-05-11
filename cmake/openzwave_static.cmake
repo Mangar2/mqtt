@@ -26,12 +26,52 @@ function(yaha_require_openzwave_phase0)
 endfunction()
 
 function(yaha_define_openzwave_static_target target_name)
-    set(openzwave_static_path "${YAHA_OPENZWAVE_SOURCE_DIR}/cpp/build/libopenzwave.a")
+    set(openzwave_build_dir "${CMAKE_CURRENT_BINARY_DIR}/openzwave_build")
+    set(openzwave_static_path "${openzwave_build_dir}/libopenzwave.a")
 
-    set(openzwave_build_command
-        make -C "${YAHA_OPENZWAVE_SOURCE_DIR}/cpp/build" BUILD=release USE_HID=0 USE_BI_TXML=1)
-    if(APPLE)
-        list(APPEND openzwave_build_command DARWIN_BUILD_TARGET=-arch\ arm64)
+    set(openzwave_make_args
+        BUILD=release
+        USE_HID=0
+        USE_BI_TXML=1
+        top_builddir=${openzwave_build_dir})
+
+    if(APPLE AND NOT CMAKE_CROSSCOMPILING)
+        list(APPEND openzwave_make_args DARWIN_BUILD_TARGET=-arch\ arm64)
+    endif()
+
+    if(CMAKE_CROSSCOMPILING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        set(openzwave_cross_cc "${CMAKE_C_COMPILER}")
+        if(CMAKE_C_COMPILER_ARG1)
+            string(APPEND openzwave_cross_cc " ${CMAKE_C_COMPILER_ARG1}")
+        endif()
+        if(DEFINED ZIG_TARGET_FLAGS)
+            string(APPEND openzwave_cross_cc " ${ZIG_TARGET_FLAGS}")
+        endif()
+
+        set(openzwave_cross_cxx "${CMAKE_CXX_COMPILER}")
+        if(CMAKE_CXX_COMPILER_ARG1)
+            string(APPEND openzwave_cross_cxx " ${CMAKE_CXX_COMPILER_ARG1}")
+        endif()
+        if(DEFINED ZIG_TARGET_FLAGS)
+            string(APPEND openzwave_cross_cxx " ${ZIG_TARGET_FLAGS}")
+        endif()
+
+        set(openzwave_build_command
+            ${CMAKE_COMMAND} -E env
+            "CC=${openzwave_cross_cc}"
+            "CXX=${openzwave_cross_cxx}"
+            "LD=${openzwave_cross_cxx}"
+            "AR=${CMAKE_AR}"
+            "RANLIB=${CMAKE_RANLIB}"
+            make -C "${YAHA_OPENZWAVE_SOURCE_DIR}/cpp/build"
+            BITBAKE_ENV=1
+            UNAME=Linux
+            "RELEASE_CFLAGS+=-Wno-error=unused-command-line-argument -fno-sanitize=undefined"
+            ${openzwave_make_args}
+            "${openzwave_static_path}")
+    else()
+        set(openzwave_build_command
+            make -C "${YAHA_OPENZWAVE_SOURCE_DIR}/cpp/build" ${openzwave_make_args} "${openzwave_static_path}")
     endif()
 
     ExternalProject_Add(openzwave_static_build

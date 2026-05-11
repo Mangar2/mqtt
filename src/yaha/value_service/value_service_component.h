@@ -109,8 +109,11 @@ private:
     [[nodiscard]] static std::string serializeValueMap(const ValueMap& values);
     [[nodiscard]] static bool parseValueMapJson(const std::string& jsonText, ValueMap& output);
 
-    void publishRetainedValue(const std::string& key, const Value& value) const;
-    void publishAllValuesSnapshot() const;
+    void publishRetainedValue(
+        const std::string& key,
+        const Value& value,
+        const std::optional<std::string>& reasonText = std::nullopt) const;
+    void publishAllValuesSnapshot(const std::optional<std::string>& reasonText = std::nullopt) const;
 
     ValueServiceConfig config_{};
 

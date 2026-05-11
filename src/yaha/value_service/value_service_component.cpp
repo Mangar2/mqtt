@@ -6,7 +6,10 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iostream>
 #include <limits>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <utility>
 
@@ -17,6 +20,42 @@ constexpr int k_http_ok_status{200};
 constexpr std::size_t k_set_suffix_size{4U};
 constexpr std::size_t k_json_escape_reserve_extra{8U};
 constexpr int k_decimal_base{10};
+
+[[nodiscard]] std::string valueToLogText(const Value& messageValue) {
+    if (std::holds_alternative<std::string>(messageValue)) {
+        return std::get<std::string>(messageValue);
+    }
+
+    std::ostringstream textStream;
+    textStream << std::get<double>(messageValue);
+    return textStream.str();
+}
+
+[[nodiscard]] std::string qosToLogText(const Qos qosValue) {
+    switch (qosValue) {
+    case Qos::AtMostOnce:
+        return "0";
+    case Qos::AtLeastOnce:
+        return "1";
+    case Qos::ExactlyOnce:
+        return "2";
+    }
+
+    return "unknown";
+}
+
+void logMessage(const char* directionText, const Message& message) {
+    std::cout << "value_service[" << directionText << "] topic=" << message.topic()
+              << " qos=" << qosToLogText(message.qos())
+              << " retain=" << (message.retain() ? "1" : "0")
+              << " value=" << valueToLogText(message.value());
+
+    if (!message.reason().empty()) {
+        std::cout << " reason=\"" << message.reason().front().message << '\"';
+    }
+
+    std::cout << '\n' << std::flush;
+}
 
 [[nodiscard]] bool startsWithText(const std::string& textValue, const std::string& prefix) {
     return textValue.size() >= prefix.size() && textValue.compare(0U, prefix.size(), prefix) == 0;
@@ -215,6 +254,8 @@ SubscriptionMap ValueServiceComponent::getSubscriptions() const {
 }
 
 void ValueServiceComponent::handleMessage(const Message& message) {
+    logMessage("in", message);
+
     if (isMonitoringTopic(message.topic())) {
         handleMonitoringMessage(message);
         return;
@@ -238,7 +279,7 @@ void ValueServiceComponent::run() {
         (void)loadValuesFromFileStore();
     }
 
-    publishAllValuesSnapshot();
+    publishAllValuesSnapshot(std::string{"loaded from valuestore on startup"});
 }
 
 void ValueServiceComponent::close() {
@@ -318,7 +359,7 @@ void ValueServiceComponent::handleMonitoringMessage(const Message& message) {
         return;
     }
 
-    publishAllValuesSnapshot();
+    publishAllValuesSnapshot(std::string{"reloaded after valuestore file change"});
 }
 
 void ValueServiceComponent::handleSetMessage(const Message& message) {
@@ -477,7 +518,10 @@ bool ValueServiceComponent::parseValueMapJson(const std::string& jsonText, Value
     return parseIndex == jsonText.size();
 }
 
-void ValueServiceComponent::publishRetainedValue(const std::string& key, const Value& value) const {
+void ValueServiceComponent::publishRetainedValue(
+    const std::string& key,
+    const Value& value,
+    const std::optional<std::string>& reasonText) const {
     PublishCallback callback;
     {
         std::lock_guard<std::mutex> lock{publishMutex_};
@@ -488,14 +532,20 @@ void ValueServiceComponent::publishRetainedValue(const std::string& key, const V
         return;
     }
 
-    const Message message{key, value, config_.subscribeQos, true};
+    Message message{key, value, config_.subscribeQos, true};
+    if (reasonText.has_value()) {
+        message.addReason(*reasonText);
+    }
+
+    logMessage("out", message);
+
     try {
         callback(message);
     } catch (...) {
     }
 }
 
-void ValueServiceComponent::publishAllValuesSnapshot() const {
+void ValueServiceComponent::publishAllValuesSnapshot(const std::optional<std::string>& reasonText) const {
     ValueMap valuesSnapshot{};
     {
         std::lock_guard<std::mutex> lock{stateMutex_};
@@ -503,7 +553,7 @@ void ValueServiceComponent::publishAllValuesSnapshot() const {
     }
 
     for (const auto& [key, value] : valuesSnapshot) {
-        publishRetainedValue(key, value);
+        publishRetainedValue(key, value, reasonText);
     }
 }
 

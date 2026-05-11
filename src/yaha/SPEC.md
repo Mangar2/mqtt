@@ -21,10 +21,10 @@ directly here — each sub-topic has its own subdirectory.
 | `remote_service/` | remoteservice phase 5 | RemoteService mapping lifecycle, domain command resolution/publish API, and lifecycle logging hooks for standalone runtime. |
 | `remote_service_http/` | remoteservice phase 4 | HTTP GET/POST adapter with token validation hooks and domain publish response mapping. |
 | `remote_service_client/` | remoteservice phase 6 | Standalone RemoteService INI mapping, executable composition/CLI runtime wiring, and deployment packaging integration (`remoteservice` component with binary, INI template, and service unit generation). |
-| `zwave/` | zwave phase 3 | ZWave domain configuration plus IMqttComponent service orchestration for publish matcher flow, inbound command routing, and lifecycle startup markers. |
+| `zwave/` | zwave phase 6 | ZWave domain configuration plus IMqttComponent service orchestration for publish matcher flow, inbound command routing, lifecycle startup markers, and phase-6 service/component lifecycle verification tests. |
 | `zwave_devices/` | zwave phase 2 | ZWave mapping and conversion helpers for value-to-topic resolution, topic-to-id lookup, and write payload normalization. |
 | `zwave_controller/` | zwave phase 3 | ZWave controller adapter for callback event mapping, node/value cache management, and topic-based set routing via driver port abstraction. |
-| `zwave_client/` | zwave phase 4 | Standalone ZWave runtime mapping and executable composition via `yaha_zwaveclient_main.cpp` with real OpenZWave runtime driver binding, watcher-to-controller event translation, and generic MQTT runtime orchestration. |
+| `zwave_client/` | zwave phase 6 | Standalone ZWave runtime mapping and executable composition via `yaha_zwaveclient_main.cpp` with real OpenZWave runtime driver binding, watcher-to-controller event translation, generic MQTT runtime orchestration, and phase-6 runtime config validation tests. |
 | `value_service/` | valueservice phase 2 | ValueService IMqttComponent with startup FileStore load, `/set` handling, retained replay publish, and monitor-triggered reload. |
 | `value_service_client/` | valueservice phase 3 | Standalone ValueService runtime config mapping and process composition via `yaha_valueserviceclient_main.cpp`. |
 | `message_store/` | 4-7 | Internal MessageTree plus persistence and MessageStore IMqttComponent logic for state/history queries, cleanup, disk restore/save, and HTTP query interface with ISO-8601 UTC `time` output fields. |

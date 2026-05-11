@@ -89,3 +89,17 @@ Validation rules:
 | `openzwave_runtime_driver_port.h` | OpenZWave-backed `IZwaveDriverPort` declaration |
 | `openzwave_runtime_driver_port.cpp` | OpenZWave runtime lifecycle, watcher translation, and typed write implementation |
 | `../yaha_zwaveclient_main.cpp` | Standalone runtime entrypoint and composition wiring |
+
+## Phase-6 test coverage
+
+Unit/runtime-integration verification for this module is provided by:
+
+- `test/TEST_SPEC.md`
+- `test/zwave_client_app_test.cpp`
+
+Covered phase-6 behavior:
+
+- config schema/default validation for `[zwave]` mapping
+- deterministic validation failures for malformed `zwave.device` rows and missing required keys
+- combined runtime mapping of `[zwave]` and `[mqtt]` to `ZwaveClientRuntimeConfig`
+- error propagation for mqtt validation failures in runtime config loading

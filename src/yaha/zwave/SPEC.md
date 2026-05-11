@@ -98,3 +98,18 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 | `zwave_config.h` | Domain configuration contracts |
 | `zwave_service_component.h` | Service component declarations |
 | `zwave_service_component.cpp` | Service component implementation |
+
+## Phase-6 test coverage
+
+Unit/component/runtime-integration verification for this module is provided by:
+
+- `test/TEST_SPEC.md`
+- `test/zwave_service_component_test.cpp`
+
+Covered phase-6 behavior:
+
+- subscription derivation behavior from `ZwaveConfig`
+- inbound MQTT routing for management topics and regular `/set` messages
+- controller publish path integrity with reply matcher merge + configured qos/retain
+- startup lifecycle markers in `run()` and controller sync request
+- shutdown lifecycle delegation in `close()`
