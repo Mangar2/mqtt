@@ -28,9 +28,22 @@ and phase-4 standalone composition entrypoint wiring.
 - parse CLI: optional `<config-path>`, `--trace-messages`, `--help`
 - load INI with `IniDocument::loadFromFile`
 - map runtime config with `tryLoadZwaveClientRuntimeConfigFromIni`
-- create `ZwaveController` and `ZwaveServiceComponent`
+- create `OpenZwaveRuntimeDriverPort`, bind it to `ZwaveController`, and start OpenZWave runtime (`Options`, `Manager`, watcher, `AddDriver`)
+- create `ZwaveServiceComponent`
 - construct `YahaMqttClient` with `makeBrokerTransport()`
 - run until shutdown via `YahaMqttClientRuntime`
+
+OpenZWave runtime driver behavior:
+
+- translates OpenZWave watcher notifications to `ZwaveController` callback methods
+- maps value callbacks to normalized `ZwaveControllerValueEvent` payloads
+- maps `/set` write requests to typed OpenZWave `SetValue` overloads
+- routes config writes through `SetConfigParam`
+- handles add/remove-failed node controller commands
+- requests node state for known nodes on scan trigger
+- requests all config params per configured node
+- enables polling for cached value ids by node/class
+- on shutdown removes driver + watcher and destroys owned OpenZWave manager/options
 
 Runtime startup prints a deterministic summary:
 
@@ -73,4 +86,6 @@ Validation rules:
 |------|------|
 | `zwave_client_app.h` | Runtime config declarations and loader signatures |
 | `zwave_client_app.cpp` | Runtime config parsing and validation implementation |
+| `openzwave_runtime_driver_port.h` | OpenZWave-backed `IZwaveDriverPort` declaration |
+| `openzwave_runtime_driver_port.cpp` | OpenZWave runtime lifecycle, watcher translation, and typed write implementation |
 | `../yaha_zwaveclient_main.cpp` | Standalone runtime entrypoint and composition wiring |

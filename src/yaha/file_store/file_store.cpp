@@ -42,8 +42,16 @@ std::string joinTopic(const std::string& prefix, const std::string& suffix) {
     return std::format("{}/{}", prefix, suffix);
 }
 
+void applyCorsHeaders(httplib::Response& response,
+                      const std::string& allowHeaders = "content-type") {
+    response.set_header("Access-Control-Allow-Origin", "*");
+    response.set_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+    response.set_header("Access-Control-Allow-Headers", allowHeaders);
+}
+
 void setHttpErrorResponse(httplib::Response& response, int status, const YahaError& error) {
     response.status = status;
+    applyCorsHeaders(response);
     response.set_content(error.buildMessage(), "text/plain");
 }
 
@@ -134,8 +142,8 @@ void FileStore::startHttpServer() {
     httpServer_->Get(R"(.*)", [this](const httplib::Request& request, httplib::Response& response) {
         handleHttpGet(*this, request, response);
     });
-    httpServer_->Options(R"(.*)", [](const httplib::Request&, httplib::Response& response) {
-        handleHttpOptions(response);
+    httpServer_->Options(R"(.*)", [](const httplib::Request& request, httplib::Response& response) {
+        handleHttpOptions(request, response);
     });
 
     const std::string host = config_.serverHost.empty() ? "127.0.0.1" : config_.serverHost;
@@ -462,11 +470,19 @@ std::string FileStore::trimTopicPrefix(std::string prefix) {
     return prefix;
 }
 
-void FileStore::handleHttpOptions(httplib::Response& response) {
+void FileStore::handleHttpOptions(const httplib::Request& request,
+                                  httplib::Response& response) {
+    std::string allowHeaders{"content-type"};
+    std::string requestedHeaders = request.get_header_value("Access-Control-Request-Headers");
+    if (requestedHeaders.empty()) {
+        requestedHeaders = request.get_header_value("access-control-request-headers");
+    }
+    if (!requestedHeaders.empty()) {
+        allowHeaders = requestedHeaders;
+    }
+
     response.status = k_http_status_ok;
-    response.set_header("Access-Control-Allow-Origin", "*");
-    response.set_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
-    response.set_header("Access-Control-Allow-Headers", "content-type");
+    applyCorsHeaders(response, allowHeaders);
     response.set_content("", "text/plain");
 }
 
@@ -516,7 +532,7 @@ void FileStore::handleHttpPost(FileStore& store,
     store.publishMonitoring("changed", &keyPath, writeResult.filename, "http-post", nullptr);
 
     response.status = k_http_status_ok;
-    response.set_header("Access-Control-Allow-Origin", "*");
+    applyCorsHeaders(response);
     response.set_content("", "text/plain");
 }
 
@@ -556,7 +572,7 @@ void FileStore::handleHttpGet(FileStore& store,
     }
 
     response.status = k_http_status_ok;
-    response.set_header("Access-Control-Allow-Origin", "*");
+    applyCorsHeaders(response);
     response.set_content(readResult.responseJson, "Application/Json");
 }
 

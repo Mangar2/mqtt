@@ -260,7 +260,8 @@ private:
      * @brief Handles HTTP OPTIONS request.
      * @param response HTTP response object.
      */
-    static void handleHttpOptions(httplib::Response& response);
+    static void handleHttpOptions(const httplib::Request& request,
+                                  httplib::Response& response);
 
     /**
      * @brief Handles HTTP POST request.

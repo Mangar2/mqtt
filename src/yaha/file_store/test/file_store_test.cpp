@@ -324,6 +324,30 @@ TEST_CASE("http_options_returns_cors_headers", "[file_store]") {
     REQUIRE(optionsResponse->get_header_value("Access-Control-Allow-Headers") == "content-type");
 }
 
+TEST_CASE("http_options_echoes_requested_headers_for_preflight", "[file_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::FileStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.directory = tempDir;
+
+    yaha::FileStore store{config};
+    StoreCloseGuard storeGuard{&store};
+    store.run();
+    REQUIRE(waitForHttpReady(config.serverPort));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    httplib::Headers headers{};
+    headers.emplace("Access-Control-Request-Headers", "content-type, x-requested-with");
+    const auto optionsResponse = client.Options("/file/path", headers);
+    REQUIRE(optionsResponse != nullptr);
+    REQUIRE(optionsResponse->status == 200);
+    REQUIRE(optionsResponse->get_header_value("Access-Control-Allow-Origin") == "*");
+    REQUIRE(optionsResponse->get_header_value("Access-Control-Allow-Headers")
+            == "content-type, x-requested-with");
+}
+
 TEST_CASE("http_roundtrip_text_payload_escapes_json_control_chars", "[file_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};
@@ -523,6 +547,7 @@ TEST_CASE("http_post_returns_error_when_directory_is_not_writable_directory", "[
     const auto postResponse = client.Post("/file/fail-write", "payload", "text/plain");
     REQUIRE(postResponse != nullptr);
     REQUIRE(postResponse->status == 500);
+    REQUIRE(postResponse->get_header_value("Access-Control-Allow-Origin") == "*");
     REQUIRE(postResponse->body.find("code=YAHA_FILE_STORE_PERSIST_FAILED") != std::string::npos);
     REQUIRE(postResponse->body.find("failed to create directory") != std::string::npos);
 }

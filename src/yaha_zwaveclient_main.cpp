@@ -1,6 +1,7 @@
 #include "yaha/mqtt_client/broker_transport.h"
 #include "yaha/mqtt_client/mqtt_client_runtime.h"
 #include "yaha/zwave/zwave_service_component.h"
+#include "yaha/zwave_client/openzwave_runtime_driver_port.h"
 #include "yaha/zwave_client/zwave_client_app.h"
 
 #include <exception>
@@ -17,43 +18,6 @@ struct CliOptions {
     bool configPathProvided{false};
     bool enableMessageTrace{false};
     bool showHelp{false};
-};
-
-class RuntimeZwaveDriverPort final : public yaha::IZwaveDriverPort {
-public:
-    void setValue(
-        const yaha::ZwaveResolvedId& target,
-        const std::variant<bool, double, std::string>& value) override {
-        (void)target;
-        (void)value;
-    }
-
-    void setConfigParam(const std::uint16_t nodeId, const std::uint16_t paramId, const double value) override {
-        (void)nodeId;
-        (void)paramId;
-        (void)value;
-    }
-
-    void addNode() override {}
-
-    void removeFailedNode(const std::uint16_t nodeId) override {
-        (void)nodeId;
-    }
-
-    void startScan() override {}
-
-    void requestAllConfigParams(const std::uint16_t nodeId) override {
-        (void)nodeId;
-    }
-
-    void enablePoll(const std::uint16_t nodeId, const std::uint16_t classId) override {
-        (void)nodeId;
-        (void)classId;
-    }
-
-    void disconnect(const std::string& devicePath) override {
-        (void)devicePath;
-    }
 };
 
 void printUsage() {
@@ -151,8 +115,11 @@ int main(int argc, char* argv[]) {
 
     printStartupConfiguration(cliOptions.configPath, runtimeConfig);
 
-    auto driverPort = std::make_shared<RuntimeZwaveDriverPort>();
+    auto driverPort = std::make_shared<yaha::OpenZwaveRuntimeDriverPort>(runtimeConfig.zwaveConfig.usb.device);
     auto controller = std::make_shared<yaha::ZwaveController>(runtimeConfig.zwaveConfig.usb, *driverPort);
+    driverPort->bindController(*controller);
+    driverPort->start();
+
     yaha::ZwaveServiceComponent component{runtimeConfig.zwaveConfig, controller};
 
     yaha::YahaMqttClient mqttClient{
