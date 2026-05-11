@@ -101,13 +101,13 @@ Implementation is complete only when all artifacts below exist and are wired.
 
 Step 0. Vendor OpenZWave source locally
 - use upstream source repository `https://github.com/OpenZWave/open-zwave.git`
-- use fixed local source path `src/third_party/openzwave`
+- use fixed local source path `third_party/openzwave`
 - clone OpenZWave source into that location
 - keep source locally in repo-managed workspace for in-house maintenance fixes
 
 Step 0.1 Pin OpenZWave version
 - pin by full commit hash (40 hex chars), not branch name
-- record pin in `src/third_party/openzwave/PINNED_VERSION.txt`
+- record pin in `third_party/openzwave/PINNED_VERSION.txt`
 - `PINNED_VERSION.txt` must include upstream URL, commit hash, and vendoring date
 - forbid floating version resolution
 

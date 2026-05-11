@@ -18,7 +18,7 @@ option(MQTT_TRACING_DISABLED "Compile out structured tracing guards" OFF)
 
 #  Phase-0 Z-Wave third-party vendoring configuration
 set(YAHA_OPENZWAVE_SOURCE_DIR
-    "${CMAKE_SOURCE_DIR}/src/third_party/openzwave"
+    "${CMAKE_SOURCE_DIR}/third_party/openzwave"
     CACHE PATH "Path to vendored OpenZWave source tree")
 set(YAHA_OPENZWAVE_PIN_FILE
     "${YAHA_OPENZWAVE_SOURCE_DIR}/PINNED_VERSION.txt"
@@ -26,6 +26,7 @@ set(YAHA_OPENZWAVE_PIN_FILE
 
 include(cmake/openzwave_static.cmake)
 yaha_require_openzwave_phase0()
+yaha_define_openzwave_static_target(yaha_openzwave_static)
 
 #  External dependencies
 include(FetchContent)
@@ -295,6 +296,11 @@ if(BUILD_TESTING)
 
     include(Catch)
     catch_discover_tests(yahabroker-tests)
+endif()
+
+#  Wire static OpenZWave into Z-Wave client as soon as the target exists.
+if(TARGET yahazwaveclient)
+    yaha_link_openzwave_static(yahazwaveclient yaha_openzwave_static)
 endif()
 
 #  Install 

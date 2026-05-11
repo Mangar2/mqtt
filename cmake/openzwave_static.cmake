@@ -1,6 +1,8 @@
 # OpenZWave phase-0 integration helper.
-# This module validates the vendored source and pin metadata and provides
-# standard variables for later static target integration.
+# This module validates vendored source + pin metadata and provides a
+# reusable static target wiring for later client linking.
+
+include(ExternalProject)
 
 function(yaha_require_openzwave_phase0)
     if(NOT EXISTS "${YAHA_OPENZWAVE_SOURCE_DIR}")
@@ -13,11 +15,41 @@ function(yaha_require_openzwave_phase0)
             "OpenZWave pin metadata file not found: ${YAHA_OPENZWAVE_PIN_FILE}")
     endif()
 
+    if(NOT EXISTS "${YAHA_OPENZWAVE_SOURCE_DIR}/cpp/build/Makefile")
+        message(FATAL_ERROR
+            "OpenZWave build Makefile not found: ${YAHA_OPENZWAVE_SOURCE_DIR}/cpp/build/Makefile")
+    endif()
+
     set(YAHA_OPENZWAVE_INCLUDE_DIR
         "${YAHA_OPENZWAVE_SOURCE_DIR}/cpp/src"
         PARENT_SCOPE)
+endfunction()
 
-    set(YAHA_OPENZWAVE_NOTE
-        "Phase 0 validated: vendored source + pin metadata are present."
-        PARENT_SCOPE)
+function(yaha_define_openzwave_static_target target_name)
+    set(openzwave_static_path "${YAHA_OPENZWAVE_SOURCE_DIR}/cpp/build/libopenzwave.a")
+
+    ExternalProject_Add(openzwave_static_build
+        SOURCE_DIR "${YAHA_OPENZWAVE_SOURCE_DIR}/cpp/build"
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND make -C "${YAHA_OPENZWAVE_SOURCE_DIR}/cpp/build" BUILD=release USE_HID=0 USE_BI_TXML=1
+        INSTALL_COMMAND ""
+        BUILD_BYPRODUCTS "${openzwave_static_path}"
+    )
+
+    add_library(${target_name} STATIC IMPORTED GLOBAL)
+    set_target_properties(${target_name} PROPERTIES
+        IMPORTED_LOCATION "${openzwave_static_path}"
+        INTERFACE_INCLUDE_DIRECTORIES "${YAHA_OPENZWAVE_SOURCE_DIR}/cpp/src"
+    )
+    add_dependencies(${target_name} openzwave_static_build)
+
+    if(APPLE)
+        target_link_libraries(${target_name} INTERFACE resolv)
+    elseif(UNIX)
+        target_link_libraries(${target_name} INTERFACE resolv pthread)
+    endif()
+endfunction()
+
+function(yaha_link_openzwave_static consumer_target openzwave_target)
+    target_link_libraries(${consumer_target} PRIVATE ${openzwave_target})
 endfunction()

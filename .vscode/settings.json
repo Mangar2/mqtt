@@ -2,5 +2,17 @@
   "cmake.useCMakePresets": "always",
   "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
   "C_Cpp.default.compileCommands": "${workspaceFolder}/build/debug/compile_commands.json",
-  "C_Cpp.default.cppStandard": "c++20"
+  "C_Cpp.default.cppStandard": "c++20",
+  "C_Cpp.files.exclude": {
+    "${workspaceFolder}/third_party/openzwave/**": true
+  },
+  "C_Cpp.codeAnalysis.exclude": [
+    "${workspaceFolder}/third_party/openzwave/**"
+  ],
+  "files.watcherExclude": {
+    "**/third_party/openzwave/**": true
+  },
+  "search.exclude": {
+    "**/third_party/openzwave/**": true
+  }
 }

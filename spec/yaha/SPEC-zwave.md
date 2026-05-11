@@ -239,9 +239,9 @@ Normative stack decision:
 - Runtime must not depend on a separately installed system OpenZWave package.
 
 Normative source-management decision:
-- OpenZWave source code is stored locally at `src/third_party/openzwave`.
+- OpenZWave source code is stored locally at `third_party/openzwave`.
 - Canonical upstream source is `https://github.com/OpenZWave/open-zwave.git`.
-- OpenZWave version is pinned to an explicit full commit hash in `src/third_party/openzwave/PINNED_VERSION.txt`.
+- OpenZWave version is pinned to an explicit full commit hash in `third_party/openzwave/PINNED_VERSION.txt`.
 - Third-party origin/license notes are tracked in `spec/third_party/openzwave/NOTICE.md`.
 - Local OpenZWave maintenance changes are tracked in `spec/third_party/openzwave/CHANGELOG.md`.
 - Pinned version changes are explicit maintenance changes and must pass full parity and integration tests.
