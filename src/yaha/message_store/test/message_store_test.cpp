@@ -504,6 +504,33 @@ TEST_CASE("http_get_store_invalid_levelamount_with_whitespace_uses_default", "[m
     REQUIRE(response->body == "[]");
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("http_options_store_returns_cors_headers", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    const auto response = client.Options("/store/home");
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 204);
+    REQUIRE(response->get_header_value("Access-Control-Allow-Origin") == "*");
+    REQUIRE(response->get_header_value("Access-Control-Allow-Methods") == "GET, POST, OPTIONS");
+    REQUIRE(response->get_header_value("Access-Control-Allow-Headers")
+            == "Content-Type, Authorization, X-Requested-With, history, levelamount, reason, time");
+    REQUIRE(response->get_header_value("Access-Control-Max-Age") == "86400");
+}
+
 TEST_CASE("http_get_store_snapshot_body_uses_diff_mode", "[message_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};
@@ -742,8 +769,7 @@ TEST_CASE("http_get_store_outputs_iso_time_and_reason_timestamps", "[message_sto
     REQUIRE(response->body.find("\"time\":\"1970-01-01T00:00:00.500Z\"") != std::string::npos);
     REQUIRE(response->body.find("\"timestamp\":\"1970-01-01T00:00:02.000Z\"") != std::string::npos);
 
-    const std::string newestHistoryPrefix = "\"history\":[{\"time\":\"1970-01-01T00:00:01.250Z\"";
-    const std::size_t newestPosition = response->body.find(newestHistoryPrefix);
+    const std::size_t newestPosition = response->body.find("\"time\":\"1970-01-01T00:00:01.250Z\"");
     const std::size_t oldestPosition = response->body.find("\"time\":\"1970-01-01T00:00:00.500Z\"");
     REQUIRE(newestPosition != std::string::npos);
     REQUIRE(oldestPosition != std::string::npos);

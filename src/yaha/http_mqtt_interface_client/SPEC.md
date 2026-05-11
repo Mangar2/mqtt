@@ -40,6 +40,14 @@ Starts `httplib::Server` and wires handlers:
 - `PUT /pubrel` maps to native `HttpMqttInterfaces::onPubrel`
 - `POST /publish` maps through phase-6 compatibility profile
 - `POST /publish.php` maps through phase-6 compatibility profile
+- `OPTIONS /publish`, `OPTIONS /publish.php`, and `OPTIONS /pubrel` return CORS preflight `204`
+
+CORS headers on publish/pubrel responses:
+
+- `Access-Control-Allow-Origin: *`
+- `Access-Control-Allow-Methods: POST, PUT, OPTIONS`
+- `Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With`
+- `Access-Control-Max-Age: 86400` on OPTIONS responses
 
 Compatibility behavior delegates to `handlePublishCompatibilityRequest(...)` with runtime-configured mode:
 

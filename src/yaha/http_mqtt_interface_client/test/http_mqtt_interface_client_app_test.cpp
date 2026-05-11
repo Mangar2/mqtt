@@ -30,6 +30,8 @@ constexpr int k_wait_sleep_ms{10};
 constexpr int k_http_timeout_microseconds{500000};
 constexpr int k_status_ok{200};
 constexpr int k_status_no_content{204};
+constexpr const char* k_expected_cors_methods{"POST, PUT, OPTIONS"};
+constexpr const char* k_expected_cors_headers{"Content-Type, Authorization, X-Requested-With"};
 
 void configureHttpClientTimeouts(httplib::Client& client) {
     client.set_connection_timeout(0, k_http_timeout_microseconds);
@@ -65,6 +67,27 @@ void verifyHealthEndpoint(httplib::Client& client) {
     REQUIRE(healthResponse->status == k_status_ok);
 }
 
+void verifyCorsHeaders(const httplib::Result& response) {
+    REQUIRE(response != nullptr);
+    REQUIRE(response->get_header_value("Access-Control-Allow-Origin") == "*");
+    REQUIRE(response->get_header_value("Access-Control-Allow-Methods") == k_expected_cors_methods);
+    REQUIRE(response->get_header_value("Access-Control-Allow-Headers") == k_expected_cors_headers);
+}
+
+void verifyOptionsEndpoint(httplib::Client& client, const char* endpointPath) {
+    const auto optionsResponse = client.Options(endpointPath);
+    REQUIRE(optionsResponse != nullptr);
+    REQUIRE(optionsResponse->status == k_status_no_content);
+    verifyCorsHeaders(optionsResponse);
+    REQUIRE(optionsResponse->get_header_value("Access-Control-Max-Age") == "86400");
+}
+
+void verifyOptionsEndpoints(httplib::Client& client) {
+    verifyOptionsEndpoint(client, "/publish");
+    verifyOptionsEndpoint(client, "/publish.php");
+    verifyOptionsEndpoint(client, "/pubrel");
+}
+
 void verifyPutEndpoints(httplib::Client& client) {
     const httplib::Headers publishHeaders{
         {"version", "1.0"},
@@ -75,17 +98,20 @@ void verifyPutEndpoints(httplib::Client& client) {
     const auto publishResponse = client.Put("/publish", publishHeaders, "{}", "application/json");
     REQUIRE(publishResponse != nullptr);
     REQUIRE(publishResponse->status == k_status_no_content);
+    verifyCorsHeaders(publishResponse);
 
     const httplib::Headers pubrelHeaders{{"version", "1.0"}, {"packetid", "7"}};
     const auto pubrelResponse = client.Put("/pubrel", pubrelHeaders, "{}", "application/json");
     REQUIRE(pubrelResponse != nullptr);
     REQUIRE(pubrelResponse->status == k_status_no_content);
+    verifyCorsHeaders(pubrelResponse);
 }
 
 void verifyPostPublishEndpoint(httplib::Client& client, const httplib::Params& formParams) {
     const auto postFormResponse = client.Post("/publish", formParams);
     REQUIRE(postFormResponse != nullptr);
     REQUIRE(postFormResponse->status == k_status_no_content);
+    verifyCorsHeaders(postFormResponse);
 
     const std::string jsonBody =
         "{"
@@ -99,12 +125,14 @@ void verifyPostPublishEndpoint(httplib::Client& client, const httplib::Params& f
     const auto postJsonResponse = client.Post("/publish", jsonHeaders, jsonBody, "application/json");
     REQUIRE(postJsonResponse != nullptr);
     REQUIRE(postJsonResponse->status == k_status_no_content);
+    verifyCorsHeaders(postJsonResponse);
 }
 
 void verifyPostPublishPhpEndpoint(httplib::Client& client, const httplib::Params& formParams) {
     const auto postPhpResponse = client.Post("/publish.php", formParams);
     REQUIRE(postPhpResponse != nullptr);
     REQUIRE(postPhpResponse->status == k_status_no_content);
+    verifyCorsHeaders(postPhpResponse);
 }
 
 void exerciseHttpServerEndpoints(const std::uint16_t port) {
@@ -112,6 +140,7 @@ void exerciseHttpServerEndpoints(const std::uint16_t port) {
     configureHttpClientTimeouts(client);
     verifyHealthEndpoint(client);
     verifyPutEndpoints(client);
+    verifyOptionsEndpoints(client);
 
     const httplib::Params formParams{{"topic", "sensor%2Ftemp"}, {"value", "42"}, {"token", "tok-form"}};
     verifyPostPublishEndpoint(client, formParams);

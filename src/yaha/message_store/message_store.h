@@ -126,6 +126,10 @@ private:
                                   const httplib::Request& request,
                                   httplib::Response& response);
 
+    static void handleHttpOptionsRequest(const std::string& basePath,
+                                         const httplib::Request& request,
+                                         httplib::Response& response);
+
     MessageStoreConfig config_{};
     MessageTree tree_;
     MessageTreePersistence persistence_;

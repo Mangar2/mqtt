@@ -4,6 +4,7 @@ from __future__ import annotations
 """Create a copy-ready YAHA deployment directory with install scripts."""
 
 import argparse
+import hashlib
 import shutil
 import stat
 import subprocess
@@ -139,6 +140,10 @@ def run_or_fail(command: list[str], cwd: Path) -> None:
         raise RuntimeError(
             f"Command failed ({completed.returncode}): {' '.join(command)}"
         )
+
+
+def sha256_text(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 def set_executable(path: Path) -> None:
@@ -364,6 +369,7 @@ def main() -> int:
         )
         output_dir = Path(args.output_dir).expanduser()
         nginx_controlapp_content = NGINX_CONTROLAPP_SOURCE.read_text(encoding="utf-8")
+        nginx_controlapp_hash = sha256_text(nginx_controlapp_content)
 
         if args.build:
             run_or_fail(
@@ -382,7 +388,15 @@ def main() -> int:
 
         nginx_dir = output_dir / "nginx"
         nginx_dir.mkdir(parents=True, exist_ok=True)
-        (nginx_dir / "controlapp.conf").write_text(nginx_controlapp_content, encoding="utf-8")
+        deployment_nginx_controlapp = nginx_dir / "controlapp.conf"
+        deployment_nginx_controlapp.write_text(nginx_controlapp_content, encoding="utf-8")
+        deployment_nginx_hash = sha256_text(
+            deployment_nginx_controlapp.read_text(encoding="utf-8")
+        )
+        if deployment_nginx_hash != nginx_controlapp_hash:
+            raise RuntimeError(
+                "Nginx config copy verification failed: source and deployment differ."
+            )
 
         for component in SERVICE_COMPONENTS:
             component_dir = output_dir / component["name"]
@@ -428,6 +442,8 @@ def main() -> int:
         set_executable(root_install)
 
         print(f"Deployment package created: {output_dir}")
+        print(f"Nginx source used: {NGINX_CONTROLAPP_SOURCE}")
+        print("Nginx source->deployment verification: OK")
         print("Copy this directory 1:1 to the target system and run ./install.sh there.")
         return 0
     except Exception as error:

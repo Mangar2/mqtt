@@ -74,6 +74,7 @@ Unit tests for MessageTree behavior required by step 4.
 | `http_get_store_applies_levelamount_history_reason_headers` | Header options are honored | GET with `levelamount=2`, `history=true`, `reason=false`, `time=false` | status 200 and returned nodes include history but no reason/time |
 | `http_get_store_header_defaults_apply_for_blank_or_invalid_values` | Header parser fallback branches | GET with blank `levelamount/history` and invalid `reason` | status 200 and request is processed with defaults |
 | `http_get_store_invalid_levelamount_with_whitespace_uses_default` | Unsigned header parser trims whitespace and falls back for non-numeric text | GET with `levelamount = "  invalid  "` | status 200 and request is processed using default level amount |
+| `http_options_store_returns_cors_headers` | Browser preflight for store API | OPTIONS `/store/home` | status 204 with Access-Control-Allow-Origin/Methods/Headers/Max-Age |
 | `http_get_store_snapshot_body_uses_diff_mode` | JSON body activates diff mode | GET body with prior snapshot array | only changed/new topics returned |
 | `http_get_store_snapshot_body_ignores_reason_when_snapshot_reason_is_missing` | Legacy JS parity: omitted snapshot reason must not force diff | GET body with same topic/value but without `reason`, current node has non-empty reason | status 200 and `[]` |
 | `http_get_store_snapshot_body_skips_unknown_fields_and_json_variants` | Snapshot parser unknown-field skipping | GET body with unknown object/array/boolean/null fields | status 200 and parser keeps valid topic/value entries |
@@ -88,7 +89,7 @@ Unit tests for MessageTree behavior required by step 4.
 | `http_get_store_malformed_snapshot_returns_empty_array` | Malformed body fallback path | GET body `not-json` | status 200 and `[]` |
 | `http_unknown_path_returns_404` | Non-store endpoint is rejected | GET `/unknown/path` | status 404 with YahaError payload code `YAHA_MESSAGE_STORE_HTTP_NOT_FOUND` |
 | `http_get_store_json_output_escapes_special_characters` | JSON escaping branch coverage | store string payload with quote/backslash/newline/carriage-return/tab | response payload contains escaped JSON control sequences |
-| `http_get_store_outputs_iso_time_and_reason_timestamps` | HTTP response should expose ISO UTC time fields and preserve reason timestamps | two updates with explicit reason timestamps and history enabled | response uses `time` ISO strings (including history), contains reason timestamps, and contains no `timeMs` field |
+| `http_get_store_outputs_iso_time_and_reason_timestamps` | HTTP response should expose ISO UTC time fields, preserve reason timestamps, and keep history newest-first | two updates with explicit reason timestamps and history enabled | response uses `time` ISO strings (including history), contains reason timestamps, keeps history entries newest-first, and contains no `timeMs` field |
 | `handle_message_cleanup_topic_accepts_numeric_string_payload` | Cleanup path string-number conversion | cleanup message with payload "1" | stale nodes are removed |
 | `iso_parser_accepts_leap_day_and_roundtrips` | Leap-year parsing branch is valid | `2024-02-29T12:34:56Z` | parse succeeds and roundtrip emits canonical ISO with milliseconds |
 | `iso_parser_rejects_non_leap_february_29` | Day range validation for non-leap year | `2023-02-29T00:00:00Z` | parse returns false |

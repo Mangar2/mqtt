@@ -135,6 +135,12 @@ struct MessageTreeNode;
 - `run()` starts an internal cpp-httplib server on `config.serverHost:config.serverPort`.
 - GET path: `<config.serverPath>/<topicPrefix>`; default `serverPath` is `/store`.
 - POST path: same base path, intended for `sensor.php` compatibility payloads.
+- OPTIONS path: same base path (`<config.serverPath>/<topicPrefix>`) for CORS preflight.
+- CORS response headers for HTTP endpoints:
+  - `Access-Control-Allow-Origin: *`
+  - `Access-Control-Allow-Methods: GET, POST, OPTIONS`
+  - `Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, history, levelamount, reason, time`
+  - `Access-Control-Max-Age: 86400` on OPTIONS responses
 - Headers:
   - `levelamount` (default 1)
   - `history` (default false)

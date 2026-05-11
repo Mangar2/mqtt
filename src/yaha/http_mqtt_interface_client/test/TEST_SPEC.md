@@ -12,3 +12,4 @@ Unit tests for standalone HTTP MQTT interface client INI mapping behavior.
 | `load_http_mqtt_interface_client_config_from_ini` | explicit field mapping | INI with all `[httpMqttInterface]` keys | loader succeeds and mapped values match |
 | `load_http_mqtt_interface_client_config_reports_invalid_port` | numeric bounds validation | `listenerPort=70000` | loader fails with `httpMqttInterface.listenerPort` error |
 | `load_http_mqtt_interface_client_config_reports_invalid_alias_flag` | bool parsing for publish.php toggle | `enablePublishPhpAlias=maybe` | loader fails with `httpMqttInterface.enablePublishPhpAlias` error |
+| `run_http_mqtt_interface_client_serves_cors_headers_and_options` | runtime CORS contract for browser clients | GET/PUT/POST/OPTIONS requests to `/publish`, `/publish.php`, `/pubrel` | responses include CORS headers and preflight returns `204` |

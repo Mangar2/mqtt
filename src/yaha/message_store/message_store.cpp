@@ -13,6 +13,7 @@
 #include <iomanip>
 #include <optional>
 #include <sstream>
+#include <string_view>
 #include <utility>
 
 namespace yaha {
@@ -21,11 +22,24 @@ namespace {
 
 constexpr int k_hex_alpha_offset{10};
 constexpr int k_http_status_ok{200};
+constexpr int k_http_status_no_content{204};
 constexpr int k_http_status_bad_request{400};
 constexpr int k_http_status_not_found{404};
 constexpr std::uint32_t k_default_level_amount{1U};
 constexpr std::int64_t k_millis_per_second{1000};
 constexpr int k_tm_year_offset{1900};
+constexpr std::string_view k_store_cors_methods{"GET, POST, OPTIONS"};
+constexpr std::string_view k_store_cors_headers{
+    "Content-Type, Authorization, X-Requested-With, history, levelamount, reason, time"};
+
+void applyStoreCorsHeaders(httplib::Response& response, const bool includeMaxAge) {
+    response.set_header("Access-Control-Allow-Origin", "*");
+    response.set_header("Access-Control-Allow-Methods", std::string{k_store_cors_methods});
+    response.set_header("Access-Control-Allow-Headers", std::string{k_store_cors_headers});
+    if (includeMaxAge) {
+        response.set_header("Access-Control-Max-Age", "86400");
+    }
+}
 
 std::string trim(const std::string& value) {
     std::size_t begin = 0U;
@@ -530,6 +544,9 @@ void MessageStore::startHttpServer() {
     httpServer_->Post(R"(/.*)", [this, basePath](const httplib::Request& request, httplib::Response& response) {
         handleHttpRequest(*this, basePath, request, response);
     });
+    httpServer_->Options(R"(/.*)", [basePath](const httplib::Request& request, httplib::Response& response) {
+        handleHttpOptionsRequest(basePath, request, response);
+    });
 
     const std::string host = config_.serverHost.empty() ? "127.0.0.1" : config_.serverHost;
     const std::uint16_t port = config_.serverPort;
@@ -554,6 +571,7 @@ void MessageStore::handleHttpRequest(MessageStore& store,
                                      const std::string& basePath,
                                      const httplib::Request& request,
                                      httplib::Response& response) {
+    applyStoreCorsHeaders(response, false);
     const bool isPostRequest = (request.method == "POST");
 
     std::string topicPrefixEncoded;
@@ -617,6 +635,25 @@ void MessageStore::handleHttpRequest(MessageStore& store,
     }
 
     response.set_content(nodesJson, "application/json");
+}
+
+void MessageStore::handleHttpOptionsRequest(const std::string& basePath,
+                                            const httplib::Request& request,
+                                            httplib::Response& response) {
+    applyStoreCorsHeaders(response, true);
+
+    if (request.path == basePath || startsWith(request.path, basePath + "/")) {
+        response.status = k_http_status_no_content;
+        response.set_content("", "text/plain");
+        return;
+    }
+
+    setHttpErrorResponse(response,
+                         k_http_status_not_found,
+                         YahaError{"YAHA_MESSAGE_STORE_HTTP_NOT_FOUND",
+                                   "not_found",
+                                   "The requested HTTP path was not found.",
+                                   "path=" + request.path + ", base_path=" + basePath});
 }
 
 std::optional<std::uint32_t> MessageStore::parseCleanupDays(const Value& value) {

@@ -26,10 +26,23 @@ constexpr std::string_view k_publishEndpoint{"/publish"};
 constexpr std::string_view k_publishPhpEndpoint{"/publish.php"};
 constexpr std::string_view k_pubrelEndpoint{"/pubrel"};
 constexpr int k_httpStatusOk{200};
+constexpr int k_httpStatusNoContent{204};
+constexpr std::string_view k_publishCorsMethods{"POST, PUT, OPTIONS"};
+constexpr std::string_view k_publishCorsHeaders{"Content-Type, Authorization, X-Requested-With"};
 
 std::atomic<httplib::Server*> g_activeServer{nullptr};
 
+void applyHttpMqttCorsHeaders(httplib::Response& response, const bool includeMaxAge) {
+    response.set_header("Access-Control-Allow-Origin", "*");
+    response.set_header("Access-Control-Allow-Methods", std::string{k_publishCorsMethods});
+    response.set_header("Access-Control-Allow-Headers", std::string{k_publishCorsHeaders});
+    if (includeMaxAge) {
+        response.set_header("Access-Control-Max-Age", "86400");
+    }
+}
+
 void applyHttpMqttResult(const HttpMqttResult& result, httplib::Response& response) {
+    applyHttpMqttCorsHeaders(response, false);
     response.status = result.statusCode;
     for (const auto& [headerName, headerValue] : result.headers) {
         response.set_header(headerName, headerValue);
@@ -201,6 +214,24 @@ int runHttpMqttInterfaceClient(const HttpMqttInterfaceClientConfig& configInput)
                             k_publishPhpEndpoint),
                         response);
                 });
+
+    server.Options(k_publishEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+        applyHttpMqttCorsHeaders(response, true);
+        response.status = k_httpStatusNoContent;
+        response.set_content("", "text/plain");
+    });
+
+    server.Options(k_publishPhpEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+        applyHttpMqttCorsHeaders(response, true);
+        response.status = k_httpStatusNoContent;
+        response.set_content("", "text/plain");
+    });
+
+    server.Options(k_pubrelEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+        applyHttpMqttCorsHeaders(response, true);
+        response.status = k_httpStatusNoContent;
+        response.set_content("", "text/plain");
+    });
 
     std::signal(SIGINT, stopActiveServerSignalHandler);
     std::signal(SIGTERM, stopActiveServerSignalHandler);
