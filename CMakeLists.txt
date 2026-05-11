@@ -73,6 +73,7 @@ list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_automationclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_httpmqttinterfaceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_valueserviceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_remoteserviceclient_main\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_zwaveclient_main\\.cpp$")
 
 if(WIN32)
     list(FILTER MQTT_ALL_SOURCES  EXCLUDE REGEX "_posix\\.cpp$")
@@ -257,6 +258,22 @@ if(WIN32)
     target_link_libraries(yaharemoteserviceclient PRIVATE ws2_32)
 endif()
 
+#  YAHA ZWave standalone executable
+add_executable(yahazwaveclient
+    src/yaha_zwaveclient_main.cpp
+    ${MQTT_LIBRARY_SOURCES}
+)
+
+target_compile_options(yahazwaveclient PRIVATE ${MQTT_COMPILE_OPTIONS})
+target_link_options(yahazwaveclient    PRIVATE ${MQTT_LINK_OPTIONS})
+target_include_directories(yahazwaveclient PRIVATE src)
+target_include_directories(yahazwaveclient PRIVATE ${httplib_SOURCE_DIR})
+target_compile_definitions(yahazwaveclient PRIVATE
+    $<$<BOOL:${MQTT_TRACING_DISABLED}>:MQTT_TRACING_DISABLED>)
+if(WIN32)
+    target_link_libraries(yahazwaveclient PRIVATE ws2_32)
+endif()
+
 #  Unit tests 
 include(CTest)
 
@@ -314,5 +331,6 @@ install(TARGETS yahabroker
     yahahttpmqttinterfaceclient
     yahavalueserviceclient
     yaharemoteserviceclient
+    yahazwaveclient
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )

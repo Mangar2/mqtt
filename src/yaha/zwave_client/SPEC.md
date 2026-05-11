@@ -1,9 +1,9 @@
-# zwave_client — YAHA ZWave Runtime Types and INI Mapping
+# zwave_client — YAHA ZWave Runtime Mapping and Standalone Composition
 
 ## Purpose
 
-Defines ZWave standalone runtime config types and INI mapping behavior,
-including deterministic validation errors for required fields and value ranges.
+Defines ZWave standalone runtime config types, deterministic INI mapping behavior,
+and phase-4 standalone composition entrypoint wiring.
 
 ## Public API
 
@@ -20,6 +20,24 @@ including deterministic validation errors for required fields and value ranges.
 |---------|-----------|-------|
 | `tryLoadZwaveConfigFromIni` | `(const IniDocument&, ZwaveConfig&, std::string&) -> bool` | Maps `[zwave]` fields into domain config with validation |
 | `tryLoadZwaveClientRuntimeConfigFromIni` | `(const IniDocument&, ZwaveClientRuntimeConfig&, std::string&) -> bool` | Maps full runtime config including `[mqtt]` |
+
+## Standalone runtime composition
+
+`src/yaha_zwaveclient_main.cpp` composes runtime directly:
+
+- parse CLI: optional `<config-path>`, `--trace-messages`, `--help`
+- load INI with `IniDocument::loadFromFile`
+- map runtime config with `tryLoadZwaveClientRuntimeConfigFromIni`
+- create `ZwaveController` and `ZwaveServiceComponent`
+- construct `YahaMqttClient` with `makeBrokerTransport()`
+- run until shutdown via `YahaMqttClientRuntime`
+
+Runtime startup prints a deterministic summary:
+
+- config path
+- MQTT host/port/client id
+- zwave usb device/topic and configured device count
+- subscribe/publish qos and retain flags
 
 ## Configuration format
 
@@ -55,3 +73,4 @@ Validation rules:
 |------|------|
 | `zwave_client_app.h` | Runtime config declarations and loader signatures |
 | `zwave_client_app.cpp` | Runtime config parsing and validation implementation |
+| `../yaha_zwaveclient_main.cpp` | Standalone runtime entrypoint and composition wiring |
