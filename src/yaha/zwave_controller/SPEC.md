@@ -105,3 +105,5 @@ Concrete parity adapter implementation with additional callback entry points:
 
 - `zwave_controller.h`
 - `zwave_controller.cpp`
+- `test/TEST_SPEC.md`
+- `test/zwave_controller_test.cpp`

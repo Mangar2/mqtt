@@ -111,3 +111,5 @@ for bridging between MQTT topic space and ZWave value identifiers.
 |------|------|
 | `zwave_devices_mapper.h` | Mapping and conversion declarations |
 | `zwave_devices_mapper.cpp` | Mapping and conversion implementation |
+| `test/TEST_SPEC.md` | Mapping parity test matrix for phase-5 coverage |
+| `test/zwave_devices_mapper_test.cpp` | Unit tests for scoring, label append, class lookup, and write conversion behavior |

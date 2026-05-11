@@ -28,10 +28,16 @@ endfunction()
 function(yaha_define_openzwave_static_target target_name)
     set(openzwave_static_path "${YAHA_OPENZWAVE_SOURCE_DIR}/cpp/build/libopenzwave.a")
 
+    set(openzwave_build_command
+        make -C "${YAHA_OPENZWAVE_SOURCE_DIR}/cpp/build" BUILD=release USE_HID=0 USE_BI_TXML=1)
+    if(APPLE)
+        list(APPEND openzwave_build_command DARWIN_BUILD_TARGET=-arch\ arm64)
+    endif()
+
     ExternalProject_Add(openzwave_static_build
         SOURCE_DIR "${YAHA_OPENZWAVE_SOURCE_DIR}/cpp/build"
         CONFIGURE_COMMAND ""
-        BUILD_COMMAND make -C "${YAHA_OPENZWAVE_SOURCE_DIR}/cpp/build" BUILD=release USE_HID=0 USE_BI_TXML=1
+        BUILD_COMMAND ${openzwave_build_command}
         INSTALL_COMMAND ""
         BUILD_BYPRODUCTS "${openzwave_static_path}"
     )
