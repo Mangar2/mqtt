@@ -16,6 +16,17 @@ option(MQTT_SANITIZE "Enable AddressSanitizer and UBSan (host builds only)" OFF)
 option(MQTT_COVERAGE "Enable clang source-based coverage instrumentation"   OFF)
 option(MQTT_TRACING_DISABLED "Compile out structured tracing guards" OFF)
 
+#  Phase-0 Z-Wave third-party vendoring configuration
+set(YAHA_OPENZWAVE_SOURCE_DIR
+    "${CMAKE_SOURCE_DIR}/src/third_party/openzwave"
+    CACHE PATH "Path to vendored OpenZWave source tree")
+set(YAHA_OPENZWAVE_PIN_FILE
+    "${YAHA_OPENZWAVE_SOURCE_DIR}/PINNED_VERSION.txt"
+    CACHE FILEPATH "Path to vendored OpenZWave pin metadata file")
+
+include(cmake/openzwave_static.cmake)
+yaha_require_openzwave_phase0()
+
 #  External dependencies
 include(FetchContent)
 FetchContent_Declare(
