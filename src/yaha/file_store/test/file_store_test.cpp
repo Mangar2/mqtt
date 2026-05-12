@@ -16,6 +16,8 @@
 #include <unordered_map>
 #include <vector>
 
+// NOLINTBEGIN
+
 namespace {
 
 std::filesystem::path makeTempDirectory() {
@@ -701,3 +703,5 @@ TEST_CASE("run_and_close_are_idempotent", "[file_store]") {
     store.close();
     REQUIRE_FALSE(store.isRunning());
 }
+
+// NOLINTEND

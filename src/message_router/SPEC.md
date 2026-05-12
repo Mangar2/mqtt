@@ -63,6 +63,7 @@ void set_on_retained_changed(std::function<void()> callback) noexcept;
 ```
 
 **`process`**: resolves optional Topic Alias in-place, checks publish ACL
+and denies non-broker clients publishing to `$SYS` topics only
 (throws `PublishNotAuthorized` on denial), stores retained message if
 `msg.retain` is set (and fires the `on_retained_changed` callback when set),
 returns matching subscriber list.

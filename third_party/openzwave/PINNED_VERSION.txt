@@ -1,0 +1,3 @@
+upstream: https://github.com/OpenZWave/open-zwave.git
+commit: 3fff11d246a0d558d26110e1db6bd634a1b347c0
+vendored_date: 2026-05-12

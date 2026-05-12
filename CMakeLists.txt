@@ -20,6 +20,12 @@ option(MQTT_TRACING_DISABLED "Compile out structured tracing guards" OFF)
 set(YAHA_OPENZWAVE_SOURCE_DIR
     "${CMAKE_SOURCE_DIR}/third_party/openzwave"
     CACHE PATH "Path to vendored OpenZWave source tree")
+set(YAHA_OPENZWAVE_UPSTREAM_URL
+    "https://github.com/OpenZWave/open-zwave"
+    CACHE STRING "Upstream OpenZWave repository URL")
+set(YAHA_OPENZWAVE_PIN_COMMIT
+    "3fff11d246a0d558d26110e1db6bd634a1b347c0"
+    CACHE STRING "Pinned OpenZWave commit hash (40 hex chars)")
 set(YAHA_OPENZWAVE_PIN_FILE
     "${YAHA_OPENZWAVE_SOURCE_DIR}/PINNED_VERSION.txt"
     CACHE FILEPATH "Path to vendored OpenZWave pin metadata file")

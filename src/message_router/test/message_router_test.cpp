@@ -25,6 +25,8 @@
 #include "store/retained_message_store.h"
 #include "store/subscription_store.h"
 
+// NOLINTBEGIN
+
 using namespace mqtt;
 using namespace std::chrono_literals;
 
@@ -253,6 +255,21 @@ TEST_CASE("inbound_processor_alias_out_of_range_throws", "[message_router]") {
   } catch (const MessageRouterException &exc) {
     CHECK(exc.error() == MessageRouterError::TopicAliasInvalid);
   }
+}
+
+TEST_CASE("inbound_processor_blocks_sys_topic_only", "[message_router]") {
+  AclEngine acl({allow_all()});
+  RetainedMessageStore retained;
+  SubscriptionStore subs;
+  InboundPublishProcessor proc(acl, retained, subs);
+  TopicAliasTable alias_table(k_max_aliases);
+
+  Message blocked = make_msg("$SYS/status");
+  CHECK_THROWS_AS((void)proc.process(blocked, "cli", "", alias_table),
+                  MessageRouterException);
+
+  Message allowed = make_msg("$custom/ok");
+  CHECK_NOTHROW((void)proc.process(allowed, "cli", "", alias_table));
 }
 
 //
@@ -1194,3 +1211,5 @@ TEST_CASE("router_on_offline_queue_changed_fires_on_buffer",
 
   CHECK(callback_count == 1);
 }
+
+// NOLINTEND

@@ -11,6 +11,7 @@
 | `inbound_processor_alias_only_resolution`      | 12.1.1 | Empty topic resolved via existing alias |
 | `inbound_processor_alias_unregistered_throws`  | 12.1.1 | TopicAliasInvalid when alias not registered |
 | `inbound_processor_alias_out_of_range_throws`  | 12.1.1 | TopicAliasInvalid when alias exceeds maximum |
+| `inbound_processor_blocks_sys_topic_only`      | 12.1.2 | Publish to '$SYS' is denied for clients while other '$'-prefixed topics are allowed |
 | `fanout_no_local_filters_publisher`            | 12.2.2 | Subscriber omitted when no_local=true and publisher==subscriber |
 | `fanout_no_local_false_includes_publisher`     | 12.2.2 | Subscriber included when no_local=false |
 | `fanout_qos_downgrade`                         | 12.2.1 | Outbound QoS capped at subscription QoS |
