@@ -15,6 +15,21 @@ Python test modules discovered by `test/run_integration_tests.py`
 Broker treated as black-box — communicate only via MQTT protocol
 Test plan spec/integration-test-plan.md — always consult before creating tests
 
+Integration tests are split into independent domains with separate runners:
+
+- Broker + MQTT test client domain:
+    - tests under `test/integration_tests/`
+    - runner: `test/run_integration_tests.py`
+    - includes thin client shell bridge module `test/integration_tests/client/test_client_shell.py`
+        that exposes shared cases from `test/integration_client_shell_cases.py`
+- YAHA client domain (component-specific integration tests):
+    - tests under `test/yaha/<client_name>/`
+    - runner: `test/yaha/run_msgstore_integration_tests.py`
+    - despite script name, this runner discovers all modules under `test/yaha/`
+
+Never mix domains in one test file.
+If task is about a YAHA client (for example ValueService), create and run tests only in the YAHA client domain.
+
 ## Toolbox (helpers/)
 
 All tests use shared helpers in `test/integration_tests/helpers/`:
@@ -39,6 +54,14 @@ test/integration_tests/<category>/<test_name>.py
 ```
 
 Category = subdirectory matching test plan section (connect, publish, subscribe, retain, will, session, qos, topic, websocket, auth, acl, monitoring, shutdown, load, robustness, interop)
+
+YAHA client integration file location:
+
+```
+test/yaha/<client_name>/<test_name>.py
+```
+
+Examples for `<client_name>`: `msgstore_client`, `broker_connector_client`, `value_service`.
 
 ## Test module structure
 
@@ -122,14 +145,59 @@ def run_garbage_bytes(config) -> tuple[bool, str]:
 All commands from project root:
 
 ```
-python3 test/run_integration_tests.py                        # run all
-python3 test/run_integration_tests.py --filter connect       # run category
-python3 test/run_integration_tests.py --filter connect/anonymous  # run single
-python3 test/run_integration_tests.py --only-failed          # rerun failures
-python3 test/run_integration_tests.py --list                 # list all tests
+python3 test/run_integration_tests.py --filter connect                     # broker domain category
+python3 test/run_integration_tests.py --filter connect/anonymous           # broker domain single test
+python3 test/run_integration_tests.py --filter client/test_client_shell    # mqtt test client integration domain
+python3 test/run_integration_tests.py --only-failed                        # rerun failed broker/client tests
+python3 test/run_integration_tests.py --list                               # list broker/client tests
+
+python3 test/yaha/run_msgstore_integration_tests.py --filter yaha/msgstore
+python3 test/yaha/run_msgstore_integration_tests.py --filter broker_connector/
+python3 test/yaha/run_msgstore_integration_tests.py --list
 ```
 
 Runner auto-builds and starts broker if not running
+
+Rule: never run all integration tests when working on one scope.
+Always use `--filter` for the current project scope.
+
+## Creating new YAHA client integration tests
+
+Use this workflow when asked to add tests for YAHA clients (for example ValueService):
+
+1. Create or reuse client directory under `test/yaha/<client_name>/`.
+2. Add one Python module with one or more `TEST_CASES` entries.
+3. Use test names with client prefix, for example `yaha/value_service/<case_name>`.
+4. Implement each run function with signature `def run_xxx(config) -> tuple[bool, str]`.
+5. Reuse helpers from `test/integration_tests/helpers/` by dynamic import pattern used in existing YAHA tests.
+6. Build and manage required client process/broker process inside the test case setup/teardown.
+7. Execute only scoped tests via:
+
+```sh
+python3 test/yaha/run_msgstore_integration_tests.py --filter yaha/value_service
+```
+
+Minimal module skeleton:
+
+```python
+from __future__ import annotations
+
+def run_value_service_smoke(config) -> tuple[bool, str]:
+    try:
+        # setup runtime, publish/assert, teardown
+        return True, "value service integration smoke passed"
+    except Exception as error:
+        return False, str(error)
+
+
+TEST_CASES = [
+    {
+        "name": "yaha/value_service/smoke",
+        "description": "ValueService integration smoke test.",
+        "run": run_value_service_smoke,
+    }
+]
+```
 
 ## Rules
 
