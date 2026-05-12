@@ -58,6 +58,7 @@ the callback contract into real TCP MQTT packet I/O.
 - On `run()`, injects component publish callback before processing incoming messages.
 - Connect loop retries with `reconnectDelay` on failures.
 - After each successful connect, fetches `component.getSubscriptions()` and subscribes all entries.
+- After each handled inbound message, re-fetches `component.getSubscriptions()` and applies the subscription diff so component key-set changes take effect immediately.
 - During `close()`, unsubscribes active filters before transport disconnect for deterministic broker-side teardown.
 - Inbound polling forwards only messages that match active subscriptions.
 - Broker transport publish path forwards `Message.rawPayload()` bytes unchanged when present; otherwise it encodes from `Message.value()`.

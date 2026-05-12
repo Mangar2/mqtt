@@ -105,6 +105,7 @@ private:
     void workerLoop();
     bool ensureConnected();
     void replaySubscriptions();
+    void resyncSubscriptions();
     void unsubscribeAll();
     void processIncoming();
     void processKeepAlive();

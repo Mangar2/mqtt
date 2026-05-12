@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
+#include <deque>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -536,6 +537,7 @@ public:
 
         mqtt::SubscribePacket packet{};
         packet.packet_id = nextPacketId_++;
+        const std::uint16_t expectedPacketId = packet.packet_id;
         if (nextPacketId_ == 0U) {
             nextPacketId_ = 1U;
         }
@@ -552,9 +554,33 @@ public:
         }
 
         try {
-            const std::optional<mqtt::AnyPacket> maybePacket = readNextPacketLocked(k_ack_timeout_ms);
-            if (!maybePacket.has_value() || !std::holds_alternative<mqtt::SubackPacket>(*maybePacket)) {
-                disconnectLocked();
+            while (true) {
+                const std::optional<mqtt::AnyPacket> maybePacket = readNextPacketLocked(k_ack_timeout_ms);
+                if (!maybePacket.has_value()) {
+                    disconnectLocked();
+                    return;
+                }
+
+                if (std::holds_alternative<mqtt::SubackPacket>(*maybePacket)) {
+                    const auto& suback = std::get<mqtt::SubackPacket>(*maybePacket);
+                    if (suback.packet_id == expectedPacketId) {
+                        return;
+                    }
+                    continue;
+                }
+
+                if (std::holds_alternative<mqtt::PublishPacket>(*maybePacket)) {
+                    if (const std::optional<Message> bufferedMessage =
+                            parsePublishPacketLocked(std::get<mqtt::PublishPacket>(*maybePacket));
+                        bufferedMessage.has_value()) {
+                        pendingIncoming_.push_back(*bufferedMessage);
+                    }
+                    continue;
+                }
+
+                if (std::holds_alternative<mqtt::PingrespPacket>(*maybePacket)) {
+                    continue;
+                }
             }
         } catch (...) {
             disconnectLocked();
@@ -569,6 +595,7 @@ public:
 
         mqtt::UnsubscribePacket packet{};
         packet.packet_id = nextPacketId_++;
+        const std::uint16_t expectedPacketId = packet.packet_id;
         if (nextPacketId_ == 0U) {
             nextPacketId_ = 1U;
         }
@@ -582,9 +609,33 @@ public:
         }
 
         try {
-            const std::optional<mqtt::AnyPacket> maybePacket = readNextPacketLocked(k_ack_timeout_ms);
-            if (!maybePacket.has_value() || !std::holds_alternative<mqtt::UnsubackPacket>(*maybePacket)) {
-                disconnectLocked();
+            while (true) {
+                const std::optional<mqtt::AnyPacket> maybePacket = readNextPacketLocked(k_ack_timeout_ms);
+                if (!maybePacket.has_value()) {
+                    disconnectLocked();
+                    return;
+                }
+
+                if (std::holds_alternative<mqtt::UnsubackPacket>(*maybePacket)) {
+                    const auto& unsuback = std::get<mqtt::UnsubackPacket>(*maybePacket);
+                    if (unsuback.packet_id == expectedPacketId) {
+                        return;
+                    }
+                    continue;
+                }
+
+                if (std::holds_alternative<mqtt::PublishPacket>(*maybePacket)) {
+                    if (const std::optional<Message> bufferedMessage =
+                            parsePublishPacketLocked(std::get<mqtt::PublishPacket>(*maybePacket));
+                        bufferedMessage.has_value()) {
+                        pendingIncoming_.push_back(*bufferedMessage);
+                    }
+                    continue;
+                }
+
+                if (std::holds_alternative<mqtt::PingrespPacket>(*maybePacket)) {
+                    continue;
+                }
             }
         } catch (...) {
             disconnectLocked();
@@ -595,6 +646,12 @@ public:
         std::lock_guard<std::mutex> lock{transportMutex_};
         if (!connected_ || connection_ == nullptr) {
             return std::nullopt;
+        }
+
+        if (!pendingIncoming_.empty()) {
+            Message bufferedMessage = pendingIncoming_.front();
+            pendingIncoming_.pop_front();
+            return bufferedMessage;
         }
 
         std::optional<mqtt::AnyPacket> maybePacket{};
@@ -628,8 +685,29 @@ public:
             return std::nullopt;
         }
 
-        const mqtt::PublishPacket& packet = std::get<mqtt::PublishPacket>(*maybePacket);
+        return parsePublishPacketLocked(std::get<mqtt::PublishPacket>(*maybePacket));
+    }
 
+    void ping() {
+        std::lock_guard<std::mutex> lock{transportMutex_};
+        if (!connected_ || connection_ == nullptr) {
+            return;
+        }
+
+        mqtt::WriteBuffer encoded{};
+        mqtt::encode_pingreq(encoded);
+        if (!connection_->write(asSpan(encoded))) {
+            disconnectLocked();
+        }
+    }
+
+    bool isConnected() const {
+        std::lock_guard<std::mutex> lock{transportMutex_};
+        return connected_ && connection_ != nullptr && connection_->is_open();
+    }
+
+private:
+    std::optional<Message> parsePublishPacketLocked(const mqtt::PublishPacket& packet) {
         if (packet.qos == mqtt::QoS::AtLeastOnce && packet.packet_id.has_value()) {
             mqtt::PubackPacket puback{};
             puback.packet_id = *packet.packet_id;
@@ -637,6 +715,7 @@ public:
             mqtt::encode_puback(encoded, puback);
             if (!connection_->write(asSpan(encoded))) {
                 disconnectLocked();
+                return std::nullopt;
             }
         } else if (packet.qos == mqtt::QoS::ExactlyOnce && packet.packet_id.has_value()) {
             mqtt::PubrecPacket pubrec{};
@@ -645,6 +724,7 @@ public:
             mqtt::encode_pubrec(encoded, pubrec);
             if (!connection_->write(asSpan(encoded))) {
                 disconnectLocked();
+                return std::nullopt;
             }
         }
 
@@ -670,25 +750,6 @@ public:
         return incomingMessage;
     }
 
-    void ping() {
-        std::lock_guard<std::mutex> lock{transportMutex_};
-        if (!connected_ || connection_ == nullptr) {
-            return;
-        }
-
-        mqtt::WriteBuffer encoded{};
-        mqtt::encode_pingreq(encoded);
-        if (!connection_->write(asSpan(encoded))) {
-            disconnectLocked();
-        }
-    }
-
-    bool isConnected() const {
-        std::lock_guard<std::mutex> lock{transportMutex_};
-        return connected_ && connection_ != nullptr && connection_->is_open();
-    }
-
-private:
     std::optional<mqtt::AnyPacket> readNextPacketLocked(const std::uint32_t timeoutMs) {
         if (connection_ == nullptr) {
             return std::nullopt;
@@ -737,11 +798,13 @@ private:
         connection_.reset();
         connected_ = false;
         streamBuffer_ = mqtt::StreamBuffer{};
+        pendingIncoming_.clear();
     }
 
     mutable std::mutex transportMutex_{};
     std::unique_ptr<mqtt::TcpConnection> connection_{};
     mqtt::StreamBuffer streamBuffer_{};
+    std::deque<Message> pendingIncoming_{};
     bool connected_{false};
     std::uint16_t nextPacketId_{1U};
 };

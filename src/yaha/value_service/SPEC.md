@@ -50,6 +50,11 @@ for FileStore-backed value-map lifecycle.
 	- reloads from FileStore when payload `keyPath` matches `valuesKeyPath`
 	- on successful reload publishes full retained replay
 	- each reload replay message carries reason `reloaded after valuestore file change`
+- Subscription synchronization (mandatory invariant):
+	- the broker subscription set for `<key>/set` topics must always match the current in-memory key set exactly
+	- whenever keys change (startup load, monitor-triggered reload, or runtime key add/remove/change), subscriptions must be updated immediately to the new key set
+	- stale subscriptions for removed keys must be removed, and missing subscriptions for new keys must be added
+	- this is mandatory in every case; no delayed or best-effort synchronization is allowed
 - Message logging:
 	- logs every inbound message to `std::cout` before handling (`value_service[in] ...`)
 	- logs every outbound published message to `std::cout` before callback invocation (`value_service[out] ...`)

@@ -68,6 +68,42 @@ private:
     std::vector<yaha::Message> handled_messages_{};
 };
 
+class MutatingSubscriptionsComponent final : public yaha::IMqttComponent {
+public:
+    MutatingSubscriptionsComponent(yaha::SubscriptionMap initialSubscriptions,
+                                   yaha::SubscriptionMap updatedSubscriptions)
+        : subscriptions_(std::move(initialSubscriptions))
+        , updatedSubscriptions_(std::move(updatedSubscriptions)) {}
+
+    [[nodiscard]] yaha::SubscriptionMap getSubscriptions() const override {
+        return subscriptions_;
+    }
+
+    void handleMessage(const yaha::Message& message) override {
+        (void)message;
+        subscriptions_ = updatedSubscriptions_;
+        handled_messages_ += 1U;
+    }
+
+    void setPublishCallback(yaha::PublishCallback callback) override {
+        publish_callback_ = std::move(callback);
+    }
+
+    void run() override {}
+
+    void close() override {}
+
+    [[nodiscard]] std::size_t handledCount() const noexcept {
+        return handled_messages_;
+    }
+
+private:
+    mutable yaha::SubscriptionMap subscriptions_;
+    yaha::SubscriptionMap updatedSubscriptions_;
+    yaha::PublishCallback publish_callback_{};
+    std::size_t handled_messages_{0U};
+};
+
 struct TransportState {
     std::atomic<int> connect_calls{0};
     std::atomic<int> disconnect_calls{0};
@@ -192,6 +228,29 @@ TEST_CASE("disconnect_triggers_reconnect_and_resubscribe", "[mqtt_client]") {
 
     REQUIRE(state.connect_calls.load() >= 2);
     REQUIRE(state.subscribe_calls.load() >= 2);
+}
+
+TEST_CASE("handled_inbound_message_resyncs_subscription_diff", "[mqtt_client]") {
+    TransportState state{};
+    state.inbox.emplace_back("home/kitchen/state", std::string{"sync"});
+
+    MutatingSubscriptionsComponent component{{
+        {"home/+/state", yaha::Qos::AtLeastOnce},
+    }, {
+        {"home/+/state", yaha::Qos::AtLeastOnce},
+        {"sensor/#", yaha::Qos::AtMostOnce},
+    }};
+
+    yaha::YahaMqttClient::Config config{};
+    config.loopSleep = std::chrono::milliseconds{5};
+
+    yaha::YahaMqttClient client{config, component, makeTransport(state)};
+    client.run();
+    std::this_thread::sleep_for(std::chrono::milliseconds{50});
+    client.close();
+
+    REQUIRE(component.handledCount() == 1U);
+    REQUIRE(state.subscribe_calls.load() == 2);
 }
 
 TEST_CASE("publish_forwards_valid_message_to_transport", "[mqtt_client]") {

@@ -249,14 +249,35 @@ bool YahaMqttClient::ensureConnected() {
 }
 
 void YahaMqttClient::replaySubscriptions() {
-    const SubscriptionMap subscriptions = component_.getSubscriptions();
-    for (const auto& [topic_filter, qos_level] : subscriptions) {
-        transport_.subscribe(topic_filter, qos_level);
-        traceLifecycle("  broker: subscribe " + topic_filter + " qos=" + qosToText(qos_level));
+    resyncSubscriptions();
+}
+
+void YahaMqttClient::resyncSubscriptions() {
+    const SubscriptionMap desiredSubscriptions = component_.getSubscriptions();
+    SubscriptionMap currentSubscriptions{};
+    {
+        std::lock_guard<std::mutex> lock{stateMutex_};
+        currentSubscriptions = activeSubscriptions_;
+    }
+
+    for (const auto& [topic_filter, qos_level] : currentSubscriptions) {
+        const auto desiredIt = desiredSubscriptions.find(topic_filter);
+        if (desiredIt == desiredSubscriptions.end() || desiredIt->second != qos_level) {
+            traceLifecycle("  broker: unsubscribe " + topic_filter);
+            transport_.unsubscribe(topic_filter);
+        }
+    }
+
+    for (const auto& [topic_filter, qos_level] : desiredSubscriptions) {
+        const auto currentIt = currentSubscriptions.find(topic_filter);
+        if (currentIt == currentSubscriptions.end() || currentIt->second != qos_level) {
+            transport_.subscribe(topic_filter, qos_level);
+            traceLifecycle("  broker: subscribe " + topic_filter + " qos=" + qosToText(qos_level));
+        }
     }
 
     std::lock_guard<std::mutex> lock{stateMutex_};
-    activeSubscriptions_ = subscriptions;
+    activeSubscriptions_ = desiredSubscriptions;
 }
 
 void YahaMqttClient::unsubscribeAll() {
@@ -289,6 +310,7 @@ void YahaMqttClient::processIncoming() {
 
     traceMessage("recv", *maybe_message);
     component_.handleMessage(*maybe_message);
+    resyncSubscriptions();
 }
 
 void YahaMqttClient::processKeepAlive() {
