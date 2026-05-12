@@ -66,6 +66,12 @@ Implements a standalone key/value HTTP store with MQTT monitoring publishes.
 - Monitoring trigger sources:
   - successful HTTP `POST` write (`source=http-post`),
   - filesystem watcher create/change/delete (`source=filesystem-watch`).
+- Message logging:
+  - logs every inbound MQTT message to `std::cout` before handling (`file_store[in] ...`)
+  - logs every outbound monitoring message to `std::cout` before callback invocation (`file_store[out] ...`)
+- File I/O logging:
+  - logs read/write lifecycle to `std::cout` (`file_store[file-io] ...`)
+  - includes operation (`read|write`), key path, encoded filename, status (`start|ok|error`), and optional error detail
 
 ## Files
 

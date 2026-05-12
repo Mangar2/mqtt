@@ -8,6 +8,7 @@
 #include <cctype>
 #include <format>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <system_error>
 #include <utility>
@@ -40,6 +41,57 @@ std::string joinTopic(const std::string& prefix, const std::string& suffix) {
         return prefix + suffix;
     }
     return std::format("{}/{}", prefix, suffix);
+}
+
+[[nodiscard]] std::string valueToLogText(const Value& messageValue) {
+    if (std::holds_alternative<std::string>(messageValue)) {
+        return std::get<std::string>(messageValue);
+    }
+
+    std::ostringstream textStream;
+    textStream << std::get<double>(messageValue);
+    return textStream.str();
+}
+
+[[nodiscard]] std::string qosToLogText(const Qos qosValue) {
+    switch (qosValue) {
+        case Qos::AtMostOnce:
+            return "0";
+        case Qos::AtLeastOnce:
+            return "1";
+        case Qos::ExactlyOnce:
+            return "2";
+    }
+
+    return "unknown";
+}
+
+void logMessage(const char* directionText, const Message& message) {
+    std::cout << "file_store[" << directionText << "] topic=" << message.topic()
+              << " qos=" << qosToLogText(message.qos())
+              << " retain=" << (message.retain() ? "1" : "0")
+              << " value=" << valueToLogText(message.value());
+
+    if (!message.reason().empty()) {
+        std::cout << " reason=\"" << message.reason().front().message << '"';
+    }
+
+    std::cout << '\n' << std::flush;
+}
+
+void logFileIo(const std::string& operationText,
+               const std::string& keyPath,
+               const std::string& filename,
+               const std::string& statusText,
+               const std::string& detailText = "") {
+    std::cout << "file_store[file-io] op=" << operationText
+              << " keyPath=" << keyPath
+              << " file=" << filename
+              << " status=" << statusText;
+    if (!detailText.empty()) {
+        std::cout << " detail=\"" << detailText << '"';
+    }
+    std::cout << '\n' << std::flush;
 }
 
 void applyCorsHeaders(httplib::Response& response,
@@ -78,7 +130,7 @@ SubscriptionMap FileStore::getSubscriptions() const {
 }
 
 void FileStore::handleMessage(const Message& message) {
-    (void)message;
+    logMessage("in", message);
 }
 
 void FileStore::setPublishCallback(PublishCallback callback) {
@@ -258,6 +310,7 @@ FileStore::WritePayloadResult FileStore::writeKeyPayload(
     const StoredPayload& payload) const {
     WritePayloadResult result{};
     result.filename = encodeKeyPathToFilename(keyPath);
+    logFileIo("write", keyPath, result.filename, "start");
     const std::filesystem::path basePath = config_.directory / result.filename;
     const std::filesystem::path tempPath = config_.directory / (result.filename + ".tmp");
 
@@ -265,6 +318,7 @@ FileStore::WritePayloadResult FileStore::writeKeyPayload(
     std::filesystem::create_directories(config_.directory, pathError);
     if (pathError) {
         result.errorText = "failed to create directory";
+        logFileIo("write", keyPath, result.filename, "error", result.errorText);
         return result;
     }
 
@@ -282,6 +336,7 @@ FileStore::WritePayloadResult FileStore::writeKeyPayload(
         std::ofstream output{tempPath, std::ios::binary | std::ios::trunc};
         if (!output.is_open()) {
             result.errorText = "failed to open temp file";
+            logFileIo("write", keyPath, result.filename, "error", result.errorText);
             return result;
         }
         output << (payload.isJson ? 'J' : 'T') << '\n';
@@ -289,6 +344,7 @@ FileStore::WritePayloadResult FileStore::writeKeyPayload(
         output.flush();
         if (!output.good()) {
             result.errorText = "failed to write payload";
+            logFileIo("write", keyPath, result.filename, "error", result.errorText);
             return result;
         }
     }
@@ -300,6 +356,7 @@ FileStore::WritePayloadResult FileStore::writeKeyPayload(
         std::filesystem::rename(tempPath, basePath, pathError);
         if (pathError) {
             result.errorText = "failed to replace file";
+            logFileIo("write", keyPath, result.filename, "error", result.errorText);
             return result;
         }
     }
@@ -331,15 +388,19 @@ FileStore::WritePayloadResult FileStore::writeKeyPayload(
     }
 
     result.success = true;
+    logFileIo("write", keyPath, result.filename, "ok");
     return result;
 }
 
 FileStore::ReadPayloadResult FileStore::readKeyPayload(const std::string& keyPath) const {
     ReadPayloadResult result{};
-    const std::filesystem::path path = config_.directory / encodeKeyPathToFilename(keyPath);
+    const std::string filename = encodeKeyPathToFilename(keyPath);
+    logFileIo("read", keyPath, filename, "start");
+    const std::filesystem::path path = config_.directory / filename;
     std::ifstream input{path, std::ios::binary};
     if (!input.is_open()) {
         result.errorText = "file not found";
+        logFileIo("read", keyPath, filename, "error", result.errorText);
         return result;
     }
 
@@ -354,11 +415,13 @@ FileStore::ReadPayloadResult FileStore::readKeyPayload(const std::string& keyPat
             result.responseJson = std::format("\"{}\"", jsonEscape(body));
         }
         result.success = true;
+        logFileIo("read", keyPath, filename, "ok");
         return result;
     }
 
     result.responseJson = std::format("\"{}\"", jsonEscape(stored));
     result.success = true;
+    logFileIo("read", keyPath, filename, "ok");
     return result;
 }
 
@@ -417,8 +480,11 @@ void FileStore::publishMonitoring(const std::string& eventType,
     }
     payload += "}";
 
+    Message monitoringMessage{topic, payload, config_.monitoring.qos, config_.monitoring.retain};
+    logMessage("out", monitoringMessage);
+
     try {
-        callback(Message{topic, payload, config_.monitoring.qos, config_.monitoring.retain});
+        callback(monitoringMessage);
     } catch (...) {
     }
 }
