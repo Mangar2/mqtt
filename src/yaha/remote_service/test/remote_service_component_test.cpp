@@ -161,6 +161,53 @@ TEST_CASE("remote_service_mapping_payload_parser_duplicate_path_keeps_first_and_
     REQUIRE(errorStream.str().find("duplicate path") != std::string::npos);
 }
 
+TEST_CASE("remote_service_mapping_payload_parser_accepts_unknown_nested_fields", "[remote_service]") {
+    const std::string payloadText =
+        R"({"meta":{"v":1,"arr":[1,-2.5,true,false,null,{"inner":"x"}]},"services":[{"path":"/light","devices":{"kitchen":"house/kitchen/light/set"},"extraObject":{"x":1},"extraArray":[1,2,3],"extraBool":true,"extraNull":null,"reason":"switch\nnow"}]})";
+
+    yaha::RemoteServiceMap parsed{};
+    std::string errorMessage{};
+
+    REQUIRE(yaha::tryParseRemoteServiceMappingPayload(payloadText, parsed, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(parsed.size() == 1U);
+    REQUIRE(parsed.contains("/light"));
+    REQUIRE(parsed.at("/light").devices.at("kitchen") == "house/kitchen/light/set");
+}
+
+TEST_CASE("remote_service_mapping_payload_parser_rejects_service_field_without_separator", "[remote_service]") {
+    const std::string payloadText =
+        R"({"services":[{"path" "/light","devices":{"kitchen":"house/kitchen/light/set"}}]})";
+
+    yaha::RemoteServiceMap parsed{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(yaha::tryParseRemoteServiceMappingPayload(payloadText, parsed, errorMessage));
+    REQUIRE(errorMessage == "service field must contain ':'");
+}
+
+TEST_CASE("remote_service_mapping_payload_parser_rejects_non_array_services", "[remote_service]") {
+    const std::string payloadText =
+        R"({"services":{"path":"/light"}})";
+
+    yaha::RemoteServiceMap parsed{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(yaha::tryParseRemoteServiceMappingPayload(payloadText, parsed, errorMessage));
+    REQUIRE(errorMessage == "services must be array");
+}
+
+TEST_CASE("remote_service_mapping_payload_parser_rejects_invalid_service_devices_shape", "[remote_service]") {
+    const std::string payloadText =
+        R"({"services":[{"path":"/light","devices":["not-object"]}]})";
+
+    yaha::RemoteServiceMap parsed{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(yaha::tryParseRemoteServiceMappingPayload(payloadText, parsed, errorMessage));
+    REQUIRE(errorMessage == "service.devices must be object<string,string>");
+}
+
 TEST_CASE("remote_service_monitor_key_path_parser_extracts_key_path", "[remote_service]") {
     const auto keyPath = yaha::tryExtractFileStoreMonitorKeyPath(
         R"({"changeType":"changed","keyPath":"/remoteservice/mapping"})");

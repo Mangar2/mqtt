@@ -7,6 +7,7 @@
 #include <charconv>
 #include <cstdlib>
 #include <format>
+#include <iostream>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -173,6 +174,28 @@ constexpr std::string_view k_browserReasonMessage{"Request by browser"};
     outputStream << ']';
 
     return outputStream.str();
+}
+
+void logOutboundPublishRequest(const HttpMqttRequestData& requestData) {
+    std::cout << "http_mqtt_interface[out] publish";
+
+    if (const auto versionValue = tryReadHeaderValue(requestData.headers, "version"); versionValue.has_value()) {
+        std::cout << " version=" << *versionValue;
+    }
+
+    if (const auto qosValue = tryReadHeaderValue(requestData.headers, "qos"); qosValue.has_value()) {
+        std::cout << " qos=" << *qosValue;
+    }
+
+    if (const auto retainValue = tryReadHeaderValue(requestData.headers, "retain"); retainValue.has_value()) {
+        std::cout << " retain=" << *retainValue;
+    }
+
+    if (const auto packetIdValue = tryReadHeaderValue(requestData.headers, "packetid"); packetIdValue.has_value()) {
+        std::cout << " packetid=" << *packetIdValue;
+    }
+
+    std::cout << " payload=" << requestData.payload << '\n' << std::flush;
 }
 
 [[nodiscard]] bool tryFindObjectRange(
@@ -1038,6 +1061,8 @@ void validatePacketIdMatch(
             validateHeaderEquals(resultInput, "packet", "pubrec", "publish result");
         }
     };
+
+    logOutboundPublishRequest(requestData);
 
     return requestData;
 }

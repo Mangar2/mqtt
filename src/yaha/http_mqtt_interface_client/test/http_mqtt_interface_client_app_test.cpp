@@ -5,6 +5,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <thread>
 #include <string>
 
@@ -261,8 +262,10 @@ TEST_CASE("load_http_mqtt_interface_client_config_reports_invalid_legacy_flag", 
     std::filesystem::remove(iniPath);
 }
 
-TEST_CASE("run_http_mqtt_interface_client_serves_endpoints_and_stops_on_signal", "[http_mqtt_interface_client]") {
+TEST_CASE("run_http_mqtt_interface_client_serves_endpoints_logs_publish_and_stops_on_signal", "[http_mqtt_interface_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousOutputBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
 
     yaha::HttpMqttInterfaceClientConfig config{};
     config.listenerHost = "127.0.0.1";
@@ -281,6 +284,15 @@ TEST_CASE("run_http_mqtt_interface_client_serves_endpoints_and_stops_on_signal",
 
     std::raise(SIGTERM);
     serverThread.join();
+    std::cout.rdbuf(previousOutputBuffer);
+
+    const std::string outputText = capturedOutput.str();
+    REQUIRE(outputText.find("http_mqtt_interface_client[in] method=PUT endpoint=/publish version=1.0") !=
+        std::string::npos);
+    REQUIRE(outputText.find("http_mqtt_interface_client[in] method=POST endpoint=/publish") !=
+        std::string::npos);
+    REQUIRE(outputText.find("http_mqtt_interface_client[in] method=POST endpoint=/publish.php") !=
+        std::string::npos);
     REQUIRE(exitCode == 0);
 }
 

@@ -42,6 +42,11 @@ Starts `httplib::Server` and wires handlers:
 - `POST /publish.php` maps through phase-6 compatibility profile
 - `OPTIONS /publish`, `OPTIONS /publish.php`, and `OPTIONS /pubrel` return CORS preflight `204`
 
+Publish ingress logging:
+
+- every handled publish request writes one stdout line before dispatch
+- logged requests include the request method, endpoint, and `version` header when present
+
 CORS headers on publish/pubrel responses:
 
 - `Access-Control-Allow-Origin: *`

@@ -535,3 +535,19 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
 
     fake_broker.stop();
 }
+
+TEST_CASE("broker_transport_noop_operations_when_disconnected", "[mqtt_client]") {
+    yaha::YahaMqttClient::Transport transport = yaha::makeBrokerTransport();
+
+    CHECK_FALSE(transport.isConnected());
+    CHECK_FALSE(transport.pollIncoming().has_value());
+
+    transport.publish(yaha::Message{"noop/topic", std::string{"x"}, yaha::Qos::AtMostOnce, false});
+    transport.subscribe("noop/#", yaha::Qos::AtLeastOnce);
+    transport.unsubscribe("noop/#");
+    transport.ping();
+    transport.disconnect();
+
+    CHECK_FALSE(transport.isConnected());
+    CHECK_FALSE(transport.pollIncoming().has_value());
+}

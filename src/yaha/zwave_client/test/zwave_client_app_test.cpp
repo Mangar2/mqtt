@@ -84,6 +84,149 @@ TEST_CASE("load_zwave_config_rejects_invalid_device_row", "[zwave_client]") {
     CHECK(errorMessage.find("nodeId must be in range 1..255") != std::string::npos);
 }
 
+TEST_CASE("load_zwave_config_rejects_invalid_device_field_count", "[zwave_client]") {
+    const yaha::IniDocument document = loadIni(
+        "[zwave]\n"
+        "usbDevice=/dev/ttyUSB0\n"
+        "usbTopic=home/zwave/controller\n"
+        "device=home/lamp\n");
+
+    yaha::ZwaveConfig config{};
+    std::string errorMessage{};
+
+    const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
+
+    CHECK_FALSE(loaded);
+    CHECK(errorMessage.find("invalid zwave.device entry") != std::string::npos);
+}
+
+TEST_CASE("load_zwave_config_rejects_empty_device_topic", "[zwave_client]") {
+    const yaha::IniDocument document = loadIni(
+        "[zwave]\n"
+        "usbDevice=/dev/ttyUSB0\n"
+        "usbTopic=home/zwave/controller\n"
+        "device=|7\n");
+
+    yaha::ZwaveConfig config{};
+    std::string errorMessage{};
+
+    const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
+
+    CHECK_FALSE(loaded);
+    CHECK(errorMessage.find("topic must not be empty") != std::string::npos);
+}
+
+TEST_CASE("load_zwave_config_rejects_invalid_optional_numeric_fields", "[zwave_client]") {
+    {
+        const yaha::IniDocument document = loadIni(
+            "[zwave]\n"
+            "usbDevice=/dev/ttyUSB0\n"
+            "usbTopic=home/zwave/controller\n"
+            "device=home/lamp|7|bad\n");
+
+        yaha::ZwaveConfig config{};
+        std::string errorMessage{};
+        CHECK_FALSE(yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage));
+        CHECK(errorMessage.find("classId") != std::string::npos);
+    }
+
+    {
+        const yaha::IniDocument document = loadIni(
+            "[zwave]\n"
+            "usbDevice=/dev/ttyUSB0\n"
+            "usbTopic=home/zwave/controller\n"
+            "device=home/lamp|7|37|300\n");
+
+        yaha::ZwaveConfig config{};
+        std::string errorMessage{};
+        CHECK_FALSE(yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage));
+        CHECK(errorMessage.find("instance") != std::string::npos);
+    }
+
+    {
+        const yaha::IniDocument document = loadIni(
+            "[zwave]\n"
+            "usbDevice=/dev/ttyUSB0\n"
+            "usbTopic=home/zwave/controller\n"
+            "device=home/lamp|7|37|1|300\n");
+
+        yaha::ZwaveConfig config{};
+        std::string errorMessage{};
+        CHECK_FALSE(yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage));
+        CHECK(errorMessage.find("index") != std::string::npos);
+    }
+}
+
+TEST_CASE("load_zwave_config_rejects_invalid_qos_and_retain_values", "[zwave_client]") {
+    {
+        const yaha::IniDocument document = loadIni(
+            "[zwave]\n"
+            "subscribeQoS=9\n"
+            "usbDevice=/dev/ttyUSB0\n"
+            "usbTopic=home/zwave/controller\n"
+            "device=home/lamp|7\n");
+
+        yaha::ZwaveConfig config{};
+        std::string errorMessage{};
+        CHECK_FALSE(yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage));
+        CHECK(errorMessage.find("zwave.subscribeQoS") != std::string::npos);
+    }
+
+    {
+        const yaha::IniDocument document = loadIni(
+            "[zwave]\n"
+            "qos=9\n"
+            "usbDevice=/dev/ttyUSB0\n"
+            "usbTopic=home/zwave/controller\n"
+            "device=home/lamp|7\n");
+
+        yaha::ZwaveConfig config{};
+        std::string errorMessage{};
+        CHECK_FALSE(yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage));
+        CHECK(errorMessage.find("zwave.qos") != std::string::npos);
+    }
+
+    {
+        const yaha::IniDocument document = loadIni(
+            "[zwave]\n"
+            "retain=maybe\n"
+            "usbDevice=/dev/ttyUSB0\n"
+            "usbTopic=home/zwave/controller\n"
+            "device=home/lamp|7\n");
+
+        yaha::ZwaveConfig config{};
+        std::string errorMessage{};
+        CHECK_FALSE(yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage));
+        CHECK(errorMessage.find("zwave.retain") != std::string::npos);
+    }
+}
+
+TEST_CASE("load_zwave_config_requires_usb_settings", "[zwave_client]") {
+    {
+        const yaha::IniDocument document = loadIni(
+            "[zwave]\n"
+            "usbTopic=home/zwave/controller\n"
+            "device=home/lamp|7\n");
+
+        yaha::ZwaveConfig config{};
+        std::string errorMessage{};
+        CHECK_FALSE(yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage));
+        CHECK(errorMessage.find("zwave.usbDevice") != std::string::npos);
+    }
+
+    {
+        const yaha::IniDocument document = loadIni(
+            "[zwave]\n"
+            "usbDevice=/dev/ttyUSB0\n"
+            "device=home/lamp|7\n");
+
+        yaha::ZwaveConfig config{};
+        std::string errorMessage{};
+        CHECK_FALSE(yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage));
+        CHECK(errorMessage.find("zwave.usbTopic") != std::string::npos);
+    }
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("load_zwave_runtime_config_combines_zwave_and_mqtt_sections", "[zwave_client]") {
     const yaha::IniDocument document = loadIni(

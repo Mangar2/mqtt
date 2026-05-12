@@ -2,7 +2,9 @@
 
 #include "yaha/http_mqtt_interface/http_mqtt_interface_operations.h"
 
+#include <iostream>
 #include <stdexcept>
+#include <sstream>
 #include <string>
 
 namespace {
@@ -166,6 +168,15 @@ void verifyPhase7Disconnect(const yaha::HttpMqttInterfaces& interfaces) {
     REQUIRE(onDisconnectResult.payload.empty());
 }
 
+[[nodiscard]] bool outboundPublishLogContainsExpectedDetails(const std::string& outputText) {
+    return outputText.find("http_mqtt_interface[out] publish") != std::string::npos &&
+        outputText.find("version=1.0") != std::string::npos &&
+        outputText.find("qos=1") != std::string::npos &&
+        outputText.find("retain=0") != std::string::npos &&
+        outputText.find("packetid=7") != std::string::npos &&
+        outputText.find("topic/demo") != std::string::npos;
+}
+
 } // namespace
 
 TEST_CASE("connect_v1_request_sets_headers_and_keepalive_default", "[http_mqtt_interface]") {
@@ -276,6 +287,25 @@ TEST_CASE("publish_v1_request_and_result_check_qos1", "[http_mqtt_interface]") {
     );
 
     REQUIRE_NOTHROW(requestData.resultCheck(response));
+}
+
+TEST_CASE("publish_v1_request_logs_outbound_message", "[http_mqtt_interface]") {
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
+    const yaha::HttpMqttRequestData requestData = interfaces.publish(
+        "1.0",
+        yaha::HttpMqttPublishOptions{
+            .token = "token-a",
+            .message = yaha::Message{"topic/demo", std::string{"value"}, yaha::Qos::AtLeastOnce, false},
+            .dup = false,
+            .packetId = 7U});
+
+    std::cout.rdbuf(previousBuffer);
+
+    REQUIRE(requestData.headers.at("version") == "1.0");
+    REQUIRE(outboundPublishLogContainsExpectedDetails(capturedOutput.str()));
 }
 
 TEST_CASE("publish_v1_request_preserves_raw_payload_without_rebuild", "[http_mqtt_interface]") {

@@ -117,6 +117,7 @@ Implemented behavior highlights:
 - Connect request forces `keepAlive=0` when option is absent.
 - Connect result validation enforces status, headers, payload shape, present flag, mqttcode rules, and token tuple.
 - Publish request forwards `Message.rawPayload()` unchanged when present; otherwise it serializes token plus `message` fields (`topic`, `value`, `reason`) with qos/dup/retain headers.
+- Publish request logs the broker-bound request on stdout before returning the request data, including version, qos, retain, packetid when available, and the serialized payload.
 - Publish result validation enforces qos-dependent ack packet rules and optional packetid echo.
 - Pubrel response returns `packet=pubcomp` and optional packetid echo.
 - Subscribe and unsubscribe request builders include packetid headers and topic maps.

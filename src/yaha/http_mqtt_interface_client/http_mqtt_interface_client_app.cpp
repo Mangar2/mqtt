@@ -50,6 +50,18 @@ void applyHttpMqttResult(const HttpMqttResult& result, httplib::Response& respon
     response.set_content(result.payload, "application/json");
 }
 
+void logIncomingPublishRequest(const httplib::Request& request, const std::string_view endpoint) {
+    std::cout << "http_mqtt_interface_client[in] method=" << request.method
+              << " endpoint=" << endpoint;
+
+    const auto versionIterator = request.headers.find("version");
+    if (versionIterator != request.headers.end()) {
+        std::cout << " version=" << versionIterator->second;
+    }
+
+    std::cout << '\n' << std::flush;
+}
+
 HttpMqttHeaders collectHeaders(const httplib::Request& request) {
     HttpMqttHeaders headers{};
     for (const auto& [headerName, headerValue] : request.headers) {
@@ -181,6 +193,7 @@ int runHttpMqttInterfaceClient(const HttpMqttInterfaceClientConfig& configInput)
 
     server.Put(k_publishEndpoint.data(),
                [&interfaces](const httplib::Request& request, httplib::Response& response) {
+                   logIncomingPublishRequest(request, k_publishEndpoint);
                    applyHttpMqttResult(interfaces.onPublish(collectHeaders(request)), response);
                });
 
@@ -193,6 +206,7 @@ int runHttpMqttInterfaceClient(const HttpMqttInterfaceClientConfig& configInput)
                 [&interfaces, &compatibilityConfig](
                     const httplib::Request& request,
                     httplib::Response& response) {
+                    logIncomingPublishRequest(request, k_publishEndpoint);
                     applyHttpMqttResult(
                         handleCompatibilityPublish(
                             interfaces,
@@ -206,6 +220,7 @@ int runHttpMqttInterfaceClient(const HttpMqttInterfaceClientConfig& configInput)
                 [&interfaces, &compatibilityConfig](
                     const httplib::Request& request,
                     httplib::Response& response) {
+                    logIncomingPublishRequest(request, k_publishPhpEndpoint);
                     applyHttpMqttResult(
                         handleCompatibilityPublish(
                             interfaces,

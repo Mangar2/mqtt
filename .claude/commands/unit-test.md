@@ -47,6 +47,7 @@ python test/run_coverage_clients.py
 
 Each script runs in sequence: (1) build debug, (2) run scoped tests, (3) build coverage binary, (4) measure scoped coverage.  
 Stops immediately on failure and prints a focused error summary.  
+During the test and coverage phases, show live progress updates in the form `progress: 17/444 tests` so long runs stay visible.  
 On success prints a compact table — tests passed and coverage per production file.  
 Full output goes to `test/run_broker.log` or `test/run_clients.log` — read it only when diagnosing a failure.
 

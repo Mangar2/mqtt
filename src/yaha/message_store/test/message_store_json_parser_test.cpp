@@ -154,4 +154,44 @@ TEST_CASE("message_store_json_parser_parses_escaped_topic_sequences", "[message_
 
     REQUIRE(parseSucceeded);
     REQUIRE(request.topicPrefix.find("home") == 0U);
+
+}
+TEST_CASE("message_store_json_parser_handles_deep_nested_objects", "[message_store]") {
+    yaha::message_store_json::SensorPostRequest request{};
+    const bool parseSucceeded = yaha::message_store_json::parseSensorPostBody(
+        "{"
+        "\"topic\":\"home\","
+        "\"outer\":{\"middle\":{\"inner\":{\"deep\":\"value\"}}}"
+        "}",
+        request);
+
+    REQUIRE(parseSucceeded);
+    REQUIRE(request.topicPrefix == "home");
+}
+
+TEST_CASE("message_store_json_parser_rejects_unsupported_value_types_in_snapshot", "[message_store]") {
+    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+    const bool parseSucceeded = yaha::message_store_json::parseSnapshotBody(
+        "["
+        "{\"topic\":\"bad/bool\",\"value\":false},"
+        "{\"topic\":\"bad/object\",\"value\":{}},"
+        "{\"topic\":\"bad/array\",\"value\":[]}"
+        "]",
+        nodes);
+
+    REQUIRE_FALSE(parseSucceeded);
+    REQUIRE(nodes.empty());
+}
+
+TEST_CASE("message_store_json_parser_handles_complex_escape_sequences", "[message_store]") {
+    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+    const bool parseSucceeded = yaha::message_store_json::parseSnapshotBody(
+        "["
+        "{\"topic\":\"esc\",\"value\":\"\\\"quote\\\" and \\\\backslash\"},"
+        "{\"topic\":\"newline\",\"value\":\"line1\\nline2\\rline3\\ttab\"}"
+        "]",
+        nodes);
+
+    REQUIRE(parseSucceeded);
+    REQUIRE(nodes.size() == 2U);
 }

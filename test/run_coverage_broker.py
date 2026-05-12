@@ -61,6 +61,8 @@ CLIENT_SOURCE_PREFIXES = (
 CTEST_TOTAL_TIMEOUT_SECONDS = int(os.environ.get("MQTT_CTEST_TOTAL_TIMEOUT", "1800"))
 CTEST_NO_OUTPUT_TIMEOUT_SECONDS = int(os.environ.get("MQTT_CTEST_NO_OUTPUT_TIMEOUT", "300"))
 COVERAGE_TEST_TIMEOUT_SECONDS = int(os.environ.get("MQTT_COVERAGE_TEST_TIMEOUT", "600"))
+PER_TEST_TIMEOUT_SECONDS = int(os.environ.get("MQTT_PER_TEST_TIMEOUT", "60"))
+SLOW_TEST_WARNING_SECONDS = float(os.environ.get("MQTT_SLOW_TEST_WARNING", "2"))
 
 _log_fh = None
 _run_id = None
@@ -320,32 +322,52 @@ def _write_selection_file(test_names: list[str]) -> None:
             fh.write("\n")
 
 
-def _run_selected_tests(label: str, binary: Path, test_names: list[str], env: dict | None = None, total_timeout_seconds: int | None = None) -> str:
-    _write_selection_file(test_names)
-    command = [str(binary), "--input-file", str(SELECTION_FILE), "--reporter", "compact", "--colour-mode", "none"]
-    rc, output = _run_captured_live(
-        command,
-        env=env,
-        total_timeout_seconds=total_timeout_seconds,
-        no_output_timeout_seconds=CTEST_NO_OUTPUT_TIMEOUT_SECONDS,
-    )
-    if rc == 0:
-        return output
+def _catch2_exact_filter(name: str) -> str:
+    escaped = name.replace("\\", "\\\\").replace('"', '\\"').replace(",", "\\,")
+    return f'"{escaped}"'
 
-    print(f"\n[FAILED] {label}")
-    if rc == 124:
-        print(f"  timeout : {total_timeout_seconds}s")
-    failed = [
-        line.strip() for line in output.splitlines()
-        if re.search(r"failed|FAILED|error", line, re.IGNORECASE)
-    ]
-    if failed:
-        print("\n  --- failed tests ---")
-        for line in failed[:40]:
-            print(f"  {line}")
-    print(f"\n  Full log: {LOG_FILE}")
-    _close_log()
-    sys.exit(rc)
+
+def _run_selected_tests(label: str, binary: Path, test_names: list[str], env: dict | None = None, total_timeout_seconds: int | None = None) -> str:
+    combined_output: list[str] = []
+
+    for index, test_name in enumerate(test_names, start=1):
+        if index % 50 == 0:
+            print(f"      progress: {index}/{len(test_names)} tests")
+
+        command = [
+            str(binary),
+            _catch2_exact_filter(test_name),
+            "--reporter",
+            "compact",
+            "--colour-mode",
+            "none",
+        ]
+        rc, output = _run_captured(
+            command,
+            env=env,
+            timeout_seconds=PER_TEST_TIMEOUT_SECONDS,
+        )
+        combined_output.append(output)
+
+        if rc != 0:
+            print(f"\n[FAILED] {label}")
+            print(f"  command : {' '.join(str(c) for c in command)}")
+            print(f"  exit    : {rc}")
+            if rc == 124:
+                print(f"  timeout : {PER_TEST_TIMEOUT_SECONDS}s")
+            failed = [
+                line.strip() for line in output.splitlines()
+                if re.search(r"failed|FAILED|error", line, re.IGNORECASE)
+            ]
+            if failed:
+                print("\n  --- failed tests ---")
+                for line in failed[:40]:
+                    print(f"  {line}")
+            print(f"\n  Full log: {LOG_FILE}")
+            _close_log()
+            sys.exit(rc)
+
+    return "".join(combined_output)
 
 
 def _default_coverage_targets() -> list[str]:
