@@ -1,6 +1,8 @@
 #include "yaha/http_mqtt_interface_client/http_mqtt_interface_client_app.h"
 
 #include "yaha/http_mqtt_interface/http_mqtt_interface_operations.h"
+#include "yaha/mqtt_client/broker_transport.h"
+#include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <httplib.h>
 
@@ -8,7 +10,10 @@
 #include <csignal>
 #include <iostream>
 #include <map>
+#include <mutex>
 #include <optional>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -31,6 +36,45 @@ constexpr std::string_view k_publishCorsMethods{"POST, PUT, OPTIONS"};
 constexpr std::string_view k_publishCorsHeaders{"Content-Type, Authorization, X-Requested-With"};
 
 std::atomic<httplib::Server*> g_activeServer{nullptr};
+
+[[nodiscard]] std::string messageValueToText(const Value& messageValue) {
+    if (std::holds_alternative<std::string>(messageValue)) {
+        return std::get<std::string>(messageValue);
+    }
+
+    std::ostringstream outputStream{};
+    outputStream << std::get<double>(messageValue);
+    return outputStream.str();
+}
+
+[[nodiscard]] std::string qosToText(const Qos qosValue) {
+    switch (qosValue) {
+        case Qos::AtMostOnce:
+            return "0";
+        case Qos::AtLeastOnce:
+            return "1";
+        case Qos::ExactlyOnce:
+            return "2";
+    }
+
+    return "0";
+}
+
+void logBrokerForwardPublish(const Message& message, const HttpMqttRequestData& mappedRequest) {
+    std::cout << "http_mqtt_interface_client[out] broker_publish"
+              << " topic=" << message.topic()
+              << " qos=" << qosToText(message.qos())
+              << " retain=" << (message.retain() ? "1" : "0")
+              << " dup=" << (message.dup() ? "1" : "0");
+
+    const auto packetIdIterator = mappedRequest.headers.find("packetid");
+    if (packetIdIterator != mappedRequest.headers.end()) {
+        std::cout << " packetid=" << packetIdIterator->second;
+    }
+
+    std::cout << " value=" << messageValueToText(message.value())
+              << '\n' << std::flush;
+}
 
 void applyHttpMqttCorsHeaders(httplib::Response& response, const bool includeMaxAge) {
     response.set_header("Access-Control-Allow-Origin", "*");
@@ -98,7 +142,8 @@ HttpMqttResult handleCompatibilityPublish(
     const HttpMqttInterfaces& interfaces,
     const httplib::Request& request,
     const HttpMqttPublishCompatibilityConfig& compatibilityConfig,
-    const std::string_view endpoint) {
+    const std::string_view endpoint,
+    const HttpMqttInterfacePublishToBroker& publishToBroker) {
     const HttpMqttHeaders fields = collectFields(request);
     const HttpMqttPublishCompatibilityRequest compatibilityRequest{
         .method = request.method,
@@ -113,7 +158,11 @@ HttpMqttResult handleCompatibilityPublish(
         interfaces,
         compatibilityRequest,
         compatibilityConfig,
-        [&interfaces](const HttpMqttRequestData& downstreamRequest) {
+        [&interfaces, &publishToBroker](
+            const HttpMqttRequestData& downstreamRequest,
+            const Message& mappedMessage) {
+            logBrokerForwardPublish(mappedMessage, downstreamRequest);
+            publishToBroker(mappedMessage);
             return interfaces.onPublish(downstreamRequest.headers);
         });
 }
@@ -172,10 +221,46 @@ bool tryLoadHttpMqttInterfaceClientConfigFromIni(
         configOutput.useLegacyPhpResponse = *maybeLegacyResponse;
     }
 
+    if (!tryLoadMqttClientConfigFromIni(iniDocument, configOutput.mqttConfig, errorOutput)) {
+        return false;
+    }
+
     return true;
 }
 
 int runHttpMqttInterfaceClient(const HttpMqttInterfaceClientConfig& configInput) {
+    YahaMqttClient::Transport brokerTransport = makeBrokerTransport();
+    std::mutex brokerTransportStateMutex{};
+    bool brokerConnected = false;
+
+    const auto publishToBroker = [&](const Message& message) {
+        std::lock_guard<std::mutex> lock{brokerTransportStateMutex};
+        if (!brokerConnected) {
+            if (!brokerTransport.connect(configInput.mqttConfig)) {
+                throw std::runtime_error{"failed to connect broker transport"};
+            }
+            brokerConnected = true;
+        }
+
+        brokerTransport.publish(message);
+    };
+
+    const int exitCode = runHttpMqttInterfaceClient(configInput, publishToBroker);
+
+    {
+        std::lock_guard<std::mutex> lock{brokerTransportStateMutex};
+        if (brokerConnected) {
+            brokerTransport.disconnect();
+            brokerConnected = false;
+        }
+    }
+
+    return exitCode;
+}
+
+int runHttpMqttInterfaceClient(
+    const HttpMqttInterfaceClientConfig& configInput,
+    const HttpMqttInterfacePublishToBroker& publishToBroker) {
     HttpMqttInterfaces interfaces = makeHttpMqttInterfacesV1();
     const HttpMqttPublishCompatibilityConfig compatibilityConfig{
         .enablePublishPhpAlias = configInput.enablePublishPhpAlias,
@@ -203,7 +288,7 @@ int runHttpMqttInterfaceClient(const HttpMqttInterfaceClientConfig& configInput)
                });
 
     server.Post(k_publishEndpoint.data(),
-                [&interfaces, &compatibilityConfig](
+                [&interfaces, &compatibilityConfig, &publishToBroker](
                     const httplib::Request& request,
                     httplib::Response& response) {
                     logIncomingPublishRequest(request, k_publishEndpoint);
@@ -212,12 +297,13 @@ int runHttpMqttInterfaceClient(const HttpMqttInterfaceClientConfig& configInput)
                             interfaces,
                             request,
                             compatibilityConfig,
-                            k_publishEndpoint),
+                            k_publishEndpoint,
+                            publishToBroker),
                         response);
                 });
 
     server.Post(k_publishPhpEndpoint.data(),
-                [&interfaces, &compatibilityConfig](
+                [&interfaces, &compatibilityConfig, &publishToBroker](
                     const httplib::Request& request,
                     httplib::Response& response) {
                     logIncomingPublishRequest(request, k_publishPhpEndpoint);
@@ -226,7 +312,8 @@ int runHttpMqttInterfaceClient(const HttpMqttInterfaceClientConfig& configInput)
                             interfaces,
                             request,
                             compatibilityConfig,
-                            k_publishPhpEndpoint),
+                            k_publishPhpEndpoint,
+                            publishToBroker),
                         response);
                 });
 
@@ -255,6 +342,8 @@ int runHttpMqttInterfaceClient(const HttpMqttInterfaceClientConfig& configInput)
 
     std::cout << "yahahttpmqttinterfaceclient\n";
     std::cout << "  listener: " << configInput.listenerHost << ':' << configInput.listenerPort << '\n';
+    std::cout << "  mqtt: " << configInput.mqttConfig.brokerHost << ':' << configInput.mqttConfig.brokerPort
+              << " clientId=" << configInput.mqttConfig.clientId << '\n';
     std::cout << "  compatibility: publish.php=" << (configInput.enablePublishPhpAlias ? "on" : "off")
               << " legacyResponse=" << (configInput.useLegacyPhpResponse ? "on" : "off") << '\n';
     std::cout << "  signal: waiting for SIGINT/SIGTERM\n";

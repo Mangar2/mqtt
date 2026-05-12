@@ -40,7 +40,8 @@ struct HttpMqttPublishCompatibilityRequest {
 /**
  * @brief Downstream forwarding callback for mapped publish requests.
  */
-using HttpMqttPublishCompatibilityForwarder = std::function<HttpMqttResult(const HttpMqttRequestData&)>;
+using HttpMqttPublishCompatibilityForwarder =
+	std::function<HttpMqttResult(const HttpMqttRequestData&, const Message&)>;
 
 /**
  * @brief Handles browser publish compatibility mapping and response adaptation.

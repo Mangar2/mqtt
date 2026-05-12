@@ -16,6 +16,7 @@ compatibility mapping without changing the existing broker connector process.
 | `listenerPort` | `std::uint16_t` | `8092` | HTTP bind port |
 | `enablePublishPhpAlias` | `bool` | `true` | Enables `POST /publish.php` compatibility route |
 | `useLegacyPhpResponse` | `bool` | `false` | Enables legacy PHP response conversion mode |
+| `mqttConfig` | `YahaMqttClient::Config` | defaults from MQTT client config | Broker publish transport settings used for compatibility publish forwarding |
 
 ### Function `tryLoadHttpMqttInterfaceClientConfigFromIni(...)`
 
@@ -26,12 +27,23 @@ Reads optional keys from section `[httpMqttInterface]`:
 - `enablePublishPhpAlias`
 - `useLegacyPhpResponse`
 
+Also delegates MQTT client config parsing to the shared MQTT config loader:
+
+- section `[mqtt]` and related MQTT runtime keys accepted by `tryLoadMqttClientConfigFromIni(...)`
+
 Behavior:
 
 - Missing keys keep defaults.
 - Invalid numeric or boolean values return `false` and provide field-specific error text.
 
 ### Function `runHttpMqttInterfaceClient(...)`
+
+Two overloads are provided:
+
+- `runHttpMqttInterfaceClient(config)`
+- `runHttpMqttInterfaceClient(config, publishToBroker)`
+
+The second overload is used for explicit injection/testing of the broker-forward callback.
 
 Starts `httplib::Server` and wires handlers:
 
@@ -47,6 +59,11 @@ Publish ingress logging:
 - every handled publish request writes one stdout line before dispatch
 - logged requests include the request method, endpoint, and `version` header when present
 
+Publish broker-forward logging:
+
+- each compatibility publish emits one log line exactly at the broker-forward call site
+- line contains full MQTT message transport fields: `topic`, `qos`, `retain`, `dup`, optional `packetid`, and `value`
+
 CORS headers on publish/pubrel responses:
 
 - `Access-Control-Allow-Origin: *`
@@ -58,6 +75,8 @@ Compatibility behavior delegates to `handlePublishCompatibilityRequest(...)` wit
 
 - `Native` when `useLegacyPhpResponse=false`
 - `LegacyPhp` when `useLegacyPhpResponse=true`
+
+For compatibility publishes, the mapped `Message` is forwarded through the broker publish callback before the HTTP ack response is generated.
 
 Signal handling:
 

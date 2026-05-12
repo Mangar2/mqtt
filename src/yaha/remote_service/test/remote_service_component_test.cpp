@@ -208,11 +208,87 @@ TEST_CASE("remote_service_mapping_payload_parser_rejects_invalid_service_devices
     REQUIRE(errorMessage == "service.devices must be object<string,string>");
 }
 
+TEST_CASE("remote_service_mapping_payload_parser_rejects_invalid_root_and_service_shapes", "[remote_service]") {
+    yaha::RemoteServiceMap parsed{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(yaha::tryParseRemoteServiceMappingPayload("[]", parsed, errorMessage));
+    REQUIRE(errorMessage == "root payload must be object");
+
+    errorMessage.clear();
+    REQUIRE_FALSE(yaha::tryParseRemoteServiceMappingPayload(R"({"services":[1]})", parsed, errorMessage));
+    REQUIRE(errorMessage == "service entry must be object");
+
+    errorMessage.clear();
+    REQUIRE_FALSE(yaha::tryParseRemoteServiceMappingPayload(R"({"services":[]}) trailing)", parsed, errorMessage));
+    REQUIRE(errorMessage == "payload contains trailing characters");
+}
+
+TEST_CASE("remote_service_mapping_payload_parser_rejects_invalid_qos_reason_and_path", "[remote_service]") {
+    yaha::RemoteServiceMap parsed{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(yaha::tryParseRemoteServiceMappingPayload(
+        R"({"services":[{"path":"/light","devices":{"kitchen":"topic"},"qos":3}]})",
+        parsed,
+        errorMessage));
+    REQUIRE(errorMessage == "service.qos must be integer in range 0..2");
+
+    errorMessage.clear();
+    REQUIRE_FALSE(yaha::tryParseRemoteServiceMappingPayload(
+        R"({"services":[{"path":"/light","devices":{"kitchen":"topic"},"reason":1}]})",
+        parsed,
+        errorMessage));
+    REQUIRE(errorMessage == "service.reason must be string");
+
+    errorMessage.clear();
+    REQUIRE_FALSE(yaha::tryParseRemoteServiceMappingPayload(
+        R"({"services":[{"path":"","devices":{"kitchen":"topic"}}]})",
+        parsed,
+        errorMessage));
+    REQUIRE(errorMessage == "service.path must not be empty");
+}
+
+TEST_CASE("remote_service_mapping_payload_parser_rejects_invalid_root_fields", "[remote_service]") {
+    yaha::RemoteServiceMap parsed{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(yaha::tryParseRemoteServiceMappingPayload(R"({})", parsed, errorMessage));
+    REQUIRE(errorMessage == "services array is required");
+
+    errorMessage.clear();
+    REQUIRE_FALSE(yaha::tryParseRemoteServiceMappingPayload(
+        R"({"meta":, "services":[]})",
+        parsed,
+        errorMessage));
+    REQUIRE(errorMessage == "invalid JSON value for root field 'meta'");
+}
+
 TEST_CASE("remote_service_monitor_key_path_parser_extracts_key_path", "[remote_service]") {
     const auto keyPath = yaha::tryExtractFileStoreMonitorKeyPath(
         R"({"changeType":"changed","keyPath":"/remoteservice/mapping"})");
     REQUIRE(keyPath.has_value());
     REQUIRE(*keyPath == "/remoteservice/mapping");
+}
+
+TEST_CASE("remote_service_monitor_key_path_parser_rejects_invalid_payloads", "[remote_service]") {
+    REQUIRE_FALSE(yaha::tryExtractFileStoreMonitorKeyPath("[]").has_value());
+    REQUIRE_FALSE(yaha::tryExtractFileStoreMonitorKeyPath(R"({"keyPath":123})").has_value());
+    REQUIRE_FALSE(yaha::tryExtractFileStoreMonitorKeyPath(R"({"keyPath" "x"})").has_value());
+    REQUIRE_FALSE(yaha::tryExtractFileStoreMonitorKeyPath(R"({"unknown":true})").has_value());
+}
+
+TEST_CASE("remote_service_component_get_subscriptions_uses_monitor_prefix_and_qos", "[remote_service]") {
+    yaha::RemoteServiceConfig config{};
+    config.monitorTopicPrefix = "$MONITOR/CUSTOM";
+    config.subscribeQos = yaha::Qos::ExactlyOnce;
+
+    yaha::RemoteServiceComponent component{config};
+    const yaha::SubscriptionMap subscriptions = component.getSubscriptions();
+
+    REQUIRE(subscriptions.size() == 1U);
+    REQUIRE(subscriptions.contains("$MONITOR/CUSTOM/#"));
+    REQUIRE(subscriptions.at("$MONITOR/CUSTOM/#") == yaha::Qos::ExactlyOnce);
 }
 
 TEST_CASE("remote_service_component_run_loads_mapping_from_filestore", "[remote_service]") {
@@ -253,6 +329,55 @@ TEST_CASE("remote_service_component_run_keeps_empty_map_on_startup_load_failure"
     REQUIRE(component.isRunning());
     REQUIRE(component.serviceCount() == 0U);
     REQUIRE(fileStore.getCount() >= 1U);
+
+    component.close();
+}
+
+TEST_CASE("remote_service_component_run_is_idempotent_after_first_start", "[remote_service]") {
+    const std::uint16_t listenPort = reserveFreeLocalPort();
+    FileStoreMappingMockServer fileStore{listenPort, "/remoteservice/mapping"};
+    fileStore.setPayload(
+        R"({"services":[{"path":"/light","devices":{"kitchen":"topic/old"}}]})");
+
+    yaha::RemoteServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = listenPort;
+    config.mappingKeyPath = "/remoteservice/mapping";
+
+    yaha::RemoteServiceComponent component{config};
+    component.run();
+    const std::uint32_t getCountAfterFirstRun = fileStore.getCount();
+    component.run();
+
+    REQUIRE(component.isRunning());
+    REQUIRE(fileStore.getCount() == getCountAfterFirstRun);
+
+    component.close();
+}
+
+TEST_CASE("remote_service_component_ignores_non_monitor_topic", "[remote_service]") {
+    const std::uint16_t listenPort = reserveFreeLocalPort();
+    FileStoreMappingMockServer fileStore{listenPort, "/remoteservice/mapping"};
+    fileStore.setPayload(
+        R"({"services":[{"path":"/light","devices":{"kitchen":"topic/old"}}]})");
+
+    yaha::RemoteServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = listenPort;
+    config.mappingKeyPath = "/remoteservice/mapping";
+
+    yaha::RemoteServiceComponent component{config};
+    component.run();
+    const std::uint32_t initialGets = fileStore.getCount();
+
+    component.handleMessage(yaha::Message{
+        "house/light/set",
+        std::string{R"({"keyPath":"/remoteservice/mapping"})"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    REQUIRE(fileStore.getCount() == initialGets);
+    REQUIRE(component.hasServicePath("/light"));
 
     component.close();
 }

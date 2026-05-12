@@ -6,8 +6,11 @@
  */
 
 #include "yaha/ini/ini_document.h"
+#include "yaha/message/message.h"
+#include "yaha/mqtt_client/mqtt_client.h"
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 namespace yaha {
@@ -22,7 +25,13 @@ struct HttpMqttInterfaceClientConfig {
     std::uint16_t listenerPort{k_defaultHttpMqttInterfaceListenerPort};  ///< HTTP bind port.
     bool enablePublishPhpAlias{true};         ///< Enables POST /publish.php compatibility alias.
     bool useLegacyPhpResponse{false};         ///< Enables legacy 200 JSON-string response mode.
+    YahaMqttClient::Config mqttConfig{};      ///< Broker publish transport runtime settings.
 };
+
+/**
+ * @brief Callback for publishing a mapped MQTT message to the broker transport.
+ */
+using HttpMqttInterfacePublishToBroker = std::function<void(const Message& message)>;
 
 /**
  * @brief Loads client runtime config from INI document.
@@ -42,5 +51,15 @@ struct HttpMqttInterfaceClientConfig {
  * @return Exit code (0 success, non-zero failure).
  */
 [[nodiscard]] int runHttpMqttInterfaceClient(const HttpMqttInterfaceClientConfig& configInput);
+
+/**
+ * @brief Runs standalone HTTP MQTT interface server with injected broker publish callback.
+ * @param configInput Runtime configuration.
+ * @param publishToBroker Callback invoked for each mapped publish that must be forwarded.
+ * @return Exit code (0 success, non-zero failure).
+ */
+[[nodiscard]] int runHttpMqttInterfaceClient(
+    const HttpMqttInterfaceClientConfig& configInput,
+    const HttpMqttInterfacePublishToBroker& publishToBroker);
 
 } // namespace yaha

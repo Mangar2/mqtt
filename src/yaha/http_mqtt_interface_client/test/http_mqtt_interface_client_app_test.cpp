@@ -5,9 +5,11 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 #include <thread>
 #include <string>
+#include <vector>
 
 #include "httplib.h"
 
@@ -262,10 +264,13 @@ TEST_CASE("load_http_mqtt_interface_client_config_reports_invalid_legacy_flag", 
     std::filesystem::remove(iniPath);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("run_http_mqtt_interface_client_serves_endpoints_logs_publish_and_stops_on_signal", "[http_mqtt_interface_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     std::ostringstream capturedOutput{};
     std::streambuf* previousOutputBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+    std::mutex forwardedMessagesMutex{};
+    std::vector<yaha::Message> forwardedMessages{};
 
     yaha::HttpMqttInterfaceClientConfig config{};
     config.listenerHost = "127.0.0.1";
@@ -274,8 +279,13 @@ TEST_CASE("run_http_mqtt_interface_client_serves_endpoints_logs_publish_and_stop
     config.useLegacyPhpResponse = false;
 
     int exitCode = -1;
-    std::thread serverThread([&config, &exitCode]() {
-        exitCode = yaha::runHttpMqttInterfaceClient(config);
+    std::thread serverThread([&config, &exitCode, &forwardedMessagesMutex, &forwardedMessages]() {
+        exitCode = yaha::runHttpMqttInterfaceClient(
+            config,
+            [&forwardedMessagesMutex, &forwardedMessages](const yaha::Message& message) {
+                std::lock_guard<std::mutex> lock{forwardedMessagesMutex};
+                forwardedMessages.push_back(message.clone());
+            });
     });
 
     REQUIRE(waitForHttpServer(port));
@@ -293,6 +303,13 @@ TEST_CASE("run_http_mqtt_interface_client_serves_endpoints_logs_publish_and_stop
         std::string::npos);
     REQUIRE(outputText.find("http_mqtt_interface_client[in] method=POST endpoint=/publish.php") !=
         std::string::npos);
+    REQUIRE(outputText.find("http_mqtt_interface_client[out] broker_publish topic=sensor/temp") !=
+        std::string::npos);
+    {
+        std::lock_guard<std::mutex> lock{forwardedMessagesMutex};
+        REQUIRE(forwardedMessages.empty() == false);
+        REQUIRE(forwardedMessages.front().topic() == "sensor/temp");
+    }
     REQUIRE(exitCode == 0);
 }
 

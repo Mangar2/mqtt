@@ -194,6 +194,19 @@ TEST_CASE("handle_message_cleanup_topic_ignores_invalid_payload", "[message_stor
     REQUIRE(nodes.size() == 1U);
 }
 
+TEST_CASE("handle_message_cleanup_topic_ignores_negative_and_empty_values", "[message_store]") {
+    yaha::MessageStoreConfig config{};
+    config.serverPort = 0U;
+    yaha::MessageStore store{config};
+
+    store.handleMessage(yaha::Message{"keep/topic", std::string{"x"}});
+    store.handleMessage(yaha::Message{"$MONITORING/messages/cleanup", -1.0});
+    store.handleMessage(yaha::Message{"$MONITORING/messages/cleanup", std::string{}});
+
+    const auto nodes = store.querySection("keep/topic", 0U, false, true);
+    REQUIRE(nodes.size() == 1U);
+}
+
 TEST_CASE("handle_message_cleanup_topic_accepts_numeric_string_payload", "[message_store]") {
     FakeClock clock{};
 
@@ -385,6 +398,30 @@ TEST_CASE("http_get_store_rejects_invalid_percent_encoded_topic_prefix", "[messa
             != std::string::npos);
 }
 
+TEST_CASE("http_get_store_rejects_non_hex_percent_encoded_topic_prefix", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.handleMessage(yaha::Message{"home/lamp", std::string{"on"}});
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    const auto response = client.Get("/store/home%GGroom");
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 400);
+    REQUIRE(response->body.find("code=YAHA_MESSAGE_STORE_HTTP_INVALID_PERCENT_ENCODING")
+            != std::string::npos);
+}
+
 TEST_CASE("http_get_store_decodes_percent_encoded_hex_bytes", "[message_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};
@@ -529,6 +566,52 @@ TEST_CASE("http_options_store_returns_cors_headers", "[message_store]") {
     REQUIRE(response->get_header_value("Access-Control-Allow-Headers")
             == "Content-Type, Authorization, X-Requested-With, history, levelamount, reason, time");
     REQUIRE(response->get_header_value("Access-Control-Max-Age") == "86400");
+}
+
+TEST_CASE("http_options_store_returns_not_found_for_unrelated_path", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    const auto response = client.Options("/other/home");
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 404);
+    REQUIRE(response->body.find("code=YAHA_MESSAGE_STORE_HTTP_NOT_FOUND") != std::string::npos);
+}
+
+TEST_CASE("http_serverpath_without_leading_slash_and_with_trailing_slashes_is_normalized", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.serverPath = "custom///";
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    store.handleMessage(yaha::Message{"custom/topic", std::string{"on"}});
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    const auto response = client.Get("/custom/custom/topic");
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 200);
+    REQUIRE(response->body.find("\"topic\":\"custom/topic\"") != std::string::npos);
 }
 
 TEST_CASE("http_get_store_snapshot_body_uses_diff_mode", "[message_store]") {

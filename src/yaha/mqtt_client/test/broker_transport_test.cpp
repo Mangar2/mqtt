@@ -110,6 +110,11 @@ public:
         return published_records_;
     }
 
+    void enableAckBufferingMode() {
+        std::lock_guard<std::mutex> lock{mode_mutex_};
+        ackBufferingMode_ = true;
+    }
+
 private:
     static std::optional<mqtt::AnyPacket> read_next_packet(
         mqtt::TcpConnection& connection,
@@ -236,8 +241,25 @@ private:
         return connection.write(std::span<const std::uint8_t>(frame.data(), frame.size()));
     }
 
-    [[nodiscard]] static bool handle_subscribe_packet(mqtt::TcpConnection& connection,
-                                                      const mqtt::SubscribePacket& subscribe_packet) {
+    [[nodiscard]] bool handle_subscribe_packet(mqtt::TcpConnection& connection,
+                                               const mqtt::SubscribePacket& subscribe_packet) {
+        {
+            std::lock_guard<std::mutex> lock{mode_mutex_};
+            if (ackBufferingMode_) {
+                if (!send_pingresp(connection)) {
+                    return false;
+                }
+                if (!send_publish(connection,
+                                  "transport/buffered",
+                                  "buffered",
+                                  mqtt::QoS::AtMostOnce,
+                                  std::nullopt)) {
+                    return false;
+                }
+                return send_suback(connection, subscribe_packet.packet_id);
+            }
+        }
+
         if (!send_suback(connection, subscribe_packet.packet_id)) {
             return false;
         }
@@ -349,6 +371,18 @@ private:
                     return handle_subscribe_packet(connection, concretePacket);
                 }
                 if constexpr (std::is_same_v<PacketType, mqtt::UnsubscribePacket>) {
+                    {
+                        std::lock_guard<std::mutex> lock{mode_mutex_};
+                        if (ackBufferingMode_) {
+                            if (!send_publish(connection,
+                                              "transport/buffered_unsub",
+                                              "buffered",
+                                              mqtt::QoS::AtMostOnce,
+                                              std::nullopt)) {
+                                return false;
+                            }
+                        }
+                    }
                     return send_unsuback(connection, concretePacket.packet_id);
                 }
                 if constexpr (std::is_same_v<PacketType, mqtt::PublishPacket>) {
@@ -419,6 +453,8 @@ private:
     std::vector<std::thread> client_threads_{};
     mutable std::mutex published_records_mutex_{};
     std::vector<PublishedRecord> published_records_{};
+    mutable std::mutex mode_mutex_{};
+    bool ackBufferingMode_{false};
 };
 
 } // namespace
@@ -550,4 +586,34 @@ TEST_CASE("broker_transport_noop_operations_when_disconnected", "[mqtt_client]")
 
     CHECK_FALSE(transport.isConnected());
     CHECK_FALSE(transport.pollIncoming().has_value());
+}
+
+TEST_CASE("broker_transport_buffers_publish_packets_while_waiting_for_acks", "[mqtt_client]") {
+    FakeBrokerForTransportTest fake_broker{};
+    fake_broker.enableAckBufferingMode();
+    fake_broker.start();
+
+    yaha::YahaMqttClient::Transport transport = yaha::makeBrokerTransport();
+
+    yaha::YahaMqttClient::Config config{};
+    config.brokerHost = "127.0.0.1";
+    config.brokerPort = fake_broker.port();
+    config.clientId = "transport-buffering-test-client";
+    config.keepAliveInterval = std::chrono::seconds{k_keep_alive_seconds};
+
+    REQUIRE(transport.connect(config));
+
+    transport.subscribe("transport/#", yaha::Qos::AtLeastOnce);
+    transport.unsubscribe("transport/#");
+
+    const auto firstBuffered = transport.pollIncoming();
+    const auto secondBuffered = transport.pollIncoming();
+
+    REQUIRE(firstBuffered.has_value());
+    REQUIRE(secondBuffered.has_value());
+    CHECK(firstBuffered->topic() == "transport/buffered");
+    CHECK(secondBuffered->topic() == "transport/buffered_unsub");
+
+    transport.disconnect();
+    fake_broker.stop();
 }

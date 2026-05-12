@@ -195,3 +195,76 @@ TEST_CASE("message_store_json_parser_handles_complex_escape_sequences", "[messag
     REQUIRE(parseSucceeded);
     REQUIRE(nodes.size() == 2U);
 }
+
+TEST_CASE("message_store_json_parser_parses_snapshot_reason_and_numeric_time", "[message_store]") {
+    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+    const bool parseSucceeded = yaha::message_store_json::parseSnapshotBody(
+        "["
+        "{\"topic\":\"home/light\",\"value\":\"on\",\"time\":1700000000,"
+        "\"reason\":[{\"message\":\"manual\",\"timestamp\":\"2026-05-12T10:00:00Z\",\"extra\":{\"a\":1}}]}"
+        "]",
+        nodes);
+
+    REQUIRE(parseSucceeded);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes[0].hasReason);
+    REQUIRE(nodes[0].reason.size() == 1U);
+    REQUIRE(nodes[0].reason[0].message == "manual");
+    REQUIRE(nodes[0].timeMs.has_value());
+    REQUIRE(*nodes[0].timeMs == 1700000000);
+}
+
+TEST_CASE("message_store_json_parser_rejects_invalid_reason_shapes", "[message_store]") {
+    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+
+    REQUIRE_FALSE(yaha::message_store_json::parseSnapshotBody(
+        "[{\"topic\":\"a\",\"value\":\"x\",\"reason\":{}}]",
+        nodes));
+
+    nodes.clear();
+    REQUIRE_FALSE(yaha::message_store_json::parseSnapshotBody(
+        "[{\"topic\":\"a\",\"value\":\"x\",\"reason\":[{\"message\":\"m\"}]}]",
+        nodes));
+
+    nodes.clear();
+    REQUIRE_FALSE(yaha::message_store_json::parseSnapshotBody(
+        "[{\"topic\":\"a\",\"value\":\"x\",\"reason\":[{}]}]",
+        nodes));
+}
+
+TEST_CASE("message_store_json_parser_rejects_invalid_snapshot_time_values", "[message_store]") {
+    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+
+    REQUIRE_FALSE(yaha::message_store_json::parseSnapshotBody(
+        "[{\"topic\":\"a\",\"value\":\"x\",\"time\":{\"bad\":}]",
+        nodes));
+}
+
+TEST_CASE("message_store_json_parser_rejects_invalid_sensor_post_syntax", "[message_store]") {
+    yaha::message_store_json::SensorPostRequest request{};
+
+    REQUIRE_FALSE(yaha::message_store_json::parseSensorPostBody(
+        "{\"topic\":\"home\",\"nodes\":{\"k\":\"v\"",
+        request));
+
+    REQUIRE_FALSE(yaha::message_store_json::parseSensorPostBody(
+        "{\"topic\":\"home\",\"reason\":\"bad\\u\"}",
+        request));
+}
+
+TEST_CASE("message_store_json_parser_sensor_levelamount_numeric_paths", "[message_store]") {
+    yaha::message_store_json::SensorPostRequest request{};
+    const bool parseSucceeded = yaha::message_store_json::parseSensorPostBody(
+        "{"
+        "\"topic\":\"home\","
+        "\"levelAmount\":2,"
+        "\"nodes\":[{\"x\":\"y\"}]"
+        "}",
+        request);
+
+    REQUIRE(parseSucceeded);
+    REQUIRE(request.hasLevelAmount);
+    REQUIRE(request.levelAmount == 2U);
+    REQUIRE(request.hasNodes);
+    REQUIRE_FALSE(request.nodesJson.empty());
+}

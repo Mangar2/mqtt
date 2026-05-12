@@ -176,28 +176,6 @@ constexpr std::string_view k_browserReasonMessage{"Request by browser"};
     return outputStream.str();
 }
 
-void logOutboundPublishRequest(const HttpMqttRequestData& requestData) {
-    std::cout << "http_mqtt_interface[out] publish";
-
-    if (const auto versionValue = tryReadHeaderValue(requestData.headers, "version"); versionValue.has_value()) {
-        std::cout << " version=" << *versionValue;
-    }
-
-    if (const auto qosValue = tryReadHeaderValue(requestData.headers, "qos"); qosValue.has_value()) {
-        std::cout << " qos=" << *qosValue;
-    }
-
-    if (const auto retainValue = tryReadHeaderValue(requestData.headers, "retain"); retainValue.has_value()) {
-        std::cout << " retain=" << *retainValue;
-    }
-
-    if (const auto packetIdValue = tryReadHeaderValue(requestData.headers, "packetid"); packetIdValue.has_value()) {
-        std::cout << " packetid=" << *packetIdValue;
-    }
-
-    std::cout << " payload=" << requestData.payload << '\n' << std::flush;
-}
-
 [[nodiscard]] bool tryFindObjectRange(
     const std::string_view textValue,
     const std::string_view keyName,
@@ -737,10 +715,11 @@ struct CompatibilityParsedFields {
 
 [[nodiscard]] std::optional<HttpMqttResult> tryForwardCompatibilityPublish(
     const HttpMqttPublishCompatibilityForwarder& forwarder,
-    const HttpMqttRequestData& mappedRequest) {
+    const HttpMqttRequestData& mappedRequest,
+    const Message& mappedMessage) {
     HttpMqttResult downstreamResult{};
     try {
-        downstreamResult = forwarder(mappedRequest);
+        downstreamResult = forwarder(mappedRequest, mappedMessage);
     } catch (const std::exception&) {
         return makeCompatibilityErrorResponse(k_httpStatusInternalServerError, "internal_failure");
     }
@@ -1062,8 +1041,6 @@ void validatePacketIdMatch(
         }
     };
 
-    logOutboundPublishRequest(requestData);
-
     return requestData;
 }
 
@@ -1312,7 +1289,8 @@ HttpMqttResult handlePublishCompatibilityRequest(
         .packetId = std::nullopt};
     const HttpMqttRequestData mappedRequest = interfaces.publish(k_versionValue, mappedOptions);
 
-    const std::optional<HttpMqttResult> downstreamResult = tryForwardCompatibilityPublish(forwarder, mappedRequest);
+    const std::optional<HttpMqttResult> downstreamResult =
+        tryForwardCompatibilityPublish(forwarder, mappedRequest, mappedMessage);
     if (!downstreamResult.has_value()) {
         return makeCompatibilityErrorResponse(k_httpStatusInternalServerError, "internal_failure");
     }
