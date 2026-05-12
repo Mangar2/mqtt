@@ -102,6 +102,10 @@ function(yaha_define_openzwave_static_target target_name)
         USE_BI_TXML=1
         top_builddir=${openzwave_build_dir})
 
+    set(openzwave_warning_suppression
+        "DEBUG_CFLAGS+=-Wno-error=inconsistent-missing-override"
+        "RELEASE_CFLAGS+=-Wno-error=inconsistent-missing-override")
+
     if(APPLE AND NOT CMAKE_CROSSCOMPILING)
         list(APPEND openzwave_make_args DARWIN_BUILD_TARGET=-arch\ arm64)
     endif()
@@ -134,11 +138,15 @@ function(yaha_define_openzwave_static_target target_name)
             BITBAKE_ENV=1
             UNAME=Linux
             "RELEASE_CFLAGS+=-Wno-error=unused-command-line-argument -fno-sanitize=undefined"
+            ${openzwave_warning_suppression}
             ${openzwave_make_args}
             "${openzwave_static_path}")
     else()
         set(openzwave_build_command
-            make -C "${YAHA_OPENZWAVE_EFFECTIVE_SOURCE_DIR}/cpp/build" ${openzwave_make_args} "${openzwave_static_path}")
+            make -C "${YAHA_OPENZWAVE_EFFECTIVE_SOURCE_DIR}/cpp/build"
+            ${openzwave_warning_suppression}
+            ${openzwave_make_args}
+            "${openzwave_static_path}")
     endif()
 
     ExternalProject_Add(openzwave_static_build

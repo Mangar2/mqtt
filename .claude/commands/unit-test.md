@@ -28,6 +28,13 @@ CMake discovers all `src/*_test.cpp` files automatically — no manual registrat
 All commands are run from the **project root**: `c:\Development\mqtt`.
 **Never call cmake, ctest, llvm-profdata or llvm-cov directly.** Use only the script.
 
+### Mandatory execution rule
+
+For any code change in broker scope, always run `python3 test/run_coverage_broker.py` before completion.
+For any code change in client scope, always run `python3 test/run_coverage_clients.py` before completion.
+If the touched scope is unclear or spans both, run both scripts.
+Do not stop after editing code without running the matching script(s).
+
 The scripts live at `test/run_coverage_broker.py` and `test/run_coverage_clients.py`.  
 All generated files are written to `test/` (`run_broker.log`, `run_clients.log`, `coverage_broker.profdata`, `coverage_clients.profdata`) — never to the project root or `build/`.
 

@@ -66,7 +66,7 @@ Phase 6 deployment artifacts for RemoteService are wired through packaging scrip
 - INI template: `cmake/ini/remoteservice.ini`
 - deployment component name: `remoteservice`
 - packaged binary: `yaharemoteserviceclient`
-- packaged service unit: `yaharemoteserviceclient.service`
+- packaged service unit: `remotesvc.service`
 
 `cmake/create_yaha_deployment.py` includes `remoteservice` in component packaging
 and root install order. `cmake/deploy_yaha_scp.py` supports remote component install

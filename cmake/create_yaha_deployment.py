@@ -42,7 +42,7 @@ SERVICE_COMPONENTS = (
         "name": "broker",
         "binary": "yahabroker",
         "ini": "broker.ini",
-        "service": "yahabroker.service",
+        "service": "broker.service",
         "description": "Yaha MQTT Broker",
         "exec": "__INSTALL_ROOT__/broker/yahabroker -c __INSTALL_ROOT__/broker/broker.ini",
     },
@@ -50,7 +50,7 @@ SERVICE_COMPONENTS = (
         "name": "filestore",
         "binary": "yahafilestoreclient",
         "ini": "filestore.ini",
-        "service": "yahafilestoreclient.service",
+        "service": "filestore.service",
         "description": "Yaha File Store Client",
         "exec": (
             "__INSTALL_ROOT__/filestore/yahafilestoreclient "
@@ -61,7 +61,7 @@ SERVICE_COMPONENTS = (
         "name": "msgstore",
         "binary": "yahamsgstoreclient",
         "ini": "msgstore.ini",
-        "service": "yahamsgstoreclient.service",
+        "service": "msgstore.service",
         "description": "Yaha Message Store Client",
         "exec": (
             "__INSTALL_ROOT__/msgstore/yahamsgstoreclient "
@@ -72,7 +72,7 @@ SERVICE_COMPONENTS = (
         "name": "automation",
         "binary": "yahaautomationclient",
         "ini": "automation.ini",
-        "service": "yahaautomationclient.service",
+        "service": "autom.service",
         "description": "Yaha Automation Client",
         "exec": (
             "__INSTALL_ROOT__/automation/yahaautomationclient "
@@ -83,7 +83,7 @@ SERVICE_COMPONENTS = (
         "name": "valueservice",
         "binary": "yahavalueserviceclient",
         "ini": "valueservice.ini",
-        "service": "yahavalueserviceclient.service",
+        "service": "valuesvc.service",
         "description": "Yaha Value Service Client",
         "exec": (
             "__INSTALL_ROOT__/valueservice/yahavalueserviceclient "
@@ -94,7 +94,7 @@ SERVICE_COMPONENTS = (
         "name": "brokerconnector",
         "binary": "yahabrokerconnectorclient",
         "ini": "brokerconnector.ini",
-        "service": "yahabrokerconnectorclient.service",
+        "service": "brkconn.service",
         "description": "Yaha Broker Connector Client",
         "exec": (
             "__INSTALL_ROOT__/brokerconnector/yahabrokerconnectorclient "
@@ -105,7 +105,7 @@ SERVICE_COMPONENTS = (
         "name": "httpmqttinterface",
         "binary": "yahahttpmqttinterfaceclient",
         "ini": "httpmqttinterface.ini",
-        "service": "yahahttpmqttinterfaceclient.service",
+        "service": "httpmqtt.service",
         "description": "Yaha HTTP MQTT Interface Client",
         "exec": (
             "__INSTALL_ROOT__/httpmqttinterface/yahahttpmqttinterfaceclient "
@@ -116,7 +116,7 @@ SERVICE_COMPONENTS = (
         "name": "remoteservice",
         "binary": "yaharemoteserviceclient",
         "ini": "remoteservice.ini",
-        "service": "yaharemoteserviceclient.service",
+        "service": "remotesvc.service",
         "description": "Yaha RemoteService Client",
         "exec": (
             "__INSTALL_ROOT__/remoteservice/yaharemoteserviceclient "

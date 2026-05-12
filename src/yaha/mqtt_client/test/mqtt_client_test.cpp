@@ -405,9 +405,11 @@ TEST_CASE("message_trace_escapes_string_and_formats_numeric_values", "[mqtt_clie
     std::cout.rdbuf(oldBuffer);
 
     const std::string output = captured.str();
-    REQUIRE(output.find("broker: recv topic=home/trace/in") != std::string::npos);
+    REQUIRE(output.find("mqtt: start clientId=") != std::string::npos);
+    REQUIRE(output.find("mqtt: connected clientId=") != std::string::npos);
+    REQUIRE(output.find("mqtt: incoming topic=home/trace/in") != std::string::npos);
     REQUIRE(output.find("value=21.5") != std::string::npos);
-    REQUIRE(output.find("broker: sent topic=home/trace/out") != std::string::npos);
+    REQUIRE(output.find("mqtt: outgoing topic=home/trace/out") != std::string::npos);
     REQUIRE(output.find("raw=\"line1\\n\\\"x\\\"\\\\tab\\t\"") != std::string::npos);
 }
 

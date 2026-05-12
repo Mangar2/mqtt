@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+readonly DEFAULT_SERVICE_PATTERN='^(autom|broker|brkconn|filestore|httpmqtt|msgstore|remotesvc|valuesvc)\.service$'
+
 usage() {
     cat <<'EOF'
 Usage:
@@ -9,7 +11,7 @@ Usage:
     svc log <service> [lines]
 
 Subcommands:
-    list    Show PM2-like overview for system services (default filter: yaha)
+    list    Show PM2-like overview for deployment services (default: managed YAHA units)
     log     Follow service logs via journalctl (default lines: 100)
 EOF
 }
@@ -74,7 +76,7 @@ read_rss_bytes_from_pid() {
 list_services() {
     ensure_dependencies
 
-    local pattern="${1:-yaha}"
+    local pattern="${1:-$DEFAULT_SERVICE_PATTERN}"
     local services
     services="$(systemctl list-units --type=service --all --no-legend --no-pager | awk '{print $1}' | grep -E "$pattern" | sort -u || true)"
 
@@ -167,7 +169,7 @@ follow_service_logs() {
     local unit
 
     if [[ -z "$service_name" ]]; then
-        echo "error: missing service name (example: svc log yahabrokerconnectorclient)" >&2
+        echo "error: missing service name (example: svc log brkconn)" >&2
         exit 1
     fi
 
