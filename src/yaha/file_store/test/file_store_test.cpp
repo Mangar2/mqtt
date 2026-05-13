@@ -9,6 +9,8 @@
 #include <filesystem>
 #include <mutex>
 #include <netinet/in.h>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <sys/socket.h>
 #include <thread>
@@ -828,6 +830,137 @@ TEST_CASE("run_and_close_are_idempotent", "[file_store]") {
     store.close();
     store.close();
     REQUIRE_FALSE(store.isRunning());
+}
+
+TEST_CASE("monitoring_publish_throw_logs_out_fail_without_false_success", "[file_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::FileStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.directory = tempDir;
+
+    yaha::FileStore store{config};
+    store.setPublishCallback([](const yaha::Message&) {
+        throw std::runtime_error{"publish failed"};
+    });
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousStdoutBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    StoreCloseGuard storeGuard{&store};
+    store.run();
+    REQUIRE(waitForHttpReady(config.serverPort));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    const auto postResponse = client.Post("/file/fail-log", "txt", "text/plain");
+    REQUIRE(postResponse != nullptr);
+    REQUIRE(postResponse->status == 200);
+
+    std::cout.rdbuf(previousStdoutBuffer);
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find("file_store[out-fail] eventType=changed") != std::string::npos);
+    REQUIRE(logText.find("file_store[out] topic=$MONITOR/FileStore/changed") == std::string::npos);
+}
+
+TEST_CASE("monitoring_publish_result_failure_logs_structured_category", "[file_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::FileStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.directory = tempDir;
+
+    yaha::FileStore store{config};
+    store.setPublishCallback([](const yaha::Message&) {
+        return yaha::PublishResult::fail(yaha::PublishFailureCategory::AckTimeout,
+                                         "timed out waiting for PUBACK from broker");
+    });
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousStdoutBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    StoreCloseGuard storeGuard{&store};
+    store.run();
+    REQUIRE(waitForHttpReady(config.serverPort));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    const auto postResponse = client.Post("/file/fail-result", "txt", "text/plain");
+    REQUIRE(postResponse != nullptr);
+    REQUIRE(postResponse->status == 200);
+
+    std::cout.rdbuf(previousStdoutBuffer);
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find("file_store[out-fail] eventType=changed") != std::string::npos);
+    REQUIRE(logText.find("category=ack_timeout") != std::string::npos);
+}
+
+TEST_CASE("monitoring_retry_queue_flushes_after_callback_restore", "[file_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::FileStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.directory = tempDir;
+
+    yaha::FileStore store{config};
+
+    StoreCloseGuard storeGuard{&store};
+    store.run();
+    REQUIRE(waitForHttpReady(config.serverPort));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    const auto postResponse = client.Post("/file/retry", "txt", "text/plain");
+    REQUIRE(postResponse != nullptr);
+    REQUIRE(postResponse->status == 200);
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    store.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+        return yaha::PublishResult::ok();
+    });
+
+    store.handleMessage(yaha::Message{"file_store/retry/trigger", std::string{"trigger"}});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    REQUIRE_FALSE(published.empty());
+    REQUIRE(published.back().topic() == "$MONITOR/FileStore/changed");
+}
+
+TEST_CASE("monitoring_retry_exhaustion_logs_retry_exhausted", "[file_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::FileStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.directory = tempDir;
+
+    yaha::FileStore store{config};
+    store.setPublishCallback([](const yaha::Message&) {
+        throw std::runtime_error{"publish failed"};
+    });
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousStdoutBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    StoreCloseGuard storeGuard{&store};
+    store.run();
+    REQUIRE(waitForHttpReady(config.serverPort));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    const auto postResponse = client.Post("/file/retry-exhausted", "txt", "text/plain");
+    REQUIRE(postResponse != nullptr);
+    REQUIRE(postResponse->status == 200);
+
+    for (std::size_t attemptIndex = 0U; attemptIndex < 5U; ++attemptIndex) {
+        store.handleMessage(yaha::Message{"file_store/retry/trigger", std::string{"trigger"}});
+    }
+
+    std::cout.rdbuf(previousStdoutBuffer);
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find("category=retry_exhausted") != std::string::npos);
 }
 
 // NOLINTEND

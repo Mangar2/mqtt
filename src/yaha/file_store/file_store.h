@@ -10,6 +10,7 @@
 
 #include <condition_variable>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -166,6 +167,16 @@ public:
 
 private:
     /**
+     * @brief One queued monitoring publish entry.
+     */
+    struct PendingMonitoringEntry {
+        std::string eventType;      ///< Monitoring event type.
+        std::string topic;          ///< MQTT topic.
+        std::string payload;        ///< JSON payload.
+        std::size_t attemptCount{0U}; ///< Failed attempt count.
+    };
+
+    /**
      * @brief Encoded payload kept in store file format.
      */
     struct StoredPayload {
@@ -235,6 +246,46 @@ private:
                            const std::string& filename,
                            const std::string& source,
                            const std::string* details) const;
+
+    /**
+     * @brief Attempts one monitoring publish send.
+     * @param eventType Event type suffix.
+     * @param topic Monitoring topic.
+     * @param payload Monitoring payload JSON.
+     * @return True when callback confirms send success.
+     */
+    [[nodiscard]] bool tryPublishMonitoringMessage(const std::string& eventType,
+                                                   const std::string& topic,
+                                                   const std::string& payload) const;
+
+    /**
+     * @brief Enqueues one monitoring event for retry.
+     * @param eventType Event type suffix.
+     * @param topic Monitoring topic.
+     * @param payload Monitoring payload JSON.
+     */
+    void enqueuePendingMonitoringEvent(const std::string& eventType,
+                                       const std::string& topic,
+                                       const std::string& payload) const;
+
+    /**
+     * @brief Processes queued monitoring publish retries.
+     */
+    void processPendingMonitoringQueue() const;
+
+    /**
+     * @brief Logs one outbound monitoring publish failure.
+     * @param eventType Event type suffix.
+     * @param topic Monitoring topic.
+     * @param payload Monitoring payload JSON.
+     * @param categoryText Failure category token.
+     * @param reasonText Failure reason.
+     */
+    static void logMonitoringFailure(const std::string& eventType,
+                                     const std::string& topic,
+                                     const std::string& payload,
+                                     const std::string& categoryText,
+                                     const std::string& reasonText);
 
     /**
      * @brief Escapes one text for embedding in JSON string value.
@@ -326,6 +377,8 @@ private:
     bool running_{false};                           ///< True when lifecycle is active.
     bool stopRequested_{false};                     ///< True when shutdown requested.
     PublishCallback publishCallback_;               ///< Outgoing MQTT publish callback.
+    mutable std::mutex pendingMonitoringQueueMutex_; ///< Guards queued monitoring events.
+    mutable std::deque<PendingMonitoringEntry> pendingMonitoringQueue_{};
     mutable std::unordered_map<std::string, std::string> knownFilenameToKeyPath_{};
 };
 

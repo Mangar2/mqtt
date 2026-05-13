@@ -66,9 +66,13 @@ Implements a standalone key/value HTTP store with MQTT monitoring publishes.
 - Monitoring trigger sources:
   - successful HTTP `POST` write (`source=http-post`),
   - filesystem watcher create/change/delete (`source=filesystem-watch`).
+- Monitoring publish path is delivery-result aware via component publish callback.
+- Failed monitoring sends are queued in bounded retry queue and retried on later activity cycles.
+- Retry exhaustion emits explicit structured failure log and drops event.
 - Message logging:
   - logs every inbound MQTT message to `std::cout` before handling (`file_store[in] ...`)
-  - logs every outbound monitoring message to `std::cout` before callback invocation (`file_store[out] ...`)
+  - logs outbound monitoring success only after callback confirms send (`file_store[out] ...`)
+  - logs outbound monitoring failure as `file_store[out-fail]` with event type, topic, category, reason, and payload
 - File I/O logging:
   - logs read/write lifecycle to `std::cout` (`file_store[file-io] ...`)
   - includes operation (`read|write`), key path, encoded filename, status (`start|ok|error`), and optional error detail

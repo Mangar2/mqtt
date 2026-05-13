@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <exception>
 #include <format>
 #include <fstream>
 #include <iostream>
@@ -22,6 +23,7 @@ constexpr int k_http_status_ok{200};
 constexpr int k_http_status_bad_request{400};
 constexpr int k_http_status_not_found{404};
 constexpr int k_http_status_internal_server_error{500};
+constexpr std::size_t k_max_pending_monitoring_attempts{3U};
 
 std::int64_t nowMilliseconds() {
     const auto now = std::chrono::system_clock::now();
@@ -41,6 +43,25 @@ std::string joinTopic(const std::string& prefix, const std::string& suffix) {
         return prefix + suffix;
     }
     return std::format("{}/{}", prefix, suffix);
+}
+
+[[nodiscard]] std::string publishFailureCategoryToText(const PublishFailureCategory categoryValue) {
+    switch (categoryValue) {
+        case PublishFailureCategory::None:
+            return "none";
+        case PublishFailureCategory::Disconnected:
+            return "disconnected";
+        case PublishFailureCategory::AckTimeout:
+            return "ack_timeout";
+        case PublishFailureCategory::WriteFailed:
+            return "write_failed";
+        case PublishFailureCategory::CallbackMissing:
+            return "callback_missing";
+        case PublishFailureCategory::Unknown:
+            return "unknown";
+    }
+
+    return "unknown";
 }
 
 [[nodiscard]] std::string valueToLogText(const Value& messageValue) {
@@ -130,6 +151,7 @@ SubscriptionMap FileStore::getSubscriptions() const {
 }
 
 void FileStore::handleMessage(const Message& message) {
+    processPendingMonitoringQueue();
     logMessage("in", message);
 }
 
@@ -155,6 +177,7 @@ void FileStore::run() {
     watcherThread_ = std::thread([this]() {
         watcherLoop();
     });
+    processPendingMonitoringQueue();
 }
 
 void FileStore::close() {
@@ -238,6 +261,8 @@ void FileStore::watcherLoop() {
             break;
         }
         stateLock.unlock();
+
+        processPendingMonitoringQueue();
 
         auto currentResult = buildSnapshot();
         if (!currentResult.success) {
@@ -480,14 +505,7 @@ void FileStore::publishMonitoring(const std::string& eventType,
         return;
     }
 
-    PublishCallback callback{};
-    {
-        std::lock_guard<std::mutex> lock{publishMutex_};
-        callback = publishCallback_;
-    }
-    if (!callback) {
-        return;
-    }
+    processPendingMonitoringQueue();
 
     const std::string prefix = trimTopicPrefix(config_.monitoring.topicPrefix);
     const std::string topic = joinTopic(prefix, eventType);
@@ -509,13 +527,116 @@ void FileStore::publishMonitoring(const std::string& eventType,
     }
     payload += "}";
 
+    if (!tryPublishMonitoringMessage(eventType, topic, payload)) {
+        enqueuePendingMonitoringEvent(eventType, topic, payload);
+    }
+}
+
+bool FileStore::tryPublishMonitoringMessage(const std::string& eventType,
+                                            const std::string& topic,
+                                            const std::string& payload) const {
+    PublishCallback callback{};
+    {
+        std::lock_guard<std::mutex> lock{publishMutex_};
+        callback = publishCallback_;
+    }
+
+    if (!callback) {
+        logMonitoringFailure(eventType,
+                             topic,
+                             payload,
+                             "callback_missing",
+                             "callback_missing");
+        return false;
+    }
+
     Message monitoringMessage{topic, payload, config_.monitoring.qos, config_.monitoring.retain};
-    logMessage("out", monitoringMessage);
 
     try {
-        callback(monitoringMessage);
+        const PublishResult publishResult = callback(monitoringMessage);
+        if (!publishResult.success) {
+            const std::string reasonText = publishResult.reason.empty()
+                ? "unspecified"
+                : publishResult.reason;
+            logMonitoringFailure(eventType,
+                                 topic,
+                                 payload,
+                                 publishFailureCategoryToText(publishResult.category),
+                                 reasonText);
+            return false;
+        }
+
+        logMessage("out", monitoringMessage);
+        return true;
+    } catch (const std::exception& exceptionValue) {
+        logMonitoringFailure(eventType,
+                             topic,
+                             payload,
+                             "publish_callback",
+                             exceptionValue.what());
     } catch (...) {
+        logMonitoringFailure(eventType,
+                             topic,
+                             payload,
+                             "publish_callback",
+                             "unknown");
     }
+
+    return false;
+}
+
+void FileStore::enqueuePendingMonitoringEvent(const std::string& eventType,
+                                              const std::string& topic,
+                                              const std::string& payload) const {
+    std::lock_guard<std::mutex> lock{pendingMonitoringQueueMutex_};
+    pendingMonitoringQueue_.push_back(PendingMonitoringEntry{eventType, topic, payload, 0U});
+}
+
+void FileStore::processPendingMonitoringQueue() const {
+    std::deque<PendingMonitoringEntry> pendingBatch{};
+    {
+        std::lock_guard<std::mutex> lock{pendingMonitoringQueueMutex_};
+        if (pendingMonitoringQueue_.empty()) {
+            return;
+        }
+        pendingBatch.swap(pendingMonitoringQueue_);
+    }
+
+    for (auto& pendingEntry : pendingBatch) {
+        if (tryPublishMonitoringMessage(
+                pendingEntry.eventType,
+                pendingEntry.topic,
+                pendingEntry.payload)) {
+            continue;
+        }
+
+        pendingEntry.attemptCount += 1U;
+        if (pendingEntry.attemptCount >= k_max_pending_monitoring_attempts) {
+            logMonitoringFailure(pendingEntry.eventType,
+                                 pendingEntry.topic,
+                                 pendingEntry.payload,
+                                 "retry_exhausted",
+                                 "monitoring_event");
+            continue;
+        }
+
+        std::lock_guard<std::mutex> lock{pendingMonitoringQueueMutex_};
+        pendingMonitoringQueue_.push_back(std::move(pendingEntry));
+    }
+}
+
+void FileStore::logMonitoringFailure(const std::string& eventType,
+                                     const std::string& topic,
+                                     const std::string& payload,
+                                     const std::string& categoryText,
+                                     const std::string& reasonText) {
+    std::cout << "file_store[out-fail] eventType=" << eventType
+              << " topic=" << topic
+              << " category=" << categoryText
+              << " reason=" << reasonText
+              << " payload=" << payload
+              << '\n'
+              << std::flush;
 }
 
 std::string FileStore::jsonEscape(const std::string& text) {
