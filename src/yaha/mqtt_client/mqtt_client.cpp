@@ -1,6 +1,7 @@
 #include "yaha/mqtt_client/mqtt_client.h"
 
 #include <algorithm>
+#include <exception>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -10,6 +11,21 @@
 namespace yaha {
 
 namespace {
+
+PublishResult mapPublishExceptionToResult(const std::exception& exceptionValue) {
+    const std::string reasonText{exceptionValue.what()};
+    if (reasonText.find("disconnected") != std::string::npos) {
+        return PublishResult::fail(PublishFailureCategory::Disconnected, reasonText);
+    }
+    if (reasonText.find("timed out waiting") != std::string::npos) {
+        return PublishResult::fail(PublishFailureCategory::AckTimeout, reasonText);
+    }
+    if (reasonText.find("failed to write") != std::string::npos) {
+        return PublishResult::fail(PublishFailureCategory::WriteFailed, reasonText);
+    }
+
+    return PublishResult::fail(PublishFailureCategory::Unknown, reasonText);
+}
 
 std::vector<std::string> splitTopic(const std::string& text) {
     std::vector<std::string> segments{};
@@ -100,7 +116,14 @@ void YahaMqttClient::run() {
     }
 
     component_.setPublishCallback([this](const Message& message) {
-        this->publish(message);
+        try {
+            this->publish(message);
+            return PublishResult::ok();
+        } catch (const std::exception& exceptionValue) {
+            return mapPublishExceptionToResult(exceptionValue);
+        } catch (...) {
+            return PublishResult::fail(PublishFailureCategory::Unknown, "unknown");
+        }
     });
 
     traceLifecycle("  mqtt: start clientId=" + config_.clientId + " broker=" + config_.brokerHost + ":"
@@ -175,20 +198,29 @@ bool YahaMqttClient::isConnected() const {
 void YahaMqttClient::workerLoop() {
     while (isRunning()) {
         bool should_sleep_reconnect = false;
+        std::string reconnectReason{"none"};
 
         try {
             if (!ensureConnected()) {
                 should_sleep_reconnect = true;
+                reconnectReason = "connect_failed";
             } else {
                 processIncoming();
                 processKeepAlive();
 
                 if (!transport_.isConnected()) {
                     should_sleep_reconnect = true;
+                    reconnectReason = "connection_lost";
                 }
             }
-        } catch (...) {
+        } catch (const std::exception& exceptionValue) {
+            traceLifecycle("  mqtt: loop exception reason=" + std::string{exceptionValue.what()});
             should_sleep_reconnect = true;
+            reconnectReason = "loop_exception";
+        } catch (...) {
+            traceLifecycle("  mqtt: loop exception reason=unknown");
+            should_sleep_reconnect = true;
+            reconnectReason = "loop_exception_unknown";
         }
 
         if (should_sleep_reconnect) {
@@ -204,7 +236,7 @@ void YahaMqttClient::workerLoop() {
                 traceLifecycle("  mqtt: connection lost");
             }
 
-            traceLifecycle("  mqtt: reconnecting");
+            traceLifecycle("  mqtt: reconnecting reason=" + reconnectReason);
 
             try {
                 transport_.disconnect();
@@ -274,24 +306,30 @@ void YahaMqttClient::resyncSubscriptions() {
         currentSubscriptions = activeSubscriptions_;
     }
 
+    SubscriptionMap confirmedSubscriptions = currentSubscriptions;
+
     for (const auto& [topic_filter, qos_level] : currentSubscriptions) {
         const auto desiredIt = desiredSubscriptions.find(topic_filter);
         if (desiredIt == desiredSubscriptions.end() || desiredIt->second != qos_level) {
             traceLifecycle("  mqtt: unsubscribe topic=" + topic_filter);
-            transport_.unsubscribe(topic_filter);
+            if (transport_.unsubscribe(topic_filter)) {
+                confirmedSubscriptions.erase(topic_filter);
+            }
         }
     }
 
     for (const auto& [topic_filter, qos_level] : desiredSubscriptions) {
-        const auto currentIt = currentSubscriptions.find(topic_filter);
-        if (currentIt == currentSubscriptions.end() || currentIt->second != qos_level) {
-            transport_.subscribe(topic_filter, qos_level);
-            traceLifecycle("  mqtt: subscribe topic=" + topic_filter + " qos=" + qosToText(qos_level));
+        const auto currentIt = confirmedSubscriptions.find(topic_filter);
+        if (currentIt == confirmedSubscriptions.end() || currentIt->second != qos_level) {
+            if (transport_.subscribe(topic_filter, qos_level)) {
+                traceLifecycle("  mqtt: subscribe topic=" + topic_filter + " qos=" + qosToText(qos_level));
+                confirmedSubscriptions[topic_filter] = qos_level;
+            }
         }
     }
 
     std::lock_guard<std::mutex> lock{stateMutex_};
-    activeSubscriptions_ = desiredSubscriptions;
+    activeSubscriptions_ = std::move(confirmedSubscriptions);
 }
 
 void YahaMqttClient::unsubscribeAll() {
@@ -305,7 +343,7 @@ void YahaMqttClient::unsubscribeAll() {
         (void)qos_level;
         traceLifecycle("  mqtt: unsubscribe topic=" + topic_filter);
         try {
-            transport_.unsubscribe(topic_filter);
+            (void)transport_.unsubscribe(topic_filter);
         } catch (...) {
         }
     }

@@ -377,6 +377,7 @@ TEST_CASE("run_http_mqtt_interface_client_returns_error_on_listen_failure", "[ht
     REQUIRE(exitCode == 1);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("run_http_mqtt_interface_client_reconnects_broker_after_publish_failure", "[http_mqtt_interface_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     std::ostringstream capturedError{};
@@ -397,8 +398,8 @@ TEST_CASE("run_http_mqtt_interface_client_reconnects_broker_after_publish_failur
             throw std::runtime_error{"timed out waiting for PUBACK from broker"};
         }
     };
-    mockTransport.subscribe = [](const std::string&, yaha::Qos) {};
-    mockTransport.unsubscribe = [](const std::string&) {};
+    mockTransport.subscribe = [](const std::string&, yaha::Qos) -> bool { return true; };
+    mockTransport.unsubscribe = [](const std::string&) -> bool { return true; };
     mockTransport.pollIncoming = []() -> std::optional<yaha::Message> { return std::nullopt; };
     mockTransport.ping = []() {};
     mockTransport.isConnected = []() -> bool { return true; };

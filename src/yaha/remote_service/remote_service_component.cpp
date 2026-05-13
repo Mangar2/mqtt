@@ -833,7 +833,12 @@ RemoteServiceCommandResult RemoteServiceComponent::publishCommand(
     }
 
     try {
-        publishCallback(*resolutionResult.resolvedMessage);
+        const PublishResult publishResult = publishCallback(*resolutionResult.resolvedMessage);
+        if (!publishResult.success) {
+            return {
+                .status = RemoteServiceCommandStatus::PublishFailed,
+                .resolvedMessage = resolutionResult.resolvedMessage};
+        }
     } catch (...) {
         return {
             .status = RemoteServiceCommandStatus::PublishFailed,

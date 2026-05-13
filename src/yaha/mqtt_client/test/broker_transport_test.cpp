@@ -115,6 +115,7 @@ public:
         ackBufferingMode_ = true;
     }
 
+
 private:
     static std::optional<mqtt::AnyPacket> read_next_packet(
         mqtt::TcpConnection& connection,
@@ -620,3 +621,4 @@ TEST_CASE("broker_transport_buffers_publish_packets_while_waiting_for_acks", "[m
     transport.disconnect();
     fake_broker.stop();
 }
+

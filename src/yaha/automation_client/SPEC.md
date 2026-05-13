@@ -59,6 +59,7 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
 - Monitoring updates:
   - Subscribed topic prefix `$MONITOR/FileStore/#` (configurable).
   - On payload with matching `keyPath` equal to `rulesKeyPath`, rules are reloaded from FileStore.
+  - Reload failures emit structured error logs with operation and key path.
 - Dynamic variable subscriptions:
   - On each rule-tree load/update, the component parses expression snippets and extracts external variables.
   - Extracted variable topics are added to subscription map with `subscribeQos`.
@@ -67,18 +68,23 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
   - Supported command topic shape: `<managementTopicPrefix>/<ruleName>/set`.
   - Payload `delete` removes rule.
   - JSON payload sets/updates rule object under `rules.<ruleName>`.
-  - After successful update/delete, full rule tree is persisted to FileStore via HTTP POST.
+  - Update/delete uses transactional staging: persist staged full tree first, then commit in-memory state and dynamic subscriptions.
+  - On persistence failure, in-memory rule tree and subscriptions stay unchanged.
   - Ack publish topic: `<managementTopicPrefix>/<ruleName>` with qos 1 and payload one of
-    updated rule JSON, `invalid rule`, or `deleted`.
+    `updated`, `deleted`, `validation_failed`, or `persist_failed`.
 - Runtime rule evaluation:
   - For each non-control incoming message, the component updates runtime variable map `variable(topic)=value`.
   - It builds evaluation context from runtime variables plus internal variables (`/time`, `/weekday`, sun/twilight).
   - It processes complete rule tree with `RulesTreeProcessor`.
-  - Produced rule output messages are published via callback.
+  - Produced rule output messages are published via delivery-result callback.
   - Produced outputs are reflected back into runtime variable map.
+  - Failed outbound sends are added to a bounded retry queue and retried on subsequent component message handling cycles.
+  - Retries stop after max attempt budget and emit explicit exhaustion error logs.
 - Logging behavior:
   - If `logIncomingMessages=true`, each inbound message handled by component is logged.
-  - If `logOutgoingMessages=true`, each outbound rule/ack message sent via callback is logged.
+  - If `logOutgoingMessages=true`, each outbound rule/ack message is logged only after successful callback send.
+  - Failed outbound sends are logged as `automation_client[out-fail]` with category and reason.
+  - FileStore GET/POST failures and internal-variable calculation failures emit structured `automation_client[error]` lines.
 
 ## Files
 

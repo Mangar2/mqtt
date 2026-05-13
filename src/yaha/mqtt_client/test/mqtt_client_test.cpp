@@ -48,6 +48,16 @@ public:
         }
     }
 
+    [[nodiscard]] yaha::PublishResult publishFromComponentWithResult(
+        const yaha::Message& message) const {
+        if (!publish_callback_) {
+            return yaha::PublishResult::fail(yaha::PublishFailureCategory::CallbackMissing,
+                                             "callback_missing");
+        }
+
+        return publish_callback_(message);
+    }
+
     [[nodiscard]] bool callbackSet() const noexcept {
         return callback_set_;
     }
@@ -113,6 +123,8 @@ struct TransportState {
     std::atomic<int> ping_calls{0};
     std::atomic<bool> connected{false};
     std::atomic<int> poll_throw_countdown{0};
+    std::atomic<int> subscribe_fail_on_call{0};
+    std::string publish_throw_reason{};
     std::deque<yaha::Message> inbox{};
     std::vector<std::pair<std::string, yaha::Qos>> subscriptions{};
     std::vector<yaha::Message> published_messages{};
@@ -133,17 +145,25 @@ yaha::YahaMqttClient::Transport makeTransport(TransportState& state) {
     };
 
     transport.publish = [&state](const yaha::Message& message) {
+        if (!state.publish_throw_reason.empty()) {
+            throw std::runtime_error{state.publish_throw_reason};
+        }
         state.publish_calls.fetch_add(1);
         state.published_messages.push_back(message);
     };
 
     transport.subscribe = [&state](const std::string& topic, yaha::Qos qos) {
-        state.subscribe_calls.fetch_add(1);
+        const int callNumber = state.subscribe_calls.fetch_add(1) + 1;
+        if (state.subscribe_fail_on_call.load() == callNumber) {
+            return false;
+        }
         state.subscriptions.emplace_back(topic, qos);
+        return true;
     };
 
     transport.unsubscribe = [&state](const std::string&) {
         state.unsubscribe_calls.fetch_add(1);
+        return true;
     };
 
     transport.pollIncoming = [&state]() -> std::optional<yaha::Message> {
@@ -253,6 +273,31 @@ TEST_CASE("handled_inbound_message_resyncs_subscription_diff", "[mqtt_client]") 
     REQUIRE(state.subscribe_calls.load() == 2);
 }
 
+TEST_CASE("failed_subscribe_confirmation_keeps_filter_inactive", "[mqtt_client]") {
+    TransportState state{};
+    state.subscribe_fail_on_call.store(2);
+    state.inbox.emplace_back("home/kitchen/state", std::string{"sync"});
+    state.inbox.emplace_back("sensor/temp", std::string{"blocked"});
+
+    MutatingSubscriptionsComponent component{{
+        {"home/+/state", yaha::Qos::AtLeastOnce},
+    }, {
+        {"home/+/state", yaha::Qos::AtLeastOnce},
+        {"sensor/#", yaha::Qos::AtMostOnce},
+    }};
+
+    yaha::YahaMqttClient::Config config{};
+    config.loopSleep = std::chrono::milliseconds{5};
+
+    yaha::YahaMqttClient client{config, component, makeTransport(state)};
+    client.run();
+    std::this_thread::sleep_for(std::chrono::milliseconds{60});
+    client.close();
+
+    REQUIRE(state.subscribe_calls.load() >= 2);
+    REQUIRE(component.handledCount() == 1U);
+}
+
 TEST_CASE("publish_forwards_valid_message_to_transport", "[mqtt_client]") {
     TransportState state{};
     RecordingComponent component{{{"home/#", yaha::Qos::AtLeastOnce}}};
@@ -270,6 +315,48 @@ TEST_CASE("publish_forwards_valid_message_to_transport", "[mqtt_client]") {
     REQUIRE(state.publish_calls.load() == 1);
     REQUIRE(state.published_messages.size() == 1U);
     REQUIRE(state.published_messages.front().topic() == "home/light");
+}
+
+TEST_CASE("publish_callback_maps_qos1_ack_timeout_to_publish_result", "[mqtt_client]") {
+    TransportState state{};
+    state.publish_throw_reason = "timed out waiting for PUBACK from broker";
+    RecordingComponent component{{{"home/#", yaha::Qos::AtLeastOnce}}};
+
+    yaha::YahaMqttClient::Config config{};
+    config.loopSleep = std::chrono::milliseconds{5};
+
+    yaha::YahaMqttClient client{config, component, makeTransport(state)};
+    client.run();
+    std::this_thread::sleep_for(std::chrono::milliseconds{20});
+
+    const yaha::PublishResult publishResult = component.publishFromComponentWithResult(
+        yaha::Message{"home/light", std::string{"on"}, yaha::Qos::AtLeastOnce, false});
+    client.close();
+
+    REQUIRE_FALSE(publishResult.success);
+    REQUIRE(publishResult.category == yaha::PublishFailureCategory::AckTimeout);
+    REQUIRE(publishResult.reason.find("PUBACK") != std::string::npos);
+}
+
+TEST_CASE("publish_callback_maps_qos2_ack_timeout_to_publish_result", "[mqtt_client]") {
+    TransportState state{};
+    state.publish_throw_reason = "timed out waiting for PUBREC from broker";
+    RecordingComponent component{{{"home/#", yaha::Qos::AtLeastOnce}}};
+
+    yaha::YahaMqttClient::Config config{};
+    config.loopSleep = std::chrono::milliseconds{5};
+
+    yaha::YahaMqttClient client{config, component, makeTransport(state)};
+    client.run();
+    std::this_thread::sleep_for(std::chrono::milliseconds{20});
+
+    const yaha::PublishResult publishResult = component.publishFromComponentWithResult(
+        yaha::Message{"home/light", 1.0, yaha::Qos::ExactlyOnce, false});
+    client.close();
+
+    REQUIRE_FALSE(publishResult.success);
+    REQUIRE(publishResult.category == yaha::PublishFailureCategory::AckTimeout);
+    REQUIRE(publishResult.reason.find("PUBREC") != std::string::npos);
 }
 
 TEST_CASE("inbound_non_matching_topic_is_filtered_out", "[mqtt_client]") {

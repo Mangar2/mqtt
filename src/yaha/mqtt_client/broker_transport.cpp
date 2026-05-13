@@ -540,10 +540,10 @@ public:
         }
     }
 
-    void subscribe(const std::string& topicFilter, const Qos qos) {
+    bool subscribe(const std::string& topicFilter, const Qos qos) {
         std::lock_guard<std::mutex> lock{transportMutex_};
         if (!connected_ || connection_ == nullptr) {
-            return;
+            return false;
         }
 
         mqtt::SubscribePacket packet{};
@@ -561,7 +561,7 @@ public:
         mqtt::encode_subscribe(encoded, packet);
         if (!connection_->write(asSpan(encoded))) {
             disconnectLocked();
-            return;
+            return false;
         }
 
         try {
@@ -569,13 +569,13 @@ public:
                 const std::optional<mqtt::AnyPacket> maybePacket = readNextPacketLocked(k_ack_timeout_ms);
                 if (!maybePacket.has_value()) {
                     disconnectLocked();
-                    return;
+                    return false;
                 }
 
                 if (std::holds_alternative<mqtt::SubackPacket>(*maybePacket)) {
                     const auto& suback = std::get<mqtt::SubackPacket>(*maybePacket);
                     if (suback.packet_id == expectedPacketId) {
-                        return;
+                        return true;
                     }
                     continue;
                 }
@@ -596,12 +596,14 @@ public:
         } catch (...) {
             disconnectLocked();
         }
+
+        return false;
     }
 
-    void unsubscribe(const std::string& topicFilter) {
+    bool unsubscribe(const std::string& topicFilter) {
         std::lock_guard<std::mutex> lock{transportMutex_};
         if (!connected_ || connection_ == nullptr) {
-            return;
+            return false;
         }
 
         mqtt::UnsubscribePacket packet{};
@@ -616,7 +618,7 @@ public:
         mqtt::encode_unsubscribe(encoded, packet);
         if (!connection_->write(asSpan(encoded))) {
             disconnectLocked();
-            return;
+            return false;
         }
 
         try {
@@ -624,13 +626,13 @@ public:
                 const std::optional<mqtt::AnyPacket> maybePacket = readNextPacketLocked(k_ack_timeout_ms);
                 if (!maybePacket.has_value()) {
                     disconnectLocked();
-                    return;
+                    return false;
                 }
 
                 if (std::holds_alternative<mqtt::UnsubackPacket>(*maybePacket)) {
                     const auto& unsuback = std::get<mqtt::UnsubackPacket>(*maybePacket);
                     if (unsuback.packet_id == expectedPacketId) {
-                        return;
+                        return true;
                     }
                     continue;
                 }
@@ -651,6 +653,8 @@ public:
         } catch (...) {
             disconnectLocked();
         }
+
+        return false;
     }
 
     std::optional<Message> pollIncoming() {
@@ -937,10 +941,10 @@ YahaMqttClient::Transport makeBrokerTransport() {
         adapter->publish(message);
     };
     transport.subscribe = [adapter](const std::string& topicFilter, const Qos qos) {
-        adapter->subscribe(topicFilter, qos);
+        return adapter->subscribe(topicFilter, qos);
     };
     transport.unsubscribe = [adapter](const std::string& topicFilter) {
-        adapter->unsubscribe(topicFilter);
+        return adapter->unsubscribe(topicFilter);
     };
     transport.pollIncoming = [adapter]() -> std::optional<Message> {
         return adapter->pollIncoming();

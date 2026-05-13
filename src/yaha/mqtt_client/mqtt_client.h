@@ -50,8 +50,8 @@ public:
         std::function<bool(const Config&)> connect;
         std::function<void()> disconnect;
         std::function<void(const Message&)> publish;
-        std::function<void(const std::string&, Qos)> subscribe;
-        std::function<void(const std::string&)> unsubscribe;
+        std::function<bool(const std::string&, Qos)> subscribe;
+        std::function<bool(const std::string&)> unsubscribe;
         std::function<std::optional<Message>()> pollIncoming;
         std::function<void()> ping;
         std::function<bool()> isConnected;

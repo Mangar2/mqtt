@@ -2,10 +2,20 @@
 
 namespace yaha {
 
+PublishResult PublishResult::ok() {
+    return PublishResult{true, PublishFailureCategory::None, {}};
+}
+
+PublishResult PublishResult::fail(const PublishFailureCategory categoryValue,
+                                  std::string reasonText) {
+    return PublishResult{false, categoryValue, std::move(reasonText)};
+}
+
 IMqttComponent::~IMqttComponent() = default;
 
 void IMqttComponent::setPublishCallback(PublishCallback callback) {
-    (void)callback;
+    PublishCallback consumedCallback{std::move(callback)};
+    (void)consumedCallback;
 }
 
 } // namespace yaha

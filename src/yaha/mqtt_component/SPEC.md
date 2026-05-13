@@ -11,8 +11,19 @@ Any component that consumes MQTT messages implements this interface.
 
 ```cpp
 using SubscriptionMap = std::map<std::string, Qos>;
-using PublishCallback = std::function<void(const Message&)>;
+enum class PublishFailureCategory : std::uint8_t;
+struct PublishResult;
+class PublishCallback; // wraps void and PublishResult callables
 ```
+
+`PublishResult` contains explicit delivery outcome:
+- `success` boolean
+- failure `category` (`Disconnected`, `AckTimeout`, `WriteFailed`, `CallbackMissing`, `Unknown`)
+- optional `reason` text
+
+`PublishCallback` wraps both callable shapes:
+- `void(const Message&)` (treated as success when no throw)
+- `PublishResult(const Message&)`
 
 ### Class IMqttComponent
 
@@ -21,7 +32,7 @@ using PublishCallback = std::function<void(const Message&)>;
 | Destructor | `virtual ~IMqttComponent()` | virtual and defaulted in `.cpp` |
 | `getSubscriptions()` | `virtual SubscriptionMap () const = 0` | called after every (re)connect |
 | `handleMessage()` | `virtual void (const Message&) = 0` | fire-and-forget delivery |
-| `setPublishCallback()` | `virtual void (PublishCallback)` | optional for components that publish |
+| `setPublishCallback()` | `virtual void (PublishCallback)` | optional for components that publish; callback returns explicit delivery result |
 
 ## Behavioral constraints
 

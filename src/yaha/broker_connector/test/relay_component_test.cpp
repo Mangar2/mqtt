@@ -65,8 +65,10 @@ yaha::YahaMqttClient::Transport makeFakeTransport(TransportState& state) {
             state.publishedMessages.push_back(message);
         },
         [](const std::string&, const yaha::Qos) {
+            return true;
         },
         [](const std::string&) {
+            return true;
         },
         []() -> std::optional<yaha::Message> {
             return std::nullopt;

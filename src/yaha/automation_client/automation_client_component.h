@@ -12,6 +12,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -102,8 +103,18 @@ public:
     [[nodiscard]] bool hasRule(const std::string& ruleName) const;
 
 private:
+    /**
+     * @brief One queued outbound publish entry for retry handling.
+     */
+    struct PendingPublishEntry {
+        Message message;                 ///< Message scheduled for retry.
+        std::string channelText;         ///< Logical channel label for diagnostics.
+        std::size_t attemptCount{0U};    ///< Number of failed send attempts so far.
+    };
+
     [[nodiscard]] bool loadRulesFromFileStore();
     [[nodiscard]] bool persistRulesToFileStore() const;
+    [[nodiscard]] bool persistRulesPayloadToFileStore(const std::string& payloadText) const;
 
     void handleMonitoringMessage(const Message& message);
     void handleManagementMessage(const Message& message);
@@ -154,6 +165,26 @@ private:
      */
     void logOutgoingMessageIfEnabled(const Message& message) const;
 
+    /**
+     * @brief Logs one failed outgoing publish attempt.
+     * @param message Message that failed to publish.
+     * @param categoryText Failure category token.
+     * @param reasonText Failure reason text.
+     */
+    static void logOutgoingFailure(const Message& message,
+                                   const std::string& categoryText,
+                                   const std::string& reasonText);
+
+    /**
+     * @brief Publishes one message through callback and logs success/failure.
+     * @param message Message to publish.
+     * @param channelText Channel label for failure logs.
+     * @return True when callback send completed successfully.
+     */
+    [[nodiscard]] bool tryPublishMessage(const Message& message, const std::string& channelText) const;
+    void enqueuePendingPublish(const Message& message, const std::string& channelText) const;
+    void processPendingPublishQueue() const;
+
     void publishManagementAck(const std::string& ruleName, const std::string& payloadText) const;
 
     AutomationClientConfig config_{};
@@ -166,6 +197,9 @@ private:
 
     mutable std::mutex publishMutex_;
     PublishCallback publishCallback_;
+
+    mutable std::mutex pendingPublishQueueMutex_;
+    mutable std::deque<PendingPublishEntry> pendingPublishQueue_;
 };
 
 } // namespace yaha

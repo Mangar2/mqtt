@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <exception>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -18,6 +19,7 @@ namespace {
 
 constexpr std::size_t k_management_suffix_length{4U};
 constexpr int k_http_ok_status{200};
+constexpr std::size_t k_max_pending_publish_attempts{3U};
 
 [[nodiscard]] bool startsWithText(const std::string& textValue, const std::string& prefix) {
     return textValue.size() >= prefix.size() && textValue.compare(0U, prefix.size(), prefix) == 0;
@@ -43,6 +45,25 @@ constexpr int k_http_ok_status{200};
     return node.isObject()
         && node.asObject().contains("topic")
         && node.asObject().at("topic").isString();
+}
+
+[[nodiscard]] std::string publishFailureCategoryToText(const PublishFailureCategory categoryValue) {
+    switch (categoryValue) {
+    case PublishFailureCategory::None:
+        return "none";
+    case PublishFailureCategory::Disconnected:
+        return "disconnected";
+    case PublishFailureCategory::AckTimeout:
+        return "ack_timeout";
+    case PublishFailureCategory::WriteFailed:
+        return "write_failed";
+    case PublishFailureCategory::CallbackMissing:
+        return "callback_missing";
+    case PublishFailureCategory::Unknown:
+        return "unknown";
+    }
+
+    return "unknown";
 }
 
 [[nodiscard]] RuleTreeNode::Object* ensureRulesObject(RuleTreeNode* rootNode) {
@@ -95,6 +116,7 @@ SubscriptionMap AutomationClientComponent::getSubscriptions() const {
 }
 
 void AutomationClientComponent::handleMessage(const Message& message) {
+    processPendingPublishQueue();
     logIncomingMessageIfEnabled(message);
 
     if (isManagementTopic(message.topic())) {
@@ -127,6 +149,8 @@ void AutomationClientComponent::run() {
         std::lock_guard<std::mutex> lock{stateMutex_};
         runtimeVariables_[config_.presenceTopic] = std::string{"initial"};
     }
+
+    processPendingPublishQueue();
 }
 
 void AutomationClientComponent::close() {
@@ -176,11 +200,22 @@ bool AutomationClientComponent::loadRulesFromFileStore() {
     httplib::Client client{config_.fileStoreHost, static_cast<int>(config_.fileStorePort)};
     const auto response = client.Get(config_.rulesKeyPath);
     if (!response || response->status != k_http_ok_status) {
+        const std::string statusText = response ? std::to_string(response->status) : "no_response";
+        std::cerr << "automation_client[error] op=filestore_get path=" << config_.rulesKeyPath
+                  << " status=" << statusText
+                  << " reason=load_rules_failed"
+                  << '\n'
+                  << std::flush;
         return false;
     }
 
     const std::optional<RuleTreeNode> parsed = parseJsonNode(response->body);
     if (!parsed.has_value()) {
+        std::cerr << "automation_client[error] op=filestore_get path=" << config_.rulesKeyPath
+                  << " status=" << response->status
+                  << " reason=invalid_json"
+                  << '\n'
+                  << std::flush;
         return false;
     }
 
@@ -202,9 +237,27 @@ bool AutomationClientComponent::persistRulesToFileStore() const {
         return toJsonText(rulesRoot_);
     }();
 
+    return persistRulesPayloadToFileStore(payloadText);
+}
+
+bool AutomationClientComponent::persistRulesPayloadToFileStore(const std::string& payloadText) const {
+    if (!config_.fileStoreEnabled) {
+        return true;
+    }
+
     httplib::Client client{config_.fileStoreHost, static_cast<int>(config_.fileStorePort)};
     const auto response = client.Post(config_.rulesKeyPath, payloadText, "application/json");
-    return response && response->status == k_http_ok_status;
+    if (!response || response->status != k_http_ok_status) {
+        const std::string statusText = response ? std::to_string(response->status) : "no_response";
+        std::cerr << "automation_client[error] op=filestore_post path=" << config_.rulesKeyPath
+                  << " status=" << statusText
+                  << " reason=persist_rules_failed"
+                  << '\n'
+                  << std::flush;
+        return false;
+    }
+
+    return true;
 }
 
 void AutomationClientComponent::handleMonitoringMessage(const Message& message) {
@@ -223,7 +276,12 @@ void AutomationClientComponent::handleMonitoringMessage(const Message& message) 
         return;
     }
 
-    (void)loadRulesFromFileStore();
+    if (!loadRulesFromFileStore()) {
+        std::cerr << "automation_client[error] op=monitor_reload keyPath=" << config_.rulesKeyPath
+                  << " reason=reload_failed"
+                  << '\n'
+                  << std::flush;
+    }
 }
 
 void AutomationClientComponent::handleManagementMessage(const Message& message) {
@@ -233,35 +291,49 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
     }
 
     if (!std::holds_alternative<std::string>(message.value())) {
-        publishManagementAck(*ruleName, "invalid rule");
+        publishManagementAck(*ruleName, "validation_failed");
         return;
     }
 
     const std::string& payloadText = std::get<std::string>(message.value());
-    std::string acknowledgedRuleJson{};
     if (isDeletePayloadText(payloadText)) {
+        RuleTreeNode stagedRulesRoot{};
         {
             std::lock_guard<std::mutex> lock{stateMutex_};
-            RuleTreeNode::Object* rulesObject = ensureRulesObject(&rulesRoot_);
+            stagedRulesRoot = rulesRoot_;
+            RuleTreeNode::Object* rulesObject = ensureRulesObject(&stagedRulesRoot);
             rulesObject->erase(*ruleName);
+        }
+
+        if (!persistRulesPayloadToFileStore(toJsonText(stagedRulesRoot))) {
+            publishManagementAck(*ruleName, "persist_failed");
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock{stateMutex_};
+            rulesRoot_ = std::move(stagedRulesRoot);
             refreshDynamicSubscriptionsLocked();
         }
 
-        if (persistRulesToFileStore()) {
-            publishManagementAck(*ruleName, "deleted");
-        }
+        publishManagementAck(*ruleName, "deleted");
         return;
     }
 
     const std::optional<RuleTreeNode> parsedRule = parseJsonNode(payloadText);
     if (!parsedRule.has_value() || !isRuleNodeStructureValid(*parsedRule)) {
-        publishManagementAck(*ruleName, "invalid rule");
+        publishManagementAck(*ruleName, "validation_failed");
         return;
     }
 
+    RuleTreeNode stagedRulesRoot{};
     {
         std::lock_guard<std::mutex> lock{stateMutex_};
-        RuleTreeNode::Object* rulesObject = ensureRulesObject(&rulesRoot_);
+        stagedRulesRoot = rulesRoot_;
+    }
+
+    {
+        RuleTreeNode::Object* rulesObject = ensureRulesObject(&stagedRulesRoot);
 
         RuleTreeNode ruleNode = *parsedRule;
         auto& ruleObject = std::get<RuleTreeNode::Object>(ruleNode.value);
@@ -270,16 +342,20 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
         }
 
         (*rulesObject)[*ruleName] = std::move(ruleNode);
-        refreshDynamicSubscriptionsLocked();
-        acknowledgedRuleJson = toJsonText(rulesObject->at(*ruleName));
     }
 
-    if (!persistRulesToFileStore()) {
-        publishManagementAck(*ruleName, "invalid rule");
+    if (!persistRulesPayloadToFileStore(toJsonText(stagedRulesRoot))) {
+        publishManagementAck(*ruleName, "persist_failed");
         return;
     }
 
-    publishManagementAck(*ruleName, acknowledgedRuleJson);
+    {
+        std::lock_guard<std::mutex> lock{stateMutex_};
+        rulesRoot_ = std::move(stagedRulesRoot);
+        refreshDynamicSubscriptionsLocked();
+    }
+
+    publishManagementAck(*ruleName, "updated");
 }
 
 void AutomationClientComponent::handleDomainMessage(const Message& message) {
@@ -322,6 +398,9 @@ void AutomationClientComponent::evaluateAndPublishRules() {
             }
         }
     } catch (...) {
+        std::cerr << "automation_client[error] op=internal_variables reason=calculation_failed"
+              << '\n'
+              << std::flush;
     }
 
     const RulesTreeProcessingResult result = RulesTreeProcessor::process(rulesSnapshot, variablesSnapshot);
@@ -341,9 +420,14 @@ void AutomationClientComponent::evaluateAndPublishRules() {
 
     for (const auto& outputMessage : result.messages) {
         try {
-            logOutgoingMessageIfEnabled(outputMessage);
             callback(outputMessage);
+            logOutgoingMessageIfEnabled(outputMessage);
+        } catch (const std::exception& exceptionValue) {
+            logOutgoingFailure(outputMessage, "publish_callback", exceptionValue.what());
+            enqueuePendingPublish(outputMessage, "rule_output");
         } catch (...) {
+            logOutgoingFailure(outputMessage, "publish_callback", "unknown");
+            enqueuePendingPublish(outputMessage, "rule_output");
         }
     }
 
@@ -511,9 +595,21 @@ void AutomationClientComponent::logOutgoingMessageIfEnabled(const Message& messa
               << std::flush;
 }
 
-void AutomationClientComponent::publishManagementAck(
-    const std::string& ruleName,
-    const std::string& payloadText) const {
+void AutomationClientComponent::logOutgoingFailure(const Message& message,
+                                                   const std::string& categoryText,
+                                                   const std::string& reasonText) {
+    std::cerr << "automation_client[out-fail] topic=" << message.topic()
+              << " qos=" << qosToLogText(message.qos())
+              << " retain=" << (message.retain() ? "1" : "0")
+              << " value=" << valueToLogText(message.value())
+              << " category=" << categoryText
+              << " reason=" << reasonText
+              << '\n'
+              << std::flush;
+}
+
+bool AutomationClientComponent::tryPublishMessage(const Message& message,
+                                                  const std::string& channelText) const {
     PublishCallback callback;
     {
         std::lock_guard<std::mutex> lock{publishMutex_};
@@ -521,19 +617,78 @@ void AutomationClientComponent::publishManagementAck(
     }
 
     if (!callback) {
-        return;
+        logOutgoingFailure(message, channelText, "callback_missing");
+        return false;
     }
 
+    try {
+        const PublishResult publishResult = callback(message);
+        if (!publishResult.success) {
+            const std::string reasonText = publishResult.reason.empty()
+                ? "unspecified"
+                : publishResult.reason;
+            logOutgoingFailure(message,
+                               publishFailureCategoryToText(publishResult.category),
+                               reasonText);
+            return false;
+        }
+
+        logOutgoingMessageIfEnabled(message);
+        return true;
+    } catch (const std::exception& exceptionValue) {
+        logOutgoingFailure(message, channelText, exceptionValue.what());
+    } catch (...) {
+        logOutgoingFailure(message, channelText, "unknown");
+    }
+
+    return false;
+}
+
+void AutomationClientComponent::enqueuePendingPublish(const Message& message,
+                                                      const std::string& channelText) const {
+    std::lock_guard<std::mutex> lock{pendingPublishQueueMutex_};
+    pendingPublishQueue_.push_back(PendingPublishEntry{message.clone(), channelText, 0U});
+}
+
+void AutomationClientComponent::processPendingPublishQueue() const {
+    std::deque<PendingPublishEntry> pendingBatch{};
+    {
+        std::lock_guard<std::mutex> lock{pendingPublishQueueMutex_};
+        if (pendingPublishQueue_.empty()) {
+            return;
+        }
+        pendingBatch.swap(pendingPublishQueue_);
+    }
+
+    for (auto& pendingEntry : pendingBatch) {
+        if (tryPublishMessage(pendingEntry.message, pendingEntry.channelText)) {
+            continue;
+        }
+
+        pendingEntry.attemptCount += 1U;
+        if (pendingEntry.attemptCount >= k_max_pending_publish_attempts) {
+            logOutgoingFailure(pendingEntry.message,
+                               "retry_exhausted",
+                               pendingEntry.channelText);
+            continue;
+        }
+
+        std::lock_guard<std::mutex> lock{pendingPublishQueueMutex_};
+        pendingPublishQueue_.push_back(std::move(pendingEntry));
+    }
+}
+
+void AutomationClientComponent::publishManagementAck(
+    const std::string& ruleName,
+    const std::string& payloadText) const {
     const Message ackMessage{
         config_.managementTopicPrefix + "/" + ruleName,
         payloadText,
         Qos::AtLeastOnce,
         false};
 
-    try {
-        logOutgoingMessageIfEnabled(ackMessage);
-        callback(ackMessage);
-    } catch (...) {
+    if (!tryPublishMessage(ackMessage, "management_ack")) {
+        enqueuePendingPublish(ackMessage, "management_ack");
     }
 }
 

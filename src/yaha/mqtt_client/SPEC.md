@@ -42,8 +42,8 @@ shutdown.
 - `connect(config) -> bool`
 - `disconnect()`
 - `publish(message)`
-- `subscribe(topic_filter, qos)`
-- `unsubscribe(topic_filter)`
+- `subscribe(topic_filter, qos) -> bool` (true only when broker confirms)
+- `unsubscribe(topic_filter) -> bool` (true only when broker confirms)
 - `pollIncoming() -> optional<Message>`
 - `ping()`
 - `isConnected() -> bool`
@@ -56,9 +56,11 @@ the callback contract into real TCP MQTT packet I/O.
 ## Behavior
 
 - On `run()`, injects component publish callback before processing incoming messages.
+- Injected publish callback returns explicit `PublishResult` and maps transport publish failures into categories (e.g. disconnected, ack-timeout, write-failed).
 - Connect loop retries with `reconnectDelay` on failures.
 - After each successful connect, fetches `component.getSubscriptions()` and subscribes all entries.
 - After each handled inbound message, re-fetches `component.getSubscriptions()` and applies the subscription diff so component key-set changes take effect immediately.
+- Active-subscription state tracks broker-confirmed filters only; failed subscribe/unsubscribe confirmations do not mutate the active map.
 - During `close()`, unsubscribes active filters before transport disconnect for deterministic broker-side teardown.
 - Inbound polling forwards only messages that match active subscriptions.
 - Broker transport publish path forwards `Message.rawPayload()` bytes unchanged when present; otherwise it encodes from `Message.value()`.
@@ -70,6 +72,8 @@ the callback contract into real TCP MQTT packet I/O.
 - Keep-alive sends `ping()` every `keepAliveInterval` while connected.
 - On external disconnect (`isConnected() == false`), marks disconnected and reconnects.
 - Exceptions raised by transport callbacks during the worker loop are treated as transient disconnects; the loop keeps running and retries connect after `reconnectDelay`.
+- Worker-loop exception paths emit lifecycle traces with failure reason (`exception.what()` or `unknown`) before reconnect handling.
+- Reconnect lifecycle line emits reason tags (`connect_failed`, `connection_lost`, `loop_exception`, `loop_exception_unknown`).
 - `close()` always ends with one `disconnect()` call if currently connected.
 - `close()` ignores transport disconnect exceptions to preserve no-throw shutdown behavior.
 - Lifecycle tracing is handled in this generic layer (`connect`, `connected`, `reconnect`, `reconnected`, `subscribe`, `unsubscribe`, `disconnect`, `connection lost`, `reconnecting`).
