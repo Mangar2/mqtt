@@ -713,16 +713,11 @@ struct CompatibilityParsedFields {
     return mappedMessage;
 }
 
-[[nodiscard]] std::optional<HttpMqttResult> tryForwardCompatibilityPublish(
+[[nodiscard]] HttpMqttResult tryForwardCompatibilityPublish(
     const HttpMqttPublishCompatibilityForwarder& forwarder,
     const HttpMqttRequestData& mappedRequest,
     const Message& mappedMessage) {
-    HttpMqttResult downstreamResult{};
-    try {
-        downstreamResult = forwarder(mappedRequest, mappedMessage);
-    } catch (const std::exception&) {
-        return makeCompatibilityErrorResponse(k_httpStatusInternalServerError, "internal_failure");
-    }
+    HttpMqttResult downstreamResult = forwarder(mappedRequest, mappedMessage);
 
     if (downstreamResult.statusCode != k_httpStatusNoContent) {
         return makeCompatibilityErrorResponse(k_httpStatusInternalServerError, "internal_failure");
@@ -1289,13 +1284,10 @@ HttpMqttResult handlePublishCompatibilityRequest(
         .packetId = std::nullopt};
     const HttpMqttRequestData mappedRequest = interfaces.publish(k_versionValue, mappedOptions);
 
-    const std::optional<HttpMqttResult> downstreamResult =
+    const HttpMqttResult downstreamResult =
         tryForwardCompatibilityPublish(forwarder, mappedRequest, mappedMessage);
-    if (!downstreamResult.has_value()) {
-        return makeCompatibilityErrorResponse(k_httpStatusInternalServerError, "internal_failure");
-    }
 
-    return adaptCompatibilityResponse(*downstreamResult, configInput);
+    return adaptCompatibilityResponse(downstreamResult, configInput);
 }
 
 } // namespace yaha

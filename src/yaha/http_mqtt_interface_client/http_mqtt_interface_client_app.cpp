@@ -14,6 +14,7 @@
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <string_view>
 #include <string>
 #include <utility>
 
@@ -32,6 +33,7 @@ constexpr std::string_view k_publishPhpEndpoint{"/publish.php"};
 constexpr std::string_view k_pubrelEndpoint{"/pubrel"};
 constexpr int k_httpStatusOk{200};
 constexpr int k_httpStatusNoContent{204};
+constexpr int k_httpStatusInternalServerError{500};
 constexpr std::string_view k_publishCorsMethods{"POST, PUT, OPTIONS"};
 constexpr std::string_view k_publishCorsHeaders{"Content-Type, Authorization, X-Requested-With"};
 
@@ -60,20 +62,71 @@ std::atomic<httplib::Server*> g_activeServer{nullptr};
     return "0";
 }
 
-void logBrokerForwardPublish(const Message& message, const HttpMqttRequestData& mappedRequest) {
-    std::cout << "http_mqtt_interface_client[out] broker_publish"
-              << " topic=" << message.topic()
-              << " qos=" << qosToText(message.qos())
-              << " retain=" << (message.retain() ? "1" : "0")
-              << " dup=" << (message.dup() ? "1" : "0");
+[[nodiscard]] std::string describeBrokerForwardMessage(
+    const Message& message,
+    const HttpMqttRequestData& mappedRequest) {
+    std::ostringstream output{};
+    output << " topic=" << message.topic()
+           << " qos=" << qosToText(message.qos())
+           << " retain=" << (message.retain() ? "1" : "0")
+           << " dup=" << (message.dup() ? "1" : "0");
 
     const auto packetIdIterator = mappedRequest.headers.find("packetid");
     if (packetIdIterator != mappedRequest.headers.end()) {
-        std::cout << " packetid=" << packetIdIterator->second;
+        output << " packetid=" << packetIdIterator->second;
     }
 
-    std::cout << " value=" << messageValueToText(message.value())
+    output << " value=" << messageValueToText(message.value());
+    return output.str();
+}
+
+[[nodiscard]] bool isBrokerNoAckError(const std::string_view errorText) {
+    return errorText.find("timed out waiting for PUBACK") != std::string_view::npos ||
+           errorText.find("timed out waiting for PUBREC") != std::string_view::npos ||
+           errorText.find("timed out waiting for PUBCOMP") != std::string_view::npos;
+}
+
+void logBrokerForwardPublishAck(const Message& message, const HttpMqttRequestData& mappedRequest) {
+    std::cout << "http_mqtt_interface_client[out] broker_publish_ack"
+              << describeBrokerForwardMessage(message, mappedRequest)
               << '\n' << std::flush;
+}
+
+void logBrokerForwardPublishError(
+    const Message& message,
+    const HttpMqttRequestData& mappedRequest,
+    const std::string_view errorText) {
+    std::cout << "http_mqtt_interface_client[error] broker_publish_failed"
+              << describeBrokerForwardMessage(message, mappedRequest)
+              << " error=" << errorText;
+    if (isBrokerNoAckError(errorText)) {
+        std::cout << " detail=message_was_sent_but_broker_reported_no_ack";
+    }
+    std::cout << '\n' << std::flush;
+}
+
+void logCompatibilityRequestFailure(const std::string_view endpoint, const std::string_view errorText) {
+    std::cerr << "http_mqtt_interface_client[error] publish_request_failed"
+              << " endpoint=" << endpoint
+              << " error=" << errorText
+              << '\n' << std::flush;
+}
+
+void logCompatibilityInternalResultFailure(const std::string_view endpoint, const HttpMqttResult& result) {
+    std::ostringstream errorText{};
+    errorText << "compatibility_result_status=" << result.statusCode;
+    if (!result.payload.empty()) {
+        errorText << " payload=" << result.payload;
+    }
+    logCompatibilityRequestFailure(endpoint, errorText.str());
+}
+
+[[nodiscard]] HttpMqttResult makeCompatibilityInternalErrorResult() {
+    HttpMqttResult result{};
+    result.statusCode = k_httpStatusInternalServerError;
+    result.headers["content-type"] = "application/json";
+    result.payload = "{\"error\":\"internal_error\"}";
+    return result;
 }
 
 void applyHttpMqttCorsHeaders(httplib::Response& response, const bool includeMaxAge) {
@@ -161,8 +214,16 @@ HttpMqttResult handleCompatibilityPublish(
         [&interfaces, &publishToBroker](
             const HttpMqttRequestData& downstreamRequest,
             const Message& mappedMessage) {
-            logBrokerForwardPublish(mappedMessage, downstreamRequest);
-            publishToBroker(mappedMessage);
+            try {
+                publishToBroker(mappedMessage);
+                logBrokerForwardPublishAck(mappedMessage, downstreamRequest);
+            } catch (const std::exception& exception) {
+                logBrokerForwardPublishError(mappedMessage, downstreamRequest, exception.what());
+                throw;
+            } catch (...) {
+                logBrokerForwardPublishError(mappedMessage, downstreamRequest, "unknown broker publish error");
+                throw;
+            }
             return interfaces.onPublish(downstreamRequest.headers);
         });
 }
@@ -292,14 +353,24 @@ int runHttpMqttInterfaceClient(
                     const httplib::Request& request,
                     httplib::Response& response) {
                     logIncomingPublishRequest(request, k_publishEndpoint);
-                    applyHttpMqttResult(
-                        handleCompatibilityPublish(
+                    try {
+                        const HttpMqttResult compatibilityResult = handleCompatibilityPublish(
                             interfaces,
                             request,
                             compatibilityConfig,
                             k_publishEndpoint,
-                            publishToBroker),
-                        response);
+                            publishToBroker);
+                        if (compatibilityResult.statusCode >= k_httpStatusInternalServerError) {
+                            logCompatibilityInternalResultFailure(k_publishEndpoint, compatibilityResult);
+                        }
+                        applyHttpMqttResult(compatibilityResult, response);
+                    } catch (const std::exception& exception) {
+                        logCompatibilityRequestFailure(k_publishEndpoint, exception.what());
+                        applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+                    } catch (...) {
+                        logCompatibilityRequestFailure(k_publishEndpoint, "unknown publish request error");
+                        applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+                    }
                 });
 
     server.Post(k_publishPhpEndpoint.data(),
@@ -307,14 +378,24 @@ int runHttpMqttInterfaceClient(
                     const httplib::Request& request,
                     httplib::Response& response) {
                     logIncomingPublishRequest(request, k_publishPhpEndpoint);
-                    applyHttpMqttResult(
-                        handleCompatibilityPublish(
+                    try {
+                        const HttpMqttResult compatibilityResult = handleCompatibilityPublish(
                             interfaces,
                             request,
                             compatibilityConfig,
                             k_publishPhpEndpoint,
-                            publishToBroker),
-                        response);
+                            publishToBroker);
+                        if (compatibilityResult.statusCode >= k_httpStatusInternalServerError) {
+                            logCompatibilityInternalResultFailure(k_publishPhpEndpoint, compatibilityResult);
+                        }
+                        applyHttpMqttResult(compatibilityResult, response);
+                    } catch (const std::exception& exception) {
+                        logCompatibilityRequestFailure(k_publishPhpEndpoint, exception.what());
+                        applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+                    } catch (...) {
+                        logCompatibilityRequestFailure(k_publishPhpEndpoint, "unknown publish request error");
+                        applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+                    }
                 });
 
     server.Options(k_publishEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {

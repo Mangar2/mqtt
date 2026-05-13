@@ -61,8 +61,10 @@ Publish ingress logging:
 
 Publish broker-forward logging:
 
-- each compatibility publish emits one log line exactly at the broker-forward call site
+- each compatibility publish emits one `broker_publish_ack` log line only after the broker-forward callback returned successfully
 - line contains full MQTT message transport fields: `topic`, `qos`, `retain`, `dup`, optional `packetid`, and `value`
+- callback failures emit one `broker_publish_failed` error line with the same message fields plus the error text
+- timeout-style broker ACK failures add `detail=message_was_sent_but_broker_reported_no_ack`
 
 CORS headers on publish/pubrel responses:
 
@@ -77,6 +79,12 @@ Compatibility behavior delegates to `handlePublishCompatibilityRequest(...)` wit
 - `LegacyPhp` when `useLegacyPhpResponse=true`
 
 For compatibility publishes, the mapped `Message` is forwarded through the broker publish callback before the HTTP ack response is generated.
+
+If broker forwarding fails during compatibility publish processing, the request is handled as internal error (`500`, JSON `{\"error\":\"internal_error\"}`) and broker publish failure details are logged with message fields.
+
+If compatibility publish processing ends in a 5xx compatibility result, one request-level error line is logged with endpoint and failure details.
+
+If a compatibility request handler throws past the mapping layer, one request-level error line is logged with endpoint and exception text.
 
 Signal handling:
 

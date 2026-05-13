@@ -303,13 +303,65 @@ TEST_CASE("run_http_mqtt_interface_client_serves_endpoints_logs_publish_and_stop
         std::string::npos);
     REQUIRE(outputText.find("http_mqtt_interface_client[in] method=POST endpoint=/publish.php") !=
         std::string::npos);
-    REQUIRE(outputText.find("http_mqtt_interface_client[out] broker_publish topic=sensor/temp") !=
+    REQUIRE(outputText.find("http_mqtt_interface_client[out] broker_publish_ack topic=sensor/temp") !=
         std::string::npos);
     {
         std::lock_guard<std::mutex> lock{forwardedMessagesMutex};
         REQUIRE(forwardedMessages.empty() == false);
         REQUIRE(forwardedMessages.front().topic() == "sensor/temp");
     }
+    REQUIRE(exitCode == 0);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("run_http_mqtt_interface_client_logs_broker_publish_error_when_ack_missing", "[http_mqtt_interface_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousOutputBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+    std::ostringstream capturedErrorOutput{};
+    std::streambuf* previousErrorBuffer = std::cerr.rdbuf(capturedErrorOutput.rdbuf());
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = port;
+    config.enablePublishPhpAlias = true;
+    config.useLegacyPhpResponse = false;
+
+    int exitCode = -1;
+    std::thread serverThread([&config, &exitCode]() {
+        exitCode = yaha::runHttpMqttInterfaceClient(
+            config,
+            [](const yaha::Message&) {
+                throw std::runtime_error{"timed out waiting for PUBACK from broker"};
+            });
+    });
+
+    REQUIRE(waitForHttpServer(port));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
+    const httplib::Params formParams{{"topic", "sensor%2Ftemp"}, {"value", "42"}, {"token", "tok-form"}};
+    const auto postResponse = client.Post("/publish", formParams);
+    REQUIRE(postResponse != nullptr);
+    REQUIRE(postResponse->status == 500);
+
+    std::raise(SIGTERM);
+    serverThread.join();
+    std::cout.rdbuf(previousOutputBuffer);
+    std::cerr.rdbuf(previousErrorBuffer);
+
+    const std::string outputText = capturedOutput.str();
+    REQUIRE(outputText.find("http_mqtt_interface_client[error] broker_publish_failed") !=
+        std::string::npos);
+    REQUIRE(outputText.find("topic=sensor/temp") != std::string::npos);
+    REQUIRE(outputText.find("value=42") != std::string::npos);
+    REQUIRE(outputText.find("detail=message_was_sent_but_broker_reported_no_ack") !=
+        std::string::npos);
+
+    const std::string errorOutputText = capturedErrorOutput.str();
+    REQUIRE(errorOutputText.find("http_mqtt_interface_client[error] publish_request_failed endpoint=/publish") !=
+        std::string::npos);
+    REQUIRE(errorOutputText.find("timed out waiting for PUBACK from broker") != std::string::npos);
     REQUIRE(exitCode == 0);
 }
 

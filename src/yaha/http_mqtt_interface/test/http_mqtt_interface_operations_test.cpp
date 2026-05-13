@@ -554,6 +554,27 @@ TEST_CASE("compat_publish_invalid_json_returns_400", "[http_mqtt_interface]") {
     REQUIRE(forwarded == false);
 }
 
+TEST_CASE("compat_publish_forwarder_exception_propagates_to_caller", "[http_mqtt_interface]") {
+    const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
+    const yaha::HttpMqttPublishCompatibilityRequest requestInput{
+        .method = "POST",
+        .endpoint = "/publish",
+        .headers = {},
+        .fields = {{"topic", "sensor%2Ftemp"}, {"value", "42"}},
+        .body = "",
+        .token = "token-compat"};
+
+    REQUIRE_THROWS_AS(
+        yaha::handlePublishCompatibilityRequest(
+            interfaces,
+            requestInput,
+            yaha::HttpMqttPublishCompatibilityConfig{},
+            [](const yaha::HttpMqttRequestData&, const yaha::Message&) -> yaha::HttpMqttResult {
+                throw std::runtime_error{"forwarder failure"};
+            }),
+        std::runtime_error);
+}
+
 TEST_CASE("compat_publish_missing_topic_returns_400", "[http_mqtt_interface]") {
     const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
     const yaha::HttpMqttPublishCompatibilityRequest requestInput{

@@ -62,6 +62,8 @@ the callback contract into real TCP MQTT packet I/O.
 - During `close()`, unsubscribes active filters before transport disconnect for deterministic broker-side teardown.
 - Inbound polling forwards only messages that match active subscriptions.
 - Broker transport publish path forwards `Message.rawPayload()` bytes unchanged when present; otherwise it encodes from `Message.value()`.
+- Broker transport publish waits for broker acknowledgements on QoS1/QoS2 (`PUBACK` for QoS1, `PUBREC` + `PUBCOMP` for QoS2) before returning.
+- If broker ACK is missing within timeout during publish (`PUBACK`/`PUBREC`/`PUBCOMP`), broker transport disconnects and throws.
 - Broker transport inbound path parses forwarded payload envelopes into internal `Message.topic()/value()/reason()` fields for runtime semantics while preserving the exact original payload text in `Message.rawPayload()` for lossless forwarding.
 - Broker transport maps `Message.dup()` to MQTT PUBLISH DUP on outgoing packets for QoS>0 and normalizes DUP to false for QoS0.
 - Broker transport preserves incoming MQTT PUBLISH DUP in the produced `Message` objects.

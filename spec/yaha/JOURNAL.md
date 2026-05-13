@@ -168,3 +168,14 @@ Added standalone broker connector executable main composition: CLI/config load, 
 
 ### [ARTIFACT] CMake and README updated for BrokerConnector executable
 Registered new `yahabrokerconnectorclient` target in `CMakeLists.txt`, added install rule, and documented run/config usage in `README.md`.
+
+## 2026-05-13
+
+### [ARTIFACT] HTTP MQTT interface client logging updated
+Updated `src/yaha/http_mqtt_interface_client/http_mqtt_interface_client_app.cpp` so outgoing broker publish logs are emitted only after broker publish callback success (`broker_publish_ack`). Added explicit `broker_publish_failed` error logging with full message fields (`topic`, `qos`, `retain`, `dup`, optional `packetid`, `value`) and no-ACK detail marker.
+
+### [ARTIFACT] Broker transport publish now waits for ACK
+Updated `src/yaha/mqtt_client/broker_transport.cpp` to wait for broker acknowledgements on QoS1/QoS2 publishes (`PUBACK`, `PUBREC`, `PUBCOMP`) and throw on timeout or write failure. This enables reliable detection and logging of missing broker ACK scenarios in client runtimes.
+
+### [ARTIFACT] HTTP MQTT interface client tests/spec updated
+Extended `src/yaha/http_mqtt_interface_client/test/http_mqtt_interface_client_app_test.cpp` and `test/TEST_SPEC.md` with a missing-ACK error logging test and adjusted success-log expectations to ACK-gated logging. Updated module specs in `src/yaha/http_mqtt_interface_client/SPEC.md`, `src/yaha/mqtt_client/SPEC.md`, and `src/SPEC.md` to keep behavior documentation aligned.

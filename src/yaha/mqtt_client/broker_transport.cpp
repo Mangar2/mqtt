@@ -21,6 +21,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <span>
 #include <string>
 #include <vector>
@@ -500,7 +501,7 @@ public:
     void publish(const Message& message) {
         std::lock_guard<std::mutex> lock{transportMutex_};
         if (!connected_ || connection_ == nullptr) {
-            return;
+            throw std::runtime_error{"publish requested while broker transport is disconnected"};
         }
 
         mqtt::PublishPacket packet{};
@@ -526,6 +527,16 @@ public:
         mqtt::encode_publish(encoded, packet);
         if (!connection_->write(asSpan(encoded))) {
             disconnectLocked();
+            throw std::runtime_error{"failed to write publish packet to broker"};
+        }
+
+        if (packet.qos == mqtt::QoS::AtLeastOnce && packet.packet_id.has_value()) {
+            waitForPubackLocked(*packet.packet_id);
+            return;
+        }
+
+        if (packet.qos == mqtt::QoS::ExactlyOnce && packet.packet_id.has_value()) {
+            waitForQos2AckFlowLocked(*packet.packet_id);
         }
     }
 
@@ -707,6 +718,107 @@ public:
     }
 
 private:
+    void handleConcurrentPacketWhileWaitingForAckLocked(const mqtt::AnyPacket& packet) {
+        if (std::holds_alternative<mqtt::PublishPacket>(packet)) {
+            if (const std::optional<Message> bufferedMessage =
+                    parsePublishPacketLocked(std::get<mqtt::PublishPacket>(packet));
+                bufferedMessage.has_value()) {
+                pendingIncoming_.push_back(*bufferedMessage);
+            }
+            return;
+        }
+
+        if (std::holds_alternative<mqtt::PubrelPacket>(packet)) {
+            mqtt::PubcompPacket pubcomp{};
+            pubcomp.packet_id = std::get<mqtt::PubrelPacket>(packet).packet_id;
+            mqtt::WriteBuffer encoded{};
+            mqtt::encode_pubcomp(encoded, pubcomp);
+            if (!connection_->write(asSpan(encoded))) {
+                disconnectLocked();
+                throw std::runtime_error{"failed to write PUBCOMP during ack wait"};
+            }
+        }
+    }
+
+    void waitForPubackLocked(const std::uint16_t expectedPacketId) {
+        while (true) {
+            const std::optional<mqtt::AnyPacket> maybePacket = readNextPacketLocked(k_ack_timeout_ms);
+            if (!maybePacket.has_value()) {
+                disconnectLocked();
+                throw std::runtime_error{"timed out waiting for PUBACK from broker"};
+            }
+
+            if (std::holds_alternative<mqtt::PubackPacket>(*maybePacket)) {
+                const auto& puback = std::get<mqtt::PubackPacket>(*maybePacket);
+                if (puback.packet_id == expectedPacketId) {
+                    return;
+                }
+                continue;
+            }
+
+            if (std::holds_alternative<mqtt::PingrespPacket>(*maybePacket)) {
+                continue;
+            }
+
+            handleConcurrentPacketWhileWaitingForAckLocked(*maybePacket);
+        }
+    }
+
+    void waitForQos2AckFlowLocked(const std::uint16_t expectedPacketId) {
+        while (true) {
+            const std::optional<mqtt::AnyPacket> maybePacket = readNextPacketLocked(k_ack_timeout_ms);
+            if (!maybePacket.has_value()) {
+                disconnectLocked();
+                throw std::runtime_error{"timed out waiting for PUBREC from broker"};
+            }
+
+            if (std::holds_alternative<mqtt::PubrecPacket>(*maybePacket)) {
+                const auto& pubrec = std::get<mqtt::PubrecPacket>(*maybePacket);
+                if (pubrec.packet_id == expectedPacketId) {
+                    break;
+                }
+                continue;
+            }
+
+            if (std::holds_alternative<mqtt::PingrespPacket>(*maybePacket)) {
+                continue;
+            }
+
+            handleConcurrentPacketWhileWaitingForAckLocked(*maybePacket);
+        }
+
+        mqtt::PubrelPacket pubrel{};
+        pubrel.packet_id = expectedPacketId;
+        mqtt::WriteBuffer pubrelEncoded{};
+        mqtt::encode_pubrel(pubrelEncoded, pubrel);
+        if (!connection_->write(asSpan(pubrelEncoded))) {
+            disconnectLocked();
+            throw std::runtime_error{"failed to write PUBREL packet to broker"};
+        }
+
+        while (true) {
+            const std::optional<mqtt::AnyPacket> maybePacket = readNextPacketLocked(k_ack_timeout_ms);
+            if (!maybePacket.has_value()) {
+                disconnectLocked();
+                throw std::runtime_error{"timed out waiting for PUBCOMP from broker"};
+            }
+
+            if (std::holds_alternative<mqtt::PubcompPacket>(*maybePacket)) {
+                const auto& pubcomp = std::get<mqtt::PubcompPacket>(*maybePacket);
+                if (pubcomp.packet_id == expectedPacketId) {
+                    return;
+                }
+                continue;
+            }
+
+            if (std::holds_alternative<mqtt::PingrespPacket>(*maybePacket)) {
+                continue;
+            }
+
+            handleConcurrentPacketWhileWaitingForAckLocked(*maybePacket);
+        }
+    }
+
     std::optional<Message> parsePublishPacketLocked(const mqtt::PublishPacket& packet) {
         if (packet.qos == mqtt::QoS::AtLeastOnce && packet.packet_id.has_value()) {
             mqtt::PubackPacket puback{};

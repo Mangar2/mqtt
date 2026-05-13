@@ -147,7 +147,8 @@ Implemented compatibility behavior:
 - error mapping:
 	- `400` for invalid JSON or missing topic
 	- `405` for unsupported method/route
-	- `500` for downstream/internal failures
+	- `500` for downstream non-204 failures
+	- forwarder runtime exceptions are propagated to the caller layer
 
 ## Constraints and behavior
 
