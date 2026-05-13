@@ -65,6 +65,12 @@ Publish broker-forward logging:
 - line contains full MQTT message transport fields: `topic`, `qos`, `retain`, `dup`, optional `packetid`, and `value`
 - callback failures emit one `broker_publish_failed` error line with the same message fields plus the error text
 - timeout-style broker ACK failures add `detail=message_was_sent_but_broker_reported_no_ack`
+- broker transport disconnect failures on shutdown emit `broker_disconnect_failed` and do not crash the runtime
+
+Native PUT error mapping:
+
+- `PUT /publish` and `PUT /pubrel` wrap dispatcher exceptions into deterministic internal error response (`500`, JSON `{"error":"internal_error"}`)
+- failed PUT requests emit one request-level `publish_request_failed` error line with endpoint and reason
 
 CORS headers on publish/pubrel responses:
 

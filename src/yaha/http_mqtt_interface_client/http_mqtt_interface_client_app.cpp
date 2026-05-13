@@ -321,7 +321,17 @@ int runHttpMqttInterfaceClient(
     {
         std::lock_guard<std::mutex> lock{brokerTransportStateMutex};
         if (brokerConnected) {
-            brokerTransport.disconnect();
+            try {
+                brokerTransport.disconnect();
+            } catch (const std::exception& exception) {
+                std::cerr << "http_mqtt_interface_client[error] broker_disconnect_failed"
+                          << " error=" << exception.what()
+                          << '\n' << std::flush;
+            } catch (...) {
+                std::cerr << "http_mqtt_interface_client[error] broker_disconnect_failed"
+                          << " error=unknown"
+                          << '\n' << std::flush;
+            }
             brokerConnected = false;
         }
     }
@@ -350,12 +360,28 @@ int runHttpMqttInterfaceClient(
     server.Put(k_publishEndpoint.data(),
                [&interfaces](const httplib::Request& request, httplib::Response& response) {
                    logIncomingPublishRequest(request, k_publishEndpoint);
-                   applyHttpMqttResult(interfaces.onPublish(collectHeaders(request)), response);
+                   try {
+                       applyHttpMqttResult(interfaces.onPublish(collectHeaders(request)), response);
+                   } catch (const std::exception& exception) {
+                       logCompatibilityRequestFailure(k_publishEndpoint, exception.what());
+                       applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+                   } catch (...) {
+                       logCompatibilityRequestFailure(k_publishEndpoint, "unknown publish request error");
+                       applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+                   }
                });
 
     server.Put(k_pubrelEndpoint.data(),
                [&interfaces](const httplib::Request& request, httplib::Response& response) {
-                   applyHttpMqttResult(interfaces.onPubrel(collectHeaders(request)), response);
+                   try {
+                       applyHttpMqttResult(interfaces.onPubrel(collectHeaders(request)), response);
+                   } catch (const std::exception& exception) {
+                       logCompatibilityRequestFailure(k_pubrelEndpoint, exception.what());
+                       applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+                   } catch (...) {
+                       logCompatibilityRequestFailure(k_pubrelEndpoint, "unknown publish request error");
+                       applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+                   }
                });
 
     server.Post(k_publishEndpoint.data(),
