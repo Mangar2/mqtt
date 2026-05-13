@@ -290,7 +290,12 @@ bool tryLoadHttpMqttInterfaceClientConfigFromIni(
 }
 
 int runHttpMqttInterfaceClient(const HttpMqttInterfaceClientConfig& configInput) {
-    YahaMqttClient::Transport brokerTransport = makeBrokerTransport();
+    return runHttpMqttInterfaceClient(configInput, makeBrokerTransport());
+}
+
+int runHttpMqttInterfaceClient(
+    const HttpMqttInterfaceClientConfig& configInput,
+    YahaMqttClient::Transport brokerTransport) {
     std::mutex brokerTransportStateMutex{};
     bool brokerConnected = false;
 
@@ -303,7 +308,12 @@ int runHttpMqttInterfaceClient(const HttpMqttInterfaceClientConfig& configInput)
             brokerConnected = true;
         }
 
-        brokerTransport.publish(message);
+        try {
+            brokerTransport.publish(message);
+        } catch (...) {
+            brokerConnected = false;
+            throw;
+        }
     };
 
     const int exitCode = runHttpMqttInterfaceClient(configInput, publishToBroker);

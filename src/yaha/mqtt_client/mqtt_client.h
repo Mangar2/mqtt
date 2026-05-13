@@ -34,7 +34,7 @@ public:
     struct Config {
         std::string brokerHost{"127.0.0.1"};
         std::uint16_t brokerPort{k_default_broker_port};
-        std::string clientId{"yaha-client"};
+        std::string clientId{};
         std::chrono::milliseconds reconnectDelay{k_default_reconnect_delay_ms};
         std::chrono::milliseconds keepAliveInterval{k_default_keep_alive_interval_ms};
         std::chrono::milliseconds loopSleep{k_default_loop_sleep_ms};

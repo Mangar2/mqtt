@@ -154,6 +154,45 @@ bool waitForMonitoringEventWithSourceAndKeyPath(std::mutex& eventsMutex,
     return false;
 }
 
+bool waitForMonitoringEventWithSourceAndKeyPathInTopics(
+    std::mutex& eventsMutex,
+    const std::vector<yaha::Message>& events,
+    const std::vector<std::string>& eventTopics,
+    const std::string& sourceText,
+    const std::string& keyPathText) {
+    const std::string sourceToken = std::string{"\"source\":\""} + sourceText + "\"";
+    const std::string keyPathToken = std::string{"\"keyPath\":\""} + keyPathText + "\"";
+
+    for (int attemptIndex = 0; attemptIndex < 200; ++attemptIndex) {
+        {
+            std::lock_guard<std::mutex> lock{eventsMutex};
+            for (const auto& eventValue : events) {
+                bool topicMatch = false;
+                for (const auto& eventTopic : eventTopics) {
+                    if (eventValue.topic() == eventTopic) {
+                        topicMatch = true;
+                        break;
+                    }
+                }
+                if (!topicMatch) {
+                    continue;
+                }
+                if (!std::holds_alternative<std::string>(eventValue.value())) {
+                    continue;
+                }
+                const std::string& payloadText = std::get<std::string>(eventValue.value());
+                if (payloadText.find(sourceToken) != std::string::npos
+                    && payloadText.find(keyPathToken) != std::string::npos) {
+                    return true;
+                }
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+
+    return false;
+}
+
 struct StoreCloseGuard {
     yaha::FileStore* store{nullptr};
     ~StoreCloseGuard() {
@@ -720,7 +759,7 @@ TEST_CASE("watcher_emits_created_changed_deleted_events", "[file_store]") {
     REQUIRE(topicCounts["$MONITOR/FileStore/deleted"] >= 1U);
 }
 
-TEST_CASE("watcher_changed_event_includes_key_path_for_known_file", "[file_store]") {
+TEST_CASE("watcher_filesystem_event_includes_key_path_for_known_file", "[file_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};
 
@@ -751,6 +790,27 @@ TEST_CASE("watcher_changed_event_includes_key_path_for_known_file", "[file_store
         eventsMutex,
         events,
         "$MONITOR/FileStore/changed",
+        "http-post",
+        "/watch/key"));
+
+    const std::filesystem::path watchedFilePath =
+        tempDir / yaha::FileStore::encodeKeyPathToFilename("/watch/key");
+    {
+        std::ofstream output{watchedFilePath, std::ios::binary | std::ios::trunc};
+        REQUIRE(output.is_open());
+        output << "T\nchanged-by-filesystem";
+    }
+    std::error_code writeTimeError{};
+    std::filesystem::last_write_time(
+        watchedFilePath,
+        std::filesystem::file_time_type::clock::now() + std::chrono::seconds{2},
+        writeTimeError);
+    REQUIRE_FALSE(writeTimeError);
+
+    REQUIRE(waitForMonitoringEventWithSourceAndKeyPathInTopics(
+        eventsMutex,
+        events,
+        {"$MONITOR/FileStore/changed", "$MONITOR/FileStore/created"},
         "filesystem-watch",
         "/watch/key"));
 }

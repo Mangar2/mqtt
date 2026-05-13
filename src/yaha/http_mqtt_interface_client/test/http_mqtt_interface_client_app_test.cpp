@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <atomic>
 #include <csignal>
 #include <cstdint>
 #include <chrono>
@@ -7,6 +8,7 @@
 #include <fstream>
 #include <mutex>
 #include <sstream>
+#include <stdexcept>
 #include <thread>
 #include <string>
 #include <vector>
@@ -15,6 +17,7 @@
 
 #include "yaha/http_mqtt_interface_client/http_mqtt_interface_client_app.h"
 #include "yaha/ini/ini_document.h"
+#include "yaha/mqtt_client/mqtt_client.h"
 
 namespace {
 
@@ -372,4 +375,63 @@ TEST_CASE("run_http_mqtt_interface_client_returns_error_on_listen_failure", "[ht
 
     const int exitCode = yaha::runHttpMqttInterfaceClient(config);
     REQUIRE(exitCode == 1);
+}
+
+TEST_CASE("run_http_mqtt_interface_client_reconnects_broker_after_publish_failure", "[http_mqtt_interface_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    std::ostringstream capturedError{};
+    std::streambuf* previousErrorBuffer = std::cerr.rdbuf(capturedError.rdbuf());
+
+    std::atomic<int> connectCallCount{0};
+    std::atomic<int> publishCallCount{0};
+
+    yaha::YahaMqttClient::Transport mockTransport{};
+    mockTransport.connect = [&connectCallCount](const yaha::YahaMqttClient::Config&) -> bool {
+        ++connectCallCount;
+        return true;
+    };
+    mockTransport.disconnect = []() {};
+    mockTransport.publish = [&publishCallCount](const yaha::Message&) {
+        const int call = ++publishCallCount;
+        if (call == 1) {
+            throw std::runtime_error{"timed out waiting for PUBACK from broker"};
+        }
+    };
+    mockTransport.subscribe = [](const std::string&, yaha::Qos) {};
+    mockTransport.unsubscribe = [](const std::string&) {};
+    mockTransport.pollIncoming = []() -> std::optional<yaha::Message> { return std::nullopt; };
+    mockTransport.ping = []() {};
+    mockTransport.isConnected = []() -> bool { return true; };
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = port;
+    config.enablePublishPhpAlias = false;
+    config.useLegacyPhpResponse = false;
+
+    int exitCode = -1;
+    std::thread serverThread([&config, &mockTransport, &exitCode]() mutable {
+        exitCode = yaha::runHttpMqttInterfaceClient(config, std::move(mockTransport));
+    });
+
+    REQUIRE(waitForHttpServer(port));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
+    const httplib::Params formParams{{"topic", "home%2Fstate"}, {"value", "1"}, {"token", "tok"}};
+
+    const auto firstResponse = client.Post("/publish", formParams);
+    REQUIRE(firstResponse != nullptr);
+    REQUIRE(firstResponse->status == 500);
+    REQUIRE(connectCallCount.load() == 1);
+
+    const auto secondResponse = client.Post("/publish", formParams);
+    REQUIRE(secondResponse != nullptr);
+    REQUIRE(secondResponse->status == 204);
+    REQUIRE(connectCallCount.load() == 2);
+
+    std::raise(SIGTERM);
+    serverThread.join();
+    std::cerr.rdbuf(previousErrorBuffer);
+    REQUIRE(exitCode == 0);
 }

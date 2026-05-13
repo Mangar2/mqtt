@@ -179,3 +179,12 @@ Updated `src/yaha/mqtt_client/broker_transport.cpp` to wait for broker acknowled
 
 ### [ARTIFACT] HTTP MQTT interface client tests/spec updated
 Extended `src/yaha/http_mqtt_interface_client/test/http_mqtt_interface_client_app_test.cpp` and `test/TEST_SPEC.md` with a missing-ACK error logging test and adjusted success-log expectations to ACK-gated logging. Updated module specs in `src/yaha/http_mqtt_interface_client/SPEC.md`, `src/yaha/mqtt_client/SPEC.md`, and `src/SPEC.md` to keep behavior documentation aligned.
+
+### [CORRECTION] mqtt_client disconnected publish test aligned with transport contract
+`src/yaha/mqtt_client/test/broker_transport_test.cpp` expected disconnected publish as no-op, but broker transport now throws on disconnected publish. Test updated to assert runtime error for publish while keeping subscribe/unsubscribe/ping/disconnect no-op-safe; `src/yaha/mqtt_client/test/TEST_SPEC.md` synchronized.
+
+### [CORRECTION] file_store watcher key-path test hardened against snapshot race
+`src/yaha/file_store/test/file_store_test.cpp` watcher test could fail when filesystem change was observed as `created` instead of `changed` due timing between watcher snapshots and out-of-band write. Test now verifies deterministic setup, forces out-of-band mtime change, and accepts race-equivalent filesystem event (`created` or `changed`) while still requiring `source=filesystem-watch` and expected `keyPath`; `src/yaha/file_store/test/TEST_SPEC.md` synchronized.
+
+### [MILESTONE] Full unit-only Python scripts green after follow-up fixes
+Executed `python3 test/run_coverage_broker.py --unit-only` and `python3 test/run_coverage_clients.py --unit-only` to completion after fixes; both reports are OK with selected broker/client tests passing.

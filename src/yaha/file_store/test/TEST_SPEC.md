@@ -29,4 +29,5 @@ Unit tests for `FileStore` HTTP behavior, key mapping, lifecycle, and MQTT monit
 | `handle_message_is_noop` | Inbound message handler contract | call handleMessage with any message | no throw and component stays usable |
 | `http_post_emits_monitoring_changed_event` | Monitoring publish on successful write | set callback + POST | one `$MONITOR/FileStore/changed` publish |
 | `watcher_emits_created_changed_deleted_events` | Filesystem watcher emits events for out-of-band file changes | create, update, delete file in store dir | changed + deleted topics published (created may be timing-dependent) |
+| `watcher_filesystem_event_includes_key_path_for_known_file` | Watcher event includes resolved key path for known persisted file | POST key to create known mapping, then modify mapped file out-of-band | filesystem event (`changed` or race-equivalent `created`) contains source `filesystem-watch` and `keyPath` for the key |
 | `run_and_close_are_idempotent` | Lifecycle reentry safety | run twice, close twice | no crash, running flag toggles correctly |

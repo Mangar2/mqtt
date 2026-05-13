@@ -53,6 +53,17 @@ using HttpMqttInterfacePublishToBroker = std::function<void(const Message& messa
 [[nodiscard]] int runHttpMqttInterfaceClient(const HttpMqttInterfaceClientConfig& configInput);
 
 /**
+ * @brief Runs standalone HTTP MQTT interface server with an injected broker transport.
+ *        Manages connect/reconnect state internally. Used for testing with a mock transport.
+ * @param configInput Runtime configuration.
+ * @param brokerTransport Broker transport to use for publishes.
+ * @return Exit code (0 success, non-zero failure).
+ */
+[[nodiscard]] int runHttpMqttInterfaceClient(
+    const HttpMqttInterfaceClientConfig& configInput,
+    YahaMqttClient::Transport brokerTransport);
+
+/**
  * @brief Runs standalone HTTP MQTT interface server with injected broker publish callback.
  * @param configInput Runtime configuration.
  * @param publishToBroker Callback invoked for each mapped publish that must be forwarded.

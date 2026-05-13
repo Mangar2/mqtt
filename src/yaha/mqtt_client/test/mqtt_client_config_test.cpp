@@ -146,3 +146,8 @@ TEST_CASE("mqtt_client_subscription_parser_rejects_invalid_qos", "[mqtt_client]"
 
     removeDirectoryQuiet(tempDir);
 }
+
+TEST_CASE("mqtt_client_config_default_client_id_is_empty", "[mqtt_client]") {
+    const yaha::YahaMqttClient::Config config{};
+    REQUIRE(config.clientId.empty());
+}
