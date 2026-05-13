@@ -14,6 +14,7 @@ Unit tests for MessageStore runtime config parsing.
 | `load_config_rejects_legacy_subscriptions_section` | no compatibility mode for legacy subscription map section | ini file using `[subscriptions]` | parser fails with migration hint |
 | `load_config_rejects_invalid_numeric_fields` | numeric range validation | invalid `mqtt.port` | parser fails and returns error |
 | `load_config_parses_tree_compression_parameters` | tree compression tuning parsing | ini file with all `[tree]` keys | parsed tree config values match file values |
+| `load_config_accepts_zero_length_for_further_compression` | preserve documented zero-value behavior | `[tree]` with `lengthForFurtherCompression = 0` | parser succeeds and keeps value `0` |
 | `load_config_rejects_invalid_tree_factor_values` | tree factor validation | `[tree]` with non-numeric `upperBoundFactor` | parser fails and returns error |
 | `load_config_rejects_out_of_range_tree_factor_values` | tree factor range guard | `[tree]` with `upperBoundFactor = 1001` | parser fails with range error |
 | `load_config_rejects_subscription_unknown_key` | strict subscription key validation | `[subscription]` with unsupported key | parser fails with unknown-key error |

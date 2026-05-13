@@ -10,7 +10,9 @@
 #include <cmath>
 #include <ctime>
 #include <cstdlib>
+#include <exception>
 #include <iomanip>
+#include <iostream>
 #include <optional>
 #include <sstream>
 #include <string_view>
@@ -451,6 +453,10 @@ void MessageStore::handleMessage(const Message& message) {
         if (days.has_value()) {
             std::lock_guard<std::mutex> lock{treeStateMutex_};
             (void)tree_.cleanup(*days);
+        } else {
+            std::cout << "message_store[error] op=cleanup reason=invalid_payload topic="
+                      << config_.cleanupTopic
+                      << '\n' << std::flush;
         }
         return;
     }
@@ -470,7 +476,19 @@ void MessageStore::run() {
 
     {
         std::lock_guard<std::mutex> lock{treeStateMutex_};
-        (void)persistence_.restoreLatest(tree_);
+        try {
+            if (!persistence_.restoreLatest(tree_)) {
+                std::cout << "message_store[error] op=restore_latest reason=no_valid_snapshot"
+                          << '\n' << std::flush;
+            }
+        } catch (const std::exception& exceptionValue) {
+            std::cout << "message_store[error] op=restore_latest reason=exception details=\""
+                      << exceptionValue.what() << "\""
+                      << '\n' << std::flush;
+        } catch (...) {
+            std::cout << "message_store[error] op=restore_latest reason=exception details=\"unknown\""
+                      << '\n' << std::flush;
+        }
     }
 
     startHttpServer();
@@ -503,7 +521,19 @@ void MessageStore::close() {
     persistence_.stopPeriodic();
 
     std::lock_guard<std::mutex> lock{treeStateMutex_};
-    (void)persistence_.persistNow(tree_);
+    try {
+        if (!persistence_.persistNow(tree_)) {
+            std::cout << "message_store[error] op=persist_final reason=persist_failed"
+                      << '\n' << std::flush;
+        }
+    } catch (const std::exception& exceptionValue) {
+        std::cout << "message_store[error] op=persist_final reason=exception details=\""
+                  << exceptionValue.what() << "\""
+                  << '\n' << std::flush;
+    } catch (...) {
+        std::cout << "message_store[error] op=persist_final reason=exception details=\"unknown\""
+                  << '\n' << std::flush;
+    }
 }
 
 bool MessageStore::isRunning() const {
@@ -552,7 +582,12 @@ void MessageStore::startHttpServer() {
     const std::uint16_t port = config_.serverPort;
     httpThread_ = std::thread([this, host, port]() {
         if (httpServer_ != nullptr) {
-            (void)httpServer_->listen(host, static_cast<int>(port));
+            if (!httpServer_->listen(host, static_cast<int>(port))) {
+                std::cout << "message_store[error] op=http_listen host=" << host
+                          << " port=" << port
+                          << " reason=listen_failed"
+                          << '\n' << std::flush;
+            }
         }
     });
 }

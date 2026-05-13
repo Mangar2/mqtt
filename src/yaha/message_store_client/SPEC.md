@@ -40,7 +40,7 @@ Parsing is composed from reusable shared modules:
   - `logReason` (optional, default `true`)
 - `[tree]`
   - `maxHistoryLength`, `historyHysterese`, `maxValuesPerHistoryEntry`
-  - `lengthForFurtherCompression`
+  - `lengthForFurtherCompression` (range `0..100000`; `0` keeps legacy non-converting behavior)
   - `upperBoundFactor`, `upperBoundAddInMilliseconds`
   - `lowerBoundFactor`, `lowerBoundSubInMilliseconds`
 - `[subscription]` (repeatable)

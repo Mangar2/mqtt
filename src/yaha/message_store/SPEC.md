@@ -126,13 +126,18 @@ struct MessageTreeNode;
 - `handleMessage()`:
   - cleanup topic: parse payload as days and call `tree.cleanup(days)`.
   - other topics: call `tree.addData(message)`.
-- Non-numeric cleanup payload is ignored.
+- Non-numeric cleanup payload emits one structured error log line (`message_store[error] op=cleanup ...`).
 - `run()` restores latest persisted snapshot before serving.
+- `run()` emits structured restore error log when no valid snapshot is available.
+- `run()` catches restore exceptions and emits structured error logs instead of terminating.
 - `close()` always performs one final `persistNow` after periodic loop is stopped.
+- `close()` emits structured error log when final persist fails.
+- `close()` catches final persist exceptions and emits structured error logs instead of terminating.
 
 ## HTTP behavior
 
 - `run()` starts an internal cpp-httplib server on `config.serverHost:config.serverPort`.
+- HTTP listen failure emits one structured error log (`message_store[error] op=http_listen ...`).
 - GET path: `<config.serverPath>/<topicPrefix>`; default `serverPath` is `/store`.
 - POST path: same base path, intended for `sensor.php` compatibility payloads.
 - OPTIONS path: same base path (`<config.serverPath>/<topicPrefix>`) for CORS preflight.

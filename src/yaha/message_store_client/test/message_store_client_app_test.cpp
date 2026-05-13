@@ -199,6 +199,24 @@ TEST_CASE("load_config_parses_tree_compression_parameters", "[message_store_clie
     removeDirectoryQuiet(tempDir);
 }
 
+TEST_CASE("load_config_accepts_zero_length_for_further_compression", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[tree]\n"
+        "lengthForFurtherCompression = 0\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(config.storeConfig.treeConfig.lengthForFurtherCompression == 0U);
+
+    removeDirectoryQuiet(tempDir);
+}
+
 TEST_CASE("load_config_rejects_invalid_tree_factor_values", "[message_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,

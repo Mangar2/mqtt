@@ -5,7 +5,9 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <netinet/in.h>
+#include <sstream>
 #include <sys/socket.h>
 #include <string>
 #include <thread>
@@ -194,6 +196,19 @@ TEST_CASE("handle_message_cleanup_topic_ignores_invalid_payload", "[message_stor
     REQUIRE(nodes.size() == 1U);
 }
 
+TEST_CASE("handle_message_cleanup_topic_logs_invalid_payload", "[message_store]") {
+    yaha::MessageStoreConfig config{};
+    config.serverPort = 0U;
+    yaha::MessageStore store{config};
+
+    std::ostringstream captured{};
+    auto* originalBuffer = std::cout.rdbuf(captured.rdbuf());
+    store.handleMessage(yaha::Message{"$MONITORING/messages/cleanup", std::string{"abc"}});
+    std::cout.rdbuf(originalBuffer);
+
+    REQUIRE(captured.str().find("message_store[error] op=cleanup") != std::string::npos);
+}
+
 TEST_CASE("handle_message_cleanup_topic_ignores_negative_and_empty_values", "[message_store]") {
     yaha::MessageStoreConfig config{};
     config.serverPort = 0U;
@@ -321,6 +336,58 @@ TEST_CASE("run_and_close_are_idempotent", "[message_store]") {
 
     REQUIRE(startCount == 1U);
     REQUIRE(stopCount == 1U);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("run_logs_restore_failure_for_unusable_persist_directory", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    const auto persistFilePath = tempDir / "persist-file";
+    {
+        std::ofstream output{persistFilePath};
+        output << "block-directory";
+    }
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = 0U;
+    config.persistenceConfig.directory = persistFilePath;
+    config.persistenceConfig.filename = "state";
+    config.persistenceConfig.intervalMs = 0U;
+
+    yaha::MessageStore store{config};
+    std::ostringstream captured{};
+    auto* originalBuffer = std::cout.rdbuf(captured.rdbuf());
+    store.run();
+    store.close();
+    std::cout.rdbuf(originalBuffer);
+
+    REQUIRE(captured.str().find("message_store[error] op=restore_latest") != std::string::npos);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("close_logs_final_persist_failure_for_unusable_persist_directory", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    const auto persistFilePath = tempDir / "persist-file";
+    {
+        std::ofstream output{persistFilePath};
+        output << "block-directory";
+    }
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = 0U;
+    config.persistenceConfig.directory = persistFilePath;
+    config.persistenceConfig.filename = "state";
+    config.persistenceConfig.intervalMs = 0U;
+
+    yaha::MessageStore store{config};
+    std::ostringstream captured{};
+    auto* originalBuffer = std::cout.rdbuf(captured.rdbuf());
+    store.run();
+    store.close();
+    std::cout.rdbuf(originalBuffer);
+
+    REQUIRE(captured.str().find("message_store[error] op=persist_final") != std::string::npos);
 
     removeDirectoryQuiet(tempDir);
 }

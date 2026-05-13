@@ -203,7 +203,7 @@ bool tryLoadMessageStoreConfigFromIni(
     }
     if (!tryReadTreeUnsigned(document,
                              "lengthForFurtherCompression",
-                             1U,
+                             0U,
                              k_tree_uint_max,
                              output.treeConfig.lengthForFurtherCompression,
                              errorMessage)) {
