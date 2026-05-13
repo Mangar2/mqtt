@@ -123,6 +123,37 @@ bool waitForAnyTopicAtLeast(std::mutex& eventsMutex,
     return false;
 }
 
+bool waitForMonitoringEventWithSourceAndKeyPath(std::mutex& eventsMutex,
+                                                const std::vector<yaha::Message>& events,
+                                                const std::string& eventTopic,
+                                                const std::string& sourceText,
+                                                const std::string& keyPathText) {
+    const std::string sourceToken = std::string{"\"source\":\""} + sourceText + "\"";
+    const std::string keyPathToken = std::string{"\"keyPath\":\""} + keyPathText + "\"";
+
+    for (int attemptIndex = 0; attemptIndex < 200; ++attemptIndex) {
+        {
+            std::lock_guard<std::mutex> lock{eventsMutex};
+            for (const auto& eventValue : events) {
+                if (eventValue.topic() != eventTopic) {
+                    continue;
+                }
+                if (!std::holds_alternative<std::string>(eventValue.value())) {
+                    continue;
+                }
+                const std::string& payloadText = std::get<std::string>(eventValue.value());
+                if (payloadText.find(sourceToken) != std::string::npos
+                    && payloadText.find(keyPathToken) != std::string::npos) {
+                    return true;
+                }
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+
+    return false;
+}
+
 struct StoreCloseGuard {
     yaha::FileStore* store{nullptr};
     ~StoreCloseGuard() {
@@ -687,6 +718,41 @@ TEST_CASE("watcher_emits_created_changed_deleted_events", "[file_store]") {
 
     REQUIRE(topicCounts["$MONITOR/FileStore/changed"] >= 1U);
     REQUIRE(topicCounts["$MONITOR/FileStore/deleted"] >= 1U);
+}
+
+TEST_CASE("watcher_changed_event_includes_key_path_for_known_file", "[file_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::FileStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.directory = tempDir;
+    config.monitoring.watchIntervalMs = 10U;
+
+    yaha::FileStore store{config};
+
+    std::mutex eventsMutex{};
+    std::vector<yaha::Message> events{};
+    store.setPublishCallback([&eventsMutex, &events](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{eventsMutex};
+        events.push_back(message.clone());
+    });
+
+    StoreCloseGuard storeGuard{&store};
+    store.run();
+    REQUIRE(waitForHttpReady(config.serverPort));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    const auto postResponse = client.Post("/watch/key", "value", "text/plain");
+    REQUIRE(postResponse != nullptr);
+    REQUIRE(postResponse->status == 200);
+
+    REQUIRE(waitForMonitoringEventWithSourceAndKeyPath(
+        eventsMutex,
+        events,
+        "$MONITOR/FileStore/changed",
+        "filesystem-watch",
+        "/watch/key"));
 }
 
 TEST_CASE("run_and_close_are_idempotent", "[file_store]") {

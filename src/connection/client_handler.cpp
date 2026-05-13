@@ -501,9 +501,9 @@ void process_decode_job(int fd, ConnectionTable &table, IoReactor &reactor,
   }
 
   if (total_read == 0U && packets_processed == 0U && !peer_closed && !close_after_flush) {
-    TRACE_GUARD(&broker.structured_tracer(), TraceLevel::Info, "connection") {
+    TRACE_GUARD(&broker.structured_tracer(), TraceLevel::Trace, "connection") {
       TraceEvent event;
-      event.level = TraceLevel::Info;
+      event.level = TraceLevel::Trace;
       event.module = "connection";
       event.info = "decode_job_idle";
       event.data.emplace_back("fd", std::to_string(fd));

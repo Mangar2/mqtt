@@ -14,6 +14,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -257,6 +258,35 @@ private:
     [[nodiscard]] static std::string trimTopicPrefix(std::string prefix);
 
     /**
+     * @brief Publishes one watcher-triggered monitoring event with known key mapping when available.
+     * @param eventType Event type suffix.
+     * @param filename Changed filename in data directory.
+     */
+    void publishWatcherMonitoring(const std::string& eventType,
+                                  const std::string& filename) const;
+
+    /**
+     * @brief Stores known filename to key path mapping.
+     * @param filename Encoded filename.
+     * @param keyPath Logical key path.
+     */
+    void rememberKnownKeyPath(const std::string& filename,
+                              const std::string& keyPath) const;
+
+    /**
+     * @brief Looks up known key path for one filename.
+     * @param filename Encoded filename.
+     * @return Known key path when available.
+     */
+    [[nodiscard]] std::optional<std::string> lookupKnownKeyPath(const std::string& filename) const;
+
+    /**
+     * @brief Removes known filename to key path mapping.
+     * @param filename Encoded filename.
+     */
+    void forgetKnownKeyPath(const std::string& filename) const;
+
+    /**
      * @brief Handles HTTP OPTIONS request.
      * @param response HTTP response object.
      */
@@ -291,10 +321,12 @@ private:
 
     mutable std::mutex stateMutex_;                 ///< Guards lifecycle state flags.
     mutable std::mutex publishMutex_;               ///< Guards publish callback access.
+    mutable std::mutex knownFilesMutex_;            ///< Guards known filename to key path map.
     std::condition_variable stopCondition_;         ///< Wakes watcher on shutdown.
     bool running_{false};                           ///< True when lifecycle is active.
     bool stopRequested_{false};                     ///< True when shutdown requested.
     PublishCallback publishCallback_;               ///< Outgoing MQTT publish callback.
+    mutable std::unordered_map<std::string, std::string> knownFilenameToKeyPath_{};
 };
 
 } // namespace yaha

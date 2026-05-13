@@ -250,17 +250,18 @@ void FileStore::watcherLoop() {
         for (const auto& currentEntry : current) {
             const auto previousIt = previous.find(currentEntry.first);
             if (previousIt == previous.end()) {
-                publishMonitoring("created", nullptr, currentEntry.first, "filesystem-watch", nullptr);
+                publishWatcherMonitoring("created", currentEntry.first);
                 continue;
             }
             if (previousIt->second != currentEntry.second) {
-                publishMonitoring("changed", nullptr, currentEntry.first, "filesystem-watch", nullptr);
+                publishWatcherMonitoring("changed", currentEntry.first);
             }
         }
 
         for (const auto& previousEntry : previous) {
             if (current.find(previousEntry.first) == current.end()) {
-                publishMonitoring("deleted", nullptr, previousEntry.first, "filesystem-watch", nullptr);
+                publishWatcherMonitoring("deleted", previousEntry.first);
+                forgetKnownKeyPath(previousEntry.first);
             }
         }
 
@@ -388,8 +389,36 @@ FileStore::WritePayloadResult FileStore::writeKeyPayload(
     }
 
     result.success = true;
+    rememberKnownKeyPath(result.filename, keyPath);
     logFileIo("write", keyPath, result.filename, "ok");
     return result;
+}
+
+void FileStore::rememberKnownKeyPath(const std::string& filename,
+                                     const std::string& keyPath) const {
+    std::lock_guard<std::mutex> lock{knownFilesMutex_};
+    knownFilenameToKeyPath_[filename] = keyPath;
+}
+
+std::optional<std::string> FileStore::lookupKnownKeyPath(const std::string& filename) const {
+    std::lock_guard<std::mutex> lock{knownFilesMutex_};
+    const auto found = knownFilenameToKeyPath_.find(filename);
+    if (found == knownFilenameToKeyPath_.end()) {
+        return std::nullopt;
+    }
+    return found->second;
+}
+
+void FileStore::forgetKnownKeyPath(const std::string& filename) const {
+    std::lock_guard<std::mutex> lock{knownFilesMutex_};
+    knownFilenameToKeyPath_.erase(filename);
+}
+
+void FileStore::publishWatcherMonitoring(const std::string& eventType,
+                                         const std::string& filename) const {
+    const std::optional<std::string> knownKeyPath = lookupKnownKeyPath(filename);
+    const std::string* keyPathPointer = knownKeyPath ? &*knownKeyPath : nullptr;
+    publishMonitoring(eventType, keyPathPointer, filename, "filesystem-watch", nullptr);
 }
 
 FileStore::ReadPayloadResult FileStore::readKeyPayload(const std::string& keyPath) const {

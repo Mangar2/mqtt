@@ -1,6 +1,7 @@
 #include "broker/subscribe_facade.h"
 
 #include <string>
+#include <sstream>
 
 namespace mqtt {
 
@@ -22,6 +23,20 @@ SubackPacket SubscribeFacade::handle_subscribe(std::string_view client_id,
     }
   }
 
+  // Build topic_filters list (max 10 for performance)
+  std::ostringstream topics_stream;
+  const std::size_t max_filters_to_log = 10U;
+  for (std::size_t idx = 0U; idx < packet.filters.size(); ++idx) {
+    if (idx >= max_filters_to_log) {
+      topics_stream << ",...";
+      break;
+    }
+    if (idx > 0U) {
+      topics_stream << ",";
+    }
+    topics_stream << packet.filters[idx].topic_filter.value;
+  }
+
   TRACE_GUARD(&structured_tracer_, TraceLevel::Info, "broker") {
     TraceEvent event;
     event.level = TraceLevel::Info;
@@ -34,6 +49,7 @@ SubackPacket SubscribeFacade::handle_subscribe(std::string_view client_id,
         "granted_filters",
         std::to_string(suback.reason_codes.size() - failure_count));
     event.data.emplace_back("failed_filters", std::to_string(failure_count));
+    event.data.emplace_back("topic_filters", topics_stream.str());
     structured_tracer_.emit(event);
   }
 
@@ -52,6 +68,20 @@ UnsubackPacket SubscribeFacade::handle_unsubscribe(
     }
   }
 
+  // Build topic_filters list (max 10 for performance)
+  std::ostringstream topics_stream;
+  const std::size_t max_filters_to_log = 10U;
+  for (std::size_t idx = 0U; idx < packet.topic_filters.size(); ++idx) {
+    if (idx >= max_filters_to_log) {
+      topics_stream << ",...";
+      break;
+    }
+    if (idx > 0U) {
+      topics_stream << ",";
+    }
+    topics_stream << packet.topic_filters[idx].value;
+  }
+
   TRACE_GUARD(&structured_tracer_, TraceLevel::Info, "broker") {
     TraceEvent event;
     event.level = TraceLevel::Info;
@@ -64,6 +94,7 @@ UnsubackPacket SubscribeFacade::handle_unsubscribe(
         "successful_filters",
         std::to_string(unsuback.reason_codes.size() - failure_count));
     event.data.emplace_back("failed_filters", std::to_string(failure_count));
+    event.data.emplace_back("topic_filters", topics_stream.str());
     structured_tracer_.emit(event);
   }
 

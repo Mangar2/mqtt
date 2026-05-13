@@ -353,6 +353,50 @@ TEST_CASE("value_service_monitoring_non_matching_keypath_does_not_reload", "[val
     component.close();
 }
 
+TEST_CASE("value_service_monitoring_filesystem_watch_is_ignored", "[value_service]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setValuesJson("{\"house/light\":\"on\"}");
+
+    yaha::ValueServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::ValueServiceComponent component{config};
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.run();
+    const std::size_t startupPublishCount = [&publishMutex, &published]() {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        return published.size();
+    }();
+
+    fileStore.setValuesJson("{\"house/heating\":\"off\"}");
+    component.handleMessage(yaha::Message{
+        "$MONITOR/FileStore/changed",
+        std::string{"{\"keyPath\":\"/valueservice/values\",\"changeType\":\"changed\",\"source\":\"filesystem-watch\"}"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    const auto oldValue = component.valueForKey("house/light");
+    const auto newValue = component.valueForKey("house/heating");
+    REQUIRE(oldValue.has_value());
+    REQUIRE_FALSE(newValue.has_value());
+
+    {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        REQUIRE(published.size() == startupPublishCount);
+    }
+
+    component.close();
+}
+
 TEST_CASE("value_service_rejects_non_integral_numeric_set_value", "[value_service]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};

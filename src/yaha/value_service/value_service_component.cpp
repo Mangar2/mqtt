@@ -348,6 +348,13 @@ void ValueServiceComponent::handleMonitoringMessage(const Message& message) {
         return;
     }
 
+    const std::optional<std::string> source = extractJsonStringField(
+        std::get<std::string>(message.value()),
+        "source");
+    if (source.has_value() && *source == "filesystem-watch") {
+        return;
+    }
+
     const std::optional<std::string> keyPath = extractJsonStringField(
         std::get<std::string>(message.value()),
         "keyPath");

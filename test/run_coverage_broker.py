@@ -274,14 +274,37 @@ def _discover_tests(binary: Path) -> list[tuple[str, str]]:
     output = _run_or_die("discover tests", [str(binary), "--list-tests", "-v", "high"])
     tests: list[tuple[str, str]] = []
     current_name: str | None = None
-    for raw_line in output.splitlines():
+    lines = output.splitlines()
+    idx = 0
+    while idx < len(lines):
+        raw_line = lines[idx]
+        
+        # Test name line: exactly 2 leading spaces, not empty after strip
         if raw_line.startswith("  ") and not raw_line.startswith("    "):
             stripped = raw_line.strip()
-            if stripped and stripped != "All available test cases:":
-                current_name = stripped
+            # Skip "All available test cases:" header
+            if not stripped or stripped == "All available test cases:":
+                idx += 1
+                continue
+            
+            # Start a new test name (may be multi-line with - continuation)
+            current_name = stripped
+            
+            # Handle line continuation with trailing dash
+            while current_name.endswith("-") and idx + 1 < len(lines):
+                next_line = lines[idx + 1]
+                # If next line is 2-space indented (continuation), append it
+                if next_line.startswith("  ") and not next_line.startswith("    "):
+                    current_name = current_name[:-1] + next_line.strip()
+                    idx += 1
+                else:
+                    break
+            idx += 1
             continue
 
+        # Location line: must have current_name and match file:line pattern
         if current_name is None:
+            idx += 1
             continue
 
         location_match = re.match(r"\s+(.+\.(?:cpp|cc|cxx)):\d+\s*$", raw_line)
@@ -291,8 +314,16 @@ def _discover_tests(binary: Path) -> list[tuple[str, str]]:
                 rel = abs_location.relative_to(PROJECT_ROOT).as_posix()
             except ValueError:
                 rel = abs_location.as_posix()
-            tests.append((current_name, rel))
+            # Only append if both name and location are valid
+            if current_name and not current_name.startswith('_'):
+                tests.append((current_name, rel))
             current_name = None
+        # Reset current_name if we hit a line that doesn't match location pattern
+        # but also doesn't match test name pattern (indicates parse error)
+        elif raw_line and not raw_line.startswith("  "):
+            current_name = None
+        
+        idx += 1
 
     if not tests:
         print("\n[FAILED] could not discover Catch2 tests", file=sys.stderr)
