@@ -4,7 +4,9 @@
 #include <array>
 #include <cmath>
 #include <ctime>
+#include <exception>
 #include <iomanip>
+#include <iostream>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -164,6 +166,16 @@ private:
     return output;
 }
 
+[[nodiscard]] Message makeOperationErrorMessage(const std::string& operation,
+                                                const std::string& detail) {
+    Message error{"$MONITORING/zwave/error", std::string{operation + " failed"}};
+    error.addReason("operation=" + operation);
+    if (!detail.empty()) {
+        error.addReason(detail);
+    }
+    return error;
+}
+
 ReplyMatcher& sharedReplyMatcher() {
     static ReplyMatcher matcher{};
     return matcher;
@@ -213,12 +225,32 @@ SubscriptionMap ZwaveServiceComponent::getSubscriptions() const {
 
 void ZwaveServiceComponent::handleMessage(const Message& message) {
     if (isRemoveFailedTopic(message.topic())) {
-        controller_->removeFailedNode(message.value());
+        try {
+            controller_->removeFailedNode(message.value());
+        } catch (const std::exception& exceptionValue) {
+            publish(withPublishFlags(makeOperationErrorMessage("removefailednode", exceptionValue.what()),
+                                     config_.qos,
+                                     config_.retain));
+        } catch (...) {
+            publish(withPublishFlags(makeOperationErrorMessage("removefailednode", "unknown"),
+                                     config_.qos,
+                                     config_.retain));
+        }
         return;
     }
 
     if (isAddNodeTopic(message.topic())) {
-        controller_->addDevice();
+        try {
+            controller_->addDevice();
+        } catch (const std::exception& exceptionValue) {
+            publish(withPublishFlags(makeOperationErrorMessage("addnode", exceptionValue.what()),
+                                     config_.qos,
+                                     config_.retain));
+        } catch (...) {
+            publish(withPublishFlags(makeOperationErrorMessage("addnode", "unknown"),
+                                     config_.qos,
+                                     config_.retain));
+        }
         return;
     }
 
@@ -232,6 +264,10 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
             Message error{"$MONITORING/zwave/error", std::string{"scan command failed"}};
             error.addReason(exception.what());
             publish(withPublishFlags(error, config_.qos, config_.retain));
+        } catch (...) {
+            Message error{"$MONITORING/zwave/error", std::string{"scan command failed"}};
+            error.addReason("unknown");
+            publish(withPublishFlags(error, config_.qos, config_.retain));
         }
         return;
     }
@@ -243,7 +279,17 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
     routedMessage.addReason("received by zwave service");
 
     sharedReplyMatcher().addReceivedMessage(routedMessage);
-    controller_->setValue(message.topic(), message.value());
+    try {
+        controller_->setValue(message.topic(), message.value());
+    } catch (const std::exception& exceptionValue) {
+        publish(withPublishFlags(makeOperationErrorMessage("setvalue", exceptionValue.what()),
+                                 config_.qos,
+                                 config_.retain));
+    } catch (...) {
+        publish(withPublishFlags(makeOperationErrorMessage("setvalue", "unknown"),
+                                 config_.qos,
+                                 config_.retain));
+    }
 }
 
 void ZwaveServiceComponent::run() {
@@ -255,11 +301,31 @@ void ZwaveServiceComponent::run() {
     addNodeRestart.addReason("zwave restarted");
     publish(withPublishFlags(addNodeRestart, config_.qos, config_.retain));
 
-    controller_->requestConfigParametersForAllNodes();
+    try {
+        controller_->requestConfigParametersForAllNodes();
+    } catch (const std::exception& exceptionValue) {
+        publish(withPublishFlags(makeOperationErrorMessage("requestconfig", exceptionValue.what()),
+                                 config_.qos,
+                                 config_.retain));
+    } catch (...) {
+        publish(withPublishFlags(makeOperationErrorMessage("requestconfig", "unknown"),
+                                 config_.qos,
+                                 config_.retain));
+    }
 }
 
 void ZwaveServiceComponent::close() {
-    controller_->close();
+    try {
+        controller_->close();
+    } catch (const std::exception& exceptionValue) {
+        publish(withPublishFlags(makeOperationErrorMessage("close", exceptionValue.what()),
+                                 config_.qos,
+                                 config_.retain));
+    } catch (...) {
+        publish(withPublishFlags(makeOperationErrorMessage("close", "unknown"),
+                                 config_.qos,
+                                 config_.retain));
+    }
 }
 
 void ZwaveServiceComponent::setPublishCallback(PublishCallback callback) {
@@ -272,8 +338,32 @@ void ZwaveServiceComponent::handleControllerPublish(const Message& message) {
 }
 
 void ZwaveServiceComponent::publish(const Message& message) const {
-    if (publishCallback_) {
-        publishCallback_(message);
+    if (!publishCallback_) {
+        std::cout << "zwave_service[error] op=publish reason=callback_missing"
+                  << " topic=" << message.topic()
+                  << '\n' << std::flush;
+        return;
+    }
+
+    try {
+        const PublishResult result = publishCallback_(message);
+        if (!result.success) {
+            std::cout << "zwave_service[error] op=publish reason=publish_rejected"
+                      << " topic=" << message.topic()
+                      << " category=" << static_cast<int>(result.category)
+                      << " detail=\"" << result.reason << "\""
+                      << '\n' << std::flush;
+        }
+    } catch (const std::exception& exceptionValue) {
+        std::cout << "zwave_service[error] op=publish reason=exception"
+                  << " topic=" << message.topic()
+                  << " detail=\"" << exceptionValue.what() << "\""
+                  << '\n' << std::flush;
+    } catch (...) {
+        std::cout << "zwave_service[error] op=publish reason=exception"
+                  << " topic=" << message.topic()
+                  << " detail=\"unknown\""
+                  << '\n' << std::flush;
     }
 }
 

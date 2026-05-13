@@ -3,9 +3,11 @@
 #include "yaha/zwave/zwave_service_component.h"
 
 #include <algorithm>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -15,6 +17,12 @@ constexpr std::uint16_t kNodeIdSeven = 7U;
 constexpr std::uint16_t kNodeIdNine = 9U;
 constexpr std::uint16_t kSwitchClass = 0x25U;
 constexpr double kRemoveFailedPayload = 7.0;
+constexpr int kUnknownThrowSetValue = 1;
+constexpr int kUnknownThrowAddNode = 2;
+constexpr int kUnknownThrowRemoveFailed = 3;
+constexpr int kUnknownThrowRequestConfig = 4;
+constexpr int kUnknownThrowClose = 5;
+constexpr int kUnknownThrowPublish = 99;
 
 class FakeController final : public yaha::IZwaveController {
 public:
@@ -27,21 +35,42 @@ public:
     }
 
     void setValue(const std::string& topic, const yaha::Value& value) override {
+        if (throwUnknownOnSetValue_) {
+            throw kUnknownThrowSetValue;
+        }
+        if (throwOnSetValue_) {
+            throw std::runtime_error{"setvalue failed in fake controller"};
+        }
         setValueCalls_ += 1U;
         lastSetTopic_ = topic;
         lastSetValue_ = value;
     }
 
     void addDevice() override {
+        if (throwUnknownOnAddDevice_) {
+            throw kUnknownThrowAddNode;
+        }
+        if (throwOnAddDevice_) {
+            throw std::runtime_error{"addnode failed in fake controller"};
+        }
         addDeviceCalls_ += 1U;
     }
 
     void removeFailedNode(const yaha::Value& value) override {
+        if (throwUnknownOnRemoveFailed_) {
+            throw kUnknownThrowRemoveFailed;
+        }
+        if (throwOnRemoveFailed_) {
+            throw std::runtime_error{"removefailednode failed in fake controller"};
+        }
         removeFailedCalls_ += 1U;
         lastRemoveFailedValue_ = value;
     }
 
     void startScan() override {
+        if (throwUnknownOnScan_) {
+            throw kUnknownThrowClose;
+        }
         startScanCalls_ += 1U;
         if (throwOnScan_) {
             throw std::runtime_error{"scan failed in fake controller"};
@@ -49,10 +78,22 @@ public:
     }
 
     void requestConfigParametersForAllNodes() override {
+        if (throwUnknownOnRequestConfig_) {
+            throw kUnknownThrowRequestConfig;
+        }
+        if (throwOnRequestConfig_) {
+            throw std::runtime_error{"requestconfig failed in fake controller"};
+        }
         requestConfigCalls_ += 1U;
     }
 
     void close() override {
+        if (throwUnknownOnClose_) {
+            throw kUnknownThrowClose;
+        }
+        if (throwOnClose_) {
+            throw std::runtime_error{"close failed in fake controller"};
+        }
         closeCalls_ += 1U;
     }
 
@@ -64,6 +105,50 @@ public:
 
     void setThrowOnScan(const bool enabled) {
         throwOnScan_ = enabled;
+    }
+
+    void setThrowUnknownOnScan(const bool enabled) {
+        throwUnknownOnScan_ = enabled;
+    }
+
+    void setThrowOnSetValue(const bool enabled) {
+        throwOnSetValue_ = enabled;
+    }
+
+    void setThrowUnknownOnSetValue(const bool enabled) {
+        throwUnknownOnSetValue_ = enabled;
+    }
+
+    void setThrowOnAddDevice(const bool enabled) {
+        throwOnAddDevice_ = enabled;
+    }
+
+    void setThrowUnknownOnAddDevice(const bool enabled) {
+        throwUnknownOnAddDevice_ = enabled;
+    }
+
+    void setThrowOnRemoveFailed(const bool enabled) {
+        throwOnRemoveFailed_ = enabled;
+    }
+
+    void setThrowUnknownOnRemoveFailed(const bool enabled) {
+        throwUnknownOnRemoveFailed_ = enabled;
+    }
+
+    void setThrowOnRequestConfig(const bool enabled) {
+        throwOnRequestConfig_ = enabled;
+    }
+
+    void setThrowUnknownOnRequestConfig(const bool enabled) {
+        throwUnknownOnRequestConfig_ = enabled;
+    }
+
+    void setThrowOnClose(const bool enabled) {
+        throwOnClose_ = enabled;
+    }
+
+    void setThrowUnknownOnClose(const bool enabled) {
+        throwUnknownOnClose_ = enabled;
     }
 
     [[nodiscard]] std::size_t setValueCalls() const {
@@ -118,6 +203,17 @@ private:
 
     std::vector<yaha::ZwaveDeviceConfig> configuredDevices_{};
     bool throwOnScan_{false};
+    bool throwUnknownOnScan_{false};
+    bool throwOnSetValue_{false};
+    bool throwOnAddDevice_{false};
+    bool throwOnRemoveFailed_{false};
+    bool throwOnRequestConfig_{false};
+    bool throwOnClose_{false};
+    bool throwUnknownOnSetValue_{false};
+    bool throwUnknownOnAddDevice_{false};
+    bool throwUnknownOnRemoveFailed_{false};
+    bool throwUnknownOnRequestConfig_{false};
+    bool throwUnknownOnClose_{false};
 };
 
 [[nodiscard]] yaha::ZwaveConfig makeConfig() {
@@ -221,6 +317,95 @@ TEST_CASE("scan_failure_publishes_error_message", "[zwave_service]") {
     CHECK(hasReasonMessage(published.front(), "scan failed in fake controller"));
 }
 
+TEST_CASE("scan_unknown_failure_publishes_error_message", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    controller->setThrowUnknownOnScan(true);
+
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    service.handleMessage(yaha::Message{"$MONITORING/zwave/scan/set", yaha::Value{std::string{"now"}}});
+
+    REQUIRE(controller->startScanCalls() == 0U);
+    REQUIRE(published.size() == 1U);
+    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    REQUIRE(std::holds_alternative<std::string>(published.front().value()));
+    CHECK(std::get<std::string>(published.front().value()) == "scan command failed");
+    CHECK(hasReasonMessage(published.front(), "unknown"));
+}
+
+TEST_CASE("publish_without_callback_logs_error", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::ostringstream outputStream{};
+    auto* previousBuffer = std::cout.rdbuf(outputStream.rdbuf());
+    service.run();
+    std::cout.rdbuf(previousBuffer);
+
+    REQUIRE(outputStream.str().find("zwave_service[error] op=publish reason=callback_missing")
+            != std::string::npos);
+}
+
+TEST_CASE("publish_failure_result_logs_error", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    service.setPublishCallback([](const yaha::Message&) {
+        return yaha::PublishResult::fail(yaha::PublishFailureCategory::AckTimeout, "no_ack");
+    });
+
+    std::ostringstream outputStream{};
+    auto* previousBuffer = std::cout.rdbuf(outputStream.rdbuf());
+    service.run();
+    std::cout.rdbuf(previousBuffer);
+
+    REQUIRE(outputStream.str().find("zwave_service[error] op=publish reason=publish_rejected")
+            != std::string::npos);
+    REQUIRE(outputStream.str().find("category=2") != std::string::npos);
+    REQUIRE(outputStream.str().find("detail=\"no_ack\"") != std::string::npos);
+}
+
+TEST_CASE("publish_callback_exception_logs_error", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    service.setPublishCallback([](const yaha::Message&) {
+        throw std::runtime_error{"publish failed in fake callback"};
+    });
+
+    std::ostringstream outputStream{};
+    auto* previousBuffer = std::cout.rdbuf(outputStream.rdbuf());
+    service.run();
+    std::cout.rdbuf(previousBuffer);
+
+    REQUIRE(outputStream.str().find("zwave_service[error] op=publish reason=exception")
+            != std::string::npos);
+    REQUIRE(outputStream.str().find("detail=\"publish failed in fake callback\"")
+            != std::string::npos);
+}
+
+TEST_CASE("publish_callback_unknown_exception_logs_error", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    service.setPublishCallback([](const yaha::Message&) {
+        throw kUnknownThrowPublish;
+    });
+
+    std::ostringstream outputStream{};
+    auto* previousBuffer = std::cout.rdbuf(outputStream.rdbuf());
+    service.run();
+    std::cout.rdbuf(previousBuffer);
+
+    REQUIRE(outputStream.str().find("zwave_service[error] op=publish reason=exception")
+            != std::string::npos);
+    REQUIRE(outputStream.str().find("detail=\"unknown\"") != std::string::npos);
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("regular_set_message_updates_matcher_and_publish_flags", "[zwave_service]") {
     auto controller = std::make_shared<FakeController>();
@@ -251,6 +436,176 @@ TEST_CASE("regular_set_message_updates_matcher_and_publish_flags", "[zwave_servi
     CHECK(hasReasonMessage(published.front(), "device feedback"));
 }
 
+TEST_CASE("regular_set_message_value_mismatch_skips_reason_merge", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    yaha::Message incoming{"home/phase6/lamp/set", yaha::Value{std::string{"on"}}};
+    service.handleMessage(incoming);
+
+    yaha::Message controllerPublish{"home/phase6/lamp", yaha::Value{std::string{"off"}}};
+    controllerPublish.addReason("device feedback", "2026-05-13T10:00:00Z");
+    controller->emitControllerPublish(controllerPublish);
+
+    REQUIRE(published.size() == 1U);
+    CHECK(hasReasonMessage(published.front(), "device feedback"));
+    CHECK_FALSE(hasReasonMessage(published.front(), "received by zwave service"));
+}
+
+TEST_CASE("regular_set_message_invalid_received_timestamp_skips_reason_merge", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    yaha::Message incoming{"home/phase6/lamp/set", yaha::Value{std::string{"on"}}};
+    incoming.addReason("ui", "invalid-time");
+    service.handleMessage(incoming);
+
+    yaha::Message controllerPublish{"home/phase6/lamp", yaha::Value{std::string{"on"}}};
+    controllerPublish.addReason("device feedback", "2026-05-13T10:00:00Z");
+    controller->emitControllerPublish(controllerPublish);
+
+    REQUIRE(published.size() == 1U);
+    CHECK(hasReasonMessage(published.front(), "device feedback"));
+    CHECK_FALSE(hasReasonMessage(published.front(), "received by zwave service"));
+}
+
+TEST_CASE("regular_set_message_out_of_window_timestamp_skips_reason_merge", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    yaha::Message incoming{"home/phase6/lamp/set", yaha::Value{std::string{"on"}}};
+    incoming.addReason("ui", "2026-05-13T10:00:00Z");
+    service.handleMessage(incoming);
+
+    yaha::Message controllerPublish{"home/phase6/lamp", yaha::Value{std::string{"on"}}};
+    controllerPublish.addReason("device feedback", "2026-05-13T10:01:00Z");
+    controller->emitControllerPublish(controllerPublish);
+
+    REQUIRE(published.size() == 1U);
+    CHECK(hasReasonMessage(published.front(), "device feedback"));
+    CHECK_FALSE(hasReasonMessage(published.front(), "received by zwave service"));
+}
+
+TEST_CASE("remove_failed_exception_publishes_error_message", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    controller->setThrowOnRemoveFailed(true);
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    service.handleMessage(yaha::Message{"$MONITORING/zwave/removefailednode/set", yaha::Value{kRemoveFailedPayload}});
+
+    REQUIRE(published.size() == 1U);
+    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(hasReasonMessage(published.front(), "operation=removefailednode"));
+}
+
+TEST_CASE("remove_failed_unknown_exception_publishes_error_message", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    controller->setThrowUnknownOnRemoveFailed(true);
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    service.handleMessage(yaha::Message{"$MONITORING/zwave/removefailednode/set", yaha::Value{kRemoveFailedPayload}});
+
+    REQUIRE(published.size() == 1U);
+    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(hasReasonMessage(published.front(), "operation=removefailednode"));
+    CHECK(hasReasonMessage(published.front(), "unknown"));
+}
+
+TEST_CASE("add_node_exception_publishes_error_message", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    controller->setThrowOnAddDevice(true);
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    service.handleMessage(yaha::Message{"$MONITORING/zwave/addnode/set", yaha::Value{std::string{"ignored"}}});
+
+    REQUIRE(published.size() == 1U);
+    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(hasReasonMessage(published.front(), "operation=addnode"));
+}
+
+TEST_CASE("add_node_unknown_exception_publishes_error_message", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    controller->setThrowUnknownOnAddDevice(true);
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    service.handleMessage(yaha::Message{"$MONITORING/zwave/addnode/set", yaha::Value{std::string{"ignored"}}});
+
+    REQUIRE(published.size() == 1U);
+    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(hasReasonMessage(published.front(), "operation=addnode"));
+    CHECK(hasReasonMessage(published.front(), "unknown"));
+}
+
+TEST_CASE("set_value_exception_publishes_error_message", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    controller->setThrowOnSetValue(true);
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    service.handleMessage(yaha::Message{"home/phase6/lamp/set", yaha::Value{std::string{"on"}}});
+
+    REQUIRE(published.size() == 1U);
+    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(hasReasonMessage(published.front(), "operation=setvalue"));
+}
+
+TEST_CASE("set_value_unknown_exception_publishes_error_message", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    controller->setThrowUnknownOnSetValue(true);
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    service.handleMessage(yaha::Message{"home/phase6/lamp/set", yaha::Value{std::string{"on"}}});
+
+    REQUIRE(published.size() == 1U);
+    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(hasReasonMessage(published.front(), "operation=setvalue"));
+    CHECK(hasReasonMessage(published.front(), "unknown"));
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("run_publishes_startup_markers_and_requests_controller_sync", "[zwave_service]") {
     auto controller = std::make_shared<FakeController>();
@@ -276,6 +631,41 @@ TEST_CASE("run_publishes_startup_markers_and_requests_controller_sync", "[zwave_
     CHECK(hasReasonMessage(published[1], "zwave restarted"));
 }
 
+TEST_CASE("run_request_config_exception_publishes_error_message", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    controller->setThrowOnRequestConfig(true);
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    service.run();
+
+    REQUIRE(published.size() == 3U);
+    CHECK(published.back().topic() == "$MONITORING/zwave/error");
+    CHECK(hasReasonMessage(published.back(), "operation=requestconfig"));
+}
+
+TEST_CASE("run_request_config_unknown_exception_publishes_error_message", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    controller->setThrowUnknownOnRequestConfig(true);
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    service.run();
+
+    REQUIRE(published.size() == 3U);
+    CHECK(published.back().topic() == "$MONITORING/zwave/error");
+    CHECK(hasReasonMessage(published.back(), "operation=requestconfig"));
+    CHECK(hasReasonMessage(published.back(), "unknown"));
+}
+
 TEST_CASE("close_delegates_to_controller", "[zwave_service]") {
     auto controller = std::make_shared<FakeController>();
     yaha::ZwaveServiceComponent service{makeConfig(), controller};
@@ -283,4 +673,39 @@ TEST_CASE("close_delegates_to_controller", "[zwave_service]") {
     service.close();
 
     CHECK(controller->closeCalls() == 1U);
+}
+
+TEST_CASE("close_exception_publishes_error_message", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    controller->setThrowOnClose(true);
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    service.close();
+
+    REQUIRE(published.size() == 1U);
+    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(hasReasonMessage(published.front(), "operation=close"));
+}
+
+TEST_CASE("close_unknown_exception_publishes_error_message", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    controller->setThrowUnknownOnClose(true);
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    service.close();
+
+    REQUIRE(published.size() == 1U);
+    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(hasReasonMessage(published.front(), "operation=close"));
+    CHECK(hasReasonMessage(published.front(), "unknown"));
 }

@@ -69,10 +69,13 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 - scan topic -> `controller.startScan()` with deterministic success/failure publish:
 	- success: `$MONITORING/zwave/notification` value `scan command accepted`
 	- failure: `$MONITORING/zwave/error` value `scan command failed`
+	- unknown scan exceptions are contained and reported with reason `unknown`
 - other topics:
 	- adds reason `received by zwave service`
 	- stores incoming message in reply matcher
 	- routes to `controller.setValue(topic, value)`
+- remove-failed/add-node/setValue exceptions are contained and emitted as deterministic
+	`$MONITORING/zwave/error` messages with operation reason metadata.
 
 ## Publish and matcher flow
 
@@ -80,6 +83,8 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 - Outbound messages are emitted with configured publish flags:
 	- `qos = config.qos`
 	- `retain = config.retain`
+- Publish callback missing/non-success/exception branches emit deterministic
+	`zwave_service[error] op=publish ...` logs.
 
 ## Lifecycle
 
@@ -89,7 +94,11 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 	- `$MONITORING/zwave/addnode` value `nop`
 	- reason `zwave restarted`
 - `run()` then calls `controller.requestConfigParametersForAllNodes()`.
+- request-config exceptions are contained and emitted as deterministic
+	`$MONITORING/zwave/error` messages.
 - `close()` delegates to controller close.
+- `close()` controller exceptions are contained and emitted as deterministic
+	`$MONITORING/zwave/error` messages.
 
 ## Files
 
