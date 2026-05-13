@@ -44,12 +44,19 @@ for FileStore-backed value-map lifecycle.
 	- accepts `<key>/set` topics
 	- accepts only string and integral numeric values
 	- updates in-memory map and publishes retained `<key>` state message
-	- persists full map to FileStore via HTTP POST (failure does not block publish)
+	- persists full map to FileStore via HTTP POST (failure does not block publish and emits structured error log)
 - Monitor reload handling:
 	- listens to `<monitorTopicPrefix>/#`
 	- reloads from FileStore when payload `keyPath` matches `valuesKeyPath`
 	- on successful reload publishes full retained replay
+	- on reload failure emits structured error log
 	- each reload replay message carries reason `reloaded after valuestore file change`
+- Publish handling:
+	- outgoing retained publish is delivery-result aware via `PublishCallback`
+	- success log is emitted only after callback confirms send
+	- failures emit structured `value_service[out-fail]` log with category and reason
+	- failed publishes are queued in bounded retry queue and retried on later activity cycles
+	- exhausted retry budget emits `category=retry_exhausted` and drops message
 - Subscription synchronization (mandatory invariant):
 	- the broker subscription set for `<key>/set` topics must always match the current in-memory key set exactly
 	- whenever keys change (startup load, monitor-triggered reload, or runtime key add/remove/change), subscriptions must be updated immediately to the new key set
@@ -57,7 +64,8 @@ for FileStore-backed value-map lifecycle.
 	- this is mandatory in every case; no delayed or best-effort synchronization is allowed
 - Message logging:
 	- logs every inbound message to `std::cout` before handling (`value_service[in] ...`)
-	- logs every outbound published message to `std::cout` before callback invocation (`value_service[out] ...`)
+	- logs every outbound published message to `std::cout` only after callback success (`value_service[out] ...`)
+	- logs outbound failures as `value_service[out-fail] ...`
 - Persistence format:
 	- full JSON object map `key -> value`
 	- values restricted to `string` or integer numbers

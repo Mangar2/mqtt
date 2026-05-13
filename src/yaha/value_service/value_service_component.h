@@ -8,7 +8,9 @@
 #include "yaha/message/message.h"
 #include "yaha/mqtt_component/mqtt_component.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -90,6 +92,18 @@ public:
     [[nodiscard]] std::optional<Value> valueForKey(const std::string& key) const;
 
 private:
+    /**
+     * @brief One pending retained publish entry.
+     */
+    struct PendingPublishEntry {
+        Message message;                 ///< Message queued for retry.
+        std::string channelText;         ///< Channel marker for diagnostics.
+        std::size_t attemptCount{0U};    ///< Number of failed attempts.
+    };
+
+    /**
+     * @brief In-memory value map type.
+     */
     using ValueMap = std::map<std::string, Value>;
 
     [[nodiscard]] bool loadValuesFromFileStore();
@@ -109,6 +123,36 @@ private:
     [[nodiscard]] static std::string serializeValueMap(const ValueMap& values);
     [[nodiscard]] static bool parseValueMapJson(const std::string& jsonText, ValueMap& output);
 
+    /**
+     * @brief Attempts one publish through callback.
+     * @param message Message to publish.
+     * @param channelText Channel marker for diagnostics.
+     * @return True when callback confirms send success.
+     */
+    [[nodiscard]] bool tryPublishMessage(const Message& message, const std::string& channelText) const;
+
+    /**
+     * @brief Enqueues one publish message for retry.
+     * @param message Message to enqueue.
+     * @param channelText Channel marker for diagnostics.
+     */
+    void enqueuePendingPublish(const Message& message, const std::string& channelText) const;
+
+    /**
+     * @brief Processes all queued publish retries.
+     */
+    void processPendingPublishQueue() const;
+
+    /**
+     * @brief Logs one failed outgoing publish attempt.
+     * @param message Failed message.
+     * @param categoryText Failure category token.
+     * @param reasonText Failure reason text.
+     */
+    static void logOutgoingFailure(const Message& message,
+                                   const std::string& categoryText,
+                                   const std::string& reasonText);
+
     void publishRetainedValue(
         const std::string& key,
         const Value& value,
@@ -123,6 +167,9 @@ private:
 
     mutable std::mutex publishMutex_;
     PublishCallback publishCallback_;
+
+    mutable std::mutex pendingPublishQueueMutex_;      ///< Guards pending publish queue.
+    mutable std::deque<PendingPublishEntry> pendingPublishQueue_; ///< Pending retained publish retries.
 };
 
 } // namespace yaha

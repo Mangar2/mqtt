@@ -19,6 +19,10 @@ Unit tests for ValueService phase 2 component behavior.
 | `value_service_runtime_config_parses_all_sections` | full runtime mapping for standalone composition | ini with mqtt, filestore and valueservice sections | parsed runtime config contains mapped values from single-source filestore filename/topicPrefix and valueservice qos |
 | `value_service_runtime_config_rejects_invalid_subscribe_qos` | invalid qos parser path | ini with `valueservice.subscribeQoS=9` | load fails with field-specific error |
 | `value_service_runtime_config_rejects_invalid_filestore_use` | invalid bool parser path | ini with `filestore.use=maybe` | load fails with field-specific error |
+| `value_service_publish_throw_logs_out_fail_without_false_success` | callback throw path must not emit success outbound line | callback throws and one `/set` message triggers publish | logs contain `value_service[out-fail]` and no `value_service[out]` for same topic |
+| `value_service_publish_result_failure_logs_category` | explicit callback failure result path logs structured category | callback returns `PublishResult::fail(AckTimeout)` and one `/set` message triggers publish | logs contain `category=ack_timeout` and `value_service[out-fail]` |
+| `value_service_retry_queue_flushes_after_callback_restore` | queued retained publish is flushed after callback restoration | first `/set` queues event because callback missing, callback set later, next inbound triggers retry processing | queued retained publish reaches callback successfully |
+| `value_service_retry_exhaustion_logs_retry_exhausted` | retry queue stops after budget and logs final category | callback always throws and repeated inbound messages trigger retries | logs contain `category=retry_exhausted` |
 
 ## Additional assertions on existing tests
 

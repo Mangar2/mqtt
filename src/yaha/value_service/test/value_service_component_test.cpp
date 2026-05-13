@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <mutex>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -22,6 +23,7 @@ constexpr int k_http_internal_server_error_status{500};
 constexpr int k_wait_sleep_ms{10};
 constexpr double k_non_integral_test_value{21.5};
 constexpr double k_integral_test_value{21.0};
+constexpr std::size_t k_retry_trigger_messages{5U};
 
 [[nodiscard]] std::uint16_t reserveFreeLocalPort() {
     httplib::Server probeServer;
@@ -542,6 +544,149 @@ TEST_CASE("value_service_get_subscriptions_contains_monitor_and_set_topics", "[v
     REQUIRE(subscriptions.contains("$MONITOR/FileStore/#"));
     REQUIRE(subscriptions.contains("house/light/set"));
     REQUIRE(subscriptions.contains("house/heating/set"));
+
+    component.close();
+}
+
+TEST_CASE("value_service_publish_throw_logs_out_fail_without_false_success", "[value_service]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+
+    yaha::ValueServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::ValueServiceComponent component{config};
+    component.setPublishCallback([](const yaha::Message&) {
+        throw std::runtime_error{"publish failed"};
+    });
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    component.run();
+    component.handleMessage(yaha::Message{
+        "house/light/set",
+        std::string{"on"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    std::cout.rdbuf(previousBuffer);
+
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find("value_service[out-fail] topic=house/light") != std::string::npos);
+    REQUIRE(logText.find("value_service[out] topic=house/light") == std::string::npos);
+
+    component.close();
+}
+
+TEST_CASE("value_service_publish_result_failure_logs_category", "[value_service]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+
+    yaha::ValueServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::ValueServiceComponent component{config};
+    component.setPublishCallback([](const yaha::Message&) {
+        return yaha::PublishResult::fail(yaha::PublishFailureCategory::AckTimeout,
+                                         "timed out waiting for PUBACK from broker");
+    });
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    component.run();
+    component.handleMessage(yaha::Message{
+        "house/light/set",
+        std::string{"on"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    std::cout.rdbuf(previousBuffer);
+
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find("value_service[out-fail] topic=house/light") != std::string::npos);
+    REQUIRE(logText.find("category=ack_timeout") != std::string::npos);
+
+    component.close();
+}
+
+TEST_CASE("value_service_retry_queue_flushes_after_callback_restore", "[value_service]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+
+    yaha::ValueServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::ValueServiceComponent component{config};
+    component.run();
+
+    component.handleMessage(yaha::Message{
+        "house/light/set",
+        std::string{"on"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+        return yaha::PublishResult::ok();
+    });
+
+    component.handleMessage(yaha::Message{
+        "house/retry/trigger",
+        std::string{"trigger"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        REQUIRE_FALSE(published.empty());
+        REQUIRE(published.back().topic() == "house/light");
+    }
+
+    component.close();
+}
+
+TEST_CASE("value_service_retry_exhaustion_logs_retry_exhausted", "[value_service]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+
+    yaha::ValueServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::ValueServiceComponent component{config};
+    component.setPublishCallback([](const yaha::Message&) {
+        throw std::runtime_error{"publish failed"};
+    });
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    component.run();
+    component.handleMessage(yaha::Message{
+        "house/light/set",
+        std::string{"on"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    for (std::size_t attemptIndex = 0U; attemptIndex < k_retry_trigger_messages; ++attemptIndex) {
+        component.handleMessage(yaha::Message{
+            "house/retry/trigger",
+            std::string{"trigger"},
+            yaha::Qos::AtLeastOnce,
+            false});
+    }
+
+    std::cout.rdbuf(previousBuffer);
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find("category=retry_exhausted") != std::string::npos);
 
     component.close();
 }

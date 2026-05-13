@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <iostream>
 #include <limits>
 #include <optional>
@@ -20,6 +21,26 @@ constexpr int k_http_ok_status{200};
 constexpr std::size_t k_set_suffix_size{4U};
 constexpr std::size_t k_json_escape_reserve_extra{8U};
 constexpr int k_decimal_base{10};
+constexpr std::size_t k_max_pending_publish_attempts{3U};
+
+[[nodiscard]] std::string publishFailureCategoryToText(const PublishFailureCategory categoryValue) {
+    switch (categoryValue) {
+    case PublishFailureCategory::None:
+        return "none";
+    case PublishFailureCategory::Disconnected:
+        return "disconnected";
+    case PublishFailureCategory::AckTimeout:
+        return "ack_timeout";
+    case PublishFailureCategory::WriteFailed:
+        return "write_failed";
+    case PublishFailureCategory::CallbackMissing:
+        return "callback_missing";
+    case PublishFailureCategory::Unknown:
+        return "unknown";
+    }
+
+    return "unknown";
+}
 
 [[nodiscard]] std::string valueToLogText(const Value& messageValue) {
     if (std::holds_alternative<std::string>(messageValue)) {
@@ -254,6 +275,7 @@ SubscriptionMap ValueServiceComponent::getSubscriptions() const {
 }
 
 void ValueServiceComponent::handleMessage(const Message& message) {
+    processPendingPublishQueue();
     logMessage("in", message);
 
     if (isMonitoringTopic(message.topic())) {
@@ -280,6 +302,7 @@ void ValueServiceComponent::run() {
     }
 
     publishAllValuesSnapshot(std::string{"loaded from valuestore on startup"});
+    processPendingPublishQueue();
 }
 
 void ValueServiceComponent::close() {
@@ -315,11 +338,22 @@ bool ValueServiceComponent::loadValuesFromFileStore() {
     httplib::Client client{config_.fileStoreHost, static_cast<int>(config_.fileStorePort)};
     const auto response = client.Get(config_.valuesKeyPath);
     if (!response || response->status != k_http_ok_status) {
+        const std::string statusText = response ? std::to_string(response->status) : "no_response";
+        std::cout << "value_service[error] op=filestore_get path=" << config_.valuesKeyPath
+                  << " status=" << statusText
+                  << " reason=load_values_failed"
+                  << '\n'
+                  << std::flush;
         return false;
     }
 
     ValueMap parsedValues{};
     if (!parseValueMapJson(response->body, parsedValues)) {
+        std::cout << "value_service[error] op=filestore_get path=" << config_.valuesKeyPath
+                  << " status=" << response->status
+                  << " reason=invalid_json"
+                  << '\n'
+                  << std::flush;
         return false;
     }
 
@@ -340,7 +374,17 @@ bool ValueServiceComponent::persistValuesToFileStore() const {
 
     httplib::Client client{config_.fileStoreHost, static_cast<int>(config_.fileStorePort)};
     const auto response = client.Post(config_.valuesKeyPath, payloadText, "application/json");
-    return response && response->status == k_http_ok_status;
+    if (!response || response->status != k_http_ok_status) {
+        const std::string statusText = response ? std::to_string(response->status) : "no_response";
+        std::cout << "value_service[error] op=filestore_post path=" << config_.valuesKeyPath
+                  << " status=" << statusText
+                  << " reason=persist_values_failed"
+                  << '\n'
+                  << std::flush;
+        return false;
+    }
+
+    return true;
 }
 
 void ValueServiceComponent::handleMonitoringMessage(const Message& message) {
@@ -363,6 +407,10 @@ void ValueServiceComponent::handleMonitoringMessage(const Message& message) {
     }
 
     if (!loadValuesFromFileStore()) {
+        std::cout << "value_service[error] op=monitor_reload path=" << config_.valuesKeyPath
+                  << " reason=reload_failed"
+                  << '\n'
+                  << std::flush;
         return;
     }
 
@@ -391,7 +439,12 @@ void ValueServiceComponent::handleSetMessage(const Message& message) {
     }
 
     publishRetainedValue(key, normalizedValue);
-    (void)persistValuesToFileStore();
+    if (!persistValuesToFileStore()) {
+        std::cout << "value_service[error] op=set_persist key=" << key
+                  << " reason=persist_failed"
+                  << '\n'
+                  << std::flush;
+    }
 }
 
 bool ValueServiceComponent::isMonitoringTopic(const std::string& topicName) const {
@@ -529,26 +582,13 @@ void ValueServiceComponent::publishRetainedValue(
     const std::string& key,
     const Value& value,
     const std::optional<std::string>& reasonText) const {
-    PublishCallback callback;
-    {
-        std::lock_guard<std::mutex> lock{publishMutex_};
-        callback = publishCallback_;
-    }
-
-    if (!callback) {
-        return;
-    }
-
     Message message{key, value, config_.subscribeQos, true};
     if (reasonText.has_value()) {
         message.addReason(*reasonText);
     }
 
-    logMessage("out", message);
-
-    try {
-        callback(message);
-    } catch (...) {
+    if (!tryPublishMessage(message, "retained_value")) {
+        enqueuePendingPublish(message, "retained_value");
     }
 }
 
@@ -562,6 +602,94 @@ void ValueServiceComponent::publishAllValuesSnapshot(const std::optional<std::st
     for (const auto& [key, value] : valuesSnapshot) {
         publishRetainedValue(key, value, reasonText);
     }
+
+    processPendingPublishQueue();
+}
+
+bool ValueServiceComponent::tryPublishMessage(const Message& message,
+                                              const std::string& channelText) const {
+    PublishCallback callback{};
+    {
+        std::lock_guard<std::mutex> lock{publishMutex_};
+        callback = publishCallback_;
+    }
+
+    if (!callback) {
+        logOutgoingFailure(message, channelText, "callback_missing");
+        return false;
+    }
+
+    try {
+        const PublishResult publishResult = callback(message);
+        if (!publishResult.success) {
+            const std::string reasonText = publishResult.reason.empty()
+                ? "unspecified"
+                : publishResult.reason;
+            logOutgoingFailure(
+                message,
+                publishFailureCategoryToText(publishResult.category),
+                reasonText);
+            return false;
+        }
+
+        logMessage("out", message);
+        return true;
+    } catch (const std::exception& exceptionValue) {
+        logOutgoingFailure(message, channelText, exceptionValue.what());
+    } catch (...) {
+        logOutgoingFailure(message, channelText, "unknown");
+    }
+
+    return false;
+}
+
+void ValueServiceComponent::enqueuePendingPublish(const Message& message,
+                                                  const std::string& channelText) const {
+    std::lock_guard<std::mutex> lock{pendingPublishQueueMutex_};
+    pendingPublishQueue_.push_back(PendingPublishEntry{message.clone(), channelText, 0U});
+}
+
+void ValueServiceComponent::processPendingPublishQueue() const {
+    std::deque<PendingPublishEntry> pendingBatch{};
+    {
+        std::lock_guard<std::mutex> lock{pendingPublishQueueMutex_};
+        if (pendingPublishQueue_.empty()) {
+            return;
+        }
+
+        pendingBatch.swap(pendingPublishQueue_);
+    }
+
+    for (auto& pendingEntry : pendingBatch) {
+        if (tryPublishMessage(pendingEntry.message, pendingEntry.channelText)) {
+            continue;
+        }
+
+        pendingEntry.attemptCount += 1U;
+        if (pendingEntry.attemptCount >= k_max_pending_publish_attempts) {
+            logOutgoingFailure(
+                pendingEntry.message,
+                "retry_exhausted",
+                pendingEntry.channelText);
+            continue;
+        }
+
+        std::lock_guard<std::mutex> lock{pendingPublishQueueMutex_};
+        pendingPublishQueue_.push_back(std::move(pendingEntry));
+    }
+}
+
+void ValueServiceComponent::logOutgoingFailure(const Message& message,
+                                               const std::string& categoryText,
+                                               const std::string& reasonText) {
+    std::cout << "value_service[out-fail] topic=" << message.topic()
+              << " qos=" << qosToLogText(message.qos())
+              << " retain=" << (message.retain() ? "1" : "0")
+              << " value=" << valueToLogText(message.value())
+              << " category=" << categoryText
+              << " reason=" << reasonText
+              << '\n'
+              << std::flush;
 }
 
 } // namespace yaha
