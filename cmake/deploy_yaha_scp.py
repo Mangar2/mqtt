@@ -6,7 +6,7 @@ from __future__ import annotations
 Features:
 - Creates missing remote directories.
 - Compares file hashes before copying and skips identical files.
-- Prompts before overwriting changed protected service config files (.ini/.service).
+- Prompts before overwriting changed protected INI config files (.ini).
 - Optional remote install/restart for selected service components.
 - Optional remote execution of root install.sh.
 - Remote install can run with interactive TTY for sudo password prompts.
@@ -125,7 +125,9 @@ def remote_sha256(*, remote_host: str, remote_path: str, cwd: Path) -> str | Non
 
 def is_protected_service_config_file(path: Path) -> bool:
     suffix = path.suffix.lower()
-    return suffix in {".ini", ".service"}
+    # --no-overwrite-ini must only protect runtime-edited INI files.
+    # Service unit templates are deployment-owned and must be updated.
+    return suffix == ".ini"
 
 
 def list_local_files(local_root: Path) -> list[Path]:
@@ -262,7 +264,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Copy deployment/yaha to a remote system via scp with checksum-based "
-            "skip and overwrite prompts for protected service config files."
+            "skip and overwrite prompts for protected INI config files."
         )
     )
     parser.add_argument(
@@ -283,12 +285,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--yes-overwrite-ini",
         action="store_true",
-        help="Overwrite differing protected service config files without prompting",
+        help="Overwrite differing protected INI config files without prompting",
     )
     parser.add_argument(
         "--no-overwrite-ini",
         action="store_true",
-        help="Never overwrite differing protected service config files",
+        help="Never overwrite differing protected INI config files",
     )
     parser.add_argument(
         "--install-component",

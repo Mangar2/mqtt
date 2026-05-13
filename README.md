@@ -107,6 +107,25 @@ Startup precedence is deterministic:
 
 Any unknown CLI flag causes startup failure.
 
+## Deployment logging
+
+YAHA deployment service units are configured with dedicated systemd journal namespaces.
+Each managed unit (`broker`, `filestore`, `msgstore`, `autom`, `valuesvc`,
+`brkconn`, `httpmqtt`, `remotesvc`) writes to its own namespace to prevent
+cross-service log eviction.
+
+Deployment installer behavior:
+
+- installs namespace journald drop-ins under `/etc/systemd/journald@<namespace>.conf.d/`
+- enables persistent storage and namespace-local retention limits
+- keeps existing namespace journal data on repeated deployment runs
+
+The `svc` helper reads logs from the namespace assigned to the selected unit:
+
+```sh
+./deployment/yaha/svc log valuesvc 200
+```
+
 `yahamsgstoreclient` accepts one optional positional config path and optional flags:
 
 | Argument | Type | Default | Description |

@@ -43,6 +43,7 @@ SERVICE_COMPONENTS = (
         "binary": "yahabroker",
         "ini": "broker.ini",
         "service": "broker.service",
+        "log_namespace": "broker",
         "description": "Yaha MQTT Broker",
         "exec": "__INSTALL_ROOT__/broker/yahabroker -c __INSTALL_ROOT__/broker/broker.ini",
     },
@@ -51,6 +52,7 @@ SERVICE_COMPONENTS = (
         "binary": "yahafilestoreclient",
         "ini": "filestore.ini",
         "service": "filestore.service",
+        "log_namespace": "filestore",
         "description": "Yaha File Store Client",
         "exec": (
             "__INSTALL_ROOT__/filestore/yahafilestoreclient "
@@ -62,6 +64,7 @@ SERVICE_COMPONENTS = (
         "binary": "yahamsgstoreclient",
         "ini": "msgstore.ini",
         "service": "msgstore.service",
+        "log_namespace": "msgstore",
         "description": "Yaha Message Store Client",
         "exec": (
             "__INSTALL_ROOT__/msgstore/yahamsgstoreclient "
@@ -73,6 +76,7 @@ SERVICE_COMPONENTS = (
         "binary": "yahaautomationclient",
         "ini": "automation.ini",
         "service": "autom.service",
+        "log_namespace": "autom",
         "description": "Yaha Automation Client",
         "exec": (
             "__INSTALL_ROOT__/automation/yahaautomationclient "
@@ -84,6 +88,7 @@ SERVICE_COMPONENTS = (
         "binary": "yahavalueserviceclient",
         "ini": "valueservice.ini",
         "service": "valuesvc.service",
+        "log_namespace": "valuesvc",
         "description": "Yaha Value Service Client",
         "exec": (
             "__INSTALL_ROOT__/valueservice/yahavalueserviceclient "
@@ -95,6 +100,7 @@ SERVICE_COMPONENTS = (
         "binary": "yahabrokerconnectorclient",
         "ini": "brokerconnector.ini",
         "service": "brkconn.service",
+        "log_namespace": "brkconn",
         "description": "Yaha Broker Connector Client",
         "exec": (
             "__INSTALL_ROOT__/brokerconnector/yahabrokerconnectorclient "
@@ -106,6 +112,7 @@ SERVICE_COMPONENTS = (
         "binary": "yahahttpmqttinterfaceclient",
         "ini": "httpmqttinterface.ini",
         "service": "httpmqtt.service",
+        "log_namespace": "httpmqtt",
         "description": "Yaha HTTP MQTT Interface Client",
         "exec": (
             "__INSTALL_ROOT__/httpmqttinterface/yahahttpmqttinterfaceclient "
@@ -117,6 +124,7 @@ SERVICE_COMPONENTS = (
         "binary": "yaharemoteserviceclient",
         "ini": "remoteservice.ini",
         "service": "remotesvc.service",
+        "log_namespace": "remotesvc",
         "description": "Yaha RemoteService Client",
         "exec": (
             "__INSTALL_ROOT__/remoteservice/yaharemoteserviceclient "
@@ -132,6 +140,17 @@ ROOT_TOOLS = (
         "target_name": "svc",
     },
 )
+
+JOURNALD_NAMESPACE_DROPIN_NAME = "20-yaha-retention.conf"
+
+JOURNALD_NAMESPACE_SETTINGS = {
+    "Storage": "persistent",
+    "SystemMaxUse": "8M",
+    "SystemKeepFree": "64M",
+    "SystemMaxFileSize": "1M",
+    "MaxRetentionSec": "30day",
+    "RateLimitIntervalSec": "0",
+}
 
 
 def run_or_fail(command: list[str], cwd: Path) -> None:
@@ -170,7 +189,9 @@ def ensure_ini_templates() -> None:
         raise RuntimeError(f"Missing tool files:\n{missing_lines}")
 
 
-def render_service_file(*, description: str, component_name: str, exec_start: str) -> str:
+def render_service_file(
+    *, description: str, component_name: str, exec_start: str, log_namespace: str
+) -> str:
     return "\n".join(
         [
             "[Unit]",
@@ -186,6 +207,7 @@ def render_service_file(*, description: str, component_name: str, exec_start: st
             f"ExecStart={exec_start}",
             "Restart=always",
             "RestartSec=3",
+            f"LogNamespace={log_namespace}",
             "StandardOutput=journal",
             "StandardError=journal",
             "",
@@ -194,6 +216,13 @@ def render_service_file(*, description: str, component_name: str, exec_start: st
             "",
         ]
     )
+
+
+def render_journald_namespace_config() -> str:
+    lines = ["[Journal]"]
+    lines.extend(f"{key}={value}" for key, value in JOURNALD_NAMESPACE_SETTINGS.items())
+    lines.append("")
+    return "\n".join(lines)
 
 
 def render_component_install_script(*, service_name: str) -> str:
@@ -240,7 +269,7 @@ def render_component_install_script(*, service_name: str) -> str:
     )
 
 
-def render_root_install_script() -> str:
+def render_root_install_script(*, journal_namespaces: list[str]) -> str:
     install_order = [
         "broker",
         "filestore",
@@ -251,6 +280,8 @@ def render_root_install_script() -> str:
         "httpmqttinterface",
         "remoteservice",
     ]
+    namespaces_literal = " ".join(journal_namespaces)
+
     return "\n".join(
         [
             "#!/usr/bin/env bash",
@@ -261,6 +292,57 @@ def render_root_install_script() -> str:
             "if [[ ${EUID} -ne 0 ]]; then",
             "  SUDO=\"sudo\"",
             "fi",
+            "",
+            "install_journald_namespace_config() {",
+            "  local namespace=\"$1\"",
+            "  local src_conf=\"${SCRIPT_DIR}/journald/${namespace}.conf\"",
+            f"  local dropin_name=\"{JOURNALD_NAMESPACE_DROPIN_NAME}\"",
+            "  local target_dir=\"/etc/systemd/journald@${namespace}.conf.d\"",
+            "  local target_conf=\"${target_dir}/${dropin_name}\"",
+            "",
+            "  if [[ ! -f \"${src_conf}\" ]]; then",
+            "    echo \"Missing journald namespace config: ${src_conf}\" >&2",
+            "    return 1",
+            "  fi",
+            "",
+            "  ${SUDO} mkdir -p \"${target_dir}\"",
+            "",
+            "  if [[ -f \"${target_conf}\" ]] && cmp -s \"${src_conf}\" \"${target_conf}\"; then",
+            "    echo \"journald namespace ${namespace} already configured.\"",
+            "    return 0",
+            "  fi",
+            "",
+            "  ${SUDO} cp \"${src_conf}\" \"${target_conf}\"",
+            "  echo \"Installed journald namespace policy for ${namespace}.\"",
+            "  return 2",
+            "}",
+            "",
+            "apply_journald_namespace_configs() {",
+            "  local changed_any=0",
+            "  local rc=0",
+            "",
+            f"  for namespace in {namespaces_literal}; do",
+            "    if install_journald_namespace_config \"${namespace}\"; then",
+            "      rc=0",
+            "    else",
+            "      rc=$?",
+            "      if [[ ${rc} -eq 2 ]]; then",
+            "        changed_any=1",
+            "      else",
+            "        return ${rc}",
+            "      fi",
+            "    fi",
+            "  done",
+            "",
+            "  if [[ ${changed_any} -eq 0 ]]; then",
+            "    return 0",
+            "  fi",
+            "",
+            "  ${SUDO} systemctl daemon-reload",
+            f"  for namespace in {namespaces_literal}; do",
+            "    ${SUDO} systemctl restart \"systemd-journald@${namespace}.service\" || true",
+            "  done",
+            "}",
             "",
             "install_nginx_config() {",
             "  local src_conf=\"${SCRIPT_DIR}/nginx/controlapp.conf\"",
@@ -320,6 +402,8 @@ def render_root_install_script() -> str:
             "  echo \"Installing ${component}...\"",
             "  bash \"${installer}\"",
             "done",
+            "",
+            "apply_journald_namespace_configs",
             "",
             "install_nginx_config",
             "",
@@ -398,6 +482,17 @@ def main() -> int:
                 "Nginx config copy verification failed: source and deployment differ."
             )
 
+        journald_dir = output_dir / "journald"
+        journald_dir.mkdir(parents=True, exist_ok=True)
+        journald_namespace_content = render_journald_namespace_config()
+
+        journal_namespaces = sorted(
+            {str(component["log_namespace"]) for component in SERVICE_COMPONENTS}
+        )
+        for namespace in journal_namespaces:
+            namespace_path = journald_dir / f"{namespace}.conf"
+            namespace_path.write_text(journald_namespace_content, encoding="utf-8")
+
         for component in SERVICE_COMPONENTS:
             component_dir = output_dir / component["name"]
             component_dir.mkdir(parents=True, exist_ok=True)
@@ -420,6 +515,7 @@ def main() -> int:
                 description=component["description"],
                 component_name=component["name"],
                 exec_start=component["exec"],
+                log_namespace=component["log_namespace"],
             )
             service_path = component_dir / component["service"]
             service_path.write_text(service_content, encoding="utf-8")
@@ -438,7 +534,10 @@ def main() -> int:
             set_executable(target_tool)
 
         root_install = output_dir / "install.sh"
-        root_install.write_text(render_root_install_script(), encoding="utf-8")
+        root_install.write_text(
+            render_root_install_script(journal_namespaces=journal_namespaces),
+            encoding="utf-8",
+        )
         set_executable(root_install)
 
         print(f"Deployment package created: {output_dir}")

@@ -12,7 +12,7 @@ Usage:
 
 Subcommands:
     list    Show PM2-like overview for deployment services (default: managed YAHA units)
-    log     Follow service logs via journalctl (default lines: 100)
+    log     Follow service logs via journalctl namespace (default lines: 100)
 EOF
 }
 
@@ -21,6 +21,15 @@ ensure_dependencies() {
         echo "error: systemctl not found" >&2
         exit 1
     fi
+
+    if ! command -v journalctl >/dev/null 2>&1; then
+        echo "error: journalctl not found" >&2
+        exit 1
+    fi
+}
+
+journalctl_supports_namespace() {
+    journalctl --help 2>/dev/null | grep -q -- '--namespace'
 }
 
 format_bytes() {
@@ -161,12 +170,29 @@ normalize_service_unit() {
     fi
 }
 
+namespace_for_service_unit() {
+    local unit_name="$1"
+
+    case "$unit_name" in
+        broker.service) printf '%s' "broker" ;;
+        filestore.service) printf '%s' "filestore" ;;
+        msgstore.service) printf '%s' "msgstore" ;;
+        autom.service) printf '%s' "autom" ;;
+        valuesvc.service) printf '%s' "valuesvc" ;;
+        brkconn.service) printf '%s' "brkconn" ;;
+        httpmqtt.service) printf '%s' "httpmqtt" ;;
+        remotesvc.service) printf '%s' "remotesvc" ;;
+        *) printf '%s' "${unit_name%.service}" ;;
+    esac
+}
+
 follow_service_logs() {
     ensure_dependencies
 
     local service_name="${1:-}"
     local lines="${2:-100}"
     local unit
+    local namespace
 
     if [[ -z "$service_name" ]]; then
         echo "error: missing service name (example: svc log brkconn)" >&2
@@ -179,9 +205,15 @@ follow_service_logs() {
     fi
 
     unit="$(normalize_service_unit "$service_name")"
+    namespace="$(namespace_for_service_unit "$unit")"
 
-    echo "Following logs for ${unit} (press Ctrl+C to stop)..."
-    journalctl -u "$unit" -n "$lines" -f --no-pager
+    if ! journalctl_supports_namespace; then
+        echo "error: journalctl on this system does not support --namespace" >&2
+        exit 1
+    fi
+
+    echo "Following logs for ${unit} in namespace ${namespace} (press Ctrl+C to stop)..."
+    journalctl --namespace="$namespace" -u "$unit" -n "$lines" -f --no-pager
 }
 
 main() {
