@@ -568,6 +568,76 @@ TEST_CASE("remote_service_component_publish_command_returns_publish_failed_when_
     component.close();
 }
 
+TEST_CASE("remote_service_component_publish_command_logs_failure_when_callback_missing", "[remote_service]") {
+    const std::uint16_t listenPort = reserveFreeLocalPort();
+    FileStoreMappingMockServer fileStore{listenPort, "/remoteservice/mapping"};
+    fileStore.setPayload(
+        R"({"services":[{"path":"/light","devices":{"kitchen":"house/kitchen/light/set"}}]})");
+
+    yaha::RemoteServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = listenPort;
+    config.mappingKeyPath = "/remoteservice/mapping";
+
+    yaha::RemoteServiceComponent component{config};
+    component.run();
+
+    const yaha::RemoteServiceCommandRequest requestData{
+        .path = "/light",
+        .deviceId = "kitchen",
+        .state = std::string{"on"},
+        .token = "token-4b"};
+
+    std::ostringstream outputStream{};
+    auto* previousBuffer = std::cout.rdbuf(outputStream.rdbuf());
+    const yaha::RemoteServiceCommandResult result = component.publishCommand(requestData);
+    std::cout.rdbuf(previousBuffer);
+
+    REQUIRE(result.status == yaha::RemoteServiceCommandStatus::PublishFailed);
+    REQUIRE(outputStream.str().find("remote_service[error] op=publish_command reason=callback_missing")
+            != std::string::npos);
+
+    component.close();
+}
+
+TEST_CASE("remote_service_component_publish_command_logs_failure_when_callback_returns_error", "[remote_service]") {
+    const std::uint16_t listenPort = reserveFreeLocalPort();
+    FileStoreMappingMockServer fileStore{listenPort, "/remoteservice/mapping"};
+    fileStore.setPayload(
+        R"({"services":[{"path":"/light","devices":{"kitchen":"house/kitchen/light/set"}}]})");
+
+    yaha::RemoteServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = listenPort;
+    config.mappingKeyPath = "/remoteservice/mapping";
+
+    yaha::RemoteServiceComponent component{config};
+    component.run();
+
+    component.setPublishCallback([](const yaha::Message&) {
+        return yaha::PublishResult::fail(yaha::PublishFailureCategory::AckTimeout, "no_ack");
+    });
+
+    const yaha::RemoteServiceCommandRequest requestData{
+        .path = "/light",
+        .deviceId = "kitchen",
+        .state = std::string{"on"},
+        .token = "token-4c"};
+
+    std::ostringstream outputStream{};
+    auto* previousBuffer = std::cout.rdbuf(outputStream.rdbuf());
+    const yaha::RemoteServiceCommandResult result = component.publishCommand(requestData);
+    std::cout.rdbuf(previousBuffer);
+
+    REQUIRE(result.status == yaha::RemoteServiceCommandStatus::PublishFailed);
+    REQUIRE(outputStream.str().find("remote_service[error] op=publish_command reason=publish_rejected")
+            != std::string::npos);
+    REQUIRE(outputStream.str().find("category=2") != std::string::npos);
+    REQUIRE(outputStream.str().find("detail=\"no_ack\"") != std::string::npos);
+
+    component.close();
+}
+
 TEST_CASE("remote_service_component_publish_command_returns_publish_failed_when_callback_throws", "[remote_service]") {
     const std::uint16_t listenPort = reserveFreeLocalPort();
     FileStoreMappingMockServer fileStore{listenPort, "/remoteservice/mapping"};
@@ -595,6 +665,43 @@ TEST_CASE("remote_service_component_publish_command_returns_publish_failed_when_
     const yaha::RemoteServiceCommandResult result = component.publishCommand(requestData);
     REQUIRE(result.status == yaha::RemoteServiceCommandStatus::PublishFailed);
     REQUIRE(result.resolvedMessage.has_value());
+
+    component.close();
+}
+
+TEST_CASE("remote_service_component_publish_command_logs_failure_when_callback_throws", "[remote_service]") {
+    const std::uint16_t listenPort = reserveFreeLocalPort();
+    FileStoreMappingMockServer fileStore{listenPort, "/remoteservice/mapping"};
+    fileStore.setPayload(
+        R"({"services":[{"path":"/light","devices":{"kitchen":"house/kitchen/light/set"}}]})");
+
+    yaha::RemoteServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = listenPort;
+    config.mappingKeyPath = "/remoteservice/mapping";
+
+    yaha::RemoteServiceComponent component{config};
+    component.run();
+
+    component.setPublishCallback([](const yaha::Message&) {
+        throw std::runtime_error{"publish failure"};
+    });
+
+    const yaha::RemoteServiceCommandRequest requestData{
+        .path = "/light",
+        .deviceId = "kitchen",
+        .state = std::string{"on"},
+        .token = "token-5b"};
+
+    std::ostringstream outputStream{};
+    auto* previousBuffer = std::cout.rdbuf(outputStream.rdbuf());
+    const yaha::RemoteServiceCommandResult result = component.publishCommand(requestData);
+    std::cout.rdbuf(previousBuffer);
+
+    REQUIRE(result.status == yaha::RemoteServiceCommandStatus::PublishFailed);
+    REQUIRE(outputStream.str().find("remote_service[error] op=publish_command reason=exception")
+            != std::string::npos);
+    REQUIRE(outputStream.str().find("detail=\"publish failure\"") != std::string::npos);
 
     component.close();
 }

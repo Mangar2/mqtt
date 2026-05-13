@@ -84,7 +84,8 @@ public:
      * @param callableValue Callable to wrap.
      * @return Reference to this callback.
      */
-    template <typename CallableT>
+    template <typename CallableT,
+              typename = std::enable_if_t<!std::is_same_v<std::decay_t<CallableT>, PublishCallback>>>
     PublishCallback& operator=(CallableT&& callableValue) {
         assign(std::forward<CallableT>(callableValue));
         return *this;

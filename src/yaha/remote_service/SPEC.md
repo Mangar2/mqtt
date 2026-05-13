@@ -135,6 +135,7 @@ Lifecycle logging:
 - Unknown service path or device id returns `ServiceNotFound`.
 - `publishCommand()` calls `resolveCommand()` and publishes resolved message via injected callback.
 - Callback missing or callback exception returns `PublishFailed`.
+- Callback missing, callback exception, and callback non-success results emit structured error logs (`remote_service[error] op=publish_command ...`).
 - Callback success returns `Success`.
 
 Phase-4 integration note:

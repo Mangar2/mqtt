@@ -4,6 +4,7 @@
 
 #include <cctype>
 #include <cstdint>
+#include <exception>
 #include <format>
 #include <iostream>
 #include <string>
@@ -827,6 +828,10 @@ RemoteServiceCommandResult RemoteServiceComponent::publishCommand(
     }
 
     if (!publishCallback || !resolutionResult.resolvedMessage.has_value()) {
+        std::cout << "remote_service[error] op=publish_command reason=callback_missing"
+                  << " path=" << request.path
+                  << " deviceId=" << request.deviceId
+                  << '\n' << std::flush;
         return {
             .status = RemoteServiceCommandStatus::PublishFailed,
             .resolvedMessage = resolutionResult.resolvedMessage};
@@ -835,11 +840,31 @@ RemoteServiceCommandResult RemoteServiceComponent::publishCommand(
     try {
         const PublishResult publishResult = publishCallback(*resolutionResult.resolvedMessage);
         if (!publishResult.success) {
+            std::cout << "remote_service[error] op=publish_command reason=publish_rejected"
+                      << " path=" << request.path
+                      << " deviceId=" << request.deviceId
+                      << " category=" << static_cast<int>(publishResult.category)
+                      << " detail=\"" << publishResult.reason << "\""
+                      << '\n' << std::flush;
             return {
                 .status = RemoteServiceCommandStatus::PublishFailed,
                 .resolvedMessage = resolutionResult.resolvedMessage};
         }
+    } catch (const std::exception& exceptionValue) {
+        std::cout << "remote_service[error] op=publish_command reason=exception"
+                  << " path=" << request.path
+                  << " deviceId=" << request.deviceId
+                  << " detail=\"" << exceptionValue.what() << "\""
+                  << '\n' << std::flush;
+        return {
+            .status = RemoteServiceCommandStatus::PublishFailed,
+            .resolvedMessage = resolutionResult.resolvedMessage};
     } catch (...) {
+        std::cout << "remote_service[error] op=publish_command reason=exception"
+                  << " path=" << request.path
+                  << " deviceId=" << request.deviceId
+                  << " detail=\"unknown\""
+                  << '\n' << std::flush;
         return {
             .status = RemoteServiceCommandStatus::PublishFailed,
             .resolvedMessage = resolutionResult.resolvedMessage};

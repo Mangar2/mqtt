@@ -185,7 +185,13 @@ int main(int argc, char* argv[]) {
             ? "0.0.0.0"
             : runtimeConfig.remoteServiceConfig.listenHost;
         const int listenPort = static_cast<int>(runtimeConfig.remoteServiceConfig.listenPort);
-        httpServer.listen(listenHost, listenPort);
+        if (!httpServer.listen(listenHost, listenPort)) {
+            std::cerr << "remoteservice_client[error] op=http_listen"
+                      << " host=" << listenHost
+                      << " port=" << listenPort
+                      << " reason=listen_failed"
+                      << '\n' << std::flush;
+        }
     }};
 
     shutdownRequested.store(false);

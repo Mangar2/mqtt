@@ -58,6 +58,7 @@ Mapping rules:
 - start component and MQTT client lifecycle
 - start HTTP listener for dynamic path routing
 - run until signal and perform clean shutdown
+- HTTP listen false branch emits deterministic error log (`remoteservice_client[error] op=http_listen ...`).
 
 ## Deployment integration
 
