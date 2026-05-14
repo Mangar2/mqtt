@@ -144,10 +144,10 @@ python3 cmake/create_yaha_deployment.py --preset armv7-zig-release --build \
 Run on the remote host to unpack and deploy locally with checksum-based copy rules:
 
 ```sh
-bash deploy_yaha_local.sh --zip yaha.zip --target-dir ~/mqtt/yaha
+bash deploy.sh --zip yaha.zip --target-dir ~/mqtt
 ```
 
-`deploy_yaha_local.sh` behavior:
+`deploy.sh` behavior:
 
 - unpacks deployment zip locally on the remote host
 - copies files with checksum compare and skips identical files

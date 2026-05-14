@@ -1,10 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+timestamp() {
+  date '+%Y-%m-%d %H:%M:%S'
+}
+
+log_info() {
+  echo "[$(timestamp)] [INFO] $*"
+}
+
+log_warn() {
+  echo "[$(timestamp)] [WARN] $*"
+}
+
+log_error() {
+  echo "[$(timestamp)] [ERROR] $*" >&2
+}
+
+cleanup_tmp_dir() {
+  if [[ -n "${tmp_dir:-}" && -d "${tmp_dir}" ]]; then
+    log_info "Cleaning temporary directory: ${tmp_dir}"
+    rm -rf "${tmp_dir}"
+  fi
+}
+
 usage() {
   cat <<'EOF'
 Usage:
-  deploy_yaha_local.sh --zip <deployment-zip> [--target-dir <dir>] [--yes-overwrite-ini|--no-overwrite-ini] [--skip-install]
+  deploy.sh --zip <deployment-zip> [--target-dir <dir>] [--yes-overwrite-ini|--no-overwrite-ini] [--skip-install]
 
 Description:
   Local deployment on the target host.
@@ -15,7 +38,7 @@ Description:
 
 Options:
   --zip <file>              Deployment zip (required)
-  --target-dir <dir>        Deployment target directory (default: ~/mqtt/yaha)
+  --target-dir <dir>        Deployment target directory (default: ~/mqtt)
   --yes-overwrite-ini       Overwrite changed .ini files without prompt
   --no-overwrite-ini        Never overwrite changed .ini files
   --skip-install            Copy only, do not apply install/restart actions
@@ -25,8 +48,9 @@ EOF
 
 require_command() {
   local cmd="$1"
+  log_info "Checking required command: ${cmd}"
   if ! command -v "${cmd}" >/dev/null 2>&1; then
-    echo "Missing required command: ${cmd}" >&2
+    log_error "Missing required command: ${cmd}"
     exit 1
   fi
 }
@@ -41,7 +65,7 @@ calc_sha256() {
     shasum -a 256 "${file_path}" | awk '{print $1}'
     return
   fi
-  echo "Neither sha256sum nor shasum is available." >&2
+  log_error "Neither sha256sum nor shasum is available."
   exit 1
 }
 
@@ -83,15 +107,18 @@ install_journald_namespace_config() {
   local target_conf="${target_dir}/${dropin_name}"
 
   if [[ ! -f "${src_conf}" ]]; then
-    echo "Missing journald namespace config: ${src_conf}" >&2
+    log_error "Missing journald namespace config: ${src_conf}"
     return 1
   fi
 
+  log_info "Ensuring journald namespace dir: ${target_dir}"
   ${sudo_cmd} mkdir -p "${target_dir}"
   if [[ -f "${target_conf}" ]] && cmp -s "${src_conf}" "${target_conf}"; then
+    log_info "Journald namespace config unchanged: ${namespace}"
     return 0
   fi
 
+  log_info "Updating journald namespace config: ${namespace}"
   ${sudo_cmd} cp "${src_conf}" "${target_conf}"
   return 2
 }
@@ -117,13 +144,15 @@ apply_journald_namespace_configs() {
   done
 
   if [[ ${changed_any} -eq 1 ]]; then
+    log_info "Reloading systemd daemon after journald namespace changes"
     ${sudo_cmd} systemctl daemon-reload
     for namespace in broker filestore msgstore autom valuesvc brkconn httpmqtt remotesvc; do
+      log_info "Restarting systemd-journald namespace: ${namespace}"
       ${sudo_cmd} systemctl restart "systemd-journald@${namespace}.service" || true
     done
-    echo "Updated journald namespace policies."
+    log_info "Updated journald namespace policies."
   else
-    echo "Journald namespace policies unchanged."
+    log_info "Journald namespace policies unchanged."
   fi
 }
 
@@ -136,10 +165,11 @@ install_nginx_config() {
   local obsolete_link="/etc/nginx/sites-enabled/controlapp.conf"
 
   if [[ ! -f "${src_conf}" ]]; then
-    echo "Skipping nginx setup (missing ${src_conf})."
+    log_warn "Skipping nginx setup (missing ${src_conf})."
     return 0
   fi
 
+  log_info "Ensuring nginx directories and links"
   ${sudo_cmd} mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
   ${sudo_cmd} rm -f "${obsolete_link}"
 
@@ -151,16 +181,18 @@ install_nginx_config() {
     changed=1
     if [[ -f "${target_conf}" ]]; then
       backup_conf="${target_conf}.bak.$(date +%Y%m%d%H%M%S)"
+      log_info "Backing up existing nginx config: ${backup_conf}"
       ${sudo_cmd} cp "${target_conf}" "${backup_conf}"
       had_backup=1
     fi
+    log_info "Installing nginx controlapp config"
     ${sudo_cmd} cp "${src_conf}" "${target_conf}"
   fi
 
   ${sudo_cmd} ln -sfn "${target_conf}" "${enabled_link}"
 
   if ! ${sudo_cmd} nginx -t; then
-    echo "nginx -t failed, rolling back controlapp.conf" >&2
+    log_error "nginx -t failed, rolling back controlapp.conf"
     if [[ ${had_backup} -eq 1 ]]; then
       ${sudo_cmd} cp "${backup_conf}" "${target_conf}"
     elif [[ ${changed} -eq 1 ]]; then
@@ -172,15 +204,16 @@ install_nginx_config() {
   fi
 
   if [[ ${changed} -eq 1 ]]; then
+    log_info "Reloading nginx"
     ${sudo_cmd} systemctl reload nginx
-    echo "Installed nginx controlapp.conf and reloaded nginx."
+    log_info "Installed nginx controlapp.conf and reloaded nginx."
   else
-    echo "nginx controlapp.conf unchanged; no reload needed."
+    log_info "nginx controlapp.conf unchanged; no reload needed."
   fi
 }
 
 zip_file=""
-target_dir="~/mqtt/yaha"
+target_dir="~/mqtt"
 overwrite_mode="ask"
 skip_install=0
 
@@ -188,7 +221,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --zip)
       if [[ $# -lt 2 ]]; then
-        echo "--zip requires a value" >&2
+        log_error "--zip requires a value"
         exit 1
       fi
       zip_file="$2"
@@ -196,7 +229,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --target-dir)
       if [[ $# -lt 2 ]]; then
-        echo "--target-dir requires a value" >&2
+        log_error "--target-dir requires a value"
         exit 1
       fi
       target_dir="$2"
@@ -219,7 +252,7 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     *)
-      echo "Unknown argument: $1" >&2
+      log_error "Unknown argument: $1"
       usage >&2
       exit 1
       ;;
@@ -227,29 +260,41 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${zip_file}" ]]; then
-  echo "--zip is required" >&2
+  log_error "--zip is required"
   usage >&2
   exit 1
 fi
 
 if [[ ! -f "${zip_file}" ]]; then
-  echo "Deployment zip not found: ${zip_file}" >&2
+  log_error "Deployment zip not found: ${zip_file}"
   exit 1
 fi
+
+log_info "Starting local deploy"
+log_info "ZIP file: ${zip_file}"
+log_info "Target dir (raw): ${target_dir}"
+log_info "Overwrite mode: ${overwrite_mode}"
+log_info "Skip install: ${skip_install}"
 
 if [[ "${target_dir}" == ~* ]]; then
   target_dir="${HOME}${target_dir#\~}"
 fi
 
 target_dir="$(cd "$(dirname "${target_dir}")" && pwd)/$(basename "${target_dir}")"
+log_info "Target dir (resolved): ${target_dir}"
 
 require_command unzip
 require_command cmp
 
-tmp_dir="$(mktemp -d)"
-trap 'rm -rf "${tmp_dir}"' EXIT
+tmp_parent="$(dirname "${target_dir}")"
+mkdir -p "${tmp_parent}"
+tmp_dir="$(mktemp -d "${tmp_parent}/.deploy_yaha_tmp.XXXXXX")"
+log_info "Temporary extraction dir: ${tmp_dir}"
+trap cleanup_tmp_dir EXIT
 
+log_info "Unpacking deployment ZIP"
 unzip -q "${zip_file}" -d "${tmp_dir}"
+log_info "ZIP unpack completed"
 
 source_root=""
 if [[ -d "${tmp_dir}/yaha" ]]; then
@@ -264,11 +309,17 @@ else
 fi
 
 if [[ ! -d "${source_root}" ]]; then
-  echo "Could not determine unpacked deployment directory." >&2
+  log_error "Could not determine unpacked deployment directory."
   exit 1
 fi
 
+log_info "Using source root: ${source_root}"
+
 mkdir -p "${target_dir}"
+log_info "Ensuring target directory tree"
+
+dir_list_file="${tmp_dir}/.dir_list"
+find "${source_root}" -type d | sort > "${dir_list_file}"
 
 while IFS= read -r dir_path; do
   rel_dir="${dir_path#${source_root}/}"
@@ -276,7 +327,7 @@ while IFS= read -r dir_path; do
     continue
   fi
   mkdir -p "${target_dir}/${rel_dir}"
-done < <(find "${source_root}" -type d | sort)
+done < "${dir_list_file}"
 
 copied=0
 skipped_identical=0
@@ -285,6 +336,11 @@ journald_changed=0
 nginx_changed=0
 
 declare -A changed_components=()
+
+log_info "Starting file copy phase"
+
+file_list_file="${tmp_dir}/.file_list"
+find "${source_root}" -type f | sort > "${file_list_file}"
 
 while IFS= read -r src_file; do
   rel_path="${src_file#${source_root}/}"
@@ -298,14 +354,14 @@ while IFS= read -r src_file; do
 
   if [[ -n "${dst_hash}" && "${src_hash}" == "${dst_hash}" ]]; then
     skipped_identical=$((skipped_identical + 1))
-    echo "SKIP identical ${rel_path}"
+    log_info "SKIP identical ${rel_path}"
     continue
   fi
 
   if [[ -f "${dst_file}" && "${rel_path}" == *.ini ]]; then
     if [[ "${overwrite_mode}" == "none" ]]; then
       skipped_prompt=$((skipped_prompt + 1))
-      echo "SKIP protected-config ${rel_path}"
+      log_info "SKIP protected-config ${rel_path}"
       continue
     fi
 
@@ -313,7 +369,7 @@ while IFS= read -r src_file; do
       decision="$(prompt_overwrite "${rel_path}")"
       if [[ "${decision}" == "n" ]]; then
         skipped_prompt=$((skipped_prompt + 1))
-        echo "SKIP protected-config ${rel_path}"
+        log_info "SKIP protected-config ${rel_path}"
         continue
       fi
       if [[ "${decision}" == "a" ]]; then
@@ -322,7 +378,7 @@ while IFS= read -r src_file; do
       if [[ "${decision}" == "s" ]]; then
         overwrite_mode="none"
         skipped_prompt=$((skipped_prompt + 1))
-        echo "SKIP protected-config ${rel_path}"
+        log_info "SKIP protected-config ${rel_path}"
         continue
       fi
     fi
@@ -337,7 +393,7 @@ while IFS= read -r src_file; do
   mv "${tmp_target}" "${dst_file}"
 
   copied=$((copied + 1))
-  echo "COPY ${rel_path}"
+  log_info "COPY ${rel_path}"
 
   first_segment="${rel_path%%/*}"
   if is_component "${first_segment}"; then
@@ -352,12 +408,12 @@ while IFS= read -r src_file; do
     nginx_changed=1
   fi
 
-done < <(find "${source_root}" -type f | sort)
+done < "${file_list_file}"
 
-echo "DEPLOY done copied=${copied} skipped_identical=${skipped_identical} skipped_prompt=${skipped_prompt}"
+log_info "DEPLOY done copied=${copied} skipped_identical=${skipped_identical} skipped_prompt=${skipped_prompt}"
 
 if [[ ${skip_install} -eq 1 ]]; then
-  echo "Skipping install/restart actions by request (--skip-install)."
+  log_info "Skipping install/restart actions by request (--skip-install)."
   exit 0
 fi
 
@@ -365,31 +421,34 @@ sudo_cmd=""
 if [[ ${EUID} -ne 0 ]]; then
   sudo_cmd="sudo"
 fi
+log_info "Install phase starts (sudo command: ${sudo_cmd:-none})"
 
 if [[ ${journald_changed} -eq 1 ]]; then
+  log_info "Applying journald namespace config updates"
   apply_journald_namespace_configs "${target_dir}" "${sudo_cmd}"
 else
-  echo "Journald files unchanged; no journald restart needed."
+  log_info "Journald files unchanged; no journald restart needed."
 fi
 
 if [[ ${nginx_changed} -eq 1 ]]; then
+  log_info "Applying nginx config updates"
   install_nginx_config "${target_dir}" "${sudo_cmd}"
 else
-  echo "Nginx config unchanged; no nginx reload needed."
+  log_info "Nginx config unchanged; no nginx reload needed."
 fi
 
 for component in broker filestore msgstore automation valueservice brokerconnector httpmqttinterface remoteservice; do
   if [[ -n "${changed_components[${component}]:-}" ]]; then
     installer="${target_dir}/${component}/install.sh"
     if [[ ! -x "${installer}" ]]; then
-      echo "Missing installer for changed component: ${installer}" >&2
+      log_error "Missing installer for changed component: ${installer}"
       exit 1
     fi
-    echo "Installing changed component: ${component}"
+    log_info "Installing changed component: ${component}"
     bash "${installer}"
   else
-    echo "Component unchanged: ${component}"
+    log_info "Component unchanged: ${component}"
   fi
 done
 
-echo "Local deployment apply completed."
+log_info "Local deployment apply completed."
