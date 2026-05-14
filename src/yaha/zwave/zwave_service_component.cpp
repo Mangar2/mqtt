@@ -168,7 +168,7 @@ private:
 
 [[nodiscard]] Message makeOperationErrorMessage(const std::string& operation,
                                                 const std::string& detail) {
-    Message error{"$MONITORING/zwave/error", std::string{operation + " failed"}};
+    Message error{"$MONITOR/zwave/error", std::string{operation + " failed"}};
     error.addReason("operation=" + operation);
     if (!detail.empty()) {
         error.addReason(detail);
@@ -199,16 +199,16 @@ ZwaveServiceComponent::ZwaveServiceComponent(ZwaveConfig config, std::shared_ptr
 void ZwaveServiceComponent::setDeviceConfiguration(const std::vector<ZwaveDeviceConfig>& config) {
     controller_->setDeviceConfiguration(config);
 
-    Message infoMessage{"$MONITORING/zwave/info", std::string{"configuration reloaded"}};
+    Message infoMessage{"$MONITOR/zwave/info", std::string{"configuration reloaded"}};
     infoMessage.addReason("updated");
     publish(withPublishFlags(infoMessage, config_.qos, config_.retain));
 }
 
 SubscriptionMap ZwaveServiceComponent::getSubscriptions() const {
     SubscriptionMap subscriptions{};
-    subscriptions.insert({"$MONITORING/zwave/removefailednode/set", Qos::ExactlyOnce});
-    subscriptions.insert({"$MONITORING/zwave/addnode/set", Qos::ExactlyOnce});
-    subscriptions.insert({"$MONITORING/zwave/scan/set", Qos::ExactlyOnce});
+    subscriptions.insert({"$MONITOR/zwave/removefailednode/set", Qos::ExactlyOnce});
+    subscriptions.insert({"$MONITOR/zwave/addnode/set", Qos::ExactlyOnce});
+    subscriptions.insert({"$MONITOR/zwave/scan/set", Qos::ExactlyOnce});
 
     for (const auto& device : config_.devices) {
         std::string topic = device.topic;
@@ -257,15 +257,15 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
     if (isScanTopic(message.topic())) {
         try {
             controller_->startScan();
-            Message notification{"$MONITORING/zwave/notification", std::string{"scan command accepted"}};
+            Message notification{"$MONITOR/zwave/notification", std::string{"scan command accepted"}};
             notification.addReason("scan command accepted by controller");
             publish(withPublishFlags(notification, config_.qos, config_.retain));
         } catch (const std::exception& exception) {
-            Message error{"$MONITORING/zwave/error", std::string{"scan command failed"}};
+            Message error{"$MONITOR/zwave/error", std::string{"scan command failed"}};
             error.addReason(exception.what());
             publish(withPublishFlags(error, config_.qos, config_.retain));
         } catch (...) {
-            Message error{"$MONITORING/zwave/error", std::string{"scan command failed"}};
+            Message error{"$MONITOR/zwave/error", std::string{"scan command failed"}};
             error.addReason("unknown");
             publish(withPublishFlags(error, config_.qos, config_.retain));
         }
@@ -293,11 +293,11 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
 }
 
 void ZwaveServiceComponent::run() {
-    Message removeFailedRestart{"$MONITORING/zwave/removefailednode", std::string{"nop"}};
+    Message removeFailedRestart{"$MONITOR/zwave/removefailednode", std::string{"nop"}};
     removeFailedRestart.addReason("zwave restarted");
     publish(withPublishFlags(removeFailedRestart, config_.qos, config_.retain));
 
-    Message addNodeRestart{"$MONITORING/zwave/addnode", std::string{"nop"}};
+    Message addNodeRestart{"$MONITOR/zwave/addnode", std::string{"nop"}};
     addNodeRestart.addReason("zwave restarted");
     publish(withPublishFlags(addNodeRestart, config_.qos, config_.retain));
 
@@ -368,15 +368,15 @@ void ZwaveServiceComponent::publish(const Message& message) const {
 }
 
 bool ZwaveServiceComponent::isRemoveFailedTopic(const std::string& topic) {
-    return topic == "$MONITORING/zwave/removefailednode/set";
+    return topic == "$MONITOR/zwave/removefailednode/set";
 }
 
 bool ZwaveServiceComponent::isAddNodeTopic(const std::string& topic) {
-    return topic == "$MONITORING/zwave/addnode/set";
+    return topic == "$MONITOR/zwave/addnode/set";
 }
 
 bool ZwaveServiceComponent::isScanTopic(const std::string& topic) {
-    return topic == "$MONITORING/zwave/scan/set";
+    return topic == "$MONITOR/zwave/scan/set";
 }
 
 } // namespace yaha

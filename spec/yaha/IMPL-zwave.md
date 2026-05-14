@@ -176,9 +176,9 @@ Step 7. Implement service publish and matcher flow
 
 Step 8. Implement inbound MQTT routing behavior
 - management topics:
-  - `$MONITORING/zwave/removefailednode/set`
-  - `$MONITORING/zwave/addnode/set`
-  - `$MONITORING/zwave/scan/set`
+  - `$MONITOR/zwave/removefailednode/set`
+  - `$MONITOR/zwave/addnode/set`
+  - `$MONITOR/zwave/scan/set`
 - default path for regular set topics to controller setValue
 - implement approved scan fix behavior from spec with deterministic success/failure publish contract
 

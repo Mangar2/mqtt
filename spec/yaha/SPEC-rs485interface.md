@@ -44,12 +44,12 @@ Mandatory subscriptions are derived from configuration:
    - `<topic>/+`
    - QoS = configured `qos`
 3. System control namespace for RS485Interface control:
-   - `$MONITORING/rs485Interface/#`
+   - `$MONITOR/rs485Interface/#`
    - QoS = configured `qos`
 
 Compatibility note:
 - Legacy source uses `$SYS/rs485Interface/#` and `$SYS/rs485Interface/trace/set`.
-- YAHA spec replaces this namespace by `$MONITORING/rs485Interface/#` and `$MONITORING/rs485Interface/trace/set`.
+- YAHA spec replaces this namespace by `$MONITOR/rs485Interface/#` and `$MONITOR/rs485Interface/trace/set`.
 
 ## Published messages
 
@@ -148,7 +148,7 @@ Noise handling:
 ## Inbound MQTT processing
 
 For each `handleMessage(message)`:
-1. If topic is `$MONITORING/rs485Interface/trace/set`, update trace level.
+1. If topic is `$MONITOR/rs485Interface/trace/set`, update trace level.
 2. Otherwise:
    - annotate reason (`received by RS485Interface service` compatibility string)
    - process action semantics (`/set`, `/temporary`, `/blink`)

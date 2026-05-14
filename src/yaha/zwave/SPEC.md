@@ -53,9 +53,9 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 ## Subscriptions
 
 - Fixed management topics with QoS 2:
-	- `$MONITORING/zwave/removefailednode/set`
-	- `$MONITORING/zwave/addnode/set`
-	- `$MONITORING/zwave/scan/set`
+	- `$MONITOR/zwave/removefailednode/set`
+	- `$MONITOR/zwave/addnode/set`
+	- `$MONITOR/zwave/scan/set`
 - Device topics from config:
 	- with `classId`: `<topic>/set`
 	- without `classId`: `<topic>/+/set`
@@ -67,15 +67,15 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 - remove-failed topic -> `controller.removeFailedNode(...)`
 - add-node topic -> `controller.addDevice()`
 - scan topic -> `controller.startScan()` with deterministic success/failure publish:
-	- success: `$MONITORING/zwave/notification` value `scan command accepted`
-	- failure: `$MONITORING/zwave/error` value `scan command failed`
+	- success: `$MONITOR/zwave/notification` value `scan command accepted`
+	- failure: `$MONITOR/zwave/error` value `scan command failed`
 	- unknown scan exceptions are contained and reported with reason `unknown`
 - other topics:
 	- adds reason `received by zwave service`
 	- stores incoming message in reply matcher
 	- routes to `controller.setValue(topic, value)`
 - remove-failed/add-node/setValue exceptions are contained and emitted as deterministic
-	`$MONITORING/zwave/error` messages with operation reason metadata.
+	`$MONITOR/zwave/error` messages with operation reason metadata.
 
 ## Publish and matcher flow
 
@@ -88,17 +88,17 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 
 ## Lifecycle
 
-- `setDeviceConfiguration(...)` publishes `$MONITORING/zwave/info` value `configuration reloaded`.
+- `setDeviceConfiguration(...)` publishes `$MONITOR/zwave/info` value `configuration reloaded`.
 - `run()` publishes startup markers:
-	- `$MONITORING/zwave/removefailednode` value `nop`
-	- `$MONITORING/zwave/addnode` value `nop`
+	- `$MONITOR/zwave/removefailednode` value `nop`
+	- `$MONITOR/zwave/addnode` value `nop`
 	- reason `zwave restarted`
 - `run()` then calls `controller.requestConfigParametersForAllNodes()`.
 - request-config exceptions are contained and emitted as deterministic
-	`$MONITORING/zwave/error` messages.
+	`$MONITOR/zwave/error` messages.
 - `close()` delegates to controller close.
 - `close()` controller exceptions are contained and emitted as deterministic
-	`$MONITORING/zwave/error` messages.
+	`$MONITOR/zwave/error` messages.
 
 ## Files
 

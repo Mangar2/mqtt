@@ -17,8 +17,8 @@ First component spec. Covers MQTT subscriptions, HTTP query interface, message t
 ### [CORRECTION] SPEC-messagetree.md deleted, content merged into SPEC-messagestore.md
 MessageTree is only used by MessageStore — not a cross-cutting concern. A standalone spec was the wrong structure. On user feedback, all content moved into SPEC-messagestore.md (Data model, Configuration, Architectural notes, Open questions sections). Skill updated: dedicated spec only for concerns used by more than one component.
 
-### [DECISION] $SYS topics renamed to $MONITORING
-MQTT specification reserves the $SYS prefix for broker-originated messages. Components must never publish or subscribe to $SYS topics. On user instruction: all legacy $SYS/... topics become $MONITORING/... in new specs. SPEC-messagestore.md corrected at all three occurrences. Skill section "MQTT topic conventions" added.
+### [DECISION] $SYS topics renamed to $MONITOR
+MQTT specification reserves the $SYS prefix for broker-originated messages. Components must never publish or subscribe to $SYS topics. On user instruction: all legacy $SYS/... topics become $MONITOR/... in new specs. SPEC-messagestore.md corrected at all three occurrences. Skill section "MQTT topic conventions" added.
 
 ### [INSIGHT] Message identified as central shared data type
 User prompted a review of whether the Message format deserves its own spec. Cross-check across all legacy components (valueservice, raspberry, zwave, pushover, serialdevice, and others) confirmed that `{topic, value, reason, qos, retain}` with the ReasonEntry chain is the universal data carrier of the system. SPEC-message.md created. Skill Step 2 updated to explicitly check shared data formats (not just interfaces) as a cross-cutting concern trigger.
@@ -97,7 +97,7 @@ Added persistence unit tests for roundtrip restore, corrupt-file fallback, malfo
 Step 5 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/message_store/`. Full `python3 test/run_coverage.py` passed tests (1287/1287). Scoped coverage for `src/yaha/` reports threshold MET with `message_tree_persistence.cpp` at Regions 84.85%, Functions 100.00%, Lines 80.84%.
 
 ### [ARTIFACT] src/yaha/message_store/message_store.* created (Step 6)
-Implemented `MessageStore` component logic in `message_store.h/.cpp` as `IMqttComponent`: configured subscription exposure, inbound message dispatch to `MessageTree`, cleanup-topic handling (`$MONITORING/messages/cleanup`), lifecycle `run()`/`close()`, startup restore via persistence, periodic persistence start/stop, and final persist on shutdown.
+Implemented `MessageStore` component logic in `message_store.h/.cpp` as `IMqttComponent`: configured subscription exposure, inbound message dispatch to `MessageTree`, cleanup-topic handling (`$MONITOR/messages/cleanup`), lifecycle `run()`/`close()`, startup restore via persistence, periodic persistence start/stop, and final persist on shutdown.
 
 ### [ARTIFACT] src/yaha/message_store/test/message_store_test.cpp created
 Added component tests for configured subscriptions, regular message storage, numeric cleanup dispatch, invalid cleanup payload behavior, run/close lifecycle callbacks, restore-on-run behavior, periodic persistence start, final persist on close, and idempotent run/close semantics.

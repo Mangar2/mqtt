@@ -73,7 +73,7 @@ TEST_CASE("load_config_parses_mqtt_server_persist_and_subscriptions", "[message_
         "keepFiles = 7\n"
         "\n"
         "[messagestore]\n"
-        "cleanupTopic = $MONITORING/messages/cleanup\n"
+        "cleanupTopic = $MONITOR/messages/cleanup\n"
         "\n"
         "[subscription]\n"
         "topic = #\n"

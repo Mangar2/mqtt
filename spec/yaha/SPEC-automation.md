@@ -47,16 +47,16 @@ The component must not implement broker reconnect/session policy. The runtime mu
 
 Legacy implementation uses control topics under $SYS.
 
-For YAHA reimplementation, all legacy $SYS control topics are mapped 1:1 to $MONITORING topics:
+For YAHA reimplementation, all legacy $SYS control topics are mapped 1:1 to $MONITOR topics:
 
-- $SYS/simulation/# -> $MONITORING/simulation/#
-- $SYS/simulation/date -> $MONITORING/simulation/date
-- $SYS/simulation/end -> $MONITORING/simulation/end
-- $SYS/automation/# -> $MONITORING/automation/#
-- $SYS/automation/rules/<name>/set -> $MONITORING/automation/rules/<name>/set
-- $SYS/automation/rules/<name> -> $MONITORING/automation/rules/<name>
-- default presence topic $SYS/presence -> $MONITORING/presence
-- default presence input topic $SYS/presence/set -> $MONITORING/presence/set
+- $SYS/simulation/# -> $MONITOR/simulation/#
+- $SYS/simulation/date -> $MONITOR/simulation/date
+- $SYS/simulation/end -> $MONITOR/simulation/end
+- $SYS/automation/# -> $MONITOR/automation/#
+- $SYS/automation/rules/<name>/set -> $MONITOR/automation/rules/<name>/set
+- $SYS/automation/rules/<name> -> $MONITOR/automation/rules/<name>
+- default presence topic $SYS/presence -> $MONITOR/presence
+- default presence input topic $SYS/presence/set -> $MONITOR/presence/set
 
 No YAHA component may subscribe/publish $SYS topics.
 
@@ -68,8 +68,8 @@ Subscription sources:
 1. Static motion topics from config.motionTopics, each with config.subscribeQoS.
 2. Dynamic variable topics discovered from rule analysis (see Rule variable discovery), each with config.subscribeQoS.
 3. Monitoring control channels:
-   - $MONITORING/simulation/# with qos 1.
-   - $MONITORING/automation/# with qos 1.
+   - $MONITOR/simulation/# with qos 1.
+   - $MONITOR/automation/# with qos 1.
 
 Dynamic variable topic inclusion rule:
 - Include variable topic only if it is not already matched by any motion topic pattern.
@@ -83,7 +83,7 @@ Automation emits two categories of messages.
 - Topic/value/qos derive from rule definition and rules engine behavior.
 
 2. Rule-management acknowledgments
-- Topic: $MONITORING/automation/rules/<ruleName>
+- Topic: $MONITOR/automation/rules/<ruleName>
 - qos: always 1
 - payloads:
   - JSON string of accepted/updated rule,
@@ -135,8 +135,8 @@ Unknown config properties are not allowed by schema.
 
 - motionTopics:
   - +/+/+/motion sensor/detection state
-  - $MONITORING/presence/set
-- presenceTopic: $MONITORING/presence
+  - $MONITOR/presence/set
+- presenceTopic: $MONITOR/presence
 - rules: [rules.json]
 - intervalInSeconds: 60
 - subscribeQoS: 1
@@ -251,7 +251,7 @@ alert/motion                                 (under alert -> rules)
 ### Runtime semantics
 
 - Rule name uniquely identifies the rule within the rule set.
-- Rule update topic path also defines the ruleName: `$MONITORING/automation/rules/<ruleName>/set`
+- Rule update topic path also defines the ruleName: `$MONITOR/automation/rules/<ruleName>/set`
 - If update topic has nested segments like `ground/kitchen/dishwasher/onMorning/set`, the ruleName is `ground/kitchen/dishwasher/onMorning`.
 - The hierarchical path above the `rules` property is organizational only; it has no semantic effect on rule evaluation.
 
@@ -520,7 +520,7 @@ Semantics:
 
 Example:
 - `presence = (1: awake, on: awake, awake: awake, sleeping: sleeping, default: absent)`
-- `$MONITORING/presence != presence($MONITORING/presence/set)`
+- `$MONITOR/presence != presence($MONITOR/presence/set)`
 
 ## Multi-line field script format
 
@@ -534,7 +534,7 @@ Execution order:
 
 Example (`check` field):
 - `presence = (1: awake, on: awake, awake: awake, sleeping: sleeping, default: absent)`
-- `$MONITORING/presence != presence($MONITORING/presence/set)`
+- `$MONITOR/presence != presence($MONITOR/presence/set)`
 
 ## If semantics
 
@@ -547,7 +547,7 @@ Semantics are equivalent to legacy `if` node behavior.
 
 - Quotes are optional for tokens that contain only safe identifier characters and no whitespace.
 - Quotes are required when value contains spaces or separator characters.
-- Unquoted topic-like tokens (for example `/time`, `$MONITORING/presence`) are treated as variable references.
+- Unquoted topic-like tokens (for example `/time`, `$MONITOR/presence`) are treated as variable references.
 - Literal text values must be quoted when ambiguous.
 
 ## Semantic equivalence requirement
@@ -632,7 +632,7 @@ Non-motion lifecycle:
 ## Rule management channel
 
 Accepted command topic pattern:
-- $MONITORING/automation/rules/<ruleName>/set
+- $MONITOR/automation/rules/<ruleName>/set
 
 Command payload semantics:
 - delete: remove rule named ruleName.
@@ -654,15 +654,15 @@ All rule-management ack messages use qos 1.
 ## Simulation channel
 
 Supported topics:
-- $MONITORING/simulation/date
-- $MONITORING/simulation/end
-- $MONITORING/simulation/<domainTopic>
+- $MONITOR/simulation/date
+- $MONITOR/simulation/end
+- $MONITOR/simulation/<domainTopic>
 
 Behavior:
 1. Receiving simulation/date when not already in simulation sets simulation mode true.
 2. simulation/date payload is parsed as time-of-day date and used to run processTasks(simulationDate, true).
 3. simulation/end sets simulation mode false.
-4. Other simulation topics are mapped by removing prefix $MONITORING/simulation/ and then treated as normal incoming domain events in simulation context.
+4. Other simulation topics are mapped by removing prefix $MONITOR/simulation/ and then treated as normal incoming domain events in simulation context.
 5. For mapped simulation messages, reason[0].timestamp is parsed and normalized to ISO string before processing.
 
 Safety gate:
@@ -788,7 +788,7 @@ Mandatory implementation requirements:
 
 For a reimplementation to be considered parity-correct, these requirements are mandatory:
 
-1. Topic namespace mapping from legacy $SYS to $MONITORING must be applied consistently for all Automation control paths.
+1. Topic namespace mapping from legacy $SYS to $MONITOR must be applied consistently for all Automation control paths.
 2. Rule evaluation must run both:
    - after every incoming message,
   - and on periodic schedule with intervalInSeconds seconds.

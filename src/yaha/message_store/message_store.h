@@ -31,7 +31,7 @@ struct MessageStoreConfig {
     static constexpr std::uint16_t k_default_server_port{8090U};
 
     SubscriptionMap subscriptions;                    ///< Topic subscriptions for MQTT transport.
-    std::string cleanupTopic{"$MONITORING/messages/cleanup"}; ///< Cleanup command topic.
+    std::string cleanupTopic{"$MONITOR/messages/cleanup"}; ///< Cleanup command topic.
     std::string serverHost{"127.0.0.1"};             ///< HTTP server bind host/IP.
     std::string serverPath{"/store"};                 ///< HTTP GET base path.
     std::uint16_t serverPort{k_default_server_port};   ///< HTTP server listen port.

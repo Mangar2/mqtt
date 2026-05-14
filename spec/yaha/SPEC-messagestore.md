@@ -30,7 +30,7 @@ Special topic:
 
 | Topic                      | Meaning                                                      |
 |----------------------------|--------------------------------------------------------------|
-| `$MONITORING/messages/cleanup` | Triggers a cleanup of stale nodes. Payload is the number of days without update after which a node is considered stale. |
+| `$MONITOR/messages/cleanup` | Triggers a cleanup of stale nodes. Payload is the number of days without update after which a node is considered stale. |
 
 ## Published messages
 
@@ -104,7 +104,7 @@ A reason describes why a message was sent. It is a list of objects each with at 
 ### Message handling
 
 On receiving a message via `handleMessage`:
-1. If the topic is `$MONITORING/messages/cleanup`, the payload value is interpreted as a number of days. A cleanup is triggered on the tree with that value.
+1. If the topic is `$MONITOR/messages/cleanup`, the payload value is interpreted as a number of days. A cleanup is triggered on the tree with that value.
 2. For all other topics, the message is passed to the tree's `addData` operation.
 
 ### HTTP query handling
@@ -164,7 +164,7 @@ The MessageTree state is periodically serialised to disk. On startup the most re
 - Malformed request body (invalid JSON) in HTTP requests: treated as if no body was provided; a full section query is executed.
 - Unknown HTTP path: error returned to caller.
 - Persistence load failure: the store starts with an empty tree and logs the failure.
-- `$MONITORING/messages/cleanup` with a non-numeric payload: ignored.
+- `$MONITOR/messages/cleanup` with a non-numeric payload: ignored.
 
 ## Architectural notes
 
@@ -176,7 +176,7 @@ The MessageTree state is periodically serialised to disk. On startup the most re
 ## Open questions
 
 - Should the HTTP API support POST/websocket push in addition to GET polling? The legacy code is poll-only.
-- Should `$MONITORING/messages/cleanup` be a reserved topic handled inside the MessageStore, or should cleanup be triggerable via HTTP as well?
+- Should `$MONITOR/messages/cleanup` be a reserved topic handled inside the MessageStore, or should cleanup be triggerable via HTTP as well?
 - Is the HTTP interface sufficient, or should a gRPC or WebSocket interface be considered for the C++ reimplementation?
 - What authentication/authorisation (if any) should the HTTP server enforce? The legacy code has none.
 - Should the message tree support concurrent reads during a write, or is single-threaded access assumed (locked by the caller)?

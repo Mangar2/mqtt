@@ -25,8 +25,8 @@ If code is unclear, mark as open question instead of guessing from docs.
 ## MQTT topic conventions
 
 $SYS is reserved for broker-originated messages per MQTT specification. YAHA components must never publish or subscribe to $SYS topics.
-All system/control messages that were previously sent to $SYS/... in the legacy JS code must be specified as $MONITORING/... in the new specs.
-When reading legacy code, treat any $SYS topic as $MONITORING for the new spec.
+All system/control messages that were previously sent to $SYS/... in the legacy JS code must be specified as $MONITOR/... in the new specs.
+When reading legacy code, treat any $SYS topic as $MONITOR for the new spec.
 
 ## Architecture principles to preserve
 

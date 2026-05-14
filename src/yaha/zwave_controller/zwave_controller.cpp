@@ -126,15 +126,15 @@ void ZwaveController::close() {
 void ZwaveController::onDriverReady(const std::uint32_t homeId) {
     std::ostringstream reason{};
     reason << "scanning homeid=0x" << std::hex << homeId;
-    publish("$MONITORING/zwave/notification", std::string{"starting scan"}, reason.str());
+    publish("$MONITOR/zwave/notification", std::string{"starting scan"}, reason.str());
 }
 
 void ZwaveController::onDriverFailed() {
-    publish("$MONITORING/zwave/error", std::string{"driver failure"}, "failed to start driver. Stopping module");
+    publish("$MONITOR/zwave/error", std::string{"driver failure"}, "failed to start driver. Stopping module");
 }
 
 void ZwaveController::onScanComplete() {
-    publish("$MONITORING/zwave/notification", std::string{"scan complete"}, "zwave info");
+    publish("$MONITOR/zwave/notification", std::string{"scan complete"}, "zwave info");
 }
 
 void ZwaveController::onNotification(const std::uint16_t nodeId, const ZwaveNotificationCode notification) {
@@ -148,7 +148,7 @@ void ZwaveController::onNotification(const std::uint16_t nodeId, const ZwaveNoti
             .valueId = std::nullopt};
 
         const std::optional<ZwaveTopicMapping> mapping = devicesMapper_.valueToTopicAndType(descriptor);
-        std::string topic = "/$MONITORING/zwave/unknown node " + std::to_string(nodeId);
+        std::string topic = "/$MONITOR/zwave/unknown node " + std::to_string(nodeId);
         if (mapping.has_value() && !mapping->topic.empty()) {
             topic = mapping->topic;
         }
@@ -156,13 +156,13 @@ void ZwaveController::onNotification(const std::uint16_t nodeId, const ZwaveNoti
         publish(topic, notificationText(notification), "zwave notification");
     } catch (...) {
         const std::string text = notificationText(notification);
-        publish("$MONITORING/zwave/error", text, "node: " + std::to_string(nodeId) + " " + text);
+        publish("$MONITOR/zwave/error", text, "node: " + std::to_string(nodeId) + " " + text);
     }
 }
 
 void ZwaveController::onControllerCommand(const std::int32_t resultCode, const std::string& statusText) {
     publish(
-        "$MONITORING/zwave/notification",
+        "$MONITOR/zwave/notification",
         statusText,
         "controller commmand feedback: r=" + std::to_string(resultCode) + " s=" + statusText);
 }
@@ -365,7 +365,7 @@ void ZwaveController::publishValue(
 
         publish(topic, outputValue, reason);
     } catch (...) {
-        publish("$MONITORING/zwave/" + std::to_string(nodeId), event.value, reason);
+        publish("$MONITOR/zwave/" + std::to_string(nodeId), event.value, reason);
     }
 }
 

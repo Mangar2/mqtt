@@ -38,8 +38,8 @@ Main composition rule:
 
 Mandatory subscriptions:
 1. Management topics:
-- `$MONITORING/zwave/removefailednode/set` with qos `2`
-- `$MONITORING/zwave/addnode/set` with qos `2`
+- `$MONITOR/zwave/removefailednode/set` with qos `2`
+- `$MONITOR/zwave/addnode/set` with qos `2`
 
 2. Device set topics derived from `devices` configuration:
 - if `class_id` is defined for device entry: `<device.topic>/set`
@@ -48,10 +48,10 @@ Mandatory subscriptions:
 
 Compatibility note:
 - Legacy source uses `$SYS/zwave/...` control topics.
-- YAHA spec maps these to `$MONITORING/zwave/...`.
+- YAHA spec maps these to `$MONITOR/zwave/...`.
 
 Normative topic rule:
-- Runtime uses only `$MONITORING/...` topics.
+- Runtime uses only `$MONITOR/...` topics.
 - No `$SYS/...` runtime alias subscribe/publish behavior is required.
 
 ## Published messages
@@ -59,19 +59,19 @@ Normative topic rule:
 ZWave publishes the following message categories:
 
 1. Driver and scan lifecycle notifications:
-- `$MONITORING/zwave/notification` with values such as `starting scan`, `scan complete`, controller command feedback.
+- `$MONITOR/zwave/notification` with values such as `starting scan`, `scan complete`, controller command feedback.
 
 2. Error notifications:
-- `$MONITORING/zwave/error` for driver start failure and notification handling errors.
+- `$MONITOR/zwave/error` for driver start failure and notification handling errors.
 
 3. Service info notifications:
-- `$MONITORING/zwave/info` value `configuration reloaded` when device configuration is applied.
-- `$MONITORING/zwave/removefailednode` and `$MONITORING/zwave/addnode` with value `nop` during startup run.
+- `$MONITOR/zwave/info` value `configuration reloaded` when device configuration is applied.
+- `$MONITOR/zwave/removefailednode` and `$MONITOR/zwave/addnode` with value `nop` during startup run.
 
 4. Device value updates:
 - topic from `valueToTopicAndType` mapping for regular nodes
 - USB/controller topic for node `1`
-- fallback topic `$MONITORING/zwave/<nodeId>` on mapping failure
+- fallback topic `$MONITOR/zwave/<nodeId>` on mapping failure
 
 Publish metadata rules:
 - every published message is passed through reply matcher update (`MatchMessages` behavior)
@@ -152,7 +152,7 @@ On component construction:
 
 On `setDeviceConfiguration(config)`:
 1. apply device configuration to controller mapper.
-2. publish `$MONITORING/zwave/info` (`configuration reloaded`).
+2. publish `$MONITOR/zwave/info` (`configuration reloaded`).
 
 On `run()`:
 1. publish restart marker messages for removefailednode/addnode topics with `nop`.
@@ -176,9 +176,9 @@ Controller behavior handles events and publishes mapped messages:
 ## Inbound MQTT handling
 
 For each incoming message:
-1. if topic is `$MONITORING/zwave/removefailednode/set`: invoke remove-failed-node operation.
-2. else if topic is `$MONITORING/zwave/addnode/set`: invoke add-node operation.
-3. else if topic is `$MONITORING/zwave/scan/set`: invoke scan operation.
+1. if topic is `$MONITOR/zwave/removefailednode/set`: invoke remove-failed-node operation.
+2. else if topic is `$MONITOR/zwave/addnode/set`: invoke add-node operation.
+3. else if topic is `$MONITOR/zwave/scan/set`: invoke scan operation.
 4. else:
 - add reason `received by zwave service`
 - register message in reply matcher
@@ -189,7 +189,7 @@ Compatibility note for scan command:
 - legacy controller implementation has no `startScan` method.
 
 Normative YAHA decision:
-- New C++ client implements a defined scan operation for `$MONITORING/zwave/scan/set`.
+- New C++ client implements a defined scan operation for `$MONITOR/zwave/scan/set`.
 - Scan request must trigger controller scan/start-inclusion flow and publish deterministic success/failure notification messages.
 - Legacy no-op/error behavior for scan is intentionally not preserved.
 
@@ -220,8 +220,8 @@ Validation rules from schema:
 ## Error handling
 
 - mapping or set errors are caught and logged via error log path.
-- notification mapping errors publish to `$MONITORING/zwave/error` and log details.
-- missing mapping during value publish falls back to `$MONITORING/zwave/<nodeId>` and logs context.
+- notification mapping errors publish to `$MONITOR/zwave/error` and log details.
+- missing mapping during value publish falls back to `$MONITOR/zwave/<nodeId>` and logs context.
 - component continues runtime after recoverable per-message failures.
 
 ## Architectural notes

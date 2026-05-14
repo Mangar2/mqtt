@@ -10,7 +10,7 @@
 TEST_CASE("expression_parser_parses_declarations_and_collects_external_topics", "[yaha][automation]") {
     const std::string script =
         "presence = (1: awake, on: awake, default: absent)\n"
-        "$MONITORING/presence != presence($MONITORING/presence/set)";
+        "$MONITOR/presence != presence($MONITOR/presence/set)";
 
     const yaha::ExpressionParseResult result = yaha::ExpressionParser::parse(script);
 
@@ -19,8 +19,8 @@ TEST_CASE("expression_parser_parses_declarations_and_collects_external_topics", 
     REQUIRE(result.ast.declarations.size() == 1U);
     REQUIRE(result.ast.declarations[0].name == "presence");
 
-    REQUIRE(result.externalVariables.contains("$MONITORING/presence"));
-    REQUIRE(result.externalVariables.contains("$MONITORING/presence/set"));
+    REQUIRE(result.externalVariables.contains("$MONITOR/presence"));
+    REQUIRE(result.externalVariables.contains("$MONITOR/presence/set"));
     REQUIRE(result.externalVariables.size() == 2U);
 }
 
@@ -44,8 +44,8 @@ TEST_CASE("rules_tree_parser_exposes_snippets_by_slash_path", "[yaha][automation
         {"motion", Node{Node::Object{
             {"rules", Node{Node::Object{
                 {"setReceived", Node{Node::Object{
-                    {"check", Node{"$MONITORING/presence != state($MONITORING/presence/set)"}},
-                    {"value", Node{"if($MONITORING/presence = awake, on, off)"}}
+                    {"check", Node{"$MONITOR/presence != state($MONITOR/presence/set)"}},
+                    {"value", Node{"if($MONITOR/presence = awake, on, off)"}}
                 }}}
             }}}
         }}}
@@ -57,8 +57,8 @@ TEST_CASE("rules_tree_parser_exposes_snippets_by_slash_path", "[yaha][automation
     REQUIRE(result.snippetsByPath.contains("motion/rules/setReceived/check"));
     REQUIRE(result.snippetsByPath.contains("motion/rules/setReceived/value"));
 
-    REQUIRE(result.externalVariables.contains("$MONITORING/presence"));
-    REQUIRE(result.externalVariables.contains("$MONITORING/presence/set"));
+    REQUIRE(result.externalVariables.contains("$MONITOR/presence"));
+    REQUIRE(result.externalVariables.contains("$MONITOR/presence/set"));
 }
 
 TEST_CASE("rules_tree_parser_reports_path_on_expression_error", "[yaha][automation]") {
@@ -107,7 +107,7 @@ TEST_CASE("expression_parser_reports_empty_script", "[yaha][automation]") {
 TEST_CASE("expression_parser_reports_invalid_declaration", "[yaha][automation]") {
     const yaha::ExpressionParseResult result = yaha::ExpressionParser::parse(
         "presence (default: absent)\n"
-        "presence($MONITORING/presence)");
+        "presence($MONITOR/presence)");
 
     REQUIRE_FALSE(result.success);
     REQUIRE_FALSE(result.errors.empty());

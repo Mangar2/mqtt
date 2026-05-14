@@ -254,7 +254,7 @@ TEST_CASE("on_controller_command_publishes_monitoring_notification", "[zwave_con
     controller.onControllerCommand(kControllerResultCode, "in-progress");
 
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITORING/zwave/notification");
+    CHECK(published.front().topic() == "$MONITOR/zwave/notification");
     REQUIRE(std::holds_alternative<std::string>(published.front().value()));
     CHECK(std::get<std::string>(published.front().value()) == "in-progress");
 }
@@ -303,17 +303,17 @@ TEST_CASE("driver_lifecycle_callbacks_publish_expected_monitoring_messages", "[z
 
     REQUIRE(published.size() == 3U);
 
-    CHECK(published[0].topic() == "$MONITORING/zwave/notification");
+    CHECK(published[0].topic() == "$MONITOR/zwave/notification");
     REQUIRE(std::holds_alternative<std::string>(published[0].value()));
     CHECK(std::get<std::string>(published[0].value()) == "starting scan");
     REQUIRE(published[0].reason().size() == 1U);
     CHECK(published[0].reason().front().message.find("homeid=0xabcd") != std::string::npos);
 
-    CHECK(published[1].topic() == "$MONITORING/zwave/error");
+    CHECK(published[1].topic() == "$MONITOR/zwave/error");
     REQUIRE(std::holds_alternative<std::string>(published[1].value()));
     CHECK(std::get<std::string>(published[1].value()) == "driver failure");
 
-    CHECK(published[2].topic() == "$MONITORING/zwave/notification");
+    CHECK(published[2].topic() == "$MONITOR/zwave/notification");
     REQUIRE(std::holds_alternative<std::string>(published[2].value()));
     CHECK(std::get<std::string>(published[2].value()) == "scan complete");
 }
@@ -353,12 +353,12 @@ TEST_CASE("notification_callback_maps_all_codes_and_uses_unknown_topic_fallback"
 
     REQUIRE(published.size() == expectedText.size() + 1U);
     for (std::size_t index = 0U; index < expectedText.size(); ++index) {
-        CHECK(published[index].topic() == "/$MONITORING/zwave/unknown node 20");
+        CHECK(published[index].topic() == "/$MONITOR/zwave/unknown node 20");
         REQUIRE(std::holds_alternative<std::string>(published[index].value()));
         CHECK(std::get<std::string>(published[index].value()) == expectedText[index]);
     }
 
-    CHECK(published.back().topic() == "/$MONITORING/zwave/unknown node 20");
+    CHECK(published.back().topic() == "/$MONITOR/zwave/unknown node 20");
     REQUIRE(std::holds_alternative<std::string>(published.back().value()));
     CHECK(std::get<std::string>(published.back().value()) == "unknown");
 }
@@ -451,7 +451,7 @@ TEST_CASE("on_value_changed_without_mapping_falls_back_to_monitoring_topic", "[z
         .readOnly = false});
 
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITORING/zwave/22");
+    CHECK(published.front().topic() == "$MONITOR/zwave/22");
     REQUIRE(std::holds_alternative<std::string>(published.front().value()));
     CHECK(std::get<std::string>(published.front().value()) == "open");
 }

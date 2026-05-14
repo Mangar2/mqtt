@@ -116,7 +116,7 @@ Implement the `MessageStore` class that implements `IMqttComponent` as specified
 What is produced:
 - `getSubscriptions()` — returns the configured topic→QoS map.
 - `handleMessage(Message)` — dispatches to:
-  - cleanup if topic is `$MONITORING/messages/cleanup`,
+  - cleanup if topic is `$MONITOR/messages/cleanup`,
   - `tree.addData()` for all other topics.
 - Lifecycle: `run()` starts the HTTP server and persistence loop; `close()` stops both and triggers a final persist.
 
@@ -170,7 +170,7 @@ When done: a deployable binary that connects to yahabroker, records all messages
 
 - Start yahabroker and the MessageStore binary.
 - Publish a set of messages; query over HTTP and verify the response matches what was published.
-- Publish `$MONITORING/messages/cleanup`; verify stale nodes are removed.
+- Publish `$MONITOR/messages/cleanup`; verify stale nodes are removed.
 - Restart MessageStore; verify persisted state is restored and HTTP queries return correct data.
 
 ---

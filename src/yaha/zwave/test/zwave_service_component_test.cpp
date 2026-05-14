@@ -256,12 +256,12 @@ TEST_CASE("subscriptions_include_management_and_device_topics", "[zwave_service]
 
     const yaha::SubscriptionMap subscriptions = service.getSubscriptions();
 
-    REQUIRE(subscriptions.contains("$MONITORING/zwave/removefailednode/set"));
-    REQUIRE(subscriptions.contains("$MONITORING/zwave/addnode/set"));
-    REQUIRE(subscriptions.contains("$MONITORING/zwave/scan/set"));
-    CHECK(subscriptions.at("$MONITORING/zwave/removefailednode/set") == yaha::Qos::ExactlyOnce);
-    CHECK(subscriptions.at("$MONITORING/zwave/addnode/set") == yaha::Qos::ExactlyOnce);
-    CHECK(subscriptions.at("$MONITORING/zwave/scan/set") == yaha::Qos::ExactlyOnce);
+    REQUIRE(subscriptions.contains("$MONITOR/zwave/removefailednode/set"));
+    REQUIRE(subscriptions.contains("$MONITOR/zwave/addnode/set"));
+    REQUIRE(subscriptions.contains("$MONITOR/zwave/scan/set"));
+    CHECK(subscriptions.at("$MONITOR/zwave/removefailednode/set") == yaha::Qos::ExactlyOnce);
+    CHECK(subscriptions.at("$MONITOR/zwave/addnode/set") == yaha::Qos::ExactlyOnce);
+    CHECK(subscriptions.at("$MONITOR/zwave/scan/set") == yaha::Qos::ExactlyOnce);
 
     REQUIRE(subscriptions.contains("home/lamp/set"));
     REQUIRE(subscriptions.contains("home/climate/+/set"));
@@ -279,9 +279,9 @@ TEST_CASE("management_messages_are_forwarded_and_scan_success_is_published", "[z
         published.push_back(message.clone());
     });
 
-    service.handleMessage(yaha::Message{"$MONITORING/zwave/removefailednode/set", yaha::Value{kRemoveFailedPayload}});
-    service.handleMessage(yaha::Message{"$MONITORING/zwave/addnode/set", yaha::Value{std::string{"ignored"}}});
-    service.handleMessage(yaha::Message{"$MONITORING/zwave/scan/set", yaha::Value{std::string{"now"}}});
+    service.handleMessage(yaha::Message{"$MONITOR/zwave/removefailednode/set", yaha::Value{kRemoveFailedPayload}});
+    service.handleMessage(yaha::Message{"$MONITOR/zwave/addnode/set", yaha::Value{std::string{"ignored"}}});
+    service.handleMessage(yaha::Message{"$MONITOR/zwave/scan/set", yaha::Value{std::string{"now"}}});
 
     CHECK(controller->removeFailedCalls() == 1U);
     CHECK(controller->addDeviceCalls() == 1U);
@@ -290,7 +290,7 @@ TEST_CASE("management_messages_are_forwarded_and_scan_success_is_published", "[z
     CHECK(std::get<double>(controller->lastRemoveFailedValue()) == kRemoveFailedPayload);
 
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITORING/zwave/notification");
+    CHECK(published.front().topic() == "$MONITOR/zwave/notification");
     REQUIRE(std::holds_alternative<std::string>(published.front().value()));
     CHECK(std::get<std::string>(published.front().value()) == "scan command accepted");
     CHECK(published.front().qos() == yaha::Qos::ExactlyOnce);
@@ -307,11 +307,11 @@ TEST_CASE("scan_failure_publishes_error_message", "[zwave_service]") {
         published.push_back(message.clone());
     });
 
-    service.handleMessage(yaha::Message{"$MONITORING/zwave/scan/set", yaha::Value{std::string{"now"}}});
+    service.handleMessage(yaha::Message{"$MONITOR/zwave/scan/set", yaha::Value{std::string{"now"}}});
 
     REQUIRE(controller->startScanCalls() == 1U);
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(published.front().topic() == "$MONITOR/zwave/error");
     REQUIRE(std::holds_alternative<std::string>(published.front().value()));
     CHECK(std::get<std::string>(published.front().value()) == "scan command failed");
     CHECK(hasReasonMessage(published.front(), "scan failed in fake controller"));
@@ -327,11 +327,11 @@ TEST_CASE("scan_unknown_failure_publishes_error_message", "[zwave_service]") {
         published.push_back(message.clone());
     });
 
-    service.handleMessage(yaha::Message{"$MONITORING/zwave/scan/set", yaha::Value{std::string{"now"}}});
+    service.handleMessage(yaha::Message{"$MONITOR/zwave/scan/set", yaha::Value{std::string{"now"}}});
 
     REQUIRE(controller->startScanCalls() == 0U);
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(published.front().topic() == "$MONITOR/zwave/error");
     REQUIRE(std::holds_alternative<std::string>(published.front().value()));
     CHECK(std::get<std::string>(published.front().value()) == "scan command failed");
     CHECK(hasReasonMessage(published.front(), "unknown"));
@@ -511,10 +511,10 @@ TEST_CASE("remove_failed_exception_publishes_error_message", "[zwave_service]") 
         published.push_back(message.clone());
     });
 
-    service.handleMessage(yaha::Message{"$MONITORING/zwave/removefailednode/set", yaha::Value{kRemoveFailedPayload}});
+    service.handleMessage(yaha::Message{"$MONITOR/zwave/removefailednode/set", yaha::Value{kRemoveFailedPayload}});
 
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(published.front().topic() == "$MONITOR/zwave/error");
     CHECK(hasReasonMessage(published.front(), "operation=removefailednode"));
 }
 
@@ -528,10 +528,10 @@ TEST_CASE("remove_failed_unknown_exception_publishes_error_message", "[zwave_ser
         published.push_back(message.clone());
     });
 
-    service.handleMessage(yaha::Message{"$MONITORING/zwave/removefailednode/set", yaha::Value{kRemoveFailedPayload}});
+    service.handleMessage(yaha::Message{"$MONITOR/zwave/removefailednode/set", yaha::Value{kRemoveFailedPayload}});
 
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(published.front().topic() == "$MONITOR/zwave/error");
     CHECK(hasReasonMessage(published.front(), "operation=removefailednode"));
     CHECK(hasReasonMessage(published.front(), "unknown"));
 }
@@ -546,10 +546,10 @@ TEST_CASE("add_node_exception_publishes_error_message", "[zwave_service]") {
         published.push_back(message.clone());
     });
 
-    service.handleMessage(yaha::Message{"$MONITORING/zwave/addnode/set", yaha::Value{std::string{"ignored"}}});
+    service.handleMessage(yaha::Message{"$MONITOR/zwave/addnode/set", yaha::Value{std::string{"ignored"}}});
 
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(published.front().topic() == "$MONITOR/zwave/error");
     CHECK(hasReasonMessage(published.front(), "operation=addnode"));
 }
 
@@ -563,10 +563,10 @@ TEST_CASE("add_node_unknown_exception_publishes_error_message", "[zwave_service]
         published.push_back(message.clone());
     });
 
-    service.handleMessage(yaha::Message{"$MONITORING/zwave/addnode/set", yaha::Value{std::string{"ignored"}}});
+    service.handleMessage(yaha::Message{"$MONITOR/zwave/addnode/set", yaha::Value{std::string{"ignored"}}});
 
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(published.front().topic() == "$MONITOR/zwave/error");
     CHECK(hasReasonMessage(published.front(), "operation=addnode"));
     CHECK(hasReasonMessage(published.front(), "unknown"));
 }
@@ -584,7 +584,7 @@ TEST_CASE("set_value_exception_publishes_error_message", "[zwave_service]") {
     service.handleMessage(yaha::Message{"home/phase6/lamp/set", yaha::Value{std::string{"on"}}});
 
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(published.front().topic() == "$MONITOR/zwave/error");
     CHECK(hasReasonMessage(published.front(), "operation=setvalue"));
 }
 
@@ -601,7 +601,7 @@ TEST_CASE("set_value_unknown_exception_publishes_error_message", "[zwave_service
     service.handleMessage(yaha::Message{"home/phase6/lamp/set", yaha::Value{std::string{"on"}}});
 
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(published.front().topic() == "$MONITOR/zwave/error");
     CHECK(hasReasonMessage(published.front(), "operation=setvalue"));
     CHECK(hasReasonMessage(published.front(), "unknown"));
 }
@@ -620,8 +620,8 @@ TEST_CASE("run_publishes_startup_markers_and_requests_controller_sync", "[zwave_
 
     CHECK(controller->requestConfigCalls() == 1U);
     REQUIRE(published.size() == 2U);
-    CHECK(published[0].topic() == "$MONITORING/zwave/removefailednode");
-    CHECK(published[1].topic() == "$MONITORING/zwave/addnode");
+    CHECK(published[0].topic() == "$MONITOR/zwave/removefailednode");
+    CHECK(published[1].topic() == "$MONITOR/zwave/addnode");
 
     REQUIRE(std::holds_alternative<std::string>(published[0].value()));
     REQUIRE(std::holds_alternative<std::string>(published[1].value()));
@@ -644,7 +644,7 @@ TEST_CASE("run_request_config_exception_publishes_error_message", "[zwave_servic
     service.run();
 
     REQUIRE(published.size() == 3U);
-    CHECK(published.back().topic() == "$MONITORING/zwave/error");
+    CHECK(published.back().topic() == "$MONITOR/zwave/error");
     CHECK(hasReasonMessage(published.back(), "operation=requestconfig"));
 }
 
@@ -661,7 +661,7 @@ TEST_CASE("run_request_config_unknown_exception_publishes_error_message", "[zwav
     service.run();
 
     REQUIRE(published.size() == 3U);
-    CHECK(published.back().topic() == "$MONITORING/zwave/error");
+    CHECK(published.back().topic() == "$MONITOR/zwave/error");
     CHECK(hasReasonMessage(published.back(), "operation=requestconfig"));
     CHECK(hasReasonMessage(published.back(), "unknown"));
 }
@@ -688,7 +688,7 @@ TEST_CASE("close_exception_publishes_error_message", "[zwave_service]") {
     service.close();
 
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(published.front().topic() == "$MONITOR/zwave/error");
     CHECK(hasReasonMessage(published.front(), "operation=close"));
 }
 
@@ -705,7 +705,7 @@ TEST_CASE("close_unknown_exception_publishes_error_message", "[zwave_service]") 
     service.close();
 
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITORING/zwave/error");
+    CHECK(published.front().topic() == "$MONITOR/zwave/error");
     CHECK(hasReasonMessage(published.front(), "operation=close"));
     CHECK(hasReasonMessage(published.front(), "unknown"));
 }

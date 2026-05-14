@@ -32,11 +32,11 @@ struct AutomationClientConfig {
     std::uint16_t fileStorePort{k_default_file_store_port};            ///< FileStore HTTP port.
     bool fileStoreEnabled{true};                                        ///< Enables startup read and write-back.
     std::string monitorTopicPrefix{"$MONITOR/FileStore"};             ///< Prefix for FileStore monitoring topics.
-    std::string managementTopicPrefix{"$MONITORING/automation/rules"}; ///< Prefix for runtime rule update topics.
-    std::string presenceTopic{"$MONITORING/presence"};                ///< Presence variable topic.
+    std::string managementTopicPrefix{"$MONITOR/automation/rules"}; ///< Prefix for runtime rule update topics.
+    std::string presenceTopic{"$MONITOR/presence"};                ///< Presence variable topic.
     std::vector<std::string> motionTopics{                              ///< Default motion/control subscriptions.
         "+/+/+/motion sensor/detection state",
-        "$MONITORING/presence/set"};
+        "$MONITOR/presence/set"};
     double longitude{0.0};                                              ///< Geo longitude for internal variables.
     double latitude{0.0};                                               ///< Geo latitude for internal variables.
     Qos subscribeQos{Qos::AtLeastOnce};                                ///< Requested QoS for subscriptions.

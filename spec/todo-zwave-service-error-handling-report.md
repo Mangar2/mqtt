@@ -55,7 +55,7 @@ This report analyzes ZWave service robustness across:
 ## P1 Should Fix
 
 - [x] Publish deterministic monitoring error messages for non-scan controller operation failures.
-  - Acceptance: failing removefailed/addnode/setValue/requestConfig/close paths emit `$MONITORING/zwave/error` messages with reason context.
+  - Acceptance: failing removefailed/addnode/setValue/requestConfig/close paths emit `$MONITOR/zwave/error` messages with reason context.
 
 ## P2 Nice To Have
 

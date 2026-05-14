@@ -178,7 +178,7 @@ TEST_CASE("handle_message_cleanup_topic_uses_numeric_payload", "[message_store]"
     store.handleMessage(yaha::Message{"old/topic", std::string{"x"}});
     clock.nowMs += (2 * k_millis_per_day);
 
-    store.handleMessage(yaha::Message{"$MONITORING/messages/cleanup", 1.0});
+    store.handleMessage(yaha::Message{"$MONITOR/messages/cleanup", 1.0});
 
     const auto nodes = store.querySection("", 5U, false, true);
     REQUIRE(nodes.empty());
@@ -190,7 +190,7 @@ TEST_CASE("handle_message_cleanup_topic_ignores_invalid_payload", "[message_stor
     yaha::MessageStore store{config};
 
     store.handleMessage(yaha::Message{"keep/topic", std::string{"x"}});
-    store.handleMessage(yaha::Message{"$MONITORING/messages/cleanup", std::string{"abc"}});
+    store.handleMessage(yaha::Message{"$MONITOR/messages/cleanup", std::string{"abc"}});
 
     const auto nodes = store.querySection("keep/topic", 0U, false, true);
     REQUIRE(nodes.size() == 1U);
@@ -203,7 +203,7 @@ TEST_CASE("handle_message_cleanup_topic_logs_invalid_payload", "[message_store]"
 
     std::ostringstream captured{};
     auto* originalBuffer = std::cout.rdbuf(captured.rdbuf());
-    store.handleMessage(yaha::Message{"$MONITORING/messages/cleanup", std::string{"abc"}});
+    store.handleMessage(yaha::Message{"$MONITOR/messages/cleanup", std::string{"abc"}});
     std::cout.rdbuf(originalBuffer);
 
     REQUIRE(captured.str().find("message_store[error] op=cleanup") != std::string::npos);
@@ -215,8 +215,8 @@ TEST_CASE("handle_message_cleanup_topic_ignores_negative_and_empty_values", "[me
     yaha::MessageStore store{config};
 
     store.handleMessage(yaha::Message{"keep/topic", std::string{"x"}});
-    store.handleMessage(yaha::Message{"$MONITORING/messages/cleanup", -1.0});
-    store.handleMessage(yaha::Message{"$MONITORING/messages/cleanup", std::string{}});
+    store.handleMessage(yaha::Message{"$MONITOR/messages/cleanup", -1.0});
+    store.handleMessage(yaha::Message{"$MONITOR/messages/cleanup", std::string{}});
 
     const auto nodes = store.querySection("keep/topic", 0U, false, true);
     REQUIRE(nodes.size() == 1U);
@@ -235,7 +235,7 @@ TEST_CASE("handle_message_cleanup_topic_accepts_numeric_string_payload", "[messa
 
     store.handleMessage(yaha::Message{"old/topic", std::string{"x"}});
     clock.nowMs += (2 * k_millis_per_day);
-    store.handleMessage(yaha::Message{"$MONITORING/messages/cleanup", std::string{"1"}});
+    store.handleMessage(yaha::Message{"$MONITOR/messages/cleanup", std::string{"1"}});
 
     const auto nodes = store.querySection("", 5U, false, true);
     REQUIRE(nodes.empty());

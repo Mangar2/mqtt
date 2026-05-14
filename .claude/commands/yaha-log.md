@@ -59,8 +59,8 @@ Identified as cross-cutting concern during MessageStore spec work. Defines the p
 ### [CORRECTION] SPEC-messagetree.md deleted, content merged into messagestore
 MessageTree is only used by MessageStore — not a cross-cutting concern. Standalone spec was wrong. All content moved into SPEC-messagestore.md under Data model section.
 
-### [DECISION] $SYS topics renamed to $MONITORING
-MQTT spec reserves $SYS for broker use only. On user instruction: all legacy $SYS/... topics become $MONITORING/... in new specs. Skill and SPEC-messagestore.md updated.
+### [DECISION] $SYS topics renamed to $MONITOR
+MQTT spec reserves $SYS for broker use only. On user instruction: all legacy $SYS/... topics become $MONITOR/... in new specs. Skill and SPEC-messagestore.md updated.
 
 ### [INSIGHT] Message identified as central shared data type
 User prompted review. Found that Message (topic, value, reason, qos, retain) is used identically across valueservice, raspberry, zwave, pushover, serialdevice, and more. Dedicated SPEC-message.md created. Skill updated to check shared data formats, not just interfaces.

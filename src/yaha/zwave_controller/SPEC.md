@@ -88,18 +88,18 @@ Concrete parity adapter implementation with additional callback entry points:
 ## Event and publish contract
 
 - Driver lifecycle:
-  - `onDriverReady` publishes `$MONITORING/zwave/notification` value `starting scan`
-  - `onDriverFailed` publishes `$MONITORING/zwave/error` value `driver failure`
-  - `onScanComplete` publishes `$MONITORING/zwave/notification` value `scan complete`
-- Notification callback publishes mapped notification text; on failures publishes to `$MONITORING/zwave/error`.
-- Controller command callback publishes to `$MONITORING/zwave/notification`.
+  - `onDriverReady` publishes `$MONITOR/zwave/notification` value `starting scan`
+  - `onDriverFailed` publishes `$MONITOR/zwave/error` value `driver failure`
+  - `onScanComplete` publishes `$MONITOR/zwave/notification` value `scan complete`
+- Notification callback publishes mapped notification text; on failures publishes to `$MONITOR/zwave/error`.
+- Controller command callback publishes to `$MONITOR/zwave/notification`.
 - Node/value callbacks maintain in-memory node/class cache.
 - `onValueChanged` updates cache and publishes mapped value.
 - Value publish behavior:
   - node `1` publishes to configured USB topic
   - mapped devices publish via `valueToTopicAndType`
   - `switch` type converts bool to `on`/`off`
-  - mapping failures fall back to `$MONITORING/zwave/<nodeId>`
+  - mapping failures fall back to `$MONITOR/zwave/<nodeId>`
 
 ## Files
 

@@ -8,12 +8,12 @@
 TEST_CASE("expression_tokenizer_splits_declaration_and_expression", "[yaha][automation]") {
     const std::string program =
         "presence=(1:awake,default:absent)\n"
-        "$MONITORING/presence!=presence($MONITORING/presence/set)";
+        "$MONITOR/presence!=presence($MONITOR/presence/set)";
 
     const std::vector<std::string> expected = {
         "presence", "=", "(", "1", ":", "awake", ",", "default", ":", "absent", ")",
         "\\n",
-        "$MONITORING/presence", "!=", "presence", "(", "$MONITORING/presence/set", ")"
+        "$MONITOR/presence", "!=", "presence", "(", "$MONITOR/presence/set", ")"
     };
 
     REQUIRE(yaha::ExpressionTokenizer::tokenize(program) == expected);
@@ -41,10 +41,10 @@ TEST_CASE("expression_tokenizer_recognizes_comparators", "[yaha][automation]") {
 }
 
 TEST_CASE("expression_tokenizer_keeps_variable_reference_with_spaces", "[yaha][automation]") {
-    const std::string program = "$MONITORING/room/motion sensor/detection state = on";
+    const std::string program = "$MONITOR/room/motion sensor/detection state = on";
 
     const std::vector<std::string> expected = {
-        "$MONITORING/room/motion sensor/detection state", "=", "on"
+        "$MONITOR/room/motion sensor/detection state", "=", "on"
     };
 
     REQUIRE(yaha::ExpressionTokenizer::tokenize(program) == expected);

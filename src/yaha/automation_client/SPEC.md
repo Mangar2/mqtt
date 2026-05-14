@@ -16,8 +16,8 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
 | `fileStorePort` | `std::uint16_t` | `8210` | FileStore HTTP port |
 | `fileStoreEnabled` | `bool` | `true` | Enables startup load and write-back |
 | `monitorTopicPrefix` | `std::string` | `$MONITOR/FileStore` | Monitoring subscription prefix |
-| `managementTopicPrefix` | `std::string` | `$MONITORING/automation/rules` | Runtime update prefix |
-| `presenceTopic` | `std::string` | `$MONITORING/presence` | Presence variable bootstrap topic |
+| `managementTopicPrefix` | `std::string` | `$MONITOR/automation/rules` | Runtime update prefix |
+| `presenceTopic` | `std::string` | `$MONITOR/presence` | Presence variable bootstrap topic |
 | `motionTopics` | `std::vector<std::string>` | defaults | Static motion/control topic filters |
 | `longitude` | `double` | `0.0` | Geo longitude for internal variables |
 | `latitude` | `double` | `0.0` | Geo latitude for internal variables |
@@ -64,7 +64,7 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
   - On each rule-tree load/update, the component parses expression snippets and extracts external variables.
   - Extracted variable topics are added to subscription map with `subscribeQos`.
 - Runtime management updates:
-  - Subscribed topic prefix `$MONITORING/automation/rules/#` (configurable).
+  - Subscribed topic prefix `$MONITOR/automation/rules/#` (configurable).
   - Supported command topic shape: `<managementTopicPrefix>/<ruleName>/set`.
   - Payload `delete` removes rule.
   - JSON payload sets/updates rule object under `rules.<ruleName>`.
