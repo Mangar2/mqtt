@@ -199,16 +199,145 @@ On each successful rule-management update/delete message:
 
 ## Rule tree format
 
-Rules can be nested in arbitrary JSON object hierarchy.
+### Tree structure
 
-Extraction rule:
-- Parser scans for property named rules.
-- Everything under that rules object is treated as rule set.
-- rules must be the last organizational level for rule grouping.
+The rule tree is an arbitrary JSON object hierarchy where rules are organized by domain, location, and function.
 
-Rule identity:
-- Rule name is key path under rules block.
-- Runtime set topic path also defines ruleName for updates.
+```
+{
+  "domainOrCategory": {
+    "location": {
+      "function": {
+        "rules": {
+          "ruleName1": { rule object },
+          "ruleName2": { rule object }
+        }
+      },
+      "anotherFunction": {
+        "rules": {
+          "ruleName3": { rule object }
+        }
+      }
+    },
+    "anotherLocation": {
+      "rules": {
+        "directRuleName": { rule object }
+      }
+    }
+  }
+}
+```
+
+### Extraction rule
+
+- Parser scans recursively for any property named `rules`.
+- All rule objects directly under a `rules` property are extracted.
+- `rules` property must appear as a leaf node (no further nesting below it).
+- The entire hierarchy above a `rules` property is used to form the rule's full name.
+
+### Rule identity and naming
+
+Rule name is constructed as the dot-separated path of all keys leading to and including the rule key under a `rules` block.
+
+Examples from a rules tree:
+```
+motion/setReceived                           (under motion -> rules)
+ground/kitchen/dishwasher/onMorning          (under ground -> kitchen -> dishwasher -> rules -> onMorning)
+ground/wardrobe/ventilation/OnEvening        (under ground -> wardrobe -> ventilation -> rules -> OnEvening)
+cellar/boilerroom/washingmachine/SwitchOn    (under cellar -> boilerroom -> washingmachine -> rules)
+alert/motion                                 (under alert -> rules)
+```
+
+### Runtime semantics
+
+- Rule name uniquely identifies the rule within the rule set.
+- Rule update topic path also defines the ruleName: `$MONITORING/automation/rules/<ruleName>/set`
+- If update topic has nested segments like `ground/kitchen/dishwasher/onMorning/set`, the ruleName is `ground/kitchen/dishwasher/onMorning`.
+- The hierarchical path above the `rules` property is organizational only; it has no semantic effect on rule evaluation.
+
+### Arbitrary hierarchy
+
+- Domains, locations, functions, and naming conventions are user-defined.
+- The parser does not enforce naming patterns or hierarchy depth.
+- Examples: `motion`, `ground`, `cellar`, `first`, `outdoor`, `alert` are example domain/category names.
+- Examples: `kitchen`, `wardrobe`, `livingroom` are example location names.
+- Examples: `ventilation`, `dishwasher`, `roller`, `motion` are example function names.
+
+### Non-rules properties
+
+Any JSON object property not named `rules` is ignored by the parser and can be used for documentation or organizational metadata.
+
+### Concrete tree structure example
+
+```json
+{
+  "motion": {
+    "rules": {
+      "setReceived": {
+        "anyOf": ["$SYS/presence/set", "system/presence/set"],
+        "check": "map_1 = (1: awake, on: awake, awake: awake, sleeping: sleeping, default: absent)\n$SYS/presence != map_1($SYS/presence/set)",
+        "topic": {...},
+        "name": "motion/setReceived"
+      },
+      "initialize": {
+        "check": "$SYS/presence = initial",
+        "anyOf": ["+/+/+/motion sensor/detection state"],
+        "topic": {...},
+        "name": "motion/initialize"
+      }
+    }
+  },
+  "ground": {
+    "kitchen": {
+      "dishwasher": {
+        "rules": {
+          "onMorning": {
+            "time": "6:00",
+            "topic": {"ground/kitchen/zwave/switch/dishwasher/set": "on"},
+            "name": "ground/kitchen/dishwasher/onMorning"
+          }
+        }
+      }
+    },
+    "wardrobe": {
+      "floorHeating": {
+        "rules": {
+          "onMorning": {..., "name": "ground/wardrobe/floorHeating/onMorning"},
+          "offEvening": {..., "name": "ground/wardrobe/floorHeating/offEvening"}
+        }
+      },
+      "ventilation": {
+        "rules": {
+          "OnEvening": {..., "name": "ground/wardrobe/ventilation/OnEvening"},
+          "OnMorning": {..., "name": "ground/wardrobe/ventilation/OnMorning"}
+        }
+      }
+    }
+  },
+  "cellar": {
+    "boilerroom": {
+      "washingmachine": {
+        "rules": {
+          "SwitchOn": {..., "name": "cellar/boilerroom/washingmachine/SwitchOn"}
+        }
+      }
+    }
+  },
+  "alert": {
+    "rules": {
+      "motion": {..., "name": "alert/motion"},
+      "nomotion": {..., "name": "alert/nomotion"}
+    }
+  }
+}
+```
+
+In this example:
+- The rule `motion/setReceived` is found by navigating: root → motion → rules → setReceived
+- The rule `ground/kitchen/dishwasher/onMorning` is found by: root → ground → kitchen → dishwasher → rules → onMorning
+- The rule `alert/motion` is found by: root → alert → rules → motion
+
+Parser extracts all rule objects from any `rules` property, regardless of hierarchy depth or naming patterns.
 
 ## Rule contract
 
