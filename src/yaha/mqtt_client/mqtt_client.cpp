@@ -205,6 +205,8 @@ void YahaMqttClient::workerLoop() {
                 should_sleep_reconnect = true;
                 reconnectReason = "connect_failed";
             } else {
+                // Keep subscriptions aligned with component state even without inbound traffic.
+                resyncSubscriptions();
                 processIncoming();
                 processKeepAlive();
 

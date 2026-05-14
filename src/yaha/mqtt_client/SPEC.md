@@ -59,6 +59,7 @@ the callback contract into real TCP MQTT packet I/O.
 - Injected publish callback returns explicit `PublishResult` and maps transport publish failures into categories (e.g. disconnected, ack-timeout, write-failed).
 - Connect loop retries with `reconnectDelay` on failures.
 - After each successful connect, fetches `component.getSubscriptions()` and subscribes all entries.
+- While connected, periodically re-fetches `component.getSubscriptions()` in the worker loop and applies subscription diffs, so runtime rule-driven subscription changes are applied even without inbound traffic.
 - After each handled inbound message, re-fetches `component.getSubscriptions()` and applies the subscription diff so component key-set changes take effect immediately.
 - Active-subscription state tracks broker-confirmed filters only; failed subscribe/unsubscribe confirmations do not mutate the active map.
 - During `close()`, unsubscribes active filters before transport disconnect for deterministic broker-side teardown.

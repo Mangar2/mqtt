@@ -527,6 +527,58 @@ TEST_CASE("automation_component_retry_budget_exhaustion_logs_failure", "[automat
     component.close();
 }
 
+TEST_CASE("automation_component_retries_rule_output_after_publish_result_failure", "[automation_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setRulesJson(
+        "{\"rules\":{\"presenceOn\":{\"topic\":\"house/light/set\",\"check\":\"$MONITORING/presence/set = on\",\"value\":\"on\"}}}");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    std::size_t outputPublishAttempts{0U};
+    component.setPublishCallback([&publishMutex, &published, &outputPublishAttempts](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        if (message.topic() == "house/light/set") {
+            outputPublishAttempts += 1U;
+            if (outputPublishAttempts == 1U) {
+                return yaha::PublishResult::fail(yaha::PublishFailureCategory::AckTimeout,
+                                                 "timed out waiting for PUBACK from broker");
+            }
+        }
+
+        published.push_back(message.clone());
+        return yaha::PublishResult::ok();
+    });
+
+    component.handleMessage(yaha::Message{
+        "$MONITORING/presence/set",
+        std::string{"on"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    component.handleMessage(yaha::Message{
+        "house/retry/trigger",
+        std::string{"trigger"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    REQUIRE(outputPublishAttempts >= 2U);
+    REQUIRE_FALSE(published.empty());
+    REQUIRE(published.back().topic() == "house/light/set");
+    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+    REQUIRE(std::get<std::string>(published.back().value()) == "on");
+
+    component.close();
+}
+
 TEST_CASE("automation_component_run_with_filestore_get_failure_keeps_empty_rules", "[automation_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};

@@ -114,6 +114,41 @@ private:
     std::size_t handled_messages_{0U};
 };
 
+class PollDrivenMutatingSubscriptionsComponent final : public yaha::IMqttComponent {
+public:
+    PollDrivenMutatingSubscriptionsComponent(yaha::SubscriptionMap initialSubscriptions,
+                                             yaha::SubscriptionMap updatedSubscriptions)
+        : initialSubscriptions_(std::move(initialSubscriptions))
+        , updatedSubscriptions_(std::move(updatedSubscriptions)) {}
+
+    [[nodiscard]] yaha::SubscriptionMap getSubscriptions() const override {
+        getSubscriptionsCallCount_ += 1U;
+        if (getSubscriptionsCallCount_ >= 2U) {
+            return updatedSubscriptions_;
+        }
+
+        return initialSubscriptions_;
+    }
+
+    void handleMessage(const yaha::Message& message) override {
+        (void)message;
+    }
+
+    void setPublishCallback(yaha::PublishCallback callback) override {
+        publish_callback_ = std::move(callback);
+    }
+
+    void run() override {}
+
+    void close() override {}
+
+private:
+    yaha::SubscriptionMap initialSubscriptions_;
+    yaha::SubscriptionMap updatedSubscriptions_;
+    yaha::PublishCallback publish_callback_{};
+    mutable std::size_t getSubscriptionsCallCount_{0U};
+};
+
 struct TransportState {
     std::atomic<int> connect_calls{0};
     std::atomic<int> disconnect_calls{0};
@@ -124,6 +159,7 @@ struct TransportState {
     std::atomic<bool> connected{false};
     std::atomic<int> poll_throw_countdown{0};
     std::atomic<int> subscribe_fail_on_call{0};
+    std::string subscribe_fail_topic{};
     std::string publish_throw_reason{};
     std::deque<yaha::Message> inbox{};
     std::vector<std::pair<std::string, yaha::Qos>> subscriptions{};
@@ -154,6 +190,9 @@ yaha::YahaMqttClient::Transport makeTransport(TransportState& state) {
 
     transport.subscribe = [&state](const std::string& topic, yaha::Qos qos) {
         const int callNumber = state.subscribe_calls.fetch_add(1) + 1;
+        if (!state.subscribe_fail_topic.empty() && topic == state.subscribe_fail_topic) {
+            return false;
+        }
         if (state.subscribe_fail_on_call.load() == callNumber) {
             return false;
         }
@@ -273,9 +312,30 @@ TEST_CASE("handled_inbound_message_resyncs_subscription_diff", "[mqtt_client]") 
     REQUIRE(state.subscribe_calls.load() == 2);
 }
 
+TEST_CASE("runtime_resync_updates_subscription_diff_without_inbound_message", "[mqtt_client]") {
+    TransportState state{};
+
+    PollDrivenMutatingSubscriptionsComponent component{ {
+        {"home/+/state", yaha::Qos::AtLeastOnce},
+    }, {
+        {"home/+/state", yaha::Qos::AtLeastOnce},
+        {"sensor/#", yaha::Qos::AtMostOnce},
+    }};
+
+    yaha::YahaMqttClient::Config config{};
+    config.loopSleep = std::chrono::milliseconds{5};
+
+    yaha::YahaMqttClient client{config, component, makeTransport(state)};
+    client.run();
+    std::this_thread::sleep_for(std::chrono::milliseconds{60});
+    client.close();
+
+    REQUIRE(state.subscribe_calls.load() == 2);
+}
+
 TEST_CASE("failed_subscribe_confirmation_keeps_filter_inactive", "[mqtt_client]") {
     TransportState state{};
-    state.subscribe_fail_on_call.store(2);
+    state.subscribe_fail_topic = "sensor/#";
     state.inbox.emplace_back("home/kitchen/state", std::string{"sync"});
     state.inbox.emplace_back("sensor/temp", std::string{"blocked"});
 

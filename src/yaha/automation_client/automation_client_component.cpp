@@ -408,25 +408,8 @@ void AutomationClientComponent::evaluateAndPublishRules() {
         return;
     }
 
-    PublishCallback callback;
-    {
-        std::lock_guard<std::mutex> lock{publishMutex_};
-        callback = publishCallback_;
-    }
-
-    if (!callback) {
-        return;
-    }
-
     for (const auto& outputMessage : result.messages) {
-        try {
-            callback(outputMessage);
-            logOutgoingMessageIfEnabled(outputMessage);
-        } catch (const std::exception& exceptionValue) {
-            logOutgoingFailure(outputMessage, "publish_callback", exceptionValue.what());
-            enqueuePendingPublish(outputMessage, "rule_output");
-        } catch (...) {
-            logOutgoingFailure(outputMessage, "publish_callback", "unknown");
+        if (!tryPublishMessage(outputMessage, "rule_output")) {
             enqueuePendingPublish(outputMessage, "rule_output");
         }
     }

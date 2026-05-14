@@ -33,11 +33,13 @@ constexpr std::uint16_t k_server_pubrel_packet_id{77U};
 constexpr std::uint16_t k_server_number_packet_id{101U};
 constexpr std::uint16_t k_server_text_packet_id{102U};
 constexpr std::uint16_t k_server_forwarded_packet_id{103U};
+constexpr std::uint16_t k_server_interleaved_pubrel_packet_id{104U};
 constexpr int k_keep_alive_seconds{5};
 constexpr double k_outgoing_qos2_value{42.0};
 constexpr std::uint32_t k_fake_read_timeout_ms{100U};
 constexpr int k_poll_deadline_ms{1000};
 constexpr std::size_t k_expected_incoming_messages{8U};
+constexpr std::size_t k_expected_malformed_messages{4U};
 constexpr double k_forwarded_numeric_value{77.5};
 
 const std::string k_forwarded_inbound_payload =
@@ -52,6 +54,14 @@ const std::string k_forwarded_escaped_payload =
     "{\"message\":{\"topic\":\"transport\\/forwarded_escaped\",\"value\":\"line\\nvalue\",\"reason\":[{\"message\":\"plain\"}]}}";
 const std::string k_forwarded_invalid_value_payload =
     "{\"message\":{\"topic\":\"transport/forwarded_invalid\",\"value\":{}}}";
+const std::string k_malformed_missing_colon_payload =
+    "{\"message\" {\"topic\":\"transport/malformed_missing_colon\",\"value\":\"x\"}}";
+const std::string k_malformed_topic_mismatch_payload =
+    "{\"message\":{\"topic\":\"transport/not_matching_topic\",\"value\":\"x\"}}";
+const std::string k_malformed_reason_array_payload =
+    "{\"message\":{\"topic\":\"transport/malformed_reason_array\",\"value\":\"x\",\"reason\":[{\"message\":\"broken\"}}";
+const std::string k_malformed_reason_token_payload =
+    "{\"message\":{\"topic\":\"transport/malformed_reason_token\",\"value\":\"x\",\"reason\":{}}}";
 
 class FakeBrokerForTransportTest {
 public:
@@ -113,6 +123,16 @@ public:
     void enableAckBufferingMode() {
         std::lock_guard<std::mutex> lock{mode_mutex_};
         ackBufferingMode_ = true;
+    }
+
+    void enableMalformedForwardedMode() {
+        std::lock_guard<std::mutex> lock{mode_mutex_};
+        malformedForwardedMode_ = true;
+    }
+
+    void enableInterleavedAckMode() {
+        std::lock_guard<std::mutex> lock{mode_mutex_};
+        interleavedAckMode_ = true;
     }
 
 
@@ -259,6 +279,38 @@ private:
                 }
                 return send_suback(connection, subscribe_packet.packet_id);
             }
+
+            if (malformedForwardedMode_) {
+                if (!send_suback(connection, subscribe_packet.packet_id)) {
+                    return false;
+                }
+                if (!send_publish(connection,
+                                  "transport/malformed_missing_colon",
+                                  k_malformed_missing_colon_payload,
+                                  mqtt::QoS::AtMostOnce,
+                                  std::nullopt)) {
+                    return false;
+                }
+                if (!send_publish(connection,
+                                  "transport/malformed_reason_array",
+                                  k_malformed_reason_array_payload,
+                                  mqtt::QoS::AtMostOnce,
+                                  std::nullopt)) {
+                    return false;
+                }
+                if (!send_publish(connection,
+                                  "transport/malformed_reason_token",
+                                  k_malformed_reason_token_payload,
+                                  mqtt::QoS::AtMostOnce,
+                                  std::nullopt)) {
+                    return false;
+                }
+                return send_publish(connection,
+                                    "transport/malformed_topic_mismatch",
+                                    k_malformed_topic_mismatch_payload,
+                                    mqtt::QoS::AtMostOnce,
+                                    std::nullopt);
+            }
         }
 
         if (!send_suback(connection, subscribe_packet.packet_id)) {
@@ -342,10 +394,29 @@ private:
         published_records_.push_back(std::move(publishedRecord));
     }
 
-    [[nodiscard]] static bool acknowledge_publish_if_needed(mqtt::TcpConnection& connection,
-                                                             const mqtt::PublishPacket& publish_packet) {
+    [[nodiscard]] bool acknowledge_publish_if_needed(mqtt::TcpConnection& connection,
+                                                     const mqtt::PublishPacket& publish_packet) {
         if (!publish_packet.packet_id.has_value()) {
             return true;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock{mode_mutex_};
+            if (interleavedAckMode_) {
+                if (!send_pingresp(connection)) {
+                    return false;
+                }
+                if (!send_publish(connection,
+                                  "transport/interleaved_ack",
+                                  "interleaved",
+                                  mqtt::QoS::AtMostOnce,
+                                  std::nullopt)) {
+                    return false;
+                }
+                if (!send_pubrel(connection, k_server_interleaved_pubrel_packet_id)) {
+                    return false;
+                }
+            }
         }
 
         if (publish_packet.qos == mqtt::QoS::AtLeastOnce) {
@@ -456,6 +527,8 @@ private:
     std::vector<PublishedRecord> published_records_{};
     mutable std::mutex mode_mutex_{};
     bool ackBufferingMode_{false};
+    bool malformedForwardedMode_{false};
+    bool interleavedAckMode_{false};
 };
 
 } // namespace
@@ -617,6 +690,86 @@ TEST_CASE("broker_transport_buffers_publish_packets_while_waiting_for_acks", "[m
     REQUIRE(secondBuffered.has_value());
     CHECK(firstBuffered->topic() == "transport/buffered");
     CHECK(secondBuffered->topic() == "transport/buffered_unsub");
+
+    transport.disconnect();
+    fake_broker.stop();
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("broker_transport_malformed_forwarded_payloads_fall_back_to_raw_messages", "[mqtt_client]") {
+    FakeBrokerForTransportTest fake_broker{};
+    fake_broker.enableMalformedForwardedMode();
+    fake_broker.start();
+
+    yaha::YahaMqttClient::Transport transport = yaha::makeBrokerTransport();
+
+    yaha::YahaMqttClient::Config config{};
+    config.brokerHost = "127.0.0.1";
+    config.brokerPort = fake_broker.port();
+    config.clientId = "transport-malformed-test-client";
+    config.keepAliveInterval = std::chrono::seconds{k_keep_alive_seconds};
+
+    REQUIRE(transport.connect(config));
+    REQUIRE(transport.subscribe("transport/#", yaha::Qos::AtMostOnce));
+
+    std::vector<yaha::Message> received_messages{};
+    const auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds{k_poll_deadline_ms};
+    while (received_messages.size() < k_expected_malformed_messages &&
+           std::chrono::steady_clock::now() < deadline) {
+        const std::optional<yaha::Message> maybe_message = transport.pollIncoming();
+        if (maybe_message.has_value()) {
+            received_messages.push_back(*maybe_message);
+        }
+    }
+
+    REQUIRE(received_messages.size() == k_expected_malformed_messages);
+    CHECK(received_messages[0].topic() == "transport/malformed_missing_colon");
+    REQUIRE(std::holds_alternative<std::string>(received_messages[0].value()));
+    CHECK(std::get<std::string>(received_messages[0].value()) == k_malformed_missing_colon_payload);
+    CHECK(received_messages[0].reason().empty());
+
+    CHECK(received_messages[1].topic() == "transport/malformed_reason_array");
+    REQUIRE(std::holds_alternative<std::string>(received_messages[1].value()));
+    CHECK(std::get<std::string>(received_messages[1].value()) == k_malformed_reason_array_payload);
+    CHECK(received_messages[1].reason().empty());
+
+    CHECK(received_messages[2].topic() == "transport/malformed_reason_token");
+    REQUIRE(std::holds_alternative<std::string>(received_messages[2].value()));
+    CHECK(std::get<std::string>(received_messages[2].value()) == k_malformed_reason_token_payload);
+    CHECK(received_messages[2].reason().empty());
+
+    CHECK(received_messages[3].topic() == "transport/malformed_topic_mismatch");
+    REQUIRE(std::holds_alternative<std::string>(received_messages[3].value()));
+    CHECK(std::get<std::string>(received_messages[3].value()) == k_malformed_topic_mismatch_payload);
+    CHECK(received_messages[3].reason().empty());
+
+    transport.disconnect();
+    fake_broker.stop();
+}
+
+TEST_CASE("broker_transport_publish_handles_interleaved_ack_packets", "[mqtt_client]") {
+    FakeBrokerForTransportTest fake_broker{};
+    fake_broker.enableInterleavedAckMode();
+    fake_broker.start();
+
+    yaha::YahaMqttClient::Transport transport = yaha::makeBrokerTransport();
+
+    yaha::YahaMqttClient::Config config{};
+    config.brokerHost = "127.0.0.1";
+    config.brokerPort = fake_broker.port();
+    config.clientId = "transport-interleaved-ack-test-client";
+    config.keepAliveInterval = std::chrono::seconds{k_keep_alive_seconds};
+
+    REQUIRE(transport.connect(config));
+
+    transport.publish(yaha::Message{"out/interleaved", std::string{"payload"}, yaha::Qos::AtLeastOnce, false});
+
+    const std::optional<yaha::Message> maybeBuffered = transport.pollIncoming();
+    REQUIRE(maybeBuffered.has_value());
+    CHECK(maybeBuffered->topic() == "transport/interleaved_ack");
+    REQUIRE(std::holds_alternative<std::string>(maybeBuffered->value()));
+    CHECK(std::get<std::string>(maybeBuffered->value()) == "interleaved");
 
     transport.disconnect();
     fake_broker.stop();

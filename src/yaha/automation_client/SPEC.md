@@ -77,6 +77,7 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
   - It builds evaluation context from runtime variables plus internal variables (`/time`, `/weekday`, sun/twilight).
   - It processes complete rule tree with `RulesTreeProcessor`.
   - Produced rule output messages are published via delivery-result callback.
+  - Explicit callback failure results (`PublishResult::fail(...)`) are treated as outbound send failures and enter the same retry queue as thrown publish errors.
   - Produced outputs are reflected back into runtime variable map.
   - Failed outbound sends are added to a bounded retry queue and retried on subsequent component message handling cycles.
   - Retries stop after max attempt budget and emit explicit exhaustion error logs.
