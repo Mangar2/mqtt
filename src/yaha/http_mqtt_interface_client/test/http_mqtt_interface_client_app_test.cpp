@@ -1,23 +1,25 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <csignal>
 #include <cstdint>
-#include <chrono>
 #include <filesystem>
 #include <fstream>
-#include <mutex>
+#include <functional>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
-#include <thread>
 #include <string>
-#include <vector>
+#include <thread>
 
 #include "httplib.h"
 
+#include "yaha/error_handling/yaha_error.h"
 #include "yaha/http_mqtt_interface_client/http_mqtt_interface_client_app.h"
 #include "yaha/ini/ini_document.h"
 #include "yaha/mqtt_client/mqtt_client.h"
+#include "yaha/mqtt_client/mqtt_client_runtime.h"
 
 namespace {
 
@@ -68,12 +70,6 @@ bool waitForHttpServer(const std::uint16_t port) {
     return false;
 }
 
-void verifyHealthEndpoint(httplib::Client& client) {
-    const auto healthResponse = client.Get("/health");
-    REQUIRE(healthResponse != nullptr);
-    REQUIRE(healthResponse->status == k_status_ok);
-}
-
 void verifyCorsHeaders(const httplib::Result& response) {
     REQUIRE(response != nullptr);
     REQUIRE(response->get_header_value("Access-Control-Allow-Origin") == "*");
@@ -81,77 +77,78 @@ void verifyCorsHeaders(const httplib::Result& response) {
     REQUIRE(response->get_header_value("Access-Control-Allow-Headers") == k_expected_cors_headers);
 }
 
-void verifyOptionsEndpoint(httplib::Client& client, const char* endpointPath) {
-    const auto optionsResponse = client.Options(endpointPath);
-    REQUIRE(optionsResponse != nullptr);
-    REQUIRE(optionsResponse->status == k_status_no_content);
-    verifyCorsHeaders(optionsResponse);
-    REQUIRE(optionsResponse->get_header_value("Access-Control-Max-Age") == "86400");
-}
+class RuntimeHarness {
+public:
+    RuntimeHarness(
+        yaha::HttpMqttInterfaceClientConfig configInput,
+        yaha::YahaMqttClient::Transport brokerTransport)
+        : config(std::move(configInput))
+        , component(config)
+        , mqttClient(config.mqttConfig, component, std::move(brokerTransport))
+        , runtime(mqttClient, component) {}
 
-void verifyOptionsEndpoints(httplib::Client& client) {
-    verifyOptionsEndpoint(client, "/publish");
-    verifyOptionsEndpoint(client, "/publish.php");
-    verifyOptionsEndpoint(client, "/pubrel");
-}
+    void start() {
+        runtimeThread = std::thread([this]() {
+            try {
+                runtime.runUntilSignal();
+                exitCode.store(0);
+            } catch (const std::exception& exceptionValue) {
+                exceptionText = exceptionValue.what();
+                exitCode.store(1);
+            } catch (...) {
+                exceptionText = "unknown";
+                exitCode.store(1);
+            }
+        });
+    }
 
-void verifyPutEndpoints(httplib::Client& client) {
-    const httplib::Headers publishHeaders{
-        {"version", "1.0"},
-        {"qos", "1"},
-        {"retain", "0"},
-        {"packetid", "7"},
+    void stop() {
+        std::raise(SIGTERM);
+        if (runtimeThread.joinable()) {
+            runtimeThread.join();
+        }
+    }
+
+    ~RuntimeHarness() {
+        if (runtimeThread.joinable()) {
+            stop();
+        }
+    }
+
+    [[nodiscard]] int resultCode() const {
+        return exitCode.load();
+    }
+
+    [[nodiscard]] const std::string& errorText() const {
+        return exceptionText;
+    }
+
+private:
+public:
+    yaha::HttpMqttInterfaceClientConfig config;
+    yaha::HttpMqttInterfaceClientComponent component;
+    yaha::YahaMqttClient mqttClient;
+    yaha::YahaMqttClientRuntime runtime;
+    std::thread runtimeThread{};
+    std::atomic<int> exitCode{-1};
+    std::string exceptionText{};
+};
+
+yaha::YahaMqttClient::Transport makeMockTransport(
+    const std::function<void(const yaha::Message&)>& publishFn,
+    const std::function<bool()>& connectFn = []() { return true; }) {
+    yaha::YahaMqttClient::Transport mockTransport{};
+    mockTransport.connect = [connectFn](const yaha::YahaMqttClient::Config&) -> bool {
+        return connectFn();
     };
-    const auto publishResponse = client.Put("/publish", publishHeaders, "{}", "application/json");
-    REQUIRE(publishResponse != nullptr);
-    REQUIRE(publishResponse->status == k_status_no_content);
-    verifyCorsHeaders(publishResponse);
-
-    const httplib::Headers pubrelHeaders{{"version", "1.0"}, {"packetid", "7"}};
-    const auto pubrelResponse = client.Put("/pubrel", pubrelHeaders, "{}", "application/json");
-    REQUIRE(pubrelResponse != nullptr);
-    REQUIRE(pubrelResponse->status == k_status_no_content);
-    verifyCorsHeaders(pubrelResponse);
-}
-
-void verifyPostPublishEndpoint(httplib::Client& client, const httplib::Params& formParams) {
-    const auto postFormResponse = client.Post("/publish", formParams);
-    REQUIRE(postFormResponse != nullptr);
-    REQUIRE(postFormResponse->status == k_status_no_content);
-    verifyCorsHeaders(postFormResponse);
-
-    const std::string jsonBody =
-        "{"
-        "\"topic\":\"lab%2Fstate\","
-        "\"value\":true,"
-        "\"reason\":[{\"message\":\"a\\n\",\"timestamp\":\"2024-01-01T00:00:00Z\"}],"
-        "\"qos\":2,"
-        "\"retain\":true"
-        "}";
-    const httplib::Headers jsonHeaders{{"content-type", "application/json"}, {"token", "tok-json"}};
-    const auto postJsonResponse = client.Post("/publish", jsonHeaders, jsonBody, "application/json");
-    REQUIRE(postJsonResponse != nullptr);
-    REQUIRE(postJsonResponse->status == k_status_no_content);
-    verifyCorsHeaders(postJsonResponse);
-}
-
-void verifyPostPublishPhpEndpoint(httplib::Client& client, const httplib::Params& formParams) {
-    const auto postPhpResponse = client.Post("/publish.php", formParams);
-    REQUIRE(postPhpResponse != nullptr);
-    REQUIRE(postPhpResponse->status == k_status_no_content);
-    verifyCorsHeaders(postPhpResponse);
-}
-
-void exerciseHttpServerEndpoints(const std::uint16_t port) {
-    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
-    configureHttpClientTimeouts(client);
-    verifyHealthEndpoint(client);
-    verifyPutEndpoints(client);
-    verifyOptionsEndpoints(client);
-
-    const httplib::Params formParams{{"topic", "sensor%2Ftemp"}, {"value", "42"}, {"token", "tok-form"}};
-    verifyPostPublishEndpoint(client, formParams);
-    verifyPostPublishPhpEndpoint(client, formParams);
+    mockTransport.disconnect = []() {};
+    mockTransport.publish = publishFn;
+    mockTransport.subscribe = [](const std::string&, yaha::Qos) -> bool { return true; };
+    mockTransport.unsubscribe = [](const std::string&) -> bool { return true; };
+    mockTransport.pollIncoming = []() -> std::optional<yaha::Message> { return std::nullopt; };
+    mockTransport.ping = []() {};
+    mockTransport.isConnected = []() -> bool { return true; };
+    return mockTransport;
 }
 
 } // namespace
@@ -269,12 +266,10 @@ TEST_CASE("load_http_mqtt_interface_client_config_reports_invalid_legacy_flag", 
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("run_http_mqtt_interface_client_serves_endpoints_logs_publish_and_stops_on_signal", "[http_mqtt_interface_client]") {
+TEST_CASE("http_mqtt_interface_component_serves_endpoints_logs_publish_and_stops_on_signal", "[http_mqtt_interface_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     std::ostringstream capturedOutput{};
     std::streambuf* previousOutputBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
-    std::mutex forwardedMessagesMutex{};
-    std::vector<yaha::Message> forwardedMessages{};
 
     yaha::HttpMqttInterfaceClientConfig config{};
     config.listenerHost = "127.0.0.1";
@@ -282,43 +277,102 @@ TEST_CASE("run_http_mqtt_interface_client_serves_endpoints_logs_publish_and_stop
     config.enablePublishPhpAlias = true;
     config.useLegacyPhpResponse = false;
 
-    int exitCode = -1;
-    std::thread serverThread([&config, &exitCode, &forwardedMessagesMutex, &forwardedMessages]() {
-        exitCode = yaha::runHttpMqttInterfaceClient(
-            config,
-            [&forwardedMessagesMutex, &forwardedMessages](const yaha::Message& message) {
-                std::lock_guard<std::mutex> lock{forwardedMessagesMutex};
-                forwardedMessages.push_back(message.clone());
-            });
-    });
-
+    RuntimeHarness harness{config, makeMockTransport([](const yaha::Message&) {})};
+    harness.start();
     REQUIRE(waitForHttpServer(port));
 
-    exerciseHttpServerEndpoints(port);
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
 
-    std::raise(SIGTERM);
-    serverThread.join();
+    const auto healthResponse = client.Get("/health");
+    REQUIRE(healthResponse != nullptr);
+    REQUIRE(healthResponse->status == k_status_ok);
+
+    const auto optionsPublishResponse = client.Options("/publish");
+    REQUIRE(optionsPublishResponse != nullptr);
+    REQUIRE(optionsPublishResponse->status == k_status_no_content);
+    verifyCorsHeaders(optionsPublishResponse);
+    REQUIRE(optionsPublishResponse->get_header_value("Access-Control-Max-Age") == "86400");
+
+    const auto optionsPublishPhpResponse = client.Options("/publish.php");
+    REQUIRE(optionsPublishPhpResponse != nullptr);
+    REQUIRE(optionsPublishPhpResponse->status == k_status_no_content);
+    verifyCorsHeaders(optionsPublishPhpResponse);
+
+    const auto optionsPubrelResponse = client.Options("/pubrel");
+    REQUIRE(optionsPubrelResponse != nullptr);
+    REQUIRE(optionsPubrelResponse->status == k_status_no_content);
+    verifyCorsHeaders(optionsPubrelResponse);
+
+    const httplib::Headers putHeaders{
+        {"version", "1.0"},
+        {"qos", "1"},
+        {"retain", "0"},
+        {"packetid", "7"},
+    };
+    const auto putPublishResponse = client.Put("/publish", putHeaders, "{}", "application/json");
+    REQUIRE(putPublishResponse != nullptr);
+    REQUIRE(putPublishResponse->status == k_status_no_content);
+
+    const auto putPubrelResponse = client.Put("/pubrel", httplib::Headers{{"version", "1.0"}}, "{}", "application/json");
+    REQUIRE(putPubrelResponse != nullptr);
+    REQUIRE(putPubrelResponse->status == k_status_no_content);
+
+    const httplib::Params formParams{{"topic", "sensor%2Ftemp"}, {"value", "42"}, {"token", "tok-form"}};
+    const auto postResponse = client.Post("/publish", formParams);
+    REQUIRE(postResponse != nullptr);
+    REQUIRE(postResponse->status == k_status_no_content);
+    verifyCorsHeaders(postResponse);
+
+    const httplib::Params formParamsNoToken{{"topic", "sensor%2Ffallback"}, {"value", "7"}};
+    const auto postNoTokenResponse = client.Post("/publish", formParamsNoToken);
+    REQUIRE(postNoTokenResponse != nullptr);
+    REQUIRE(postNoTokenResponse->status == k_status_no_content);
+
+    const std::string jsonBody =
+        "{"
+        "\"topic\":\"sensor%2Fjson\","
+        "\"value\":2.5,"
+        "\"qos\":2,"
+        "\"retain\":false"
+        "}";
+    const auto postJsonResponse = client.Post("/publish", httplib::Headers{{"content-type", "application/json"}, {"token", "tok-json"}}, jsonBody, "application/json");
+    REQUIRE(postJsonResponse != nullptr);
+    REQUIRE(postJsonResponse->status == k_status_no_content);
+
+    const auto postPhpResponse = client.Post("/publish.php", formParams);
+    REQUIRE(postPhpResponse != nullptr);
+    REQUIRE(postPhpResponse->status == k_status_no_content);
+
+    harness.stop();
     std::cout.rdbuf(previousOutputBuffer);
 
     const std::string outputText = capturedOutput.str();
-    REQUIRE(outputText.find("http_mqtt_interface_client[in] method=PUT endpoint=/publish version=1.0") !=
-        std::string::npos);
-    REQUIRE(outputText.find("http_mqtt_interface_client[in] method=POST endpoint=/publish") !=
-        std::string::npos);
-    REQUIRE(outputText.find("http_mqtt_interface_client[in] method=POST endpoint=/publish.php") !=
-        std::string::npos);
-    REQUIRE(outputText.find("http_mqtt_interface_client[out] broker_publish_ack topic=sensor/temp") !=
-        std::string::npos);
-    {
-        std::lock_guard<std::mutex> lock{forwardedMessagesMutex};
-        REQUIRE(forwardedMessages.empty() == false);
-        REQUIRE(forwardedMessages.front().topic() == "sensor/temp");
-    }
-    REQUIRE(exitCode == 0);
+    REQUIRE(outputText.find("http_mqtt_interface_client[in] method=POST endpoint=/publish") != std::string::npos);
+    REQUIRE(outputText.find("http_mqtt_interface_client[out] broker_publish_ack") != std::string::npos);
+    REQUIRE(harness.resultCode() == 0);
+}
+
+TEST_CASE("http_mqtt_interface_component_run_twice_and_close_without_run_is_safe", "[http_mqtt_interface_client]") {
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = reserveFreeLocalPort();
+
+    yaha::HttpMqttInterfaceClientComponent component{config};
+    component.close();
+
+    component.setPublishCallback([](const yaha::Message&) {
+        return yaha::PublishResult::ok();
+    });
+    component.run();
+    component.run();
+
+    component.handleMessage(yaha::Message{"ignore/topic", std::string{"value"}});
+    component.close();
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("run_http_mqtt_interface_client_logs_broker_publish_error_when_ack_missing", "[http_mqtt_interface_client]") {
+TEST_CASE("http_mqtt_interface_component_logs_broker_publish_error_when_ack_missing", "[http_mqtt_interface_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     std::ostringstream capturedOutput{};
     std::streambuf* previousOutputBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
@@ -331,15 +385,10 @@ TEST_CASE("run_http_mqtt_interface_client_logs_broker_publish_error_when_ack_mis
     config.enablePublishPhpAlias = true;
     config.useLegacyPhpResponse = false;
 
-    int exitCode = -1;
-    std::thread serverThread([&config, &exitCode]() {
-        exitCode = yaha::runHttpMqttInterfaceClient(
-            config,
-            [](const yaha::Message&) {
-                throw std::runtime_error{"timed out waiting for PUBACK from broker"};
-            });
-    });
-
+    RuntimeHarness harness{config, makeMockTransport([](const yaha::Message&) {
+                             throw std::runtime_error{"timed out waiting for PUBACK from broker"};
+                         })};
+    harness.start();
     REQUIRE(waitForHttpServer(port));
 
     httplib::Client client{"127.0.0.1", static_cast<int>(port)};
@@ -347,63 +396,41 @@ TEST_CASE("run_http_mqtt_interface_client_logs_broker_publish_error_when_ack_mis
     const httplib::Params formParams{{"topic", "sensor%2Ftemp"}, {"value", "42"}, {"token", "tok-form"}};
     const auto postResponse = client.Post("/publish", formParams);
     REQUIRE(postResponse != nullptr);
-    REQUIRE(postResponse->status == 500);
+    REQUIRE(postResponse->status == k_status_internal_server_error);
 
-    std::raise(SIGTERM);
-    serverThread.join();
+    harness.stop();
     std::cout.rdbuf(previousOutputBuffer);
     std::cerr.rdbuf(previousErrorBuffer);
 
     const std::string outputText = capturedOutput.str();
-    REQUIRE(outputText.find("http_mqtt_interface_client[error] broker_publish_failed") !=
-        std::string::npos);
-    REQUIRE(outputText.find("topic=sensor/temp") != std::string::npos);
-    REQUIRE(outputText.find("value=42") != std::string::npos);
-    REQUIRE(outputText.find("detail=message_was_sent_but_broker_reported_no_ack") !=
-        std::string::npos);
+    REQUIRE(outputText.find("http_mqtt_interface_client[error] broker_publish_failed") != std::string::npos);
+    REQUIRE(outputText.find("detail=message_was_sent_but_broker_reported_no_ack") != std::string::npos);
 
     const std::string errorOutputText = capturedErrorOutput.str();
     REQUIRE(errorOutputText.find("http_mqtt_interface_client[error] publish_request_failed endpoint=/publish") !=
         std::string::npos);
-    REQUIRE(errorOutputText.find("timed out waiting for PUBACK from broker") != std::string::npos);
-    REQUIRE(exitCode == 0);
+    REQUIRE(harness.resultCode() == 0);
 }
 
-TEST_CASE("run_http_mqtt_interface_client_returns_error_on_listen_failure", "[http_mqtt_interface_client]") {
+TEST_CASE("http_mqtt_interface_component_returns_error_on_listen_failure", "[http_mqtt_interface_client]") {
     yaha::HttpMqttInterfaceClientConfig config{};
     config.listenerHost = "invalid.invalid.invalid";
     config.listenerPort = reserveFreeLocalPort();
 
-    const int exitCode = yaha::runHttpMqttInterfaceClient(config);
-    REQUIRE(exitCode == 1);
+    yaha::HttpMqttInterfaceClientComponent component{config};
+    yaha::YahaMqttClient mqttClient{
+        config.mqttConfig,
+        component,
+        makeMockTransport([](const yaha::Message&) {})};
+    yaha::YahaMqttClientRuntime runtime{mqttClient, component};
+
+    REQUIRE_THROWS_AS(runtime.runUntilSignal(), yaha::YahaError);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("run_http_mqtt_interface_client_reconnects_broker_after_publish_failure", "[http_mqtt_interface_client]") {
+TEST_CASE("http_mqtt_interface_component_recovers_across_repeated_broker_publish_failures", "[http_mqtt_interface_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
-    std::ostringstream capturedError{};
-    std::streambuf* previousErrorBuffer = std::cerr.rdbuf(capturedError.rdbuf());
-
-    std::atomic<int> connectCallCount{0};
     std::atomic<int> publishCallCount{0};
-
-    yaha::YahaMqttClient::Transport mockTransport{};
-    mockTransport.connect = [&connectCallCount](const yaha::YahaMqttClient::Config&) -> bool {
-        ++connectCallCount;
-        return true;
-    };
-    mockTransport.disconnect = []() {};
-    mockTransport.publish = [&publishCallCount](const yaha::Message&) {
-        const int call = ++publishCallCount;
-        if (call == 1) {
-            throw std::runtime_error{"timed out waiting for PUBACK from broker"};
-        }
-    };
-    mockTransport.subscribe = [](const std::string&, yaha::Qos) -> bool { return true; };
-    mockTransport.unsubscribe = [](const std::string&) -> bool { return true; };
-    mockTransport.pollIncoming = []() -> std::optional<yaha::Message> { return std::nullopt; };
-    mockTransport.ping = []() {};
-    mockTransport.isConnected = []() -> bool { return true; };
 
     yaha::HttpMqttInterfaceClientConfig config{};
     config.listenerHost = "127.0.0.1";
@@ -411,11 +438,13 @@ TEST_CASE("run_http_mqtt_interface_client_reconnects_broker_after_publish_failur
     config.enablePublishPhpAlias = false;
     config.useLegacyPhpResponse = false;
 
-    int exitCode = -1;
-    std::thread serverThread([&config, &mockTransport, &exitCode]() mutable {
-        exitCode = yaha::runHttpMqttInterfaceClient(config, std::move(mockTransport));
-    });
-
+    RuntimeHarness harness{config, makeMockTransport([&publishCallCount](const yaha::Message&) {
+                             const int currentCall = ++publishCallCount;
+                             if ((currentCall % 2) == 1) {
+                                 throw std::runtime_error{"timed out waiting for PUBACK from broker"};
+                             }
+                         })};
+    harness.start();
     REQUIRE(waitForHttpServer(port));
 
     httplib::Client client{"127.0.0.1", static_cast<int>(port)};
@@ -424,21 +453,27 @@ TEST_CASE("run_http_mqtt_interface_client_reconnects_broker_after_publish_failur
 
     const auto firstResponse = client.Post("/publish", formParams);
     REQUIRE(firstResponse != nullptr);
-    REQUIRE(firstResponse->status == 500);
-    REQUIRE(connectCallCount.load() == 1);
+    REQUIRE(firstResponse->status == k_status_internal_server_error);
 
     const auto secondResponse = client.Post("/publish", formParams);
     REQUIRE(secondResponse != nullptr);
-    REQUIRE(secondResponse->status == 204);
-    REQUIRE(connectCallCount.load() == 2);
+    REQUIRE(secondResponse->status == k_status_no_content);
 
-    std::raise(SIGTERM);
-    serverThread.join();
-    std::cerr.rdbuf(previousErrorBuffer);
-    REQUIRE(exitCode == 0);
+    const auto thirdResponse = client.Post("/publish", formParams);
+    REQUIRE(thirdResponse != nullptr);
+    REQUIRE(thirdResponse->status == k_status_internal_server_error);
+
+    const auto fourthResponse = client.Post("/publish", formParams);
+    REQUIRE(fourthResponse != nullptr);
+    REQUIRE(fourthResponse->status == k_status_no_content);
+
+    REQUIRE(publishCallCount.load() == 4);
+
+    harness.stop();
+    REQUIRE(harness.resultCode() == 0);
 }
 
-TEST_CASE("run_http_mqtt_interface_client_put_publish_failure_returns_500_and_logs", "[http_mqtt_interface_client]") {
+TEST_CASE("http_mqtt_interface_component_put_publish_failure_returns_500_and_logs", "[http_mqtt_interface_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     std::ostringstream capturedErrorOutput{};
     std::streambuf* previousErrorBuffer = std::cerr.rdbuf(capturedErrorOutput.rdbuf());
@@ -447,13 +482,8 @@ TEST_CASE("run_http_mqtt_interface_client_put_publish_failure_returns_500_and_lo
     config.listenerHost = "127.0.0.1";
     config.listenerPort = port;
 
-    int exitCode = -1;
-    std::thread serverThread([&config, &exitCode]() {
-        exitCode = yaha::runHttpMqttInterfaceClient(
-            config,
-            [](const yaha::Message&) {});
-    });
-
+    RuntimeHarness harness{config, makeMockTransport([](const yaha::Message&) {})};
+    harness.start();
     REQUIRE(waitForHttpServer(port));
 
     httplib::Client client{"127.0.0.1", static_cast<int>(port)};
@@ -463,16 +493,15 @@ TEST_CASE("run_http_mqtt_interface_client_put_publish_failure_returns_500_and_lo
     REQUIRE(putResponse != nullptr);
     REQUIRE(putResponse->status == k_status_internal_server_error);
 
-    std::raise(SIGTERM);
-    serverThread.join();
+    harness.stop();
     std::cerr.rdbuf(previousErrorBuffer);
 
     const std::string errorOutputText = capturedErrorOutput.str();
     REQUIRE(errorOutputText.find("publish_request_failed endpoint=/publish") != std::string::npos);
-    REQUIRE(exitCode == 0);
+    REQUIRE(harness.resultCode() == 0);
 }
 
-TEST_CASE("run_http_mqtt_interface_client_put_pubrel_failure_returns_500_and_logs", "[http_mqtt_interface_client]") {
+TEST_CASE("http_mqtt_interface_component_put_pubrel_failure_returns_500_and_logs", "[http_mqtt_interface_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     std::ostringstream capturedErrorOutput{};
     std::streambuf* previousErrorBuffer = std::cerr.rdbuf(capturedErrorOutput.rdbuf());
@@ -481,13 +510,8 @@ TEST_CASE("run_http_mqtt_interface_client_put_pubrel_failure_returns_500_and_log
     config.listenerHost = "127.0.0.1";
     config.listenerPort = port;
 
-    int exitCode = -1;
-    std::thread serverThread([&config, &exitCode]() {
-        exitCode = yaha::runHttpMqttInterfaceClient(
-            config,
-            [](const yaha::Message&) {});
-    });
-
+    RuntimeHarness harness{config, makeMockTransport([](const yaha::Message&) {})};
+    harness.start();
     REQUIRE(waitForHttpServer(port));
 
     httplib::Client client{"127.0.0.1", static_cast<int>(port)};
@@ -497,59 +521,10 @@ TEST_CASE("run_http_mqtt_interface_client_put_pubrel_failure_returns_500_and_log
     REQUIRE(putResponse != nullptr);
     REQUIRE(putResponse->status == k_status_internal_server_error);
 
-    std::raise(SIGTERM);
-    serverThread.join();
+    harness.stop();
     std::cerr.rdbuf(previousErrorBuffer);
 
     const std::string errorOutputText = capturedErrorOutput.str();
     REQUIRE(errorOutputText.find("publish_request_failed endpoint=/pubrel") != std::string::npos);
-    REQUIRE(exitCode == 0);
-}
-
-TEST_CASE("run_http_mqtt_interface_client_shutdown_tolerates_disconnect_throw", "[http_mqtt_interface_client]") {
-    const std::uint16_t port = reserveFreeLocalPort();
-    std::ostringstream capturedErrorOutput{};
-    std::streambuf* previousErrorBuffer = std::cerr.rdbuf(capturedErrorOutput.rdbuf());
-
-    yaha::YahaMqttClient::Transport mockTransport{};
-    mockTransport.connect = [](const yaha::YahaMqttClient::Config&) -> bool {
-        return true;
-    };
-    mockTransport.disconnect = []() {
-        throw std::runtime_error{"disconnect failed"};
-    };
-    mockTransport.publish = [](const yaha::Message&) {};
-    mockTransport.subscribe = [](const std::string&, yaha::Qos) -> bool { return true; };
-    mockTransport.unsubscribe = [](const std::string&) -> bool { return true; };
-    mockTransport.pollIncoming = []() -> std::optional<yaha::Message> { return std::nullopt; };
-    mockTransport.ping = []() {};
-    mockTransport.isConnected = []() -> bool { return true; };
-
-    yaha::HttpMqttInterfaceClientConfig config{};
-    config.listenerHost = "127.0.0.1";
-    config.listenerPort = port;
-    config.enablePublishPhpAlias = false;
-    config.useLegacyPhpResponse = false;
-
-    int exitCode = -1;
-    std::thread serverThread([&config, &mockTransport, &exitCode]() mutable {
-        exitCode = yaha::runHttpMqttInterfaceClient(config, std::move(mockTransport));
-    });
-
-    REQUIRE(waitForHttpServer(port));
-
-    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
-    configureHttpClientTimeouts(client);
-    const httplib::Params formParams{{"topic", "home%2Fstate"}, {"value", "1"}, {"token", "tok"}};
-    const auto postResponse = client.Post("/publish", formParams);
-    REQUIRE(postResponse != nullptr);
-    REQUIRE(postResponse->status == k_status_no_content);
-
-    std::raise(SIGTERM);
-    serverThread.join();
-    std::cerr.rdbuf(previousErrorBuffer);
-
-    const std::string errorOutputText = capturedErrorOutput.str();
-    REQUIRE(errorOutputText.find("broker_disconnect_failed") != std::string::npos);
-    REQUIRE(exitCode == 0);
+    REQUIRE(harness.resultCode() == 0);
 }

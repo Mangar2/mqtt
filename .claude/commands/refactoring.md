@@ -1,4 +1,4 @@
-One robustness skill only.
+One refactoring skill only.
 Use this for all modules.
 
 Caveman language.
@@ -6,6 +6,7 @@ No format chars.
 No unneeded words.
 
 Goal
+Keep architecture clean.
 Find hard failure gaps.
 Fix all non P2.
 Prove with tests.
@@ -18,6 +19,34 @@ Flow
 4 update module SPEC and TEST_SPEC
 5 run diagnostics
 6 run client coverage command
+
+Execution gate strict order
+Never start implementation before step 1 and step 2 done.
+If todo report not updated stop work and return to analysis.
+First output of each run is report delta with todo checkboxes.
+Only after report delta exists implementation may start.
+
+Architecture law strict
+Fachclient has only fachlogik.
+Generic client handles all broker communication aspects.
+Fachclient offers only virtual interface to generic client.
+Any other communication path is strictly forbidden.
+
+Architecture law broker ownership
+Generic client owns connect disconnect reconnect keepalive ping subscribe unsubscribe publish ack handling state handling error mapping.
+Fachclient must not duplicate any of these.
+
+Architecture law forbidden patterns
+No broker transport callbacks in fachclient for connect disconnect publish subscribe unsubscribe ping isConnected.
+No brokerConnected local flag in fachclient.
+No direct broker transport object usage in fachclient runtime.
+No callback injection bypass like publishToBroker for broker communication path.
+No side channel broker communication outside virtual interface contract.
+
+Architecture law required shape
+Fachclient implements only domain behavior and virtual interface contract.
+Generic client drives runtime and invokes virtual interface.
+Broker session lifecycle stays inside generic client only.
 
 Report continuity rule
 Before write report check if module report already exists.
@@ -33,7 +62,7 @@ No swallow exceptions in runtime paths.
 Deterministic error mapping.
 Todo checkboxes update immediate.
 
-Broker interplay mandatory in every robustness pass
+Broker interplay mandatory in every pass
 Must verify and test full lifecycle not one case.
 
 Broker lifecycle checklist
@@ -82,6 +111,7 @@ no memory growth leak in reconnect loops
 no thread or fd leak in reconnect loops
 stable behavior under repeated connect disconnect cycles
 soak style test or repeated cycle test exists
+ci test uses deterministic bounded repeat cycle if full soak not possible
 
 Observability checklist
 structured logs for connect reconnect disconnect
@@ -94,10 +124,11 @@ Each checklist item above must be marked done not done or out of scope in report
 Out of scope needs explicit reason.
 Unit or integration test must exist for every done item.
 If missing add tests in module scope or mqtt_client scope.
-If module has no direct broker transport code verify via publish callback contract runtime orchestration and shared mqtt_client tests.
+If module has no direct broker transport code verify via virtual interface contract runtime orchestration and shared mqtt_client tests.
 
 Done gate
 All non P2 todo done.
+Architecture law checks complete.
 Broker routine checklist complete.
 Tests pass.
 Diagnostics clean for changed files.

@@ -1,4 +1,7 @@
 #include "yaha/http_mqtt_interface_client/http_mqtt_interface_client_app.h"
+#include "yaha/error_handling/yaha_error.h"
+#include "yaha/mqtt_client/broker_transport.h"
+#include "yaha/mqtt_client/mqtt_client_runtime.h"
 
 #include <exception>
 #include <filesystem>
@@ -51,7 +54,12 @@ int main(int argc, char* argv[]) {
     CliOptions cliOptions{};
     std::string cliError{};
     if (!tryParseCli(argc, argv, cliOptions, cliError)) {
-        std::cerr << "Failed to parse arguments: " << cliError << '\n';
+        const yaha::YahaError yahaError{
+            "HTTP_MQTT_CLIENT_CLI_PARSE_FAILED",
+            cliError,
+            "failed to parse arguments",
+        };
+        std::cerr << yahaError.buildMessage() << '\n';
         printUsage();
         return 1;
     }
@@ -65,8 +73,13 @@ int main(int argc, char* argv[]) {
     try {
         configDocument = yaha::IniDocument::loadFromFile(cliOptions.configPath);
     } catch (const std::exception& exceptionValue) {
-        std::cerr << "Failed to load config file '" << cliOptions.configPath.string()
-                  << "': " << exceptionValue.what() << '\n';
+        const yaha::YahaError yahaError{
+            "HTTP_MQTT_CLIENT_CONFIG_LOAD_FAILED",
+            exceptionValue.what(),
+            "failed to load config file",
+            "path=" + cliOptions.configPath.string(),
+        };
+        std::cerr << yahaError.buildMessage() << '\n';
         return 1;
     }
 
@@ -76,10 +89,36 @@ int main(int argc, char* argv[]) {
             configDocument,
             runtimeConfig,
             configError)) {
-        std::cerr << "Failed to parse HTTP MQTT interface client config from '"
-                  << cliOptions.configPath.string() << "': " << configError << '\n';
+        const yaha::YahaError yahaError{
+            "HTTP_MQTT_CLIENT_CONFIG_PARSE_FAILED",
+            configError,
+            "failed to parse http mqtt interface client config",
+            "path=" + cliOptions.configPath.string(),
+        };
+        std::cerr << yahaError.buildMessage() << '\n';
         return 1;
     }
 
-    return yaha::runHttpMqttInterfaceClient(runtimeConfig);
+    try {
+        yaha::HttpMqttInterfaceClientComponent component{runtimeConfig};
+        yaha::YahaMqttClient mqttClient{
+            runtimeConfig.mqttConfig,
+            component,
+            yaha::makeBrokerTransport()};
+        yaha::YahaMqttClientRuntime runtime{mqttClient, component};
+        runtime.runUntilSignal();
+    } catch (const yaha::YahaError& yahaError) {
+        std::cerr << yahaError.buildMessage() << '\n';
+        return 1;
+    } catch (const std::exception& exceptionValue) {
+        const yaha::YahaError yahaError{
+            "HTTP_MQTT_CLIENT_RUNTIME_FAILED",
+            exceptionValue.what(),
+            "http mqtt interface client runtime failed",
+        };
+        std::cerr << yahaError.buildMessage() << '\n';
+        return 1;
+    }
+
+    return 0;
 }

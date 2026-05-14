@@ -1,21 +1,19 @@
 #include "yaha/http_mqtt_interface_client/http_mqtt_interface_client_app.h"
 
+#include "yaha/error_handling/yaha_error.h"
 #include "yaha/http_mqtt_interface/http_mqtt_interface_operations.h"
-#include "yaha/mqtt_client/broker_transport.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <httplib.h>
 
-#include <atomic>
-#include <csignal>
+#include <condition_variable>
 #include <iostream>
 #include <map>
 #include <mutex>
-#include <optional>
 #include <sstream>
-#include <stdexcept>
-#include <string_view>
 #include <string>
+#include <string_view>
+#include <thread>
 #include <utility>
 
 namespace yaha {
@@ -36,8 +34,8 @@ constexpr int k_httpStatusNoContent{204};
 constexpr int k_httpStatusInternalServerError{500};
 constexpr std::string_view k_publishCorsMethods{"POST, PUT, OPTIONS"};
 constexpr std::string_view k_publishCorsHeaders{"Content-Type, Authorization, X-Requested-With"};
-
-std::atomic<httplib::Server*> g_activeServer{nullptr};
+constexpr const char* k_error_code_broker_publish_failed{"HTTP_MQTT_BROKER_PUBLISH_FAILED"};
+constexpr const char* k_error_code_listener_start_failed{"HTTP_MQTT_LISTENER_START_FAILED"};
 
 [[nodiscard]] std::string messageValueToText(const Value& messageValue) {
     if (std::holds_alternative<std::string>(messageValue)) {
@@ -191,51 +189,253 @@ std::string resolveCompatibilityToken(const httplib::Request& request, const Htt
     return "";
 }
 
-HttpMqttResult handleCompatibilityPublish(
-    const HttpMqttInterfaces& interfaces,
-    const httplib::Request& request,
-    const HttpMqttPublishCompatibilityConfig& compatibilityConfig,
-    const std::string_view endpoint,
-    const HttpMqttInterfacePublishToBroker& publishToBroker) {
-    const HttpMqttHeaders fields = collectFields(request);
-    const HttpMqttPublishCompatibilityRequest compatibilityRequest{
-        .method = request.method,
-        .endpoint = std::string{endpoint},
-        .headers = collectHeaders(request),
-        .fields = fields,
-        .body = request.body,
-        .token = resolveCompatibilityToken(request, fields),
+} // namespace
+
+struct HttpMqttInterfaceClientComponent::Impl {
+    explicit Impl(HttpMqttInterfaceClientConfig configInput)
+        : config(std::move(configInput))
+        , interfaces(makeHttpMqttInterfacesV1())
+        , compatibilityConfig{
+            .enablePublishPhpAlias = config.enablePublishPhpAlias,
+            .responseMode = config.useLegacyPhpResponse
+                ? HttpMqttPublishCompatibilityResponseMode::LegacyPhp
+                : HttpMqttPublishCompatibilityResponseMode::Native,
+        } {}
+
+    HttpMqttInterfaceClientConfig config{};
+    HttpMqttInterfaces interfaces;
+    HttpMqttPublishCompatibilityConfig compatibilityConfig{};
+    httplib::Server server{};
+
+    std::mutex publishCallbackMutex{};
+    PublishCallback publishCallback{};
+
+    std::mutex lifecycleMutex{};
+    std::condition_variable startupCondition{};
+    bool startupResultReady{false};
+    bool startupSucceeded{false};
+    std::string startupError{};
+    bool stopRequested{false};
+    bool running{false};
+    std::thread serverThread{};
+};
+
+HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(HttpMqttInterfaceClientConfig configInput)
+    : impl_(std::make_unique<Impl>(std::move(configInput))) {
+    impl_->server.Get(k_healthEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+        response.status = k_httpStatusOk;
+        response.set_content("ok", "text/plain");
+    });
+
+    impl_->server.Put(k_publishEndpoint.data(),
+                      [this](const httplib::Request& request, httplib::Response& response) {
+                          logIncomingPublishRequest(request, k_publishEndpoint);
+                          try {
+                              applyHttpMqttResult(impl_->interfaces.onPublish(collectHeaders(request)), response);
+                          } catch (const std::exception& exceptionValue) {
+                              logCompatibilityRequestFailure(k_publishEndpoint, exceptionValue.what());
+                              applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+                          } catch (...) {
+                              logCompatibilityRequestFailure(k_publishEndpoint, "unknown publish request error");
+                              applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+                          }
+                      });
+
+    impl_->server.Put(k_pubrelEndpoint.data(),
+                      [this](const httplib::Request& request, httplib::Response& response) {
+                          try {
+                              applyHttpMqttResult(impl_->interfaces.onPubrel(collectHeaders(request)), response);
+                          } catch (const std::exception& exceptionValue) {
+                              logCompatibilityRequestFailure(k_pubrelEndpoint, exceptionValue.what());
+                              applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+                          } catch (...) {
+                              logCompatibilityRequestFailure(k_pubrelEndpoint, "unknown publish request error");
+                              applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+                          }
+                      });
+
+    const auto handleCompatibilityRequest = [this](
+                                                const httplib::Request& request,
+                                                httplib::Response& response,
+                                                const std::string_view endpoint) {
+        logIncomingPublishRequest(request, endpoint);
+        try {
+            const HttpMqttHeaders fields = collectFields(request);
+            const HttpMqttPublishCompatibilityRequest compatibilityRequest{
+                .method = request.method,
+                .endpoint = std::string{endpoint},
+                .headers = collectHeaders(request),
+                .fields = fields,
+                .body = request.body,
+                .token = resolveCompatibilityToken(request, fields),
+            };
+
+            const HttpMqttResult compatibilityResult = handlePublishCompatibilityRequest(
+                impl_->interfaces,
+                compatibilityRequest,
+                impl_->compatibilityConfig,
+                [this](const HttpMqttRequestData& downstreamRequest, const Message& mappedMessage) {
+                    PublishResult publishResult{};
+                    {
+                        std::lock_guard<std::mutex> lock{impl_->publishCallbackMutex};
+                        publishResult = impl_->publishCallback(mappedMessage);
+                    }
+
+                    if (!publishResult.success) {
+                        const std::string publishReason = publishResult.reason.empty()
+                            ? "broker publish callback failed"
+                            : publishResult.reason;
+                        logBrokerForwardPublishError(mappedMessage, downstreamRequest, publishReason);
+                        throw YahaError{
+                            k_error_code_broker_publish_failed,
+                            publishReason,
+                            "broker publish failed",
+                        };
+                    }
+
+                    logBrokerForwardPublishAck(mappedMessage, downstreamRequest);
+                    return impl_->interfaces.onPublish(downstreamRequest.headers);
+                });
+
+            if (compatibilityResult.statusCode >= k_httpStatusInternalServerError) {
+                logCompatibilityInternalResultFailure(endpoint, compatibilityResult);
+            }
+            applyHttpMqttResult(compatibilityResult, response);
+        } catch (const std::exception& exceptionValue) {
+            logCompatibilityRequestFailure(endpoint, exceptionValue.what());
+            applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+        } catch (...) {
+            logCompatibilityRequestFailure(endpoint, "unknown publish request error");
+            applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+        }
     };
 
-    return handlePublishCompatibilityRequest(
-        interfaces,
-        compatibilityRequest,
-        compatibilityConfig,
-        [&interfaces, &publishToBroker](
-            const HttpMqttRequestData& downstreamRequest,
-            const Message& mappedMessage) {
-            try {
-                publishToBroker(mappedMessage);
-                logBrokerForwardPublishAck(mappedMessage, downstreamRequest);
-            } catch (const std::exception& exception) {
-                logBrokerForwardPublishError(mappedMessage, downstreamRequest, exception.what());
-                throw;
-            } catch (...) {
-                logBrokerForwardPublishError(mappedMessage, downstreamRequest, "unknown broker publish error");
-                throw;
-            }
-            return interfaces.onPublish(downstreamRequest.headers);
-        });
+    impl_->server.Post(k_publishEndpoint.data(),
+                       [handleCompatibilityRequest](const httplib::Request& request, httplib::Response& response) {
+                           handleCompatibilityRequest(request, response, k_publishEndpoint);
+                       });
+
+    impl_->server.Post(k_publishPhpEndpoint.data(),
+                       [handleCompatibilityRequest](const httplib::Request& request, httplib::Response& response) {
+                           handleCompatibilityRequest(request, response, k_publishPhpEndpoint);
+                       });
+
+    impl_->server.Options(k_publishEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+        applyHttpMqttCorsHeaders(response, true);
+        response.status = k_httpStatusNoContent;
+        response.set_content("", "text/plain");
+    });
+
+    impl_->server.Options(k_publishPhpEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+        applyHttpMqttCorsHeaders(response, true);
+        response.status = k_httpStatusNoContent;
+        response.set_content("", "text/plain");
+    });
+
+    impl_->server.Options(k_pubrelEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+        applyHttpMqttCorsHeaders(response, true);
+        response.status = k_httpStatusNoContent;
+        response.set_content("", "text/plain");
+    });
 }
 
-void stopActiveServerSignalHandler(int /*signalValue*/) {
-    httplib::Server* server = g_activeServer.load();
-    if (server != nullptr) {
-        server->stop();
+HttpMqttInterfaceClientComponent::~HttpMqttInterfaceClientComponent() {
+    close();
+}
+
+SubscriptionMap HttpMqttInterfaceClientComponent::getSubscriptions() const {
+    return {};
+}
+
+void HttpMqttInterfaceClientComponent::handleMessage(const Message& /*message*/) {
+    // No inbound topic handling required for this HTTP->MQTT forwarding component.
+}
+
+void HttpMqttInterfaceClientComponent::run() {
+    std::unique_lock<std::mutex> lifecycleLock{impl_->lifecycleMutex};
+    if (impl_->running) {
+        return;
+    }
+
+    impl_->startupResultReady = false;
+    impl_->startupSucceeded = false;
+    impl_->startupError.clear();
+    impl_->stopRequested = false;
+
+    impl_->serverThread = std::thread([this]() {
+        const int boundPort = impl_->server.bind_to_port(impl_->config.listenerHost, impl_->config.listenerPort);
+        {
+            std::lock_guard<std::mutex> lifecycleLock{impl_->lifecycleMutex};
+            impl_->startupResultReady = true;
+            if (boundPort <= 0) {
+                impl_->startupSucceeded = false;
+                impl_->startupError = "failed to bind HTTP listener on " +
+                    impl_->config.listenerHost + ":" + std::to_string(impl_->config.listenerPort);
+            } else {
+                impl_->startupSucceeded = true;
+                impl_->running = true;
+            }
+        }
+        impl_->startupCondition.notify_all();
+
+        if (boundPort <= 0) {
+            return;
+        }
+
+        const bool listenSuccess = impl_->server.listen_after_bind();
+        if (!listenSuccess) {
+            const bool shouldLogFailure = [&]() {
+                std::lock_guard<std::mutex> lifecycleLock{impl_->lifecycleMutex};
+                return !impl_->stopRequested;
+            }();
+            if (shouldLogFailure) {
+                std::cerr << "Failed to run HTTP listener on " << impl_->config.listenerHost << ':'
+                          << impl_->config.listenerPort << '\n';
+            }
+        }
+
+        std::lock_guard<std::mutex> lifecycleLock{impl_->lifecycleMutex};
+        impl_->running = false;
+    });
+
+    impl_->startupCondition.wait(lifecycleLock, [this]() {
+        return impl_->startupResultReady;
+    });
+
+    if (!impl_->startupSucceeded) {
+        const std::string startupErrorText = impl_->startupError;
+        lifecycleLock.unlock();
+        if (impl_->serverThread.joinable()) {
+            impl_->serverThread.join();
+        }
+        throw YahaError{
+            k_error_code_listener_start_failed,
+            startupErrorText,
+            "http listener start failed",
+        };
     }
 }
 
-} // namespace
+void HttpMqttInterfaceClientComponent::close() {
+    {
+        std::lock_guard<std::mutex> lock{impl_->lifecycleMutex};
+        impl_->stopRequested = true;
+    }
+
+    impl_->server.stop();
+
+    if (impl_->serverThread.joinable()) {
+        impl_->serverThread.join();
+    }
+
+    std::lock_guard<std::mutex> lock{impl_->lifecycleMutex};
+    impl_->running = false;
+}
+
+void HttpMqttInterfaceClientComponent::setPublishCallback(PublishCallback callback) {
+    std::lock_guard<std::mutex> lock{impl_->publishCallbackMutex};
+    impl_->publishCallback = std::move(callback);
+}
 
 bool tryLoadHttpMqttInterfaceClientConfigFromIni(
     const IniDocument& iniDocument,
@@ -287,195 +487,6 @@ bool tryLoadHttpMqttInterfaceClientConfigFromIni(
     }
 
     return true;
-}
-
-int runHttpMqttInterfaceClient(const HttpMqttInterfaceClientConfig& configInput) {
-    return runHttpMqttInterfaceClient(configInput, makeBrokerTransport());
-}
-
-int runHttpMqttInterfaceClient(
-    const HttpMqttInterfaceClientConfig& configInput,
-    YahaMqttClient::Transport brokerTransport) {
-    std::mutex brokerTransportStateMutex{};
-    bool brokerConnected = false;
-
-    const auto publishToBroker = [&](const Message& message) {
-        std::lock_guard<std::mutex> lock{brokerTransportStateMutex};
-        if (!brokerConnected) {
-            if (!brokerTransport.connect(configInput.mqttConfig)) {
-                throw std::runtime_error{"failed to connect broker transport"};
-            }
-            brokerConnected = true;
-        }
-
-        try {
-            brokerTransport.publish(message);
-        } catch (...) {
-            brokerConnected = false;
-            throw;
-        }
-    };
-
-    const int exitCode = runHttpMqttInterfaceClient(configInput, publishToBroker);
-
-    {
-        std::lock_guard<std::mutex> lock{brokerTransportStateMutex};
-        if (brokerConnected) {
-            try {
-                brokerTransport.disconnect();
-            } catch (const std::exception& exception) {
-                std::cerr << "http_mqtt_interface_client[error] broker_disconnect_failed"
-                          << " error=" << exception.what()
-                          << '\n' << std::flush;
-            } catch (...) {
-                std::cerr << "http_mqtt_interface_client[error] broker_disconnect_failed"
-                          << " error=unknown"
-                          << '\n' << std::flush;
-            }
-            brokerConnected = false;
-        }
-    }
-
-    return exitCode;
-}
-
-int runHttpMqttInterfaceClient(
-    const HttpMqttInterfaceClientConfig& configInput,
-    const HttpMqttInterfacePublishToBroker& publishToBroker) {
-    HttpMqttInterfaces interfaces = makeHttpMqttInterfacesV1();
-    const HttpMqttPublishCompatibilityConfig compatibilityConfig{
-        .enablePublishPhpAlias = configInput.enablePublishPhpAlias,
-        .responseMode = configInput.useLegacyPhpResponse
-            ? HttpMqttPublishCompatibilityResponseMode::LegacyPhp
-            : HttpMqttPublishCompatibilityResponseMode::Native,
-    };
-
-    httplib::Server server{};
-
-    server.Get(k_healthEndpoint.data(), [](const httplib::Request& /*request*/, httplib::Response& response) {
-        response.status = k_httpStatusOk;
-        response.set_content("ok", "text/plain");
-    });
-
-    server.Put(k_publishEndpoint.data(),
-               [&interfaces](const httplib::Request& request, httplib::Response& response) {
-                   logIncomingPublishRequest(request, k_publishEndpoint);
-                   try {
-                       applyHttpMqttResult(interfaces.onPublish(collectHeaders(request)), response);
-                   } catch (const std::exception& exception) {
-                       logCompatibilityRequestFailure(k_publishEndpoint, exception.what());
-                       applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
-                   } catch (...) {
-                       logCompatibilityRequestFailure(k_publishEndpoint, "unknown publish request error");
-                       applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
-                   }
-               });
-
-    server.Put(k_pubrelEndpoint.data(),
-               [&interfaces](const httplib::Request& request, httplib::Response& response) {
-                   try {
-                       applyHttpMqttResult(interfaces.onPubrel(collectHeaders(request)), response);
-                   } catch (const std::exception& exception) {
-                       logCompatibilityRequestFailure(k_pubrelEndpoint, exception.what());
-                       applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
-                   } catch (...) {
-                       logCompatibilityRequestFailure(k_pubrelEndpoint, "unknown publish request error");
-                       applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
-                   }
-               });
-
-    server.Post(k_publishEndpoint.data(),
-                [&interfaces, &compatibilityConfig, &publishToBroker](
-                    const httplib::Request& request,
-                    httplib::Response& response) {
-                    logIncomingPublishRequest(request, k_publishEndpoint);
-                    try {
-                        const HttpMqttResult compatibilityResult = handleCompatibilityPublish(
-                            interfaces,
-                            request,
-                            compatibilityConfig,
-                            k_publishEndpoint,
-                            publishToBroker);
-                        if (compatibilityResult.statusCode >= k_httpStatusInternalServerError) {
-                            logCompatibilityInternalResultFailure(k_publishEndpoint, compatibilityResult);
-                        }
-                        applyHttpMqttResult(compatibilityResult, response);
-                    } catch (const std::exception& exception) {
-                        logCompatibilityRequestFailure(k_publishEndpoint, exception.what());
-                        applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
-                    } catch (...) {
-                        logCompatibilityRequestFailure(k_publishEndpoint, "unknown publish request error");
-                        applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
-                    }
-                });
-
-    server.Post(k_publishPhpEndpoint.data(),
-                [&interfaces, &compatibilityConfig, &publishToBroker](
-                    const httplib::Request& request,
-                    httplib::Response& response) {
-                    logIncomingPublishRequest(request, k_publishPhpEndpoint);
-                    try {
-                        const HttpMqttResult compatibilityResult = handleCompatibilityPublish(
-                            interfaces,
-                            request,
-                            compatibilityConfig,
-                            k_publishPhpEndpoint,
-                            publishToBroker);
-                        if (compatibilityResult.statusCode >= k_httpStatusInternalServerError) {
-                            logCompatibilityInternalResultFailure(k_publishPhpEndpoint, compatibilityResult);
-                        }
-                        applyHttpMqttResult(compatibilityResult, response);
-                    } catch (const std::exception& exception) {
-                        logCompatibilityRequestFailure(k_publishPhpEndpoint, exception.what());
-                        applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
-                    } catch (...) {
-                        logCompatibilityRequestFailure(k_publishPhpEndpoint, "unknown publish request error");
-                        applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
-                    }
-                });
-
-    server.Options(k_publishEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
-        applyHttpMqttCorsHeaders(response, true);
-        response.status = k_httpStatusNoContent;
-        response.set_content("", "text/plain");
-    });
-
-    server.Options(k_publishPhpEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
-        applyHttpMqttCorsHeaders(response, true);
-        response.status = k_httpStatusNoContent;
-        response.set_content("", "text/plain");
-    });
-
-    server.Options(k_pubrelEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
-        applyHttpMqttCorsHeaders(response, true);
-        response.status = k_httpStatusNoContent;
-        response.set_content("", "text/plain");
-    });
-
-    std::signal(SIGINT, stopActiveServerSignalHandler);
-    std::signal(SIGTERM, stopActiveServerSignalHandler);
-
-    g_activeServer.store(&server);
-
-    std::cout << "yahahttpmqttinterfaceclient\n";
-    std::cout << "  listener: " << configInput.listenerHost << ':' << configInput.listenerPort << '\n';
-    std::cout << "  mqtt: " << configInput.mqttConfig.brokerHost << ':' << configInput.mqttConfig.brokerPort
-              << " clientId=" << configInput.mqttConfig.clientId << '\n';
-    std::cout << "  compatibility: publish.php=" << (configInput.enablePublishPhpAlias ? "on" : "off")
-              << " legacyResponse=" << (configInput.useLegacyPhpResponse ? "on" : "off") << '\n';
-    std::cout << "  signal: waiting for SIGINT/SIGTERM\n";
-    std::cout << std::flush;
-
-    const bool listenSuccess = server.listen(configInput.listenerHost, configInput.listenerPort);
-    g_activeServer.store(nullptr);
-
-    if (!listenSuccess) {
-        std::cerr << "Failed to start HTTP listener on " << configInput.listenerHost << ':'
-                  << configInput.listenerPort << '\n';
-        return 1;
-    }
-
-    return 0;
 }
 
 } // namespace yaha

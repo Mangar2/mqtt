@@ -6,11 +6,11 @@
  */
 
 #include "yaha/ini/ini_document.h"
-#include "yaha/message/message.h"
+#include "yaha/mqtt_component/mqtt_component.h"
 #include "yaha/mqtt_client/mqtt_client.h"
 
 #include <cstdint>
-#include <functional>
+#include <memory>
 #include <string>
 
 namespace yaha {
@@ -29,9 +29,56 @@ struct HttpMqttInterfaceClientConfig {
 };
 
 /**
- * @brief Callback for publishing a mapped MQTT message to the broker transport.
+ * @brief IMqttComponent implementation for standalone HTTP MQTT interface domain runtime.
  */
-using HttpMqttInterfacePublishToBroker = std::function<void(const Message& message)>;
+class HttpMqttInterfaceClientComponent final : public IMqttComponent {
+public:
+    /**
+     * @brief Constructs component with runtime configuration.
+     * @param configInput Runtime configuration.
+     */
+    explicit HttpMqttInterfaceClientComponent(HttpMqttInterfaceClientConfig configInput);
+
+    /**
+     * @brief Destructor stops active HTTP server thread.
+     */
+    ~HttpMqttInterfaceClientComponent() override;
+
+    HttpMqttInterfaceClientComponent(const HttpMqttInterfaceClientComponent&) = delete;
+    HttpMqttInterfaceClientComponent& operator=(const HttpMqttInterfaceClientComponent&) = delete;
+
+    /**
+     * @brief Returns subscriptions for this component.
+     * @return Empty map because this component is publish-forward focused.
+     */
+    [[nodiscard]] SubscriptionMap getSubscriptions() const override;
+
+    /**
+     * @brief Handles inbound MQTT messages.
+     * @param message Incoming message.
+     */
+    void handleMessage(const Message& message) override;
+
+    /**
+     * @brief Starts HTTP server runtime in background thread.
+     */
+    void run() override;
+
+    /**
+     * @brief Stops HTTP server runtime and joins background thread.
+     */
+    void close() override;
+
+    /**
+     * @brief Injects publish callback from generic MQTT client.
+     * @param callback Publish callback.
+     */
+    void setPublishCallback(PublishCallback callback) override;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
 
 /**
  * @brief Loads client runtime config from INI document.
@@ -44,33 +91,5 @@ using HttpMqttInterfacePublishToBroker = std::function<void(const Message& messa
     const IniDocument& iniDocument,
     HttpMqttInterfaceClientConfig& configOutput,
     std::string& errorOutput);
-
-/**
- * @brief Runs standalone HTTP MQTT interface server.
- * @param configInput Runtime configuration.
- * @return Exit code (0 success, non-zero failure).
- */
-[[nodiscard]] int runHttpMqttInterfaceClient(const HttpMqttInterfaceClientConfig& configInput);
-
-/**
- * @brief Runs standalone HTTP MQTT interface server with an injected broker transport.
- *        Manages connect/reconnect state internally. Used for testing with a mock transport.
- * @param configInput Runtime configuration.
- * @param brokerTransport Broker transport to use for publishes.
- * @return Exit code (0 success, non-zero failure).
- */
-[[nodiscard]] int runHttpMqttInterfaceClient(
-    const HttpMqttInterfaceClientConfig& configInput,
-    YahaMqttClient::Transport brokerTransport);
-
-/**
- * @brief Runs standalone HTTP MQTT interface server with injected broker publish callback.
- * @param configInput Runtime configuration.
- * @param publishToBroker Callback invoked for each mapped publish that must be forwarded.
- * @return Exit code (0 success, non-zero failure).
- */
-[[nodiscard]] int runHttpMqttInterfaceClient(
-    const HttpMqttInterfaceClientConfig& configInput,
-    const HttpMqttInterfacePublishToBroker& publishToBroker);
 
 } // namespace yaha

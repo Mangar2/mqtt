@@ -1,10 +1,10 @@
-# http_mqtt_interface_client — Standalone HTTP MQTT Interface Runtime
+# http_mqtt_interface_client — HTTP MQTT Domain Component
 
 ## Purpose
 
-Provides a standalone executable runtime for the HTTP MQTT interface module.
-The runtime exposes HTTP endpoints for publish/pubrel processing and browser
-compatibility mapping without changing the existing broker connector process.
+Provides domain component and config mapping for standalone HTTP MQTT interface.
+Domain component implements `IMqttComponent` only.
+Generic MQTT client and generic runtime orchestrator own broker communication and signal lifecycle.
 
 ## Public API
 
@@ -16,7 +16,22 @@ compatibility mapping without changing the existing broker connector process.
 | `listenerPort` | `std::uint16_t` | `8092` | HTTP bind port |
 | `enablePublishPhpAlias` | `bool` | `true` | Enables `POST /publish.php` compatibility route |
 | `useLegacyPhpResponse` | `bool` | `false` | Enables legacy PHP response conversion mode |
-| `mqttConfig` | `YahaMqttClient::Config` | defaults from MQTT client config | Broker publish transport settings used for compatibility publish forwarding |
+| `mqttConfig` | `YahaMqttClient::Config` | defaults from MQTT client config | Generic MQTT client session config |
+
+### Class `HttpMqttInterfaceClientComponent`
+
+Implements `IMqttComponent` for HTTP MQTT domain behavior.
+
+Behavior:
+
+- `getSubscriptions()` returns empty map.
+- `handleMessage(...)` is no-op.
+- `run()` starts HTTP listener in background thread.
+- `close()` stops listener and joins thread.
+- `setPublishCallback(...)` stores callback injected by generic MQTT client.
+
+Publish forwarding path uses only IMqttComponent publish callback contract.
+No direct broker transport callback bundle is owned in this module.
 
 ### Function `tryLoadHttpMqttInterfaceClientConfigFromIni(...)`
 
@@ -27,50 +42,46 @@ Reads optional keys from section `[httpMqttInterface]`:
 - `enablePublishPhpAlias`
 - `useLegacyPhpResponse`
 
-Also delegates MQTT client config parsing to the shared MQTT config loader:
+Also delegates MQTT client config parsing to shared MQTT config loader:
 
-- section `[mqtt]` and related MQTT runtime keys accepted by `tryLoadMqttClientConfigFromIni(...)`
+- section `[mqtt]` and related runtime keys accepted by `tryLoadMqttClientConfigFromIni(...)`
 
 Behavior:
 
-- Missing keys keep defaults.
-- Invalid numeric or boolean values return `false` and provide field-specific error text.
+- missing keys keep defaults
+- invalid numeric or boolean values return `false` with field-specific error text
 
-### Function `runHttpMqttInterfaceClient(...)`
+## HTTP Endpoint Behavior
 
-Two overloads are provided:
-
-- `runHttpMqttInterfaceClient(config)`
-- `runHttpMqttInterfaceClient(config, publishToBroker)`
-
-The second overload is used for explicit injection/testing of the broker-forward callback.
-
-Starts `httplib::Server` and wires handlers:
+Component starts `httplib::Server` and wires:
 
 - `GET /health` returns `200` `ok`
 - `PUT /publish` maps to native `HttpMqttInterfaces::onPublish`
 - `PUT /pubrel` maps to native `HttpMqttInterfaces::onPubrel`
-- `POST /publish` maps through phase-6 compatibility profile
-- `POST /publish.php` maps through phase-6 compatibility profile
-- `OPTIONS /publish`, `OPTIONS /publish.php`, and `OPTIONS /pubrel` return CORS preflight `204`
+- `POST /publish` maps through compatibility profile
+- `POST /publish.php` maps through compatibility profile
+- `OPTIONS /publish`, `OPTIONS /publish.php`, `OPTIONS /pubrel` return CORS preflight `204`
 
 Publish ingress logging:
 
-- every handled publish request writes one stdout line before dispatch
-- logged requests include the request method, endpoint, and `version` header when present
+- each handled publish request writes one stdout line
+- includes method, endpoint, and `version` header when present
 
 Publish broker-forward logging:
 
-- each compatibility publish emits one `broker_publish_ack` log line only after the broker-forward callback returned successfully
-- line contains full MQTT message transport fields: `topic`, `qos`, `retain`, `dup`, optional `packetid`, and `value`
-- callback failures emit one `broker_publish_failed` error line with the same message fields plus the error text
-- timeout-style broker ACK failures add `detail=message_was_sent_but_broker_reported_no_ack`
-- broker transport disconnect failures on shutdown emit `broker_disconnect_failed` and do not crash the runtime
+- successful callback publish emits `broker_publish_ack` with message fields
+- failed callback publish emits `broker_publish_failed` with message fields and error text
+- timeout-style failures add `detail=message_was_sent_but_broker_reported_no_ack`
 
 Native PUT error mapping:
 
 - `PUT /publish` and `PUT /pubrel` wrap dispatcher exceptions into deterministic internal error response (`500`, JSON `{"error":"internal_error"}`)
-- failed PUT requests emit one request-level `publish_request_failed` error line with endpoint and reason
+- failed PUT requests emit `publish_request_failed` with endpoint and reason
+
+Compatibility error mapping:
+
+- callback failures and mapping exceptions produce deterministic internal error response (`500`, JSON `{"error":"internal_error"}`)
+- request-level failure logs contain endpoint and reason
 
 CORS headers on publish/pubrel responses:
 
@@ -79,28 +90,17 @@ CORS headers on publish/pubrel responses:
 - `Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With`
 - `Access-Control-Max-Age: 86400` on OPTIONS responses
 
-Compatibility behavior delegates to `handlePublishCompatibilityRequest(...)` with runtime-configured mode:
+## Ownership Boundaries
 
-- `Native` when `useLegacyPhpResponse=false`
-- `LegacyPhp` when `useLegacyPhpResponse=true`
-
-For compatibility publishes, the mapped `Message` is forwarded through the broker publish callback before the HTTP ack response is generated.
-
-If broker forwarding fails during compatibility publish processing, the request is handled as internal error (`500`, JSON `{\"error\":\"internal_error\"}`) and broker publish failure details are logged with message fields.
-
-If compatibility publish processing ends in a 5xx compatibility result, one request-level error line is logged with endpoint and failure details.
-
-If a compatibility request handler throws past the mapping layer, one request-level error line is logged with endpoint and exception text.
-
-Signal handling:
-
-- `SIGINT` and `SIGTERM` trigger `httplib::Server::stop()`.
+- generic MQTT client owns connect disconnect reconnect keepalive subscribe unsubscribe publish delivery status
+- generic runtime owns signal handling and shutdown choreography
+- this domain component owns only HTTP request mapping and domain-level compatibility behavior
 
 ## Files
 
 | File | Role |
 |------|------|
-| `http_mqtt_interface_client_app.h` | Runtime config and API declarations |
-| `http_mqtt_interface_client_app.cpp` | INI mapping and standalone HTTP server wiring |
+| `http_mqtt_interface_client_app.h` | Runtime config and domain component declarations |
+| `http_mqtt_interface_client_app.cpp` | INI mapping and IMqttComponent implementation |
 | `test/TEST_SPEC.md` | Unit test specification |
-| `test/http_mqtt_interface_client_app_test.cpp` | Unit tests for INI mapping behavior |
+| `test/http_mqtt_interface_client_app_test.cpp` | Unit tests for config and component runtime behavior |
