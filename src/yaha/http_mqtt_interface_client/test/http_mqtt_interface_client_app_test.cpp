@@ -308,7 +308,6 @@ TEST_CASE("http_mqtt_interface_component_serves_endpoints_logs_publish_and_stops
         {"version", "1.0"},
         {"qos", "1"},
         {"retain", "0"},
-        {"packetid", "7"},
     };
     const auto putPublishResponse = client.Put("/publish", putHeaders, "{}", "application/json");
     REQUIRE(putPublishResponse != nullptr);

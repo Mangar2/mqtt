@@ -60,19 +60,12 @@ constexpr const char* k_error_code_listener_start_failed{"HTTP_MQTT_LISTENER_STA
     return "0";
 }
 
-[[nodiscard]] std::string describeBrokerForwardMessage(
-    const Message& message,
-    const HttpMqttRequestData& mappedRequest) {
+[[nodiscard]] std::string describeBrokerForwardMessage(const Message& message) {
     std::ostringstream output{};
     output << " topic=" << message.topic()
            << " qos=" << qosToText(message.qos())
            << " retain=" << (message.retain() ? "1" : "0")
            << " dup=" << (message.dup() ? "1" : "0");
-
-    const auto packetIdIterator = mappedRequest.headers.find("packetid");
-    if (packetIdIterator != mappedRequest.headers.end()) {
-        output << " packetid=" << packetIdIterator->second;
-    }
 
     output << " value=" << messageValueToText(message.value());
     return output.str();
@@ -84,18 +77,18 @@ constexpr const char* k_error_code_listener_start_failed{"HTTP_MQTT_LISTENER_STA
            errorText.find("timed out waiting for PUBCOMP") != std::string_view::npos;
 }
 
-void logBrokerForwardPublishAck(const Message& message, const HttpMqttRequestData& mappedRequest) {
+void logBrokerForwardPublishAck(const Message& message) {
     std::cout << "http_mqtt_interface_client[out] broker_publish_ack"
-              << describeBrokerForwardMessage(message, mappedRequest)
+              << describeBrokerForwardMessage(message)
               << '\n' << std::flush;
 }
 
 void logBrokerForwardPublishError(
     const Message& message,
-    const HttpMqttRequestData& mappedRequest,
+    const HttpMqttRequestData& /*mappedRequest*/,
     const std::string_view errorText) {
     std::cout << "http_mqtt_interface_client[error] broker_publish_failed"
-              << describeBrokerForwardMessage(message, mappedRequest)
+              << describeBrokerForwardMessage(message)
               << " error=" << errorText;
     if (isBrokerNoAckError(errorText)) {
         std::cout << " detail=message_was_sent_but_broker_reported_no_ack";
@@ -293,7 +286,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(HttpMqttInter
                         };
                     }
 
-                    logBrokerForwardPublishAck(mappedMessage, downstreamRequest);
+                    logBrokerForwardPublishAck(mappedMessage);
                     return impl_->interfaces.onPublish(downstreamRequest.headers);
                 });
 
