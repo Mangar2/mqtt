@@ -27,7 +27,7 @@ Unit tests for `FileStore` HTTP behavior, key mapping, lifecycle, and MQTT monit
 | `http_post_returns_error_when_directory_is_not_writable_directory` | Write failure path bubbles to HTTP server error | configure directory path as regular file and POST | status 500 with YahaError payload code `YAHA_FILE_STORE_PERSIST_FAILED` and persistence details |
 | `run_invokes_http_start_and_stop_callbacks` | HTTP lifecycle callbacks from config | set start/stop callbacks and run+close | both callbacks invoked exactly once |
 | `handle_message_is_noop` | Inbound message handler contract | call handleMessage with any message | no throw and component stays usable |
-| `http_post_emits_monitoring_changed_event` | Monitoring publish on successful write | set callback + POST | one `$MONITOR/FileStore/changed` publish |
+| `http_post_emits_monitoring_changed_event` | Monitoring publish on successful write | set callback + POST | one `$MONITOR/FileStore/changed` publish; payload contains logical `keyPath` and does not expose mapped `filename` |
 | `watcher_emits_created_changed_deleted_events` | Filesystem watcher emits events for out-of-band file changes | create, update, delete file in store dir | changed + deleted topics published (created may be timing-dependent) |
 | `watcher_filesystem_event_includes_key_path_for_known_file` | Watcher event includes resolved key path for known persisted file | POST key to create known mapping, then modify mapped file out-of-band | filesystem event (`changed` or race-equivalent `created`) contains source `filesystem-watch` and `keyPath` for the key |
 | `run_and_close_are_idempotent` | Lifecycle reentry safety | run twice, close twice | no crash, running flag toggles correctly |

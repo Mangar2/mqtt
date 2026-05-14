@@ -247,7 +247,7 @@ void FileStore::stopHttpServer() {
 void FileStore::watcherLoop() {
     auto previousResult = buildSnapshot();
     if (!previousResult.success) {
-        publishMonitoring("error", nullptr, "", "filesystem-watch", &previousResult.errorText);
+        publishMonitoring("error", nullptr, "filesystem-watch", &previousResult.errorText);
     }
     auto previous = std::move(previousResult.snapshot);
 
@@ -266,7 +266,7 @@ void FileStore::watcherLoop() {
 
         auto currentResult = buildSnapshot();
         if (!currentResult.success) {
-            publishMonitoring("error", nullptr, "", "filesystem-watch", &currentResult.errorText);
+            publishMonitoring("error", nullptr, "filesystem-watch", &currentResult.errorText);
             continue;
         }
 
@@ -443,7 +443,7 @@ void FileStore::publishWatcherMonitoring(const std::string& eventType,
                                          const std::string& filename) const {
     const std::optional<std::string> knownKeyPath = lookupKnownKeyPath(filename);
     const std::string* keyPathPointer = knownKeyPath ? &*knownKeyPath : nullptr;
-    publishMonitoring(eventType, keyPathPointer, filename, "filesystem-watch", nullptr);
+    publishMonitoring(eventType, keyPathPointer, "filesystem-watch", nullptr);
 }
 
 FileStore::ReadPayloadResult FileStore::readKeyPayload(const std::string& keyPath) const {
@@ -498,7 +498,6 @@ bool FileStore::validateJsonPayload(const std::string& jsonText) {
 
 void FileStore::publishMonitoring(const std::string& eventType,
                                   const std::string* keyPath,
-                                  const std::string& filename,
                                   const std::string& source,
                                   const std::string* details) const {
     if (!config_.monitoring.enabled) {
@@ -517,7 +516,6 @@ void FileStore::publishMonitoring(const std::string& eventType,
     } else {
         payload += std::format("\"{}\"", jsonEscape(*keyPath));
     }
-    payload += std::format(",\"filename\":\"{}\"", jsonEscape(filename));
     payload += std::format(",\"directory\":\"{}\"", jsonEscape(config_.directory.string()));
     payload += std::format(",\"changeType\":\"{}\"", jsonEscape(eventType));
     payload += ",\"timestamp\":" + std::to_string(nowMilliseconds());
@@ -745,7 +743,7 @@ void FileStore::handleHttpPost(FileStore& store,
         return;
     }
 
-    store.publishMonitoring("changed", &keyPath, writeResult.filename, "http-post", nullptr);
+    store.publishMonitoring("changed", &keyPath, "http-post", nullptr);
 
     response.status = k_http_status_ok;
     applyCorsHeaders(response);

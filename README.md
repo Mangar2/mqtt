@@ -126,6 +126,35 @@ The `svc` helper reads logs from the namespace assigned to the selected unit:
 ./deployment/yaha/svc log valuesvc 200
 ```
 
+## Deployment packaging and rollout
+
+Create deployment artifacts directory and zip archive (`deployment/yaha` and `deployment/yaha.zip`):
+
+```sh
+python3 cmake/create_yaha_deployment.py --preset armv7-zig-release --build
+```
+
+Create artifacts and copy deployment zip plus local apply script to a remote target via `scp`:
+
+```sh
+python3 cmake/create_yaha_deployment.py --preset armv7-zig-release --build \
+    --remote pi@yaha2:~/mqtt
+```
+
+Run on the remote host to unpack and deploy locally with checksum-based copy rules:
+
+```sh
+bash deploy_yaha_local.sh --zip yaha.zip --target-dir ~/mqtt/yaha
+```
+
+`deploy_yaha_local.sh` behavior:
+
+- unpacks deployment zip locally on the remote host
+- copies files with checksum compare and skips identical files
+- protects existing changed `.ini` files (prompt by default)
+- supports `--yes-overwrite-ini` and `--no-overwrite-ini`
+- restarts only changed services (component install runs only when files changed)
+
 `yahamsgstoreclient` accepts one optional positional config path and optional flags:
 
 | Argument | Type | Default | Description |

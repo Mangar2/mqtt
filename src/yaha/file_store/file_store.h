@@ -237,13 +237,11 @@ private:
      * @brief Publishes one monitoring event message.
      * @param eventType Event type suffix.
      * @param keyPath Optional logical key path.
-     * @param filename Encoded filename.
      * @param source Event source marker.
      * @param details Optional details string.
      */
     void publishMonitoring(const std::string& eventType,
                            const std::string* keyPath,
-                           const std::string& filename,
                            const std::string& source,
                            const std::string* details) const;
 

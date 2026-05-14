@@ -36,6 +36,8 @@ DEFAULT_PRESET = "armv7-zig-release"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "deployment" / "yaha"
 INI_DIR = PROJECT_ROOT / "cmake" / "ini"
 NGINX_CONTROLAPP_SOURCE = PROJECT_ROOT / "cmake" / "nginx" / "controlapp.conf"
+REMOTE_DEPLOY_HELPER_SCRIPT = PROJECT_ROOT / "cmake" / "deploy_yaha_local.sh"
+DEFAULT_REMOTE_COPY_DIR = "~/mqtt"
 
 SERVICE_COMPONENTS = (
     {
@@ -161,6 +163,39 @@ def run_or_fail(command: list[str], cwd: Path) -> None:
         )
 
 
+def normalize_remote_target(remote_target: str) -> str:
+    cleaned_target = remote_target.strip()
+    if not cleaned_target:
+        raise RuntimeError("Remote target must not be empty.")
+
+    # Host-only input (for example pi@yaha2) is mapped to a default remote path.
+    if ":" not in cleaned_target:
+        return f"{cleaned_target}:{DEFAULT_REMOTE_COPY_DIR}"
+    return cleaned_target
+
+
+def copy_to_remote_via_scp(*, files: list[Path], remote_target: str, cwd: Path) -> None:
+    print(f"SCP target: {remote_target}")
+    for file_path in files:
+        print(f"SCP copy: {file_path.name} -> {remote_target}")
+        run_or_fail(["scp", str(file_path), remote_target], cwd)
+
+
+def create_zip_archive(output_dir: Path) -> Path:
+    archive_base = output_dir.parent / output_dir.name
+    zip_path = archive_base.with_suffix(".zip")
+    if zip_path.exists():
+        zip_path.unlink()
+
+    archive_result = shutil.make_archive(
+        base_name=str(archive_base),
+        format="zip",
+        root_dir=str(output_dir.parent),
+        base_dir=output_dir.name,
+    )
+    return Path(archive_result)
+
+
 def sha256_text(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
@@ -183,6 +218,9 @@ def ensure_ini_templates() -> None:
 
     if not NGINX_CONTROLAPP_SOURCE.exists():
         missing.append(NGINX_CONTROLAPP_SOURCE)
+
+    if not REMOTE_DEPLOY_HELPER_SCRIPT.exists():
+        missing.append(REMOTE_DEPLOY_HELPER_SCRIPT)
 
     if missing:
         missing_lines = "\n".join(str(path) for path in missing)
@@ -437,6 +475,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Run cmake --build before packaging",
     )
+    parser.add_argument(
+        "--remote",
+        default="",
+        help=(
+            "Optional scp target for deployment zip and deploy_yaha_local.sh "
+            "(host only allowed, default path ~/mqtt; example: pi@yaha2 or pi@yaha2:~/mqtt)"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -540,10 +586,29 @@ def main() -> int:
         )
         set_executable(root_install)
 
+        zip_path = create_zip_archive(output_dir)
+
+        if args.remote.strip():
+            normalized_remote_target = normalize_remote_target(args.remote)
+            copy_to_remote_via_scp(
+                files=[zip_path, REMOTE_DEPLOY_HELPER_SCRIPT],
+                remote_target=normalized_remote_target,
+                cwd=PROJECT_ROOT,
+            )
+            print(f"Remote copy completed via scp target: {normalized_remote_target}")
+            print(
+                "Run on remote host: bash deploy_yaha_local.sh "
+                f"--zip {zip_path.name}"
+            )
+
         print(f"Deployment package created: {output_dir}")
+        print(f"Deployment archive created: {zip_path}")
         print(f"Nginx source used: {NGINX_CONTROLAPP_SOURCE}")
         print("Nginx source->deployment verification: OK")
-        print("Copy this directory 1:1 to the target system and run ./install.sh there.")
+        if args.remote.strip():
+            print("Deployment archive was already copied to remote target.")
+        else:
+            print("Copy this directory 1:1 to the target system and run ./install.sh there.")
         return 0
     except Exception as error:
         print(f"ERROR: {error}", file=sys.stderr)

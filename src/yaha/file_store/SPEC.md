@@ -63,6 +63,7 @@ Implements a standalone key/value HTTP store with MQTT monitoring publishes.
   - `YAHA_FILE_STORE_PERSIST_FAILED` (500)
   - `YAHA_FILE_STORE_READ_FAILED` (500)
 - Monitoring publishes to `<topicPrefix>/created|changed|deleted|error`.
+- Monitoring payload exposes logical metadata only; mapped persistence filenames are never published externally.
 - Monitoring trigger sources:
   - successful HTTP `POST` write (`source=http-post`),
   - filesystem watcher create/change/delete (`source=filesystem-watch`).

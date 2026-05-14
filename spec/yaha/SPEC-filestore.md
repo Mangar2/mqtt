@@ -70,12 +70,14 @@ Mandatory event types:
 
 Payload contract (JSON object):
 - `keyPath`: logical key path if resolvable, else `null`
-- `filename`: mapped filename in persistence directory
 - `directory`: configured directory
 - `changeType`: one of `changed | created | deleted | error`
 - `timestamp`: unix epoch in milliseconds
 - `source`: one of `http-post | filesystem-watch`
 - `details`: optional object for error or watcher backend details
+
+Privacy rule:
+- Encoded persistence filenames are internal implementation details and are never included in outbound monitoring payloads.
 
 QoS and retain defaults:
 - QoS: `1`

@@ -697,6 +697,9 @@ TEST_CASE("http_post_emits_monitoring_changed_event", "[file_store]") {
     REQUIRE_FALSE(events.empty());
     REQUIRE(events.front().topic() == "$MONITOR/FileStore/changed");
     REQUIRE(std::holds_alternative<std::string>(events.front().value()));
+    const auto& payloadText = std::get<std::string>(events.front().value());
+    REQUIRE(payloadText.find("\"keyPath\":\"/automation/rules\"") != std::string::npos);
+    REQUIRE(payloadText.find("\"filename\":") == std::string::npos);
 }
 
 TEST_CASE("watcher_emits_created_changed_deleted_events", "[file_store]") {
