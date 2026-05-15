@@ -3,29 +3,29 @@
     "rules": {
       "setReceived": {
         "anyOf": [
-          "$SYS/presence/set",
+          "status/presence/set",
           "system/presence/set"
         ],
-        "check": "map_1 = (1: awake, on: awake, awake: awake, sleeping: sleeping, default: absent)\n$SYS/presence != map_1($SYS/presence/set)",
+        "check": "map_1 = (1: awake, on: awake, awake: awake, sleeping: sleeping, default: absent)\nstatus/presence != map_1(status/presence/set)",
         "topic": {
-          "ground/livingroom/zwave/switch/camera/set": "map_1 = (absent: on, default: off)\nmap_1($SYS/presence/set)",
-          "$SYS/presence": "map_1 = (1: awake, on: awake, awake: awake, sleeping: sleeping, default: absent)\nmap_1($SYS/presence/set)",
-          "outdoor/garden/main/switch/light stairs/blink": "map_1 = (1: 2, on: 2, awake: 2, sleeping: 0, default: 1)\nmap_1($SYS/presence/set)"
+          "ground/livingroom/zwave/switch/camera/set": "map_1 = (absent: on, default: off)\nmap_1(status/presence/set)",
+          "status/presence": "map_1 = (1: awake, on: awake, awake: awake, sleeping: sleeping, default: absent)\nmap_1(status/presence/set)",
+          "outdoor/garden/main/switch/light stairs/blink": "map_1 = (1: 2, on: 2, awake: 2, sleeping: 0, default: 1)\nmap_1(status/presence/set)"
         },
         "name": "motion/setReceived",
         "isValid": true
       },
       "initialize": {
-        "check": "$SYS/presence = initial",
+        "check": "status/presence = initial",
         "anyOf": [
           "+/+/+/motion sensor/detection state"
         ],
         "topic": {
-          "$SYS/presence": "awake",
+          "status/presence": "awake",
           "system/presence": "awake",
-          "$SYS/cleaning/first": 0,
-          "$SYS/cleaning/ground": 0,
-          "$SYS/alert/motion": 0
+          "status/cleaning/first": 0,
+          "status/cleaning/ground": 0,
+          "status/alert/motion": 0
         },
         "name": "motion/initialize",
         "isValid": true
@@ -33,7 +33,7 @@
       "sleeping": {
         "time": "21:00",
         "duration": "8:00",
-        "check": "$SYS/presence = awake",
+        "check": "status/presence = awake",
         "durationWithoutMovementInMinutes": 15,
         "allOf": [
           "first/hallway/main/motion sensor/detection state"
@@ -51,7 +51,7 @@
           "ground/livingroom/motionv2/motion sensor/detection state"
         ],
         "topic": [
-          "$SYS/presence",
+          "status/presence",
           "system/presence"
         ],
         "value": "sleeping",
@@ -59,7 +59,7 @@
         "isValid": true
       },
       "wakeup1": {
-        "check": "$SYS/presence = sleeping",
+        "check": "status/presence = sleeping",
         "anyOf": [
           "+/+/+/motion sensor/detection state"
         ],
@@ -68,7 +68,7 @@
           "first/bathroom/main/motion sensor/detection state"
         ],
         "topic": [
-          "$SYS/presence",
+          "status/presence",
           "system/presence"
         ],
         "value": "awake",
@@ -76,7 +76,7 @@
         "isValid": true
       },
       "wakeup2": {
-        "check": "$SYS/presence = absent and $SYS/cleaning/first != cleaning",
+        "check": "status/presence = absent and status/cleaning/first != cleaning",
         "allOf": [
           "first/hallway/main/motion sensor/detection state"
         ],
@@ -93,7 +93,7 @@
           "ground/livingroom/motionv2/motion sensor/detection state"
         ],
         "topic": [
-          "$SYS/presence",
+          "status/presence",
           "system/presence"
         ],
         "value": "awake",
@@ -101,7 +101,7 @@
         "isValid": true
       },
       "homecoming": {
-        "check": "$SYS/presence = absent",
+        "check": "status/presence = absent",
         "allOf": [
           "ground/hallway/wall/motion sensor/detection state",
           "ground/hallway/center/motion sensor/detection state"
@@ -110,7 +110,7 @@
           "ground/wardrobe/main/motion sensor/detection state"
         ],
         "topic": [
-          "$SYS/presence",
+          "status/presence",
           "system/presence"
         ],
         "value": "awake",
@@ -118,7 +118,7 @@
         "isValid": true
       },
       "leaving": {
-        "check": "$SYS/presence = awake",
+        "check": "status/presence = awake",
         "durationWithoutMovementInMinutes": 30,
         "allOf": [
           "ground/hallway/wall/motion sensor/detection state"
@@ -129,7 +129,7 @@
           "first/hallway/main/motion sensor/detection state"
         ],
         "topic": [
-          "$SYS/presence",
+          "status/presence",
           "system/presence"
         ],
         "value": "absent",
@@ -139,7 +139,7 @@
       "leaving2": {
         "time": "12:00",
         "duration": "2:00",
-        "check": "$SYS/presence = awake",
+        "check": "status/presence = awake",
         "durationWithoutMovementInMinutes": 20,
         "allOf": [
           "ground/hallway/wall/motion sensor/detection state"
@@ -150,7 +150,7 @@
           "first/hallway/main/motion sensor/detection state"
         ],
         "topic": [
-          "$SYS/presence",
+          "status/presence",
           "system/presence"
         ],
         "value": "absent",
@@ -167,9 +167,9 @@
         "allOf": [
           "first/study/main/motion sensor/detection state"
         ],
-        "check": "$SYS/presence = absent and $SYS/cleaning/first != cleaning",
+        "check": "status/presence = absent and status/cleaning/first != cleaning",
         "topic": {
-          "$SYS/cleaning/first": "cleaning"
+          "status/cleaning/first": "cleaning"
         },
         "isValid": false,
         "errors": {
@@ -178,11 +178,11 @@
       },
       "cleaningFirstFinished": {
         "durationWithoutMovementInMinutes": 15,
-        "check": "$SYS/cleaning/first = cleaning",
+        "check": "status/cleaning/first = cleaning",
         "allOf": [
           "first/study/main/motion sensor/detection state"
         ],
-        "topic": "$SYS/cleaning/first",
+        "topic": "status/cleaning/first",
         "value": "off",
         "name": "motion/cleaningFirstFinished",
         "isValid": true
@@ -197,9 +197,9 @@
         "allOf": [
           "ground/hallway/center/motion sensor/detection state"
         ],
-        "check": "$SYS/presence = absent and $SYS/cleaning/ground != cleaning",
+        "check": "status/presence = absent and status/cleaning/ground != cleaning",
         "topic": {
-          "$SYS/cleaning/ground": "cleaning"
+          "status/cleaning/ground": "cleaning"
         },
         "isValid": false,
         "errors": {
@@ -208,12 +208,12 @@
       },
       "cleaningGroundFinished": {
         "durationWithoutMovementInMinutes": 15,
-        "check": "$SYS/cleaning/ground = cleaning",
+        "check": "status/cleaning/ground = cleaning",
         "allOf": [
           "ground/hallway/center/motion sensor/detection state"
         ],
         "topic": {
-          "$SYS/cleaning/ground": "off"
+          "status/cleaning/ground": "off"
         },
         "name": "motion/cleaningGroundFinished",
         "isValid": true
@@ -225,7 +225,7 @@
       "dishwasher": {
         "rules": {
           "onMorning": {
-            "time": "map_1 = (awake: \"6:00\")\nmap_1($SYS/presence)",
+            "time": "map_1 = (awake: \"6:00\")\nmap_1(status/presence)",
             "topic": {
               "ground/kitchen/zwave/switch/dishwasher/set": "on"
             },
@@ -240,7 +240,7 @@
         "rules": {
           "onMorning": {
             "name": "ground/wardrobe/floorHeating/onMorning",
-            "time": "map_1 = (absent: \"13:00\", default: \"6:00\")\nmap_1($SYS/presence)",
+            "time": "map_1 = (absent: \"13:00\", default: \"6:00\")\nmap_1(status/presence)",
             "check": "outdoor/garden/main/weather/temperature < 18 and first/hallway/main/temperature and humidity sensor/temperature in celsius < ground/wardrobe/floorHeating/lowtemperature",
             "topic": {
               "ground/wardrobe/fs20/switch/floor heating/set": "on"
@@ -262,7 +262,7 @@
         "rules": {
           "offNetworkMoring": {
             "time": "8:00",
-            "check": "$SYS/presence != initial",
+            "check": "status/presence != initial",
             "topic": {
               "ground/wardrobe/i2c/switch/monitor/set": "off"
             },
@@ -270,8 +270,8 @@
             "isValid": true
           },
           "lanSwitch": {
-            "check": "$SYS/presence != initial",
-            "value": "map_1 = (awake: on, default: off)\nmap_1($SYS/presence)",
+            "check": "status/presence != initial",
+            "value": "map_1 = (awake: on, default: off)\nmap_1(status/presence)",
             "topic": "ground/wardrobe/i2c/switch/network switch/set",
             "name": "ground/wardrobe/central/lanSwitch",
             "isValid": true
@@ -311,7 +311,7 @@
             "time": "11:00",
             "duration": "4:00",
             "cooldownInSeconds": 14800,
-            "check": "$SYS/presence = awake",
+            "check": "status/presence = awake",
             "allOf": [
               "first/study/main/motion sensor/detection state"
             ],
@@ -323,7 +323,7 @@
           },
           "OnCooling": {
             "cooldownInSeconds": 36000,
-            "check": "map_1 = (absent: 25, awake: 24, sleeping: 24)\noutdoor/garden/main/weather/temperature < 16 and ground/hallway/center/temperature and humidity sensor/temperature in celsius > map_1($SYS/presence)",
+            "check": "map_1 = (absent: 25, awake: 24, sleeping: 24)\noutdoor/garden/main/weather/temperature < 16 and ground/hallway/center/temperature and humidity sensor/temperature in celsius > map_1(status/presence)",
             "topic": {
               "ground/wardrobe/zwave/switch/ventilation/set": "on"
             },
@@ -332,18 +332,18 @@
           },
           "OffMorning": {
             "name": "ground/wardrobe/ventilation/OffMorning",
-            "time": "map_1 = (absent: \"9:00\", default: \"10:00\")\nmap_1($SYS/presence)",
+            "time": "map_1 = (absent: \"9:00\", default: \"10:00\")\nmap_1(status/presence)",
             "duration": "1:00",
-            "check": "map_1 = (absent: 3, awake: 0, sleeping: 0)\nmap_2 = (absent: 22, awake: 24, sleeping: 24)\noutdoor/garden/main/weather/temperature < map_1($SYS/presence) or outdoor/garden/main/weather/temperature > map_2($SYS/presence) or ground/hallway/center/temperature and humidity sensor/humidity in percent < ground/wardrobe/ventilation/min humidity",
+            "check": "map_1 = (absent: 3, awake: 0, sleeping: 0)\nmap_2 = (absent: 22, awake: 24, sleeping: 24)\noutdoor/garden/main/weather/temperature < map_1(status/presence) or outdoor/garden/main/weather/temperature > map_2(status/presence) or ground/hallway/center/temperature and humidity sensor/humidity in percent < ground/wardrobe/ventilation/min humidity",
             "topic": {
               "ground/wardrobe/zwave/switch/ventilation/set": "off"
             },
             "isValid": true
           },
           "OffEvening": {
-            "time": "map_1 = (absent: \"19:00\", default: \"20:00\")\nmap_1($SYS/presence)",
+            "time": "map_1 = (absent: \"19:00\", default: \"20:00\")\nmap_1(status/presence)",
             "duration": "1:00",
-            "check": "map_1 = (absent: 3, awake: 0, sleeping: 0)\nmap_2 = (absent: 22, awake: 24, sleeping: 24)\noutdoor/garden/main/weather/temperature < map_1($SYS/presence) or outdoor/garden/main/weather/temperature > map_2($SYS/presence) or ground/hallway/center/temperature and humidity sensor/humidity in percent < ground/wardrobe/ventilation/min humidity",
+            "check": "map_1 = (absent: 3, awake: 0, sleeping: 0)\nmap_2 = (absent: 22, awake: 24, sleeping: 24)\noutdoor/garden/main/weather/temperature < map_1(status/presence) or outdoor/garden/main/weather/temperature > map_2(status/presence) or ground/hallway/center/temperature and humidity sensor/humidity in percent < ground/wardrobe/ventilation/min humidity",
             "topic": {
               "ground/wardrobe/zwave/switch/ventilation/set": "off"
             },
@@ -367,9 +367,9 @@
           "activate": {
             "name": "ground/livingroom/camera/activate",
             "durationWithoutMovementInMinutes": 1,
-            "check": "$SYS/presence != initial",
+            "check": "status/presence != initial",
             "topic": "ground/livingroom/zwave/switch/camera/set",
-            "value": "map_1 = (absent: on, default: off)\nmap_1($SYS/presence)",
+            "value": "map_1 = (absent: on, default: off)\nmap_1(status/presence)",
             "isValid": true
           }
         }
@@ -406,7 +406,7 @@
             "allOf": [
               "ground/livingroom/motionv2/motion sensor/detection state"
             ],
-            "check": "\"/time\" >= \"/sunset\" - 10 and $SYS/presence = awake",
+            "check": "\"/time\" >= \"/sunset\" - 10 and status/presence = awake",
             "topic": {
               "ground/livingroom/zwave/switch/floodlight/set": "on"
             },
@@ -418,7 +418,7 @@
             "allOf": [
               "ground/livingroom/motionv2/motion sensor/detection state"
             ],
-            "check": "\"/time\" <= \"/sunrise\" - 10 and $SYS/presence = awake",
+            "check": "\"/time\" <= \"/sunrise\" - 10 and status/presence = awake",
             "topic": {
               "ground/livingroom/zwave/switch/floodlight/set": "on"
             },
@@ -445,9 +445,9 @@
         "rules": {
           "presence": {
             "name": "ground/livingroom/multimedia/presence",
-            "check": "$SYS/presence != initial and ground/livingroom/zwave/sys/multimedia/Power < 20",
+            "check": "status/presence != initial and ground/livingroom/zwave/sys/multimedia/Power < 20",
             "topic": "ground/livingroom/zwave/switch/multimedia/set",
-            "value": "map_1 = (default: off, awake: on)\nmap_1($SYS/presence)",
+            "value": "map_1 = (default: off, awake: on)\nmap_1(status/presence)",
             "isValid": true
           }
         }
@@ -460,7 +460,7 @@
               "cooldownInSeconds": 86400,
               "check": "ground/livingroom/motionv2/battery/voltage < 3.2",
               "topic": {
-                "$SYS/alert/battery/motion": "warning"
+                "status/alert/battery/motion": "warning"
               },
               "isValid": true
             }
@@ -474,7 +474,7 @@
             "cooldownInSeconds": 86400,
             "check": "ground/livingroom/main/ficus/voltage <= 9",
             "topic": {
-              "$SYS/alert/battery/ficus": "warning"
+              "status/alert/battery/ficus": "warning"
             },
             "isValid": true
           }
@@ -486,7 +486,7 @@
             "name": "ground/livingroom/roller/UpMorning",
             "time": "5:00",
             "duration": "6:00",
-            "check": "map_1 = (absent: \"8:00\", awake: \"5:30\", sleeping: \"10:00\")\n\"/time\" >= \"/sunrise\" - 10 and \"/time\" < \"/sunset\" - 10 and \"/time\" >= map_1($SYS/presence) and $SYS/presence != initial",
+            "check": "map_1 = (absent: \"8:00\", awake: \"5:30\", sleeping: \"10:00\")\n\"/time\" >= \"/sunrise\" - 10 and \"/time\" < \"/sunset\" - 10 and \"/time\" >= map_1(status/presence) and status/presence != initial",
             "topic": {
               "ground/livingroom/zwave/shutter/southeast/set": "on",
               "ground/livingroom/zwave/shutter/southwest/set": "on"
@@ -509,7 +509,7 @@
             "active": false,
             "time": "9:30",
             "duration": "6:00",
-            "check": "outdoor/garden/weather2/sensor/temperature > 22 and ground/hallway/center/temperature and humidity sensor/temperature in celsius > 23 and $SYS/motion/ground/latest < \"/time\" - 30 and ($SYS/presence != awake or $SYS/motion/first/latest > \"/time\" - 30)",
+            "check": "outdoor/garden/weather2/sensor/temperature > 22 and ground/hallway/center/temperature and humidity sensor/temperature in celsius > 23 and status/motion/ground/latest < \"/time\" - 30 and (status/presence != awake or status/motion/first/latest > \"/time\" - 30)",
             "topic": {
               "ground/livingroom/zwave/shutter/southwest/set": "off",
               "ground/livingroom/state/shutter/cooling": 1
@@ -533,7 +533,7 @@
           "UpAfternoon": {
             "name": "ground/livingroom/roller/UpAfternoon",
             "time": "17:00",
-            "check": "\"/time\" <= \"/sunset\" - 30 and $SYS/presence != initial",
+            "check": "\"/time\" <= \"/sunset\" - 30 and status/presence != initial",
             "topic": {
               "ground/livingroom/zwave/shutter/southeast/set": "on",
               "ground/livingroom/zwave/shutter/southwest/set": "on",
@@ -569,7 +569,7 @@
           "DownSunsetWestNotAwake": {
             "name": "ground/livingroom/roller/DownSunsetWestNotAwake",
             "cooldownInSeconds": 36000,
-            "check": "\"/time\" >= \"/sunset\" and $SYS/presence != awake",
+            "check": "\"/time\" >= \"/sunset\" and status/presence != awake",
             "topic": {
               "ground/livingroom/zwave/shutter/southwest/set": "off"
             },
@@ -597,7 +597,7 @@
             "ground/hallway/center/motion sensor/detection state",
             "ground/livingroom/motionv2/motion sensor/detection state"
           ],
-          "topic": "$SYS/motion/ground/latest",
+          "topic": "status/motion/ground/latest",
           "value": "/time",
           "isValid": true
         }
@@ -611,7 +611,7 @@
           "name": "cellar/light/SwitchOff",
           "active": false,
           "cooldownInSeconds": 300,
-          "check": "\"/time\" >= $SYS/motion/cellar/latest + 5 and $SYS/motion/ground/latest > $SYS/motion/cellar/latest",
+          "check": "\"/time\" >= status/motion/cellar/latest + 5 and status/motion/ground/latest > status/motion/cellar/latest",
           "topic": {
             "cellar/boilerroom/main/light/light on time/set": "off",
             "cellar/storeroom/main/light/light on time/set": "off",
@@ -622,7 +622,7 @@
           },
           "isValid": false,
           "errors": [
-            "Error in rule \"cellar/light/SwitchOff\": false is not a number or a date ([\"$SYS/motion/cellar/latest\",\"5\"])"
+            "Error in rule \"cellar/light/SwitchOff\": false is not a number or a date ([\"status/motion/cellar/latest\",\"5\"])"
           ]
         }
       }
@@ -679,7 +679,7 @@
         "water alert": {
           "name": "cellar/boilerroom/water alert",
           "topic": {
-            "$SYS/alert/water": "if(cellar/boilerroom/main/water leakage/detection state = 1, alert, ok)"
+            "status/alert/water": "if(cellar/boilerroom/main/water leakage/detection state = 1, alert, ok)"
           },
           "isValid": true
         }
@@ -699,7 +699,7 @@
             "cellar/storeroom/main/motion sensor/detection state",
             "cellar/hallway/main/motion sensor/detection state"
           ],
-          "topic": "$SYS/motion/cellar/latest",
+          "topic": "status/motion/cellar/latest",
           "value": "/time",
           "isValid": true
         }
@@ -709,8 +709,8 @@
       "rules": {
         "window": {
           "name": "cellar/alert/window",
-          "check": "$SYS/presence != awake",
-          "topic": "$SYS/alert/window",
+          "check": "status/presence != awake",
+          "topic": "status/alert/window",
           "value": "if(cellar/boilerroom/main/window/detection state != closed or cellar/storeroom/main/window/detection state != closed or cellar/hobbycellar/east/window/detection state != closed or cellar/hobbycellar/west/window/detection state != closed, alert, ok)",
           "isValid": true
         }
@@ -729,25 +729,25 @@
           "first/study/main/motion sensor/detection state",
           "first/dressingroom/main/motion sensor/detection state"
         ],
-        "check": "$SYS/presence = absent and $SYS/cleaning/first != cleaning and $SYS/cleaning/ground != cleaning",
+        "check": "status/presence = absent and status/cleaning/first != cleaning and status/cleaning/ground != cleaning",
         "topic": {
-          "$SYS/alert/motion": "alert"
+          "status/alert/motion": "alert"
         },
         "isValid": true
       },
       "nomotion": {
-        "check": "$SYS/alert/motion != ok",
+        "check": "status/alert/motion != ok",
         "durationWithoutMovementInMinutes": 30,
         "topic": {
-          "$SYS/alert/motion": "ok"
+          "status/alert/motion": "ok"
         },
         "name": "alert/nomotion",
         "isValid": true
       },
       "awake": {
-        "check": "$SYS/presence = awake and $SYS/alert/motion != ok",
+        "check": "status/presence = awake and status/alert/motion != ok",
         "topic": {
-          "$SYS/alert/motion": "ok"
+          "status/alert/motion": "ok"
         },
         "name": "alert/awake",
         "isValid": true
@@ -840,15 +840,15 @@
         "awake": {
           "name": "first/dressingroom/awake",
           "active": false,
-          "check": "$SYS/presence != initial",
+          "check": "status/presence != initial",
           "topic": "first/dressingroom/zwave/switch/dressing room/set",
-          "value": "map_1 = (default: off, awake: on)\nmap_1($SYS/presence)",
+          "value": "map_1 = (default: off, awake: on)\nmap_1(status/presence)",
           "isValid": true
         },
         "motion": {
           "name": "first/dressingroom/motion",
           "topic": "first/dressingroom/zwave/switch/dressing room/set",
-          "value": "if(\"/time\" < $SYS/motion/first/latest + 20 and $SYS/presence = awake, on, off)",
+          "value": "if(\"/time\" < status/motion/first/latest + 20 and status/presence = awake, on, off)",
           "isValid": false
         }
       }
@@ -861,7 +861,7 @@
           "cooldownInSeconds": 43200,
           "check": "outdoor/garden/temperature < first/hallway/main/temperature and humidity sensor/temperature in celsius and first/hallway/main/temperature and humidity sensor/temperature in celsius > 24",
           "topic": {
-            "$SYS/alert/openwindow": "info"
+            "status/alert/openwindow": "info"
           },
           "isValid": true
         }
@@ -878,7 +878,7 @@
             "first/study/main/motion sensor/detection state",
             "first/dressingroom/main/motion sensor/detection state"
           ],
-          "topic": "$SYS/motion/first/latest",
+          "topic": "status/motion/first/latest",
           "value": "/time",
           "isValid": true
         }
@@ -986,7 +986,7 @@
             "cooldownInSeconds": 86400,
             "check": "outdoor/garden/weather2/battery/voltage < 3.55",
             "topic": {
-              "$SYS/alert/battery/weather2": "warning"
+              "status/alert/battery/weather2": "warning"
             },
             "isValid": true
           }
@@ -999,7 +999,7 @@
             "cooldownInSeconds": 86400,
             "check": "outdoor/garden/tomatov2/battery/voltage < 4.76",
             "topic": {
-              "$SYS/alert/battery/tomato": "warning"
+              "status/alert/battery/tomato": "warning"
             },
             "isValid": true
           }
