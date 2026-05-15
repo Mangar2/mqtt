@@ -63,6 +63,62 @@ constexpr std::string_view k_debug_topic_prefix{"$MONITOR/automation/"};
     return segments;
 }
 
+[[nodiscard]] std::string joinPathSegments(const std::vector<std::string>& segments) {
+    std::string pathText{};
+    for (std::size_t index = 0U; index < segments.size(); ++index) {
+        if (index > 0U) {
+            pathText.push_back('/');
+        }
+        pathText.append(segments[index]);
+    }
+    return pathText;
+}
+
+void appendCandidatePath(std::vector<std::vector<std::string>>* candidates,
+                         const std::vector<std::string>& candidatePath) {
+    if (candidatePath.empty()) {
+        return;
+    }
+    if (std::ranges::find(*candidates, candidatePath) == candidates->end()) {
+        candidates->push_back(candidatePath);
+    }
+}
+
+[[nodiscard]] std::vector<std::vector<std::string>> buildRuleLookupCandidates(
+    const std::vector<std::string>& ruleSegments) {
+    std::vector<std::vector<std::string>> candidates{};
+    if (ruleSegments.empty()) {
+        return candidates;
+    }
+
+    std::vector<std::string> normalizedSegments = ruleSegments;
+    if (!normalizedSegments.empty() && normalizedSegments.front() == "rules") {
+        normalizedSegments.erase(normalizedSegments.begin());
+    }
+    if (normalizedSegments.empty()) {
+        return candidates;
+    }
+
+    appendCandidatePath(&candidates, normalizedSegments);
+
+    std::vector<std::string> rootRulesPath{"rules"};
+    rootRulesPath.insert(rootRulesPath.end(), normalizedSegments.begin(), normalizedSegments.end());
+    appendCandidatePath(&candidates, rootRulesPath);
+
+    if (normalizedSegments.size() >= 2U) {
+        std::vector<std::string> implicitRulesPath = normalizedSegments;
+        implicitRulesPath.insert(implicitRulesPath.end() - 1, "rules");
+        appendCandidatePath(&candidates, implicitRulesPath);
+
+        std::vector<std::string> rootAndImplicitRulesPath{"rules"};
+        rootAndImplicitRulesPath.insert(
+            rootAndImplicitRulesPath.end(), implicitRulesPath.begin(), implicitRulesPath.end());
+        appendCandidatePath(&candidates, rootAndImplicitRulesPath);
+    }
+
+    return candidates;
+}
+
 [[nodiscard]] std::optional<RuleTreeNode> findNodeByPathSegments(
     const RuleTreeNode& rootNode,
     const std::vector<std::string>& segments) {
@@ -719,50 +775,14 @@ std::optional<RuleTreeNode> AutomationClientComponent::findRuleNodeByLink(
         }
     };
 
-    if (const std::optional<RuleTreeNode> directNode = findNodeByPathSegments(rulesRoot_, ruleSegments);
-        directNode.has_value()) {
-        setResolvedPath(ruleLink);
-        return directNode;
-    }
-
-    std::vector<std::string> normalizedSegments = ruleSegments;
-    if (!normalizedSegments.empty() && normalizedSegments.front() == "rules") {
-        normalizedSegments.erase(normalizedSegments.begin());
-    }
-
-    if (normalizedSegments.empty()) {
-        return std::nullopt;
-    }
-
-    std::string normalizedLink{};
-    for (std::size_t segmentIndex = 0U; segmentIndex < normalizedSegments.size(); ++segmentIndex) {
-        if (segmentIndex > 0U) {
-            normalizedLink.push_back('/');
+    const std::vector<std::vector<std::string>> candidatePaths = buildRuleLookupCandidates(ruleSegments);
+    for (const auto& candidatePath : candidatePaths) {
+        const std::optional<RuleTreeNode> candidateNode = findNodeByPathSegments(rulesRoot_, candidatePath);
+        if (!candidateNode.has_value()) {
+            continue;
         }
-        normalizedLink.append(normalizedSegments[segmentIndex]);
-    }
-
-    std::vector<std::string> rootRulesSegments{"rules"};
-    rootRulesSegments.insert(rootRulesSegments.end(), normalizedSegments.begin(), normalizedSegments.end());
-    if (const std::optional<RuleTreeNode> nestedNode = findNodeByPathSegments(rulesRoot_, rootRulesSegments);
-        nestedNode.has_value()) {
-        setResolvedPath("rules/" + normalizedLink);
-        return nestedNode;
-    }
-
-    if (rulesRoot_.isObject()) {
-        const auto& rootObject = rulesRoot_.asObject();
-        const auto rulesIterator = rootObject.find("rules");
-        if (rulesIterator != rootObject.end() && rulesIterator->second.isObject()) {
-            const auto& rulesObject = rulesIterator->second.asObject();
-            if (normalizedSegments.size() == 1U) {
-                const auto entryIterator = rulesObject.find(normalizedSegments.front());
-                if (entryIterator != rulesObject.end()) {
-                    setResolvedPath("rules/" + normalizedSegments.front());
-                    return entryIterator->second;
-                }
-            }
-        }
+        setResolvedPath(joinPathSegments(candidatePath));
+        return candidateNode;
     }
 
     return std::nullopt;
