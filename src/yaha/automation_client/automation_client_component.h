@@ -7,6 +7,7 @@
 
 #include "yaha/automation/rules_tree_parser.h"
 #include "yaha/automation/expression_evaluator.h"
+#include "yaha/automation_client/rule_runtime_engine.h"
 #include "yaha/message/message.h"
 #include "yaha/mqtt_component/mqtt_component.h"
 
@@ -124,42 +125,9 @@ private:
     void refreshDynamicSubscriptionsLocked();
     void evaluateAndPublishRules();
 
-    [[nodiscard]] bool isMonitoringTopic(const std::string& topicName) const;
-    [[nodiscard]] bool isManagementTopic(const std::string& topicName) const;
-    [[nodiscard]] static bool isDebugTopic(const std::string& topicName);
-
-    [[nodiscard]] std::optional<std::string> extractRuleNameFromManagementTopic(
-        const std::string& topicName) const;
-    [[nodiscard]] static std::optional<std::string> extractRuleLinkFromDebugTopic(
-        const std::string& topicName);
     [[nodiscard]] std::optional<RuleTreeNode> findRuleNodeByLink(
         const std::string& ruleLink,
         std::string* resolvedPath) const;
-    [[nodiscard]] static std::string buildTraceTopicFromRuleLink(const std::string& ruleLink);
-
-    [[nodiscard]] static std::optional<std::string> extractMonitoringKeyPath(
-        const std::string& payload);
-
-    [[nodiscard]] static std::optional<std::string> extractMonitoringChangeType(
-        const std::string& payload);
-
-    [[nodiscard]] static std::optional<RuleTreeNode> parseJsonNode(const std::string& payload);
-    [[nodiscard]] static std::string toJsonText(const RuleTreeNode& node);
-    [[nodiscard]] static ExpressionEvaluator::Value messageValueToExpressionValue(const Value& messageValue);
-
-    /**
-     * @brief Converts message payload value into stable logging text.
-     * @param messageValue MQTT message payload value.
-     * @return Printable payload text.
-     */
-    [[nodiscard]] static std::string valueToLogText(const Value& messageValue);
-
-    /**
-     * @brief Converts QoS enum into numeric logging text.
-     * @param qosValue QoS value from message.
-     * @return QoS as decimal string.
-     */
-    [[nodiscard]] static std::string qosToLogText(Qos qosValue);
 
     /**
      * @brief Logs one incoming message when incoming tracing is enabled.
@@ -200,6 +168,8 @@ private:
     mutable std::mutex stateMutex_;
     RuleTreeNode rulesRoot_{RuleTreeNode::Object{}};
     ExpressionEvaluator::VariableMap runtimeVariables_;
+    RuleRuntimeEventState runtimeEventState_;
+    RuleRuntimeDeliveryState runtimeDeliveryState_;
     std::set<std::string> dynamicTopicSubscriptions_;
     bool running_{false};
 

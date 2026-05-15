@@ -74,8 +74,21 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
     `updated`, `deleted`, `validation_failed`, or `persist_failed`.
 - Runtime rule evaluation:
   - For each non-control incoming message, the component updates runtime variable map `variable(topic)=value`.
+  - Domain-message ingestion maintains event history with two classes:
+    - motion events as bounded ordered history (max 100, trim oldest 20 on overflow)
+    - non-motion events as one-cycle topic set
+  - Incoming domain messages with payload value `0` are ignored for event-history insertion.
   - It builds evaluation context from runtime variables plus internal variables (`/time`, `/weekday`, sun/twilight).
-  - It processes complete rule tree with `RulesTreeProcessor`.
+  - It processes complete rule tree with runtime gates before rule execution:
+    - `active` boolean skip gate
+    - weekday gate (`weekdays`)
+    - time window gate (`time` + optional `duration`)
+    - event gates (`anyOf`, `allOf`, `noneOf`, `allow`)
+    - inactivity gate (`durationWithoutMovementInMinutes`)
+  - Triggered rule candidates are then filtered by delivery controls:
+    - dedup on identical topic/value output while rule stays active
+    - `delayInSeconds` stable-candidate gate
+    - `cooldownInSeconds` periodic resend gate for identical output
   - Produced rule output messages are published via delivery-result callback.
   - Explicit callback failure results (`PublishResult::fail(...)`) are treated as outbound send failures and enter the same retry queue as thrown publish errors.
   - Produced outputs are reflected back into runtime variable map.
@@ -108,8 +121,17 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
 |------|------|
 | `automation_client_component.h` | IMqttComponent declarations for automation rule sync |
 | `automation_client_component.cpp` | Runtime behavior implementation |
+| `automation_control_topics.h/.cpp` | Topic classification and rule-link extraction helper |
+| `automation_rule_json.h/.cpp` | Rule JSON parse/serialize helper |
+| `automation_message_values.h/.cpp` | Message value conversion and logging text helper |
+| `automation_rule_lookup.h/.cpp` | Rule-link path lookup helper |
+| `automation_rule_tree_access.h/.cpp` | Rule-tree object and string-field access helper |
+| `automation_trace_format.h/.cpp` | Debug-trace formatting helper |
+| `automation_publish_failure_text.h/.cpp` | Publish failure-category text mapping helper |
 | `automation_client_app.h` | Runtime config mapping declarations |
 | `automation_client_app.cpp` | Runtime config mapping implementation |
+| `rule_runtime_engine.h/.cpp` | Runtime rule-gate, event-history, and delivery-control helper |
 | `test/TEST_SPEC.md` | Unit test specification |
 | `test/automation_client_component_test.cpp` | Component unit tests |
+| `test/automation_client_rule_runtime_test.cpp` | Runtime gate and delivery-control unit tests |
 | `test/automation_client_app_test.cpp` | Config mapping unit tests |

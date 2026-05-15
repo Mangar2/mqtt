@@ -2,338 +2,29 @@
 
 #include "httplib.h"
 #include "yaha/automation/internal_variables.h"
-#include "yaha/automation/rules_tree_json_reader.h"
-#include "yaha/automation/rules_tree_processor.h"
 #include "yaha/automation/single_rule_processor.h"
+#include "yaha/automation_client/automation_control_topics.h"
+#include "yaha/automation_client/automation_message_values.h"
+#include "yaha/automation_client/automation_publish_failure_text.h"
+#include "yaha/automation_client/automation_rule_json.h"
+#include "yaha/automation_client/automation_rule_lookup.h"
+#include "yaha/automation_client/automation_rule_tree_access.h"
+#include "yaha/automation_client/automation_trace_format.h"
 
-#include <algorithm>
-#include <array>
-#include <cctype>
 #include <chrono>
 #include <exception>
 #include <iostream>
 #include <ranges>
-#include <sstream>
 #include <string>
 #include <utility>
 
 namespace yaha {
 namespace {
 
-constexpr std::size_t k_management_suffix_length{4U};
-constexpr std::size_t k_debug_suffix_length{6U};
 constexpr int k_http_ok_status{200};
 constexpr int k_http_not_found_status{404};
 constexpr std::size_t k_max_pending_publish_attempts{3U};
-constexpr unsigned char k_ascii_control_max{0x20U};
-constexpr unsigned char k_low_nibble_mask{0x0FU};
 constexpr std::string_view k_debug_topic_prefix{"$MONITOR/automation/"};
-
-[[nodiscard]] bool startsWithText(const std::string& textValue, const std::string& prefix) {
-    return textValue.starts_with(prefix);
-}
-
-[[nodiscard]] bool endsWithSetSuffix(const std::string& textValue) {
-    return textValue.size() >= k_management_suffix_length
-        && textValue.compare(textValue.size() - k_management_suffix_length, k_management_suffix_length, "/set") == 0;
-}
-
-[[nodiscard]] bool endsWithDebugSuffix(const std::string& textValue) {
-    return textValue.size() >= k_debug_suffix_length
-        && textValue.compare(textValue.size() - k_debug_suffix_length, k_debug_suffix_length, "/debug") == 0;
-}
-
-[[nodiscard]] std::vector<std::string> splitPathSegments(const std::string& pathText) {
-    std::vector<std::string> segments{};
-    std::string currentSegment{};
-    for (const char currentChar : pathText) {
-        if (currentChar == '/') {
-            if (!currentSegment.empty()) {
-                segments.push_back(currentSegment);
-                currentSegment.clear();
-            }
-            continue;
-        }
-        currentSegment.push_back(currentChar);
-    }
-    if (!currentSegment.empty()) {
-        segments.push_back(currentSegment);
-    }
-    return segments;
-}
-
-[[nodiscard]] std::string joinPathSegments(const std::vector<std::string>& segments) {
-    std::string pathText{};
-    for (std::size_t index = 0U; index < segments.size(); ++index) {
-        if (index > 0U) {
-            pathText.push_back('/');
-        }
-        pathText.append(segments[index]);
-    }
-    return pathText;
-}
-
-void appendCandidatePath(std::vector<std::vector<std::string>>* candidates,
-                         const std::vector<std::string>& candidatePath) {
-    if (candidatePath.empty()) {
-        return;
-    }
-    if (std::ranges::find(*candidates, candidatePath) == candidates->end()) {
-        candidates->push_back(candidatePath);
-    }
-}
-
-[[nodiscard]] std::vector<std::vector<std::string>> buildRuleLookupCandidates(
-    const std::vector<std::string>& ruleSegments) {
-    std::vector<std::vector<std::string>> candidates{};
-    if (ruleSegments.empty()) {
-        return candidates;
-    }
-
-    std::vector<std::string> normalizedSegments = ruleSegments;
-    if (!normalizedSegments.empty() && normalizedSegments.front() == "rules") {
-        normalizedSegments.erase(normalizedSegments.begin());
-    }
-    if (normalizedSegments.empty()) {
-        return candidates;
-    }
-
-    appendCandidatePath(&candidates, normalizedSegments);
-
-    std::vector<std::string> rootRulesPath{"rules"};
-    rootRulesPath.insert(rootRulesPath.end(), normalizedSegments.begin(), normalizedSegments.end());
-    appendCandidatePath(&candidates, rootRulesPath);
-
-    if (normalizedSegments.size() >= 2U) {
-        std::vector<std::string> implicitRulesPath = normalizedSegments;
-        implicitRulesPath.insert(implicitRulesPath.end() - 1, "rules");
-        appendCandidatePath(&candidates, implicitRulesPath);
-
-        std::vector<std::string> rootAndImplicitRulesPath{"rules"};
-        rootAndImplicitRulesPath.insert(
-            rootAndImplicitRulesPath.end(), implicitRulesPath.begin(), implicitRulesPath.end());
-        appendCandidatePath(&candidates, rootAndImplicitRulesPath);
-    }
-
-    return candidates;
-}
-
-[[nodiscard]] std::optional<RuleTreeNode> findNodeByPathSegments(
-    const RuleTreeNode& rootNode,
-    const std::vector<std::string>& segments) {
-    const RuleTreeNode* currentNode = &rootNode;
-    for (const auto& segment : segments) {
-        if (!currentNode->isObject()) {
-            return std::nullopt;
-        }
-
-        const auto& objectNode = currentNode->asObject();
-        const auto iterator = objectNode.find(segment);
-        if (iterator == objectNode.end()) {
-            return std::nullopt;
-        }
-
-        currentNode = &iterator->second;
-    }
-
-    return *currentNode;
-}
-
-void appendTraceEntry(std::vector<std::string>* traceEntries, const std::string& traceText) {
-    if (traceEntries == nullptr) {
-        return;
-    }
-    traceEntries->push_back(traceText);
-}
-
-[[nodiscard]] std::string buildDebugExplainSummary(
-    const std::string& topic,
-    const std::string& checkReason,
-    const std::string& valueReason) {
-    if (topic.empty()) {
-        return {};
-    }
-
-    std::string summary = "Rule: " + topic;
-    if (!checkReason.empty()) {
-        summary += ", check: " + checkReason;
-    }
-    if (!valueReason.empty()) {
-        summary += ", value: " + valueReason;
-    }
-    return summary;
-}
-
-void appendExplainTraceEntries(
-    std::vector<std::string>* traceEntries,
-    const std::vector<std::string>& evaluationTrace,
-    const std::string& fallbackTopic) {
-    constexpr std::string_view k_topic_prefix{"rule-evaluation:topic="};
-    constexpr std::string_view k_check_reason_prefix{"rule-evaluation:check reason="};
-    constexpr std::string_view k_value_reason_prefix{"rule-evaluation:value reason="};
-    constexpr std::string_view k_error_prefix{"rule-evaluation:error "};
-
-    std::string topic = fallbackTopic;
-    std::string checkReason;
-    std::string valueReason;
-
-    for (const auto& entry : evaluationTrace) {
-        if (topic.empty() && entry.starts_with(k_topic_prefix)) {
-            topic = entry.substr(k_topic_prefix.size());
-            continue;
-        }
-        if (checkReason.empty() && entry.starts_with(k_check_reason_prefix)) {
-            checkReason = entry.substr(k_check_reason_prefix.size());
-            continue;
-        }
-        if (valueReason.empty() && entry.starts_with(k_value_reason_prefix)) {
-            valueReason = entry.substr(k_value_reason_prefix.size());
-            continue;
-        }
-        if (entry.starts_with(k_error_prefix)) {
-            appendTraceEntry(traceEntries, "debug:error " + entry.substr(k_error_prefix.size()));
-        }
-    }
-
-    const std::string summary = buildDebugExplainSummary(topic, checkReason, valueReason);
-    if (!summary.empty()) {
-        appendTraceEntry(traceEntries, "debug:explain " + summary);
-        return;
-    }
-
-    if (!checkReason.empty()) {
-        appendTraceEntry(traceEntries, "debug:explain check: " + checkReason);
-    }
-    if (!valueReason.empty()) {
-        appendTraceEntry(traceEntries, "debug:explain value: " + valueReason);
-    }
-}
-
-[[nodiscard]] std::string jsonEscapeString(const std::string& text) {
-    std::string result{"\""};
-    constexpr std::array<char, 16U> k_hex_digits{
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
-    for (const unsigned char currentChar : text) {
-        switch (currentChar) {
-        case '\\':
-            result += "\\\\";
-            break;
-        case '\"':
-            result += "\\\"";
-            break;
-        case '\n':
-            result += "\\n";
-            break;
-        case '\r':
-            result += "\\r";
-            break;
-        case '\t':
-            result += "\\t";
-            break;
-        case '\b':
-            result += "\\b";
-            break;
-        case '\f':
-            result += "\\f";
-            break;
-        default:
-            if (currentChar < k_ascii_control_max) {
-                result += "\\u00";
-                result.push_back(k_hex_digits[(currentChar >> 4U) & k_low_nibble_mask]);
-                result.push_back(k_hex_digits[currentChar & k_low_nibble_mask]);
-            } else {
-                result.push_back(static_cast<char>(currentChar));
-            }
-            break;
-        }
-    }
-    result.push_back('\"');
-    return result;
-}
-
-[[nodiscard]] std::string buildTraceRawPayload(const Message& traceMessage) {
-    std::string reasonArray{"["};
-    const auto& reasonEntries = traceMessage.reason();
-    for (std::size_t index = 0U; index < reasonEntries.size(); ++index) {
-        if (index > 0U) {
-            reasonArray.push_back(',');
-        }
-        reasonArray += "{\"message\":" + jsonEscapeString(reasonEntries[index].message)
-            + ",\"timestamp\":" + jsonEscapeString(reasonEntries[index].timestamp) + "}";
-    }
-    reasonArray.push_back(']');
-
-    const std::string valueText = std::holds_alternative<std::string>(traceMessage.value())
-        ? jsonEscapeString(std::get<std::string>(traceMessage.value()))
-        : std::to_string(std::get<double>(traceMessage.value()));
-
-    return std::string{R"({"message":{"topic":)"} + jsonEscapeString(traceMessage.topic())
-        + R"(,"value":)" + valueText
-        + R"(,"reason":)" + reasonArray + "}}";
-}
-
-[[nodiscard]] bool isDeletePayloadText(const std::string& payload) {
-    std::string trimmed = payload;
-    trimmed.erase(trimmed.begin(), std::ranges::find_if(trimmed, [](unsigned char currentChar) {
-        return std::isspace(currentChar) == 0;
-    }));
-    trimmed.erase(std::ranges::find_if(trimmed.rbegin(), trimmed.rend(), [](unsigned char currentChar) {
-        return std::isspace(currentChar) == 0;
-    }).base(), trimmed.end());
-    return trimmed == "delete";
-}
-
-[[nodiscard]] bool isRuleNodeStructureValid(const RuleTreeNode& node) {
-    return node.isObject()
-        && node.asObject().contains("topic")
-        && node.asObject().at("topic").isString();
-}
-
-[[nodiscard]] std::string publishFailureCategoryToText(const PublishFailureCategory categoryValue) {
-    switch (categoryValue) {
-    case PublishFailureCategory::None:
-        return "none";
-    case PublishFailureCategory::Disconnected:
-        return "disconnected";
-    case PublishFailureCategory::AckTimeout:
-        return "ack_timeout";
-    case PublishFailureCategory::WriteFailed:
-        return "write_failed";
-    case PublishFailureCategory::CallbackMissing:
-        return "callback_missing";
-    case PublishFailureCategory::Unknown:
-        return "unknown";
-    }
-
-    return "unknown";
-}
-
-[[nodiscard]] RuleTreeNode::Object* ensureRulesObject(RuleTreeNode* rootNode) {
-    if (!rootNode->isObject()) {
-        rootNode->value = RuleTreeNode::Object{};
-    }
-
-    auto& rootObject = std::get<RuleTreeNode::Object>(rootNode->value);
-    if (!rootObject.contains("rules") || !rootObject["rules"].isObject()) {
-        rootObject["rules"] = RuleTreeNode{RuleTreeNode::Object{}};
-    }
-
-    return &std::get<RuleTreeNode::Object>(rootObject["rules"].value);
-}
-
-[[nodiscard]] std::optional<std::string> readStringField(
-    const RuleTreeNode::Object& objectNode,
-    const std::string& fieldName) {
-    if (!objectNode.contains(fieldName)) {
-        return std::nullopt;
-    }
-    const RuleTreeNode& fieldNode = objectNode.at(fieldName);
-    if (!fieldNode.isString()) {
-        return std::nullopt;
-    }
-    return fieldNode.asString();
-}
-
 } // namespace
 
 AutomationClientComponent::AutomationClientComponent(AutomationClientConfig config)
@@ -362,17 +53,17 @@ void AutomationClientComponent::handleMessage(const Message& message) {
     processPendingPublishQueue();
     logIncomingMessageIfEnabled(message);
 
-    if (isDebugTopic(message.topic())) {
+    if (automation_control_topics::isDebugTopic(message.topic(), std::string{k_debug_topic_prefix})) {
         handleDebugMessage(message);
         return;
     }
 
-    if (isManagementTopic(message.topic())) {
+    if (automation_control_topics::isManagementTopic(message.topic(), config_.managementTopicPrefix)) {
         handleManagementMessage(message);
         return;
     }
 
-    if (isMonitoringTopic(message.topic())) {
+    if (automation_control_topics::isMonitoringTopic(message.topic(), config_.monitorTopicPrefix)) {
         handleMonitoringMessage(message);
         return;
     }
@@ -452,7 +143,7 @@ bool AutomationClientComponent::loadRulesFromFileStore() {
         if (!rulesRoot_.isObject()) {
             rulesRoot_ = RuleTreeNode{RuleTreeNode::Object{}};
         }
-        RuleTreeNode::Object* rulesObject = ensureRulesObject(&rulesRoot_);
+        RuleTreeNode::Object* rulesObject = automation_rule_tree_access::ensureRulesObject(&rulesRoot_);
         (void)rulesObject;
         refreshDynamicSubscriptionsLocked();
         return true;
@@ -468,7 +159,7 @@ bool AutomationClientComponent::loadRulesFromFileStore() {
         return false;
     }
 
-    const std::optional<RuleTreeNode> parsed = parseJsonNode(response->body);
+    const std::optional<RuleTreeNode> parsed = automation_rule_json::parseJsonNode(response->body);
     if (!parsed.has_value()) {
         std::cerr << "automation_client[error] op=filestore_get path=" << config_.rulesKeyPath
                   << " status=" << response->status
@@ -480,7 +171,7 @@ bool AutomationClientComponent::loadRulesFromFileStore() {
 
     std::lock_guard<std::mutex> lock{stateMutex_};
     rulesRoot_ = parsed.value();
-    RuleTreeNode::Object* rulesObject = ensureRulesObject(&rulesRoot_);
+    RuleTreeNode::Object* rulesObject = automation_rule_tree_access::ensureRulesObject(&rulesRoot_);
     (void)rulesObject;
     refreshDynamicSubscriptionsLocked();
     return true;
@@ -493,7 +184,7 @@ bool AutomationClientComponent::persistRulesToFileStore() const {
 
     const std::string payloadText = [this]() {
         std::lock_guard<std::mutex> lock{stateMutex_};
-        return toJsonText(rulesRoot_);
+        return automation_rule_json::toJsonText(rulesRoot_);
     }();
 
     return persistRulesPayloadToFileStore(payloadText);
@@ -525,12 +216,16 @@ void AutomationClientComponent::handleMonitoringMessage(const Message& message) 
     }
 
     const auto& payloadText = std::get<std::string>(message.value());
-    const std::optional<std::string> keyPath = extractMonitoringKeyPath(payloadText);
+    const std::optional<std::string> keyPath = automation_rule_json::extractStringFieldFromObjectPayload(
+        payloadText,
+        "keyPath");
     if (!keyPath.has_value() || *keyPath != config_.rulesKeyPath) {
         return;
     }
 
-    const std::optional<std::string> changeType = extractMonitoringChangeType(payloadText);
+    const std::optional<std::string> changeType = automation_rule_json::extractStringFieldFromObjectPayload(
+        payloadText,
+        "changeType");
     if (changeType.has_value() && *changeType == "deleted") {
         return;
     }
@@ -544,7 +239,9 @@ void AutomationClientComponent::handleMonitoringMessage(const Message& message) 
 }
 
 void AutomationClientComponent::handleManagementMessage(const Message& message) {
-    const std::optional<std::string> ruleName = extractRuleNameFromManagementTopic(message.topic());
+    const std::optional<std::string> ruleName = automation_control_topics::extractRuleNameFromManagementTopic(
+        message.topic(),
+        config_.managementTopicPrefix);
     if (!ruleName.has_value()) {
         return;
     }
@@ -555,16 +252,16 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
     }
 
     const auto& payloadText = std::get<std::string>(message.value());
-    if (isDeletePayloadText(payloadText)) {
+    if (automation_control_topics::isDeletePayloadText(payloadText)) {
         RuleTreeNode stagedRulesRoot{};
         {
             std::lock_guard<std::mutex> lock{stateMutex_};
             stagedRulesRoot = rulesRoot_;
-            RuleTreeNode::Object* rulesObject = ensureRulesObject(&stagedRulesRoot);
+            RuleTreeNode::Object* rulesObject = automation_rule_tree_access::ensureRulesObject(&stagedRulesRoot);
             rulesObject->erase(*ruleName);
         }
 
-        if (!persistRulesPayloadToFileStore(toJsonText(stagedRulesRoot))) {
+        if (!persistRulesPayloadToFileStore(automation_rule_json::toJsonText(stagedRulesRoot))) {
             publishManagementAck(*ruleName, "persist_failed");
             return;
         }
@@ -579,8 +276,8 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
         return;
     }
 
-    const std::optional<RuleTreeNode> parsedRule = parseJsonNode(payloadText);
-    if (!parsedRule.has_value() || !isRuleNodeStructureValid(*parsedRule)) {
+    const std::optional<RuleTreeNode> parsedRule = automation_rule_json::parseJsonNode(payloadText);
+    if (!parsedRule.has_value() || !RuleRuntimeEngine::isRuleNodeStructureValid(*parsedRule)) {
         publishManagementAck(*ruleName, "validation_failed");
         return;
     }
@@ -592,7 +289,7 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
     }
 
     {
-        RuleTreeNode::Object* rulesObject = ensureRulesObject(&stagedRulesRoot);
+        RuleTreeNode::Object* rulesObject = automation_rule_tree_access::ensureRulesObject(&stagedRulesRoot);
 
         RuleTreeNode ruleNode = *parsedRule;
         auto& ruleObject = std::get<RuleTreeNode::Object>(ruleNode.value);
@@ -603,7 +300,7 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
         (*rulesObject)[*ruleName] = std::move(ruleNode);
     }
 
-    if (!persistRulesPayloadToFileStore(toJsonText(stagedRulesRoot))) {
+    if (!persistRulesPayloadToFileStore(automation_rule_json::toJsonText(stagedRulesRoot))) {
         publishManagementAck(*ruleName, "persist_failed");
         return;
     }
@@ -621,7 +318,9 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
 void AutomationClientComponent::handleDebugMessage(const Message& message) {
     std::vector<std::string> traceEntries{};
 
-    const std::optional<std::string> ruleLink = extractRuleLinkFromDebugTopic(message.topic());
+    const std::optional<std::string> ruleLink = automation_control_topics::extractRuleLinkFromDebugTopic(
+        message.topic(),
+        std::string{k_debug_topic_prefix});
 
     std::string resolvedRulePath{};
     std::optional<RuleTreeNode> ruleNode;
@@ -638,11 +337,11 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
     std::string traceValue{"error"};
 
     if (!ruleLink.has_value()) {
-        appendTraceEntry(&traceEntries, "debug:error invalid debug topic shape");
+        automation_trace_format::appendTraceEntry(&traceEntries, "debug:error invalid debug topic shape");
     } else if (!ruleNode.has_value()) {
-        appendTraceEntry(&traceEntries, "debug:rule lookup failed link=" + *ruleLink);
+        automation_trace_format::appendTraceEntry(&traceEntries, "debug:rule lookup failed link=" + *ruleLink);
     } else {
-        appendTraceEntry(&traceEntries, "debug:rule path=" + resolvedRulePath);
+        automation_trace_format::appendTraceEntry(&traceEntries, "debug:rule path=" + resolvedRulePath);
         try {
             const InternalVariables internalVariables{
                 InternalVariables::GeoCoordinates{.longitude = config_.longitude, .latitude = config_.latitude}};
@@ -657,7 +356,7 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
                 }
             }
         } catch (...) {
-            appendTraceEntry(&traceEntries, "debug:error internal variable calculation failed");
+            automation_trace_format::appendTraceEntry(&traceEntries, "debug:error internal variable calculation failed");
         }
 
         std::vector<std::string> evaluationTrace{};
@@ -665,37 +364,39 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
             *ruleNode,
             variablesSnapshot,
             &evaluationTrace);
-        appendExplainTraceEntries(&traceEntries, evaluationTrace, std::string{});
+        automation_trace_format::appendExplainTraceEntries(&traceEntries, evaluationTrace, std::string{});
 
         if (!result.success) {
             traceValue = "error";
             if (!result.errors.empty()) {
-                appendTraceEntry(&traceEntries, "debug:error " + result.errors.front());
+                automation_trace_format::appendTraceEntry(&traceEntries, "debug:error " + result.errors.front());
             }
         } else if (!result.triggered || (result.messages.empty() && !result.message.has_value())) {
             traceValue = "not_triggered";
-            appendTraceEntry(&traceEntries, "debug:result no outbound message");
+            automation_trace_format::appendTraceEntry(&traceEntries, "debug:result no outbound message");
         } else {
             traceValue = "triggered";
             if (!result.messages.empty()) {
                 if (result.messages.size() == 1U) {
-                    appendTraceEntry(&traceEntries, "debug:result outbound topic=" + result.messages.front().topic());
+                    automation_trace_format::appendTraceEntry(&traceEntries, "debug:result outbound topic=" + result.messages.front().topic());
                 } else {
-                    appendTraceEntry(&traceEntries,
+                    automation_trace_format::appendTraceEntry(&traceEntries,
                                      "debug:result outbound topics=" + std::to_string(result.messages.size()));
                 }
             } else {
-                appendTraceEntry(&traceEntries, "debug:result outbound topic=" + result.message->topic());
+                automation_trace_format::appendTraceEntry(&traceEntries, "debug:result outbound topic=" + result.message->topic());
             }
         }
     }
 
-    const std::string traceTopic = buildTraceTopicFromRuleLink(ruleLink.value_or(std::string{"invalid"}));
+    const std::string traceTopic = automation_control_topics::buildTraceTopicFromRuleLink(
+        std::string{k_debug_topic_prefix},
+        ruleLink.value_or(std::string{"invalid"}));
     Message traceMessage{traceTopic, traceValue, Qos::AtLeastOnce, false};
     for (const auto& traceEntry : traceEntries | std::views::reverse) {
         traceMessage.addReason(traceEntry);
     }
-    traceMessage.setRawPayload(buildTraceRawPayload(traceMessage));
+    traceMessage.setRawPayload(automation_trace_format::buildTraceRawPayload(traceMessage));
 
     if (!tryPublishMessage(traceMessage, "debug_trace")) {
         enqueuePendingPublish(traceMessage, "debug_trace");
@@ -703,9 +404,15 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
 }
 
 void AutomationClientComponent::handleDomainMessage(const Message& message) {
+    const auto nowTime = std::chrono::system_clock::now();
     {
         std::lock_guard<std::mutex> lock{stateMutex_};
-        runtimeVariables_[message.topic()] = messageValueToExpressionValue(message.value());
+        runtimeVariables_[message.topic()] = automation_message_values::toExpressionValue(message.value());
+        RuleRuntimeEngine::ingestDomainMessageEvent(
+            message,
+            nowTime,
+            config_.motionTopics,
+            &runtimeEventState_);
     }
 
     evaluateAndPublishRules();
@@ -720,19 +427,18 @@ void AutomationClientComponent::refreshDynamicSubscriptionsLocked() {
 }
 
 void AutomationClientComponent::evaluateAndPublishRules() {
-    RuleTreeNode rulesSnapshot;
     ExpressionEvaluator::VariableMap variablesSnapshot;
     {
         std::lock_guard<std::mutex> lock{stateMutex_};
-        rulesSnapshot = rulesRoot_;
         variablesSnapshot = runtimeVariables_;
     }
+
+    const auto evaluationTime = std::chrono::system_clock::now();
 
     try {
         const InternalVariables internalVariables{
             InternalVariables::GeoCoordinates{.longitude = config_.longitude, .latitude = config_.latitude}};
-        const InternalVariables::VariableMap internalValues = internalVariables.calculate(
-            std::chrono::system_clock::now());
+        const InternalVariables::VariableMap internalValues = internalVariables.calculate(evaluationTime);
         for (const auto& [variableName, variableValue] : internalValues) {
             if (std::holds_alternative<double>(variableValue)) {
                 variablesSnapshot[variableName] = std::get<double>(variableValue);
@@ -747,7 +453,18 @@ void AutomationClientComponent::evaluateAndPublishRules() {
               << std::flush;
     }
 
-    const RulesTreeProcessingResult result = RulesTreeProcessor::process(rulesSnapshot, variablesSnapshot);
+    RuleRuntimeProcessingResult result;
+    {
+        std::lock_guard<std::mutex> lock{stateMutex_};
+        result = RuleRuntimeEngine::processRules(
+            rulesRoot_,
+            variablesSnapshot,
+            evaluationTime,
+            &runtimeEventState_,
+            &runtimeDeliveryState_);
+        RuleRuntimeEngine::clearNonMotionEvents(&runtimeEventState_);
+    }
+
     if (result.messages.empty()) {
         return;
     }
@@ -760,62 +477,14 @@ void AutomationClientComponent::evaluateAndPublishRules() {
 
     std::lock_guard<std::mutex> lock{stateMutex_};
     for (const auto& outputMessage : result.messages) {
-        runtimeVariables_[outputMessage.topic()] = messageValueToExpressionValue(outputMessage.value());
+        runtimeVariables_[outputMessage.topic()] = automation_message_values::toExpressionValue(outputMessage.value());
     }
-}
-
-bool AutomationClientComponent::isMonitoringTopic(const std::string& topicName) const {
-    return startsWithText(topicName, config_.monitorTopicPrefix + "/");
-}
-
-bool AutomationClientComponent::isManagementTopic(const std::string& topicName) const {
-    return startsWithText(topicName, config_.managementTopicPrefix + "/") && endsWithSetSuffix(topicName);
-}
-
-bool AutomationClientComponent::isDebugTopic(const std::string& topicName) {
-    return startsWithText(topicName, std::string{k_debug_topic_prefix}) && endsWithDebugSuffix(topicName);
-}
-
-std::optional<std::string> AutomationClientComponent::extractRuleNameFromManagementTopic(
-    const std::string& topicName) const {
-    const std::string prefix = config_.managementTopicPrefix + "/";
-    if (!startsWithText(topicName, prefix) || !endsWithSetSuffix(topicName)) {
-        return std::nullopt;
-    }
-
-    const std::size_t startIndex = prefix.size();
-    const std::size_t endIndex = topicName.size() - k_management_suffix_length;
-    if (endIndex <= startIndex) {
-        return std::nullopt;
-    }
-
-    return topicName.substr(startIndex, endIndex - startIndex);
-}
-
-std::optional<std::string> AutomationClientComponent::extractRuleLinkFromDebugTopic(
-    const std::string& topicName) {
-    const std::string prefixText{k_debug_topic_prefix};
-    if (!startsWithText(topicName, prefixText) || !endsWithDebugSuffix(topicName)) {
-        return std::nullopt;
-    }
-
-    const std::size_t startIndex = prefixText.size();
-    const std::size_t endIndex = topicName.size() - k_debug_suffix_length;
-    if (endIndex <= startIndex) {
-        return std::nullopt;
-    }
-
-    const std::string ruleLink = topicName.substr(startIndex, endIndex - startIndex);
-    if (ruleLink.empty()) {
-        return std::nullopt;
-    }
-    return std::string{ruleLink};
 }
 
 std::optional<RuleTreeNode> AutomationClientComponent::findRuleNodeByLink(
     const std::string& ruleLink,
     std::string* resolvedPath) const {
-    const std::vector<std::string> ruleSegments = splitPathSegments(ruleLink);
+    const std::vector<std::string> ruleSegments = automation_rule_lookup::splitPathSegments(ruleLink);
     if (ruleSegments.empty()) {
         return std::nullopt;
     }
@@ -826,130 +495,19 @@ std::optional<RuleTreeNode> AutomationClientComponent::findRuleNodeByLink(
         }
     };
 
-    const std::vector<std::vector<std::string>> candidatePaths = buildRuleLookupCandidates(ruleSegments);
+    const std::vector<std::vector<std::string>> candidatePaths = automation_rule_lookup::buildRuleLookupCandidates(ruleSegments);
     for (const auto& candidatePath : candidatePaths) {
-        const std::optional<RuleTreeNode> candidateNode = findNodeByPathSegments(rulesRoot_, candidatePath);
+        const std::optional<RuleTreeNode> candidateNode = automation_rule_lookup::findNodeByPathSegments(rulesRoot_, candidatePath);
         if (!candidateNode.has_value()) {
             continue;
         }
-        setResolvedPath(joinPathSegments(candidatePath));
+        setResolvedPath(automation_rule_lookup::joinPathSegments(candidatePath));
         return candidateNode;
     }
 
     return std::nullopt;
 }
 
-std::string AutomationClientComponent::buildTraceTopicFromRuleLink(const std::string& ruleLink) {
-    return std::string{k_debug_topic_prefix} + ruleLink + "/trace";
-}
-
-std::optional<std::string> AutomationClientComponent::extractMonitoringKeyPath(const std::string& payload) {
-    const std::optional<RuleTreeNode> parsed = parseJsonNode(payload);
-    if (!parsed.has_value() || !parsed->isObject()) {
-        return std::nullopt;
-    }
-
-    return readStringField(parsed->asObject(), "keyPath");
-}
-
-std::optional<std::string> AutomationClientComponent::extractMonitoringChangeType(const std::string& payload) {
-    const std::optional<RuleTreeNode> parsed = parseJsonNode(payload);
-    if (!parsed.has_value() || !parsed->isObject()) {
-        return std::nullopt;
-    }
-
-    return readStringField(parsed->asObject(), "changeType");
-}
-
-std::optional<RuleTreeNode> AutomationClientComponent::parseJsonNode(const std::string& payload) {
-    const RuleTreeJsonReadResult readResult = RulesTreeJsonReader::parseJsonText(payload);
-    if (!readResult.success || !readResult.errors.empty()) {
-        return std::nullopt;
-    }
-    return readResult.root;
-}
-
-std::string AutomationClientComponent::toJsonText(const RuleTreeNode& node) {
-    if (std::holds_alternative<std::monostate>(node.value)) {
-        return "null";
-    }
-    if (std::holds_alternative<bool>(node.value)) {
-        return std::get<bool>(node.value) ? "true" : "false";
-    }
-    if (std::holds_alternative<double>(node.value)) {
-        std::ostringstream stream;
-        stream << std::get<double>(node.value);
-        return stream.str();
-    }
-    if (std::holds_alternative<std::string>(node.value)) {
-        std::string escaped{"\""};
-        for (const char currentChar : std::get<std::string>(node.value)) {
-            if (currentChar == '\\' || currentChar == '\"') {
-                escaped.push_back('\\');
-            }
-            escaped.push_back(currentChar);
-        }
-        escaped.push_back('\"');
-        return escaped;
-    }
-    if (std::holds_alternative<RuleTreeNode::Array>(node.value)) {
-        const auto& arrayValue = std::get<RuleTreeNode::Array>(node.value);
-        std::string jsonText{"["};
-        for (std::size_t index = 0U; index < arrayValue.size(); ++index) {
-            if (index > 0U) {
-                jsonText.push_back(',');
-            }
-            jsonText.append(toJsonText(arrayValue[index]));
-        }
-        jsonText.push_back(']');
-        return jsonText;
-    }
-
-    const auto& objectValue = std::get<RuleTreeNode::Object>(node.value);
-    std::string jsonText{"{"};
-    bool firstEntry = true;
-    for (const auto& [keyText, valueNode] : objectValue) {
-        if (!firstEntry) {
-            jsonText.push_back(',');
-        }
-        firstEntry = false;
-        jsonText.append(toJsonText(RuleTreeNode{std::string{keyText}}));
-        jsonText.push_back(':');
-        jsonText.append(toJsonText(valueNode));
-    }
-    jsonText.push_back('}');
-    return jsonText;
-}
-
-ExpressionEvaluator::Value AutomationClientComponent::messageValueToExpressionValue(const Value& messageValue) {
-    if (std::holds_alternative<std::string>(messageValue)) {
-        return std::get<std::string>(messageValue);
-    }
-    return std::get<double>(messageValue);
-}
-
-std::string AutomationClientComponent::valueToLogText(const Value& messageValue) {
-    if (std::holds_alternative<std::string>(messageValue)) {
-        return std::get<std::string>(messageValue);
-    }
-
-    std::ostringstream textStream;
-    textStream << std::get<double>(messageValue);
-    return textStream.str();
-}
-
-std::string AutomationClientComponent::qosToLogText(const Qos qosValue) {
-    switch (qosValue) {
-    case Qos::AtMostOnce:
-        return "0";
-    case Qos::AtLeastOnce:
-        return "1";
-    case Qos::ExactlyOnce:
-        return "2";
-    }
-
-    return "unknown";
-}
 
 void AutomationClientComponent::logIncomingMessageIfEnabled(const Message& message) const {
     if (!config_.logIncomingMessages) {
@@ -957,9 +515,9 @@ void AutomationClientComponent::logIncomingMessageIfEnabled(const Message& messa
     }
 
     std::cout << "automation_client[in] topic=" << message.topic()
-              << " qos=" << qosToLogText(message.qos())
+              << " qos=" << automation_message_values::qosToLogText(message.qos())
               << " retain=" << (message.retain() ? "1" : "0")
-              << " value=" << valueToLogText(message.value())
+              << " value=" << automation_message_values::valueToLogText(message.value())
               << '\n';
     for (const auto& entry : message.reason()) {
         std::cout << "  reason: [" << entry.timestamp << "] " << entry.message << '\n';
@@ -973,9 +531,9 @@ void AutomationClientComponent::logOutgoingMessageIfEnabled(const Message& messa
     }
 
     std::cout << "automation_client[out] topic=" << message.topic()
-              << " qos=" << qosToLogText(message.qos())
+              << " qos=" << automation_message_values::qosToLogText(message.qos())
               << " retain=" << (message.retain() ? "1" : "0")
-              << " value=" << valueToLogText(message.value())
+              << " value=" << automation_message_values::valueToLogText(message.value())
               << '\n';
     for (const auto& entry : message.reason()) {
         std::cout << "  reason: [" << entry.timestamp << "] " << entry.message << '\n';
@@ -987,9 +545,9 @@ void AutomationClientComponent::logOutgoingFailure(const Message& message,
                                                    const std::string& categoryText,
                                                    const std::string& reasonText) {
     std::cerr << "automation_client[out-fail] topic=" << message.topic()
-              << " qos=" << qosToLogText(message.qos())
+              << " qos=" << automation_message_values::qosToLogText(message.qos())
               << " retain=" << (message.retain() ? "1" : "0")
-              << " value=" << valueToLogText(message.value())
+              << " value=" << automation_message_values::valueToLogText(message.value())
               << " category=" << categoryText
               << " reason=" << reasonText
               << '\n'
@@ -1015,9 +573,10 @@ bool AutomationClientComponent::tryPublishMessage(const Message& message,
             const std::string reasonText = publishResult.reason.empty()
                 ? "unspecified"
                 : publishResult.reason;
-            logOutgoingFailure(message,
-                               publishFailureCategoryToText(publishResult.category),
-                               reasonText);
+            logOutgoingFailure(
+                message,
+                automation_publish_failure_text::toText(publishResult.category),
+                reasonText);
             return false;
         }
 
