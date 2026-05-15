@@ -10,9 +10,7 @@
 #include <array>
 #include <cctype>
 #include <chrono>
-#include <ctime>
 #include <exception>
-#include <iomanip>
 #include <iostream>
 #include <ranges>
 #include <sstream>
@@ -148,21 +146,67 @@ void appendTraceEntry(std::vector<std::string>* traceEntries, const std::string&
     traceEntries->push_back(traceText);
 }
 
-[[nodiscard]] std::string variableValueToDebugText(const ExpressionEvaluator::Value& value) {
-    if (std::holds_alternative<std::string>(value)) {
-        return "string:" + std::get<std::string>(value);
+[[nodiscard]] std::string buildDebugExplainSummary(
+    const std::string& topic,
+    const std::string& checkReason,
+    const std::string& valueReason) {
+    if (topic.empty()) {
+        return {};
     }
-    if (std::holds_alternative<double>(value)) {
-        return "number:" + std::to_string(std::get<double>(value));
+
+    std::string summary = "Rule: " + topic;
+    if (!checkReason.empty()) {
+        summary += ", check: " + checkReason;
     }
-    if (std::holds_alternative<bool>(value)) {
-        return std::get<bool>(value) ? "bool:true" : "bool:false";
+    if (!valueReason.empty()) {
+        summary += ", value: " + valueReason;
     }
-    const auto timePointValue = std::get<std::chrono::system_clock::time_point>(value);
-    const std::time_t timeT = std::chrono::system_clock::to_time_t(timePointValue);
-    std::ostringstream stream;
-    stream << std::put_time(std::gmtime(&timeT), "%Y-%m-%dT%H:%M:%SZ");
-    return "time:" + stream.str();
+    return summary;
+}
+
+void appendExplainTraceEntries(
+    std::vector<std::string>* traceEntries,
+    const std::vector<std::string>& evaluationTrace,
+    const std::string& fallbackTopic) {
+    constexpr std::string_view k_topic_prefix{"rule-evaluation:topic="};
+    constexpr std::string_view k_check_reason_prefix{"rule-evaluation:check reason="};
+    constexpr std::string_view k_value_reason_prefix{"rule-evaluation:value reason="};
+    constexpr std::string_view k_error_prefix{"rule-evaluation:error "};
+
+    std::string topic = fallbackTopic;
+    std::string checkReason;
+    std::string valueReason;
+
+    for (const auto& entry : evaluationTrace) {
+        if (topic.empty() && entry.starts_with(k_topic_prefix)) {
+            topic = entry.substr(k_topic_prefix.size());
+            continue;
+        }
+        if (checkReason.empty() && entry.starts_with(k_check_reason_prefix)) {
+            checkReason = entry.substr(k_check_reason_prefix.size());
+            continue;
+        }
+        if (valueReason.empty() && entry.starts_with(k_value_reason_prefix)) {
+            valueReason = entry.substr(k_value_reason_prefix.size());
+            continue;
+        }
+        if (entry.starts_with(k_error_prefix)) {
+            appendTraceEntry(traceEntries, "debug:error " + entry.substr(k_error_prefix.size()));
+        }
+    }
+
+    const std::string summary = buildDebugExplainSummary(topic, checkReason, valueReason);
+    if (!summary.empty()) {
+        appendTraceEntry(traceEntries, "debug:explain " + summary);
+        return;
+    }
+
+    if (!checkReason.empty()) {
+        appendTraceEntry(traceEntries, "debug:explain check: " + checkReason);
+    }
+    if (!valueReason.empty()) {
+        appendTraceEntry(traceEntries, "debug:explain value: " + valueReason);
+    }
 }
 
 [[nodiscard]] std::string jsonEscapeString(const std::string& text) {
@@ -576,14 +620,8 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void AutomationClientComponent::handleDebugMessage(const Message& message) {
     std::vector<std::string> traceEntries{};
-    appendTraceEntry(&traceEntries, "debug:request topic=" + message.topic());
 
     const std::optional<std::string> ruleLink = extractRuleLinkFromDebugTopic(message.topic());
-    if (ruleLink.has_value()) {
-        appendTraceEntry(&traceEntries, "debug:rule-link normalized=" + *ruleLink);
-    } else {
-        appendTraceEntry(&traceEntries, "debug:rule-link normalization failed");
-    }
 
     std::string resolvedRulePath{};
     std::optional<RuleTreeNode> ruleNode;
@@ -604,7 +642,6 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
     } else if (!ruleNode.has_value()) {
         appendTraceEntry(&traceEntries, "debug:rule lookup failed link=" + *ruleLink);
     } else {
-        appendTraceEntry(&traceEntries, "debug:rule lookup ok");
         appendTraceEntry(&traceEntries, "debug:rule path=" + resolvedRulePath);
         try {
             const InternalVariables internalVariables{
@@ -619,13 +656,8 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
                         variableValue);
                 }
             }
-            appendTraceEntry(&traceEntries, "debug:internal variables calculated");
         } catch (...) {
             appendTraceEntry(&traceEntries, "debug:error internal variable calculation failed");
-        }
-
-        for (const auto& [varName, varValue] : variablesSnapshot) {
-            appendTraceEntry(&traceEntries, "debug:var " + varName + "=" + variableValueToDebugText(varValue));
         }
 
         std::vector<std::string> evaluationTrace{};
@@ -633,9 +665,7 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
             *ruleNode,
             variablesSnapshot,
             &evaluationTrace);
-        for (const auto& traceLine : evaluationTrace) {
-            appendTraceEntry(&traceEntries, traceLine);
-        }
+        appendExplainTraceEntries(&traceEntries, evaluationTrace, std::string{});
 
         if (!result.success) {
             traceValue = "error";

@@ -349,6 +349,7 @@ The previous JSON-array expression tree is replaced by this textual DSL in new r
 
 Supported fields:
 - topic
+- active
 - value
 - time
 - duration
@@ -361,6 +362,13 @@ Supported fields:
 - noneOf
 - allow
 - durationWithoutMovementInMinutes
+
+## active field semantics
+
+- Optional boolean flag to disable a rule entirely.
+- When `active: false`, the rule is unconditionally skipped by the rule processor.
+- When absent or `active: true`, the rule is evaluated normally.
+- Skipped rules are not counted as processed rules.
 
 Not supported field name:
 - oneOf (runtime schema and evaluator use anyOf, not oneOf)

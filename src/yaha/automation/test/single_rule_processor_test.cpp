@@ -400,7 +400,7 @@ TEST_CASE("single_rule_processor_trace_includes_reasoned_check_and_value", "[yah
         [](const std::string& entry) {
             return entry.find("rule-evaluation:var $SYS/presence=") != std::string::npos;
         });
-    REQUIRE(hasVariableSnapshot);
+    REQUIRE_FALSE(hasVariableSnapshot);
 }
 
 TEST_CASE("single_rule_processor_adds_trace_reason_to_emitted_message_when_program_executed", "[yaha][automation]") {

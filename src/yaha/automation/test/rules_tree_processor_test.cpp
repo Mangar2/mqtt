@@ -120,4 +120,32 @@ TEST_CASE("rules_tree_processor_emitted_messages_include_evaluation_trace_reason
     const std::string& summaryMessage = result.messages.front().reason().front().message;
     REQUIRE(summaryMessage.starts_with("Rule: house/light/set"));
 }
+
+TEST_CASE("rules_tree_processor_skips_rules_with_active_false", "[yaha][automation]") {
+    yaha::RuleTreeNode::Object activeRule;
+    activeRule.insert({"topic", yaha::RuleTreeNode{"house/light/set"}});
+    activeRule.insert({"value", yaha::RuleTreeNode{"on"}});
+
+    yaha::RuleTreeNode::Object inactiveRule;
+    inactiveRule.insert({"active", yaha::RuleTreeNode{false}});
+    inactiveRule.insert({"topic", yaha::RuleTreeNode{"house/pump/set"}});
+    inactiveRule.insert({"value", yaha::RuleTreeNode{"on"}});
+
+    yaha::RuleTreeNode::Object rulesObject;
+    rulesObject.insert({"enabledRule", yaha::RuleTreeNode{std::move(activeRule)}});
+    rulesObject.insert({"disabledRule", yaha::RuleTreeNode{std::move(inactiveRule)}});
+
+    yaha::RuleTreeNode::Object rootObject;
+    rootObject.insert({"rules", yaha::RuleTreeNode{std::move(rulesObject)}});
+
+    const yaha::RulesTreeProcessingResult result = yaha::RulesTreeProcessor::process(
+        yaha::RuleTreeNode{std::move(rootObject)},
+        yaha::ExpressionEvaluator::VariableMap{});
+
+    REQUIRE(result.success);
+    REQUIRE(result.processedRules == 1U);
+    REQUIRE(result.triggeredRules == 1U);
+    REQUIRE(result.messages.size() == 1U);
+    REQUIRE(result.messages.front().topic() == "house/light/set");
+}
 // NOLINTEND(readability-function-cognitive-complexity)

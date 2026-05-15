@@ -156,7 +156,7 @@ Behavior:
 - Aggregates all used variable names from evaluated expressions.
 - `processWithTrace` emits ordered trace text entries for each decision step
   (shape validation, check decision, check reason text, value reason text,
-  variable snapshots, qos parse, event-gate summary, and final trigger status)
+  qos parse, event-gate summary, and final trigger status)
   into the caller-provided trace list.
 
 Error behavior:
@@ -172,7 +172,8 @@ Public contract:
 
 Behavior:
 - Traverses the complete structured rules tree recursively.
-- Treats every object that contains `topic` as one rule object.
+- Treats every object that contains `topic` as one rule object, unless `active: false` is set.
+- Rule objects with `active: false` are unconditionally skipped and not counted as processed.
 - Processes each discovered rule via `SingleRuleProcessor`.
 - Aggregates outbound messages, used variables, processed/triggered counters, and path-aware errors.
 - Continues processing remaining rules even if one rule fails.

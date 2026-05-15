@@ -887,12 +887,12 @@ TEST_CASE("automation_component_debug_trace_request_resolves_hierarchical_rule_l
     REQUIRE(std::holds_alternative<std::string>(published.back().value()));
     REQUIRE(std::get<std::string>(published.back().value()) == "triggered");
 
-    const bool hasLookupOkTrace = std::ranges::any_of(
+    const bool hasRulePathTrace = std::ranges::any_of(
         published.back().reason(),
         [](const yaha::ReasonEntry& reasonEntry) {
-            return reasonEntry.message.find("debug:rule lookup ok") != std::string::npos;
+            return reasonEntry.message.find("debug:rule path=") != std::string::npos;
         });
-    REQUIRE(hasLookupOkTrace);
+    REQUIRE(hasRulePathTrace);
 
     component.close();
 }
@@ -938,15 +938,16 @@ TEST_CASE("automation_component_debug_trace_raw_payload_escapes_multiline_reason
 
     const std::optional<std::string>& rawPayload = published.back().rawPayload();
     REQUIRE(rawPayload.has_value());
-    REQUIRE(rawPayload->find("\\n") != std::string::npos);
+    REQUIRE(rawPayload->find('\n') == std::string::npos);
+    REQUIRE(rawPayload->find("debug:explain Rule: house/light/set") != std::string::npos);
 
     REQUIRE_FALSE(published.back().reason().empty());
-    const bool hasCheckReasonTrace = std::ranges::any_of(
+    const bool hasExplainTrace = std::ranges::any_of(
         published.back().reason(),
         [](const yaha::ReasonEntry& reasonEntry) {
-            return reasonEntry.message.find("rule-evaluation:check reason=") != std::string::npos;
+            return reasonEntry.message.find("debug:explain Rule: house/light/set") != std::string::npos;
         });
-    REQUIRE(hasCheckReasonTrace);
+    REQUIRE(hasExplainTrace);
 
     component.close();
 }

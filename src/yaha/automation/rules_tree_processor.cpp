@@ -15,7 +15,18 @@ namespace {
 }
 
 [[nodiscard]] bool isRuleObjectNode(const RuleTreeNode& node) {
-    return node.isObject() && node.asObject().contains("topic");
+    if (!node.isObject()) {
+        return false;
+    }
+    const auto& obj = node.asObject();
+    if (!obj.contains("topic")) {
+        return false;
+    }
+    const auto activeIt = obj.find("active");
+    const bool isDisabled = activeIt != obj.end()
+        && std::holds_alternative<bool>(activeIt->second.value)
+        && !std::get<bool>(activeIt->second.value);
+    return !isDisabled;
 }
 
 void processNodeRecursively(

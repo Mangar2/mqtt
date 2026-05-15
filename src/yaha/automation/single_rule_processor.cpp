@@ -2,13 +2,9 @@
 
 #include <algorithm>
 #include <cctype>
-#include <chrono>
 #include <cmath>
-#include <ctime>
-#include <iomanip>
-#include <sstream>
-#include <string>
 #include <ranges>
+#include <string>
 #include <utility>
 
 #include "yaha/automation/expression_parser.h"
@@ -31,24 +27,6 @@ void appendTrace(std::vector<std::string>* traceEntries, const std::string& trac
         return;
     }
     traceEntries->push_back(traceText);
-}
-
-[[nodiscard]] std::string variableValueToTraceText(const ExpressionEvaluator::Value& value) {
-    if (std::holds_alternative<std::string>(value)) {
-        return "string:" + std::get<std::string>(value);
-    }
-    if (std::holds_alternative<double>(value)) {
-        return "number:" + std::to_string(std::get<double>(value));
-    }
-    if (std::holds_alternative<bool>(value)) {
-        return std::get<bool>(value) ? "bool:true" : "bool:false";
-    }
-    // time_point — format as ISO-like string
-    const auto timePointValue = std::get<std::chrono::system_clock::time_point>(value);
-    const std::time_t timeT = std::chrono::system_clock::to_time_t(timePointValue);
-    std::ostringstream stream;
-    stream << std::put_time(std::gmtime(&timeT), "%Y-%m-%dT%H:%M:%SZ");
-    return "time:" + stream.str();
 }
 
 [[nodiscard]] std::string evaluationValueToTraceText(const ExpressionEvaluationResult::Value& value) {
@@ -195,16 +173,6 @@ void appendTrace(std::vector<std::string>* traceEntries, const std::string& trac
 
     errors->emplace_back("qos must be 0, 1, or 2");
     return Qos::AtLeastOnce;
-}
-
-void appendVariableTraceEntry(std::vector<std::string>* traceEntries,
-                              const std::string& variableName,
-                              const std::string& variableValueText) {
-    std::string traceText{"rule-evaluation:var "};
-    traceText.append(variableName);
-    traceText.push_back('=');
-    traceText.append(variableValueText);
-    appendTrace(traceEntries, traceText);
 }
 
 [[nodiscard]] bool handleStringTopic(
@@ -428,13 +396,6 @@ SingleRuleProcessingResult SingleRuleProcessor::processWithTrace(
         ExpressionEvaluationResult checkResult;
         if (!evaluateScript("check", checkNode.asString(), variables, &checkResult, &result.errors)) {
             appendTrace(traceEntries, "rule-evaluation:error check evaluation failed");
-            for (const auto& varName : checkResult.usedVariables) {
-                const auto varIt = variables.find(varName);
-                const std::string varVal = (varIt != variables.end())
-                    ? variableValueToTraceText(varIt->second)
-                    : "undefined";
-                appendVariableTraceEntry(traceEntries, varName, varVal);
-            }
             return result;
         }
 
@@ -444,13 +405,6 @@ SingleRuleProcessingResult SingleRuleProcessor::processWithTrace(
                     "rule-evaluation:check result=" + evaluationValueToTraceText(checkResult.value));
         if (!checkResult.reason.empty()) {
             appendTrace(traceEntries, "rule-evaluation:check reason=" + checkResult.reason);
-        }
-        for (const auto& varName : checkResult.usedVariables) {
-            const auto varIt = variables.find(varName);
-            const std::string varVal = (varIt != variables.end())
-                ? variableValueToTraceText(varIt->second)
-                : "undefined";
-            appendVariableTraceEntry(traceEntries, varName, varVal);
         }
         appendTrace(traceEntries,
                     std::string{"rule-evaluation:check decision="}
@@ -519,13 +473,6 @@ SingleRuleProcessingResult SingleRuleProcessor::processWithTrace(
                             "rule-evaluation:value result=" + evaluationValueToTraceText(valueResult.value));
                 if (!valueResult.reason.empty()) {
                     appendTrace(traceEntries, "rule-evaluation:value reason=" + valueResult.reason);
-                }
-                for (const auto& varName : valueResult.usedVariables) {
-                    const auto varIt = variables.find(varName);
-                    const std::string varVal = (varIt != variables.end())
-                        ? variableValueToTraceText(varIt->second)
-                        : "undefined";
-                    appendVariableTraceEntry(traceEntries, varName, varVal);
                 }
             }
         } else if (std::holds_alternative<double>(valueNode.value)) {
