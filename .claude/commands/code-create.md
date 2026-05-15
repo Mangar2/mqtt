@@ -128,6 +128,14 @@ observable behaviour difference. There is no exception to this rule.
 Only generate or rewrite code when behaviour actually changes.
 Never regenerate a file with identical behaviour. If a file is correct, leave it.
 
+## MessageStore subscription guardrail
+
+For msgstore ini work keep subscriptions additive unless user requests delete.
+Must keep full message coverage with topic #.
+When user requests all monitoring messages ensure topic $MONITOR/# exists.
+Never replace existing subscription entries when user asked only add or rollback.
+For rollback deletion requests restore exact deleted subscription lines only.
+
 ## Unit-test specification (TEST_SPEC.md)
 
 For every directory with testable code, maintain a `TEST_SPEC.md`.

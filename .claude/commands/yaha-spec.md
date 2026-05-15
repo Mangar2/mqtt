@@ -28,6 +28,14 @@ $SYS is reserved for broker-originated messages per MQTT specification. YAHA com
 All system/control messages that were previously sent to $SYS/... in the legacy JS code must be specified as $MONITOR/... in the new specs.
 When reading legacy code, treat any $SYS topic as $MONITOR for the new spec.
 
+## MessageStore subscription guardrail
+
+MessageStore must subscribe all message traffic.
+Use topic # for full catch all coverage.
+If user asks monitoring coverage too add topic $MONITOR/#.
+Never remove or replace existing subscriptions unless user says exact delete.
+If user says rollback deletion restore exact deleted subscription lines only.
+
 ## Reason trace rule
 
 Reason is an append-only event trace bound to one message.

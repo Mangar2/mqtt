@@ -51,6 +51,20 @@ TEST_CASE("load_ini_with_sections_and_values", "[ini]") {
     removeDirectoryQuiet(tempDir);
 }
 
+void validateMultiValueSection(
+    const yaha::IniDocument::Section* section,
+    const std::string& key,
+    const std::vector<std::string>& expectedValues) {
+    REQUIRE(section != nullptr);
+    const auto values = section->valuesForKey(key);
+    REQUIRE(values.has_value());
+    REQUIRE(values->size() == expectedValues.size());
+    for (size_t i = 0; i < expectedValues.size(); ++i) {
+        REQUIRE((*values)[i] == expectedValues[i]);
+    }
+    REQUIRE(section->lastValueForKey(key).value_or("") == expectedValues.back());
+}
+
 TEST_CASE("load_ini_preserves_multivalue_keys", "[ini]") {
     const auto tempDir = makeTempDirectory();
     const auto iniPath = writeIniFile(tempDir,
@@ -61,15 +75,8 @@ TEST_CASE("load_ini_preserves_multivalue_keys", "[ini]") {
 
     const auto document = yaha::IniDocument::loadFromFile(iniPath);
 
-    const auto* section = document.findSection("tracing");
-    REQUIRE(section != nullptr);
-    const auto values = section->valuesForKey("module");
-    REQUIRE(values.has_value());
-    REQUIRE(values->size() == 3U);
-    REQUIRE((*values)[0] == "broker");
-    REQUIRE((*values)[1] == "connection");
-    REQUIRE((*values)[2] == "monitoring");
-    REQUIRE(section->lastValueForKey("module").value_or("") == "monitoring");
+    validateMultiValueSection(document.findSection("tracing"), "module",
+        {"broker", "connection", "monitoring"});
 
     removeDirectoryQuiet(tempDir);
 }
@@ -154,6 +161,19 @@ TEST_CASE("load_ini_rejects_indented_hash_line", "[ini]") {
     } catch (const std::exception& exceptionValue) {
         REQUIRE(std::string{exceptionValue.what()}.find("missing '='") != std::string::npos);
     }
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_ini_keeps_empty_section", "[ini]") {
+    const auto tempDir = makeTempDirectory();
+    const auto iniPath = writeIniFile(tempDir,
+        "[subscriptions]\n");
+
+    const auto document = yaha::IniDocument::loadFromFile(iniPath);
+    const auto* section = document.findSection("subscriptions");
+    REQUIRE(section != nullptr);
+    REQUIRE(section->entries().empty());
 
     removeDirectoryQuiet(tempDir);
 }

@@ -15,6 +15,7 @@ Unit tests for generic INI parser behavior and multi-value key support.
 | `load_ini_supports_hash_and_inline_comments` | Accept hash line comments and semicolon inline comments without breaking MQTT wildcard/hash values | file with `#` line comment, semicolon inline comment, and `#` in values | parser succeeds, line comments are removed and `#` values remain intact |
 | `load_ini_treats_hash_at_column_zero_as_comment_even_with_equals` | Hash comments at column zero are always comment lines | line starting with `#` and containing `=` | parser ignores the line as comment |
 | `load_ini_rejects_indented_hash_line` | Hash comment marker is only valid at column zero | indented line starting with spaces then `#` | parser treats line as invalid key/value and reports missing `=` |
+| `load_ini_keeps_empty_section` | Empty section headers must still be discoverable | INI file containing only `[subscriptions]` | `findSection("subscriptions")` returns a section with zero entries |
 | `ini_document_parses_bounded_unsigned` | Generic typed parser bounds handling | direct parse calls | valid values pass, invalid values fail |
 | `ini_document_reads_optional_unsigned_field` | Optional typed field read | valid `mqtt.port` plus missing key | present key parses, missing key is no-op |
 | `ini_document_reports_invalid_unsigned_field` | Invalid typed field read | `port = invalid` | read fails and returns standardized error text with `section.key` |

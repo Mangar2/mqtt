@@ -642,12 +642,21 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
             for (const auto& errorText : result.errors) {
                 appendTraceEntry(&traceEntries, "debug:error " + errorText);
             }
-        } else if (!result.triggered || !result.message.has_value()) {
+        } else if (!result.triggered || (result.messages.empty() && !result.message.has_value())) {
             traceValue = "not_triggered";
             appendTraceEntry(&traceEntries, "debug:result no outbound message");
         } else {
             traceValue = "triggered";
-            appendTraceEntry(&traceEntries, "debug:result outbound topic=" + result.message->topic());
+            if (!result.messages.empty()) {
+                if (result.messages.size() == 1U) {
+                    appendTraceEntry(&traceEntries, "debug:result outbound topic=" + result.messages.front().topic());
+                } else {
+                    appendTraceEntry(&traceEntries,
+                                     "debug:result outbound topics=" + std::to_string(result.messages.size()));
+                }
+            } else {
+                appendTraceEntry(&traceEntries, "debug:result outbound topic=" + result.message->topic());
+            }
         }
     }
 

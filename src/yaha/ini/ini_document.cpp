@@ -137,6 +137,9 @@ IniDocument IniDocument::loadFromFile(const std::filesystem::path& filePath) {
                     filePath.string(),
                     lineNumber)};
             }
+
+            // Keep empty sections visible for callers that validate section presence.
+            (void)parsed.sections_[currentSection];
             continue;
         }
 

@@ -22,7 +22,8 @@ namespace yaha {
 struct SingleRuleProcessingResult {
     bool success{false};                           ///< True when processing completed without errors.
     bool triggered{false};                         ///< True when check condition is active and message is emitted.
-    std::optional<Message> message;                ///< Produced outbound message when triggered.
+    std::vector<Message> messages;                 ///< Produced outbound messages when triggered.
+    std::optional<Message> message;                ///< Legacy first outbound message when triggered.
     std::set<std::string> usedVariables;           ///< Variables touched by evaluated expressions.
     std::vector<std::string> errors;               ///< Processing errors.
 };
@@ -35,13 +36,13 @@ public:
     /**
      * @brief Processes one rule object from the structured rules tree.
      *
-     * Required fields:
-     * - `topic` as string
-     * - `value` as number or expression string
-     *
-     * Optional fields:
-     * - `check` as expression string (defaults to true)
-     * - `qos` as number 0..2 (defaults to 1)
+    * Required fields:
+    * - `topic` as string, array of strings, or object map topic -> value
+    * - `value` as number or expression string when `topic` is a string or array
+    *
+    * Optional fields:
+    * - `check` as expression string (defaults to true)
+    * - `qos` as number 0..2 (defaults to 1)
      *
      * @param ruleNode Rule object node.
      * @param variables Runtime external variables.

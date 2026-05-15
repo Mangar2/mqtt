@@ -114,7 +114,7 @@ TEST_CASE("mqtt_client_subscription_parser_reads_topic_qos_map", "[mqtt_client]"
     const auto tempDir = makeTempDirectory();
     const auto iniPath = writeIniFile(tempDir,
         "[subscriptions]\n"
-        "# = 1\n"
+        " # = 1\n"
         "home/+/state = 0\n");
 
     yaha::IniDocument document{};
@@ -134,7 +134,7 @@ TEST_CASE("mqtt_client_subscription_parser_rejects_invalid_qos", "[mqtt_client]"
     const auto tempDir = makeTempDirectory();
     const auto iniPath = writeIniFile(tempDir,
         "[subscriptions]\n"
-        "# = 9\n");
+        " # = 9\n");
 
     yaha::IniDocument document{};
     std::string errorMessage{};

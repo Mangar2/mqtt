@@ -143,10 +143,11 @@ Public contract:
 
 Behavior:
 - Processes one complete rule object with fields `topic`, `check`, `value`, and optional `qos`.
+- `topic` can be a string, an array of strings, or an object map of topic -> value.
 - Evaluates `check` expression first (defaults to true when omitted).
 - If `check` resolves false, returns success with `triggered=false` and no message.
-- Evaluates `value` as expression string or accepts numeric/bool literal node values.
-- Builds one outbound `Message` when rule is triggered and value is valid.
+- Evaluates `value` as expression string or accepts numeric/bool literal node values when a shared value is used.
+- Builds one or many outbound `Message` objects when rule is triggered and value is valid.
 - When at least one executable program was evaluated (`check` expression or
   string-based `value` expression), the emitted rule message `reason` chain is
   populated with the full ordered evaluation trace.

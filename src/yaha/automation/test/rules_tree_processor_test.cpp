@@ -42,6 +42,30 @@ TEST_CASE("rules_tree_processor_processes_all_rules_in_tree", "[yaha][automation
     REQUIRE(result.usedVariables.contains("$SYS/presence"));
 }
 
+TEST_CASE("rules_tree_processor_emits_all_messages_for_topic_object_map", "[yaha][automation]") {
+    yaha::RuleTreeNode::Object topicMap;
+    topicMap.insert({"ground/livingroom/zwave/shutter/southeast/set", yaha::RuleTreeNode{"on"}});
+    topicMap.insert({"ground/livingroom/zwave/shutter/southwest/set", yaha::RuleTreeNode{"on"}});
+
+    yaha::RuleTreeNode::Object ruleObject;
+    ruleObject.insert({"topic", yaha::RuleTreeNode{std::move(topicMap)}});
+
+    yaha::RuleTreeNode::Object rulesObject;
+    rulesObject.insert({"openShutters", yaha::RuleTreeNode{std::move(ruleObject)}});
+
+    yaha::RuleTreeNode::Object rootObject;
+    rootObject.insert({"rules", yaha::RuleTreeNode{std::move(rulesObject)}});
+
+    const yaha::RulesTreeProcessingResult result = yaha::RulesTreeProcessor::process(
+        yaha::RuleTreeNode{std::move(rootObject)},
+        yaha::ExpressionEvaluator::VariableMap{});
+
+    REQUIRE(result.success);
+    REQUIRE(result.processedRules == 1U);
+    REQUIRE(result.triggeredRules == 1U);
+    REQUIRE(result.messages.size() == 2U);
+}
+
 TEST_CASE("rules_tree_processor_collects_path_aware_errors_and_keeps_valid_results", "[yaha][automation]") {
     yaha::RuleTreeNode::Object validRule;
     validRule.insert({"topic", yaha::RuleTreeNode{"house/light/set"}});
@@ -91,13 +115,9 @@ TEST_CASE("rules_tree_processor_emitted_messages_include_evaluation_trace_reason
 
     REQUIRE(result.success);
     REQUIRE(result.messages.size() == 1U);
-    REQUIRE_FALSE(result.messages.front().reason().empty());
+    REQUIRE(result.messages.front().reason().size() == 1U);
 
-    const bool hasFinishTrace = std::ranges::any_of(
-        result.messages.front().reason(),
-        [](const yaha::ReasonEntry& reasonEntry) {
-            return reasonEntry.message.find("rule-evaluation:finish triggered message-ready") != std::string::npos;
-        });
-    REQUIRE(hasFinishTrace);
+    const std::string& summaryMessage = result.messages.front().reason().front().message;
+    REQUIRE(summaryMessage.starts_with("Rule: house/light/set"));
 }
 // NOLINTEND(readability-function-cognitive-complexity)

@@ -37,6 +37,11 @@ void processNodeRecursively(
                 formattedError.append(errorText);
                 result->errors.push_back(std::move(formattedError));
             }
+        } else if (ruleResult.triggered && !ruleResult.messages.empty()) {
+            result->triggeredRules += 1U;
+            for (const auto& message : ruleResult.messages) {
+                result->messages.push_back(message.clone());
+            }
         } else if (ruleResult.triggered && ruleResult.message.has_value()) {
             result->triggeredRules += 1U;
             result->messages.push_back(ruleResult.message.value().clone());

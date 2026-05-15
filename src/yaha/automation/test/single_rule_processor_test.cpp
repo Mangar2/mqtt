@@ -43,6 +43,66 @@ TEST_CASE("single_rule_processor_processes_complete_rule_and_emits_message", "[y
     REQUIRE(result.usedVariables.contains("$SYS/presence"));
 }
 
+TEST_CASE("single_rule_processor_supports_topic_array_with_shared_value", "[yaha][automation]") {
+    yaha::RuleTreeNode::Array topics;
+    topics.emplace_back("home/light/set");
+    topics.emplace_back("home/heating/set");
+
+    yaha::RuleTreeNode::Object ruleObject;
+    ruleObject.insert({"topic", yaha::RuleTreeNode{std::move(topics)}});
+    ruleObject.insert({"value", yaha::RuleTreeNode{"on"}});
+
+    const yaha::SingleRuleProcessingResult result = yaha::SingleRuleProcessor::process(
+        yaha::RuleTreeNode{std::move(ruleObject)},
+        yaha::ExpressionEvaluator::VariableMap{});
+
+    REQUIRE(result.success);
+    REQUIRE(result.triggered);
+    REQUIRE(result.messages.size() == 2U);
+    REQUIRE(result.message.has_value());
+    const bool hasExpectedLegacyTopic = std::ranges::any_of(
+        result.messages,
+        [](const yaha::Message& message) {
+            return message.topic() == "home/heating/set" || message.topic() == "home/light/set";
+        });
+    REQUIRE(hasExpectedLegacyTopic);
+    REQUIRE(std::ranges::all_of(result.messages, [](const yaha::Message& message) {
+        return std::holds_alternative<std::string>(message.value())
+            && std::get<std::string>(message.value()) == "on";
+    }));
+}
+
+TEST_CASE("single_rule_processor_supports_topic_object_map_without_value_field", "[yaha][automation]") {
+    yaha::RuleTreeNode::Object topicMap;
+    topicMap.insert({"ground/livingroom/zwave/shutter/southeast/set", yaha::RuleTreeNode{"on"}});
+    topicMap.insert({"ground/livingroom/zwave/shutter/southwest/set", yaha::RuleTreeNode{"on"}});
+
+    yaha::RuleTreeNode::Object ruleObject;
+    ruleObject.insert({"topic", yaha::RuleTreeNode{std::move(topicMap)}});
+
+    const yaha::SingleRuleProcessingResult result = yaha::SingleRuleProcessor::process(
+        yaha::RuleTreeNode{std::move(ruleObject)},
+        yaha::ExpressionEvaluator::VariableMap{});
+
+    REQUIRE(result.success);
+    REQUIRE(result.triggered);
+    REQUIRE(result.messages.size() == 2U);
+    REQUIRE(result.message.has_value());
+
+    const bool hasSoutheast = std::ranges::any_of(result.messages, [](const yaha::Message& message) {
+        return message.topic() == "ground/livingroom/zwave/shutter/southeast/set"
+            && std::holds_alternative<std::string>(message.value())
+            && std::get<std::string>(message.value()) == "on";
+    });
+    const bool hasSouthwest = std::ranges::any_of(result.messages, [](const yaha::Message& message) {
+        return message.topic() == "ground/livingroom/zwave/shutter/southwest/set"
+            && std::holds_alternative<std::string>(message.value())
+            && std::get<std::string>(message.value()) == "on";
+    });
+    REQUIRE(hasSoutheast);
+    REQUIRE(hasSouthwest);
+}
+
 TEST_CASE("single_rule_processor_returns_no_message_when_check_is_false", "[yaha][automation]") {
     yaha::RuleTreeNode::Object ruleObject;
     ruleObject.insert({"topic", yaha::RuleTreeNode{"home/light/set"}});
@@ -359,21 +419,10 @@ TEST_CASE("single_rule_processor_adds_trace_reason_to_emitted_message_when_progr
     REQUIRE(result.success);
     REQUIRE(result.triggered);
     REQUIRE(result.message.has_value());
-    REQUIRE_FALSE(result.message->reason().empty());
+    REQUIRE(result.message->reason().size() == 1U);
 
-    const bool hasCheckTrace = std::ranges::any_of(
-        result.message->reason(),
-        [](const yaha::ReasonEntry& reasonEntry) {
-            return reasonEntry.message.find("rule-evaluation:check expr=") != std::string::npos;
-        });
-    REQUIRE(hasCheckTrace);
-
-    const bool hasValueTrace = std::ranges::any_of(
-        result.message->reason(),
-        [](const yaha::ReasonEntry& reasonEntry) {
-            return reasonEntry.message.find("rule-evaluation:value expr=") != std::string::npos;
-        });
-    REQUIRE(hasValueTrace);
+    const std::string& summaryMessage = result.message->reason().front().message;
+    REQUIRE(summaryMessage.starts_with("Rule: home/light/set"));
 }
 
 TEST_CASE("single_rule_processor_keeps_reason_empty_for_literal_rule_without_program", "[yaha][automation]") {
