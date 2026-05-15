@@ -2,7 +2,11 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 #include <string>
 #include <utility>
 
@@ -21,6 +25,24 @@ void appendTrace(std::vector<std::string>* traceEntries, const std::string& trac
         return;
     }
     traceEntries->push_back(traceText);
+}
+
+[[nodiscard]] std::string variableValueToTraceText(const ExpressionEvaluator::Value& value) {
+    if (std::holds_alternative<std::string>(value)) {
+        return "string:" + std::get<std::string>(value);
+    }
+    if (std::holds_alternative<double>(value)) {
+        return "number:" + std::to_string(std::get<double>(value));
+    }
+    if (std::holds_alternative<bool>(value)) {
+        return std::get<bool>(value) ? "bool:true" : "bool:false";
+    }
+    // time_point — format as ISO-like string
+    const auto tp = std::get<std::chrono::system_clock::time_point>(value);
+    const std::time_t timeT = std::chrono::system_clock::to_time_t(tp);
+    std::ostringstream stream;
+    stream << std::put_time(std::gmtime(&timeT), "%Y-%m-%dT%H:%M:%SZ");
+    return "time:" + stream.str();
 }
 
 [[nodiscard]] std::string evaluationValueToTraceText(const ExpressionEvaluationResult::Value& value) {
@@ -217,11 +239,18 @@ SingleRuleProcessingResult SingleRuleProcessor::processWithTrace(
             return result;
         }
 
-        appendTrace(traceEntries, "rule-evaluation:check parse and evaluate");
+        appendTrace(traceEntries, "rule-evaluation:check expr=" + checkNode.asString());
 
         ExpressionEvaluationResult checkResult;
         if (!evaluateScript("check", checkNode.asString(), variables, &checkResult, &result.errors)) {
             appendTrace(traceEntries, "rule-evaluation:error check evaluation failed");
+            for (const auto& varName : checkResult.usedVariables) {
+                const auto varIt = variables.find(varName);
+                const std::string varVal = (varIt != variables.end())
+                    ? variableValueToTraceText(varIt->second)
+                    : "undefined";
+                appendTrace(traceEntries, "rule-evaluation:var " + varName + "=" + varVal);
+            }
             return result;
         }
 
@@ -229,6 +258,13 @@ SingleRuleProcessingResult SingleRuleProcessor::processWithTrace(
         isTriggered = asBooleanValue(checkResult.value);
         appendTrace(traceEntries,
                     "rule-evaluation:check result=" + evaluationValueToTraceText(checkResult.value));
+        for (const auto& varName : checkResult.usedVariables) {
+            const auto varIt = variables.find(varName);
+            const std::string varVal = (varIt != variables.end())
+                ? variableValueToTraceText(varIt->second)
+                : "undefined";
+            appendTrace(traceEntries, "rule-evaluation:var " + varName + "=" + varVal);
+        }
         appendTrace(traceEntries,
                     std::string{"rule-evaluation:check decision="}
                         + (isTriggered ? "trigger" : "skip"));
@@ -252,7 +288,7 @@ SingleRuleProcessingResult SingleRuleProcessor::processWithTrace(
     Value messageValue;
     const RuleTreeNode& valueNode = ruleObject.at("value");
     if (valueNode.isString()) {
-        appendTrace(traceEntries, "rule-evaluation:value parse and evaluate");
+        appendTrace(traceEntries, "rule-evaluation:value expr=" + valueNode.asString());
         ExpressionEvaluationResult valueResult;
         if (!evaluateScript("value", valueNode.asString(), variables, &valueResult, &result.errors)) {
             appendTrace(traceEntries, "rule-evaluation:error value evaluation failed");

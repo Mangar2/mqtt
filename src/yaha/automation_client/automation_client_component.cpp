@@ -9,7 +9,9 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <ctime>
 #include <exception>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -83,6 +85,56 @@ void appendTraceEntry(std::vector<std::string>* traceEntries, const std::string&
         return;
     }
     traceEntries->push_back(traceText);
+}
+
+[[nodiscard]] std::string variableValueToDebugText(const ExpressionEvaluator::Value& value) {
+    if (std::holds_alternative<std::string>(value)) {
+        return "string:" + std::get<std::string>(value);
+    }
+    if (std::holds_alternative<double>(value)) {
+        return "number:" + std::to_string(std::get<double>(value));
+    }
+    if (std::holds_alternative<bool>(value)) {
+        return std::get<bool>(value) ? "bool:true" : "bool:false";
+    }
+    const auto tp = std::get<std::chrono::system_clock::time_point>(value);
+    const std::time_t timeT = std::chrono::system_clock::to_time_t(tp);
+    std::ostringstream stream;
+    stream << std::put_time(std::gmtime(&timeT), "%Y-%m-%dT%H:%M:%SZ");
+    return "time:" + stream.str();
+}
+
+[[nodiscard]] std::string jsonEscapeString(const std::string& text) {
+    std::string result{"\""};
+    for (const char currentChar : text) {
+        if (currentChar == '\\' || currentChar == '\"') {
+            result.push_back('\\');
+        }
+        result.push_back(currentChar);
+    }
+    result.push_back('\"');
+    return result;
+}
+
+[[nodiscard]] std::string buildTraceRawPayload(const Message& traceMessage) {
+    std::string reasonArray{"["};
+    const auto& reasonEntries = traceMessage.reason();
+    for (std::size_t index = 0U; index < reasonEntries.size(); ++index) {
+        if (index > 0U) {
+            reasonArray.push_back(',');
+        }
+        reasonArray += "{\"message\":" + jsonEscapeString(reasonEntries[index].message)
+            + ",\"timestamp\":" + jsonEscapeString(reasonEntries[index].timestamp) + "}";
+    }
+    reasonArray.push_back(']');
+
+    const std::string valueText = std::holds_alternative<std::string>(traceMessage.value())
+        ? jsonEscapeString(std::get<std::string>(traceMessage.value()))
+        : std::to_string(std::get<double>(traceMessage.value()));
+
+    return "{\"message\":{\"topic\":" + jsonEscapeString(traceMessage.topic())
+        + ",\"value\":" + valueText
+        + ",\"reason\":" + reasonArray + "}}";
 }
 
 [[nodiscard]] bool isDeletePayloadText(const std::string& payload) {
@@ -460,6 +512,10 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
             appendTraceEntry(&traceEntries, "debug:error internal variable calculation failed");
         }
 
+        for (const auto& [varName, varValue] : variablesSnapshot) {
+            appendTraceEntry(&traceEntries, "debug:var " + varName + "=" + variableValueToDebugText(varValue));
+        }
+
         std::vector<std::string> evaluationTrace{};
         const SingleRuleProcessingResult result = SingleRuleProcessor::processWithTrace(
             *ruleNode,
@@ -489,6 +545,7 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
     for (auto iterator = traceEntries.rbegin(); iterator != traceEntries.rend(); ++iterator) {
         traceMessage.addReason(*iterator);
     }
+    traceMessage.setRawPayload(buildTraceRawPayload(traceMessage));
 
     if (!tryPublishMessage(traceMessage, "debug_trace")) {
         enqueuePendingPublish(traceMessage, "debug_trace");
@@ -789,8 +846,11 @@ void AutomationClientComponent::logIncomingMessageIfEnabled(const Message& messa
               << " qos=" << qosToLogText(message.qos())
               << " retain=" << (message.retain() ? "1" : "0")
               << " value=" << valueToLogText(message.value())
-              << '\n'
-              << std::flush;
+              << '\n';
+    for (const auto& entry : message.reason()) {
+        std::cout << "  reason: [" << entry.timestamp << "] " << entry.message << '\n';
+    }
+    std::cout << std::flush;
 }
 
 void AutomationClientComponent::logOutgoingMessageIfEnabled(const Message& message) const {
@@ -802,8 +862,11 @@ void AutomationClientComponent::logOutgoingMessageIfEnabled(const Message& messa
               << " qos=" << qosToLogText(message.qos())
               << " retain=" << (message.retain() ? "1" : "0")
               << " value=" << valueToLogText(message.value())
-              << '\n'
-              << std::flush;
+              << '\n';
+    for (const auto& entry : message.reason()) {
+        std::cout << "  reason: [" << entry.timestamp << "] " << entry.message << '\n';
+    }
+    std::cout << std::flush;
 }
 
 void AutomationClientComponent::logOutgoingFailure(const Message& message,
