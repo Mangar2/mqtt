@@ -113,6 +113,8 @@ Behavior:
   - `if(condition, trueValue, falseValue)`,
   - map declarations and map calls.
 - Tracks used variable names for dependency/telemetry handling.
+- Produces human-readable explanation text (`reason`) that mirrors original
+  decision mini-program wording style for trace diagnostics.
 
 Type behavior:
 - Runtime value supports string, number, bool, and time_point values.
@@ -122,6 +124,13 @@ Type behavior:
 
 Error behavior:
 - Fails with structured error list when variables are undefined or operand types are invalid.
+
+`ExpressionEvaluationResult` fields:
+- `success`: evaluation completed without errors.
+- `value`: resulting value.
+- `reason`: human-readable explanation of the selected decision/value branch.
+- `usedVariables`: referenced runtime variables.
+- `errors`: evaluation errors.
 
 ### Single rule end-to-end processor
 
@@ -140,8 +149,9 @@ Behavior:
 - Builds one outbound `Message` when rule is triggered and value is valid.
 - Aggregates all used variable names from evaluated expressions.
 - `processWithTrace` emits ordered trace text entries for each decision step
-  (shape validation, check decision, value mapping, qos parse, and final trigger
-  status) into the caller-provided trace list.
+  (shape validation, check decision, check reason text, value reason text,
+  variable snapshots, qos parse, event-gate summary, and final trigger status)
+  into the caller-provided trace list.
 
 Error behavior:
 - Fails on invalid rule structure, parse/evaluation errors, unsupported value result type, or invalid qos values.

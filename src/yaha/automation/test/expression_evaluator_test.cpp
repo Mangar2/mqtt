@@ -57,7 +57,7 @@ TEST_CASE("expression_evaluator_evaluates_if_expression", "[yaha][automation]") 
 }
 
 TEST_CASE("expression_evaluator_supports_time_arithmetic_in_minutes", "[yaha][automation]") {
-    const auto ast = parseScript("\"/time\" >= \"/sunrise\" - 10");
+    const auto ast = parseScript(R"("/time" >= "/sunrise" - 10)");
 
     yaha::ExpressionEvaluator::VariableMap vars;
     const auto day = std::chrono::sys_days{std::chrono::year{2026} / std::chrono::May / 4};
@@ -82,7 +82,7 @@ TEST_CASE("expression_evaluator_reports_undefined_variable", "[yaha][automation]
 }
 
 TEST_CASE("expression_evaluator_can_evaluate_program_from_rules_fixture", "[yaha][automation]") {
-    const auto ast = parseScript("if(\"/time\" < \"/sunrise\" + -15 and \"/time\" > \"7:00\" and \"/time\" < \"8:00\", on, off)");
+    const auto ast = parseScript(R"(if("/time" < "/sunrise" + -15 and "/time" > "7:00" and "/time" < "8:00", on, off))");
 
     yaha::ExpressionEvaluator::VariableMap vars;
     const auto day = std::chrono::sys_days{std::chrono::year{2026} / std::chrono::May / 4};
@@ -194,7 +194,7 @@ TEST_CASE("expression_evaluator_supports_neq_and_le_operators", "[yaha][automati
     REQUIRE(std::holds_alternative<bool>(neqResult.value));
     REQUIRE(std::get<bool>(neqResult.value));
 
-    const auto leAst = parseScript("\"07:00\" <= \"07:10\"");
+    const auto leAst = parseScript(R"("07:00" <= "07:10")");
     const yaha::ExpressionEvaluationResult leResult = yaha::ExpressionEvaluator::evaluate(
         leAst,
         yaha::ExpressionEvaluator::VariableMap{});
@@ -282,7 +282,7 @@ TEST_CASE("expression_evaluator_supports_time_arithmetic_for_string_time", "[yah
 }
 
 TEST_CASE("expression_evaluator_supports_hhmmss_and_rejects_invalid_time_text", "[yaha][automation]") {
-    const auto validAst = parseScript("\"07:00:05\" < \"07:00:10\"");
+    const auto validAst = parseScript(R"("07:00:05" < "07:00:10")");
     const yaha::ExpressionEvaluationResult validResult = yaha::ExpressionEvaluator::evaluate(
         validAst,
         yaha::ExpressionEvaluator::VariableMap{});
@@ -290,7 +290,7 @@ TEST_CASE("expression_evaluator_supports_hhmmss_and_rejects_invalid_time_text", 
     REQUIRE(std::holds_alternative<bool>(validResult.value));
     REQUIRE(std::get<bool>(validResult.value));
 
-    const auto invalidAst = parseScript("\"07:70\" < \"08:00\"");
+    const auto invalidAst = parseScript(R"("07:70" < "08:00")");
     const yaha::ExpressionEvaluationResult invalidResult = yaha::ExpressionEvaluator::evaluate(
         invalidAst,
         yaha::ExpressionEvaluator::VariableMap{});
@@ -339,7 +339,7 @@ TEST_CASE("expression_evaluator_supports_numeric_and_time_equality", "[yaha][aut
     REQUIRE(std::holds_alternative<bool>(numericResult.value));
     REQUIRE(std::get<bool>(numericResult.value));
 
-    const auto timeAst = parseScript("\"/time\" = \"09:00\"");
+    const auto timeAst = parseScript(R"("/time" = "09:00")");
     const auto day = std::chrono::sys_days{std::chrono::year{2026} / std::chrono::May / 4};
     yaha::ExpressionEvaluator::VariableMap timeVars;
     timeVars.insert({"/time", std::chrono::system_clock::time_point{day + std::chrono::hours{k_time_hour_nine}}});
@@ -377,4 +377,19 @@ TEST_CASE("expression_evaluator_applies_zero_truthiness", "[yaha][automation]") 
     REQUIRE(zeroResult.success);
     REQUIRE(std::holds_alternative<std::string>(zeroResult.value));
     REQUIRE(std::get<std::string>(zeroResult.value) == "off");
+}
+
+TEST_CASE("expression_evaluator_provides_human_readable_reason", "[yaha][automation]") {
+    const auto ast = parseScript("if($SYS/presence = awake, on, off)");
+
+    yaha::ExpressionEvaluator::VariableMap vars;
+    vars.insert({"$SYS/presence", std::string{"awake"}});
+
+    const yaha::ExpressionEvaluationResult result = yaha::ExpressionEvaluator::evaluate(ast, vars);
+
+    REQUIRE(result.success);
+    REQUIRE_FALSE(result.reason.empty());
+    REQUIRE(result.reason.find("$SYS/presence (awake) is = awake") != std::string::npos);
+    REQUIRE(result.reason.find("if ") != std::string::npos);
+    REQUIRE(result.reason.find(" then on") != std::string::npos);
 }

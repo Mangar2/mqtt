@@ -7,12 +7,14 @@
 #include "yaha/automation/single_rule_processor.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <chrono>
 #include <ctime>
 #include <exception>
 #include <iomanip>
 #include <iostream>
+#include <ranges>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -24,10 +26,12 @@ constexpr std::size_t k_management_suffix_length{4U};
 constexpr std::size_t k_debug_suffix_length{6U};
 constexpr int k_http_ok_status{200};
 constexpr std::size_t k_max_pending_publish_attempts{3U};
+constexpr unsigned char k_ascii_control_max{0x20U};
+constexpr unsigned char k_low_nibble_mask{0x0FU};
 constexpr std::string_view k_debug_topic_prefix{"$MONITOR/automation/"};
 
 [[nodiscard]] bool startsWithText(const std::string& textValue, const std::string& prefix) {
-    return textValue.size() >= prefix.size() && textValue.compare(0U, prefix.size(), prefix) == 0;
+    return textValue.starts_with(prefix);
 }
 
 [[nodiscard]] bool endsWithSetSuffix(const std::string& textValue) {
@@ -97,8 +101,8 @@ void appendTraceEntry(std::vector<std::string>* traceEntries, const std::string&
     if (std::holds_alternative<bool>(value)) {
         return std::get<bool>(value) ? "bool:true" : "bool:false";
     }
-    const auto tp = std::get<std::chrono::system_clock::time_point>(value);
-    const std::time_t timeT = std::chrono::system_clock::to_time_t(tp);
+    const auto timePointValue = std::get<std::chrono::system_clock::time_point>(value);
+    const std::time_t timeT = std::chrono::system_clock::to_time_t(timePointValue);
     std::ostringstream stream;
     stream << std::put_time(std::gmtime(&timeT), "%Y-%m-%dT%H:%M:%SZ");
     return "time:" + stream.str();
@@ -106,11 +110,41 @@ void appendTraceEntry(std::vector<std::string>* traceEntries, const std::string&
 
 [[nodiscard]] std::string jsonEscapeString(const std::string& text) {
     std::string result{"\""};
-    for (const char currentChar : text) {
-        if (currentChar == '\\' || currentChar == '\"') {
-            result.push_back('\\');
+    constexpr std::array<char, 16U> k_hex_digits{
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+    for (const unsigned char currentChar : text) {
+        switch (currentChar) {
+        case '\\':
+            result += "\\\\";
+            break;
+        case '\"':
+            result += "\\\"";
+            break;
+        case '\n':
+            result += "\\n";
+            break;
+        case '\r':
+            result += "\\r";
+            break;
+        case '\t':
+            result += "\\t";
+            break;
+        case '\b':
+            result += "\\b";
+            break;
+        case '\f':
+            result += "\\f";
+            break;
+        default:
+            if (currentChar < k_ascii_control_max) {
+                result += "\\u00";
+                result.push_back(k_hex_digits[(currentChar >> 4U) & k_low_nibble_mask]);
+                result.push_back(k_hex_digits[currentChar & k_low_nibble_mask]);
+            } else {
+                result.push_back(static_cast<char>(currentChar));
+            }
+            break;
         }
-        result.push_back(currentChar);
     }
     result.push_back('\"');
     return result;
@@ -132,17 +166,17 @@ void appendTraceEntry(std::vector<std::string>* traceEntries, const std::string&
         ? jsonEscapeString(std::get<std::string>(traceMessage.value()))
         : std::to_string(std::get<double>(traceMessage.value()));
 
-    return "{\"message\":{\"topic\":" + jsonEscapeString(traceMessage.topic())
-        + ",\"value\":" + valueText
-        + ",\"reason\":" + reasonArray + "}}";
+    return std::string{R"({"message":{"topic":)"} + jsonEscapeString(traceMessage.topic())
+        + R"(,"value":)" + valueText
+        + R"(,"reason":)" + reasonArray + "}}";
 }
 
 [[nodiscard]] bool isDeletePayloadText(const std::string& payload) {
     std::string trimmed = payload;
-    trimmed.erase(trimmed.begin(), std::find_if(trimmed.begin(), trimmed.end(), [](unsigned char currentChar) {
+    trimmed.erase(trimmed.begin(), std::ranges::find_if(trimmed, [](unsigned char currentChar) {
         return std::isspace(currentChar) == 0;
     }));
-    trimmed.erase(std::find_if(trimmed.rbegin(), trimmed.rend(), [](unsigned char currentChar) {
+    trimmed.erase(std::ranges::find_if(trimmed.rbegin(), trimmed.rend(), [](unsigned char currentChar) {
         return std::isspace(currentChar) == 0;
     }).base(), trimmed.end());
     return trimmed == "delete";
@@ -378,7 +412,7 @@ void AutomationClientComponent::handleMonitoringMessage(const Message& message) 
         return;
     }
 
-    const std::string& payloadText = std::get<std::string>(message.value());
+    const auto& payloadText = std::get<std::string>(message.value());
     const std::optional<std::string> keyPath = extractMonitoringKeyPath(payloadText);
     if (!keyPath.has_value() || *keyPath != config_.rulesKeyPath) {
         return;
@@ -408,7 +442,7 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
         return;
     }
 
-    const std::string& payloadText = std::get<std::string>(message.value());
+    const auto& payloadText = std::get<std::string>(message.value());
     if (isDeletePayloadText(payloadText)) {
         RuleTreeNode stagedRulesRoot{};
         {
@@ -471,8 +505,17 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
     publishManagementAck(*ruleName, "updated");
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void AutomationClientComponent::handleDebugMessage(const Message& message) {
+    std::vector<std::string> traceEntries{};
+    appendTraceEntry(&traceEntries, "debug:request topic=" + message.topic());
+
     const std::optional<std::string> ruleLink = extractRuleLinkFromDebugTopic(message.topic());
+    if (ruleLink.has_value()) {
+        appendTraceEntry(&traceEntries, "debug:rule-link normalized=" + *ruleLink);
+    } else {
+        appendTraceEntry(&traceEntries, "debug:rule-link normalization failed");
+    }
 
     std::string resolvedRulePath{};
     std::optional<RuleTreeNode> ruleNode;
@@ -486,7 +529,6 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
         variablesSnapshot = runtimeVariables_;
     }
 
-    std::vector<std::string> traceEntries{};
     std::string traceValue{"error"};
 
     if (!ruleLink.has_value()) {
@@ -494,9 +536,11 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
     } else if (!ruleNode.has_value()) {
         appendTraceEntry(&traceEntries, "debug:rule lookup failed link=" + *ruleLink);
     } else {
+        appendTraceEntry(&traceEntries, "debug:rule lookup ok");
+        appendTraceEntry(&traceEntries, "debug:rule path=" + resolvedRulePath);
         try {
             const InternalVariables internalVariables{
-                InternalVariables::GeoCoordinates{config_.longitude, config_.latitude}};
+                InternalVariables::GeoCoordinates{.longitude = config_.longitude, .latitude = config_.latitude}};
             const InternalVariables::VariableMap internalValues = internalVariables.calculate(
                 std::chrono::system_clock::now());
             for (const auto& [variableName, variableValue] : internalValues) {
@@ -521,7 +565,6 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
             *ruleNode,
             variablesSnapshot,
             &evaluationTrace);
-        appendTraceEntry(&traceEntries, "debug:rule path=" + resolvedRulePath);
         for (const auto& traceLine : evaluationTrace) {
             appendTraceEntry(&traceEntries, traceLine);
         }
@@ -542,8 +585,8 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
 
     const std::string traceTopic = buildTraceTopicFromRuleLink(ruleLink.value_or(std::string{"invalid"}));
     Message traceMessage{traceTopic, traceValue, Qos::AtLeastOnce, false};
-    for (auto iterator = traceEntries.rbegin(); iterator != traceEntries.rend(); ++iterator) {
-        traceMessage.addReason(*iterator);
+    for (const auto& traceEntry : traceEntries | std::views::reverse) {
+        traceMessage.addReason(traceEntry);
     }
     traceMessage.setRawPayload(buildTraceRawPayload(traceMessage));
 
@@ -580,7 +623,7 @@ void AutomationClientComponent::evaluateAndPublishRules() {
 
     try {
         const InternalVariables internalVariables{
-            InternalVariables::GeoCoordinates{config_.longitude, config_.latitude}};
+            InternalVariables::GeoCoordinates{.longitude = config_.longitude, .latitude = config_.latitude}};
         const InternalVariables::VariableMap internalValues = internalVariables.calculate(
             std::chrono::system_clock::now());
         for (const auto& [variableName, variableValue] : internalValues) {
@@ -921,7 +964,10 @@ bool AutomationClientComponent::tryPublishMessage(const Message& message,
 void AutomationClientComponent::enqueuePendingPublish(const Message& message,
                                                       const std::string& channelText) const {
     std::lock_guard<std::mutex> lock{pendingPublishQueueMutex_};
-    pendingPublishQueue_.push_back(PendingPublishEntry{message.clone(), channelText, 0U});
+    pendingPublishQueue_.push_back(PendingPublishEntry{
+        .message = message.clone(),
+        .channelText = channelText,
+        .attemptCount = 0U});
 }
 
 void AutomationClientComponent::processPendingPublishQueue() const {

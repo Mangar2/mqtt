@@ -28,6 +28,11 @@ struct MapRuntimeValue {
 
 using RuntimeValue = std::variant<std::string, double, bool, std::chrono::system_clock::time_point, MapRuntimeValue>;
 
+struct EvaluatedNode {
+    RuntimeValue value;
+    std::string reason;
+};
+
 [[nodiscard]] std::string toLower(std::string textValue) {
     std::ranges::transform(textValue, textValue.begin(), [](const unsigned char charValue) {
         return static_cast<char>(std::tolower(charValue));
@@ -176,25 +181,26 @@ public:
             return result;
         }
 
-        const auto evaluatedValue = eval(script_.resultExpression);
-        if (!evaluatedValue.has_value()) {
+        const auto evaluatedNode = eval(script_.resultExpression);
+        if (!evaluatedNode.has_value()) {
             result.errors = errors_;
             result.usedVariables = usedVariables_;
             return result;
         }
 
-        if (std::holds_alternative<std::string>(*evaluatedValue)) {
-            result.value = std::get<std::string>(*evaluatedValue);
-        } else if (std::holds_alternative<double>(*evaluatedValue)) {
-            result.value = std::get<double>(*evaluatedValue);
-        } else if (std::holds_alternative<bool>(*evaluatedValue)) {
-            result.value = std::get<bool>(*evaluatedValue);
-        } else if (std::holds_alternative<std::chrono::system_clock::time_point>(*evaluatedValue)) {
-            result.value = std::get<std::chrono::system_clock::time_point>(*evaluatedValue);
+        if (std::holds_alternative<std::string>(evaluatedNode->value)) {
+            result.value = std::get<std::string>(evaluatedNode->value);
+        } else if (std::holds_alternative<double>(evaluatedNode->value)) {
+            result.value = std::get<double>(evaluatedNode->value);
+        } else if (std::holds_alternative<bool>(evaluatedNode->value)) {
+            result.value = std::get<bool>(evaluatedNode->value);
+        } else if (std::holds_alternative<std::chrono::system_clock::time_point>(evaluatedNode->value)) {
+            result.value = std::get<std::chrono::system_clock::time_point>(evaluatedNode->value);
         } else {
             errors_.emplace_back("result expression must not evaluate to a map");
         }
 
+        result.reason = evaluatedNode->reason;
         result.success = errors_.empty();
         result.errors = errors_;
         result.usedVariables = usedVariables_;
@@ -202,7 +208,7 @@ public:
     }
 
 private:
-    [[nodiscard]] std::optional<RuntimeValue> eval(const ExprPtr& expression) {
+    [[nodiscard]] std::optional<EvaluatedNode> eval(const ExprPtr& expression) {
         if (!expression) {
             errors_.emplace_back("invalid null expression");
             return std::nullopt;
@@ -244,7 +250,7 @@ private:
         return std::nullopt;
     }
 
-    [[nodiscard]] std::optional<RuntimeValue> evalLiteralNode(const LiteralNode& literalNode) {
+    [[nodiscard]] std::optional<EvaluatedNode> evalLiteralNode(const LiteralNode& literalNode) {
         const auto& literalValue = literalNode.value;
         if (std::holds_alternative<std::string>(literalValue)) {
             const std::string textValue = std::get<std::string>(literalValue);
@@ -253,35 +259,41 @@ private:
                 if (variableIterator != variables_.end()) {
                     usedVariables_.insert(textValue);
                     if (std::holds_alternative<std::string>(variableIterator->second)) {
-                        return RuntimeValue{std::get<std::string>(variableIterator->second)};
+                        const RuntimeValue variableValue{std::get<std::string>(variableIterator->second)};
+                        return EvaluatedNode{.value = variableValue, .reason = textValue + " (" + valueToString(variableValue) + ")"};
                     }
                     if (std::holds_alternative<double>(variableIterator->second)) {
-                        return RuntimeValue{std::get<double>(variableIterator->second)};
+                        const RuntimeValue variableValue{std::get<double>(variableIterator->second)};
+                        return EvaluatedNode{.value = variableValue, .reason = textValue + " (" + valueToString(variableValue) + ")"};
                     }
                     if (std::holds_alternative<bool>(variableIterator->second)) {
-                        return RuntimeValue{std::get<bool>(variableIterator->second)};
+                        const RuntimeValue variableValue{std::get<bool>(variableIterator->second)};
+                        return EvaluatedNode{.value = variableValue, .reason = textValue + " (" + valueToString(variableValue) + ")"};
                     }
-                    return RuntimeValue{std::get<std::chrono::system_clock::time_point>(variableIterator->second)};
+                    const RuntimeValue variableValue{
+                        std::get<std::chrono::system_clock::time_point>(variableIterator->second)};
+                    return EvaluatedNode{.value = variableValue, .reason = textValue + " (" + valueToString(variableValue) + ")"};
                 }
             }
-            return RuntimeValue{textValue};
+            return EvaluatedNode{.value = RuntimeValue{textValue}, .reason = textValue};
         }
 
-        return RuntimeValue{std::get<double>(literalValue)};
+        const RuntimeValue numberValue{std::get<double>(literalValue)};
+        return EvaluatedNode{.value = numberValue, .reason = valueToString(numberValue)};
     }
 
-    [[nodiscard]] static std::optional<RuntimeValue> evalIdentifierNode(const IdentifierNode& identifierNode) {
+    [[nodiscard]] static std::optional<EvaluatedNode> evalIdentifierNode(const IdentifierNode& identifierNode) {
         const std::string identifierName = identifierNode.name;
         if (toLower(identifierName) == "true") {
-            return RuntimeValue{true};
+            return EvaluatedNode{.value = RuntimeValue{true}, .reason = "constant true"};
         }
         if (toLower(identifierName) == "false") {
-            return RuntimeValue{false};
+            return EvaluatedNode{.value = RuntimeValue{false}, .reason = "constant false"};
         }
-        return RuntimeValue{identifierName};
+        return EvaluatedNode{.value = RuntimeValue{identifierName}, .reason = identifierName};
     }
 
-    [[nodiscard]] std::optional<RuntimeValue> evalVariableRefNode(const VariableRefNode& variableNode) {
+    [[nodiscard]] std::optional<EvaluatedNode> evalVariableRefNode(const VariableRefNode& variableNode) {
         const std::string variableName = variableNode.name;
         usedVariables_.insert(variableName);
         const auto variableIterator = variables_.find(variableName);
@@ -291,123 +303,174 @@ private:
         }
 
         if (std::holds_alternative<std::string>(variableIterator->second)) {
-            return RuntimeValue{std::get<std::string>(variableIterator->second)};
+            const RuntimeValue variableValue{std::get<std::string>(variableIterator->second)};
+            return EvaluatedNode{.value = variableValue, .reason = variableName + " (" + valueToString(variableValue) + ")"};
         }
         if (std::holds_alternative<double>(variableIterator->second)) {
-            return RuntimeValue{std::get<double>(variableIterator->second)};
+            const RuntimeValue variableValue{std::get<double>(variableIterator->second)};
+            return EvaluatedNode{.value = variableValue, .reason = variableName + " (" + valueToString(variableValue) + ")"};
         }
         if (std::holds_alternative<bool>(variableIterator->second)) {
-            return RuntimeValue{std::get<bool>(variableIterator->second)};
+            const RuntimeValue variableValue{std::get<bool>(variableIterator->second)};
+            return EvaluatedNode{.value = variableValue, .reason = variableName + " (" + valueToString(variableValue) + ")"};
         }
-        return RuntimeValue{std::get<std::chrono::system_clock::time_point>(variableIterator->second)};
+        const RuntimeValue variableValue{std::get<std::chrono::system_clock::time_point>(variableIterator->second)};
+        return EvaluatedNode{.value = variableValue, .reason = variableName + " (" + valueToString(variableValue) + ")"};
     }
 
-    [[nodiscard]] std::optional<RuntimeValue> evalUnaryNode(const UnaryOpNode& unaryNode) {
-        const auto operandValue = eval(unaryNode.operand);
-        if (!operandValue.has_value()) {
+    [[nodiscard]] std::optional<EvaluatedNode> evalUnaryNode(const UnaryOpNode& unaryNode) {
+        const auto operandNode = eval(unaryNode.operand);
+        if (!operandNode.has_value()) {
             return std::nullopt;
         }
-        return RuntimeValue{!toBool(*operandValue)};
+        const RuntimeValue unaryValue{!toBool(operandNode->value)};
+        return EvaluatedNode{.value = unaryValue, .reason = "not (" + operandNode->reason + ")"};
     }
 
-    [[nodiscard]] std::optional<RuntimeValue> evalBinaryNode(const BinaryOpNode& binaryNode) {
-        const auto leftValue = eval(binaryNode.left);
-        const auto rightValue = eval(binaryNode.right);
-        if (!leftValue.has_value() || !rightValue.has_value()) {
+    [[nodiscard]] std::optional<EvaluatedNode> evalBinaryNode(const BinaryOpNode& binaryNode) {
+        const auto leftNode = eval(binaryNode.left);
+        const auto rightNode = eval(binaryNode.right);
+        if (!leftNode.has_value() || !rightNode.has_value()) {
             return std::nullopt;
         }
 
         switch (binaryNode.op) {
-        case BinaryOperator::And:
-            return RuntimeValue{toBool(*leftValue) && toBool(*rightValue)};
-        case BinaryOperator::Or:
-            return RuntimeValue{toBool(*leftValue) || toBool(*rightValue)};
+        case BinaryOperator::And: {
+            const bool leftBool = toBool(leftNode->value);
+            const bool rightBool = toBool(rightNode->value);
+            const bool combinedValue = leftBool && rightBool;
+            std::string combinedReason;
+            if (combinedValue) {
+                if (!leftNode->reason.empty() && !rightNode->reason.empty()) {
+                    combinedReason = leftNode->reason + " and " + rightNode->reason;
+                } else {
+                    combinedReason = leftNode->reason + rightNode->reason;
+                }
+            } else {
+                combinedReason = leftBool ? rightNode->reason : leftNode->reason;
+            }
+            return EvaluatedNode{.value = RuntimeValue{combinedValue}, .reason = combinedReason};
+        }
+        case BinaryOperator::Or: {
+            const bool leftBool = toBool(leftNode->value);
+            const bool rightBool = toBool(rightNode->value);
+            const bool combinedValue = leftBool || rightBool;
+            std::string combinedReason;
+            if (combinedValue) {
+                combinedReason = leftBool ? leftNode->reason : rightNode->reason;
+            } else if (!leftNode->reason.empty() && !rightNode->reason.empty()) {
+                combinedReason = leftNode->reason + " or " + rightNode->reason;
+            } else {
+                combinedReason = leftNode->reason + rightNode->reason;
+            }
+            return EvaluatedNode{.value = RuntimeValue{combinedValue}, .reason = combinedReason};
+        }
         case BinaryOperator::Eq:
-            return RuntimeValue{evalEquals(*leftValue, *rightValue)};
+            return EvaluatedNode{
+                .value = RuntimeValue{evalEquals(leftNode->value, rightNode->value)},
+                .reason = leftNode->reason + " is = " + rightNode->reason};
         case BinaryOperator::Neq:
-            return RuntimeValue{!evalEquals(*leftValue, *rightValue)};
+            return EvaluatedNode{
+                .value = RuntimeValue{!evalEquals(leftNode->value, rightNode->value)},
+                .reason = leftNode->reason + " is != " + rightNode->reason};
         case BinaryOperator::Gt:
-            return compareRel(*leftValue, *rightValue, "gt");
+            return compareRel(*leftNode, *rightNode, "gt");
         case BinaryOperator::Lt:
-            return compareRel(*leftValue, *rightValue, "lt");
+            return compareRel(*leftNode, *rightNode, "lt");
         case BinaryOperator::Ge:
-            return compareRel(*leftValue, *rightValue, "ge");
+            return compareRel(*leftNode, *rightNode, "ge");
         case BinaryOperator::Le:
-            return compareRel(*leftValue, *rightValue, "le");
+            return compareRel(*leftNode, *rightNode, "le");
         case BinaryOperator::Add:
         case BinaryOperator::Sub:
-            return evalAddSub(*leftValue, *rightValue, binaryNode.op == BinaryOperator::Add);
+            return evalAddSub(*leftNode, *rightNode, binaryNode.op == BinaryOperator::Add);
         }
 
         errors_.emplace_back("unsupported binary operator");
         return std::nullopt;
     }
 
-    [[nodiscard]] std::optional<RuntimeValue> evalIfCallNode(const IfCallNode& ifCallNode) {
-        const auto conditionValue = eval(ifCallNode.condition);
-        if (!conditionValue.has_value()) {
+    [[nodiscard]] std::optional<EvaluatedNode> evalIfCallNode(const IfCallNode& ifCallNode) {
+        const auto conditionNode = eval(ifCallNode.condition);
+        if (!conditionNode.has_value()) {
             return std::nullopt;
         }
-        return toBool(*conditionValue) ? eval(ifCallNode.trueValue) : eval(ifCallNode.falseValue);
-    }
-
-    [[nodiscard]] std::optional<RuntimeValue> evalMapLiteralNode(const MapLiteralNode& mapNode) {
-        MapRuntimeValue runtimeMap;
-        for (const auto& mapEntry : mapNode.entries) {
-            const auto entryValue = eval(mapEntry.value);
-            if (!entryValue.has_value()) {
+        if (toBool(conditionNode->value)) {
+            const auto trueNode = eval(ifCallNode.trueValue);
+            if (!trueNode.has_value()) {
                 return std::nullopt;
             }
-            if (std::holds_alternative<MapRuntimeValue>(*entryValue)) {
+            return EvaluatedNode{.value = trueNode->value, .reason = "if " + conditionNode->reason + " then " + trueNode->reason};
+        }
+
+        const auto falseNode = eval(ifCallNode.falseValue);
+        if (!falseNode.has_value()) {
+            return std::nullopt;
+        }
+        return EvaluatedNode{.value = falseNode->value, .reason = "if " + conditionNode->reason + ": " + falseNode->reason};
+    }
+
+    [[nodiscard]] std::optional<EvaluatedNode> evalMapLiteralNode(const MapLiteralNode& mapNode) {
+        MapRuntimeValue runtimeMap;
+        for (const auto& mapEntry : mapNode.entries) {
+            const auto entryNode = eval(mapEntry.value);
+            if (!entryNode.has_value()) {
+                return std::nullopt;
+            }
+            if (std::holds_alternative<MapRuntimeValue>(entryNode->value)) {
                 errors_.emplace_back("map entry value must not be a map");
                 return std::nullopt;
             }
 
-            if (std::holds_alternative<std::string>(*entryValue)) {
-                runtimeMap.entries.push_back(MapRuntimeEntry{.isDefault = mapEntry.key.isDefault, .keyToken = mapEntry.key.token, .value = std::get<std::string>(*entryValue)});
-            } else if (std::holds_alternative<double>(*entryValue)) {
-                runtimeMap.entries.push_back(MapRuntimeEntry{.isDefault = mapEntry.key.isDefault, .keyToken = mapEntry.key.token, .value = std::get<double>(*entryValue)});
-            } else if (std::holds_alternative<bool>(*entryValue)) {
-                runtimeMap.entries.push_back(MapRuntimeEntry{.isDefault = mapEntry.key.isDefault, .keyToken = mapEntry.key.token, .value = std::get<bool>(*entryValue)});
-            } else if (std::holds_alternative<std::chrono::system_clock::time_point>(*entryValue)) {
-                runtimeMap.entries.push_back(MapRuntimeEntry{.isDefault = mapEntry.key.isDefault, .keyToken = mapEntry.key.token, .value = std::get<std::chrono::system_clock::time_point>(*entryValue)});
+            if (std::holds_alternative<std::string>(entryNode->value)) {
+                runtimeMap.entries.push_back(MapRuntimeEntry{.isDefault = mapEntry.key.isDefault, .keyToken = mapEntry.key.token, .value = std::get<std::string>(entryNode->value)});
+            } else if (std::holds_alternative<double>(entryNode->value)) {
+                runtimeMap.entries.push_back(MapRuntimeEntry{.isDefault = mapEntry.key.isDefault, .keyToken = mapEntry.key.token, .value = std::get<double>(entryNode->value)});
+            } else if (std::holds_alternative<bool>(entryNode->value)) {
+                runtimeMap.entries.push_back(MapRuntimeEntry{.isDefault = mapEntry.key.isDefault, .keyToken = mapEntry.key.token, .value = std::get<bool>(entryNode->value)});
+            } else if (std::holds_alternative<std::chrono::system_clock::time_point>(entryNode->value)) {
+                runtimeMap.entries.push_back(MapRuntimeEntry{.isDefault = mapEntry.key.isDefault, .keyToken = mapEntry.key.token, .value = std::get<std::chrono::system_clock::time_point>(entryNode->value)});
             }
         }
 
-        return RuntimeValue{runtimeMap};
+        return EvaluatedNode{.value = RuntimeValue{runtimeMap}, .reason = "map literal"};
     }
 
-    [[nodiscard]] std::optional<RuntimeValue> evalMapCallNode(const MapCallNode& mapCallNode) {
+    [[nodiscard]] std::optional<EvaluatedNode> evalMapCallNode(const MapCallNode& mapCallNode) {
         const auto declarationIterator = declarations_.find(mapCallNode.name);
         if (declarationIterator == declarations_.end()) {
             errors_.emplace_back("undefined map declaration: " + mapCallNode.name);
             return std::nullopt;
         }
 
-        const auto selectorValue = eval(mapCallNode.selector);
-        if (!selectorValue.has_value()) {
+        const auto selectorNode = eval(mapCallNode.selector);
+        if (!selectorNode.has_value()) {
             return std::nullopt;
         }
 
-        std::optional<RuntimeValue> defaultValue;
+        std::optional<EvaluatedNode> defaultValue;
         for (const auto& mapEntry : declarationIterator->second) {
-            auto entryValue = eval(mapEntry.value);
-            if (!entryValue.has_value()) {
+            auto entryNode = eval(mapEntry.value);
+            if (!entryNode.has_value()) {
                 return std::nullopt;
             }
 
             if (mapEntry.key.isDefault) {
-                defaultValue = entryValue;
+                defaultValue = *entryNode;
                 continue;
             }
 
-            if (matchesMapKey(mapEntry.key.token, *selectorValue)) {
-                return entryValue;
+            if (matchesMapKey(mapEntry.key.token, selectorNode->value)) {
+                return EvaluatedNode{
+                    .value = entryNode->value,
+                    .reason = selectorNode->reason + " mapped to " + valueToString(entryNode->value)};
             }
         }
 
         if (defaultValue.has_value()) {
-            return defaultValue;
+            return EvaluatedNode{
+                .value = defaultValue->value,
+                .reason = selectorNode->reason + " mapped to " + valueToString(defaultValue->value)};
         }
 
         errors_.emplace_back("map call has no matching key and no default: " + mapCallNode.name);
@@ -429,52 +492,66 @@ private:
         return normalizedKey == valueToString(selectorValue);
     }
 
-    [[nodiscard]] std::optional<RuntimeValue> compareRel(
-        const RuntimeValue& leftValue,
-        const RuntimeValue& rightValue,
+    [[nodiscard]] std::optional<EvaluatedNode> compareRel(
+        const EvaluatedNode& leftNode,
+        const EvaluatedNode& rightNode,
         const std::string& relationOperator) {
+        auto makeCompareNode = [&](const bool compareValue, const std::string& operatorText) {
+            return EvaluatedNode{
+                .value = RuntimeValue{compareValue},
+                .reason = leftNode.reason + " is " + operatorText + " " + rightNode.reason};
+        };
+
+        const RuntimeValue& leftValue = leftNode.value;
+        const RuntimeValue& rightValue = rightNode.value;
         if (std::holds_alternative<double>(leftValue) && std::holds_alternative<double>(rightValue)) {
             const double leftNumber = std::get<double>(leftValue);
             const double rightNumber = std::get<double>(rightValue);
             if (relationOperator == "gt") {
-                return RuntimeValue{leftNumber > rightNumber};
+                return makeCompareNode(leftNumber > rightNumber, ">");
             }
             if (relationOperator == "lt") {
-                return RuntimeValue{leftNumber < rightNumber};
+                return makeCompareNode(leftNumber < rightNumber, "<");
             }
             if (relationOperator == "ge") {
-                return RuntimeValue{leftNumber >= rightNumber};
+                return makeCompareNode(leftNumber >= rightNumber, ">=");
             }
-            return RuntimeValue{leftNumber <= rightNumber};
+            return makeCompareNode(leftNumber <= rightNumber, "<=");
         }
 
         const auto leftTime = tryTimeOfDay(leftValue);
         const auto rightTime = tryTimeOfDay(rightValue);
         if (leftTime.has_value() && rightTime.has_value()) {
             if (relationOperator == "gt") {
-                return RuntimeValue{*leftTime > *rightTime};
+                return makeCompareNode(*leftTime > *rightTime, ">");
             }
             if (relationOperator == "lt") {
-                return RuntimeValue{*leftTime < *rightTime};
+                return makeCompareNode(*leftTime < *rightTime, "<");
             }
             if (relationOperator == "ge") {
-                return RuntimeValue{*leftTime >= *rightTime};
+                return makeCompareNode(*leftTime >= *rightTime, ">=");
             }
-            return RuntimeValue{*leftTime <= *rightTime};
+            return makeCompareNode(*leftTime <= *rightTime, "<=");
         }
 
         errors_.emplace_back("invalid operands for relational comparison");
         return std::nullopt;
     }
 
-    [[nodiscard]] std::optional<RuntimeValue> evalAddSub(
-        const RuntimeValue& leftValue,
-        const RuntimeValue& rightValue,
+    [[nodiscard]] std::optional<EvaluatedNode> evalAddSub(
+        const EvaluatedNode& leftNode,
+        const EvaluatedNode& rightNode,
         const bool isAddOperation) {
+        const RuntimeValue& leftValue = leftNode.value;
+        const RuntimeValue& rightValue = rightNode.value;
+        const std::string operatorText = isAddOperation ? "+" : "-";
         if (std::holds_alternative<double>(leftValue) && std::holds_alternative<double>(rightValue)) {
             const double leftNumber = std::get<double>(leftValue);
             const double rightNumber = std::get<double>(rightValue);
-            return RuntimeValue{isAddOperation ? leftNumber + rightNumber : leftNumber - rightNumber};
+            const RuntimeValue resultValue{isAddOperation ? leftNumber + rightNumber : leftNumber - rightNumber};
+            return EvaluatedNode{
+                .value = resultValue,
+                .reason = leftNode.reason + " " + operatorText + " " + rightNode.reason + " = " + valueToString(resultValue)};
         }
 
         const auto leftTime = tryTimeOfDay(leftValue);
@@ -484,9 +561,15 @@ private:
             const auto resultTime = isAddOperation ? *leftTime + deltaDuration : *leftTime - deltaDuration;
             if (std::holds_alternative<std::chrono::system_clock::time_point>(leftValue)) {
                 const auto dayStart = std::chrono::floor<std::chrono::days>(std::get<std::chrono::system_clock::time_point>(leftValue));
-                return RuntimeValue{dayStart + resultTime};
+                const RuntimeValue resultValue{dayStart + resultTime};
+                return EvaluatedNode{
+                    .value = resultValue,
+                    .reason = leftNode.reason + " " + operatorText + " " + rightNode.reason + " = " + valueToString(resultValue)};
             }
-            return RuntimeValue{formatTimeText(resultTime)};
+            const RuntimeValue resultValue{formatTimeText(resultTime)};
+            return EvaluatedNode{
+                .value = resultValue,
+                .reason = leftNode.reason + " " + operatorText + " " + rightNode.reason + " = " + valueToString(resultValue)};
         }
 
         errors_.emplace_back("invalid operands for arithmetic operation");

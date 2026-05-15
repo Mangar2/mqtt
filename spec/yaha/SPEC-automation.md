@@ -651,6 +651,49 @@ Delete behavior:
 
 All rule-management ack messages use qos 1.
 
+## Rule debug-trace channel
+
+Accepted debug request topic pattern:
+- $MONITOR/automation/<ruleLink>/debug
+
+Trace response topic:
+- $MONITOR/automation/<ruleLink>/trace
+
+Trace response qos:
+- always 1
+
+Trace response value:
+- `triggered`: rule evaluation produced an outbound message.
+- `not_triggered`: rule evaluation finished without error, but no outbound message is produced.
+- `error`: rule lookup or rule evaluation failed.
+
+Trace response reason contract:
+- reason must never be empty for debug-trace responses.
+- reason must contain a full ordered step-by-step trace in evaluation order.
+- each trace entry must be a standalone diagnostic sentence and must be actionable without additional runtime context.
+
+Mandatory trace steps (full original-style capability scope):
+1. debug request normalization and rule-link resolution result.
+2. effective rule path used for evaluation.
+3. variable snapshot used for evaluation (including runtime topic variables and derived internal variables).
+4. rule shape validation (required fields and basic type checks).
+5. check-program evaluation result:
+  - final boolean decision,
+  - human-readable mini-program reason text equivalent to original decision reasoning style,
+  - used variable/value pairs.
+6. event-gate reasoning summary (allOf/anyOf/noneOf/allow style gate semantics):
+  - gate pass/fail,
+  - matched or blocking events.
+7. value-program evaluation result:
+  - resolved value,
+  - human-readable reason text,
+  - used variable/value pairs.
+8. qos resolution result.
+9. final outcome summary (`triggered` / `not_triggered` / `error`) including outbound topic when triggered.
+
+Trace quality requirement:
+- the produced reason chain must be sufficient to localize the failing decision branch without follow-up questions.
+
 ## Simulation channel
 
 Supported topics:

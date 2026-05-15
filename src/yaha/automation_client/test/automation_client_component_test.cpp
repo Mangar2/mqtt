@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <iostream>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -130,7 +131,7 @@ private:
     mutable std::mutex mutex_;
     httplib::Server server_;
     std::thread serverThread_;
-    std::string rulesJsonText_{"{\"rules\":{}}"};
+    std::string rulesJsonText_{R"({"rules":{}})"};
     std::string lastPostedBodyText_;
     std::uint32_t postCountValue_{0U};
     int getStatusCode_{k_http_ok_status};
@@ -142,7 +143,7 @@ private:
 TEST_CASE("automation_component_run_loads_rules_from_filestore", "[automation_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
-    fileStore.setRulesJson("{\"rules\":{\"wake\":{\"topic\":\"house/light\",\"value\":\"on\"}}}");
+    fileStore.setRulesJson(R"({"rules":{"wake":{"topic":"house/light","value":"on"}}})");
 
     yaha::AutomationClientConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -161,7 +162,7 @@ TEST_CASE("automation_component_run_loads_rules_from_filestore", "[automation_cl
 TEST_CASE("automation_component_monitoring_event_reload_rules", "[automation_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
-    fileStore.setRulesJson("{\"rules\":{\"first\":{\"topic\":\"house/light\",\"value\":\"on\"}}}");
+    fileStore.setRulesJson(R"({"rules":{"first":{"topic":"house/light","value":"on"}}})");
 
     yaha::AutomationClientConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -171,11 +172,11 @@ TEST_CASE("automation_component_monitoring_event_reload_rules", "[automation_cli
     component.run();
     REQUIRE(component.hasRule("first"));
 
-    fileStore.setRulesJson("{\"rules\":{\"second\":{\"topic\":\"house/heating\",\"value\":\"off\"}}}");
+    fileStore.setRulesJson(R"({"rules":{"second":{"topic":"house/heating","value":"off"}}})");
 
     component.handleMessage(yaha::Message{
         "$MONITOR/FileStore/changed",
-        std::string{"{\"keyPath\":\"/automation/rules\",\"changeType\":\"changed\"}"},
+        std::string{R"({"keyPath":"/automation/rules","changeType":"changed"})"},
         yaha::Qos::AtLeastOnce,
         false});
 
@@ -206,7 +207,7 @@ TEST_CASE("automation_component_management_update_persists_and_acks", "[automati
 
     component.handleMessage(yaha::Message{
         "$MONITOR/automation/rules/demo/set",
-        std::string{"{\"topic\":\"house/light/set\",\"value\":\"on\"}"},
+        std::string{R"({"topic":"house/light/set","value":"on"})"},
         yaha::Qos::AtLeastOnce,
         false});
 
@@ -226,7 +227,7 @@ TEST_CASE("automation_component_evaluates_rules_and_publishes_outputs", "[automa
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
     fileStore.setRulesJson(
-        "{\"rules\":{\"presenceOn\":{\"topic\":\"house/light/set\",\"check\":\"$MONITOR/presence/set = on\",\"value\":\"on\"}}}");
+        R"({"rules":{"presenceOn":{"topic":"house/light/set","check":"$MONITOR/presence/set = on","value":"on"}}})");
 
     yaha::AutomationClientConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -260,7 +261,7 @@ TEST_CASE("automation_component_evaluates_rules_and_publishes_outputs", "[automa
 TEST_CASE("automation_component_management_delete_persists_and_acks_deleted", "[automation_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
-    fileStore.setRulesJson("{\"rules\":{\"demo\":{\"topic\":\"house/light/set\",\"value\":\"on\"}}}");
+    fileStore.setRulesJson(R"({"rules":{"demo":{"topic":"house/light/set","value":"on"}}})");
 
     yaha::AutomationClientConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -331,7 +332,7 @@ TEST_CASE("automation_component_management_non_string_payload_acks_invalid", "[a
 TEST_CASE("automation_component_management_update_persist_failure_rolls_back_and_acks", "[automation_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
-    fileStore.setRulesJson("{\"rules\":{\"stable\":{\"topic\":\"house/light/set\",\"value\":\"on\"}}}");
+    fileStore.setRulesJson(R"({"rules":{"stable":{"topic":"house/light/set","value":"on"}}})");
 
     yaha::AutomationClientConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -352,7 +353,7 @@ TEST_CASE("automation_component_management_update_persist_failure_rolls_back_and
     fileStore.setPostStatus(k_http_error_status);
     component.handleMessage(yaha::Message{
         "$MONITOR/automation/rules/demo/set",
-        std::string{"{\"topic\":\"house/heating/set\",\"value\":\"off\"}"},
+        std::string{R"({"topic":"house/heating/set","value":"off"})"},
         yaha::Qos::AtLeastOnce,
         false});
 
@@ -370,7 +371,7 @@ TEST_CASE("automation_component_management_update_persist_failure_rolls_back_and
 TEST_CASE("automation_component_management_delete_persist_failure_rolls_back_and_acks", "[automation_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
-    fileStore.setRulesJson("{\"rules\":{\"demo\":{\"topic\":\"house/light/set\",\"value\":\"on\"}}}");
+    fileStore.setRulesJson(R"({"rules":{"demo":{"topic":"house/light/set","value":"on"}}})");
 
     yaha::AutomationClientConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -408,7 +409,7 @@ TEST_CASE("automation_component_publish_failure_logs_out_fail_without_false_out_
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
     fileStore.setRulesJson(
-        "{\"rules\":{\"presenceOn\":{\"topic\":\"house/light/set\",\"check\":\"$MONITOR/presence/set = on\",\"value\":\"on\"}}}");
+        R"({"rules":{"presenceOn":{"topic":"house/light/set","check":"$MONITOR/presence/set = on","value":"on"}}})");
 
     yaha::AutomationClientConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -532,7 +533,7 @@ TEST_CASE("automation_component_retries_rule_output_after_publish_result_failure
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
     fileStore.setRulesJson(
-        "{\"rules\":{\"presenceOn\":{\"topic\":\"house/light/set\",\"check\":\"$MONITOR/presence/set = on\",\"value\":\"on\"}}}");
+        R"({"rules":{"presenceOn":{"topic":"house/light/set","check":"$MONITOR/presence/set = on","value":"on"}}})");
 
     yaha::AutomationClientConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -601,7 +602,7 @@ TEST_CASE("automation_component_run_with_filestore_get_failure_keeps_empty_rules
 TEST_CASE("automation_component_monitor_reload_get_failure_keeps_existing_rules", "[automation_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
-    fileStore.setRulesJson("{\"rules\":{\"first\":{\"topic\":\"house/light\",\"value\":\"on\"}}}");
+    fileStore.setRulesJson(R"({"rules":{"first":{"topic":"house/light","value":"on"}}})");
 
     yaha::AutomationClientConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -612,10 +613,10 @@ TEST_CASE("automation_component_monitor_reload_get_failure_keeps_existing_rules"
     REQUIRE(component.hasRule("first"));
 
     fileStore.setGetStatus(k_http_error_status);
-    fileStore.setRulesJson("{\"rules\":{\"second\":{\"topic\":\"house/heating\",\"value\":\"off\"}}}");
+    fileStore.setRulesJson(R"({"rules":{"second":{"topic":"house/heating","value":"off"}}})");
     component.handleMessage(yaha::Message{
         "$MONITOR/FileStore/changed",
-        std::string{"{\"keyPath\":\"/automation/rules\",\"changeType\":\"changed\"}"},
+        std::string{R"({"keyPath":"/automation/rules","changeType":"changed"})"},
         yaha::Qos::AtLeastOnce,
         false});
 
@@ -665,7 +666,7 @@ TEST_CASE("automation_component_flushes_retry_queue_after_callback_restore", "[a
 TEST_CASE("automation_component_monitoring_deleted_does_not_reload", "[automation_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
-    fileStore.setRulesJson("{\"rules\":{\"first\":{\"topic\":\"house/light\",\"value\":\"on\"}}}");
+    fileStore.setRulesJson(R"({"rules":{"first":{"topic":"house/light","value":"on"}}})");
 
     yaha::AutomationClientConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -675,10 +676,10 @@ TEST_CASE("automation_component_monitoring_deleted_does_not_reload", "[automatio
     component.run();
     REQUIRE(component.hasRule("first"));
 
-    fileStore.setRulesJson("{\"rules\":{\"second\":{\"topic\":\"house/heating\",\"value\":\"off\"}}}");
+    fileStore.setRulesJson(R"({"rules":{"second":{"topic":"house/heating","value":"off"}}})");
     component.handleMessage(yaha::Message{
         "$MONITOR/FileStore/deleted",
-        std::string{"{\"keyPath\":\"/automation/rules\",\"changeType\":\"deleted\"}"},
+        std::string{R"({"keyPath":"/automation/rules","changeType":"deleted"})"},
         yaha::Qos::AtLeastOnce,
         false});
 
@@ -706,7 +707,7 @@ TEST_CASE("automation_component_recovers_from_non_object_rules_payload", "[autom
 
     component.handleMessage(yaha::Message{
         "$MONITOR/automation/rules/demo/set",
-        std::string{"{\"topic\":\"house/light/set\",\"value\":\"on\",\"enabled\":true,\"weight\":1.5,\"list\":[1,2]}"},
+        std::string{R"({"topic":"house/light/set","value":"on","enabled":true,"weight":1.5,"list":[1,2]})"},
         yaha::Qos::AtLeastOnce,
         false});
 
@@ -720,7 +721,7 @@ TEST_CASE("automation_component_get_subscriptions_includes_dynamic_topics", "[au
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
     fileStore.setRulesJson(
-        "{\"rules\":{\"withVar\":{\"topic\":\"house/light/set\",\"check\":\"$MONITOR/presence/set = on\",\"value\":\"on\"}}}");
+        R"({"rules":{"withVar":{"topic":"house/light/set","check":"$MONITOR/presence/set = on","value":"on"}}})");
 
     yaha::AutomationClientConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -740,7 +741,7 @@ TEST_CASE("automation_component_logs_incoming_and_outgoing_messages_when_enabled
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
     fileStore.setRulesJson(
-        "{\"rules\":{\"presenceOn\":{\"topic\":\"house/light/set\",\"check\":\"$MONITOR/presence/set = on\",\"value\":\"on\"}}}");
+        R"({"rules":{"presenceOn":{"topic":"house/light/set","check":"$MONITOR/presence/set = on","value":"on"}}})");
 
     yaha::AutomationClientConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -775,7 +776,7 @@ TEST_CASE("automation_component_debug_trace_request_reports_not_triggered", "[au
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
     fileStore.setRulesJson(
-        "{\"rules\":{\"presenceOn\":{\"topic\":\"house/light/set\",\"check\":\"0\",\"value\":\"on\"}}}");
+        R"({"rules":{"presenceOn":{"topic":"house/light/set","check":"0","value":"on"}}})");
 
     yaha::AutomationClientConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -850,6 +851,60 @@ TEST_CASE("automation_component_debug_trace_request_reports_missing_rule", "[aut
             return reasonEntry.message.find("rule lookup failed") != std::string::npos;
         });
     REQUIRE(hasLookupFailureTrace);
+
+    component.close();
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("automation_component_debug_trace_raw_payload_escapes_multiline_reason_entries", "[automation_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setRulesJson(
+        R"({"rules":{"presenceOn":{"topic":"house/light/set","check":"map_1 = (on: awake, default: absent)\n$MONITOR/presence/set = on","value":"on"}}})");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{
+        "$MONITOR/presence/set",
+        std::string{"on"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    component.handleMessage(yaha::Message{
+        "$MONITOR/automation/rules/presenceOn/debug",
+        std::string{"1"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    REQUIRE_FALSE(published.empty());
+    REQUIRE(published.back().topic() == "$MONITOR/automation/rules/presenceOn/trace");
+    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+    REQUIRE(std::get<std::string>(published.back().value()) == "triggered");
+
+    const std::optional<std::string>& rawPayload = published.back().rawPayload();
+    REQUIRE(rawPayload.has_value());
+    REQUIRE(rawPayload->find("\\n") != std::string::npos);
+
+    REQUIRE_FALSE(published.back().reason().empty());
+    const bool hasCheckReasonTrace = std::ranges::any_of(
+        published.back().reason(),
+        [](const yaha::ReasonEntry& reasonEntry) {
+            return reasonEntry.message.find("rule-evaluation:check reason=") != std::string::npos;
+        });
+    REQUIRE(hasCheckReasonTrace);
 
     component.close();
 }

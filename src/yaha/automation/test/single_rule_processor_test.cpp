@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <string>
+#include <vector>
 
 #include "yaha/automation/rules_tree_parser.h"
 #include "yaha/automation/single_rule_processor.h"
@@ -298,5 +300,46 @@ TEST_CASE("single_rule_processor_accepts_qos_zero_and_two", "[yaha][automation]"
     REQUIRE(qosTwoResult.success);
     REQUIRE(qosTwoResult.message.has_value());
     REQUIRE(qosTwoResult.message->qos() == yaha::Qos::ExactlyOnce);
+}
+
+TEST_CASE("single_rule_processor_trace_includes_reasoned_check_and_value", "[yaha][automation]") {
+    yaha::RuleTreeNode::Object ruleObject;
+    ruleObject.insert({"topic", yaha::RuleTreeNode{"home/light/set"}});
+    ruleObject.insert({"check", yaha::RuleTreeNode{"$SYS/presence = awake"}});
+    ruleObject.insert({"value", yaha::RuleTreeNode{"if($SYS/presence = awake, on, off)"}});
+
+    yaha::ExpressionEvaluator::VariableMap variables;
+    variables.insert({"$SYS/presence", std::string{"awake"}});
+
+    std::vector<std::string> traceEntries;
+    const yaha::SingleRuleProcessingResult result = yaha::SingleRuleProcessor::processWithTrace(
+        yaha::RuleTreeNode{std::move(ruleObject)},
+        variables,
+        &traceEntries);
+
+    REQUIRE(result.success);
+    REQUIRE(result.triggered);
+    REQUIRE_FALSE(traceEntries.empty());
+
+    const bool hasCheckReason = std::ranges::any_of(
+        traceEntries,
+        [](const std::string& entry) {
+            return entry.find("rule-evaluation:check reason=") != std::string::npos;
+        });
+    REQUIRE(hasCheckReason);
+
+    const bool hasValueReason = std::ranges::any_of(
+        traceEntries,
+        [](const std::string& entry) {
+            return entry.find("rule-evaluation:value reason=") != std::string::npos;
+        });
+    REQUIRE(hasValueReason);
+
+    const bool hasVariableSnapshot = std::ranges::any_of(
+        traceEntries,
+        [](const std::string& entry) {
+            return entry.find("rule-evaluation:var $SYS/presence=") != std::string::npos;
+        });
+    REQUIRE(hasVariableSnapshot);
 }
 // NOLINTEND(readability-function-cognitive-complexity)

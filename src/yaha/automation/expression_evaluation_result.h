@@ -24,6 +24,7 @@ struct ExpressionEvaluationResult {
 
     bool success{false};                         ///< True when evaluation finished without errors.
     Value value{std::string{}};                 ///< Result value of the script expression.
+    std::string reason;                         ///< Human-readable explanation of the computed result.
     std::set<std::string> usedVariables;        ///< Variable names read during evaluation.
     std::vector<std::string> errors;            ///< Error messages collected during evaluation.
 };

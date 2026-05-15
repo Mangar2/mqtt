@@ -38,8 +38,8 @@ void appendTrace(std::vector<std::string>* traceEntries, const std::string& trac
         return std::get<bool>(value) ? "bool:true" : "bool:false";
     }
     // time_point — format as ISO-like string
-    const auto tp = std::get<std::chrono::system_clock::time_point>(value);
-    const std::time_t timeT = std::chrono::system_clock::to_time_t(tp);
+    const auto timePointValue = std::get<std::chrono::system_clock::time_point>(value);
+    const std::time_t timeT = std::chrono::system_clock::to_time_t(timePointValue);
     std::ostringstream stream;
     stream << std::put_time(std::gmtime(&timeT), "%Y-%m-%dT%H:%M:%SZ");
     return "time:" + stream.str();
@@ -191,6 +191,16 @@ void appendTrace(std::vector<std::string>* traceEntries, const std::string& trac
     return Qos::AtLeastOnce;
 }
 
+void appendVariableTraceEntry(std::vector<std::string>* traceEntries,
+                              const std::string& variableName,
+                              const std::string& variableValueText) {
+    std::string traceText{"rule-evaluation:var "};
+    traceText.append(variableName);
+    traceText.push_back('=');
+    traceText.append(variableValueText);
+    appendTrace(traceEntries, traceText);
+}
+
 } // namespace
 
 SingleRuleProcessingResult SingleRuleProcessor::process(
@@ -199,6 +209,7 @@ SingleRuleProcessingResult SingleRuleProcessor::process(
     return processWithTrace(ruleNode, variables, nullptr);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 SingleRuleProcessingResult SingleRuleProcessor::processWithTrace(
     const RuleTreeNode& ruleNode,
     const ExpressionEvaluator::VariableMap& variables,
@@ -229,6 +240,7 @@ SingleRuleProcessingResult SingleRuleProcessor::processWithTrace(
     }
 
     appendTrace(traceEntries, "rule-evaluation:topic=" + topicName);
+    appendTrace(traceEntries, "rule-evaluation:shape required fields validated (topic)");
 
     bool isTriggered = true;
     if (ruleObject.contains("check")) {
@@ -249,7 +261,7 @@ SingleRuleProcessingResult SingleRuleProcessor::processWithTrace(
                 const std::string varVal = (varIt != variables.end())
                     ? variableValueToTraceText(varIt->second)
                     : "undefined";
-                appendTrace(traceEntries, "rule-evaluation:var " + varName + "=" + varVal);
+                appendVariableTraceEntry(traceEntries, varName, varVal);
             }
             return result;
         }
@@ -258,12 +270,15 @@ SingleRuleProcessingResult SingleRuleProcessor::processWithTrace(
         isTriggered = asBooleanValue(checkResult.value);
         appendTrace(traceEntries,
                     "rule-evaluation:check result=" + evaluationValueToTraceText(checkResult.value));
+        if (!checkResult.reason.empty()) {
+            appendTrace(traceEntries, "rule-evaluation:check reason=" + checkResult.reason);
+        }
         for (const auto& varName : checkResult.usedVariables) {
             const auto varIt = variables.find(varName);
             const std::string varVal = (varIt != variables.end())
                 ? variableValueToTraceText(varIt->second)
                 : "undefined";
-            appendTrace(traceEntries, "rule-evaluation:var " + varName + "=" + varVal);
+            appendVariableTraceEntry(traceEntries, varName, varVal);
         }
         appendTrace(traceEntries,
                     std::string{"rule-evaluation:check decision="}
@@ -275,8 +290,21 @@ SingleRuleProcessingResult SingleRuleProcessor::processWithTrace(
     result.triggered = isTriggered;
     if (!isTriggered) {
         result.success = true;
+        appendTrace(traceEntries, "rule-evaluation:event-gates=not_evaluated (rule not triggered by check)");
         appendTrace(traceEntries, "rule-evaluation:finish not_triggered");
         return result;
+    }
+
+    const bool hasEventGates = ruleObject.contains("allOf")
+        || ruleObject.contains("anyOf")
+        || ruleObject.contains("noneOf")
+        || ruleObject.contains("allow");
+    if (hasEventGates) {
+        appendTrace(traceEntries,
+                    "rule-evaluation:event-gates=declared (allOf/anyOf/noneOf/allow), "
+                    "single-rule debug path has no event history context");
+    } else {
+        appendTrace(traceEntries, "rule-evaluation:event-gates=none");
     }
 
     if (!ruleObject.contains("value")) {
@@ -284,6 +312,8 @@ SingleRuleProcessingResult SingleRuleProcessor::processWithTrace(
         appendTrace(traceEntries, "rule-evaluation:error rule requires value field");
         return result;
     }
+
+    appendTrace(traceEntries, "rule-evaluation:shape required fields validated (value)");
 
     Value messageValue;
     const RuleTreeNode& valueNode = ruleObject.at("value");
@@ -303,6 +333,16 @@ SingleRuleProcessingResult SingleRuleProcessor::processWithTrace(
 
         appendTrace(traceEntries,
                     "rule-evaluation:value result=" + evaluationValueToTraceText(valueResult.value));
+        if (!valueResult.reason.empty()) {
+            appendTrace(traceEntries, "rule-evaluation:value reason=" + valueResult.reason);
+        }
+        for (const auto& varName : valueResult.usedVariables) {
+            const auto varIt = variables.find(varName);
+            const std::string varVal = (varIt != variables.end())
+                ? variableValueToTraceText(varIt->second)
+                : "undefined";
+            appendVariableTraceEntry(traceEntries, varName, varVal);
+        }
     } else if (std::holds_alternative<double>(valueNode.value)) {
         messageValue = std::get<double>(valueNode.value);
         appendTrace(traceEntries, "rule-evaluation:value literal number");

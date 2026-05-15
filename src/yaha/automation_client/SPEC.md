@@ -90,8 +90,13 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
     `$MONITOR/automation/<rule-link>/trace`.
   - Trace response payload is one of `triggered`, `not_triggered`, or `error`.
   - Trace response `reason` chain contains ordered step-by-step decision entries
-    covering rule lookup, internal-variable preparation, check/value evaluation,
-    qos parsing, and final decision about outbound message generation.
+    covering request normalization, effective rule path resolution,
+    internal-variable preparation, variable snapshot, rule shape validation,
+    check/value evaluation with human-readable reason text,
+    event-gate summary, qos parsing, and final decision about outbound message generation.
+  - Raw trace payload serialization JSON-escapes control characters
+    (including newline/tab/carriage-return and other ASCII control codes)
+    to keep forwarded envelopes parseable by downstream consumers.
 - Logging behavior:
   - If `logIncomingMessages=true`, each inbound message handled by component is logged.
   - If `logOutgoingMessages=true`, each outbound rule/ack message is logged only after successful callback send.
