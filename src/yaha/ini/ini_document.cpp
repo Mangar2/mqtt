@@ -1,6 +1,5 @@
 #include "yaha/ini/ini_document.h"
 
-#include <algorithm>
 #include <cerrno>
 #include <charconv>
 #include <cctype>
@@ -18,25 +17,28 @@ namespace yaha {
 namespace {
 
 std::string trimCopy(std::string value) {
-    auto notSpace = [](unsigned char character) {
-        return std::isspace(character) == 0;
-    };
+    std::size_t beginIndex = 0U;
+    while (beginIndex < value.size() &&
+           std::isspace(static_cast<unsigned char>(value[beginIndex])) != 0) {
+        beginIndex += 1U;
+    }
 
-    value.erase(value.begin(), std::find_if(value.begin(), value.end(), notSpace));
-    value.erase(std::find_if(value.rbegin(), value.rend(), notSpace).base(), value.end());
-    return value;
+    if (beginIndex == value.size()) {
+        return "";
+    }
+
+    std::size_t endIndex = value.size();
+    while (endIndex > beginIndex &&
+           std::isspace(static_cast<unsigned char>(value[endIndex - 1U])) != 0) {
+        endIndex -= 1U;
+    }
+
+    return value.substr(beginIndex, endIndex - beginIndex);
 }
 
 std::string stripComment(std::string line) {
-    const auto firstNonWhitespace = std::find_if(
-        line.begin(),
-        line.end(),
-        [](unsigned char character) { return std::isspace(character) == 0; });
-    if (firstNonWhitespace != line.end() && *firstNonWhitespace == '#') {
-        const std::size_t assignmentPos = line.find('=');
-        if (assignmentPos == std::string::npos) {
-            return line.substr(0U, static_cast<std::size_t>(firstNonWhitespace - line.begin()));
-        }
+    if (!line.empty() && line.front() == '#') {
+        return "";
     }
 
     bool inQuotes = false;
@@ -82,7 +84,7 @@ std::string stripComment(std::string line) {
 
 void IniDocument::Section::addEntry(std::string key, std::string value) {
     valuesByKey_[key].push_back(value);
-    entries_.push_back(Entry{std::move(key), std::move(value)});
+    entries_.push_back(Entry{.key = std::move(key), .value = std::move(value)});
 }
 
 const std::vector<IniDocument::Entry>& IniDocument::Section::entries() const {

@@ -273,7 +273,7 @@ def render_component_install_script(*, service_name: str) -> str:
             "INSTALL_ROOT=\"$(cd \"${SCRIPT_DIR}/..\" && pwd)\"",
             f"SERVICE_TEMPLATE=\"${{SCRIPT_DIR}}/{service_name}\"",
             f"SERVICE_TARGET=\"/etc/systemd/system/{service_name}\"",
-            "SERVICE_USER=\"${YAHA_SERVICE_USER:-$(id -un)}\"",
+            "SERVICE_USER=\"${YAHA_SERVICE_USER:-${SUDO_USER:-$(id -un)}}\"",
             "",
             "if [[ ! -f \"${SERVICE_TEMPLATE}\" ]]; then",
             "  echo \"Missing service template: ${SERVICE_TEMPLATE}\" >&2",

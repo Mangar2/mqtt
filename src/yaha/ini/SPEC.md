@@ -36,7 +36,7 @@ Provides reusable INI infrastructure for YAHA clients. The parser is domain-agno
 
 - INI section headers: `[section]`
 - Key/value lines: `key = value`
-- Semicolon (`;`) comments are stripped inline; hash (`#`) is treated as a line comment marker only when it is the first non-whitespace character
+- Semicolon (`;`) comments are stripped inline; hash (`#`) is treated as a line comment marker only when it is the first character at column zero
 - Leading/trailing whitespace is trimmed on keys, values, and section names
 - Empty lines are ignored
 - Duplicate keys are allowed and preserved as multiple values in insertion order

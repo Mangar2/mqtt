@@ -126,3 +126,34 @@ TEST_CASE("load_ini_supports_hash_and_inline_comments", "[ini]") {
 
     removeDirectoryQuiet(tempDir);
 }
+
+TEST_CASE("load_ini_treats_hash_at_column_zero_as_comment_even_with_equals", "[ini]") {
+    const auto tempDir = makeTempDirectory();
+    const auto iniPath = writeIniFile(tempDir,
+        "# comment with equals = still comment\n"
+        "[mqtt]\n"
+        "host = broker.local\n");
+
+    const auto document = yaha::IniDocument::loadFromFile(iniPath);
+    REQUIRE(document.lastValue("mqtt", "host").value_or("") == "broker.local");
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_ini_rejects_indented_hash_line", "[ini]") {
+    const auto tempDir = makeTempDirectory();
+    const auto iniPath = writeIniFile(tempDir,
+        "[mqtt]\n"
+        "  # indented hash is not a comment\n"
+        "host = broker.local\n");
+
+    try {
+        const auto document = yaha::IniDocument::loadFromFile(iniPath);
+        (void)document;
+        FAIL("expected parse exception");
+    } catch (const std::exception& exceptionValue) {
+        REQUIRE(std::string{exceptionValue.what()}.find("missing '='") != std::string::npos);
+    }
+
+    removeDirectoryQuiet(tempDir);
+}

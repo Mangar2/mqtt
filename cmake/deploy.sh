@@ -17,6 +17,24 @@ log_error() {
   echo "[$(timestamp)] [ERROR] $*" >&2
 }
 
+resolve_home_for_user() {
+  local user_name="$1"
+  if [[ -z "${user_name}" ]]; then
+    return 1
+  fi
+
+  if command -v getent >/dev/null 2>&1; then
+    local home_dir
+    home_dir="$(getent passwd "${user_name}" | awk -F: '{print $6}')"
+    if [[ -n "${home_dir}" ]]; then
+      printf '%s' "${home_dir}"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
 cleanup_tmp_dir() {
   if [[ -n "${tmp_dir:-}" && -d "${tmp_dir}" ]]; then
     log_info "Cleaning temporary directory: ${tmp_dir}"
@@ -27,7 +45,7 @@ cleanup_tmp_dir() {
 usage() {
   cat <<'EOF'
 Usage:
-  deploy.sh --zip <deployment-zip> [--target-dir <dir>] [--yes-overwrite-ini|--no-overwrite-ini] [--skip-install]
+  deploy.sh --zip <deployment-zip> [--target-dir <dir>] [--no-overwrite-ini] [--skip-install]
 
 Description:
   Local deployment on the target host.
@@ -39,7 +57,6 @@ Description:
 Options:
   --zip <file>              Deployment zip (required)
   --target-dir <dir>        Deployment target directory (default: ~/mqtt)
-  --yes-overwrite-ini       Overwrite changed .ini files without prompt
   --no-overwrite-ini        Never overwrite changed .ini files
   --skip-install            Copy only, do not apply install/restart actions
   -h, --help                Show this help
@@ -83,15 +100,15 @@ is_component() {
 prompt_overwrite() {
   local rel_path="$1"
   while true; do
-    read -r -p "Target protected config exists and differs: ${rel_path}. Overwrite? [y]es/[n]o/[a]ll/[s]kip-all: " answer
+    read -r -p "Target protected config exists and differs: ${rel_path}. Overwrite? [y]es/[n]o: " answer
     answer="${answer,,}"
     case "${answer}" in
-      y|n|a|s)
+      y|n)
         echo "${answer}"
         return
         ;;
       *)
-        echo "Please answer with y, n, a, or s."
+        echo "Please answer with y or n."
         ;;
     esac
   done
@@ -235,10 +252,6 @@ while [[ $# -gt 0 ]]; do
       target_dir="$2"
       shift 2
       ;;
-    --yes-overwrite-ini)
-      overwrite_mode="all"
-      shift
-      ;;
     --no-overwrite-ini)
       overwrite_mode="none"
       shift
@@ -277,7 +290,18 @@ log_info "Overwrite mode: ${overwrite_mode}"
 log_info "Skip install: ${skip_install}"
 
 if [[ "${target_dir}" == ~* ]]; then
-  target_dir="${HOME}${target_dir#\~}"
+  if [[ ${EUID} -eq 0 && -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+    sudo_home="$(resolve_home_for_user "${SUDO_USER}" || true)"
+    if [[ -n "${sudo_home}" ]]; then
+      target_dir="${sudo_home}${target_dir#\~}"
+      log_warn "Running as root: resolved '~' using SUDO_USER home (${SUDO_USER} -> ${sudo_home})"
+    else
+      target_dir="${HOME}${target_dir#\~}"
+      log_warn "Running as root and failed to resolve SUDO_USER home; using HOME=${HOME}"
+    fi
+  else
+    target_dir="${HOME}${target_dir#\~}"
+  fi
 fi
 
 target_dir="$(cd "$(dirname "${target_dir}")" && pwd)/$(basename "${target_dir}")"
@@ -368,15 +392,6 @@ while IFS= read -r src_file; do
     if [[ "${overwrite_mode}" == "ask" ]]; then
       decision="$(prompt_overwrite "${rel_path}")"
       if [[ "${decision}" == "n" ]]; then
-        skipped_prompt=$((skipped_prompt + 1))
-        log_info "SKIP protected-config ${rel_path}"
-        continue
-      fi
-      if [[ "${decision}" == "a" ]]; then
-        overwrite_mode="all"
-      fi
-      if [[ "${decision}" == "s" ]]; then
-        overwrite_mode="none"
         skipped_prompt=$((skipped_prompt + 1))
         log_info "SKIP protected-config ${rel_path}"
         continue

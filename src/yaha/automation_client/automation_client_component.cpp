@@ -25,6 +25,7 @@ namespace {
 constexpr std::size_t k_management_suffix_length{4U};
 constexpr std::size_t k_debug_suffix_length{6U};
 constexpr int k_http_ok_status{200};
+constexpr int k_http_not_found_status{404};
 constexpr std::size_t k_max_pending_publish_attempts{3U};
 constexpr unsigned char k_ascii_control_max{0x20U};
 constexpr unsigned char k_low_nibble_mask{0x0FU};
@@ -402,6 +403,17 @@ bool AutomationClientComponent::hasRule(const std::string& ruleName) const {
 bool AutomationClientComponent::loadRulesFromFileStore() {
     httplib::Client client{config_.fileStoreHost, static_cast<int>(config_.fileStorePort)};
     const auto response = client.Get(config_.rulesKeyPath);
+    if (response && response->status == k_http_not_found_status) {
+        std::lock_guard<std::mutex> lock{stateMutex_};
+        if (!rulesRoot_.isObject()) {
+            rulesRoot_ = RuleTreeNode{RuleTreeNode::Object{}};
+        }
+        RuleTreeNode::Object* rulesObject = ensureRulesObject(&rulesRoot_);
+        (void)rulesObject;
+        refreshDynamicSubscriptionsLocked();
+        return true;
+    }
+
     if (!response || response->status != k_http_ok_status) {
         const std::string statusText = response ? std::to_string(response->status) : "no_response";
         std::cerr << "automation_client[error] op=filestore_get path=" << config_.rulesKeyPath

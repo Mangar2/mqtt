@@ -26,7 +26,7 @@ Protocol and domain logic remain in `broker_connector/`. Runtime orchestration i
 
 | Function | Signature | Notes |
 |---------|-----------|-------|
-| `tryLoadSourceHttpBrokerConfigFromIni` | `SourceHttpBrokerConfigLoadResult(const IniDocument&)` | Reads `sourceHttpBroker` and `subscription` sections (legacy fallback: `sourceSubscriptions`) |
+| `tryLoadSourceHttpBrokerConfigFromIni` | `SourceHttpBrokerConfigLoadResult(const IniDocument&)` | Reads `sourceHttpBroker` and repeated `subscription` sections |
 | `tryLoadReceiverMqttBrokerConfigFromIni` | `ReceiverMqttBrokerConfigLoadResult(const IniDocument&)` | Reads `receiverMqttBroker` section |
 | `tryLoadBrokerConnectorClientRuntimeConfigFromIni` | `BrokerConnectorClientRuntimeConfigLoadResult(const IniDocument&)` | Reads source, receiver, `automation`, and `monitoring` sections |
 
@@ -50,7 +50,7 @@ Protocol and domain logic remain in `broker_connector/`. Runtime orchestration i
 - key `qos`: qos (`0`, `1`, `2`)
 - section can be repeated for multiple subscriptions
 - default when missing: `topic=#`, `qos=1`
-- legacy fallback: `[sourceSubscriptions]` key/value mapping is still accepted
+- legacy `[sourceSubscriptions]` key/value mapping is not supported
 
 ### Section `[receiverMqttBroker]`
 

@@ -151,11 +151,11 @@ def prompt_overwrite(relative_path: Path) -> str:
         answer = input(
             "Remote protected config exists and differs: "
             f"{relative_path.as_posix()}\n"
-            "Overwrite? [y]es / [n]o / [a]ll / [s]kip-all: "
+            "Overwrite? [y]es / [n]o: "
         ).strip().lower()
-        if answer in {"y", "n", "a", "s"}:
+        if answer in {"y", "n"}:
             return answer
-        print("Please answer with y, n, a, or s.")
+        print("Please answer with y or n.")
 
 
 def build_remote_path(remote_root: str, relative_path: Path) -> str:
@@ -283,11 +283,6 @@ def parse_args() -> argparse.Namespace:
         help="Remote target directory",
     )
     parser.add_argument(
-        "--yes-overwrite-ini",
-        action="store_true",
-        help="Overwrite differing protected INI config files without prompting",
-    )
-    parser.add_argument(
         "--no-overwrite-ini",
         action="store_true",
         help="Never overwrite differing protected INI config files",
@@ -326,12 +321,7 @@ def main() -> int:
     remote_host = normalize_remote_host(args.remote_host)
     remote_root = args.remote_dir
 
-    yes_overwrite_ini = args.yes_overwrite_ini
     no_overwrite_ini = args.no_overwrite_ini
-
-    if yes_overwrite_ini and no_overwrite_ini:
-        print("ERROR: --yes-overwrite-ini and --no-overwrite-ini are mutually exclusive", file=sys.stderr)
-        return 1
 
     if not local_root.exists() or not local_root.is_dir():
         print(f"ERROR: local directory does not exist: {local_root}", file=sys.stderr)
@@ -356,9 +346,7 @@ def main() -> int:
         stats = CopyStats()
         overwrite_mode = "ask"
         interactive_install = not args.non_interactive_install
-        if yes_overwrite_ini:
-            overwrite_mode = "all"
-        elif no_overwrite_ini:
+        if no_overwrite_ini:
             overwrite_mode = "none"
 
         for local_file in files:
@@ -392,13 +380,6 @@ def main() -> int:
                 if overwrite_mode == "ask":
                     decision = prompt_overwrite(relative)
                     if decision == "n":
-                        stats.skipped_prompt += 1
-                        print(f"SKIP protected-config {relative.as_posix()}")
-                        continue
-                    if decision == "a":
-                        overwrite_mode = "all"
-                    elif decision == "s":
-                        overwrite_mode = "none"
                         stats.skipped_prompt += 1
                         print(f"SKIP protected-config {relative.as_posix()}")
                         continue

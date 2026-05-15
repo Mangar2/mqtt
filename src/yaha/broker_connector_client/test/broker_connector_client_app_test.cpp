@@ -190,6 +190,30 @@ TEST_CASE("load_runtime_config_rejects_incomplete_subscription_entry", "[broker_
     REQUIRE(runtimeConfigResult.errorMessage.find("incomplete [subscription] entry") != std::string::npos);
 }
 
+TEST_CASE("load_runtime_config_ignores_legacy_source_subscriptions_section", "[broker_connector_client]") {
+    const std::string iniText =
+        "[sourceHttpBroker]\n"
+        "host=127.0.0.1\n"
+        "port=8080\n"
+        "\n"
+        "[sourceSubscriptions]\n"
+        "home/#=1\n"
+        "\n"
+        "[receiverMqttBroker]\n"
+        "host=127.0.0.1\n"
+        "port=1883\n";
+
+    yaha::IniDocument document{};
+    std::string errorMessage{};
+    REQUIRE(loadDocumentFromText(iniText, document, errorMessage));
+
+    const auto runtimeConfigResult = yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document);
+    REQUIRE(runtimeConfigResult.config.has_value());
+    const yaha::BrokerConnectorClientRuntimeConfig config = *runtimeConfigResult.config;
+    REQUIRE(config.sourceConfig.subscribeTopics.size() == 1U);
+    REQUIRE(config.sourceConfig.subscribeTopics.count("#") == 1U);
+}
+
 TEST_CASE("load_runtime_config_rejects_invalid_monitoring_log_reason", "[broker_connector_client]") {
     const std::string iniText =
         "[sourceHttpBroker]\n"

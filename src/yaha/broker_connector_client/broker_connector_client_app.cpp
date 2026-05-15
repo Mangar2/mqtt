@@ -1,7 +1,6 @@
 #include "yaha/broker_connector_client/broker_connector_client_app.h"
 
 #include "yaha/ini/ini_document.h"
-#include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <chrono>
 #include <cstdint>
@@ -162,13 +161,6 @@ SourceHttpBrokerConfigLoadResult tryLoadSourceHttpBrokerConfigFromIni(
         return {.config = std::nullopt, .errorMessage = structuredSubscriptionsResult.errorMessage};
     }
     parsedSubscriptions = *structuredSubscriptionsResult.subscriptions;
-
-    std::string errorMessage{};
-    if (parsedSubscriptions.empty()) {
-        if (!tryLoadSubscriptionsFromIni(document, "sourceSubscriptions", parsedSubscriptions, errorMessage)) {
-            return {.config = std::nullopt, .errorMessage = errorMessage};
-        }
-    }
 
     if (parsedSubscriptions.empty()) {
         parsed.subscribeTopics = {{"#", Qos::AtLeastOnce}};
