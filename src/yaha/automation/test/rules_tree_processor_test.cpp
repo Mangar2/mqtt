@@ -69,4 +69,35 @@ TEST_CASE("rules_tree_processor_collects_path_aware_errors_and_keeps_valid_resul
     REQUIRE(result.messages.size() == 1U);
     REQUIRE(result.errors.empty() == false);
 }
+
+TEST_CASE("rules_tree_processor_emitted_messages_include_evaluation_trace_reason", "[yaha][automation]") {
+    yaha::RuleTreeNode::Object ruleObject;
+    ruleObject.insert({"topic", yaha::RuleTreeNode{"house/light/set"}});
+    ruleObject.insert({"check", yaha::RuleTreeNode{"$SYS/presence = awake"}});
+    ruleObject.insert({"value", yaha::RuleTreeNode{"if($SYS/presence = awake, on, off)"}});
+
+    yaha::RuleTreeNode::Object rulesObject;
+    rulesObject.insert({"wakeUpRule", yaha::RuleTreeNode{std::move(ruleObject)}});
+
+    yaha::RuleTreeNode::Object rootObject;
+    rootObject.insert({"rules", yaha::RuleTreeNode{std::move(rulesObject)}});
+
+    yaha::ExpressionEvaluator::VariableMap variables;
+    variables.insert({"$SYS/presence", std::string{"awake"}});
+
+    const yaha::RulesTreeProcessingResult result = yaha::RulesTreeProcessor::process(
+        yaha::RuleTreeNode{std::move(rootObject)},
+        variables);
+
+    REQUIRE(result.success);
+    REQUIRE(result.messages.size() == 1U);
+    REQUIRE_FALSE(result.messages.front().reason().empty());
+
+    const bool hasFinishTrace = std::ranges::any_of(
+        result.messages.front().reason(),
+        [](const yaha::ReasonEntry& reasonEntry) {
+            return reasonEntry.message.find("rule-evaluation:finish triggered message-ready") != std::string::npos;
+        });
+    REQUIRE(hasFinishTrace);
+}
 // NOLINTEND(readability-function-cognitive-complexity)

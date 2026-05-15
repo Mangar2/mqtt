@@ -147,6 +147,11 @@ Behavior:
 - If `check` resolves false, returns success with `triggered=false` and no message.
 - Evaluates `value` as expression string or accepts numeric/bool literal node values.
 - Builds one outbound `Message` when rule is triggered and value is valid.
+- When at least one executable program was evaluated (`check` expression or
+  string-based `value` expression), the emitted rule message `reason` chain is
+  populated with the full ordered evaluation trace.
+- Literal-only rules without evaluated programs keep message `reason` unchanged
+  (no synthetic trace entries).
 - Aggregates all used variable names from evaluated expressions.
 - `processWithTrace` emits ordered trace text entries for each decision step
   (shape validation, check decision, check reason text, value reason text,

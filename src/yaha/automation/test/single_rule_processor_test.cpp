@@ -342,4 +342,52 @@ TEST_CASE("single_rule_processor_trace_includes_reasoned_check_and_value", "[yah
         });
     REQUIRE(hasVariableSnapshot);
 }
+
+TEST_CASE("single_rule_processor_adds_trace_reason_to_emitted_message_when_program_executed", "[yaha][automation]") {
+    yaha::RuleTreeNode::Object ruleObject;
+    ruleObject.insert({"topic", yaha::RuleTreeNode{"home/light/set"}});
+    ruleObject.insert({"check", yaha::RuleTreeNode{"$SYS/presence = awake"}});
+    ruleObject.insert({"value", yaha::RuleTreeNode{"if($SYS/presence = awake, on, off)"}});
+
+    yaha::ExpressionEvaluator::VariableMap variables;
+    variables.insert({"$SYS/presence", std::string{"awake"}});
+
+    const yaha::SingleRuleProcessingResult result = yaha::SingleRuleProcessor::process(
+        yaha::RuleTreeNode{std::move(ruleObject)},
+        variables);
+
+    REQUIRE(result.success);
+    REQUIRE(result.triggered);
+    REQUIRE(result.message.has_value());
+    REQUIRE_FALSE(result.message->reason().empty());
+
+    const bool hasCheckTrace = std::ranges::any_of(
+        result.message->reason(),
+        [](const yaha::ReasonEntry& reasonEntry) {
+            return reasonEntry.message.find("rule-evaluation:check expr=") != std::string::npos;
+        });
+    REQUIRE(hasCheckTrace);
+
+    const bool hasValueTrace = std::ranges::any_of(
+        result.message->reason(),
+        [](const yaha::ReasonEntry& reasonEntry) {
+            return reasonEntry.message.find("rule-evaluation:value expr=") != std::string::npos;
+        });
+    REQUIRE(hasValueTrace);
+}
+
+TEST_CASE("single_rule_processor_keeps_reason_empty_for_literal_rule_without_program", "[yaha][automation]") {
+    yaha::RuleTreeNode::Object ruleObject;
+    ruleObject.insert({"topic", yaha::RuleTreeNode{"home/light/set"}});
+    ruleObject.insert({"value", yaha::RuleTreeNode{1.0}});
+
+    const yaha::SingleRuleProcessingResult result = yaha::SingleRuleProcessor::process(
+        yaha::RuleTreeNode{std::move(ruleObject)},
+        yaha::ExpressionEvaluator::VariableMap{});
+
+    REQUIRE(result.success);
+    REQUIRE(result.triggered);
+    REQUIRE(result.message.has_value());
+    REQUIRE(result.message->reason().empty());
+}
 // NOLINTEND(readability-function-cognitive-complexity)

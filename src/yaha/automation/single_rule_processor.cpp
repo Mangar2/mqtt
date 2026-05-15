@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <ranges>
 #include <utility>
 
 #include "yaha/automation/expression_parser.h"
@@ -201,12 +202,44 @@ void appendVariableTraceEntry(std::vector<std::string>* traceEntries,
     appendTrace(traceEntries, traceText);
 }
 
+[[nodiscard]] bool hasExecutableProgram(const RuleTreeNode& ruleNode) {
+    if (!ruleNode.isObject()) {
+        return false;
+    }
+
+    const auto& ruleObject = ruleNode.asObject();
+    if (ruleObject.contains("check")) {
+        return true;
+    }
+
+    const auto valueIterator = ruleObject.find("value");
+    return valueIterator != ruleObject.end() && valueIterator->second.isString();
+}
+
+void appendEvaluationTraceToMessage(
+    const std::vector<std::string>& traceEntries,
+    Message* outputMessage) {
+    for (const auto& traceEntry : traceEntries | std::views::reverse) {
+        outputMessage->addReason(traceEntry);
+    }
+}
+
 } // namespace
 
 SingleRuleProcessingResult SingleRuleProcessor::process(
     const RuleTreeNode& ruleNode,
     const ExpressionEvaluator::VariableMap& variables) {
-    return processWithTrace(ruleNode, variables, nullptr);
+    std::vector<std::string> traceEntries;
+    SingleRuleProcessingResult result = processWithTrace(ruleNode, variables, &traceEntries);
+
+    if (result.success
+        && result.triggered
+        && result.message.has_value()
+        && hasExecutableProgram(ruleNode)) {
+        appendEvaluationTraceToMessage(traceEntries, &result.message.value());
+    }
+
+    return result;
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
