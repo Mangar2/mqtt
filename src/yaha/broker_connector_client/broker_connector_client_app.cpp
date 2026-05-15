@@ -177,8 +177,7 @@ ReceiverMqttBrokerConfigLoadResult tryLoadReceiverMqttBrokerConfigFromIni(
         .brokerHost = "127.0.0.1",
         .clientId = "broker-connector-receiver",
         .enableLifecycleTrace = true,
-        .enableMessageTrace = false,
-        .logReason = true};
+        .enableMessageTrace = true};
 
     if (const auto host = document.lastValue("receiverMqttBroker", "host"); host.has_value()) {
         parsed.brokerHost = *host;
@@ -228,14 +227,6 @@ ReceiverMqttBrokerConfigLoadResult tryLoadReceiverMqttBrokerConfigFromIni(
     }
     if (lifecycleTraceResult.first.has_value()) {
         parsed.enableLifecycleTrace = *lifecycleTraceResult.first;
-    }
-
-    const auto messageTraceResult = document.readBool("receiverMqttBroker", "enableMessageTrace");
-    if (!messageTraceResult.second.empty()) {
-        return {.config = std::nullopt, .errorMessage = messageTraceResult.second};
-    }
-    if (messageTraceResult.first.has_value()) {
-        parsed.enableMessageTrace = *messageTraceResult.first;
     }
 
     return {.config = std::move(parsed), .errorMessage = ""};
@@ -324,13 +315,20 @@ BrokerConnectorClientRuntimeConfigLoadResult tryLoadBrokerConnectorClientRuntime
         parsed.sourceLifecycleConfig.enableTrace = *sourceTraceResult.first;
     }
 
-    const auto logReasonResult = document.readBool("monitoring", "logReason");
-    if (!logReasonResult.second.empty()) {
-        return {.config = std::nullopt, .errorMessage = logReasonResult.second};
+    const auto logIncomingResult = document.readBool("monitoring", "logIncomingMessage");
+    if (!logIncomingResult.second.empty()) {
+        return {.config = std::nullopt, .errorMessage = logIncomingResult.second};
     }
-    if (logReasonResult.first.has_value()) {
-        parsed.sourceConfig.logReason = *logReasonResult.first;
-        parsed.receiverConfig.logReason = *logReasonResult.first;
+    if (logIncomingResult.first.has_value()) {
+        parsed.sourceConfig.logIncomingMessages = *logIncomingResult.first;
+    }
+
+    const auto logOutgoingResult = document.readBool("monitoring", "logOutgoingMessage");
+    if (!logOutgoingResult.second.empty()) {
+        return {.config = std::nullopt, .errorMessage = logOutgoingResult.second};
+    }
+    if (logOutgoingResult.first.has_value()) {
+        parsed.receiverConfig.enableMessageTrace = *logOutgoingResult.first;
     }
 
     return {.config = std::move(parsed), .errorMessage = ""};

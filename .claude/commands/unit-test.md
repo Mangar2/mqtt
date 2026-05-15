@@ -1,5 +1,11 @@
 # Unit Test Guidelines
 
+## ABSOLUTE PRE-RUN GATE
+
+Before any compile, build, coverage run, or test command, run `get_errors` for every changed file and fix all reported problems.
+
+Hard rule: zero problems required before execution. No exceptions, never.
+
 ## Framework
 
 Catch2 v3 (`Catch2::Catch2WithMain`), already linked to the test target.

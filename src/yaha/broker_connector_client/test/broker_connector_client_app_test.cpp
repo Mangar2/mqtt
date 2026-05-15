@@ -60,7 +60,6 @@ TEST_CASE("load_runtime_config_parses_source_receiver_and_automation", "[broker_
         "keepAliveSeconds=60\n"
         "loopSleepMs=25\n"
         "enableLifecycleTrace=false\n"
-        "enableMessageTrace=true\n"
         "\n"
         "[automation]\n"
         "reconnectDelayMs=3000\n"
@@ -73,7 +72,8 @@ TEST_CASE("load_runtime_config_parses_source_receiver_and_automation", "[broker_
         "\n"
         "[monitoring]\n"
         "sourceLifecycleTrace=false\n"
-        "logReason=false\n";
+        "logIncomingMessage=false\n"
+        "logOutgoingMessage=false\n";
 
     yaha::IniDocument document{};
     std::string errorMessage{};
@@ -100,14 +100,13 @@ TEST_CASE("load_runtime_config_parses_source_receiver_and_automation", "[broker_
     REQUIRE(config.receiverConfig.keepAliveInterval.count() == 60000);
     REQUIRE(config.receiverConfig.loopSleep.count() == 25);
     REQUIRE_FALSE(config.receiverConfig.enableLifecycleTrace);
-    REQUIRE(config.receiverConfig.enableMessageTrace);
+    REQUIRE_FALSE(config.receiverConfig.enableMessageTrace);
 
     REQUIRE(config.sourceLifecycleConfig.reconnectDelay.count() == 3000);
     REQUIRE(config.sourceLifecycleConfig.loopSleep.count() == 30);
     REQUIRE(config.sourceLifecycleConfig.keepAliveInterval.count() == 5000);
     REQUIRE_FALSE(config.sourceLifecycleConfig.enableTrace);
-    REQUIRE_FALSE(config.sourceConfig.logReason);
-    REQUIRE_FALSE(config.receiverConfig.logReason);
+    REQUIRE_FALSE(config.sourceConfig.logIncomingMessages);
 
     REQUIRE(config.relayPolicyConfig.maxPublishRetries == 5U);
     REQUIRE(config.relayPolicyConfig.publishRetryBackoff.count() == 350);
@@ -136,12 +135,12 @@ TEST_CASE("load_runtime_config_uses_defaults_when_optional_keys_missing", "[brok
 
     REQUIRE(config.sourceConfig.clientId == "broker-connector-source");
     REQUIRE(config.sourceConfig.clean);
-    REQUIRE(config.sourceConfig.logReason);
+    REQUIRE(config.sourceConfig.logIncomingMessages);
     REQUIRE(config.sourceConfig.subscribeTopics.size() == 1U);
     REQUIRE(config.sourceConfig.subscribeTopics.count("#") == 1U);
 
     REQUIRE(config.receiverConfig.clientId == "broker-connector-receiver");
-    REQUIRE(config.receiverConfig.logReason);
+    REQUIRE(config.receiverConfig.enableMessageTrace);
     REQUIRE(config.relayPolicyConfig.maxPublishRetries == 3U);
     REQUIRE(config.relayPolicyConfig.normalizeQosToAtLeastOnce);
 }
@@ -214,7 +213,7 @@ TEST_CASE("load_runtime_config_ignores_legacy_source_subscriptions_section", "[b
     REQUIRE(config.sourceConfig.subscribeTopics.count("#") == 1U);
 }
 
-TEST_CASE("load_runtime_config_rejects_invalid_monitoring_log_reason", "[broker_connector_client]") {
+TEST_CASE("load_runtime_config_rejects_invalid_monitoring_log_incoming", "[broker_connector_client]") {
     const std::string iniText =
         "[sourceHttpBroker]\n"
         "host=127.0.0.1\n"
@@ -225,7 +224,7 @@ TEST_CASE("load_runtime_config_rejects_invalid_monitoring_log_reason", "[broker_
         "port=1883\n"
         "\n"
         "[monitoring]\n"
-        "logReason=maybe\n";
+        "logIncomingMessage=maybe\n";
 
     yaha::IniDocument document{};
     std::string errorMessage{};
@@ -233,5 +232,5 @@ TEST_CASE("load_runtime_config_rejects_invalid_monitoring_log_reason", "[broker_
 
     const auto runtimeConfigResult = yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document);
     REQUIRE_FALSE(runtimeConfigResult.config.has_value());
-    REQUIRE(runtimeConfigResult.errorMessage.find("monitoring.logReason") != std::string::npos);
+    REQUIRE(runtimeConfigResult.errorMessage.find("monitoring.logIncomingMessage") != std::string::npos);
 }

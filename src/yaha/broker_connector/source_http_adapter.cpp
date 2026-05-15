@@ -43,7 +43,7 @@ std::string trim(const std::string& text) {
 }
 
 std::string toLower(std::string text) {
-    std::transform(text.begin(), text.end(), text.begin(), [](const unsigned char value) {
+    std::ranges::transform(text, text.begin(), [](const unsigned char value) {
         return static_cast<char>(std::tolower(value));
     });
     return text;
@@ -75,6 +75,22 @@ std::string escapeJson(const std::string& text) {
         }
     }
     return escaped;
+}
+
+std::string reasonEntriesToLogText(const std::vector<ReasonEntry>& reasonEntries) {
+    if (reasonEntries.empty()) {
+        return "none";
+    }
+
+    std::string combined{};
+    for (std::size_t index = 0U; index < reasonEntries.size(); ++index) {
+        if (index > 0U) {
+            combined += " | ";
+        }
+        combined += reasonEntries[index].message;
+    }
+
+    return combined;
 }
 
 bool parseBool(const std::string& text, const bool defaultValue) {
@@ -376,7 +392,7 @@ std::optional<ReasonEntry> tryParseReasonEntryObject(const std::string& objectTe
         timestampText.clear();
     }
 
-    return ReasonEntry{std::move(messageText), std::move(timestampText)};
+    return ReasonEntry{.message = std::move(messageText), .timestamp = std::move(timestampText)};
 }
 
 std::optional<std::vector<ReasonEntry>> tryParseReasonArray(const std::string& arrayText) {
@@ -649,7 +665,7 @@ bool SourceHttpBrokerAdapter::ping(std::string& errorMessage) {
 
     const auto tryPingWithSendToken = [this](std::string& failureText) -> bool {
         httplib::Client client{config_.brokerHost, static_cast<int>(config_.brokerPort)};
-        const std::string payload = "{\"token\":\"" + escapeJson(sendToken_) + "\"}";
+        const std::string payload = R"({"token":")" + escapeJson(sendToken_) + R"("})";
         httplib::Headers headers = makeStandardJsonHeaders();
 
         const auto response = client.Put("/pingreq", headers, payload, "application/json");
@@ -732,7 +748,7 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
                       << escapeJson(rawPacketIdHeader) << "\" qos=" << static_cast<int>(meta.qos)
                       << '\n' << std::flush;
             response.status = k_http_status_bad_request;
-            response.set_content("{\"error\":\"bad_publish_packetid\"}", "application/json");
+            response.set_content(R"({"error":"bad_publish_packetid"})", "application/json");
             return;
         }
 
@@ -741,29 +757,27 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
             std::cout << "  source: publish rejected bad payload body=" << request.body
                       << '\n' << std::flush;
             response.status = k_http_status_bad_request;
-            response.set_content("{\"error\":\"bad_publish_payload\"}", "application/json");
+            response.set_content(R"({"error":"bad_publish_payload"})", "application/json");
             return;
         }
 
         message.setRawPayload(request.body);
 
-        std::cout << "  source: publish recv topic=" << message.topic()
-                  << " qos=" << static_cast<int>(meta.qos)
-                  << " retain=" << (meta.retain ? "1" : "0")
-                  << " dup=" << (meta.dup ? "1" : "0")
-                  << " value=" << valueToText(message.value());
+        if (config_.logIncomingMessages) {
+            std::cout << "  source: publish recv topic=" << message.topic()
+                      << " qos=" << static_cast<int>(meta.qos)
+                      << " retain=" << (meta.retain ? "1" : "0")
+                      << " dup=" << (meta.dup ? "1" : "0")
+                      << " value=" << valueToText(message.value());
 
-        if (meta.packetId.has_value()) {
-            std::cout << " packetid=" << *meta.packetId;
-        }
+            if (meta.packetId.has_value()) {
+                std::cout << " packetid=" << *meta.packetId;
+            }
 
-        if (config_.logReason) {
-            const std::string reasonText =
-                message.reason().empty() ? "none" : message.reason().front().message;
+            const std::string reasonText = reasonEntriesToLogText(message.reason());
             std::cout << " reason=\"" << escapeJson(reasonText) << '\"';
+            std::cout << '\n' << std::flush;
         }
-
-        std::cout << '\n' << std::flush;
 
         SourcePublishCallback callback{};
         {
@@ -949,7 +963,7 @@ bool SourceHttpBrokerAdapter::sendDisconnect() const {
     httplib::Client client{config_.brokerHost, static_cast<int>(config_.brokerPort)};
     httplib::Headers headers = makeStandardJsonHeaders();
 
-    const std::string payload = "{\"clientId\":\"" + escapeJson(config_.clientId) + "\"}";
+    const std::string payload = R"({"clientId":")" + escapeJson(config_.clientId) + R"("})";
     const auto response = client.Put("/disconnect", headers, payload, "application/json");
     return response && response->status == k_http_status_no_content;
 }
@@ -961,19 +975,18 @@ std::string SourceHttpBrokerAdapter::buildConnectPayload(const SourceHttpBrokerC
         static_cast<std::uint64_t>(config.keepAliveSeconds) * 1000U;
 
     std::ostringstream stream{};
-    stream << "{"
-           << "\"clientId\":\"" << escapeJson(config.clientId) << "\"," 
-           << "\"host\":\"" << escapeJson(host) << "\"," 
+    stream << R"({"clientId":")" << escapeJson(config.clientId) << R"(",)"
+           << R"("host":")" << escapeJson(host) << R"(",)"
            << "\"port\":" << effectiveListenerPort << ','
-           << "\"clean\":" << (config.clean ? "true" : "false") << ','
-           << "\"keepAlive\":" << keepAliveMilliseconds
+           << R"("clean":)" << (config.clean ? "true" : "false") << ','
+           << R"("keepAlive":)" << keepAliveMilliseconds
            << '}';
     return stream.str();
 }
 
 std::string SourceHttpBrokerAdapter::buildSubscribePayload(const SourceHttpBrokerConfig& config) {
     std::ostringstream stream{};
-    stream << "{\"clientId\":\"" << escapeJson(config.clientId) << "\",\"topics\":{";
+    stream << R"({"clientId":")" << escapeJson(config.clientId) << R"(","topics":{)";
 
     bool first = true;
     for (const auto& [topicFilter, qos] : config.subscribeTopics) {

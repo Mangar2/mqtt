@@ -25,13 +25,13 @@ struct BrokerConnectorClientRuntimeConfig {
     SourceLifecycleConfig sourceLifecycleConfig{};     ///< Source lifecycle timing configuration.
     YahaMqttClient::Config receiverConfig{             ///< Receiver MQTT client configuration.
         .brokerHost = "127.0.0.1",
-        .brokerPort = 1883U,
+        .brokerPort = YahaMqttClient::k_default_broker_port,
         .clientId = "broker-connector-receiver",
-        .reconnectDelay = std::chrono::milliseconds{1000},
-        .keepAliveInterval = std::chrono::milliseconds{30000},
-        .loopSleep = std::chrono::milliseconds{20},
+        .reconnectDelay = std::chrono::milliseconds{YahaMqttClient::k_default_reconnect_delay_ms},
+        .keepAliveInterval = std::chrono::milliseconds{YahaMqttClient::k_default_keep_alive_interval_ms},
+        .loopSleep = std::chrono::milliseconds{YahaMqttClient::k_default_loop_sleep_ms},
         .enableLifecycleTrace = true,
-        .enableMessageTrace = false};
+        .enableMessageTrace = true};
     RelayPolicyConfig relayPolicyConfig{};             ///< Relay policy and retry configuration.
 };
 

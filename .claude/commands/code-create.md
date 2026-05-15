@@ -157,6 +157,8 @@ Generate unit tests based on `TEST_SPEC.md`.
 
 Before running the test script, call `get_errors` on every file that was created or modified. All diagnostics reported by the IDE must be resolved first — regardless of whether they would cause a compiler error.
 
+Absolute gate: compile/build/test is forbidden while any `get_errors` problem is still open. No exceptions, never.
+
 This includes:
 - Short variable/parameter names (< 3 characters)
 - Unused includes

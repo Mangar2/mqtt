@@ -9,6 +9,19 @@
 
 namespace {
 
+constexpr std::uint16_t k_expected_source_port{8080U};
+constexpr std::uint16_t k_expected_source_listener_port{18080U};
+constexpr std::uint32_t k_expected_source_keep_alive_seconds{11U};
+constexpr std::uint16_t k_expected_receiver_port{1884U};
+constexpr std::int64_t k_expected_receiver_reconnect_delay_ms{222};
+constexpr std::int64_t k_expected_receiver_keep_alive_interval_ms{12000};
+constexpr std::int64_t k_expected_receiver_loop_sleep_ms{7};
+constexpr std::int64_t k_expected_source_lifecycle_reconnect_delay_ms{333};
+constexpr std::int64_t k_expected_source_lifecycle_loop_sleep_ms{8};
+constexpr std::int64_t k_expected_source_lifecycle_keep_alive_interval_ms{444};
+constexpr std::uint32_t k_expected_max_publish_retries{5U};
+constexpr std::int64_t k_expected_publish_retry_backoff_ms{9};
+
 std::filesystem::path make_temp_directory() {
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto path = std::filesystem::temp_directory_path() /
@@ -42,6 +55,42 @@ yaha::BrokerConnectorClientRuntimeConfigLoadResult try_load_runtime_config_from_
     return yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document);
 }
 
+bool source_config_matches_complete_ini(
+    const yaha::BrokerConnectorClientRuntimeConfig& config) {
+    return config.sourceConfig.brokerHost == "source.local" &&
+        config.sourceConfig.brokerPort == k_expected_source_port &&
+        config.sourceConfig.clientId == "source-client" &&
+        config.sourceConfig.listenerHost == "127.0.0.1" &&
+        config.sourceConfig.listenerBindHost == "0.0.0.0" &&
+        config.sourceConfig.listenerPort == k_expected_source_listener_port &&
+        config.sourceConfig.keepAliveSeconds == k_expected_source_keep_alive_seconds &&
+        !config.sourceConfig.clean &&
+        config.sourceConfig.subscribeTopics.size() == 1U;
+}
+
+bool receiver_config_matches_complete_ini(
+    const yaha::BrokerConnectorClientRuntimeConfig& config) {
+    return config.receiverConfig.brokerHost == "receiver.local" &&
+        config.receiverConfig.brokerPort == k_expected_receiver_port &&
+        config.receiverConfig.clientId == "receiver-client" &&
+        config.receiverConfig.reconnectDelay.count() == k_expected_receiver_reconnect_delay_ms &&
+        config.receiverConfig.keepAliveInterval.count() == k_expected_receiver_keep_alive_interval_ms &&
+        config.receiverConfig.loopSleep.count() == k_expected_receiver_loop_sleep_ms &&
+        !config.receiverConfig.enableLifecycleTrace &&
+        config.receiverConfig.enableMessageTrace;
+}
+
+bool lifecycle_and_policy_match_complete_ini(
+    const yaha::BrokerConnectorClientRuntimeConfig& config) {
+    return config.sourceLifecycleConfig.reconnectDelay.count() == k_expected_source_lifecycle_reconnect_delay_ms &&
+        config.sourceLifecycleConfig.loopSleep.count() == k_expected_source_lifecycle_loop_sleep_ms &&
+        config.sourceLifecycleConfig.keepAliveInterval.count() == k_expected_source_lifecycle_keep_alive_interval_ms &&
+        config.relayPolicyConfig.maxPublishRetries == k_expected_max_publish_retries &&
+        config.relayPolicyConfig.publishRetryBackoff.count() == k_expected_publish_retry_backoff_ms &&
+        !config.relayPolicyConfig.normalizeQosToAtLeastOnce &&
+        config.relayPolicyConfig.retainPassthrough;
+}
+
 } // namespace
 
 TEST_CASE("broker_connector_client_config_parses_complete_ini",
@@ -71,7 +120,6 @@ TEST_CASE("broker_connector_client_config_parses_complete_ini",
         "keepAliveSeconds = 12\n"
         "loopSleepMs = 7\n"
         "enableLifecycleTrace = off\n"
-        "enableMessageTrace = on\n"
         "\n"
         "[automation]\n"
         "reconnectDelayMs = 333\n"
@@ -80,37 +128,17 @@ TEST_CASE("broker_connector_client_config_parses_complete_ini",
         "maxPublishRetries = 5\n"
         "publishRetryBackoffMs = 9\n"
         "normalizeQosToAtLeastOnce = false\n"
-        "retainPassthrough = true\n");
+        "retainPassthrough = true\n"
+        "\n"
+        "[monitoring]\n"
+        "logOutgoingMessage = true\n");
 
     const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
     REQUIRE(runtime_config_result.config.has_value());
     const auto config = *runtime_config_result.config;
-    REQUIRE(config.sourceConfig.brokerHost == "source.local");
-    REQUIRE(config.sourceConfig.brokerPort == 8080U);
-    REQUIRE(config.sourceConfig.clientId == "source-client");
-    REQUIRE(config.sourceConfig.listenerHost == "127.0.0.1");
-    REQUIRE(config.sourceConfig.listenerBindHost == "0.0.0.0");
-    REQUIRE(config.sourceConfig.listenerPort == 18080U);
-    REQUIRE(config.sourceConfig.keepAliveSeconds == 11U);
-    REQUIRE_FALSE(config.sourceConfig.clean);
-    REQUIRE(config.sourceConfig.subscribeTopics.size() == 1U);
-
-    REQUIRE(config.receiverConfig.brokerHost == "receiver.local");
-    REQUIRE(config.receiverConfig.brokerPort == 1884U);
-    REQUIRE(config.receiverConfig.clientId == "receiver-client");
-    REQUIRE(config.receiverConfig.reconnectDelay.count() == 222);
-    REQUIRE(config.receiverConfig.keepAliveInterval.count() == 12000);
-    REQUIRE(config.receiverConfig.loopSleep.count() == 7);
-    REQUIRE_FALSE(config.receiverConfig.enableLifecycleTrace);
-    REQUIRE(config.receiverConfig.enableMessageTrace);
-
-    REQUIRE(config.sourceLifecycleConfig.reconnectDelay.count() == 333);
-    REQUIRE(config.sourceLifecycleConfig.loopSleep.count() == 8);
-    REQUIRE(config.sourceLifecycleConfig.keepAliveInterval.count() == 444);
-    REQUIRE(config.relayPolicyConfig.maxPublishRetries == 5U);
-    REQUIRE(config.relayPolicyConfig.publishRetryBackoff.count() == 9);
-    REQUIRE_FALSE(config.relayPolicyConfig.normalizeQosToAtLeastOnce);
-    REQUIRE(config.relayPolicyConfig.retainPassthrough);
+    REQUIRE(source_config_matches_complete_ini(config));
+    REQUIRE(receiver_config_matches_complete_ini(config));
+    REQUIRE(lifecycle_and_policy_match_complete_ini(config));
 
     remove_directory_quiet(temp_directory);
 }
@@ -151,12 +179,12 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_boolean",
           "[broker_connector_client]") {
     const auto temp_directory = make_temp_directory();
     const auto config_path = write_config_file(temp_directory,
-        "[receiverMqttBroker]\n"
-        "enableMessageTrace = maybe\n");
+        "[monitoring]\n"
+        "logOutgoingMessage = maybe\n");
 
     const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
     REQUIRE_FALSE(runtime_config_result.config.has_value());
-    REQUIRE(runtime_config_result.errorMessage.find("receiverMqttBroker.enableMessageTrace") != std::string::npos);
+    REQUIRE(runtime_config_result.errorMessage.find("monitoring.logOutgoingMessage") != std::string::npos);
 
     remove_directory_quiet(temp_directory);
 }

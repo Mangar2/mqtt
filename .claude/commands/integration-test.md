@@ -1,5 +1,11 @@
 # Integration Test Skill
 
+## ABSOLUTE PRE-RUN GATE
+
+Before any compile, build, or test command, run `get_errors` for every changed file and resolve all reported problems first.
+
+Hard rule: zero problems only. No exceptions, never.
+
 ## ABSOLUTE RULE — NO SOURCE CODE
 
 NEVER read, open, grep, search, or reference any file under src/

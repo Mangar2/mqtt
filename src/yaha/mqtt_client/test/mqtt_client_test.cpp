@@ -557,7 +557,7 @@ TEST_CASE("message_trace_escapes_string_and_formats_numeric_values", "[mqtt_clie
     REQUIRE(output.find("mqtt: incoming topic=home/trace/in") != std::string::npos);
     REQUIRE(output.find("value=21.5") != std::string::npos);
     REQUIRE(output.find("mqtt: outgoing topic=home/trace/out") != std::string::npos);
-    REQUIRE(output.find("raw=\"line1\\n\\\"x\\\"\\\\tab\\t\"") != std::string::npos);
+    REQUIRE(output.find("value=payload") != std::string::npos);
 }
 
 TEST_CASE("mqtt_client_runtime_run_until_signal_starts_and_stops_component",

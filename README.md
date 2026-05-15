@@ -203,17 +203,17 @@ Automation client INI sections:
 
 BrokerConnector INI sections:
 
-- `[sourceHttpBroker]`: `host`, `port`, `clientId`, `clean`, `keepAliveSeconds`, `listenerHost`, `listenerBindHost`, `listenerPort`, `logReason` (`true/false`, default `true`)
+- `[sourceHttpBroker]`: `host`, `port`, `clientId`, `clean`, `keepAliveSeconds`, `listenerHost`, `listenerBindHost`, `listenerPort`
 - repeated `[subscription]`: `topic` and `qos` (`0`, `1`, `2`), default `topic=#` with `qos=1` when missing
-- `[receiverMqttBroker]`: `host`, `port`, `clientId`, `reconnectDelayMs`, `keepAliveSeconds`, `loopSleepMs`, `enableLifecycleTrace`, `enableMessageTrace`, `logReason`
+- `[receiverMqttBroker]`: `host`, `port`, `clientId`, `reconnectDelayMs`, `keepAliveSeconds`, `loopSleepMs`, `enableLifecycleTrace`
 - `[automation]`: `reconnectDelayMs`, `sourceLoopSleepMs`, `sourceKeepAliveIntervalMs`, `maxPublishRetries`, `publishRetryBackoffMs`, `normalizeQosToAtLeastOnce`, `retainPassthrough`
-- `[monitoring]`: `sourceLifecycleTrace`, `logReason` (`true/false`, default `true`)
+- `[monitoring]`: `sourceLifecycleTrace`, `logIncomingMessage`, `logOutgoingMessage` (`true/false`, default `true`)
 
 BrokerConnector runtime logging details:
 
-- inbound source callback logging prints parsed receive fields (`topic`, `qos`, `retain`, `dup`, `value`)
-- outbound receiver publish logging prints raw payload at send point when available (`raw="..."`)
-- `logReason=true` adds one plain reason string (`reason="..."`) without count/latest summary
+- inbound source callback logging prints parsed receive fields (`topic`, `qos`, `retain`, `dup`, `value`) and always includes plain full `reason="..."`
+- outbound receiver publish logging prints parsed send fields (`topic`, `qos`, `retain`, `value`) and always includes plain full `reason="..."`
+- `monitoring.logIncomingMessage=true` enables inbound source logging; `monitoring.logOutgoingMessage=true` enables outbound receiver logging
 
 MessageStore client INI sections:
 

@@ -42,7 +42,6 @@ Protocol and domain logic remain in `broker_connector/`. Runtime orchestration i
 - `listenerHost` string (callback host advertised to source broker)
 - `listenerBindHost` string (local bind host for callback listener)
 - `listenerPort` uint16 in range `0..65535`
-- `logReason` bool (optional, default `true`)
 
 ### Repeated section `[subscription]`
 
@@ -61,8 +60,6 @@ Protocol and domain logic remain in `broker_connector/`. Runtime orchestration i
 - `keepAliveSeconds` uint32 in range `1..86400` (mapped to milliseconds)
 - `loopSleepMs` uint32 in range `1..1000`
 - `enableLifecycleTrace` bool
-- `enableMessageTrace` bool
-- `logReason` bool (optional, default `true`)
 
 ### Section `[automation]`
 
@@ -77,7 +74,8 @@ Protocol and domain logic remain in `broker_connector/`. Runtime orchestration i
 ### Section `[monitoring]`
 
 - `sourceLifecycleTrace` bool
-- `logReason` bool (optional, default `true`, applied to source publish-recv log and receiver mqtt sent/recv trace output)
+- `logIncomingMessage` bool (optional, default `true`, controls source publish-recv logs)
+- `logOutgoingMessage` bool (optional, default `true`, controls receiver mqtt sent/recv trace logs)
 
 ## Default handling
 
