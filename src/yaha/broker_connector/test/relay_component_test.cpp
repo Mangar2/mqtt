@@ -49,37 +49,37 @@ struct TransportState {
 };
 
 yaha::YahaMqttClient::Transport makeFakeTransport(TransportState& state) {
-    return yaha::YahaMqttClient::Transport{
-        [&state](const yaha::YahaMqttClient::Config&) {
+    yaha::YahaMqttClient::Transport transport{};
+    transport.connect = [&state](const yaha::YahaMqttClient::Config&) {
             state.connectCalls.fetch_add(1);
             state.connected.store(state.connectResult);
             return state.connectResult;
-        },
-        [&state]() {
+        };
+    transport.disconnect = [&state]() {
             state.disconnectCalls.fetch_add(1);
             state.connected.store(false);
-        },
-        [&state](const yaha::Message& message) {
+        };
+    transport.publish = [&state](const yaha::Message& message) {
             state.publishCalls.fetch_add(1);
             std::lock_guard<std::mutex> lock{state.publishRecordsMutex};
             state.publishedMessages.push_back(message);
-        },
-        [](const std::string&, const yaha::Qos) {
+        };
+    transport.subscribe = [](const std::string&, const yaha::Qos) {
             return true;
-        },
-        [](const std::string&) {
+        };
+    transport.unsubscribe = [](const std::string&) {
             return true;
-        },
-        []() -> std::optional<yaha::Message> {
+        };
+    transport.pollIncoming = []() -> std::optional<yaha::Message> {
             return std::nullopt;
-        },
-        [&state]() {
+        };
+    transport.ping = [&state]() {
             state.pingCalls.fetch_add(1);
-        },
-        [&state]() {
+        };
+    transport.isConnected = [&state]() {
             return state.connected.load();
-        }
-    };
+        };
+    return transport;
 }
 
 class FakeReceiverPublishPort final : public yaha::ReceiverPublishPort {
@@ -249,7 +249,7 @@ TEST_CASE("receiver_publish_port_start_is_idempotent_and_preserves_reason", "[br
 
     yaha::Message message{"home/sensor/temp", std::string{"ok"}, yaha::Qos::AtLeastOnce, false};
     message.addReason("updated", "2026-05-01T12:00:00Z");
-    message.setRawPayload("{\"token\":\"send-token\",\"message\":{\"topic\":\"home/sensor/temp\",\"value\":\"ok\",\"reason\":[{\"message\":\"updated\",\"timestamp\":\"2026-05-01T12:00:00Z\"}]}}");
+    message.setRawPayload(R"({"token":"send-token","message":{"topic":"home/sensor/temp","value":"ok","reason":[{"message":"updated","timestamp":"2026-05-01T12:00:00Z"}]}})");
 
     yaha::ReceiverPublishOptions options{};
     options.qos = yaha::Qos::AtLeastOnce;
@@ -308,7 +308,7 @@ TEST_CASE("relay_component_forwards_message_with_mapped_options", "[broker_conne
 
     yaha::Message sourceMessage{"home/door/state", std::string{"open"}, yaha::Qos::ExactlyOnce, true};
     sourceMessage.addReason("src-reason", "2026-05-01T12:00:00Z");
-    sourceMessage.setRawPayload("{\"token\":\"send-token\",\"message\":{\"topic\":\"home/door/state\",\"value\":\"open\",\"reason\":[{\"message\":\"src-reason\",\"timestamp\":\"2026-05-01T12:00:00Z\"}]}}");
+    sourceMessage.setRawPayload(R"({"token":"send-token","message":{"topic":"home/door/state","value":"open","reason":[{"message":"src-reason","timestamp":"2026-05-01T12:00:00Z"}]}})");
 
     REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
     REQUIRE(sink.callCount == 1);
@@ -584,6 +584,29 @@ TEST_CASE("relay_component_clears_dup_for_qos0_output", "[broker_connector]") {
     REQUIRE(published.size() == 1U);
     REQUIRE(published.front().qos() == yaha::Qos::AtMostOnce);
     REQUIRE_FALSE(published.front().dup());
+
+    component.close();
+}
+
+TEST_CASE("relay_component_maps_legacy_sys_topic_prefix_to_status", "[broker_connector]") {
+    yaha::RelayPolicyConfig config{};
+    config.normalizeQosToAtLeastOnce = true;
+    config.maxPublishRetries = 0U;
+
+    std::vector<yaha::Message> published{};
+    yaha::BrokerConnectorComponent component{config};
+    component.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message);
+    });
+    component.run();
+
+    yaha::SourcePublishMeta sourceMeta{};
+    sourceMeta.qos = yaha::Qos::AtLeastOnce;
+
+    yaha::Message sourceMessage{"$SYS/a/b", std::string{"v"}, yaha::Qos::AtLeastOnce, false};
+    REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
+    REQUIRE(published.size() == 1U);
+    REQUIRE(published.front().topic() == "status/a/b");
 
     component.close();
 }

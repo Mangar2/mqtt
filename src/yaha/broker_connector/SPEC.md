@@ -191,6 +191,7 @@ On successful handshake, lifecycle trace logs include concrete source broker res
 1. Rejects forwarding when not running or no publish callback is wired.
 2. Increments `received` counter for each accepted source callback.
 3. Maps source metadata to outgoing `Message` fields:
+	- topic mapping: legacy source topics with prefix `$SYS/` are rewritten to `status/` (`$SYS/a/b -> status/a/b`) before receiver publish
 	- qos mapping: `0 -> 0`, `1/2 -> 1` when normalization is enabled
 	- retain mapping: source retain passthrough or forced false
 	- dup mapping: source `dup` is forwarded for QoS>0, forced false for QoS0

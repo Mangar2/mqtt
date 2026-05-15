@@ -1,6 +1,7 @@
 #include "yaha/broker_connector/relay_component.h"
 
 #include <exception>
+#include <string_view>
 #include <thread>
 #include <utility>
 
@@ -123,6 +124,16 @@ bool BrokerConnectorComponent::isRunning() const {
 
 Message BrokerConnectorComponent::toForwardMessage(const Message& message,
                                                    const SourcePublishMeta& sourceMeta) const {
+    constexpr std::string_view k_sys_topic_prefix{"$SYS/"};
+
+    const std::string& sourceTopic = message.topic();
+    std::string targetTopic = sourceTopic;
+    if (sourceTopic == "$SYS") {
+        targetTopic = "status";
+    } else if (sourceTopic.starts_with(k_sys_topic_prefix)) {
+        targetTopic = "status/" + sourceTopic.substr(k_sys_topic_prefix.size());
+    }
+
     Qos targetQos = Qos::AtLeastOnce;
     if (config_.normalizeQosToAtLeastOnce) {
         targetQos = sourceMeta.qos == Qos::AtMostOnce ? Qos::AtMostOnce : Qos::AtLeastOnce;
@@ -133,7 +144,7 @@ Message BrokerConnectorComponent::toForwardMessage(const Message& message,
     const bool targetRetain = config_.retainPassthrough ? sourceMeta.retain : false;
     const bool targetDup = sourceMeta.dup && targetQos != Qos::AtMostOnce;
 
-    Message mapped{message.topic(), message.value(), targetQos, targetRetain, targetDup};
+    Message mapped{targetTopic, message.value(), targetQos, targetRetain, targetDup};
     if (message.rawPayload().has_value()) {
         mapped.setRawPayload(*message.rawPayload());
     }
