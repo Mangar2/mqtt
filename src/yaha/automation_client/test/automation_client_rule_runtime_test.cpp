@@ -244,3 +244,187 @@ TEST_CASE("automation_component_delay_and_cooldown_control_repeated_outputs", "[
 
     component.close();
 }
+
+TEST_CASE("automation_component_event_gate_combines_all_of_or_any_of", "[automation_client]") {
+    const std::uint16_t portValue = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{portValue};
+    fileStore.setRulesJson(
+        R"({"rules":{"comboRule":{"topic":"house/light/set","allOf":["house/event/must"],"anyOf":["house/event/optional"],"check":"1","value":"on"}}})");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = portValue;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{"house/event/optional", std::string{"1"}, yaha::Qos::AtLeastOnce, false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    const auto outputCount = static_cast<std::size_t>(std::count_if(
+        published.begin(),
+        published.end(),
+        [](const yaha::Message& message) {
+            return message.topic() == "house/light/set";
+        }));
+    REQUIRE(outputCount == 1U);
+
+    component.close();
+}
+
+TEST_CASE("automation_component_allow_gate_rejects_unexpected_motion_topics", "[automation_client]") {
+    const std::uint16_t portValue = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{portValue};
+    fileStore.setRulesJson(
+        R"({"rules":{"allowRule":{"topic":"house/light/set","allOf":["house/motion/allowed"],"allow":["house/motion/allowed"],"check":"1","value":"on"}}})");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = portValue;
+    config.motionTopics = {"house/motion/#"};
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{"house/motion/allowed", std::string{"1"}, yaha::Qos::AtLeastOnce, false});
+    component.handleMessage(yaha::Message{"house/motion/unexpected", std::string{"1"}, yaha::Qos::AtLeastOnce, false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    const auto outputCount = static_cast<std::size_t>(std::count_if(
+        published.begin(),
+        published.end(),
+        [](const yaha::Message& message) {
+            return message.topic() == "house/light/set";
+        }));
+    REQUIRE(outputCount == 1U);
+
+    component.close();
+}
+
+TEST_CASE("automation_component_event_triggered_rule_without_cooldown_does_not_dedup", "[automation_client]") {
+    const std::uint16_t portValue = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{portValue};
+    fileStore.setRulesJson(
+        R"({"rules":{"eventRule":{"topic":"house/light/set","anyOf":["house/event/trigger"],"check":"1","value":"on"}}})");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = portValue;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{"house/event/trigger", std::string{"1"}, yaha::Qos::AtLeastOnce, false});
+    component.handleMessage(yaha::Message{"house/event/trigger", std::string{"1"}, yaha::Qos::AtLeastOnce, false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    const auto outputCount = static_cast<std::size_t>(std::count_if(
+        published.begin(),
+        published.end(),
+        [](const yaha::Message& message) {
+            return message.topic() == "house/light/set";
+        }));
+    REQUIRE(outputCount == 2U);
+
+    component.close();
+}
+
+TEST_CASE("automation_component_weekdays_accepts_lowercase_values", "[automation_client]") {
+    const std::uint16_t portValue = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{portValue};
+    fileStore.setRulesJson(
+        R"({"rules":{"weekdayRule":{"topic":"house/light/set","weekdays":["sun","mon","tue","wed","thu","fri","sat"],"check":"1","value":"on"}}})");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = portValue;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{"house/event/trigger", std::string{"1"}, yaha::Qos::AtLeastOnce, false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    const auto outputCount = static_cast<std::size_t>(std::count_if(
+        published.begin(),
+        published.end(),
+        [](const yaha::Message& message) {
+            return message.topic() == "house/light/set";
+        }));
+    REQUIRE(outputCount == 1U);
+
+    component.close();
+}
+
+TEST_CASE("automation_component_cooldown_state_survives_active_gate_miss", "[automation_client]") {
+    const std::uint16_t portValue = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{portValue};
+    fileStore.setRulesJson(
+        R"({"rules":{"coolRule":{"topic":"house/light/set","check":"$MONITOR/presence/set = on","value":"on","cooldownInSeconds":60}}})");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = portValue;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{"$MONITOR/presence/set", std::string{"on"}, yaha::Qos::AtLeastOnce, false});
+    component.handleMessage(yaha::Message{
+        "$MONITOR/automation/rules/coolRule/set",
+        std::string{R"({"topic":"house/light/set","check":"$MONITOR/presence/set = on","value":"on","cooldownInSeconds":60,"active":false})"},
+        yaha::Qos::AtLeastOnce,
+        false});
+    component.handleMessage(yaha::Message{
+        "$MONITOR/automation/rules/coolRule/set",
+        std::string{R"({"topic":"house/light/set","check":"$MONITOR/presence/set = on","value":"on","cooldownInSeconds":60,"active":true})"},
+        yaha::Qos::AtLeastOnce,
+        false});
+    component.handleMessage(yaha::Message{"$MONITOR/presence/set", std::string{"on"}, yaha::Qos::AtLeastOnce, false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    const auto outputCount = static_cast<std::size_t>(std::count_if(
+        published.begin(),
+        published.end(),
+        [](const yaha::Message& message) {
+            return message.topic() == "house/light/set";
+        }));
+    REQUIRE(outputCount == 1U);
+
+    component.close();
+}

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cctype>
 #include <cmath>
 #include <optional>
 #include <ranges>
@@ -185,6 +186,36 @@ constexpr double k_zero_epsilon{1e-12};
     }
 
     return filters;
+}
+
+[[nodiscard]] std::optional<std::vector<std::string>> readTopicFilterArrayOnly(
+    const RuleTreeNode::Object& ruleObject,
+    const std::string& fieldName) {
+    const auto fieldIter = ruleObject.find(fieldName);
+    if (fieldIter == ruleObject.end() || !fieldIter->second.isArray()) {
+        return std::nullopt;
+    }
+
+    std::vector<std::string> filters{};
+    for (const auto& arrayNode : fieldIter->second.asArray()) {
+        if (!arrayNode.isString()) {
+            return std::nullopt;
+        }
+        filters.push_back(arrayNode.asString());
+    }
+    return filters;
+}
+
+[[nodiscard]] bool fieldIsArray(const RuleTreeNode::Object& ruleObject, const std::string& fieldName) {
+    const auto fieldIter = ruleObject.find(fieldName);
+    return fieldIter != ruleObject.end() && fieldIter->second.isArray();
+}
+
+[[nodiscard]] std::string asciiLower(std::string textValue) {
+    std::ranges::transform(textValue, textValue.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    return textValue;
 }
 
 [[nodiscard]] bool anyEventMatches(
@@ -377,7 +408,7 @@ constexpr double k_zero_epsilon{1e-12};
     }
 
     static const std::array<std::pair<std::string_view, int>, 7U> k_day_map{{
-        {"Sun", 0}, {"Mon", 1}, {"Tue", 2}, {"Wed", 3}, {"Thu", 4}, {"Fri", 5}, {"Sat", 6}}};
+        {"sun", 0}, {"mon", 1}, {"tue", 2}, {"wed", 3}, {"thu", 4}, {"fri", 5}, {"sat", 6}}};
 
     std::set<int> weekdaySet{};
     for (const auto& weekdayNode : weekdaysIter->second.asArray()) {
@@ -385,7 +416,7 @@ constexpr double k_zero_epsilon{1e-12};
             return std::nullopt;
         }
 
-        const std::string& weekdayText = weekdayNode.asString();
+        const std::string weekdayText = asciiLower(weekdayNode.asString());
         const auto* const mapIter = std::ranges::find_if(k_day_map, [&weekdayText](const auto& dayEntry) {
             return dayEntry.first == weekdayText;
         });
@@ -476,6 +507,40 @@ constexpr double k_zero_epsilon{1e-12};
     return eventTopics;
 }
 
+[[nodiscard]] std::set<std::string> collectRecentMotionTopics(
+    const RuleRuntimeEventState& eventState,
+    const std::chrono::system_clock::time_point& evaluationTime,
+    const bool inactivityGateConfigured) {
+    std::set<std::string> motionTopics{};
+
+    std::optional<std::chrono::system_clock::time_point> latestMotionTime;
+    for (const auto& motionEvent : eventState.motionEvents) {
+        if (!latestMotionTime.has_value() || motionEvent.timestamp > *latestMotionTime) {
+            latestMotionTime = motionEvent.timestamp;
+        }
+    }
+
+    if (!latestMotionTime.has_value()) {
+        return motionTopics;
+    }
+
+    if (!inactivityGateConfigured
+        && std::chrono::duration_cast<std::chrono::seconds>(evaluationTime - *latestMotionTime).count()
+            > k_motion_stale_threshold_seconds) {
+        return motionTopics;
+    }
+
+    for (const auto& motionEvent : eventState.motionEvents) {
+        const auto deltaSeconds = std::chrono::duration_cast<std::chrono::seconds>(
+            *latestMotionTime - motionEvent.timestamp);
+        if (deltaSeconds.count() <= k_related_motion_window_seconds) {
+            motionTopics.insert(motionEvent.topicName);
+        }
+    }
+
+    return motionTopics;
+}
+
 [[nodiscard]] bool evaluateEventGates(
     const RuleTreeNode::Object& ruleObject,
     const RuleRuntimeEventState& eventState,
@@ -502,14 +567,21 @@ constexpr double k_zero_epsilon{1e-12};
 
     const std::set<std::string> recentEventTopics = collectRecentEventTopics(
         eventState, evaluationTime, hasInactivityGate);
+    const std::set<std::string> recentMotionTopics = collectRecentMotionTopics(
+        eventState, evaluationTime, hasInactivityGate);
 
-    const std::vector<std::string> anyOfFilters = readTopicFilterList(ruleObject, "anyOf");
-    if (!anyOfFilters.empty() && !anyEventMatches(recentEventTopics, anyOfFilters)) {
-        return false;
+    // Legacy JS semantics: (allOf OR anyOf) AND !noneOf.
+    const bool hasAnyOfField = ruleObject.contains("anyOf");
+    const bool hasAllOfField = ruleObject.contains("allOf");
+    if (!hasAnyOfField && !hasAllOfField) {
+        return true;
     }
 
+    const std::vector<std::string> anyOfFilters = readTopicFilterList(ruleObject, "anyOf");
     const std::vector<std::string> allOfFilters = readTopicFilterList(ruleObject, "allOf");
-    if (!allOfFilters.empty() && !allFiltersMatchAnyEvent(recentEventTopics, allOfFilters)) {
+    const bool allOfMatch = hasAllOfField && allFiltersMatchAnyEvent(recentEventTopics, allOfFilters);
+    const bool anyOfMatch = hasAnyOfField && anyEventMatches(recentEventTopics, anyOfFilters);
+    if (!(allOfMatch || anyOfMatch)) {
         return false;
     }
 
@@ -518,8 +590,27 @@ constexpr double k_zero_epsilon{1e-12};
         return false;
     }
 
-    const std::vector<std::string> allowFilters = readTopicFilterList(ruleObject, "allow");
-    return allowFilters.empty() || anyEventMatches(recentEventTopics, allowFilters);
+    // Legacy JS semantics: apply allow only when allow is an array and require
+    // all recent motion topics to be within (allow + allOf + anyOf).
+    const auto allowFiltersOpt = readTopicFilterArrayOnly(ruleObject, "allow");
+    if (!allowFiltersOpt.has_value()) {
+        return true;
+    }
+
+    std::vector<std::string> allowedFilters = *allowFiltersOpt;
+    allowedFilters.insert(allowedFilters.end(), allOfFilters.begin(), allOfFilters.end());
+    allowedFilters.insert(allowedFilters.end(), anyOfFilters.begin(), anyOfFilters.end());
+
+    for (const auto& motionTopic : recentMotionTopics) {
+        const bool matchesAllowSet = std::ranges::any_of(allowedFilters, [&motionTopic](const std::string& filter) {
+            return matchesTopicFilter(filter, motionTopic);
+        });
+        if (!matchesAllowSet) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 [[nodiscard]] std::optional<double> readPositiveGateSeconds(
@@ -546,6 +637,7 @@ constexpr double k_zero_epsilon{1e-12};
 
     const auto delaySeconds = readPositiveGateSeconds(ruleObject, "delayInSeconds");
     const auto cooldownSeconds = readPositiveGateSeconds(ruleObject, "cooldownInSeconds");
+    const bool eventTriggeredRule = fieldIsArray(ruleObject, "anyOf") || fieldIsArray(ruleObject, "allOf");
 
     for (const auto& candidateMessage : candidateMessages) {
         const std::string outputKey = rulePath + "|" + candidateMessage.topic();
@@ -572,6 +664,12 @@ constexpr double k_zero_epsilon{1e-12};
             continue;
         }
 
+        if (!cooldownSeconds.has_value() && eventTriggeredRule) {
+            outputState.emittedAt = evaluationTime;
+            emittedMessages.push_back(candidateMessage.clone());
+            continue;
+        }
+
         if (cooldownSeconds.has_value() && outputState.emittedAt.has_value()) {
             const auto elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(
                 evaluationTime - *outputState.emittedAt);
@@ -583,6 +681,10 @@ constexpr double k_zero_epsilon{1e-12};
     }
 
     return emittedMessages;
+}
+
+[[nodiscard]] bool shouldRetainDeliveryStateOnGateMiss(const RuleTreeNode::Object& ruleObject) {
+    return readNumberField(ruleObject, "cooldownInSeconds").has_value();
 }
 
 void clearRuleDeliveryState(const std::string& rulePath, RuleRuntimeDeliveryState* deliveryState) {
@@ -623,9 +725,12 @@ void processRuleNode(
     RuleRuntimeProcessingResult* result) {
     result->processedRules += 1U;
     const auto& ruleObject = node.asObject();
+    const bool retainDeliveryStateOnGateMiss = shouldRetainDeliveryStateOnGateMiss(ruleObject);
 
     if (!readActiveFlag(ruleObject) || !evaluateWeekdayGate(ruleObject, evaluationTime)) {
-        clearRuleDeliveryState(pathText, deliveryState);
+        if (!retainDeliveryStateOnGateMiss) {
+            clearRuleDeliveryState(pathText, deliveryState);
+        }
         return;
     }
 
@@ -635,12 +740,16 @@ void processRuleNode(
         for (const auto& errorText : gateErrors) {
             appendPathError(result, pathText, errorText);
         }
-        clearRuleDeliveryState(pathText, deliveryState);
+        if (!retainDeliveryStateOnGateMiss) {
+            clearRuleDeliveryState(pathText, deliveryState);
+        }
         return;
     }
 
     if (!timeGatePass || !evaluateEventGates(ruleObject, *eventState, evaluationTime)) {
-        clearRuleDeliveryState(pathText, deliveryState);
+        if (!retainDeliveryStateOnGateMiss) {
+            clearRuleDeliveryState(pathText, deliveryState);
+        }
         return;
     }
 
@@ -651,12 +760,16 @@ void processRuleNode(
         for (const auto& errorText : singleResult.errors) {
             appendPathError(result, pathText, errorText);
         }
-        clearRuleDeliveryState(pathText, deliveryState);
+        if (!retainDeliveryStateOnGateMiss) {
+            clearRuleDeliveryState(pathText, deliveryState);
+        }
         return;
     }
 
     if (!singleResult.triggered || singleResult.messages.empty()) {
-        clearRuleDeliveryState(pathText, deliveryState);
+        if (!retainDeliveryStateOnGateMiss) {
+            clearRuleDeliveryState(pathText, deliveryState);
+        }
         return;
     }
 
