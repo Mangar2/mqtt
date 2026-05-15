@@ -419,7 +419,7 @@ TEST_CASE("compat_publish_post_form_maps_to_publish_v1_defaults", "[http_mqtt_in
     REQUIRE(capturedRequest.headers.at("qos") == "1");
     REQUIRE(capturedRequest.headers.at("retain") == "0");
     REQUIRE(capturedRequest.payload.find("\"topic\":\"sensor/temp\"") != std::string::npos);
-    REQUIRE(capturedRequest.payload.find("\"message\":\"Request by browser\"") != std::string::npos);
+    REQUIRE(capturedRequest.payload.find("\"message\":\"Request by User\"") != std::string::npos);
 }
 
 TEST_CASE("compat_publish_falls_back_to_json_body_when_topic_missing", "[http_mqtt_interface]") {

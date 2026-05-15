@@ -130,6 +130,7 @@ Class:
 
 Public contract:
 - `process(ruleNode, variables) -> SingleRuleProcessingResult`
+- `processWithTrace(ruleNode, variables, traceEntries) -> SingleRuleProcessingResult`
 
 Behavior:
 - Processes one complete rule object with fields `topic`, `check`, `value`, and optional `qos`.
@@ -138,6 +139,9 @@ Behavior:
 - Evaluates `value` as expression string or accepts numeric/bool literal node values.
 - Builds one outbound `Message` when rule is triggered and value is valid.
 - Aggregates all used variable names from evaluated expressions.
+- `processWithTrace` emits ordered trace text entries for each decision step
+  (shape validation, check decision, value mapping, qos parse, and final trigger
+  status) into the caller-provided trace list.
 
 Error behavior:
 - Fails on invalid rule structure, parse/evaluation errors, unsupported value result type, or invalid qos values.

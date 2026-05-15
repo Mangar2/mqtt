@@ -2,6 +2,7 @@
 
 #include "httplib.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <iostream>
@@ -730,6 +731,7 @@ TEST_CASE("automation_component_get_subscriptions_includes_dynamic_topics", "[au
 
     const yaha::SubscriptionMap subscriptions = component.getSubscriptions();
     REQUIRE(subscriptions.contains("$MONITOR/presence/set"));
+    REQUIRE(subscriptions.contains("$MONITOR/automation/#"));
 
     component.close();
 }
@@ -765,6 +767,89 @@ TEST_CASE("automation_component_logs_incoming_and_outgoing_messages_when_enabled
     const std::string logOutput = capturedOutput.str();
     REQUIRE(logOutput.find("automation_client[in] topic=$MONITOR/presence/set") != std::string::npos);
     REQUIRE(logOutput.find("automation_client[out] topic=house/light/set") != std::string::npos);
+
+    component.close();
+}
+
+TEST_CASE("automation_component_debug_trace_request_reports_not_triggered", "[automation_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setRulesJson(
+        "{\"rules\":{\"presenceOn\":{\"topic\":\"house/light/set\",\"check\":\"0\",\"value\":\"on\"}}}");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{
+        "$MONITOR/automation/rules/presenceOn/debug",
+        std::string{"1"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    REQUIRE_FALSE(published.empty());
+    REQUIRE(published.back().topic() == "$MONITOR/automation/rules/presenceOn/trace");
+    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+    const std::string traceValue = std::get<std::string>(published.back().value());
+    REQUIRE(traceValue == "not_triggered");
+    REQUIRE_FALSE(published.back().reason().empty());
+    const bool hasNoOutboundTrace = std::ranges::any_of(
+        published.back().reason(),
+        [](const yaha::ReasonEntry& reasonEntry) {
+            return reasonEntry.message.find("debug:result no outbound message") != std::string::npos;
+        });
+    REQUIRE(hasNoOutboundTrace);
+
+    component.close();
+}
+
+TEST_CASE("automation_component_debug_trace_request_reports_missing_rule", "[automation_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{
+        "$MONITOR/automation/rules/missing/debug",
+        std::string{"1"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    REQUIRE_FALSE(published.empty());
+    REQUIRE(published.back().topic() == "$MONITOR/automation/rules/missing/trace");
+    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+    REQUIRE(std::get<std::string>(published.back().value()) == "error");
+    REQUIRE_FALSE(published.back().reason().empty());
+    const bool hasLookupFailureTrace = std::ranges::any_of(
+        published.back().reason(),
+        [](const yaha::ReasonEntry& reasonEntry) {
+            return reasonEntry.message.find("rule lookup failed") != std::string::npos;
+        });
+    REQUIRE(hasLookupFailureTrace);
 
     component.close();
 }

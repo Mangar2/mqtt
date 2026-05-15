@@ -4,6 +4,7 @@
 #include "yaha/automation/internal_variables.h"
 #include "yaha/automation/rules_tree_json_reader.h"
 #include "yaha/automation/rules_tree_processor.h"
+#include "yaha/automation/single_rule_processor.h"
 
 #include <algorithm>
 #include <cctype>
@@ -18,8 +19,10 @@ namespace yaha {
 namespace {
 
 constexpr std::size_t k_management_suffix_length{4U};
+constexpr std::size_t k_debug_suffix_length{6U};
 constexpr int k_http_ok_status{200};
 constexpr std::size_t k_max_pending_publish_attempts{3U};
+constexpr std::string_view k_debug_topic_prefix{"$MONITOR/automation/"};
 
 [[nodiscard]] bool startsWithText(const std::string& textValue, const std::string& prefix) {
     return textValue.size() >= prefix.size() && textValue.compare(0U, prefix.size(), prefix) == 0;
@@ -28,6 +31,58 @@ constexpr std::size_t k_max_pending_publish_attempts{3U};
 [[nodiscard]] bool endsWithSetSuffix(const std::string& textValue) {
     return textValue.size() >= k_management_suffix_length
         && textValue.compare(textValue.size() - k_management_suffix_length, k_management_suffix_length, "/set") == 0;
+}
+
+[[nodiscard]] bool endsWithDebugSuffix(const std::string& textValue) {
+    return textValue.size() >= k_debug_suffix_length
+        && textValue.compare(textValue.size() - k_debug_suffix_length, k_debug_suffix_length, "/debug") == 0;
+}
+
+[[nodiscard]] std::vector<std::string> splitPathSegments(const std::string& pathText) {
+    std::vector<std::string> segments{};
+    std::string currentSegment{};
+    for (const char currentChar : pathText) {
+        if (currentChar == '/') {
+            if (!currentSegment.empty()) {
+                segments.push_back(currentSegment);
+                currentSegment.clear();
+            }
+            continue;
+        }
+        currentSegment.push_back(currentChar);
+    }
+    if (!currentSegment.empty()) {
+        segments.push_back(currentSegment);
+    }
+    return segments;
+}
+
+[[nodiscard]] std::optional<RuleTreeNode> findNodeByPathSegments(
+    const RuleTreeNode& rootNode,
+    const std::vector<std::string>& segments) {
+    const RuleTreeNode* currentNode = &rootNode;
+    for (const auto& segment : segments) {
+        if (!currentNode->isObject()) {
+            return std::nullopt;
+        }
+
+        const auto& objectNode = currentNode->asObject();
+        const auto iterator = objectNode.find(segment);
+        if (iterator == objectNode.end()) {
+            return std::nullopt;
+        }
+
+        currentNode = &iterator->second;
+    }
+
+    return *currentNode;
+}
+
+void appendTraceEntry(std::vector<std::string>* traceEntries, const std::string& traceText) {
+    if (traceEntries == nullptr) {
+        return;
+    }
+    traceEntries->push_back(traceText);
 }
 
 [[nodiscard]] bool isDeletePayloadText(const std::string& payload) {
@@ -102,6 +157,7 @@ SubscriptionMap AutomationClientComponent::getSubscriptions() const {
     SubscriptionMap subscriptions{};
     subscriptions.insert({config_.managementTopicPrefix + "/#", config_.subscribeQos});
     subscriptions.insert({config_.monitorTopicPrefix + "/#", config_.subscribeQos});
+    subscriptions.insert({"$MONITOR/automation/#", config_.subscribeQos});
 
     for (const auto& topicFilter : config_.motionTopics) {
         subscriptions.insert({topicFilter, config_.subscribeQos});
@@ -118,6 +174,11 @@ SubscriptionMap AutomationClientComponent::getSubscriptions() const {
 void AutomationClientComponent::handleMessage(const Message& message) {
     processPendingPublishQueue();
     logIncomingMessageIfEnabled(message);
+
+    if (isDebugTopic(message.topic())) {
+        handleDebugMessage(message);
+        return;
+    }
 
     if (isManagementTopic(message.topic())) {
         handleManagementMessage(message);
@@ -358,6 +419,82 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
     publishManagementAck(*ruleName, "updated");
 }
 
+void AutomationClientComponent::handleDebugMessage(const Message& message) {
+    const std::optional<std::string> ruleLink = extractRuleLinkFromDebugTopic(message.topic());
+
+    std::string resolvedRulePath{};
+    std::optional<RuleTreeNode> ruleNode;
+    ExpressionEvaluator::VariableMap variablesSnapshot;
+
+    {
+        std::lock_guard<std::mutex> lock{stateMutex_};
+        if (ruleLink.has_value()) {
+            ruleNode = findRuleNodeByLink(*ruleLink, &resolvedRulePath);
+        }
+        variablesSnapshot = runtimeVariables_;
+    }
+
+    std::vector<std::string> traceEntries{};
+    std::string traceValue{"error"};
+
+    if (!ruleLink.has_value()) {
+        appendTraceEntry(&traceEntries, "debug:error invalid debug topic shape");
+    } else if (!ruleNode.has_value()) {
+        appendTraceEntry(&traceEntries, "debug:rule lookup failed link=" + *ruleLink);
+    } else {
+        try {
+            const InternalVariables internalVariables{
+                InternalVariables::GeoCoordinates{config_.longitude, config_.latitude}};
+            const InternalVariables::VariableMap internalValues = internalVariables.calculate(
+                std::chrono::system_clock::now());
+            for (const auto& [variableName, variableValue] : internalValues) {
+                if (std::holds_alternative<double>(variableValue)) {
+                    variablesSnapshot[variableName] = std::get<double>(variableValue);
+                } else {
+                    variablesSnapshot[variableName] = std::get<std::chrono::system_clock::time_point>(
+                        variableValue);
+                }
+            }
+            appendTraceEntry(&traceEntries, "debug:internal variables calculated");
+        } catch (...) {
+            appendTraceEntry(&traceEntries, "debug:error internal variable calculation failed");
+        }
+
+        std::vector<std::string> evaluationTrace{};
+        const SingleRuleProcessingResult result = SingleRuleProcessor::processWithTrace(
+            *ruleNode,
+            variablesSnapshot,
+            &evaluationTrace);
+        appendTraceEntry(&traceEntries, "debug:rule path=" + resolvedRulePath);
+        for (const auto& traceLine : evaluationTrace) {
+            appendTraceEntry(&traceEntries, traceLine);
+        }
+
+        if (!result.success) {
+            traceValue = "error";
+            for (const auto& errorText : result.errors) {
+                appendTraceEntry(&traceEntries, "debug:error " + errorText);
+            }
+        } else if (!result.triggered || !result.message.has_value()) {
+            traceValue = "not_triggered";
+            appendTraceEntry(&traceEntries, "debug:result no outbound message");
+        } else {
+            traceValue = "triggered";
+            appendTraceEntry(&traceEntries, "debug:result outbound topic=" + result.message->topic());
+        }
+    }
+
+    const std::string traceTopic = buildTraceTopicFromRuleLink(ruleLink.value_or(std::string{"invalid"}));
+    Message traceMessage{traceTopic, traceValue, Qos::AtLeastOnce, false};
+    for (auto iterator = traceEntries.rbegin(); iterator != traceEntries.rend(); ++iterator) {
+        traceMessage.addReason(*iterator);
+    }
+
+    if (!tryPublishMessage(traceMessage, "debug_trace")) {
+        enqueuePendingPublish(traceMessage, "debug_trace");
+    }
+}
+
 void AutomationClientComponent::handleDomainMessage(const Message& message) {
     {
         std::lock_guard<std::mutex> lock{stateMutex_};
@@ -428,6 +565,10 @@ bool AutomationClientComponent::isManagementTopic(const std::string& topicName) 
     return startsWithText(topicName, config_.managementTopicPrefix + "/") && endsWithSetSuffix(topicName);
 }
 
+bool AutomationClientComponent::isDebugTopic(const std::string& topicName) {
+    return startsWithText(topicName, std::string{k_debug_topic_prefix}) && endsWithDebugSuffix(topicName);
+}
+
 std::optional<std::string> AutomationClientComponent::extractRuleNameFromManagementTopic(
     const std::string& topicName) const {
     const std::string prefix = config_.managementTopicPrefix + "/";
@@ -442,6 +583,93 @@ std::optional<std::string> AutomationClientComponent::extractRuleNameFromManagem
     }
 
     return topicName.substr(startIndex, endIndex - startIndex);
+}
+
+std::optional<std::string> AutomationClientComponent::extractRuleLinkFromDebugTopic(
+    const std::string& topicName) {
+    const std::string prefixText{k_debug_topic_prefix};
+    if (!startsWithText(topicName, prefixText) || !endsWithDebugSuffix(topicName)) {
+        return std::nullopt;
+    }
+
+    const std::size_t startIndex = prefixText.size();
+    const std::size_t endIndex = topicName.size() - k_debug_suffix_length;
+    if (endIndex <= startIndex) {
+        return std::nullopt;
+    }
+
+    const std::string ruleLink = topicName.substr(startIndex, endIndex - startIndex);
+    if (ruleLink.empty()) {
+        return std::nullopt;
+    }
+    return std::string{ruleLink};
+}
+
+std::optional<RuleTreeNode> AutomationClientComponent::findRuleNodeByLink(
+    const std::string& ruleLink,
+    std::string* resolvedPath) const {
+    const std::vector<std::string> ruleSegments = splitPathSegments(ruleLink);
+    if (ruleSegments.empty()) {
+        return std::nullopt;
+    }
+
+    auto setResolvedPath = [resolvedPath](const std::string& pathText) {
+        if (resolvedPath != nullptr) {
+            *resolvedPath = pathText;
+        }
+    };
+
+    if (const std::optional<RuleTreeNode> directNode = findNodeByPathSegments(rulesRoot_, ruleSegments);
+        directNode.has_value()) {
+        setResolvedPath(ruleLink);
+        return directNode;
+    }
+
+    std::vector<std::string> normalizedSegments = ruleSegments;
+    if (!normalizedSegments.empty() && normalizedSegments.front() == "rules") {
+        normalizedSegments.erase(normalizedSegments.begin());
+    }
+
+    if (normalizedSegments.empty()) {
+        return std::nullopt;
+    }
+
+    std::string normalizedLink{};
+    for (std::size_t segmentIndex = 0U; segmentIndex < normalizedSegments.size(); ++segmentIndex) {
+        if (segmentIndex > 0U) {
+            normalizedLink.push_back('/');
+        }
+        normalizedLink.append(normalizedSegments[segmentIndex]);
+    }
+
+    std::vector<std::string> rootRulesSegments{"rules"};
+    rootRulesSegments.insert(rootRulesSegments.end(), normalizedSegments.begin(), normalizedSegments.end());
+    if (const std::optional<RuleTreeNode> nestedNode = findNodeByPathSegments(rulesRoot_, rootRulesSegments);
+        nestedNode.has_value()) {
+        setResolvedPath("rules/" + normalizedLink);
+        return nestedNode;
+    }
+
+    if (rulesRoot_.isObject()) {
+        const auto& rootObject = rulesRoot_.asObject();
+        const auto rulesIterator = rootObject.find("rules");
+        if (rulesIterator != rootObject.end() && rulesIterator->second.isObject()) {
+            const auto& rulesObject = rulesIterator->second.asObject();
+            if (normalizedSegments.size() == 1U) {
+                const auto entryIterator = rulesObject.find(normalizedSegments.front());
+                if (entryIterator != rulesObject.end()) {
+                    setResolvedPath("rules/" + normalizedSegments.front());
+                    return entryIterator->second;
+                }
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::string AutomationClientComponent::buildTraceTopicFromRuleLink(const std::string& ruleLink) {
+    return std::string{k_debug_topic_prefix} + ruleLink + "/trace";
 }
 
 std::optional<std::string> AutomationClientComponent::extractMonitoringKeyPath(const std::string& payload) {

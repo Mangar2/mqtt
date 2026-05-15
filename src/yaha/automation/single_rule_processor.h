@@ -50,6 +50,22 @@ public:
     [[nodiscard]] static SingleRuleProcessingResult process(
         const RuleTreeNode& ruleNode,
         const ExpressionEvaluator::VariableMap& variables);
+
+    /**
+     * @brief Processes one rule object and emits a detailed decision trace.
+     *
+     * The trace contains one line per relevant decision step used to determine
+     * whether a rule emits an outbound message.
+     *
+     * @param ruleNode Rule object node.
+     * @param variables Runtime external variables.
+     * @param traceEntries Output trace lines in evaluation order.
+     * @return Processing result with optional emitted message.
+     */
+    [[nodiscard]] static SingleRuleProcessingResult processWithTrace(
+        const RuleTreeNode& ruleNode,
+        const ExpressionEvaluator::VariableMap& variables,
+        std::vector<std::string>* traceEntries);
 };
 
 } // namespace yaha

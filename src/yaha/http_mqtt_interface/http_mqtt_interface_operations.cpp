@@ -31,7 +31,7 @@ constexpr int k_subscribeCodeFailLegacy{127};
 constexpr int k_subscribeCodeFailModern{128};
 constexpr int k_unsubscribeNoSubscription{17};
 constexpr std::size_t k_escapeReservePadding{8U};
-constexpr std::string_view k_browserReasonMessage{"Request by browser"};
+constexpr std::string_view k_publishIngressReasonMessage{"Request by User"};
 
 [[nodiscard]] std::string trimCopy(const std::string_view valueText) {
     std::size_t firstIndex = 0U;
@@ -706,9 +706,9 @@ struct CompatibilityParsedFields {
 
     if (parsedFields.reason.has_value() && !parsedFields.reason->empty()) {
         appendReasonsPreservingOrder(mappedMessage, *parsedFields.reason);
-    } else {
-        mappedMessage.addReason(std::string{k_browserReasonMessage});
     }
+
+    mappedMessage.addReason(std::string{k_publishIngressReasonMessage});
 
     return mappedMessage;
 }

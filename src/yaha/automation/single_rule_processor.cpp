@@ -16,6 +16,39 @@ constexpr double k_qos_at_most_once{0.0};
 constexpr double k_qos_at_least_once{1.0};
 constexpr double k_qos_exactly_once{2.0};
 
+void appendTrace(std::vector<std::string>* traceEntries, const std::string& traceText) {
+    if (traceEntries == nullptr) {
+        return;
+    }
+    traceEntries->push_back(traceText);
+}
+
+[[nodiscard]] std::string evaluationValueToTraceText(const ExpressionEvaluationResult::Value& value) {
+    if (std::holds_alternative<bool>(value)) {
+        return std::get<bool>(value) ? "bool:true" : "bool:false";
+    }
+    if (std::holds_alternative<double>(value)) {
+        return "number:" + std::to_string(std::get<double>(value));
+    }
+    if (std::holds_alternative<std::string>(value)) {
+        return "string:" + std::get<std::string>(value);
+    }
+    return "time";
+}
+
+[[nodiscard]] std::string qosToTraceText(const Qos qosValue) {
+    switch (qosValue) {
+    case Qos::AtMostOnce:
+        return "0";
+    case Qos::AtLeastOnce:
+        return "1";
+    case Qos::ExactlyOnce:
+        return "2";
+    }
+
+    return "unknown";
+}
+
 [[nodiscard]] std::string trimText(const std::string& textValue) {
     std::size_t beginIndex = 0U;
     while (beginIndex < textValue.size()
@@ -141,81 +174,122 @@ constexpr double k_qos_exactly_once{2.0};
 SingleRuleProcessingResult SingleRuleProcessor::process(
     const RuleTreeNode& ruleNode,
     const ExpressionEvaluator::VariableMap& variables) {
+    return processWithTrace(ruleNode, variables, nullptr);
+}
+
+SingleRuleProcessingResult SingleRuleProcessor::processWithTrace(
+    const RuleTreeNode& ruleNode,
+    const ExpressionEvaluator::VariableMap& variables,
+    std::vector<std::string>* traceEntries) {
     SingleRuleProcessingResult result;
+    appendTrace(traceEntries, "rule-evaluation:start");
 
     if (!ruleNode.isObject()) {
         result.errors.emplace_back("rule node must be an object");
+        appendTrace(traceEntries, "rule-evaluation:error rule node must be an object");
         return result;
     }
+
+    appendTrace(traceEntries, "rule-evaluation:rule object shape ok");
 
     const auto& ruleObject = ruleNode.asObject();
     if (!ruleObject.contains("topic") || !ruleObject.at("topic").isString()) {
         result.errors.emplace_back("rule requires string topic");
+        appendTrace(traceEntries, "rule-evaluation:error rule requires string topic");
         return result;
     }
 
     const std::string topicName = ruleObject.at("topic").asString();
     if (topicName.empty()) {
         result.errors.emplace_back("rule topic must not be empty");
+        appendTrace(traceEntries, "rule-evaluation:error rule topic must not be empty");
         return result;
     }
+
+    appendTrace(traceEntries, "rule-evaluation:topic=" + topicName);
 
     bool isTriggered = true;
     if (ruleObject.contains("check")) {
         const RuleTreeNode& checkNode = ruleObject.at("check");
         if (!checkNode.isString()) {
             result.errors.emplace_back("check must be expression string");
+            appendTrace(traceEntries, "rule-evaluation:error check must be expression string");
             return result;
         }
 
+        appendTrace(traceEntries, "rule-evaluation:check parse and evaluate");
+
         ExpressionEvaluationResult checkResult;
         if (!evaluateScript("check", checkNode.asString(), variables, &checkResult, &result.errors)) {
+            appendTrace(traceEntries, "rule-evaluation:error check evaluation failed");
             return result;
         }
 
         result.usedVariables.insert(checkResult.usedVariables.begin(), checkResult.usedVariables.end());
         isTriggered = asBooleanValue(checkResult.value);
+        appendTrace(traceEntries,
+                    "rule-evaluation:check result=" + evaluationValueToTraceText(checkResult.value));
+        appendTrace(traceEntries,
+                    std::string{"rule-evaluation:check decision="}
+                        + (isTriggered ? "trigger" : "skip"));
+    } else {
+        appendTrace(traceEntries, "rule-evaluation:check missing default=true");
     }
 
     result.triggered = isTriggered;
     if (!isTriggered) {
         result.success = true;
+        appendTrace(traceEntries, "rule-evaluation:finish not_triggered");
         return result;
     }
 
     if (!ruleObject.contains("value")) {
         result.errors.emplace_back("rule requires value field");
+        appendTrace(traceEntries, "rule-evaluation:error rule requires value field");
         return result;
     }
 
     Value messageValue;
     const RuleTreeNode& valueNode = ruleObject.at("value");
     if (valueNode.isString()) {
+        appendTrace(traceEntries, "rule-evaluation:value parse and evaluate");
         ExpressionEvaluationResult valueResult;
         if (!evaluateScript("value", valueNode.asString(), variables, &valueResult, &result.errors)) {
+            appendTrace(traceEntries, "rule-evaluation:error value evaluation failed");
             return result;
         }
 
         result.usedVariables.insert(valueResult.usedVariables.begin(), valueResult.usedVariables.end());
         if (!mapEvaluationValueToMessageValue(valueResult.value, &messageValue, &result.errors)) {
+            appendTrace(traceEntries, "rule-evaluation:error value mapping failed");
             return result;
         }
+
+        appendTrace(traceEntries,
+                    "rule-evaluation:value result=" + evaluationValueToTraceText(valueResult.value));
     } else if (std::holds_alternative<double>(valueNode.value)) {
         messageValue = std::get<double>(valueNode.value);
+        appendTrace(traceEntries, "rule-evaluation:value literal number");
     } else if (std::holds_alternative<bool>(valueNode.value)) {
         messageValue = std::get<bool>(valueNode.value) ? std::string{"true"} : std::string{"false"};
+        appendTrace(traceEntries, "rule-evaluation:value literal bool");
     } else {
         result.errors.emplace_back("value must be expression string, number, or bool");
+        appendTrace(traceEntries, "rule-evaluation:error value must be expression string, number, or bool");
         return result;
     }
 
     const Qos qosValue = parseQos(ruleNode, &result.errors);
     if (!result.errors.empty()) {
+        appendTrace(traceEntries, "rule-evaluation:error invalid qos");
         return result;
     }
 
+    appendTrace(traceEntries, "rule-evaluation:qos=" + qosToTraceText(qosValue));
+
     result.message = Message{topicName, std::move(messageValue), qosValue};
     result.success = true;
+    appendTrace(traceEntries, "rule-evaluation:finish triggered message-ready");
     return result;
 }
 

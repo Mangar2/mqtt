@@ -81,6 +81,17 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
   - Produced outputs are reflected back into runtime variable map.
   - Failed outbound sends are added to a bounded retry queue and retried on subsequent component message handling cycles.
   - Retries stop after max attempt budget and emit explicit exhaustion error logs.
+- Rule debug trace requests:
+  - Subscribed via static automation monitor namespace shape
+    `$MONITOR/automation/<rule-link>/debug`.
+  - On request, the component resolves exactly one rule referenced by `<rule-link>`
+    (supports links with or without leading `rules/`), evaluates that single rule
+    through a trace-capable processor, and publishes a trace response message to
+    `$MONITOR/automation/<rule-link>/trace`.
+  - Trace response payload is one of `triggered`, `not_triggered`, or `error`.
+  - Trace response `reason` chain contains ordered step-by-step decision entries
+    covering rule lookup, internal-variable preparation, check/value evaluation,
+    qos parsing, and final decision about outbound message generation.
 - Logging behavior:
   - If `logIncomingMessages=true`, each inbound message handled by component is logged.
   - If `logOutgoingMessages=true`, each outbound rule/ack message is logged only after successful callback send.

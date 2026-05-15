@@ -28,6 +28,14 @@ $SYS is reserved for broker-originated messages per MQTT specification. YAHA com
 All system/control messages that were previously sent to $SYS/... in the legacy JS code must be specified as $MONITOR/... in the new specs.
 When reading legacy code, treat any $SYS topic as $MONITOR for the new spec.
 
+## Reason trace rule
+
+Reason is an append-only event trace bound to one message.
+Never recreate, reset, or replace reason.
+Every event that affects the message must append one new reason entry.
+Each new entry must describe as precisely as possible what happened and why it happened.
+When a message crosses component boundaries, preserve all existing reason entries unchanged and append only new local event entries.
+
 ## Architecture principles to preserve
 
 MQTT-client-as-interface pattern:

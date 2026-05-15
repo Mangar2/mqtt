@@ -118,6 +118,7 @@ private:
 
     void handleMonitoringMessage(const Message& message);
     void handleManagementMessage(const Message& message);
+    void handleDebugMessage(const Message& message);
     void handleDomainMessage(const Message& message);
 
     void refreshDynamicSubscriptionsLocked();
@@ -125,9 +126,16 @@ private:
 
     [[nodiscard]] bool isMonitoringTopic(const std::string& topicName) const;
     [[nodiscard]] bool isManagementTopic(const std::string& topicName) const;
+    [[nodiscard]] static bool isDebugTopic(const std::string& topicName);
 
     [[nodiscard]] std::optional<std::string> extractRuleNameFromManagementTopic(
         const std::string& topicName) const;
+    [[nodiscard]] static std::optional<std::string> extractRuleLinkFromDebugTopic(
+        const std::string& topicName);
+    [[nodiscard]] std::optional<RuleTreeNode> findRuleNodeByLink(
+        const std::string& ruleLink,
+        std::string* resolvedPath) const;
+    [[nodiscard]] static std::string buildTraceTopicFromRuleLink(const std::string& ruleLink);
 
     [[nodiscard]] static std::optional<std::string> extractMonitoringKeyPath(
         const std::string& payload);

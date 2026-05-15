@@ -36,7 +36,7 @@ DEFAULT_PRESET = "armv7-zig-release"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "deployment" / "yaha"
 INI_DIR = PROJECT_ROOT / "cmake" / "ini"
 NGINX_CONTROLAPP_SOURCE = PROJECT_ROOT / "cmake" / "nginx" / "controlapp.conf"
-REMOTE_DEPLOY_HELPER_SCRIPT = PROJECT_ROOT / "cmake" / "deploy_yaha_local.sh"
+REMOTE_DEPLOY_HELPER_SCRIPT = PROJECT_ROOT / "cmake" / "deploy.sh"
 DEFAULT_REMOTE_COPY_DIR = "~/mqtt"
 
 SERVICE_COMPONENTS = (
@@ -479,7 +479,7 @@ def parse_args() -> argparse.Namespace:
         "--remote",
         default="",
         help=(
-            "Optional scp target for deployment zip and deploy_yaha_local.sh "
+            "Optional scp target for deployment zip and deploy.sh "
             "(host only allowed, default path ~/mqtt; example: pi@yaha2 or pi@yaha2:~/mqtt)"
         ),
     )
@@ -597,7 +597,7 @@ def main() -> int:
             )
             print(f"Remote copy completed via scp target: {normalized_remote_target}")
             print(
-                "Run on remote host: bash deploy_yaha_local.sh "
+                "Run on remote host: bash deploy.sh "
                 f"--zip {zip_path.name}"
             )
 

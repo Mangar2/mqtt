@@ -137,7 +137,8 @@ Implemented compatibility behavior:
 - defaults:
 	- `qos=1`
 	- `retain=false`
-	- auto reason entry `Request by browser` with auto-generated ISO-8601 timestamp when reason is absent
+	- publish ingress always appends reason entry `Request by User` (auto-generated ISO-8601 timestamp)
+	- existing reason entries from input are preserved unchanged and are never replaced
 - mapping:
 	- compatibility input is translated to native Publish 1.0 request data through `HttpMqttInterfaces::publish("1.0", ...)`
 	- downstream compatibility forwarder receives both mapped native request data and mapped MQTT `Message`
