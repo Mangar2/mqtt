@@ -669,8 +669,8 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
 
         if (!result.success) {
             traceValue = "error";
-            for (const auto& errorText : result.errors) {
-                appendTraceEntry(&traceEntries, "debug:error " + errorText);
+            if (!result.errors.empty()) {
+                appendTraceEntry(&traceEntries, "debug:error " + result.errors.front());
             }
         } else if (!result.triggered || (result.messages.empty() && !result.message.has_value())) {
             traceValue = "not_triggered";
