@@ -364,8 +364,9 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
         const SingleRuleProcessingResult result = SingleRuleProcessor::processWithTrace(
             *ruleNode,
             variablesSnapshot,
-            &evaluationTrace);
-        automation_trace_format::appendExplainTraceEntries(&traceEntries, evaluationTrace, std::string{});
+            &evaluationTrace,
+            resolvedRulePath);
+        automation_trace_format::appendExplainTraceEntries(&traceEntries, evaluationTrace, resolvedRulePath);
 
         if (!result.success) {
             traceValue = "error";

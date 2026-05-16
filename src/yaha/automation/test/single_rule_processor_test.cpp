@@ -425,6 +425,29 @@ TEST_CASE("single_rule_processor_adds_trace_reason_to_emitted_message_when_progr
     REQUIRE(summaryMessage.starts_with("Rule: home/light/set"));
 }
 
+TEST_CASE("single_rule_processor_uses_explicit_rule_identifier_in_summary_reason", "[yaha][automation]") {
+    yaha::RuleTreeNode::Object ruleObject;
+    ruleObject.insert({"topic", yaha::RuleTreeNode{"home/light/set"}});
+    ruleObject.insert({"check", yaha::RuleTreeNode{"$SYS/presence = awake"}});
+    ruleObject.insert({"value", yaha::RuleTreeNode{"if($SYS/presence = awake, on, off)"}});
+
+    yaha::ExpressionEvaluator::VariableMap variables;
+    variables.insert({"$SYS/presence", std::string{"awake"}});
+
+    const yaha::SingleRuleProcessingResult result = yaha::SingleRuleProcessor::process(
+        yaha::RuleTreeNode{std::move(ruleObject)},
+        variables,
+        "rules/presenceOn");
+
+    REQUIRE(result.success);
+    REQUIRE(result.triggered);
+    REQUIRE(result.message.has_value());
+    REQUIRE(result.message->reason().size() == 1U);
+
+    const std::string& summaryMessage = result.message->reason().front().message;
+    REQUIRE(summaryMessage.starts_with("Rule: presenceOn"));
+}
+
 TEST_CASE("single_rule_processor_keeps_reason_empty_for_literal_rule_without_program", "[yaha][automation]") {
     yaha::RuleTreeNode::Object ruleObject;
     ruleObject.insert({"topic", yaha::RuleTreeNode{"home/light/set"}});

@@ -803,6 +803,7 @@ TEST_CASE("automation_component_logs_incoming_and_outgoing_messages_when_enabled
     const std::string logOutput = capturedOutput.str();
     REQUIRE(logOutput.find("automation_client[in] topic=$MONITOR/presence/set") != std::string::npos);
     REQUIRE(logOutput.find("automation_client[out] topic=house/light/set") != std::string::npos);
+    REQUIRE(logOutput.find("Rule: presenceOn") != std::string::npos);
 
     component.close();
 }
@@ -974,13 +975,15 @@ TEST_CASE("automation_component_debug_trace_raw_payload_escapes_multiline_reason
     const std::optional<std::string>& rawPayload = published.back().rawPayload();
     REQUIRE(rawPayload.has_value());
     REQUIRE(rawPayload->find('\n') == std::string::npos);
-    REQUIRE(rawPayload->find("debug:explain Rule: house/light/set") != std::string::npos);
+    REQUIRE(rawPayload->find("debug:explain Rule:") != std::string::npos);
+    REQUIRE(rawPayload->find("presenceOn") != std::string::npos);
 
     REQUIRE_FALSE(published.back().reason().empty());
     const bool hasExplainTrace = std::ranges::any_of(
         published.back().reason(),
         [](const yaha::ReasonEntry& reasonEntry) {
-            return reasonEntry.message.find("debug:explain Rule: house/light/set") != std::string::npos;
+            return reasonEntry.message.find("debug:explain Rule:") != std::string::npos
+                && reasonEntry.message.find("presenceOn") != std::string::npos;
         });
     REQUIRE(hasExplainTrace);
 

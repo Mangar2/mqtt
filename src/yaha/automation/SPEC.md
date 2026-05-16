@@ -155,6 +155,8 @@ Behavior:
 - When at least one executable program was evaluated (`check` expression or
   string-based `value` expression), the emitted rule message `reason` chain is
   populated with the full ordered evaluation trace.
+- Summary reason label precedence is: explicit rule identifier parameter,
+  then optional rule field `name`, then output topic fallback.
 - Literal-only rules without evaluated programs keep message `reason` unchanged
   (no synthetic trace entries).
 - Aggregates all used variable names from evaluated expressions.

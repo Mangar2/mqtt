@@ -16,7 +16,7 @@ void appendTraceEntry(std::vector<std::string>* traceEntries, const std::string&
 void appendExplainTraceEntries(
     std::vector<std::string>* traceEntries,
     const std::vector<std::string>& evaluationTrace,
-    const std::string& fallbackTopic);
+    const std::string& fallbackRuleIdentifier);
 [[nodiscard]] std::string buildTraceRawPayload(const Message& traceMessage);
 
 } // namespace yaha::automation_trace_format

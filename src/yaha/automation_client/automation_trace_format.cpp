@@ -10,14 +10,14 @@ constexpr unsigned char k_ascii_control_max{0x20U};
 constexpr unsigned char k_low_nibble_mask{0x0FU};
 
 [[nodiscard]] std::string buildDebugExplainSummary(
-    const std::string& topic,
+    const std::string& ruleIdentifier,
     const std::string& checkReason,
     const std::string& valueReason) {
-    if (topic.empty()) {
+    if (ruleIdentifier.empty()) {
         return {};
     }
 
-    std::string summary = "Rule: " + topic;
+    std::string summary = "Rule: " + ruleIdentifier;
     if (!checkReason.empty()) {
         summary += ", check: " + checkReason;
     }
@@ -81,17 +81,23 @@ void appendTraceEntry(std::vector<std::string>* traceEntries, const std::string&
 void appendExplainTraceEntries(
     std::vector<std::string>* traceEntries,
     const std::vector<std::string>& evaluationTrace,
-    const std::string& fallbackTopic) {
+    const std::string& fallbackRuleIdentifier) {
+    constexpr std::string_view k_rule_prefix{"rule-evaluation:rule="};
     constexpr std::string_view k_topic_prefix{"rule-evaluation:topic="};
     constexpr std::string_view k_check_reason_prefix{"rule-evaluation:check reason="};
     constexpr std::string_view k_value_reason_prefix{"rule-evaluation:value reason="};
     constexpr std::string_view k_error_prefix{"rule-evaluation:error "};
 
-    std::string topic = fallbackTopic;
+    std::string ruleIdentifier = fallbackRuleIdentifier;
+    std::string topic;
     std::string checkReason;
     std::string valueReason;
 
     for (const auto& entry : evaluationTrace) {
+        if (ruleIdentifier.empty() && entry.starts_with(k_rule_prefix)) {
+            ruleIdentifier = entry.substr(k_rule_prefix.size());
+            continue;
+        }
         if (topic.empty() && entry.starts_with(k_topic_prefix)) {
             topic = entry.substr(k_topic_prefix.size());
             continue;
@@ -109,7 +115,11 @@ void appendExplainTraceEntries(
         }
     }
 
-    const std::string summary = buildDebugExplainSummary(topic, checkReason, valueReason);
+    if (ruleIdentifier.empty()) {
+        ruleIdentifier = topic;
+    }
+
+    const std::string summary = buildDebugExplainSummary(ruleIdentifier, checkReason, valueReason);
     if (!summary.empty()) {
         appendTraceEntry(traceEntries, "debug:explain " + summary);
         return;

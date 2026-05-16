@@ -301,27 +301,41 @@ void appendTrace(std::vector<std::string>* traceEntries, const std::string& trac
 }
 
 [[nodiscard]] std::string buildSummaryReason(
+    const std::string& ruleIdentifier,
     const std::string& topic,
     const std::vector<std::string>& traceEntries) {
+    constexpr std::string_view ruleIdentifierPrefix = "rule-evaluation:rule=";
     constexpr std::string_view valueReasonPrefix = "rule-evaluation:value reason=";
     constexpr std::string_view checkReasonPrefix = "rule-evaluation:check reason=";
 
+    std::string tracedRuleIdentifier;
     std::string valueReason;
     std::string checkReason;
 
     for (const auto& entry : traceEntries) {
-        if (valueReason.empty() && entry.starts_with(valueReasonPrefix)) {
+        if (tracedRuleIdentifier.empty() && entry.starts_with(ruleIdentifierPrefix)) {
+            tracedRuleIdentifier = entry.substr(ruleIdentifierPrefix.size());
+        } else if (valueReason.empty() && entry.starts_with(valueReasonPrefix)) {
             valueReason = entry.substr(valueReasonPrefix.size());
         } else if (checkReason.empty() && entry.starts_with(checkReasonPrefix)) {
             checkReason = entry.substr(checkReasonPrefix.size());
         }
     }
 
-    if (topic.empty()) {
+    std::string ruleSummaryIdentifier;
+    if (!tracedRuleIdentifier.empty()) {
+        ruleSummaryIdentifier = tracedRuleIdentifier;
+    } else if (!ruleIdentifier.empty()) {
+        ruleSummaryIdentifier = ruleIdentifier;
+    } else {
+        ruleSummaryIdentifier = topic;
+    }
+
+    if (ruleSummaryIdentifier.empty()) {
         return {};
     }
 
-    std::string summary = "Rule: " + topic;
+    std::string summary = "Rule: " + ruleSummaryIdentifier;
     if (!checkReason.empty()) {
         summary += ", check: " + checkReason;
     }
@@ -331,17 +345,65 @@ void appendTrace(std::vector<std::string>* traceEntries, const std::string& trac
     return summary;
 }
 
+[[nodiscard]] std::string normalizeRuleIdentifier(const std::string& ruleIdentifier) {
+    if (ruleIdentifier.empty()) {
+        return {};
+    }
+
+    constexpr std::string_view rulesSegment{"/rules/"};
+    const std::size_t rulesSegmentPos = ruleIdentifier.find(rulesSegment);
+    if (rulesSegmentPos != std::string::npos) {
+        return ruleIdentifier.substr(rulesSegmentPos + rulesSegment.size());
+    }
+
+    constexpr std::string_view rulesPrefix{"rules/"};
+    if (ruleIdentifier.starts_with(rulesPrefix)) {
+        return ruleIdentifier.substr(rulesPrefix.size());
+    }
+
+    return ruleIdentifier;
+}
+
+[[nodiscard]] std::string resolveRuleIdentifier(
+    const RuleTreeNode& ruleNode,
+    const std::string& explicitRuleIdentifier) {
+    if (!explicitRuleIdentifier.empty()) {
+        return normalizeRuleIdentifier(explicitRuleIdentifier);
+    }
+
+    if (!ruleNode.isObject()) {
+        return {};
+    }
+
+    const auto& ruleObject = ruleNode.asObject();
+    const auto nameIterator = ruleObject.find("name");
+    if (nameIterator == ruleObject.end() || !nameIterator->second.isString()) {
+        return {};
+    }
+
+    return normalizeRuleIdentifier(nameIterator->second.asString());
+}
+
 } // namespace
 
 SingleRuleProcessingResult SingleRuleProcessor::process(
     const RuleTreeNode& ruleNode,
-    const ExpressionEvaluator::VariableMap& variables) {
+    const ExpressionEvaluator::VariableMap& variables,
+    const std::string& ruleIdentifier) {
     std::vector<std::string> traceEntries;
-    SingleRuleProcessingResult result = processWithTrace(ruleNode, variables, &traceEntries);
+    SingleRuleProcessingResult result = processWithTrace(
+        ruleNode,
+        variables,
+        &traceEntries,
+        ruleIdentifier);
 
     if (result.success && result.triggered && !result.messages.empty() && hasExecutableProgram(ruleNode)) {
+        const std::string resolvedRuleIdentifier = resolveRuleIdentifier(ruleNode, ruleIdentifier);
         for (auto& message : result.messages) {
-            const std::string summaryReason = buildSummaryReason(message.topic(), traceEntries);
+            const std::string summaryReason = buildSummaryReason(
+                resolvedRuleIdentifier,
+                message.topic(),
+                traceEntries);
             if (!summaryReason.empty()) {
                 message.addReason(summaryReason);
             }
@@ -359,9 +421,15 @@ SingleRuleProcessingResult SingleRuleProcessor::process(
 SingleRuleProcessingResult SingleRuleProcessor::processWithTrace(
     const RuleTreeNode& ruleNode,
     const ExpressionEvaluator::VariableMap& variables,
-    std::vector<std::string>* traceEntries) {
+    std::vector<std::string>* traceEntries,
+    const std::string& ruleIdentifier) {
     SingleRuleProcessingResult result;
     appendTrace(traceEntries, "rule-evaluation:start");
+
+    const std::string resolvedRuleIdentifier = resolveRuleIdentifier(ruleNode, ruleIdentifier);
+    if (!resolvedRuleIdentifier.empty()) {
+        appendTrace(traceEntries, "rule-evaluation:rule=" + resolvedRuleIdentifier);
+    }
 
     std::vector<ResolvedRuleOutput> outputs;
     if (!collectResolvedOutputs(ruleNode, &outputs, &result.errors)) {

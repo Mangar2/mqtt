@@ -50,7 +50,8 @@ public:
      */
     [[nodiscard]] static SingleRuleProcessingResult process(
         const RuleTreeNode& ruleNode,
-        const ExpressionEvaluator::VariableMap& variables);
+        const ExpressionEvaluator::VariableMap& variables,
+        const std::string& ruleIdentifier = "");
 
     /**
      * @brief Processes one rule object and emits a detailed decision trace.
@@ -66,7 +67,8 @@ public:
     [[nodiscard]] static SingleRuleProcessingResult processWithTrace(
         const RuleTreeNode& ruleNode,
         const ExpressionEvaluator::VariableMap& variables,
-        std::vector<std::string>* traceEntries);
+        std::vector<std::string>* traceEntries,
+        const std::string& ruleIdentifier = "");
 };
 
 } // namespace yaha

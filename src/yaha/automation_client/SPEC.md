@@ -106,6 +106,8 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
   - Trace response `reason` chain is compact and explanation-focused:
     rule path resolution, optional error entries, human-readable check/value
     explanation summary, and final decision about outbound message generation.
+  - Explain summary labels use the resolved rule identifier/path; output topic is
+    only a fallback when no rule identifier is available.
   - Runtime/internal variable snapshots are intentionally not emitted in trace reasons.
   - Raw trace payload serialization JSON-escapes control characters
     (including newline/tab/carriage-return and other ASCII control codes)
@@ -113,6 +115,8 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
 - Logging behavior:
   - If `logIncomingMessages=true`, each inbound message handled by component is logged.
   - If `logOutgoingMessages=true`, each outbound rule/ack message is logged only after successful callback send.
+  - Outbound rule message reasons use the rule identifier (for example rule name/path)
+    rather than the emitted topic name when available.
   - Failed outbound sends are logged as `automation_client[out-fail]` with category and reason.
   - FileStore GET/POST failures and internal-variable calculation failures emit structured `automation_client[error]` lines.
 

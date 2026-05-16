@@ -796,7 +796,10 @@ void processRuleNode(
         return;
     }
 
-    const SingleRuleProcessingResult singleResult = SingleRuleProcessor::process(node, variables);
+    const SingleRuleProcessingResult singleResult = SingleRuleProcessor::process(
+        node,
+        variables,
+        pathText);
     result->usedVariables.insert(singleResult.usedVariables.begin(), singleResult.usedVariables.end());
 
     if (!singleResult.success) {
