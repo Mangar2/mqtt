@@ -98,15 +98,24 @@ std::string reasonEntriesToLogText(const std::vector<ReasonEntry>& reasonEntries
         return "none";
     }
 
-    std::string combined{};
-    for (std::size_t index = 0U; index < reasonEntries.size(); ++index) {
-        if (index > 0U) {
-            combined += " | ";
+    std::string reasonJson{"["};
+    bool firstEntry = true;
+    for (std::size_t reverseIndex = reasonEntries.size(); reverseIndex > 0U; --reverseIndex) {
+        const ReasonEntry& reasonEntry = reasonEntries[reverseIndex - 1U];
+        if (!firstEntry) {
+            reasonJson.push_back(',');
         }
-        combined += reasonEntries[index].message;
-    }
+        firstEntry = false;
 
-    return combined;
+        reasonJson += R"({"message":")" + escapeLogText(reasonEntry.message) + '"';
+        if (!reasonEntry.timestamp.empty()) {
+            reasonJson += R"(,"timestamp":")" + escapeLogText(reasonEntry.timestamp) + '"';
+        }
+        reasonJson.push_back('}');
+    }
+    reasonJson.push_back(']');
+
+    return reasonJson;
 }
 
 } // namespace
@@ -454,9 +463,13 @@ void YahaMqttClient::traceMessage(const std::string& direction, const Message& m
               << " retain=" << (message.retain() ? "1" : "0")
               << " value=" << valueToText(message.value());
 
+    if (message.rawPayload().has_value()) {
+        std::cout << " raw=\"" << escapeLogText(*message.rawPayload()) << '"';
+    }
+
     if (config_.logReason) {
         const std::string reasonText = reasonEntriesToLogText(message.reason());
-        std::cout << " reason=\"" << escapeLogText(reasonText) << '"';
+        std::cout << " reason=" << reasonText;
     }
 
     std::cout << '\n' << std::flush;

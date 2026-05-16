@@ -522,6 +522,7 @@ TEST_CASE("connect_trace_renders_qos2_subscription", "[mqtt_client]") {
     REQUIRE(captured.str().find("qos=2") != std::string::npos);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("message_trace_escapes_string_and_formats_numeric_values", "[mqtt_client]") {
     TransportState state{};
     state.inbox.emplace_back("home/trace/in", 21.5);
@@ -543,6 +544,8 @@ TEST_CASE("message_trace_escapes_string_and_formats_numeric_values", "[mqtt_clie
 
         yaha::Message outbound{"home/trace/out", std::string{"payload"}};
         outbound.setRawPayload("line1\n\"x\"\\tab\t");
+        outbound.addReason("received from arduino", "2026-05-15T21:40:26.003Z");
+        outbound.addReason("received by broker", "2026-05-15T21:40:26.007Z");
         component.publishFromComponent(outbound);
 
         std::this_thread::sleep_for(std::chrono::milliseconds{20});
@@ -558,6 +561,8 @@ TEST_CASE("message_trace_escapes_string_and_formats_numeric_values", "[mqtt_clie
     REQUIRE(output.find("value=21.5") != std::string::npos);
     REQUIRE(output.find("mqtt: outgoing topic=home/trace/out") != std::string::npos);
     REQUIRE(output.find("value=payload") != std::string::npos);
+    REQUIRE(output.find("raw=\"line1\\n\\\"x\\\"\\\\tab\\t\"") != std::string::npos);
+    REQUIRE(output.find("reason=[{\"message\":\"received from arduino\",\"timestamp\":\"2026-05-15T21:40:26.003Z\"},{\"message\":\"received by broker\",\"timestamp\":\"2026-05-15T21:40:26.007Z\"}]") != std::string::npos);
 }
 
 TEST_CASE("mqtt_client_runtime_run_until_signal_starts_and_stops_component",

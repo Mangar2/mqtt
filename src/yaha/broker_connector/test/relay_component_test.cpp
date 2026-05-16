@@ -82,6 +82,17 @@ yaha::YahaMqttClient::Transport makeFakeTransport(TransportState& state) {
     return transport;
 }
 
+bool published_values_match_expected(
+    const std::vector<yaha::Message>& published,
+    const std::string& expectedTextValue,
+    const double expectedNumericValue) {
+    return published.size() == 2U &&
+        std::holds_alternative<std::string>(published[0].value()) &&
+        std::get<std::string>(published[0].value()) == expectedTextValue &&
+        std::holds_alternative<double>(published[1].value()) &&
+        std::get<double>(published[1].value()) == expectedNumericValue;
+}
+
 class FakeReceiverPublishPort final : public yaha::ReceiverPublishPort {
 public:
     void setPublishResults(std::vector<bool> results) {
@@ -588,6 +599,33 @@ TEST_CASE("relay_component_clears_dup_for_qos0_output", "[broker_connector]") {
     component.close();
 }
 
+TEST_CASE("relay_component_preserves_source_value_exactly", "[broker_connector]") {
+    yaha::RelayPolicyConfig config{};
+    config.normalizeQosToAtLeastOnce = true;
+    config.maxPublishRetries = 0U;
+
+    std::vector<yaha::Message> published{};
+    yaha::BrokerConnectorComponent component{config};
+    component.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message);
+    });
+    component.run();
+
+    yaha::SourcePublishMeta sourceMeta{};
+    sourceMeta.qos = yaha::Qos::AtLeastOnce;
+
+    const std::string textValue{"  on\\toff  "};
+    yaha::Message sourceTextMessage{"home/value/text", textValue, yaha::Qos::AtLeastOnce, false};
+    REQUIRE(component.onIncomingPublish(sourceTextMessage, sourceMeta));
+
+    yaha::Message sourceNumericMessage{"home/value/num", k_temperature_21_5, yaha::Qos::AtLeastOnce, false};
+    REQUIRE(component.onIncomingPublish(sourceNumericMessage, sourceMeta));
+
+    REQUIRE(published_values_match_expected(published, textValue, k_temperature_21_5));
+
+    component.close();
+}
+
 TEST_CASE("relay_component_maps_legacy_sys_topic_prefix_to_status", "[broker_connector]") {
     yaha::RelayPolicyConfig config{};
     config.normalizeQosToAtLeastOnce = true;
@@ -604,9 +642,14 @@ TEST_CASE("relay_component_maps_legacy_sys_topic_prefix_to_status", "[broker_con
     sourceMeta.qos = yaha::Qos::AtLeastOnce;
 
     yaha::Message sourceMessage{"$SYS/a/b", std::string{"v"}, yaha::Qos::AtLeastOnce, false};
+    sourceMessage.setRawPayload(
+        R"({"token":"receivebroker-connector-source","message":{"topic":"$SYS/a/b","value":"v","reason":[{"message":"received from source","timestamp":"2026-05-15T21:40:26.003Z"},{"message":"received by broker","timestamp":"2026-05-15T21:40:26.007Z"}]}})");
     REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
     REQUIRE(published.size() == 1U);
     REQUIRE(published.front().topic() == "status/a/b");
+    REQUIRE(published.front().rawPayload().has_value());
+    REQUIRE(*published.front().rawPayload() ==
+        "{\"token\":\"receivebroker-connector-source\",\"message\":{\"topic\":\"status/a/b\",\"value\":\"v\",\"reason\":[{\"message\":\"received from source\",\"timestamp\":\"2026-05-15T21:40:26.003Z\"},{\"message\":\"received by broker\",\"timestamp\":\"2026-05-15T21:40:26.007Z\"}]}}");
 
     component.close();
 }

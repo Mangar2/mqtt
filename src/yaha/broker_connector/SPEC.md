@@ -192,6 +192,7 @@ On successful handshake, lifecycle trace logs include concrete source broker res
 2. Increments `received` counter for each accepted source callback.
 3. Maps source metadata to outgoing `Message` fields:
 	- topic mapping: legacy source topics with prefix `$SYS/` are rewritten to `status/` (`$SYS/a/b -> status/a/b`) before receiver publish
+	- when topic mapping rewrites `$SYS/...` to `status/...`, forwarded `Message.rawPayload()` is rewritten so embedded `message.topic` matches the mapped MQTT topic
 	- qos mapping: `0 -> 0`, `1/2 -> 1` when normalization is enabled
 	- retain mapping: source retain passthrough or forced false
 	- dup mapping: source `dup` is forwarded for QoS>0, forced false for QoS0
