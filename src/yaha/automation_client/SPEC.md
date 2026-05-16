@@ -106,6 +106,9 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
   - Trace response `reason` chain is compact and explanation-focused:
     rule path resolution, optional error entries, human-readable check/value
     explanation summary, and final decision about outbound message generation.
+  - For `triggered` responses, trace reasons include both the rule-output
+    candidate count and delivery-control preview (`would send=<N>`) after
+    dedup/delay/cooldown evaluation using current runtime delivery state.
   - Explain summary labels use the resolved rule identifier/path; output topic is
     only a fallback when no rule identifier is available.
   - Runtime/internal variable snapshots are intentionally not emitted in trace reasons.

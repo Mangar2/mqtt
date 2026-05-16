@@ -326,6 +326,7 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
     std::string resolvedRulePath{};
     std::optional<RuleTreeNode> ruleNode;
     ExpressionEvaluator::VariableMap variablesSnapshot;
+    RuleRuntimeDeliveryState deliveryStateSnapshot;
 
     {
         std::lock_guard<std::mutex> lock{stateMutex_};
@@ -333,6 +334,7 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
             ruleNode = findRuleNodeByLink(*ruleLink, &resolvedRulePath);
         }
         variablesSnapshot = runtimeVariables_;
+        deliveryStateSnapshot = runtimeDeliveryState_;
     }
 
     std::string traceValue{"error"};
@@ -343,11 +345,12 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
         automation_trace_format::appendTraceEntry(&traceEntries, "debug:rule lookup failed link=" + *ruleLink);
     } else {
         automation_trace_format::appendTraceEntry(&traceEntries, "debug:rule path=" + resolvedRulePath);
+        const auto evaluationTime = std::chrono::system_clock::now();
         try {
             const InternalVariables internalVariables{
                 InternalVariables::GeoCoordinates{.longitude = config_.longitude, .latitude = config_.latitude}};
             const InternalVariables::VariableMap internalValues = internalVariables.calculate(
-                std::chrono::system_clock::now());
+                evaluationTime);
             for (const auto& [variableName, variableValue] : internalValues) {
                 if (std::holds_alternative<double>(variableValue)) {
                     variablesSnapshot[variableName] = std::get<double>(variableValue);
@@ -378,15 +381,34 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
             automation_trace_format::appendTraceEntry(&traceEntries, "debug:result no outbound message");
         } else {
             traceValue = "triggered";
-            if (!result.messages.empty()) {
-                if (result.messages.size() == 1U) {
-                    automation_trace_format::appendTraceEntry(&traceEntries, "debug:result outbound topic=" + result.messages.front().topic());
-                } else {
-                    automation_trace_format::appendTraceEntry(&traceEntries,
-                                     "debug:result outbound topics=" + std::to_string(result.messages.size()));
-                }
+            const std::vector<Message> deliveryCandidates = !result.messages.empty()
+                ? result.messages
+                : std::vector<Message>{result.message.value().clone()};
+            const std::vector<Message> deliveredMessages = RuleRuntimeEngine::previewDeliveredMessages(
+                resolvedRulePath,
+                *ruleNode,
+                deliveryCandidates,
+                evaluationTime,
+                deliveryStateSnapshot);
+
+            const std::size_t candidateCount = deliveryCandidates.size();
+            const std::size_t deliveredCount = deliveredMessages.size();
+            if (candidateCount == 1U) {
+                automation_trace_format::appendTraceEntry(
+                    &traceEntries,
+                    "debug:result outbound topic=" + deliveryCandidates.front().topic()
+                        + ", would send=" + std::to_string(deliveredCount)
+                        + (deliveredCount > 0U
+                               ? " (delivery controls allow)"
+                               : " (delivery controls suppress: dedup/delay/cooldown)"));
             } else {
-                automation_trace_format::appendTraceEntry(&traceEntries, "debug:result outbound topic=" + result.message->topic());
+                automation_trace_format::appendTraceEntry(
+                    &traceEntries,
+                    "debug:result outbound topics=" + std::to_string(candidateCount)
+                        + ", would send=" + std::to_string(deliveredCount)
+                        + (deliveredCount > 0U
+                               ? " (delivery controls allow)"
+                               : " (delivery controls suppress: dedup/delay/cooldown)"));
             }
         }
     }

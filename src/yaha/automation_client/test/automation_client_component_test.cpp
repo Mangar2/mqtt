@@ -933,6 +933,54 @@ TEST_CASE("automation_component_debug_trace_request_resolves_hierarchical_rule_l
     component.close();
 }
 
+TEST_CASE("automation_component_debug_trace_request_reports_delivery_control_suppression", "[automation_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setRulesJson(
+        R"({"rules":{"presenceOn":{"topic":"house/light/set","check":"$MONITOR/presence/set = on","value":"on"}}})");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{
+        "$MONITOR/presence/set",
+        std::string{"on"},
+        yaha::Qos::AtLeastOnce,
+        false});
+    component.handleMessage(yaha::Message{
+        "$MONITOR/automation/rules/presenceOn/debug",
+        std::string{"1"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    REQUIRE_FALSE(published.empty());
+    REQUIRE(published.back().topic() == "$MONITOR/automation/rules/presenceOn/trace");
+    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+    REQUIRE(std::get<std::string>(published.back().value()) == "triggered");
+
+    const bool hasSuppressionTrace = std::ranges::any_of(
+        published.back().reason(),
+        [](const yaha::ReasonEntry& reasonEntry) {
+            return reasonEntry.message.find("would send=0") != std::string::npos
+                && reasonEntry.message.find("delivery controls suppress: dedup/delay/cooldown") != std::string::npos;
+        });
+    REQUIRE(hasSuppressionTrace);
+
+    component.close();
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("automation_component_debug_trace_raw_payload_escapes_multiline_reason_entries", "[automation_client]") {
     const std::uint16_t port = reserveFreeLocalPort();

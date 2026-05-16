@@ -938,6 +938,25 @@ RuleRuntimeProcessingResult RuleRuntimeEngine::processRules(
     return result;
 }
 
+std::vector<Message> RuleRuntimeEngine::previewDeliveredMessages(
+    const std::string& rulePath,
+    const RuleTreeNode& ruleNode,
+    const std::vector<Message>& candidateMessages,
+    const std::chrono::system_clock::time_point& evaluationTime,
+    const RuleRuntimeDeliveryState& deliveryState) {
+    if (!ruleNode.isObject()) {
+        return {};
+    }
+
+    RuleRuntimeDeliveryState deliveryStateCopy = deliveryState;
+    return applyDeliveryControls(
+        rulePath,
+        ruleNode.asObject(),
+        candidateMessages,
+        evaluationTime,
+        &deliveryStateCopy);
+}
+
 void RuleRuntimeEngine::clearNonMotionEvents(RuleRuntimeEventState* eventState) {
     eventState->nonMotionEvents.clear();
 }

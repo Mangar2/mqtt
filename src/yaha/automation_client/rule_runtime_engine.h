@@ -111,6 +111,26 @@ public:
         RuleRuntimeDeliveryState* deliveryState);
 
     /**
+     * @brief Preview delivery controls for one already-triggered rule output set.
+     *
+     * Uses the same dedup/delay/cooldown logic as runtime processing but does
+     * not mutate caller state.
+     *
+     * @param rulePath Fully resolved rule path used for delivery-state keying.
+     * @param ruleNode Rule object containing delivery-control fields.
+     * @param candidateMessages Candidate outputs produced by rule evaluation.
+     * @param evaluationTime Timestamp used for delay/cooldown calculations.
+     * @param deliveryState Snapshot of current runtime delivery state.
+     * @return Messages that would pass delivery controls at evaluation time.
+     */
+    [[nodiscard]] static std::vector<Message> previewDeliveredMessages(
+        const std::string& rulePath,
+        const RuleTreeNode& ruleNode,
+        const std::vector<Message>& candidateMessages,
+        const std::chrono::system_clock::time_point& evaluationTime,
+        const RuleRuntimeDeliveryState& deliveryState);
+
+    /**
      * @brief Clear one-cycle non-motion events after a processing cycle.
      *
      * @param eventState Mutable runtime event state.
