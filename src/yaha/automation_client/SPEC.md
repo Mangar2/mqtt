@@ -56,6 +56,7 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
 
 - Startup (`run`) performs FileStore GET on `rulesKeyPath` when enabled.
 - Startup initializes presence variable bootstrap value `initial` on `presenceTopic`.
+- Startup also initializes legacy-compatible alias `status/presence` with value `initial`.
 - Monitoring updates:
   - Subscribed topic prefix `$MONITOR/FileStore/#` (configurable).
   - On payload with matching `keyPath` equal to `rulesKeyPath`, rules are reloaded from FileStore.
@@ -81,8 +82,8 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
   - It builds evaluation context from runtime variables plus internal variables (`/time`, `/weekday`, sun/twilight).
   - It processes complete rule tree with runtime gates before rule execution:
     - `active` boolean skip gate
-    - weekday gate (`weekdays`)
-    - time window gate (`time` + optional `duration`)
+    - weekday gate (`weekdays`, evaluated in local calendar weekday)
+    - time window gate (`time` + optional `duration`, parsed against local day start)
     - event gates (`anyOf`, `allOf`, `noneOf`, `allow`)
     - inactivity gate (`durationWithoutMovementInMinutes`)
   - Triggered rule candidates are then filtered by delivery controls:

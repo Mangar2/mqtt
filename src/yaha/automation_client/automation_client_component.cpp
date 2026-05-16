@@ -87,6 +87,7 @@ void AutomationClientComponent::run() {
     {
         std::lock_guard<std::mutex> lock{stateMutex_};
         runtimeVariables_[config_.presenceTopic] = std::string{"initial"};
+        runtimeVariables_["status/presence"] = std::string{"initial"};
     }
 
     processPendingPublishQueue();

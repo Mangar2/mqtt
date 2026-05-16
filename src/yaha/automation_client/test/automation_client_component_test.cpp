@@ -258,6 +258,41 @@ TEST_CASE("automation_component_evaluates_rules_and_publishes_outputs", "[automa
     component.close();
 }
 
+TEST_CASE("automation_component_bootstraps_status_presence_initial", "[automation_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setRulesJson(
+        R"({"rules":{"init":{"topic":"house/init/set","check":"status/presence = initial","value":"on"}}})");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{
+        "house/event/trigger",
+        std::string{"1"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    REQUIRE_FALSE(published.empty());
+    REQUIRE(published.back().topic() == "house/init/set");
+    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+    REQUIRE(std::get<std::string>(published.back().value()) == "on");
+
+    component.close();
+}
+
 TEST_CASE("automation_component_management_delete_persists_and_acks_deleted", "[automation_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};

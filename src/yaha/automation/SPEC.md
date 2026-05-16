@@ -123,7 +123,11 @@ Type behavior:
 - Relational comparison supports number-vs-number and time-vs-time.
 
 Error behavior:
-- Fails with structured error list when variables are undefined or operand types are invalid.
+- Missing variables do not fail evaluation. They are tracked, and evaluation
+  completes with final result forced to `false` and a reason listing undefined
+  variable names.
+- Fails with structured error list for invalid operand types or malformed
+  expression constructs.
 
 `ExpressionEvaluationResult` fields:
 - `success`: evaluation completed without errors.
@@ -213,6 +217,11 @@ Sun-time calculation behavior:
 
 Error behavior:
 - Throws `std::runtime_error` when a sun event is undefined for date/coordinates.
+
+Expression time semantics:
+- When expression evaluation converts a `std::chrono::system_clock::time_point`
+  to `HH:MM[:SS]` (for relational checks, arithmetic, or reason text), it uses
+  local wall-clock time (local calendar conversion), not UTC clock text.
 
 ## Files
 

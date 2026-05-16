@@ -5,6 +5,7 @@
 #include <charconv>
 #include <cctype>
 #include <cmath>
+#include <ctime>
 #include <optional>
 #include <ranges>
 #include <sstream>
@@ -27,6 +28,40 @@ constexpr std::int64_t k_seconds_per_day{24 * 60 * 60};
 constexpr int k_minutes_per_hour{60};
 constexpr int k_hours_per_day{24};
 constexpr double k_zero_epsilon{1e-12};
+
+[[nodiscard]] std::optional<std::tm> toLocalCalendarTime(
+    const std::chrono::system_clock::time_point& timePoint) {
+    const std::time_t epochSeconds = std::chrono::system_clock::to_time_t(timePoint);
+    std::tm localCalendarTime{};
+#if defined(_WIN32)
+    if (localtime_s(&localCalendarTime, &epochSeconds) != 0) {
+        return std::nullopt;
+    }
+#else
+    if (localtime_r(&epochSeconds, &localCalendarTime) == nullptr) {
+        return std::nullopt;
+    }
+#endif
+    return localCalendarTime;
+}
+
+[[nodiscard]] std::optional<std::chrono::system_clock::time_point> localDayStart(
+    const std::chrono::system_clock::time_point& timePoint) {
+    auto localCalendarTime = toLocalCalendarTime(timePoint);
+    if (!localCalendarTime.has_value()) {
+        return std::nullopt;
+    }
+
+    localCalendarTime->tm_hour = 0;
+    localCalendarTime->tm_min = 0;
+    localCalendarTime->tm_sec = 0;
+    localCalendarTime->tm_isdst = -1;
+    const std::time_t localMidnightSeconds = std::mktime(&*localCalendarTime);
+    if (localMidnightSeconds == static_cast<std::time_t>(-1)) {
+        return std::nullopt;
+    }
+    return std::chrono::system_clock::from_time_t(localMidnightSeconds);
+}
 
 [[nodiscard]] std::string joinPath(const std::string& basePath, const std::string& segment) {
     if (basePath.empty()) {
@@ -312,8 +347,12 @@ constexpr double k_zero_epsilon{1e-12};
         return std::nullopt;
     }
 
-    const auto dayPoint = std::chrono::floor<std::chrono::days>(referenceDate);
-    return std::chrono::system_clock::time_point{dayPoint}
+    const auto dayPoint = localDayStart(referenceDate);
+    if (!dayPoint.has_value()) {
+        return std::nullopt;
+    }
+
+    return *dayPoint
         + std::chrono::hours{hoursValue}
         + std::chrono::minutes{minutesValue}
         + std::chrono::seconds{secondsValue};
@@ -430,9 +469,13 @@ constexpr double k_zero_epsilon{1e-12};
 }
 
 [[nodiscard]] int weekdayFromTimePoint(const std::chrono::system_clock::time_point& timePoint) {
-    const auto dayPoint = std::chrono::floor<std::chrono::days>(timePoint);
-    const std::chrono::weekday weekdayValue{dayPoint};
-    return static_cast<int>(weekdayValue.c_encoding());
+    const auto localCalendarTime = toLocalCalendarTime(timePoint);
+    if (!localCalendarTime.has_value()) {
+        const auto dayPoint = std::chrono::floor<std::chrono::days>(timePoint);
+        const std::chrono::weekday weekdayValue{dayPoint};
+        return static_cast<int>(weekdayValue.c_encoding());
+    }
+    return localCalendarTime->tm_wday;
 }
 
 [[nodiscard]] bool evaluateWeekdayGate(

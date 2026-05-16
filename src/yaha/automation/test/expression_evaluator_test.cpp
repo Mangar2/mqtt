@@ -1,7 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 
+#include <array>
 #include <chrono>
+#include <ctime>
 #include <string>
 
 #include "yaha/automation/expression_evaluator.h"
@@ -17,11 +19,29 @@ constexpr int k_minutes_fifty_five{55};
 constexpr int k_minutes_thirty{30};
 constexpr double k_numeric_one{1.0};
 constexpr double k_numeric_three{3.0};
+constexpr std::size_t k_time_text_buffer_size{9U};
 
 [[nodiscard]] yaha::FieldScriptAst parseScript(const std::string& script) {
     const yaha::ExpressionParseResult parsed = yaha::ExpressionParser::parse(script);
     REQUIRE(parsed.success);
     return parsed.ast;
+}
+
+[[nodiscard]] std::string localTimeText(const std::chrono::system_clock::time_point& timePoint) {
+    const std::time_t epochSeconds = std::chrono::system_clock::to_time_t(timePoint);
+    std::tm localCalendarTime{};
+#if defined(_WIN32)
+    const auto conversionResult = localtime_s(&localCalendarTime, &epochSeconds);
+    REQUIRE(conversionResult == 0);
+#else
+    const auto* conversionResult = localtime_r(&epochSeconds, &localCalendarTime);
+    REQUIRE(conversionResult != nullptr);
+#endif
+
+    std::array<char, k_time_text_buffer_size> outputBuffer{};
+    const auto charsWritten = std::strftime(outputBuffer.data(), outputBuffer.size(), "%H:%M:%S", &localCalendarTime);
+    REQUIRE(charsWritten > 0U);
+    return std::string{outputBuffer.data()};
 }
 
 } // namespace
@@ -71,14 +91,34 @@ TEST_CASE("expression_evaluator_supports_time_arithmetic_in_minutes", "[yaha][au
     REQUIRE(std::get<bool>(result.value));
 }
 
-TEST_CASE("expression_evaluator_reports_undefined_variable", "[yaha][automation]") {
+TEST_CASE("expression_evaluator_uses_local_time_for_timepoint_comparisons_and_reason", "[yaha][automation]") {
+    const auto ast = parseScript(R"("/time" >= "00:00")");
+
+    yaha::ExpressionEvaluator::VariableMap vars;
+    const auto nowTimePoint = std::chrono::system_clock::now();
+    vars.insert({"/time", nowTimePoint});
+
+    const yaha::ExpressionEvaluationResult result = yaha::ExpressionEvaluator::evaluate(ast, vars);
+
+    REQUIRE(result.success);
+    REQUIRE(std::holds_alternative<bool>(result.value));
+    REQUIRE(std::get<bool>(result.value));
+
+    const std::string expectedLocalClockText = localTimeText(nowTimePoint);
+    REQUIRE(result.reason.find("/time (" + expectedLocalClockText + ")") != std::string::npos);
+}
+
+TEST_CASE("expression_evaluator_handles_undefined_variable_like_legacy", "[yaha][automation]") {
     const auto ast = parseScript("$SYS/presence = awake");
 
     const yaha::ExpressionEvaluator::VariableMap vars;
     const yaha::ExpressionEvaluationResult result = yaha::ExpressionEvaluator::evaluate(ast, vars);
 
-    REQUIRE_FALSE(result.success);
-    REQUIRE(result.errors.empty() == false);
+    REQUIRE(result.success);
+    REQUIRE(result.errors.empty());
+    REQUIRE(std::holds_alternative<bool>(result.value));
+    REQUIRE_FALSE(std::get<bool>(result.value));
+    REQUIRE(result.reason.find("false, undefined variables: $SYS/presence") != std::string::npos);
 }
 
 TEST_CASE("expression_evaluator_can_evaluate_program_from_rules_fixture", "[yaha][automation]") {

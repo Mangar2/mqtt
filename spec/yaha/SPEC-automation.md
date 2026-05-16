@@ -56,6 +56,7 @@ For YAHA reimplementation, all legacy $SYS control topics are mapped 1:1 to $MON
 - $SYS/automation/rules/<name>/set -> $MONITOR/automation/rules/<name>/set
 - $SYS/automation/rules/<name> -> $MONITOR/automation/rules/<name>
 - default presence topic $SYS/presence -> $MONITOR/presence
+- legacy status presence topic status/presence is supported as additional bootstrap alias
 - default presence input topic $SYS/presence/set -> $MONITOR/presence/set
 
 No YAHA component may subscribe/publish $SYS topics.
@@ -104,6 +105,16 @@ No HTTP server API is exposed by Automation itself.
 
 Automation uses optional outbound HTTP client integration for file-store read/write of rule trees.
 File-store contract reference: [SPEC-filestore.md](./SPEC-filestore.md).
+
+## Variable semantics parity
+
+Variable handling must match legacy automation behavior:
+
+- Unknown external variables do not produce hard evaluation errors.
+- Missing variable references evaluate as `false`.
+- If one or more variables are missing during one expression evaluation, the final
+  expression result is forced to `false` with a reason text listing missing variable names.
+- Missing variables are still tracked in used-variable telemetry.
 
 ## Configuration
 
@@ -608,6 +619,7 @@ Delivery boundary requirement:
 
 On component initialization:
 - Set variable(presenceTopic) = initial.
+- Set variable(status/presence) = initial as legacy-compatible alias.
 
 ## Event history model
 

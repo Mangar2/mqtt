@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <ctime>
 #include <optional>
 #include <sstream>
 #include <vector>
@@ -93,11 +94,55 @@ struct EvaluatedNode {
     return textStream.str();
 }
 
+[[nodiscard]] std::optional<std::tm> toLocalCalendarTime(
+    const std::chrono::system_clock::time_point& timePoint) {
+    const std::time_t epochSeconds = std::chrono::system_clock::to_time_t(timePoint);
+    std::tm localCalendarTime{};
+#if defined(_WIN32)
+    if (localtime_s(&localCalendarTime, &epochSeconds) != 0) {
+        return std::nullopt;
+    }
+#else
+    if (localtime_r(&epochSeconds, &localCalendarTime) == nullptr) {
+        return std::nullopt;
+    }
+#endif
+    return localCalendarTime;
+}
+
+[[nodiscard]] std::optional<std::chrono::seconds> localTimeOfDay(
+    const std::chrono::system_clock::time_point& timePoint) {
+    const auto localCalendarTime = toLocalCalendarTime(timePoint);
+    if (!localCalendarTime.has_value()) {
+        return std::nullopt;
+    }
+
+    return std::chrono::hours{localCalendarTime->tm_hour}
+        + std::chrono::minutes{localCalendarTime->tm_min}
+        + std::chrono::seconds{localCalendarTime->tm_sec};
+}
+
+[[nodiscard]] std::optional<std::chrono::system_clock::time_point> localDayStart(
+    const std::chrono::system_clock::time_point& timePoint) {
+    auto localCalendarTime = toLocalCalendarTime(timePoint);
+    if (!localCalendarTime.has_value()) {
+        return std::nullopt;
+    }
+
+    localCalendarTime->tm_hour = 0;
+    localCalendarTime->tm_min = 0;
+    localCalendarTime->tm_sec = 0;
+    localCalendarTime->tm_isdst = -1;
+    const std::time_t localMidnightSeconds = std::mktime(&*localCalendarTime);
+    if (localMidnightSeconds == static_cast<std::time_t>(-1)) {
+        return std::nullopt;
+    }
+    return std::chrono::system_clock::from_time_t(localMidnightSeconds);
+}
+
 [[nodiscard]] std::optional<std::chrono::seconds> tryTimeOfDay(const RuntimeValue& runtimeValue) {
     if (std::holds_alternative<std::chrono::system_clock::time_point>(runtimeValue)) {
-        const auto timePoint = std::get<std::chrono::system_clock::time_point>(runtimeValue);
-        const auto dayStart = std::chrono::floor<std::chrono::days>(timePoint);
-        return std::chrono::duration_cast<std::chrono::seconds>(timePoint - dayStart);
+        return localTimeOfDay(std::get<std::chrono::system_clock::time_point>(runtimeValue));
     }
 
     if (std::holds_alternative<std::string>(runtimeValue)) {
@@ -201,6 +246,10 @@ public:
         }
 
         result.reason = evaluatedNode->reason;
+        if (!missingVariables_.empty()) {
+            result.value = false;
+            result.reason = buildMissingVariablesReason();
+        }
         result.success = errors_.empty();
         result.errors = errors_;
         result.usedVariables = usedVariables_;
@@ -298,8 +347,8 @@ private:
         usedVariables_.insert(variableName);
         const auto variableIterator = variables_.find(variableName);
         if (variableIterator == variables_.end()) {
-            errors_.emplace_back("undefined variable: " + variableName);
-            return std::nullopt;
+            missingVariables_.insert(variableName);
+            return EvaluatedNode{.value = RuntimeValue{false}, .reason = variableName + " (undefined)"};
         }
 
         if (std::holds_alternative<std::string>(variableIterator->second)) {
@@ -316,6 +365,17 @@ private:
         }
         const RuntimeValue variableValue{std::get<std::chrono::system_clock::time_point>(variableIterator->second)};
         return EvaluatedNode{.value = variableValue, .reason = variableName + " (" + valueToString(variableValue) + ")"};
+    }
+
+    [[nodiscard]] std::string buildMissingVariablesReason() const {
+        std::string reasonText{"false, undefined variables: "};
+        std::string separator;
+        for (const auto& variableName : missingVariables_) {
+            reasonText.append(separator);
+            reasonText.append(variableName);
+            separator = ", ";
+        }
+        return reasonText;
     }
 
     [[nodiscard]] std::optional<EvaluatedNode> evalUnaryNode(const UnaryOpNode& unaryNode) {
@@ -560,8 +620,12 @@ private:
             const auto deltaDuration = std::chrono::minutes{deltaMinutes};
             const auto resultTime = isAddOperation ? *leftTime + deltaDuration : *leftTime - deltaDuration;
             if (std::holds_alternative<std::chrono::system_clock::time_point>(leftValue)) {
-                const auto dayStart = std::chrono::floor<std::chrono::days>(std::get<std::chrono::system_clock::time_point>(leftValue));
-                const RuntimeValue resultValue{dayStart + resultTime};
+                const auto dayStart = localDayStart(std::get<std::chrono::system_clock::time_point>(leftValue));
+                if (!dayStart.has_value()) {
+                    errors_.emplace_back("failed to derive local day start");
+                    return std::nullopt;
+                }
+                const RuntimeValue resultValue{*dayStart + resultTime};
                 return EvaluatedNode{
                     .value = resultValue,
                     .reason = leftNode.reason + " " + operatorText + " " + rightNode.reason + " = " + valueToString(resultValue)};
@@ -580,6 +644,7 @@ private:
     const ExternalVariableMap& variables_;
     std::map<std::string, std::vector<MapEntryAst>> declarations_;
     std::set<std::string> usedVariables_;
+    std::set<std::string> missingVariables_;
     std::vector<std::string> errors_;
 };
 
