@@ -69,4 +69,5 @@ Serial -> MQTT:
 - Scheduler send callback encodes frames with protocol codec and emits bytes via serial send callback.
 - Time-of-day loop periodically sends broadcast command `'C'` with local minutes-of-day payload.
 - Serial receive pipeline uses `Rs485StreamReader`, scheduler token processing, and publishes only messages accepted by scheduler state.
+- scheduler, time-of-day, temporary, and blink waits are interruptible by `close()` so shutdown does not block for full configured delay windows.
 - phase-6 tests verify subscription contract, action-to-serial emission, serial-to-publish mapping, and trace-topic handling.

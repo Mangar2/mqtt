@@ -96,9 +96,9 @@ TEST_CASE("rs485_interface_component_set_action_emits_serial_message_after_enabl
 
     component.run();
     component.handleMessage(yaha::Message{"house/room/device/power/set", std::string{"on"}});
-    component.feedSerialBytes(encodeEnableSendForMe());
 
-    const bool found = waitUntil([&sentMutex, &sentMessages]() {
+    const bool found = waitUntil([&component, &sentMutex, &sentMessages]() {
+        component.feedSerialBytes(encodeEnableSendForMe());
         std::lock_guard<std::mutex> lock{sentMutex};
         return std::ranges::any_of(sentMessages, [](const yaha::Rs485SerialMessage& message) {
             return message.command == 'P' &&

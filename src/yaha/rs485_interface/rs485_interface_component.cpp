@@ -14,6 +14,7 @@ namespace {
 constexpr std::uint32_t k_default_blink_cycles{1U};
 constexpr std::uint32_t k_blink_toggle_multiplier{2U};
 constexpr double k_integer_epsilon{1e-9};
+constexpr std::uint32_t k_interruptible_sleep_quantum_ms{50U};
 constexpr const char* k_trace_topic_set{"$SYS/rs485Interface/trace/set"};
 constexpr const char* k_monitor_trace_topic_set{"$MONITOR/rs485Interface/trace/set"};
 
@@ -22,6 +23,22 @@ constexpr const char* k_monitor_trace_topic_set{"$MONITOR/rs485Interface/trace/s
         return std::string{"off"};
     }
     return std::string{"on"};
+}
+
+void sleepInterruptible(
+    const std::atomic<bool>& running,
+    const std::chrono::milliseconds duration) {
+    const auto deadline = std::chrono::steady_clock::now() + duration;
+    while (running.load() && std::chrono::steady_clock::now() < deadline) {
+        const auto now = std::chrono::steady_clock::now();
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
+        const auto step = std::min(
+            remaining,
+            std::chrono::milliseconds{k_interruptible_sleep_quantum_ms});
+        if (step.count() > 0) {
+            std::this_thread::sleep_for(step);
+        }
+    }
 }
 
 } // namespace
@@ -291,7 +308,7 @@ void Rs485InterfaceComponent::enqueueTemporary(const std::string& topic, const V
 
     launchActionThread([this, topic, temporarySeconds]() {
         enqueueSet(topic, std::string{"on"});
-        std::this_thread::sleep_for(std::chrono::seconds{temporarySeconds});
+        sleepInterruptible(running_, std::chrono::seconds{temporarySeconds});
         if (!running_) {
             return;
         }
@@ -317,7 +334,7 @@ void Rs485InterfaceComponent::enqueueBlink(const std::string& topic, const Value
                 ? std::get<std::string>(toggled)
                 : "off";
 
-            std::this_thread::sleep_for(std::chrono::seconds{config_.blinkDelaySeconds});
+            sleepInterruptible(running_, std::chrono::seconds{config_.blinkDelaySeconds});
         }
     });
 }
@@ -334,7 +351,7 @@ void Rs485InterfaceComponent::launchActionThread(std::function<void()> job) {
 void Rs485InterfaceComponent::runSchedulerLoop() {
     while (running_) {
         scheduler_.processTick();
-        std::this_thread::sleep_for(std::chrono::milliseconds{config_.tickDelayMs});
+        sleepInterruptible(running_, std::chrono::milliseconds{config_.tickDelayMs});
     }
 }
 
@@ -355,7 +372,7 @@ void Rs485InterfaceComponent::runTimeOfDayLoop() {
         message.value = static_cast<double>(totalMinutes);
 
         scheduler_.sendMessage(message);
-        std::this_thread::sleep_for(std::chrono::seconds{config_.timeOfDayDelaySeconds});
+        sleepInterruptible(running_, std::chrono::seconds{config_.timeOfDayDelaySeconds});
     }
 }
 
