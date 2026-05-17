@@ -44,6 +44,31 @@ constexpr std::size_t k_time_text_buffer_size{9U};
     return std::string{outputBuffer.data()};
 }
 
+[[nodiscard]] std::chrono::system_clock::time_point localTodayTimePoint(
+    const int hourValue,
+    const int minuteValue,
+    const int secondValue = 0) {
+    const auto nowTimePoint = std::chrono::system_clock::now();
+    const std::time_t epochSeconds = std::chrono::system_clock::to_time_t(nowTimePoint);
+    std::tm localCalendarTime{};
+#if defined(_WIN32)
+    const auto conversionResult = localtime_s(&localCalendarTime, &epochSeconds);
+    REQUIRE(conversionResult == 0);
+#else
+    const auto* conversionResult = localtime_r(&epochSeconds, &localCalendarTime);
+    REQUIRE(conversionResult != nullptr);
+#endif
+
+    localCalendarTime.tm_hour = hourValue;
+    localCalendarTime.tm_min = minuteValue;
+    localCalendarTime.tm_sec = secondValue;
+    localCalendarTime.tm_isdst = -1;
+
+    const std::time_t localEpochSeconds = std::mktime(&localCalendarTime);
+    REQUIRE(localEpochSeconds != static_cast<std::time_t>(-1));
+    return std::chrono::system_clock::from_time_t(localEpochSeconds);
+}
+
 } // namespace
 
 TEST_CASE("expression_evaluator_evaluates_map_declaration_and_call", "[yaha][automation]") {
@@ -125,9 +150,8 @@ TEST_CASE("expression_evaluator_can_evaluate_program_from_rules_fixture", "[yaha
     const auto ast = parseScript(R"(if("/time" < "/sunrise" + -15 and "/time" > "7:00" and "/time" < "8:00", on, off))");
 
     yaha::ExpressionEvaluator::VariableMap vars;
-    const auto day = std::chrono::sys_days{std::chrono::year{2026} / std::chrono::May / 4};
-    vars.insert({"/time", std::chrono::system_clock::time_point{day + std::chrono::hours{k_time_hour_seven} + std::chrono::minutes{k_minutes_thirty}}});
-    vars.insert({"/sunrise", std::chrono::system_clock::time_point{day + std::chrono::hours{k_time_hour_eight} + std::chrono::minutes{0}}});
+    vars.insert({"/time", localTodayTimePoint(k_time_hour_seven, k_minutes_thirty)});
+    vars.insert({"/sunrise", localTodayTimePoint(k_time_hour_eight, 0)});
 
     const yaha::ExpressionEvaluationResult result = yaha::ExpressionEvaluator::evaluate(ast, vars);
 
@@ -380,9 +404,8 @@ TEST_CASE("expression_evaluator_supports_numeric_and_time_equality", "[yaha][aut
     REQUIRE(std::get<bool>(numericResult.value));
 
     const auto timeAst = parseScript(R"("/time" = "09:00")");
-    const auto day = std::chrono::sys_days{std::chrono::year{2026} / std::chrono::May / 4};
     yaha::ExpressionEvaluator::VariableMap timeVars;
-    timeVars.insert({"/time", std::chrono::system_clock::time_point{day + std::chrono::hours{k_time_hour_nine}}});
+    timeVars.insert({"/time", localTodayTimePoint(k_time_hour_nine, 0)});
     const yaha::ExpressionEvaluationResult timeResult = yaha::ExpressionEvaluator::evaluate(timeAst, timeVars);
     REQUIRE(timeResult.success);
     REQUIRE(std::holds_alternative<bool>(timeResult.value));

@@ -126,7 +126,9 @@ TEST_CASE("automation_component_management_update_accepts_topic_object_map", "[a
     REQUIRE_FALSE(published.empty());
     REQUIRE(published.back().topic() == "$MONITOR/automation/rules/demo");
     REQUIRE(std::holds_alternative<std::string>(published.back().value()));
-    REQUIRE(std::get<std::string>(published.back().value()) == "updated");
+    const auto& payloadText = std::get<std::string>(published.back().value());
+    REQUIRE(payloadText.find("\"isValid\":true") != std::string::npos);
+    REQUIRE(payloadText.find("\"name\":\"demo\"") != std::string::npos);
 
     component.close();
 }

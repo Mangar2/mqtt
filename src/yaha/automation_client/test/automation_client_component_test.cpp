@@ -219,6 +219,9 @@ TEST_CASE("automation_component_management_update_persists_and_acks", "[automati
     REQUIRE_FALSE(published.empty());
     REQUIRE(published.back().topic() == "$MONITOR/automation/rules/demo");
     REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+    const auto& payloadText = std::get<std::string>(published.back().value());
+    REQUIRE(payloadText.find("\"isValid\":true") != std::string::npos);
+    REQUIRE(payloadText.find("\"name\":\"demo\"") != std::string::npos);
 
     component.close();
 }
@@ -359,6 +362,46 @@ TEST_CASE("automation_component_management_non_string_payload_acks_invalid", "[a
     REQUIRE(published.back().topic() == "$MONITOR/automation/rules/demo");
     REQUIRE(std::holds_alternative<std::string>(published.back().value()));
     REQUIRE(std::get<std::string>(published.back().value()) == "validation_failed");
+
+    component.close();
+}
+
+TEST_CASE("automation_component_management_invalid_rule_persists_and_publishes_isvalid_false", "[automation_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{
+        "$MONITOR/automation/rules/demo/set",
+        std::string{R"({"value":"on"})"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    REQUIRE(component.hasRule("demo"));
+    REQUIRE(fileStore.postCount() >= 1U);
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    REQUIRE(published.size() >= 2U);
+    REQUIRE(published[published.size() - 2U].topic() == "$MONITOR/automation/rules/demo");
+    REQUIRE(std::holds_alternative<std::string>(published[published.size() - 2U].value()));
+    const auto& invalidRulePayload = std::get<std::string>(published[published.size() - 2U].value());
+    REQUIRE(invalidRulePayload.find("\"isValid\":false") != std::string::npos);
+    REQUIRE(invalidRulePayload.find("\"errors\":[") != std::string::npos);
+    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+    REQUIRE(std::get<std::string>(published.back().value()) == "invalid rule");
 
     component.close();
 }

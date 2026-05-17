@@ -2,6 +2,7 @@
 
 #include "httplib.h"
 #include "yaha/automation/internal_variables.h"
+#include "yaha/automation/rules_tree_json_reader.h"
 #include "yaha/automation/single_rule_processor.h"
 #include "yaha/automation_client/automation_control_topics.h"
 #include "yaha/automation_client/automation_message_values.h"
@@ -25,6 +26,27 @@ constexpr int k_http_ok_status{200};
 constexpr int k_http_not_found_status{404};
 constexpr std::size_t k_max_pending_publish_attempts{3U};
 constexpr std::string_view k_debug_topic_prefix{"$MONITOR/automation/"};
+
+struct RuleValidationResult {
+    bool isValid{false};
+    std::vector<std::string> errors;
+};
+
+[[nodiscard]] RuleValidationResult validateIncomingRule(const RuleTreeNode& ruleNode) {
+    RuleValidationResult result{};
+    if (!ruleNode.isObject()) {
+        result.errors.push_back("rule payload must be a JSON object");
+        return result;
+    }
+
+    if (!RuleRuntimeEngine::isRuleNodeStructureValid(ruleNode)) {
+        result.errors.push_back("invalid rule: required field 'topic' is missing or malformed");
+        return result;
+    }
+
+    result.isValid = true;
+    return result;
+}
 } // namespace
 
 AutomationClientComponent::AutomationClientComponent(AutomationClientConfig config)
@@ -277,10 +299,26 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
         return;
     }
 
-    const std::optional<RuleTreeNode> parsedRule = automation_rule_json::parseJsonNode(payloadText);
-    if (!parsedRule.has_value() || !RuleRuntimeEngine::isRuleNodeStructureValid(*parsedRule)) {
+    const RuleTreeJsonReadResult readResult = RulesTreeJsonReader::parseJsonText(payloadText);
+    if (!readResult.success || !readResult.errors.empty()) {
         publishManagementAck(*ruleName, "validation_failed");
         return;
+    }
+
+    RuleTreeNode ruleNode = readResult.root;
+    RuleValidationResult validation = validateIncomingRule(ruleNode);
+    auto& ruleObject = std::get<RuleTreeNode::Object>(ruleNode.value);
+    if (!ruleObject.contains("name")) {
+        ruleObject.insert({"name", RuleTreeNode{*ruleName}});
+    }
+    ruleObject["isValid"] = RuleTreeNode{validation.isValid};
+    if (!validation.isValid) {
+        RuleTreeNode::Array errorNodes{};
+        errorNodes.reserve(validation.errors.size());
+        for (const auto& errorText : validation.errors) {
+            errorNodes.emplace_back(errorText);
+        }
+        ruleObject["errors"] = RuleTreeNode{std::move(errorNodes)};
     }
 
     RuleTreeNode stagedRulesRoot{};
@@ -291,15 +329,15 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
 
     {
         RuleTreeNode::Object* rulesObject = automation_rule_tree_access::ensureRulesObject(&stagedRulesRoot);
-
-        RuleTreeNode ruleNode = *parsedRule;
-        auto& ruleObject = std::get<RuleTreeNode::Object>(ruleNode.value);
-        if (!ruleObject.contains("name")) {
-            ruleObject.insert({"name", RuleTreeNode{*ruleName}});
-        }
-
         (*rulesObject)[*ruleName] = std::move(ruleNode);
     }
+
+    RuleTreeNode::Object* stagedRulesObject = automation_rule_tree_access::ensureRulesObject(&stagedRulesRoot);
+    if (!stagedRulesObject->contains(*ruleName)) {
+        publishManagementAck(*ruleName, "persist_failed");
+        return;
+    }
+    const std::string rulePayload = automation_rule_json::toJsonText(stagedRulesObject->at(*ruleName));
 
     if (!persistRulesPayloadToFileStore(automation_rule_json::toJsonText(stagedRulesRoot))) {
         publishManagementAck(*ruleName, "persist_failed");
@@ -312,7 +350,10 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
         refreshDynamicSubscriptionsLocked();
     }
 
-    publishManagementAck(*ruleName, "updated");
+    publishManagementAck(*ruleName, rulePayload);
+    if (!validation.isValid) {
+        publishManagementAck(*ruleName, "invalid rule");
+    }
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)

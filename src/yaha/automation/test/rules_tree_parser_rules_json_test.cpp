@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <filesystem>
 #include <string>
 
@@ -9,7 +10,7 @@
 namespace {
 
 [[nodiscard]] std::string resolveRulesJsonPath() {
-    const std::filesystem::path candidatePaths[] = {
+    const std::array<std::filesystem::path, 3U> candidatePaths = {
         std::filesystem::path{"test/rules.json"},
         std::filesystem::path{"../test/rules.json"},
         std::filesystem::path{"../../test/rules.json"}};
@@ -47,8 +48,8 @@ TEST_CASE("rules_tree_parser_collects_external_topics_from_rules_json", "[yaha][
     REQUIRE(parseResult.success());
 
     REQUIRE(parseResult.externalVariables.empty() == false);
-    REQUIRE(parseResult.externalVariables.contains("$SYS/presence"));
-    REQUIRE(parseResult.externalVariables.contains("$SYS/presence/set"));
+    REQUIRE(parseResult.externalVariables.contains("status/presence"));
+    REQUIRE(parseResult.externalVariables.contains("status/presence/set"));
     REQUIRE(parseResult.externalVariables.contains("outdoor/garden/main/weather/temperature"));
     REQUIRE(parseResult.externalVariables.contains("first/hallway/main/temperature and humidity sensor/temperature in celsius"));
 }
