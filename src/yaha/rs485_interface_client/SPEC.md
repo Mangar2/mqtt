@@ -1,6 +1,6 @@
 # rs485_interface_client
 
-Phase 1/4 scope in this module:
+Phase 1/4/6 scope in this module:
 - define the RS485 client runtime configuration contract
 - parse and validate RS485-related INI sections
 - map parsed values into typed runtime structs
@@ -107,6 +107,11 @@ Error text identifies section/key and reason in deterministic form.
 Runtime composition helper:
 - `tryBuildRs485InterfaceClientRuntime(...)` returns false with deterministic `errorMessage` on construction failures.
 
+Phase-6 runtime verification:
+- runtime build/object composition tests cover component + adapter + MQTT runtime creation.
+- adapter open/send failure paths are verified for deterministic runtime behavior.
+- component startup/shutdown lifecycle is verified through runtime-composed object usage.
+
 ## Files
 
 - rs485_interface_client_app.h
@@ -114,3 +119,4 @@ Runtime composition helper:
 - rs485_serial_adapter.h
 - rs485_serial_adapter.cpp
 - test/rs485_interface_client_config_test.cpp
+- test/rs485_interface_client_runtime_test.cpp

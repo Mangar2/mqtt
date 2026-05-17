@@ -4,6 +4,10 @@
 
 Unit tests for phase-1 runtime config contract and INI mapping in rs485_interface_client.
 
+Phase-6 extension:
+- runtime composition and lifecycle integration checks for component + adapter + MQTT runtime wiring
+- serial open/send failure-path verification for adapter behavior used by standalone runtime
+
 ## Planned and implemented test cases
 
 1. rs485_runtime_config_parses_all_required_sections
@@ -29,3 +33,19 @@ Unit tests for phase-1 runtime config contract and INI mapping in rs485_interfac
 6. rs485_runtime_config_rejects_invalid_interface_map_value
 - Scenario: interface map contains non-numeric value.
 - Expected: parsing fails with error pointing to rs485interface.interfaces value parsing.
+
+7. rs485_runtime_build_creates_component_adapter_mqtt_runtime_objects
+- Scenario: valid parsed runtime config is passed to runtime builder.
+- Expected: build succeeds and all runtime object pointers are initialized.
+
+8. rs485_runtime_component_startup_and_shutdown_is_clean
+- Scenario: build runtime, start component threads, then close.
+- Expected: no exception and clean shutdown.
+
+9. rs485_serial_adapter_open_fails_for_invalid_path
+- Scenario: open adapter with invalid serial device path.
+- Expected: open returns false and error message is non-empty.
+
+10. rs485_serial_adapter_send_fails_when_not_open
+- Scenario: call send before opening serial adapter.
+- Expected: send returns false with deterministic error text.

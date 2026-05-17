@@ -2,7 +2,7 @@
 
 ## Scope
 
-Unit tests for RS485 phase-2 MQTT <-> serial mapping behavior.
+Unit tests for RS485 phase-2 mapping and phase-6 component behavior verification.
 
 ## Test cases
 
@@ -15,3 +15,7 @@ Unit tests for RS485 phase-2 MQTT <-> serial mapping behavior.
 | `rs485_topic_mapper_to_mqtt_uses_explicit_topics_and_switch_bits` | explicit inbound mapping with switch bits | serial frame matching explicit rule and bit masks | publishes explicit topic with `on`/`off` according to bit semantics |
 | `rs485_topic_mapper_to_mqtt_falls_back_to_address_and_status_mapping` | generic inbound fallback path | serial frame not mapped by `topics` but known address+status+interface | publishes one topic with mapped string value |
 | `rs485_topic_mapper_to_mqtt_rejects_unknown_command` | unknown command mapping error path | serial frame with unknown command | throws `Unknown serial command ...` |
+| `rs485_interface_component_derives_expected_subscriptions` | component subscription contract | config with addresses, settings, and explicit topics | wildcard `/set`, explicit `topic/+`, and monitor/system wildcard topics are present with configured QoS |
+| `rs485_interface_component_set_action_emits_serial_message_after_enable_send` | MQTT `/set` action runtime behavior | run component, enqueue `/set`, then feed enable-send token | serial callback receives encoded command frame for mapped address/command/value |
+| `rs485_interface_component_serial_input_publishes_mapped_mqtt_message` | serial->MQTT runtime behavior | feed one non-token serial frame matching mapping config | publish callback receives mapped topic/value with configured QoS |
+| `rs485_interface_component_accepts_trace_topics_in_sys_and_monitor_namespace` | trace control-topic handling | send trace-set on `$SYS` and `$MONITOR` namespace | no exception and action pipeline remains functional |

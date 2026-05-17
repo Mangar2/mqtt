@@ -1,6 +1,6 @@
 # rs485_interface
 
-Phase 2/4 scope in this module:
+Phase 2/4/6 scope in this module:
 - MQTT <-> serial mapping helpers for RS485 command traffic
 - topic/address/command resolution using rs485interface configuration
 - value mapping via `interfaces` and explicit `topics` bit behavior
@@ -69,3 +69,4 @@ Serial -> MQTT:
 - Scheduler send callback encodes frames with protocol codec and emits bytes via serial send callback.
 - Time-of-day loop periodically sends broadcast command `'C'` with local minutes-of-day payload.
 - Serial receive pipeline uses `Rs485StreamReader`, scheduler token processing, and publishes only messages accepted by scheduler state.
+- phase-6 tests verify subscription contract, action-to-serial emission, serial-to-publish mapping, and trace-topic handling.
