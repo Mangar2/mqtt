@@ -4,6 +4,11 @@
 
 Unit tests for RS485 phase-3 state machine, token exchange, send queue, and scheduler behavior.
 
+Phase-5 extension in this directory:
+- legacy-JS oracle parity fixture generation for `RS485State`
+- transition-matrix parity replay against generated golden fixture
+- long deterministic replay parity against generated golden fixture
+
 ## Test cases
 
 | Name | Scenario | Input | Expected |
@@ -20,3 +25,5 @@ Unit tests for RS485 phase-3 state machine, token exchange, send queue, and sche
 | `rs485_scheduler_tick_order_state_then_queue_then_maysend_reset` | tick ordering and maySend reset | maySend true with one queued message | one queue send and maySend reset false in same tick |
 | `rs485_scheduler_response_match_dequeues_without_retry_counter_reset` | response dequeue quirk | queued reply=true message sent once, then matching response received | queue dequeued and retry counter unchanged |
 | `rs485_scheduler_retry_counter_resets_only_on_dequeue_in_send_loop` | retry reset path | reply=true message sent across 10 maySend ticks | queue dequeued and retry counter reset to 0 |
+| `rs485_state_transition_matrix_matches_legacy_oracle_fixture` | matrix parity check for all reachable states and request/notForMe combinations | generated oracle fixture cases prefixed `matrix_` | result, state, timer, maySend, siblings, and tokenLost exactly match on every step |
+| `rs485_state_long_replay_matches_legacy_oracle_fixture` | long mixed replay parity check | generated oracle fixture case `long_replay` | zero-delta step-by-step match against legacy oracle snapshot sequence |

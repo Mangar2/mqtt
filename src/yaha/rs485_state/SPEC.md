@@ -1,10 +1,11 @@
 # rs485_state
 
-Phase 3 scope in this module:
+Phase 3/5 scope in this module:
 - RS485 token state machine (`RS485State`) with legacy transition and timer behavior
 - token exchange logic (`RS485TokenExchange`) with sibling/address-chain handling and version negotiation
 - send queue replacement semantics (`RS485SendQueue`)
 - scheduler tick behavior (`RS485Scheduler`) including retry/dequeue rules
+- mandatory parity verification harness for `RS485State` legacy behavior
 
 ## Public API
 
@@ -37,6 +38,11 @@ Legacy compatibility details:
 - constructor defaults and dynamic `tokenLost` field are preserved
 - `setState` resets timer and optionally emits one trace log line
 - receiver-selection and enable-send calculation follow legacy order exactly
+
+Phase-5 parity harness artifacts:
+- `test/generate_rs485_state_parity_fixture.js` executes legacy JS `rs485state.js` as oracle.
+- `test/rs485_state_parity_fixture.txt` is generated golden snapshot data.
+- `test/rs485_state_parity_test.cpp` replays fixtures and enforces zero-delta equality per step.
 
 ### Class Rs485TokenExchange
 
