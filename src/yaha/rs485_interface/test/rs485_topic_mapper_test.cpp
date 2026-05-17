@@ -1,12 +1,19 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "yaha/rs485_interface/rs485_topic_mapper.h"
 
-#include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace {
+
+constexpr std::uint8_t k_device_address{5U};
+constexpr std::uint8_t k_explicit_topic_address{7U};
+constexpr double k_fallback_unknown_command_value{4.0};
+constexpr std::uint16_t k_explicit_bit_value{0x0004U};
+constexpr std::uint16_t k_explicit_on_value{0x4004U};
+constexpr std::uint16_t k_explicit_off_value{0x2004U};
 
 [[nodiscard]] yaha::Rs485InterfaceConfig makeBaseConfig() {
     yaha::Rs485InterfaceConfig config{};
@@ -17,11 +24,11 @@ namespace {
 
     config.settings['P'] = "/power";
     config.status['P'] = "/power";
-    config.addresses["house/room/device"] = 5U;
+    config.addresses["house/room/device"] = k_device_address;
     config.topics["house/light"] = yaha::Rs485TopicMapping{
         .command = 'L',
-        .value = 0x0004U,
-        .address = 7U};
+        .value = k_explicit_bit_value,
+        .address = k_explicit_topic_address};
 
     return config;
 }
@@ -33,13 +40,13 @@ TEST_CASE("rs485_topic_mapper_to_serial_uses_explicit_topic_bit_mapping", "[rs48
 
     const yaha::Message onMessage{"house/light", std::string{"on"}};
     const yaha::Rs485MappedSerialData onData = mapper.toSerialData(onMessage);
-    REQUIRE(onData.address == 7U);
+    REQUIRE(onData.address == k_explicit_topic_address);
     REQUIRE(onData.command == 'L');
-    REQUIRE(onData.value == static_cast<std::uint16_t>(0x4004U));
+    REQUIRE(onData.value == k_explicit_on_value);
 
     const yaha::Message offMessage{"house/light", std::string{"off"}};
     const yaha::Rs485MappedSerialData offData = mapper.toSerialData(offMessage);
-    REQUIRE(offData.value == static_cast<std::uint16_t>(0x2004U));
+    REQUIRE(offData.value == k_explicit_off_value);
 }
 
 TEST_CASE("rs485_topic_mapper_to_serial_uses_address_command_and_interface_mapping", "[rs485_interface]") {
@@ -48,7 +55,7 @@ TEST_CASE("rs485_topic_mapper_to_serial_uses_address_command_and_interface_mappi
     const yaha::Message message{"house/room/device/power", std::string{"on"}};
     const yaha::Rs485MappedSerialData data = mapper.toSerialData(message);
 
-    REQUIRE(data.address == 5U);
+    REQUIRE(data.address == k_device_address);
     REQUIRE(data.command == 'P');
     REQUIRE(data.value == 1U);
 }
@@ -75,16 +82,16 @@ TEST_CASE("rs485_topic_mapper_to_mqtt_uses_explicit_topics_and_switch_bits", "[r
     const yaha::Rs485TopicMapper mapper{makeBaseConfig()};
 
     yaha::Rs485SerialMessage serial{};
-    serial.sender = 7U;
+    serial.sender = k_explicit_topic_address;
     serial.command = 'L';
-    serial.value = static_cast<double>(0x4004U);
+    serial.value = static_cast<double>(k_explicit_on_value);
 
     const auto onMessages = mapper.toMqttMessages(serial);
     REQUIRE(onMessages.size() == 1U);
     REQUIRE(onMessages[0].topic() == "house/light");
     REQUIRE(std::get<std::string>(onMessages[0].value()) == "on");
 
-    serial.value = static_cast<double>(0x2004U);
+    serial.value = static_cast<double>(k_explicit_off_value);
     const auto offMessages = mapper.toMqttMessages(serial);
     REQUIRE(offMessages.size() == 1U);
     REQUIRE(std::get<std::string>(offMessages[0].value()) == "off");
@@ -97,7 +104,7 @@ TEST_CASE("rs485_topic_mapper_to_mqtt_falls_back_to_address_and_status_mapping",
     const yaha::Rs485TopicMapper mapper{config};
 
     yaha::Rs485SerialMessage serial{};
-    serial.sender = 5U;
+    serial.sender = k_device_address;
     serial.command = 'P';
     serial.value = 1.0;
 
@@ -115,9 +122,9 @@ TEST_CASE("rs485_topic_mapper_to_mqtt_rejects_unknown_command", "[rs485_interfac
     const yaha::Rs485TopicMapper mapper{config};
 
     yaha::Rs485SerialMessage serial{};
-    serial.sender = 5U;
+    serial.sender = k_device_address;
     serial.command = 'Z';
-    serial.value = 4.0;
+    serial.value = k_fallback_unknown_command_value;
 
     REQUIRE_THROWS_WITH(
         mapper.toMqttMessages(serial),

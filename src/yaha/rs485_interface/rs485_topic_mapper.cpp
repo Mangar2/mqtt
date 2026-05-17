@@ -1,22 +1,25 @@
 #include "yaha/rs485_interface/rs485_topic_mapper.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <format>
-#include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace yaha {
 namespace {
 
 constexpr std::uint16_t k_switch_on{0x4000U};
 constexpr std::uint16_t k_switch_off{0x2000U};
+constexpr double k_u16_max_as_double{65535.0};
 constexpr double k_integer_epsilon{1e-9};
 
 [[nodiscard]] std::string toLowerCopy(std::string text) {
-    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char characterValue) {
+    std::ranges::transform(text, text.begin(), [](unsigned char characterValue) {
         return static_cast<char>(std::tolower(characterValue));
     });
     return text;
@@ -57,7 +60,7 @@ constexpr double k_integer_epsilon{1e-9};
         throw std::runtime_error("The provided value is not an integer: " + originalValueText);
     }
 
-    if (rounded < 0.0 || rounded > 65535.0) {
+    if (rounded < 0.0 || rounded > k_u16_max_as_double) {
         throw std::runtime_error(
             "The provided value is not a positive two byte value; 0 <= value <= 0xFFFF: " +
             originalValueText);
@@ -76,8 +79,8 @@ constexpr double k_integer_epsilon{1e-9};
 
 } // namespace
 
-Rs485TopicMapper::Rs485TopicMapper(const Rs485InterfaceConfig& config)
-    : config_(config) {}
+Rs485TopicMapper::Rs485TopicMapper(Rs485InterfaceConfig config)
+    : config_(std::move(config)) {}
 
 Rs485MappedSerialData Rs485TopicMapper::toSerialData(const Message& mqttMessage) const {
     const auto explicitTopicIterator = config_.topics.find(mqttMessage.topic());
@@ -106,7 +109,7 @@ std::vector<Message> Rs485TopicMapper::toMqttMessages(const Rs485SerialMessage& 
             continue;
         }
 
-        const std::uint16_t serialValue = static_cast<std::uint16_t>(serialMessage.value);
+        const auto serialValue = static_cast<std::uint16_t>(serialMessage.value);
         const bool isSwitchOnMessage = (serialValue & k_switch_on) != 0U;
         const bool isSwitchOffMessage = (serialValue & k_switch_off) != 0U;
         const bool isSwitchMessage = isSwitchOnMessage || isSwitchOffMessage;
@@ -186,7 +189,7 @@ std::uint16_t Rs485TopicMapper::resolveValueByCommandAndPayload(
     for (const auto& [interfaceName, definition] : config_.interfaces) {
         (void)interfaceName;
         const bool commandUsedByInterface =
-            std::find(definition.usedBy.begin(), definition.usedBy.end(), command) != definition.usedBy.end();
+            std::ranges::find(definition.usedBy, command) != definition.usedBy.end();
         if (!commandUsedByInterface) {
             continue;
         }
@@ -228,7 +231,7 @@ Value Rs485TopicMapper::resolveMqttValueByCommand(const char command, const doub
     for (const auto& [interfaceName, definition] : config_.interfaces) {
         (void)interfaceName;
         const bool commandUsedByInterface =
-            std::find(definition.usedBy.begin(), definition.usedBy.end(), command) != definition.usedBy.end();
+            std::ranges::find(definition.usedBy, command) != definition.usedBy.end();
         if (!commandUsedByInterface) {
             continue;
         }

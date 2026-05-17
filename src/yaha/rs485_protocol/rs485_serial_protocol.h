@@ -13,6 +13,9 @@
 
 namespace yaha {
 
+inline constexpr std::size_t k_rs485_message_size_v0{7U};
+inline constexpr std::size_t k_rs485_message_size_v1{9U};
+
 /**
  * @brief One decoded/encodable RS485 frame.
  */
@@ -25,7 +28,7 @@ struct Rs485SerialMessage {
     std::uint8_t parity{0U};
     std::uint16_t crc16{0U};
     std::uint8_t version{1U};
-    std::size_t length{9U};
+    std::size_t length{k_rs485_message_size_v1};
 
     /**
      * @brief Returns true for token/internal command frames.
@@ -98,7 +101,7 @@ public:
      * @param byteArray Stream chunk bytes.
      * @return Ordered decode results.
      */
-    [[nodiscard]] std::vector<Rs485ReadResult> read(const std::vector<std::uint8_t>& byteArray) const;
+    [[nodiscard]] static std::vector<Rs485ReadResult> read(const std::vector<std::uint8_t>& byteArray);
 
 private:
     [[nodiscard]] static std::size_t skipNoise(

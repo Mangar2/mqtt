@@ -33,7 +33,7 @@ public:
      * @brief Creates one mapper using parsed RS485 config.
      * @param config RS485 configuration data.
      */
-    explicit Rs485TopicMapper(const Rs485InterfaceConfig& config);
+    explicit Rs485TopicMapper(Rs485InterfaceConfig config);
 
     /**
      * @brief Maps one MQTT message to serial output data.

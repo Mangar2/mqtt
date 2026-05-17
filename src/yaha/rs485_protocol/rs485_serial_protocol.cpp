@@ -12,10 +12,27 @@ namespace {
 
 constexpr std::uint16_t k_crc_start_value{0xFFFFU};
 constexpr std::uint16_t k_crc_polynom{0x1021U};
+constexpr std::uint16_t k_crc_msb_mask{0x8000U};
+constexpr std::uint16_t k_crc_mask{0xFFFFU};
+constexpr std::uint8_t k_nibble_mask{0x0FU};
 constexpr std::uint8_t k_max_address{127U};
-constexpr std::size_t k_message_size_v0{7U};
-constexpr std::size_t k_message_size_v1{9U};
 constexpr std::size_t k_bits_in_byte{8U};
+constexpr std::uint8_t k_u8_low_mask{0xFFU};
+constexpr double k_u16_max_as_double{65535.0};
+
+constexpr std::size_t k_field_sender{0U};
+constexpr std::size_t k_field_receiver{1U};
+constexpr std::size_t k_field_flags{2U};
+constexpr std::size_t k_field_v1_length{3U};
+constexpr std::size_t k_field_v0_command{3U};
+constexpr std::size_t k_field_v1_command{4U};
+constexpr std::size_t k_field_v0_value_high{4U};
+constexpr std::size_t k_field_v0_value_low{5U};
+constexpr std::size_t k_field_v1_value_high{5U};
+constexpr std::size_t k_field_v1_value_low{6U};
+constexpr std::size_t k_field_v0_parity{6U};
+constexpr std::size_t k_field_v1_crc_low{7U};
+constexpr std::size_t k_field_v1_crc_high{8U};
 
 [[nodiscard]] std::string toHexString(
     const std::vector<std::uint8_t>& byteArray,
@@ -35,7 +52,7 @@ constexpr std::size_t k_bits_in_byte{8U};
     for (std::size_t index = 0U; index < cappedLength; ++index) {
         const std::uint8_t value = byteArray[startIndex + index];
         output.push_back(hexDigits[value >> 4U]);
-        output.push_back(hexDigits[value & 0x0FU]);
+        output.push_back(hexDigits[value & k_nibble_mask]);
         if (index + 1U < cappedLength) {
             output.push_back(' ');
         }
@@ -49,7 +66,7 @@ constexpr std::size_t k_bits_in_byte{8U};
         throw std::runtime_error("invalid value for encode: non-finite");
     }
 
-    if (value < 0.0 || value > 65535.0) {
+    if (value < 0.0 || value > k_u16_max_as_double) {
         throw std::runtime_error("invalid value for encode: out of range 0..65535");
     }
 
@@ -61,10 +78,10 @@ constexpr std::size_t k_bits_in_byte{8U};
     const std::uint8_t valueHigh,
     const std::uint8_t valueLow) {
     if (command == 'h' || command == 't' || command == 's') {
-        return static_cast<double>(valueHigh) + static_cast<double>(valueLow) / 100.0;
+        return static_cast<double>(valueHigh) + (static_cast<double>(valueLow) / 100.0);
     }
 
-    return static_cast<double>((static_cast<std::uint16_t>(valueHigh) << 8U) | valueLow);
+    return static_cast<double>((static_cast<std::uint16_t>(valueHigh) << k_bits_in_byte) | valueLow);
 }
 
 [[nodiscard]] std::uint8_t buildFlags(const bool reply, const std::uint8_t version) {
@@ -96,7 +113,7 @@ std::uint16_t calcRs485Crc16(
     for (std::size_t index = startIndex; index < endIndex; ++index) {
         crc ^= static_cast<std::uint16_t>(byteArray[index] << k_bits_in_byte);
         for (std::size_t shift = 0U; shift < k_bits_in_byte; ++shift) {
-            if ((crc & 0x8000U) != 0U) {
+            if ((crc & k_crc_msb_mask) != 0U) {
                 crc = static_cast<std::uint16_t>((crc << 1U) ^ k_crc_polynom);
             } else {
                 crc = static_cast<std::uint16_t>(crc << 1U);
@@ -104,7 +121,7 @@ std::uint16_t calcRs485Crc16(
         }
     }
 
-    return static_cast<std::uint16_t>(crc & 0xFFFFU);
+    return static_cast<std::uint16_t>(crc & k_crc_mask);
 }
 
 std::uint8_t calcRs485Parity(
@@ -131,24 +148,24 @@ void decodeRs485SerialMessage(
     ensureHeaderReadable(byteArray, startIndex);
 
     output = Rs485SerialMessage{};
-    output.sender = byteArray[startIndex];
-    output.receiver = byteArray[startIndex + 1U];
-    const std::uint8_t flags = byteArray[startIndex + 2U];
+    output.sender = byteArray[startIndex + k_field_sender];
+    output.receiver = byteArray[startIndex + k_field_receiver];
+    const std::uint8_t flags = byteArray[startIndex + k_field_flags];
     output.reply = (flags & 1U) == 1U;
     output.version = static_cast<std::uint8_t>(flags >> 1U);
 
     switch (output.version) {
     case 0U:
-        output.length = k_message_size_v0;
+        output.length = k_rs485_message_size_v0;
         break;
     case 1U:
-        if (byteArray.size() < startIndex + 4U) {
+        if (byteArray.size() < startIndex + k_field_v1_command) {
             throw std::runtime_error("Insufficient data received");
         }
-        output.length = byteArray[startIndex + 3U];
+        output.length = byteArray[startIndex + k_field_v1_length];
         break;
     default:
-        output.length = k_message_size_v0;
+        output.length = k_rs485_message_size_v0;
         break;
     }
 
@@ -165,13 +182,13 @@ void decodeRs485SerialMessage(
             throw std::runtime_error("Insufficient data received");
         }
 
-        output.command = static_cast<char>(byteArray[startIndex + 3U]);
-        const std::uint8_t valueHigh = byteArray[startIndex + 4U];
-        const std::uint8_t valueLow = byteArray[startIndex + 5U];
+        output.command = static_cast<char>(byteArray[startIndex + k_field_v0_command]);
+        const std::uint8_t valueHigh = byteArray[startIndex + k_field_v0_value_high];
+        const std::uint8_t valueLow = byteArray[startIndex + k_field_v0_value_low];
         output.value = decodeValueByCommand(output.command, valueHigh, valueLow);
-        output.parity = byteArray[startIndex + 6U];
+        output.parity = byteArray[startIndex + k_field_v0_parity];
 
-        const std::uint8_t calculatedParity = calcRs485Parity(byteArray, startIndex, k_message_size_v0 - 1U);
+        const std::uint8_t calculatedParity = calcRs485Parity(byteArray, startIndex, k_rs485_message_size_v0 - 1U);
         if (calculatedParity != output.parity) {
             throw std::runtime_error(std::format(
                 "Parity does not match, expected: {} received: {}",
@@ -186,22 +203,22 @@ void decodeRs485SerialMessage(
             throw std::runtime_error("Insufficient data received");
         }
 
-        if (output.length != k_message_size_v1) {
+        if (output.length != k_rs485_message_size_v1) {
             throw std::runtime_error(std::format(
                 "Illegal message length, expected: {} received: {}",
-                k_message_size_v1,
+            k_rs485_message_size_v1,
                 output.length));
         }
 
-        output.command = static_cast<char>(byteArray[startIndex + 4U]);
-        const std::uint8_t valueHigh = byteArray[startIndex + 5U];
-        const std::uint8_t valueLow = byteArray[startIndex + 6U];
+        output.command = static_cast<char>(byteArray[startIndex + k_field_v1_command]);
+        const std::uint8_t valueHigh = byteArray[startIndex + k_field_v1_value_high];
+        const std::uint8_t valueLow = byteArray[startIndex + k_field_v1_value_low];
         output.value = decodeValueByCommand(output.command, valueHigh, valueLow);
 
-        const std::uint16_t calculatedCrc16 = calcRs485Crc16(byteArray, startIndex, k_message_size_v1 - 2U);
-        const std::uint8_t crcLow = byteArray[startIndex + 7U];
-        const std::uint8_t crcHigh = byteArray[startIndex + 8U];
-        output.crc16 = static_cast<std::uint16_t>((static_cast<std::uint16_t>(crcHigh) << 8U) | crcLow);
+        const std::uint16_t calculatedCrc16 = calcRs485Crc16(byteArray, startIndex, k_rs485_message_size_v1 - 2U);
+        const std::uint8_t crcLow = byteArray[startIndex + k_field_v1_crc_low];
+        const std::uint8_t crcHigh = byteArray[startIndex + k_field_v1_crc_high];
+        output.crc16 = static_cast<std::uint16_t>((static_cast<std::uint16_t>(crcHigh) << k_bits_in_byte) | crcLow);
 
         if (output.crc16 != calculatedCrc16) {
             throw std::runtime_error(std::format(
@@ -217,34 +234,34 @@ void decodeRs485SerialMessage(
 
 std::vector<std::uint8_t> encodeRs485SerialMessage(const Rs485SerialMessage& message) {
     const std::uint16_t rawValue = valueToRawWord(message.value);
-    const std::uint8_t valueHigh = static_cast<std::uint8_t>(rawValue >> 8U);
-    const std::uint8_t valueLow = static_cast<std::uint8_t>(rawValue & 0xFFU);
+    const auto valueHigh = static_cast<std::uint8_t>(rawValue >> k_bits_in_byte);
+    const auto valueLow = static_cast<std::uint8_t>(rawValue & k_u8_low_mask);
 
     if (message.version == 0U) {
-        std::vector<std::uint8_t> byteArray(k_message_size_v0, 0U);
-        byteArray[0] = message.sender;
-        byteArray[1] = message.receiver;
-        byteArray[2] = buildFlags(message.reply, message.version);
-        byteArray[3] = static_cast<std::uint8_t>(message.command);
-        byteArray[4] = valueHigh;
-        byteArray[5] = valueLow;
-        byteArray[6] = calcRs485Parity(byteArray, 0U, k_message_size_v0 - 1U);
+        std::vector<std::uint8_t> byteArray(k_rs485_message_size_v0, 0U);
+        byteArray[k_field_sender] = message.sender;
+        byteArray[k_field_receiver] = message.receiver;
+        byteArray[k_field_flags] = buildFlags(message.reply, message.version);
+        byteArray[k_field_v0_command] = static_cast<std::uint8_t>(message.command);
+        byteArray[k_field_v0_value_high] = valueHigh;
+        byteArray[k_field_v0_value_low] = valueLow;
+        byteArray[k_field_v0_parity] = calcRs485Parity(byteArray, 0U, k_rs485_message_size_v0 - 1U);
         return byteArray;
     }
 
     if (message.version == 1U) {
-        std::vector<std::uint8_t> byteArray(k_message_size_v1, 0U);
-        byteArray[0] = message.sender;
-        byteArray[1] = message.receiver;
-        byteArray[2] = buildFlags(message.reply, message.version);
-        byteArray[3] = static_cast<std::uint8_t>(k_message_size_v1);
-        byteArray[4] = static_cast<std::uint8_t>(message.command);
-        byteArray[5] = valueHigh;
-        byteArray[6] = valueLow;
+        std::vector<std::uint8_t> byteArray(k_rs485_message_size_v1, 0U);
+        byteArray[k_field_sender] = message.sender;
+        byteArray[k_field_receiver] = message.receiver;
+        byteArray[k_field_flags] = buildFlags(message.reply, message.version);
+        byteArray[k_field_v1_length] = static_cast<std::uint8_t>(k_rs485_message_size_v1);
+        byteArray[k_field_v1_command] = static_cast<std::uint8_t>(message.command);
+        byteArray[k_field_v1_value_high] = valueHigh;
+        byteArray[k_field_v1_value_low] = valueLow;
 
         const std::uint16_t crc = calcRs485Crc16(byteArray, 0U, 7U);
-        byteArray[7] = static_cast<std::uint8_t>(crc & 0xFFU);
-        byteArray[8] = static_cast<std::uint8_t>(crc >> 8U);
+        byteArray[k_field_v1_crc_low] = static_cast<std::uint8_t>(crc & k_u8_low_mask);
+        byteArray[k_field_v1_crc_high] = static_cast<std::uint8_t>(crc >> k_bits_in_byte);
         return byteArray;
     }
 
@@ -289,7 +306,7 @@ std::optional<Rs485ReadResult> Rs485StreamReader::readMessage(
 }
 
 std::vector<Rs485ReadResult> Rs485StreamReader::read(
-    const std::vector<std::uint8_t>& byteArray) const {
+    const std::vector<std::uint8_t>& byteArray) {
     std::vector<Rs485ReadResult> results{};
     std::size_t startIndex{0U};
 
