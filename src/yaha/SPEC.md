@@ -32,6 +32,6 @@ directly here — each sub-topic has its own subdirectory.
 | `automation/` | automation step 1 | Expression DSL tokenizer for YAHA automation rules engine. |
 | `automation_client/` | automation step 2 | Standalone Automation IMqttComponent runtime config mapping, FileStore startup load, and MQTT-driven rule update synchronization. |
 | `rs485_protocol/` | rs485 phase 2 | RS485 serial frame protocol codec for v0/v1, CRC/parity validation, and stream-reader parsing with legacy noise/error behavior. |
-| `rs485_interface/` | rs485 phase 2 | MQTT <-> serial mapping helpers for address/command/value resolution, interface string mapping, and explicit-topic bit mapping rules. |
+| `rs485_interface/` | rs485 phase 4 | MQTT <-> serial mapping helpers plus RS485 `IMqttComponent` runtime boundary for action handling, scheduler loops, and serial decode/publish routing. |
 | `rs485_state/` | rs485 phase 3 | RS485 token state machine, token-exchange behavior, queue semantics, and tick scheduler implementation with legacy-compatible transitions and retry/dequeue rules. |
-| `rs485_interface_client/` | rs485 phase 1 | Standalone RS485 interface runtime config contract and INI mapping with strict validation for serial, protocol timing, and mapping sections. |
+| `rs485_interface_client/` | rs485 phase 4 | Standalone RS485 runtime config contract, INI mapping, runtime composition wiring, and POSIX serial adapter boundary for the RS485 client process. |

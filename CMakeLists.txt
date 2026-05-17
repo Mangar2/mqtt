@@ -78,6 +78,7 @@ list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_filestoreclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_automationclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_httpmqttinterfaceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_valueserviceclient_main\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_rs485interfaceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_remoteserviceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_zwaveclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/openzwave_runtime_driver_port\\.cpp$")
@@ -247,6 +248,22 @@ target_compile_definitions(yahavalueserviceclient PRIVATE
     $<$<BOOL:${MQTT_TRACING_DISABLED}>:MQTT_TRACING_DISABLED>)
 if(WIN32)
     target_link_libraries(yahavalueserviceclient PRIVATE ws2_32)
+endif()
+
+#  YAHA RS485Interface standalone executable
+add_executable(yahars485interfaceclient
+    src/yaha_rs485interfaceclient_main.cpp
+    ${MQTT_LIBRARY_SOURCES}
+)
+
+target_compile_options(yahars485interfaceclient PRIVATE ${MQTT_COMPILE_OPTIONS})
+target_link_options(yahars485interfaceclient    PRIVATE ${MQTT_LINK_OPTIONS})
+target_include_directories(yahars485interfaceclient PRIVATE src)
+target_include_directories(yahars485interfaceclient PRIVATE ${httplib_SOURCE_DIR})
+target_compile_definitions(yahars485interfaceclient PRIVATE
+    $<$<BOOL:${MQTT_TRACING_DISABLED}>:MQTT_TRACING_DISABLED>)
+if(WIN32)
+    target_link_libraries(yahars485interfaceclient PRIVATE ws2_32)
 endif()
 
 #  YAHA RemoteService standalone executable

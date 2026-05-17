@@ -1,12 +1,12 @@
 # rs485_interface_client
 
-Phase 1 scope in this module:
+Phase 1/4 scope in this module:
 - define the RS485 client runtime configuration contract
 - parse and validate RS485-related INI sections
 - map parsed values into typed runtime structs
 - return deterministic error messages for invalid or incomplete inputs
-
-This module does not implement RS485 protocol runtime behavior yet.
+- compose standalone runtime objects (RS485 component, serial adapter, MQTT client runtime)
+- provide POSIX serial adapter for frame send/receive callback binding
 
 ## Public types
 
@@ -34,6 +34,24 @@ Fields:
 Fields:
 - rs485Config (Rs485InterfaceConfig)
 - mqttConfig (YahaMqttClient::Config)
+
+### Struct Rs485InterfaceClientRuntimeObjects
+
+Fields:
+- rs485Config (Rs485InterfaceConfig)
+- component (IMqttComponent instance)
+- serialAdapter (Rs485SerialAdapter instance)
+- mqttClient (YahaMqttClient instance)
+- runtime (YahaMqttClientRuntime instance)
+
+### Class Rs485SerialAdapter
+
+Methods:
+- `open(portName, baudrate, errorMessage)` opens serial device and starts read loop
+- `close()` stops read loop and closes descriptor
+- `send(payload, errorMessage)` writes all payload bytes
+- `setReceiveCallback(callback)` installs receive callback for read chunks
+- `isOpen()` returns descriptor state
 
 ## INI mapping
 
@@ -86,8 +104,13 @@ Keys:
 All parse failures return false and set errorMessage.
 Error text identifies section/key and reason in deterministic form.
 
+Runtime composition helper:
+- `tryBuildRs485InterfaceClientRuntime(...)` returns false with deterministic `errorMessage` on construction failures.
+
 ## Files
 
 - rs485_interface_client_app.h
 - rs485_interface_client_app.cpp
+- rs485_serial_adapter.h
+- rs485_serial_adapter.cpp
 - test/rs485_interface_client_config_test.cpp

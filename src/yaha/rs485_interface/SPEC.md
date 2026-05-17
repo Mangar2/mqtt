@@ -1,9 +1,10 @@
 # rs485_interface
 
-Phase 2 scope in this module:
+Phase 2/4 scope in this module:
 - MQTT <-> serial mapping helpers for RS485 command traffic
 - topic/address/command resolution using rs485interface configuration
 - value mapping via `interfaces` and explicit `topics` bit behavior
+- RS485 MQTT component runtime boundary (`IMqttComponent`) for standalone process wiring
 
 ## Public API
 
@@ -22,6 +23,20 @@ Constructor:
 Methods:
 - `toSerialData(const Message&)`: maps one MQTT command message to serial address/command/value
 - `toMqttMessages(const Rs485SerialMessage&)`: maps one serial message to one or more MQTT messages
+
+### Class Rs485InterfaceComponent
+
+Constructor:
+- `Rs485InterfaceComponent(Rs485InterfaceConfig)`
+
+Methods:
+- `getSubscriptions()`: derives wildcard `/set` subscriptions from `addresses` + `settings`, adds explicit `topic/+`, and trace topics
+- `handleMessage(const Message&)`: handles trace-level updates and dispatches `/set`, `/temporary`, `/blink` actions
+- `run()`: starts scheduler tick and periodic time-of-day command loop threads
+- `close()`: stops loops and joins action worker threads
+- `setPublishCallback(PublishCallback)`: sets MQTT publish callback sink
+- `setSerialSendCallback(SerialSendCallback)`: sets encoded serial output callback sink
+- `feedSerialBytes(const std::vector<uint8_t>&)`: decodes serial stream, routes through scheduler, maps publish messages
 
 ## Mapping behavior
 
@@ -45,3 +60,12 @@ Serial -> MQTT:
   - resolve suffix from `settings` first, then `status`
   - resolve payload value via reverse lookup in `interfaces` by command and map value
 - Unknown address or unknown command throws deterministic runtime error.
+
+## Component behavior
+
+- `/set`: mapped immediately via `Rs485TopicMapper::toSerialData` and enqueued to scheduler as reply-expected packet.
+- `/temporary`: sends `on`, waits configured or payload seconds, then sends `off`.
+- `/blink`: toggles cached topic state with configured blink delay and payload cycle count.
+- Scheduler send callback encodes frames with protocol codec and emits bytes via serial send callback.
+- Time-of-day loop periodically sends broadcast command `'C'` with local minutes-of-day payload.
+- Serial receive pipeline uses `Rs485StreamReader`, scheduler token processing, and publishes only messages accepted by scheduler state.

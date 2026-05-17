@@ -6,9 +6,13 @@
  */
 
 #include "yaha/ini/ini_document.h"
+#include "yaha/mqtt_component/mqtt_component.h"
 #include "yaha/mqtt_client/mqtt_client.h"
+#include "yaha/mqtt_client/mqtt_client_runtime.h"
+#include "yaha/rs485_interface_client/rs485_serial_adapter.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -70,6 +74,17 @@ struct Rs485InterfaceRuntimeConfig {
 };
 
 /**
+ * @brief Runtime composition container for RS485 standalone process.
+ */
+struct Rs485InterfaceClientRuntimeObjects {
+    Rs485InterfaceConfig rs485Config{};                      ///< RS485 config used for serial adapter open.
+    std::unique_ptr<IMqttComponent> component{};          ///< Domain component instance.
+    std::unique_ptr<Rs485SerialAdapter> serialAdapter{};  ///< Serial adapter instance.
+    std::unique_ptr<YahaMqttClient> mqttClient{};         ///< MQTT client instance.
+    std::unique_ptr<YahaMqttClientRuntime> runtime{};     ///< Generic runtime wrapper.
+};
+
+/**
  * @brief Loads RS485 domain config from INI document.
  * @param document Parsed INI document.
  * @param output Parsed config output.
@@ -91,6 +106,18 @@ struct Rs485InterfaceRuntimeConfig {
 [[nodiscard]] bool tryLoadRs485InterfaceClientRuntimeConfigFromIni(
     const IniDocument& document,
     Rs485InterfaceRuntimeConfig& output,
+    std::string& errorMessage);
+
+/**
+ * @brief Builds runtime objects for RS485 standalone process composition.
+ * @param runtimeConfig Parsed runtime configuration.
+ * @param output Built runtime object bundle.
+ * @param errorMessage Error text on failure.
+ * @return True when all runtime objects were created and wired.
+ */
+[[nodiscard]] bool tryBuildRs485InterfaceClientRuntime(
+    Rs485InterfaceRuntimeConfig runtimeConfig,
+    Rs485InterfaceClientRuntimeObjects& output,
     std::string& errorMessage);
 
 } // namespace yaha

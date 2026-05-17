@@ -1,11 +1,14 @@
 #include "yaha/rs485_interface_client/rs485_interface_client_app.h"
 
+#include "yaha/mqtt_client/broker_transport.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
+#include "yaha/rs485_interface/rs485_interface_component.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <format>
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -507,6 +510,46 @@ bool tryLoadRs485InterfaceClientRuntimeConfigFromIni(
 
     output = std::move(parsed);
     return true;
+}
+
+bool tryBuildRs485InterfaceClientRuntime(
+    Rs485InterfaceRuntimeConfig runtimeConfig,
+    Rs485InterfaceClientRuntimeObjects& output,
+    std::string& errorMessage) {
+    try {
+        auto component = std::make_unique<Rs485InterfaceComponent>(runtimeConfig.rs485Config);
+        auto serialAdapter = std::make_unique<Rs485SerialAdapter>();
+
+        component->setSerialSendCallback(
+            [adapter = serialAdapter.get()](const std::vector<std::uint8_t>& payload) {
+                std::string sendError{};
+                if (!adapter->send(payload, sendError)) {
+                    std::cout << "rs485_interface_client[serial_send_error] " << sendError << '\n';
+                }
+            });
+
+        serialAdapter->setReceiveCallback(
+            [componentInstance = component.get()](const std::vector<std::uint8_t>& byteChunk) {
+                componentInstance->feedSerialBytes(byteChunk);
+            });
+
+        auto mqttClient = std::make_unique<YahaMqttClient>(
+            std::move(runtimeConfig.mqttConfig),
+            *component,
+            makeBrokerTransport());
+
+        auto runtime = std::make_unique<YahaMqttClientRuntime>(*mqttClient, *component);
+
+        output.rs485Config = runtimeConfig.rs485Config;
+        output.component = std::move(component);
+        output.serialAdapter = std::move(serialAdapter);
+        output.mqttClient = std::move(mqttClient);
+        output.runtime = std::move(runtime);
+        return true;
+    } catch (const std::exception& exceptionValue) {
+        errorMessage = exceptionValue.what();
+        return false;
+    }
 }
 
 } // namespace yaha
