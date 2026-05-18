@@ -33,6 +33,8 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 | `subscribeQos` | `Qos` | Default `AtLeastOnce` |
 | `qos` | `Qos` | Default `AtLeastOnce` |
 | `retain` | `bool` | Default `false` |
+| `logIncomingMessages` | `bool` | Default `false`; logs inbound MQTT messages handled by ZWave service |
+| `logOutgoingMessages` | `bool` | Default `false`; logs outbound MQTT messages emitted by ZWave service |
 | `usb` | `ZwaveUsbConfig` | Required |
 | `devices` | `std::vector<ZwaveDeviceConfig>` | Required non-empty list |
 
@@ -64,6 +66,7 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 ## Inbound routing
 
 `handleMessage(...)`:
+- optional inbound log line `zwave_service[in] ...` when `logIncomingMessages=true`
 - remove-failed topic -> `controller.removeFailedNode(...)`
 - add-node topic -> `controller.addDevice()`
 - scan topic -> `controller.startScan()` with deterministic success/failure publish:
@@ -83,6 +86,7 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 - Outbound messages are emitted with configured publish flags:
 	- `qos = config.qos`
 	- `retain = config.retain`
+- optional outbound log line `zwave_service[out] ...` only after successful callback publish when `logOutgoingMessages=true`
 - Publish callback missing/non-success/exception branches emit deterministic
 	`zwave_service[error] op=publish ...` logs.
 

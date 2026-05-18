@@ -12,6 +12,7 @@ All tests are tagged `[zwave_devices]`.
 | `value_to_topic_uses_cached_value_id_mapping` | Value-id cache hit returns existing mapping | first lookup with valueId, then second lookup with same valueId and changed descriptor fields | second lookup returns first cached topic/type |
 | `topic_to_id_throws_on_unknown_topic` | Unknown topic protection | empty mapping list for requested topic | throws runtime_error with unknown-topic text |
 | `topic_to_id_label_lookup_reports_missing_node_and_label` | Label lookup error branches | classless mapping with missing node and with missing label match | throws runtime_error for missing node and missing object label |
+| `topic_to_id_defaults_multilevel_class_to_byte_when_type_missing` | Legacy class-based type fallback for class-configured rows without explicit type | mapping row with class `0x26` and omitted type | resolved id keeps class and uses type `byte` |
 | `build_write_request_covers_byte_numeric_and_text_passthrough` | Write conversion for byte and text targets | byte target with numeric string, text target with plain string | byte request stores parsed number, text request stores input text |
 | `build_write_request_byte_rejects_invalid_numeric_text` | Numeric validation for byte writes | byte target with invalid numeric string | throws runtime_error |
 | `build_write_request_routes_config_class_to_set_config_param` | Configuration command class routes to config write path | resolved id with class `0x70` and numeric value | request kind `SetConfigParam` with numeric payload |

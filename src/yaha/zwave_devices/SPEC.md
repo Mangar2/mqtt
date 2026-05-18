@@ -90,7 +90,11 @@ for bridging between MQTT topic space and ZWave value identifiers.
   - first `<topic>/<label>` when label exists
   - then `<topic>`.
 - Completes defaults when missing from configuration:
-  - `instance=1`, `index=0`, `type=bool`.
+  - `instance=1`, `index=0`.
+  - `type` fallback by class id when explicit type is missing:
+    - `0x25` -> `switch`
+    - `0x26` -> `byte`
+    - other/unspecified -> `bool`
 - If configured class id is missing:
   - requires label,
   - resolves by searching node objects with matching label and instance,

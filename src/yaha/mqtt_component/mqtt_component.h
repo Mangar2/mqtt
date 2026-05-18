@@ -7,6 +7,7 @@
 
 #include "yaha/message/message.h"
 
+#include <concepts>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -72,8 +73,8 @@ public:
      * @tparam CallableT Callable type.
      * @param callableValue Callable to wrap.
      */
-    template <typename CallableT,
-              typename = std::enable_if_t<!std::is_same_v<std::decay_t<CallableT>, PublishCallback>>>
+    template <typename CallableT>
+        requires (!std::same_as<std::decay_t<CallableT>, PublishCallback>)
     PublishCallback(CallableT&& callableValue) {
         assign(std::forward<CallableT>(callableValue));
     }
@@ -84,8 +85,8 @@ public:
      * @param callableValue Callable to wrap.
      * @return Reference to this callback.
      */
-    template <typename CallableT,
-              typename = std::enable_if_t<!std::is_same_v<std::decay_t<CallableT>, PublishCallback>>>
+    template <typename CallableT>
+        requires (!std::same_as<std::decay_t<CallableT>, PublishCallback>)
     PublishCallback& operator=(CallableT&& callableValue) {
         assign(std::forward<CallableT>(callableValue));
         return *this;

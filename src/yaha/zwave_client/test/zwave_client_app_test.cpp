@@ -201,6 +201,43 @@ TEST_CASE("load_zwave_config_rejects_invalid_qos_and_retain_values", "[zwave_cli
     }
 }
 
+TEST_CASE("load_zwave_config_parses_log_message_flags", "[zwave_client]") {
+    const yaha::IniDocument document = loadIni(
+        "[zwave]\n"
+        "logIncomingMessages=true\n"
+        "logOutgoingMessages=true\n"
+        "usbDevice=/dev/ttyUSB0\n"
+        "usbTopic=home/zwave/controller\n"
+        "device=home/lamp|7\n");
+
+    yaha::ZwaveConfig config{};
+    std::string errorMessage{};
+
+    const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
+
+    REQUIRE(loaded);
+    CHECK(errorMessage.empty());
+    CHECK(config.logIncomingMessages);
+    CHECK(config.logOutgoingMessages);
+}
+
+TEST_CASE("load_zwave_config_rejects_invalid_log_outgoing_messages_value", "[zwave_client]") {
+    const yaha::IniDocument document = loadIni(
+        "[zwave]\n"
+        "logOutgoingMessages=maybe\n"
+        "usbDevice=/dev/ttyUSB0\n"
+        "usbTopic=home/zwave/controller\n"
+        "device=home/lamp|7\n");
+
+    yaha::ZwaveConfig config{};
+    std::string errorMessage{};
+
+    const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
+
+    CHECK_FALSE(loaded);
+    CHECK(errorMessage.find("zwave.logOutgoingMessages") != std::string::npos);
+}
+
 TEST_CASE("load_zwave_config_requires_usb_settings", "[zwave_client]") {
     {
         const yaha::IniDocument document = loadIni(
@@ -273,6 +310,41 @@ TEST_CASE("load_zwave_runtime_config_combines_zwave_and_mqtt_sections", "[zwave_
     CHECK(runtimeConfig.mqttConfig.keepAliveInterval.count() == 40000);
     CHECK(runtimeConfig.mqttConfig.loopSleep.count() == 50);
     CHECK_FALSE(runtimeConfig.mqttConfig.logReason);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("load_zwave_config_parses_legacy_json_equivalent_device_rows", "[zwave_client]") {
+    const yaha::IniDocument document = loadIni(
+        "[zwave]\n"
+        "usbDevice=/dev/zwave\n"
+        "usbTopic=$SYS/zwave/usb stick\n"
+        "device=first/dressingroom/zwave/sys/dressing room|24\n"
+        "device=ground/livingroom/zwave/shutter/southwest|13|38\n"
+        "device=first/study/zwave/sys/pcvolker|22||2\n");
+
+    yaha::ZwaveConfig config{};
+    std::string errorMessage{};
+
+    const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
+
+    REQUIRE(loaded);
+    CHECK(errorMessage.empty());
+    CHECK(config.usb.device == "/dev/zwave");
+    CHECK(config.usb.topic == "$SYS/zwave/usb stick");
+    REQUIRE(config.devices.size() == 3U);
+
+    CHECK(config.devices[0].topic == "first/dressingroom/zwave/sys/dressing room");
+    CHECK(config.devices[0].nodeId == 24U);
+    CHECK_FALSE(config.devices[0].classId.has_value());
+
+    CHECK(config.devices[1].topic == "ground/livingroom/zwave/shutter/southwest");
+    REQUIRE(config.devices[1].classId.has_value());
+    CHECK(config.devices[1].classId.value() == 38U);
+    CHECK_FALSE(config.devices[1].type.has_value());
+
+    CHECK(config.devices[2].topic == "first/study/zwave/sys/pcvolker");
+    REQUIRE(config.devices[2].instance.has_value());
+    CHECK(config.devices[2].instance.value() == 2U);
 }
 
 TEST_CASE("load_zwave_runtime_config_reports_mqtt_validation_error", "[zwave_client]") {

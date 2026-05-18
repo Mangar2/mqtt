@@ -45,6 +45,12 @@ A fully specification-compliant MQTT 5.0 broker written in C++20.
 # Run YAHA RemoteService client with explicit config path
 ./build/release/yaharemoteserviceclient path/to/broker.ini
 
+# Run YAHA ZWave client with default config path (broker.ini)
+./build/release/yahazwaveclient
+
+# Run YAHA ZWave client with explicit config path
+./build/release/yahazwaveclient path/to/broker.ini
+
 # Run YAHA MessageStore client with explicit config path
 ./build/release/yahamsgstoreclient path/to/broker.ini
 
@@ -111,7 +117,7 @@ Any unknown CLI flag causes startup failure.
 
 YAHA deployment service units are configured with dedicated systemd journal namespaces.
 Each managed unit (`broker`, `filestore`, `msgstore`, `autom`, `valuesvc`,
-`brkconn`, `httpmqtt`, `remotesvc`) writes to its own namespace to prevent
+`rs485if`, `zwave`, `brkconn`, `httpmqtt`, `remotesvc`) writes to its own namespace to prevent
 cross-service log eviction.
 
 Deployment installer behavior:
@@ -202,6 +208,14 @@ bash deploy.sh --zip yaha.zip --target-dir ~/mqtt
 | `--trace-messages` | flag | off | Forces MQTT transport sent/received trace lines in runtime client (does not disable INI-enabled tracing when omitted). |
 | `-h`, `--help` | flag | off | Prints CLI usage and exits successfully. |
 
+`yahazwaveclient` accepts one optional positional config path and one optional flag:
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `<config-path>` | positional path | `broker.ini` | Optional path to ZWave INI config. |
+| `--trace-messages` | flag | off | Forces MQTT transport sent/received trace lines in runtime client (does not disable INI-enabled tracing when omitted). |
+| `-h`, `--help` | flag | off | Prints CLI usage and exits successfully. |
+
 `yahars485interfaceclient` accepts one optional positional config path and one optional flag:
 
 | Argument | Type | Default | Description |
@@ -259,6 +273,11 @@ RS485 Interface client INI sections:
 - `[rs485interface.status]`: command-to-topic-suffix mapping for status publish
 - `[rs485interface.addresses]`: topic-prefix-to-address mapping
 - `[rs485interface.topics]`: explicit topic mapping override (`COMMAND,VALUE,ADDRESS`)
+
+ZWave client INI sections:
+
+- `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs, logReason)
+- `[zwave]`: `subscribeQoS`, `qos`, `retain`, `logIncomingMessages`, `logOutgoingMessages`, `usbDevice`, `usbTopic`, repeated `device`
 
 RS485 Interface client INI sections:
 

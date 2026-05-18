@@ -12,7 +12,25 @@ namespace yaha {
 namespace {
 
 constexpr std::uint16_t kZwaveConfigurationClass = 0x70U;
+constexpr std::uint16_t kZwaveSwitchBinaryClass = 0x25U;
+constexpr std::uint16_t kZwaveSwitchMultilevelClass = 0x26U;
 constexpr double kUnitMatchTolerance = 1e-9;
+
+[[nodiscard]] std::string defaultTypeForClassId(const std::optional<std::uint16_t>& classId) {
+    if (!classId.has_value()) {
+        return "bool";
+    }
+
+    if (*classId == kZwaveSwitchBinaryClass) {
+        return "switch";
+    }
+
+    if (*classId == kZwaveSwitchMultilevelClass) {
+        return "byte";
+    }
+
+    return "bool";
+}
 
 [[nodiscard]] std::string toStringValue(const Value& input) {
     if (const auto* text = std::get_if<std::string>(&input); text != nullptr) {
@@ -173,7 +191,9 @@ ZwaveResolvedId ZwaveDevicesMapper::topicToZwaveId(
     resolved.nodeId = selected->nodeId;
     resolved.instance = toUint8OrDefault(selected->instance, 1U);
     resolved.index = toUint8OrDefault(selected->index, 0U);
-    resolved.type = selected->type.has_value() && !selected->type->empty() ? *selected->type : "bool";
+    resolved.type = selected->type.has_value() && !selected->type->empty()
+        ? *selected->type
+        : defaultTypeForClassId(selected->classId);
 
     if (!selected->classId.has_value()) {
         if (!label.has_value() || label->empty()) {
@@ -187,9 +207,8 @@ ZwaveResolvedId ZwaveDevicesMapper::topicToZwaveId(
         }
 
         const auto& objects = nodeIterator->second;
-        const auto objectIterator = std::find_if(
-            objects.begin(),
-            objects.end(),
+        const auto objectIterator = std::ranges::find_if(
+            objects,
             [&](const ZwaveNodeObject& object) {
                 return object.label == *label && object.instance == resolved.instance;
             });

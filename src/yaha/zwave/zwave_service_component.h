@@ -62,6 +62,18 @@ public:
 
 private:
     /**
+     * @brief Logs one incoming message when incoming tracing is enabled.
+     * @param message Message observed on inbound processing path.
+     */
+    void logIncomingMessageIfEnabled(const Message& message) const;
+
+    /**
+     * @brief Logs one outgoing message when outgoing tracing is enabled.
+     * @param message Message emitted on outbound processing path.
+     */
+    void logOutgoingMessageIfEnabled(const Message& message) const;
+
+    /**
      * @brief Handles one publish received from controller.
      * @param message Outbound controller message.
      */

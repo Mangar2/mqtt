@@ -20,8 +20,8 @@ namespace {
         return std::isspace(character) == 0;
     };
 
-    input.erase(input.begin(), std::find_if(input.begin(), input.end(), notSpace));
-    input.erase(std::find_if(input.rbegin(), input.rend(), notSpace).base(), input.end());
+    input.erase(input.begin(), std::ranges::find_if(input, notSpace));
+    input.erase(std::ranges::find_if(input.rbegin(), input.rend(), notSpace).base(), input.end());
     return input;
 }
 constexpr std::size_t kDeviceFieldCountMin = 2U;
@@ -220,6 +220,24 @@ bool tryLoadZwaveConfigFromIni(
     }
     if (retainResult.first.has_value()) {
         parsed.retain = *retainResult.first;
+    }
+
+    const auto logIncomingResult = document.readBool("zwave", "logIncomingMessages");
+    if (!logIncomingResult.second.empty()) {
+        errorMessage = logIncomingResult.second;
+        return false;
+    }
+    if (logIncomingResult.first.has_value()) {
+        parsed.logIncomingMessages = *logIncomingResult.first;
+    }
+
+    const auto logOutgoingResult = document.readBool("zwave", "logOutgoingMessages");
+    if (!logOutgoingResult.second.empty()) {
+        errorMessage = logOutgoingResult.second;
+        return false;
+    }
+    if (logOutgoingResult.first.has_value()) {
+        parsed.logOutgoingMessages = *logOutgoingResult.first;
     }
 
     if (!requireSetting(document, "zwave", "usbDevice", parsed.usb.device, errorMessage)) {

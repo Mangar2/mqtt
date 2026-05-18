@@ -28,7 +28,7 @@ void printUsage() {
               << std::flush;
 }
 
-bool tryParseCli(const int argc, char* argv[], CliOptions& options, std::string& errorText) {
+bool tryParseCli(const int argc, char* const* argv, CliOptions& options, std::string& errorText) {
     for (int argIndex = 1; argIndex < argc; ++argIndex) {
         const std::string argument{argv[argIndex]};
         if (argument == "--help" || argument == "-h") {
@@ -72,6 +72,10 @@ void printStartupConfiguration(
     std::cout << "  qos: subscribe=" << static_cast<int>(runtimeConfig.zwaveConfig.subscribeQos)
               << " publish=" << static_cast<int>(runtimeConfig.zwaveConfig.qos)
               << " retain=" << (runtimeConfig.zwaveConfig.retain ? "1" : "0") << '\n';
+    std::cout << "  logging: incoming="
+              << (runtimeConfig.zwaveConfig.logIncomingMessages ? "1" : "0")
+              << " outgoing="
+              << (runtimeConfig.zwaveConfig.logOutgoingMessages ? "1" : "0") << '\n';
     std::cout << std::flush;
 }
 

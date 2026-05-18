@@ -88,7 +88,7 @@ calc_sha256() {
 
 is_component() {
   case "$1" in
-    broker|filestore|msgstore|automation|valueservice|brokerconnector|httpmqttinterface|remoteservice)
+    broker|filestore|msgstore|automation|valueservice|rs485interface|zwave|brokerconnector|httpmqttinterface|remoteservice)
       return 0
       ;;
     *)
@@ -147,7 +147,7 @@ apply_journald_namespace_configs() {
   local rc=0
   local namespace
 
-  for namespace in broker filestore msgstore autom valuesvc brkconn httpmqtt remotesvc; do
+  for namespace in broker filestore msgstore autom valuesvc rs485if zwave brkconn httpmqtt remotesvc; do
     if install_journald_namespace_config "${script_dir}" "${namespace}" "${sudo_cmd}"; then
       rc=0
     else
@@ -163,7 +163,7 @@ apply_journald_namespace_configs() {
   if [[ ${changed_any} -eq 1 ]]; then
     log_info "Reloading systemd daemon after journald namespace changes"
     ${sudo_cmd} systemctl daemon-reload
-    for namespace in broker filestore msgstore autom valuesvc brkconn httpmqtt remotesvc; do
+    for namespace in broker filestore msgstore autom valuesvc rs485if zwave brkconn httpmqtt remotesvc; do
       log_info "Restarting systemd-journald namespace: ${namespace}"
       ${sudo_cmd} systemctl restart "systemd-journald@${namespace}.service" || true
     done
@@ -452,7 +452,7 @@ else
   log_info "Nginx config unchanged; no nginx reload needed."
 fi
 
-for component in broker filestore msgstore automation valueservice brokerconnector httpmqttinterface remoteservice; do
+for component in broker filestore msgstore automation valueservice rs485interface zwave brokerconnector httpmqttinterface remoteservice; do
   if [[ -n "${changed_components[${component}]:-}" ]]; then
     installer="${target_dir}/${component}/install.sh"
     if [[ ! -x "${installer}" ]]; then

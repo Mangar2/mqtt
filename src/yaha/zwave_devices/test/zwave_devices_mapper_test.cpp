@@ -12,7 +12,9 @@ namespace {
 
 constexpr std::uint16_t kNodeIdEight = 8U;
 constexpr std::uint16_t kNodeIdNine = 9U;
+constexpr std::uint16_t kNodeIdEleven = 11U;
 constexpr std::uint16_t kSwitchBinaryClass = 0x25U;
+constexpr std::uint16_t kSwitchMultilevelClass = 0x26U;
 constexpr double kConfigNumericValue = 42.0;
 constexpr double kByteNumericInput = 12.75;
 constexpr double kDoubleTolerance = 1e-9;
@@ -158,6 +160,21 @@ TEST_CASE("topic_to_id_label_lookup_reports_missing_node_and_label", "[zwave_dev
     REQUIRE_THROWS_WITH(
         mapper.topicToZwaveId(nodesWithDifferentLabel, "home/lamp", std::optional<std::string>{"power"}),
         Catch::Matchers::ContainsSubstring("label not found"));
+}
+
+TEST_CASE("topic_to_id_defaults_multilevel_class_to_byte_when_type_missing", "[zwave_devices]") {
+    yaha::ZwaveDevicesMapper mapper{{
+        makeDevice("home/shutter", kNodeIdEleven, kSwitchMultilevelClass, 1U, 0U, std::nullopt, std::nullopt),
+    }};
+
+    yaha::ZwaveNodeMap nodes{};
+    const yaha::ZwaveResolvedId resolved = mapper.topicToZwaveId(nodes, "home/shutter", std::nullopt);
+
+    CHECK(resolved.nodeId == kNodeIdEleven);
+    CHECK(resolved.classId == kSwitchMultilevelClass);
+    CHECK(resolved.instance == 1U);
+    CHECK(resolved.index == 0U);
+    CHECK(resolved.type == "byte");
 }
 
 TEST_CASE("build_write_request_covers_byte_numeric_and_text_passthrough", "[zwave_devices]") {

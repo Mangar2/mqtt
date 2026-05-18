@@ -51,6 +51,7 @@ Runtime startup prints a deterministic summary:
 - MQTT host/port/client id
 - zwave usb device/topic and configured device count
 - subscribe/publish qos and retain flags
+- incoming/outgoing message logging flags
 
 ## Configuration format
 
@@ -59,7 +60,7 @@ Supported INI sections:
 - `[mqtt]`
   - `host`, `port`, `clientId`, `reconnectDelayMs`, `keepAliveIntervalMs`, `loopSleepMs`, `logReason`
 - `[zwave]`
-  - `subscribeQoS`, `qos`, `retain`, `usbDevice`, `usbTopic`, `device`
+  - `subscribeQoS`, `qos`, `retain`, `logIncomingMessages`, `logOutgoingMessages`, `usbDevice`, `usbTopic`, `device`
 
 Device row format (`zwave.device` can appear multiple times):
 
@@ -72,6 +73,8 @@ Validation rules:
 - `zwave.subscribeQoS` must be in range `0..2` when set.
 - `zwave.qos` must be in range `0..2` when set.
 - `zwave.retain` must be valid boolean token when set.
+- `zwave.logIncomingMessages` must be valid boolean token when set.
+- `zwave.logOutgoingMessages` must be valid boolean token when set.
 - `zwave.usbDevice` must be present and non-empty.
 - `zwave.usbTopic` must be present and non-empty.
 - At least one `zwave.device` entry must be present.

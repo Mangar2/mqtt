@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <iostream>
 #include <optional>
+#include <ranges>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -25,7 +26,7 @@ constexpr std::int64_t kMillisecondsPerSecond = 1000;
 
 [[nodiscard]] bool isActionSegment(const std::string& segment) {
     static const std::array<std::string, 4> actionSegments{"set", "get", "temporary", "blink"};
-    return std::find(actionSegments.begin(), actionSegments.end(), segment) != actionSegments.end();
+    return std::ranges::find(actionSegments, segment) != actionSegments.end();
 }
 
 [[nodiscard]] bool valuesMatch(const Value& left, const Value& right) {
@@ -38,7 +39,7 @@ constexpr std::int64_t kMillisecondsPerSecond = 1000;
 
     if (std::holds_alternative<std::string>(left) && std::holds_alternative<double>(right)) {
         std::size_t consumedChars = 0U;
-        const std::string& textValue = std::get<std::string>(left);
+        const auto& textValue = std::get<std::string>(left);
         const double parsed = std::stod(textValue, &consumedChars);
         return consumedChars == textValue.size()
             && std::fabs(parsed - std::get<double>(right)) < kNumericValueTolerance;
@@ -91,8 +92,8 @@ constexpr std::int64_t kMillisecondsPerSecond = 1000;
 
 [[nodiscard]] Message rebuildMessageWithReasons(const Message& source, const std::vector<ReasonEntry>& reasons) {
     Message rebuilt{source.topic(), source.value(), source.qos(), source.retain(), source.dup()};
-    for (auto iterator = reasons.rbegin(); iterator != reasons.rend(); ++iterator) {
-        rebuilt.addReason(iterator->message, iterator->timestamp);
+    for (const auto& entry : reasons | std::views::reverse) {
+        rebuilt.addReason(entry.message, entry.timestamp);
     }
 
     if (source.rawPayload().has_value()) {
@@ -157,8 +158,8 @@ private:
 
 [[nodiscard]] Message withPublishFlags(const Message& input, const Qos qos, const bool retain) {
     Message output{input.topic(), input.value(), qos, retain, input.dup()};
-    for (auto iterator = input.reason().rbegin(); iterator != input.reason().rend(); ++iterator) {
-        output.addReason(iterator->message, iterator->timestamp);
+    for (const auto& entry : input.reason() | std::views::reverse) {
+        output.addReason(entry.message, entry.timestamp);
     }
     if (input.rawPayload().has_value()) {
         output.setRawPayload(*input.rawPayload());
@@ -174,6 +175,29 @@ private:
         error.addReason(detail);
     }
     return error;
+}
+
+[[nodiscard]] std::string valueToLogText(const Value& messageValue) {
+    if (const auto* textValue = std::get_if<std::string>(&messageValue); textValue != nullptr) {
+        return *textValue;
+    }
+
+    std::ostringstream stream{};
+    stream << std::get<double>(messageValue);
+    return stream.str();
+}
+
+[[nodiscard]] std::string qosToLogText(const Qos qosValue) {
+    switch (qosValue) {
+    case Qos::AtMostOnce:
+        return "0";
+    case Qos::AtLeastOnce:
+        return "1";
+    case Qos::ExactlyOnce:
+        return "2";
+    }
+
+    return "?";
 }
 
 ReplyMatcher& sharedReplyMatcher() {
@@ -224,6 +248,8 @@ SubscriptionMap ZwaveServiceComponent::getSubscriptions() const {
 }
 
 void ZwaveServiceComponent::handleMessage(const Message& message) {
+    logIncomingMessageIfEnabled(message);
+
     if (isRemoveFailedTopic(message.topic())) {
         try {
             controller_->removeFailedNode(message.value());
@@ -273,8 +299,8 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
     }
 
     Message routedMessage{message.topic(), message.value(), message.qos(), message.retain(), message.dup()};
-    for (auto iterator = message.reason().rbegin(); iterator != message.reason().rend(); ++iterator) {
-        routedMessage.addReason(iterator->message, iterator->timestamp);
+    for (const auto& entry : message.reason() | std::views::reverse) {
+        routedMessage.addReason(entry.message, entry.timestamp);
     }
     routedMessage.addReason("received by zwave service");
 
@@ -337,6 +363,38 @@ void ZwaveServiceComponent::handleControllerPublish(const Message& message) {
     publish(withPublishFlags(matched, config_.qos, config_.retain));
 }
 
+void ZwaveServiceComponent::logIncomingMessageIfEnabled(const Message& message) const {
+    if (!config_.logIncomingMessages) {
+        return;
+    }
+
+    std::cout << "zwave_service[in] topic=" << message.topic()
+              << " qos=" << qosToLogText(message.qos())
+              << " retain=" << (message.retain() ? "1" : "0")
+              << " value=" << valueToLogText(message.value())
+              << '\n';
+    for (const auto& entry : message.reason()) {
+        std::cout << "  reason: [" << entry.timestamp << "] " << entry.message << '\n';
+    }
+    std::cout << std::flush;
+}
+
+void ZwaveServiceComponent::logOutgoingMessageIfEnabled(const Message& message) const {
+    if (!config_.logOutgoingMessages) {
+        return;
+    }
+
+    std::cout << "zwave_service[out] topic=" << message.topic()
+              << " qos=" << qosToLogText(message.qos())
+              << " retain=" << (message.retain() ? "1" : "0")
+              << " value=" << valueToLogText(message.value())
+              << '\n';
+    for (const auto& entry : message.reason()) {
+        std::cout << "  reason: [" << entry.timestamp << "] " << entry.message << '\n';
+    }
+    std::cout << std::flush;
+}
+
 void ZwaveServiceComponent::publish(const Message& message) const {
     if (!publishCallback_) {
         std::cout << "zwave_service[error] op=publish reason=callback_missing"
@@ -353,7 +411,10 @@ void ZwaveServiceComponent::publish(const Message& message) const {
                       << " category=" << static_cast<int>(result.category)
                       << " detail=\"" << result.reason << "\""
                       << '\n' << std::flush;
+            return;
         }
+
+        logOutgoingMessageIfEnabled(message);
     } catch (const std::exception& exceptionValue) {
         std::cout << "zwave_service[error] op=publish reason=exception"
                   << " topic=" << message.topic()

@@ -110,6 +110,18 @@ SERVICE_COMPONENTS = (
         ),
     },
     {
+        "name": "zwave",
+        "binary": "yahazwaveclient",
+        "ini": "zwave.ini",
+        "service": "zwave.service",
+        "log_namespace": "zwave",
+        "description": "Yaha ZWave Client",
+        "exec": (
+            "__INSTALL_ROOT__/zwave/yahazwaveclient "
+            "__INSTALL_ROOT__/zwave/zwave.ini"
+        ),
+    },
+    {
         "name": "brokerconnector",
         "binary": "yahabrokerconnectorclient",
         "ini": "brokerconnector.ini",
@@ -327,6 +339,7 @@ def render_root_install_script(*, journal_namespaces: list[str]) -> str:
         "automation",
         "valueservice",
         "rs485interface",
+        "zwave",
         "brokerconnector",
         "httpmqttinterface",
         "remoteservice",

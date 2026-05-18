@@ -406,6 +406,30 @@ TEST_CASE("publish_callback_unknown_exception_logs_error", "[zwave_service]") {
     REQUIRE(outputStream.str().find("detail=\"unknown\"") != std::string::npos);
 }
 
+TEST_CASE("logging_flags_emit_incoming_and_outgoing_lines", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    yaha::ZwaveConfig config = makeConfig();
+    config.logIncomingMessages = true;
+    config.logOutgoingMessages = true;
+
+    yaha::ZwaveServiceComponent service{config, controller};
+    service.setPublishCallback([](const yaha::Message&) {
+        return yaha::PublishResult::ok();
+    });
+
+    std::ostringstream outputStream{};
+    auto* previousBuffer = std::cout.rdbuf(outputStream.rdbuf());
+
+    service.handleMessage(yaha::Message{"home/phase6/lamp/set", yaha::Value{std::string{"on"}}});
+    controller->emitControllerPublish(yaha::Message{"home/phase6/lamp", yaha::Value{std::string{"on"}}});
+
+    std::cout.rdbuf(previousBuffer);
+
+    const std::string logText = outputStream.str();
+    REQUIRE(logText.find("zwave_service[in] topic=home/phase6/lamp/set") != std::string::npos);
+    REQUIRE(logText.find("zwave_service[out] topic=home/phase6/lamp") != std::string::npos);
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("regular_set_message_updates_matcher_and_publish_flags", "[zwave_service]") {
     auto controller = std::make_shared<FakeController>();
