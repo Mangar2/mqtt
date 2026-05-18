@@ -125,11 +125,12 @@ Deployment installer behavior:
 - installs namespace journald drop-ins under `/etc/systemd/journald@<namespace>.conf.d/`
 - enables persistent storage and namespace-local retention limits
 - keeps existing namespace journal data on repeated deployment runs
+- includes OpenZWave config tree under `third_party/openzwave/config` in the deployment artifact for `zwave.service`
 
-The `svc` helper reads logs from the namespace assigned to the selected unit:
+The installed `svc` helper (`/usr/local/bin/svc`) reads logs from the namespace assigned to the selected unit:
 
 ```sh
-./deployment/yaha/svc log valuesvc 200
+svc log valuesvc 200
 ```
 
 ## Deployment packaging and rollout

@@ -87,7 +87,12 @@ list_services() {
 
     local pattern="${1:-$DEFAULT_SERVICE_PATTERN}"
     local services
-    services="$(systemctl list-units --type=service --all --no-legend --no-pager | awk '{print $1}' | grep -E "$pattern" | sort -u || true)"
+    services="$(
+        {
+            systemctl list-unit-files --type=service --no-legend --no-pager | awk '{print $1}'
+            systemctl list-units --type=service --all --no-legend --no-pager | awk '{print $1}'
+        } | grep -E "$pattern" | sort -u || true
+    )"
 
     printf '%-42s %-18s %-10s %-10s %-8s %s\n' "SERVICE" "STATE" "RESTARTS" "MEMORY" "PID" "LAST_START"
     printf '%-42s %-18s %-10s %-10s %-8s %s\n' "------------------------------------------" "------------------" "----------" "----------" "--------" "------------------------------"

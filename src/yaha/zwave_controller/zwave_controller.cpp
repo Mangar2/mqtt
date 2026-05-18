@@ -131,6 +131,14 @@ void ZwaveController::onDriverReady(const std::uint32_t homeId) {
 
 void ZwaveController::onDriverFailed() {
     publish("$MONITOR/zwave/error", std::string{"driver failure"}, "failed to start driver. Stopping module");
+
+    if (driverFailedCallback_) {
+        driverFailedCallback_();
+    }
+}
+
+void ZwaveController::setDriverFailedCallback(std::function<void()> callback) {
+    driverFailedCallback_ = std::move(callback);
 }
 
 void ZwaveController::onScanComplete() {

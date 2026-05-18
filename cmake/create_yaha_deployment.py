@@ -37,7 +37,9 @@ DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "deployment" / "yaha"
 INI_DIR = PROJECT_ROOT / "cmake" / "ini"
 NGINX_CONTROLAPP_SOURCE = PROJECT_ROOT / "cmake" / "nginx" / "controlapp.conf"
 REMOTE_DEPLOY_HELPER_SCRIPT = PROJECT_ROOT / "cmake" / "deploy.sh"
+OPENZWAVE_CONFIG_SOURCE = PROJECT_ROOT / "third_party" / "openzwave" / "config"
 DEFAULT_REMOTE_COPY_DIR = "~/mqtt"
+DEPLOY_HELPER_NAME = "deploy.sh"
 
 SERVICE_COMPONENTS = (
     {
@@ -159,13 +161,7 @@ SERVICE_COMPONENTS = (
     },
 )
 
-ROOT_TOOLS = (
-    {
-        "name": "svc",
-        "source": PROJECT_ROOT / "src" / "svc" / "svc",
-        "target_name": "svc",
-    },
-)
+ROOT_TOOLS = ()
 
 JOURNALD_NAMESPACE_DROPIN_NAME = "20-yaha-retention.conf"
 
@@ -220,6 +216,13 @@ def create_zip_archive(output_dir: Path) -> Path:
     return Path(archive_result)
 
 
+def create_deploy_helper_artifact(output_dir: Path) -> Path:
+    helper_target = output_dir.parent / DEPLOY_HELPER_NAME
+    shutil.copy2(REMOTE_DEPLOY_HELPER_SCRIPT, helper_target)
+    set_executable(helper_target)
+    return helper_target
+
+
 def sha256_text(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
@@ -245,6 +248,9 @@ def ensure_ini_templates() -> None:
 
     if not REMOTE_DEPLOY_HELPER_SCRIPT.exists():
         missing.append(REMOTE_DEPLOY_HELPER_SCRIPT)
+
+    if not OPENZWAVE_CONFIG_SOURCE.exists():
+        missing.append(OPENZWAVE_CONFIG_SOURCE)
 
     if missing:
         missing_lines = "\n".join(str(path) for path in missing)
@@ -558,6 +564,10 @@ def main() -> int:
         journald_dir.mkdir(parents=True, exist_ok=True)
         journald_namespace_content = render_journald_namespace_config()
 
+        openzwave_config_target = output_dir / "third_party" / "openzwave" / "config"
+        openzwave_config_target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(OPENZWAVE_CONFIG_SOURCE, openzwave_config_target)
+
         journal_namespaces = sorted(
             {str(component["log_namespace"]) for component in SERVICE_COMPONENTS}
         )
@@ -613,11 +623,12 @@ def main() -> int:
         set_executable(root_install)
 
         zip_path = create_zip_archive(output_dir)
+        deploy_helper_path = create_deploy_helper_artifact(output_dir)
 
         if args.remote.strip():
             normalized_remote_target = normalize_remote_target(args.remote)
             copy_to_remote_via_scp(
-                files=[zip_path, REMOTE_DEPLOY_HELPER_SCRIPT],
+                files=[zip_path, deploy_helper_path],
                 remote_target=normalized_remote_target,
                 cwd=PROJECT_ROOT,
             )
@@ -629,6 +640,8 @@ def main() -> int:
 
         print(f"Deployment package created: {output_dir}")
         print(f"Deployment archive created: {zip_path}")
+        print(f"Deployment helper created: {deploy_helper_path}")
+        print(f"OpenZWave config source used: {OPENZWAVE_CONFIG_SOURCE}")
         print(f"Nginx source used: {NGINX_CONTROLAPP_SOURCE}")
         print("Nginx source->deployment verification: OK")
         if args.remote.strip():

@@ -6,9 +6,11 @@
 #include "Options.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <limits>
 #include <stdexcept>
@@ -28,12 +30,48 @@ constexpr std::uint8_t kPollIntensity = 1U;
     return std::filesystem::current_path();
 }
 
-[[nodiscard]] std::string openzwaveConfigPath() {
-    return repositoryRoot().string() + "/third_party/openzwave/config";
+[[nodiscard]] std::filesystem::path deploymentRootForPathLookup() {
+    std::filesystem::path currentPath = repositoryRoot();
+    if (currentPath.filename() == "zwave") {
+        return currentPath.parent_path();
+    }
+    return currentPath;
 }
 
-[[nodiscard]] std::string openzwaveUserPath() {
-    return repositoryRoot().string() + "/tmp/openzwave";
+[[nodiscard]] std::filesystem::path openzwaveConfigPath() {
+    if (const char* configuredPath = std::getenv("YAHA_OPENZWAVE_CONFIG_PATH");
+        configuredPath != nullptr && configuredPath[0] != '\0') {
+        const std::filesystem::path environmentPath{configuredPath};
+        if (!std::filesystem::exists(environmentPath)) {
+            throw std::runtime_error("OpenZWave config path not found: " + environmentPath.string());
+        }
+        return environmentPath;
+    }
+
+    const std::filesystem::path lookupRoot = deploymentRootForPathLookup();
+    const std::array<std::filesystem::path, 4> candidates{
+        lookupRoot / "third_party/openzwave/config",
+        repositoryRoot() / "third_party/openzwave/config",
+        repositoryRoot().parent_path() / "third_party/openzwave/config",
+        std::filesystem::path{"/usr/share/openzwave/config"},
+    };
+
+    for (const auto& candidate : candidates) {
+        if (std::filesystem::exists(candidate)) {
+            return candidate;
+        }
+    }
+
+    throw std::runtime_error("OpenZWave config path not found: " + candidates.front().string());
+}
+
+[[nodiscard]] std::filesystem::path openzwaveUserPath() {
+    if (const char* configuredPath = std::getenv("YAHA_OPENZWAVE_USER_PATH");
+        configuredPath != nullptr && configuredPath[0] != '\0') {
+        return std::filesystem::path{configuredPath};
+    }
+
+    return deploymentRootForPathLookup() / "tmp/openzwave";
 }
 
 [[nodiscard]] std::uint8_t requireUint8(const std::uint16_t value, const std::string& fieldName) {
@@ -663,12 +701,8 @@ void OpenZwaveRuntimeDriverPort::ensureStarted() {
         throw std::runtime_error("zwave usbDevice is empty");
     }
 
-    const std::filesystem::path configPath{openzwaveConfigPath().c_str()};
-    const std::filesystem::path userPath{openzwaveUserPath().c_str()};
-
-    if (!std::filesystem::exists(configPath)) {
-        throw std::runtime_error("OpenZWave config path not found: " + configPath.string());
-    }
+    const std::filesystem::path configPath = openzwaveConfigPath();
+    const std::filesystem::path userPath = openzwaveUserPath();
 
     std::filesystem::create_directories(userPath);
 

@@ -5,6 +5,7 @@
 #include "yaha/zwave_client/zwave_client_app.h"
 
 #include <exception>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -121,6 +122,11 @@ int main(int argc, char* argv[]) {
 
     auto driverPort = std::make_shared<yaha::OpenZwaveRuntimeDriverPort>(runtimeConfig.zwaveConfig.usb.device);
     auto controller = std::make_shared<yaha::ZwaveController>(runtimeConfig.zwaveConfig.usb, *driverPort);
+    controller->setDriverFailedCallback([] {
+        std::cerr << "fatal: OpenZWave reported driver failure, terminating process for systemd restart\n";
+        std::cerr << std::flush;
+        std::exit(2);
+    });
     driverPort->bindController(*controller);
     driverPort->start();
 

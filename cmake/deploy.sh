@@ -97,6 +97,44 @@ is_component() {
   esac
 }
 
+service_unit_for_component() {
+  case "$1" in
+    broker) printf '%s' "broker.service" ;;
+    filestore) printf '%s' "filestore.service" ;;
+    msgstore) printf '%s' "msgstore.service" ;;
+    automation) printf '%s' "autom.service" ;;
+    valueservice) printf '%s' "valuesvc.service" ;;
+    rs485interface) printf '%s' "yahars485interfaceclient.service" ;;
+    zwave) printf '%s' "zwave.service" ;;
+    brokerconnector) printf '%s' "brkconn.service" ;;
+    httpmqttinterface) printf '%s' "httpmqtt.service" ;;
+    remoteservice) printf '%s' "remotesvc.service" ;;
+    *) printf '%s' "" ;;
+  esac
+}
+
+component_install_needed() {
+  local component="$1"
+  local sudo_cmd="$2"
+
+  if [[ -n "${changed_components[${component}]:-}" ]]; then
+    return 0
+  fi
+
+  local unit_name
+  unit_name="$(service_unit_for_component "${component}")"
+  if [[ -z "${unit_name}" ]]; then
+    return 1
+  fi
+
+  if ! ${sudo_cmd} systemctl list-unit-files --type=service --no-legend --no-pager | awk '{print $1}' | grep -Fxq "${unit_name}"; then
+    log_info "Component ${component} scheduled for install: missing unit ${unit_name}"
+    return 0
+  fi
+
+  return 1
+}
+
 prompt_overwrite() {
   local rel_path="$1"
   while true; do
@@ -453,13 +491,13 @@ else
 fi
 
 for component in broker filestore msgstore automation valueservice rs485interface zwave brokerconnector httpmqttinterface remoteservice; do
-  if [[ -n "${changed_components[${component}]:-}" ]]; then
+  if component_install_needed "${component}" "${sudo_cmd}"; then
     installer="${target_dir}/${component}/install.sh"
     if [[ ! -x "${installer}" ]]; then
       log_error "Missing installer for changed component: ${installer}"
       exit 1
     fi
-    log_info "Installing changed component: ${component}"
+    log_info "Installing component: ${component}"
     bash "${installer}"
   else
     log_info "Component unchanged: ${component}"

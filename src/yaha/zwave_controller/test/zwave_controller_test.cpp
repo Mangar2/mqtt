@@ -318,6 +318,20 @@ TEST_CASE("driver_lifecycle_callbacks_publish_expected_monitoring_messages", "[z
     CHECK(std::get<std::string>(published[2].value()) == "scan complete");
 }
 
+TEST_CASE("driver_failed_callback_is_invoked", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    std::size_t callbackCalls = 0U;
+    controller.setDriverFailedCallback([&callbackCalls] {
+        ++callbackCalls;
+    });
+
+    controller.onDriverFailed();
+
+    CHECK(callbackCalls == 1U);
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("notification_callback_maps_all_codes_and_uses_unknown_topic_fallback", "[zwave_controller]") {
     FakeDriverPort driver{};

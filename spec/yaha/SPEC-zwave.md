@@ -117,6 +117,9 @@ Optional matching fields:
 
 ## Device mapping behavior
 
+Detailed syntax and UI-oriented semantics for `[zwave].device` entries are defined in:
+- [SPEC-zwave-device-entry.md](./SPEC-zwave-device-entry.md)
+
 `valueToTopicAndType(zwaveValue)`:
 - finds best matching device config by node and optional class/instance/index precision scoring
 - if mapping has no class_id and incoming value has label, label is appended to topic

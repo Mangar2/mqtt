@@ -44,6 +44,13 @@ OpenZWave runtime driver behavior:
 - requests all config params per configured node
 - enables polling for cached value ids by node/class
 - on shutdown removes driver + watcher and destroys owned OpenZWave manager/options
+- resolves OpenZWave config path in this order:
+  - env `YAHA_OPENZWAVE_CONFIG_PATH`
+  - `<deploy-root>/third_party/openzwave/config` (deployment default)
+  - `<cwd>/third_party/openzwave/config`
+  - `<cwd>/../third_party/openzwave/config`
+  - `/usr/share/openzwave/config`
+- resolves OpenZWave user path from `YAHA_OPENZWAVE_USER_PATH` or `<deploy-root>/tmp/openzwave`
 
 Runtime startup prints a deterministic summary:
 

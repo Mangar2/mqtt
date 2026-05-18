@@ -11,6 +11,7 @@
 #include "yaha/zwave_devices/zwave_devices_mapper.h"
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -250,6 +251,12 @@ public:
     void onDriverFailed();
 
     /**
+     * @brief Sets callback invoked after driver-failed notification was published.
+     * @param callback Callback function.
+     */
+    void setDriverFailedCallback(std::function<void()> callback);
+
+    /**
      * @brief Handles scan-complete callback.
      */
     void onScanComplete();
@@ -338,6 +345,7 @@ private:
     ZwaveDevicesMapper devicesMapper_{std::vector<ZwaveDeviceConfig>{}};
     std::unordered_map<std::uint16_t, NodeRuntimeState> nodes_{};
     PublishCallback publishCallback_{};
+    std::function<void()> driverFailedCallback_{};
 };
 
 } // namespace yaha
