@@ -56,6 +56,8 @@ struct Rs485InterfaceConfig {
     std::uint32_t timeOfDayDelaySeconds{k_default_rs485_time_of_day_delay_s};///< Time-of-day broadcast delay in seconds.
     Qos subscribeQos{Qos::AtLeastOnce};                                      ///< MQTT subscription/publish QoS.
     std::string traceLevel{"messages"};                                    ///< Trace level string.
+    bool logIncomingMessages{false};                                         ///< Enables incoming message logging.
+    bool logOutgoingMessages{false};                                         ///< Enables outgoing message logging.
     std::uint32_t blinkDelaySeconds{k_default_rs485_blink_delay_s};          ///< Blink action delay in seconds.
     std::uint32_t temporaryOnSeconds{k_default_rs485_temporary_on_s};        ///< Default temporary-on duration in seconds.
     std::unordered_map<std::string, Rs485InterfaceDefinition> interfaces{};  ///< Interface definitions.

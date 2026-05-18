@@ -66,6 +66,9 @@ void printStartupSummary(
               << " myAddress=" << static_cast<int>(runtimeConfig.rs485Config.myAddress)
               << " maxVersion=" << static_cast<int>(runtimeConfig.rs485Config.maxVersion)
               << " tickDelayMs=" << runtimeConfig.rs485Config.tickDelayMs << '\n';
+    std::cout << "  logging: mqttTrace=" << (runtimeConfig.mqttConfig.enableMessageTrace ? "1" : "0")
+              << " incoming=" << (runtimeConfig.rs485Config.logIncomingMessages ? "1" : "0")
+              << " outgoing=" << (runtimeConfig.rs485Config.logOutgoingMessages ? "1" : "0") << '\n';
     std::cout << std::flush;
 }
 
@@ -113,7 +116,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    runtimeConfig.mqttConfig.enableMessageTrace = cliOptions.enableMessageTrace;
+    if (cliOptions.enableMessageTrace) {
+        runtimeConfig.mqttConfig.enableMessageTrace = true;
+    }
     printStartupSummary(cliOptions.configPath, runtimeConfig);
 
     yaha::Rs485InterfaceClientRuntimeObjects runtimeObjects{};

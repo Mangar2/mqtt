@@ -194,6 +194,22 @@ bash deploy.sh --zip yaha.zip --target-dir ~/mqtt
 | `--trace-messages` | flag | off | Enables MQTT transport sent/received trace lines in runtime client. |
 | `-h`, `--help` | flag | off | Prints CLI usage and exits successfully. |
 
+`yahars485interfaceclient` accepts one optional positional config path and one optional flag:
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `<config-path>` | positional path | `broker.ini` | Optional path to RS485 Interface INI config. |
+| `--trace-messages` | flag | off | Forces MQTT transport sent/received trace lines in runtime client (does not disable INI-enabled tracing when omitted). |
+| `-h`, `--help` | flag | off | Prints CLI usage and exits successfully. |
+
+`yahars485interfaceclient` accepts one optional positional config path and one optional flag:
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `<config-path>` | positional path | `broker.ini` | Optional path to RS485 Interface INI config. |
+| `--trace-messages` | flag | off | Forces MQTT transport sent/received trace lines in runtime client (does not disable INI-enabled tracing when omitted). |
+| `-h`, `--help` | flag | off | Prints CLI usage and exits successfully. |
+
 Automation client INI sections:
 
 - `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs)
@@ -233,6 +249,26 @@ RemoteService client INI sections:
 - `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs)
 - `[filestore]`: `host`, `port`, `filename`, `topicPrefix`
 - `[remoteservice]`: `listenHost`, `listenPort`, `subscribeQoS`
+
+RS485 Interface client INI sections:
+
+- `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs, logReason)
+- `[rs485interface]`: `serialPortName`, `baudrate`, `myAddress`, `maxVersion`, `tickDelay`, `timeOfDayDelayInSeconds`, `qos`, `trace`, `logIncomingMessages`, `logOutgoingMessages`, `blinkDelayInSeconds`, `temporaryOnInSeconds`
+- `[rs485interface.interfaces]`: interface mapping definitions
+- `[rs485interface.settings]`: command-to-topic-suffix mapping for `/set`
+- `[rs485interface.status]`: command-to-topic-suffix mapping for status publish
+- `[rs485interface.addresses]`: topic-prefix-to-address mapping
+- `[rs485interface.topics]`: explicit topic mapping override (`COMMAND,VALUE,ADDRESS`)
+
+RS485 Interface client INI sections:
+
+- `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs, logReason)
+- `[rs485interface]`: `serialPortName`, `baudrate`, `myAddress`, `maxVersion`, `tickDelay`, `timeOfDayDelayInSeconds`, `qos`, `trace`, `logIncomingMessages`, `logOutgoingMessages`, `blinkDelayInSeconds`, `temporaryOnInSeconds`
+- `[rs485interface.interfaces]`: interface mapping definitions
+- `[rs485interface.settings]`: command-to-topic-suffix mapping for `/set`
+- `[rs485interface.status]`: command-to-topic-suffix mapping for status publish
+- `[rs485interface.addresses]`: topic-prefix-to-address mapping
+- `[rs485interface.topics]`: explicit topic mapping override (`COMMAND,VALUE,ADDRESS`)
 
 ## Prerequisites
 

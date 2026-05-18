@@ -64,6 +64,8 @@ bool loadRuntimeConfigFromIniText(
         "timeOfDayDelayInSeconds=30\n"
         "qos=2\n"
         "trace=internal\n"
+        "logIncomingMessages=true\n"
+        "logOutgoingMessages=false\n"
         "blinkDelayInSeconds=4\n"
         "temporaryOnInSeconds=20\n"
         "\n"
@@ -109,6 +111,8 @@ TEST_CASE("rs485_runtime_config_parses_rs485_behavior_fields", "[rs485_interface
 
     REQUIRE(runtimeConfig.rs485Config.subscribeQos == yaha::Qos::ExactlyOnce);
     REQUIRE(runtimeConfig.rs485Config.traceLevel == "internal");
+    REQUIRE(runtimeConfig.rs485Config.logIncomingMessages == true);
+    REQUIRE(runtimeConfig.rs485Config.logOutgoingMessages == false);
     REQUIRE(runtimeConfig.rs485Config.blinkDelaySeconds == 4U);
     REQUIRE(runtimeConfig.rs485Config.temporaryOnSeconds == 20U);
 }
@@ -119,6 +123,7 @@ TEST_CASE("rs485_runtime_config_parses_mqtt_connection_fields", "[rs485_interfac
     REQUIRE(runtimeConfig.mqttConfig.brokerHost == "127.0.0.1");
     REQUIRE(runtimeConfig.mqttConfig.brokerPort == 1883U);
     REQUIRE(runtimeConfig.mqttConfig.clientId == "rs485-client");
+    REQUIRE(runtimeConfig.mqttConfig.enableMessageTrace == true);
 }
 
 TEST_CASE("rs485_runtime_config_parses_interfaces_and_value_map", "[rs485_interface]") {

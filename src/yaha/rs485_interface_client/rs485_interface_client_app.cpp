@@ -378,6 +378,34 @@ struct ParsedInterfaceSegments {
     return true;
 }
 
+void parseRs485LoggingFlags(
+    const IniDocument& document,
+    Rs485InterfaceConfig& output) {
+    const auto logIncomingResult = document.readBool("rs485interface", "logIncomingMessages");
+    if (!logIncomingResult.second.empty()) {
+        throw YahaError{
+            "RS485_CONFIG_PARSE_FAILED",
+            "failed to parse rs485 config",
+            "Invalid RS485 client configuration.",
+            logIncomingResult.second};
+    }
+    if (logIncomingResult.first.has_value()) {
+        output.logIncomingMessages = *logIncomingResult.first;
+    }
+
+    const auto logOutgoingResult = document.readBool("rs485interface", "logOutgoingMessages");
+    if (!logOutgoingResult.second.empty()) {
+        throw YahaError{
+            "RS485_CONFIG_PARSE_FAILED",
+            "failed to parse rs485 config",
+            "Invalid RS485 client configuration.",
+            logOutgoingResult.second};
+    }
+    if (logOutgoingResult.first.has_value()) {
+        output.logOutgoingMessages = *logOutgoingResult.first;
+    }
+}
+
 } // namespace
 
 Rs485InterfaceConfig loadRs485InterfaceConfigFromIni(const IniDocument& document) {
@@ -443,6 +471,8 @@ Rs485InterfaceConfig loadRs485InterfaceConfigFromIni(const IniDocument& document
         }
     }
 
+    parseRs485LoggingFlags(document, parsed);
+
     const auto blinkDelayResult =
         document.readUnsigned("rs485interface", "blinkDelayInSeconds", 1U, 86400U);
     if (!blinkDelayResult.second.empty()) {
@@ -487,6 +517,10 @@ Rs485InterfaceRuntimeConfig loadRs485InterfaceClientRuntimeConfigFromIni(const I
     std::string errorMessage{};
     if (!tryLoadMqttClientConfigFromIni(document, parsed.mqttConfig, errorMessage)) {
         throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 runtime config", "Invalid RS485 client configuration.", errorMessage};
+    }
+
+    if (parsed.rs485Config.logIncomingMessages || parsed.rs485Config.logOutgoingMessages) {
+        parsed.mqttConfig.enableMessageTrace = true;
     }
 
     return parsed;

@@ -16,11 +16,11 @@ Phase-6 extension:
 
 2. rs485_runtime_config_parses_rs485_behavior_fields
 - Scenario: full valid INI with rs485 runtime behavior values.
-- Expected: parsing succeeds and qos/trace/blink/temporary fields map correctly.
+- Expected: parsing succeeds and qos/trace/logIncomingMessages/logOutgoingMessages/blink/temporary fields map correctly.
 
 3. rs485_runtime_config_parses_mqtt_connection_fields
 - Scenario: full valid INI with mqtt section values.
-- Expected: parsing succeeds and mqtt host/port/clientId map correctly.
+- Expected: parsing succeeds and mqtt host/port/clientId map correctly, and MQTT message trace is enabled when rs485 logIncomingMessages or logOutgoingMessages is true.
 
 4. rs485_runtime_config_parses_interfaces_and_value_map
 - Scenario: full valid INI with rs485interface.interfaces section.

@@ -21,6 +21,8 @@ Fields:
 - timeOfDayDelaySeconds (default 60)
 - subscribeQos in {0,1,2} (default QoS 1)
 - traceLevel in {errors,messages,internal} (default messages)
+- logIncomingMessages (default false)
+- logOutgoingMessages (default false)
 - blinkDelaySeconds (default 3)
 - temporaryOnSeconds (default 1200)
 - interfaces (required map)
@@ -66,6 +68,8 @@ Keys:
 - timeOfDayDelayInSeconds (optional)
 - qos (optional)
 - trace (optional)
+- logIncomingMessages (optional)
+- logOutgoingMessages (optional)
 - blinkDelayInSeconds (optional)
 - temporaryOnInSeconds (optional)
 
@@ -107,6 +111,7 @@ Error text identifies section/key and reason in deterministic form.
 Runtime composition helper:
 - `loadRs485InterfaceConfigFromIni(...)` returns parsed RS485 config or throws `YahaError`.
 - `loadRs485InterfaceClientRuntimeConfigFromIni(...)` returns parsed runtime config or throws `YahaError`.
+- rs485interface `logIncomingMessages` or `logOutgoingMessages` enables `mqttConfig.enableMessageTrace` from INI.
 - `buildRs485InterfaceClientRuntime(...)` opens the configured serial adapter during runtime object composition and returns runtime objects by value.
 - runtime-build failures throw `YahaError` formatted through `YahaError::buildMessage()`.
 - serial-open failure in runtime-build path returns code `RS485_RUNTIME_SERIAL_OPEN_FAILED`.

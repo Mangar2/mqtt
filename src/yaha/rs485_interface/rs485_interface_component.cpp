@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <format>
 #include <iostream>
 #include <thread>
 #include <utility>
@@ -42,6 +43,13 @@ constexpr const char* k_monitor_trace_topic_set{"$MONITOR/rs485Interface/trace/s
         return std::string{"off"};
     }
     return std::string{"on"};
+}
+
+[[nodiscard]] std::string valueToText(const Value& value) {
+    if (const auto* text = std::get_if<std::string>(&value); text != nullptr) {
+        return *text;
+    }
+    return std::format("{}", std::get<double>(value));
 }
 
 void sleepInterruptible(
@@ -104,6 +112,11 @@ SubscriptionMap Rs485InterfaceComponent::getSubscriptions() const {
 }
 
 void Rs485InterfaceComponent::handleMessage(const Message& message) {
+    if (config_.logIncomingMessages) {
+        std::cout << "rs485_interface[incoming_mqtt] topic=" << message.topic()
+                  << " value=" << valueToText(message.value()) << '\n';
+    }
+
     const std::string topicLower = toLowerCopy(message.topic());
     if (topicLower == toLowerCopy(k_trace_topic_set) || topicLower == toLowerCopy(k_monitor_trace_topic_set)) {
         if (std::holds_alternative<std::string>(message.value())) {
@@ -177,6 +190,14 @@ void Rs485InterfaceComponent::feedSerialBytes(const std::vector<std::uint8_t>& b
         }
 
         const Rs485SerialMessage& serialMessage = *readResult.message;
+        if (config_.logIncomingMessages) {
+            std::cout << "rs485_interface[incoming_serial] sender=" << static_cast<int>(serialMessage.sender)
+                      << " receiver=" << static_cast<int>(serialMessage.receiver)
+                      << " command=" << serialMessage.command
+                      << " value=" << serialMessage.value
+                      << " version=" << static_cast<int>(serialMessage.version) << '\n';
+        }
+
         const bool sendToBroker = scheduler_.processReceivedMessage(serialMessage);
         if (!sendToBroker) {
             continue;
@@ -394,6 +415,14 @@ void Rs485InterfaceComponent::runTimeOfDayLoop() {
 }
 
 void Rs485InterfaceComponent::onSchedulerSend(const Rs485SerialMessage& message) {
+    if (config_.logOutgoingMessages) {
+        std::cout << "rs485_interface[outgoing_serial] sender=" << static_cast<int>(message.sender)
+                  << " receiver=" << static_cast<int>(message.receiver)
+                  << " command=" << message.command
+                  << " value=" << message.value
+                  << " version=" << static_cast<int>(message.version) << '\n';
+    }
+
     std::vector<std::uint8_t> bytes{};
     try {
         bytes = encodeRs485SerialMessage(message);
@@ -418,6 +447,11 @@ void Rs485InterfaceComponent::publishMappedMessages(const std::vector<Message>& 
     }
 
     for (const auto& message : messages) {
+        if (config_.logOutgoingMessages) {
+            std::cout << "rs485_interface[outgoing_mqtt] topic=" << message.topic()
+                      << " value=" << valueToText(message.value()) << '\n';
+        }
+
         Message publishMessage{message.topic(), message.value(), config_.subscribeQos, false, false};
         for (const auto& reasonEntry : message.reason()) {
             publishMessage.addReason(reasonEntry.message, reasonEntry.timestamp);
