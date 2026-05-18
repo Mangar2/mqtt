@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cmath>
 #include <cstdint>
+#include <iostream>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -54,6 +55,25 @@ constexpr double kIntegerTolerance = 1e-9;
         throw std::runtime_error("invalid numeric value '" + text + "'");
     }
     return parsed;
+}
+
+[[nodiscard]] std::string zwaveIdText(const ZwaveControllerValueEvent& event) {
+    std::ostringstream stream{};
+    stream << "node=" << event.nodeId
+           << " class=" << event.classId
+           << " instance=" << static_cast<unsigned int>(event.instance)
+           << " index=" << static_cast<unsigned int>(event.index);
+    if (event.valueId.has_value()) {
+        stream << " valueId=" << *event.valueId;
+    }
+    return stream.str();
+}
+
+void logRecognizedSwitchOn(const ZwaveControllerValueEvent& event, const std::string& topic) {
+    std::cout << "habe erkannt zwave meldet, ein switch wird geschaltet"
+              << " zwave_id={" << zwaveIdText(event) << "}"
+              << " mapped_topic=" << topic
+              << '\n' << std::flush;
 }
 
 } // namespace
@@ -376,6 +396,9 @@ void ZwaveController::publishValue(
             topic = mapping->topic;
             reason += ", Zwave value: " + valueToString(event.value);
             outputValue = applySwitchOutboundConversion(event.value, mapping->type);
+            if (mapping->type == "switch" && valueAsBool(event.value)) {
+                logRecognizedSwitchOn(event, topic);
+            }
         }
 
         publish(topic, outputValue, reason);

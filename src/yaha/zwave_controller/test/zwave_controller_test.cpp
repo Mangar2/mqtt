@@ -3,6 +3,8 @@
 #include "yaha/zwave_controller/zwave_controller.h"
 
 #include <optional>
+#include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <variant>
@@ -279,6 +281,42 @@ TEST_CASE("on_value_refreshed_publishes_mapped_switch_as_on_off", "[zwave_contro
     CHECK(published.back().topic() == "ground/livingroom/lamp");
     REQUIRE(std::holds_alternative<std::string>(published.back().value()));
     CHECK(std::get<std::string>(published.back().value()) == "on");
+}
+
+TEST_CASE("on_value_changed_logs_switch_on_detection_with_zwave_id_and_topic", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/lamp",
+            kNodeIdFourteen,
+            kSwitchBinaryClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"switch"},
+            std::nullopt)});
+
+    std::ostringstream outputStream{};
+    auto* previousBuffer = std::cout.rdbuf(outputStream.rdbuf());
+
+    controller.onValueChanged(yaha::ZwaveControllerValueEvent{
+        .nodeId = kNodeIdFourteen,
+        .classId = kSwitchBinaryClass,
+        .instance = kInstanceOne,
+        .index = kIndexZero,
+        .label = std::nullopt,
+        .valueId = kValueIdSample,
+        .value = yaha::Value{1.0},
+        .type = "switch",
+        .readOnly = false});
+
+    std::cout.rdbuf(previousBuffer);
+
+    const std::string logText = outputStream.str();
+    CHECK(logText.find("habe erkannt zwave meldet, ein switch wird geschaltet") != std::string::npos);
+    CHECK(logText.find("zwave_id={node=14 class=37 instance=1 index=0 valueId=1001}") != std::string::npos);
+    CHECK(logText.find("mapped_topic=ground/livingroom/lamp") != std::string::npos);
 }
 
 TEST_CASE("on_controller_command_publishes_monitoring_notification", "[zwave_controller]") {
