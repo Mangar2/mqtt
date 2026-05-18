@@ -15,3 +15,6 @@ Unit tests for RS485 phase-2 protocol codec and stream-reader behavior.
 | `rs485_codec_rejects_unsupported_version_encode` | unsupported encode version failure path | message with version `2` | encode throws deterministic error |
 | `rs485_stream_reader_skips_noise_and_parses_multiple_messages` | noise handling and multi-frame parsing | noise prefix + one v0 + one v1 frame | two successful read results, no errors |
 | `rs485_stream_reader_reports_error_and_continues_by_message_length` | legacy error advance behavior | invalid v1 frame followed by valid v0 frame | first result has error, second result decodes valid message |
+| `rs485_codec_encode_rejects_non_finite_and_out_of_range_values` | encode value guard rails | message values `inf` and `>65535` | encode throws deterministic non-finite / range errors |
+| `rs485_codec_decode_validates_addresses_and_version` | decode validates sender/receiver bounds and version support | crafted frames with illegal sender, illegal receiver, and unsupported version | decode throws matching structured errors |
+| `rs485_codec_helpers_cover_internal_and_guard_paths` | helper surface methods and parity guard branch | internal/external commands and parity call with start index beyond input size | `isInternal` is correct and parity guard returns `0` |

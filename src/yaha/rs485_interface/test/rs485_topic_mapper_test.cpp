@@ -14,6 +14,9 @@ constexpr double k_fallback_unknown_command_value{4.0};
 constexpr std::uint16_t k_explicit_bit_value{0x0004U};
 constexpr std::uint16_t k_explicit_on_value{0x4004U};
 constexpr std::uint16_t k_explicit_off_value{0x2004U};
+constexpr std::uint16_t k_explicit_non_switch_bit_value{0x0008U};
+constexpr double k_numeric_unmapped_value{42.0};
+constexpr std::uint8_t k_unknown_sender_address{99U};
 
 [[nodiscard]] yaha::Rs485InterfaceConfig makeBaseConfig() {
     yaha::Rs485InterfaceConfig config{};
@@ -129,4 +132,83 @@ TEST_CASE("rs485_topic_mapper_to_mqtt_rejects_unknown_command", "[rs485_interfac
     REQUIRE_THROWS_WITH(
         mapper.toMqttMessages(serial),
         Catch::Matchers::ContainsSubstring("Unknown serial command"));
+}
+
+TEST_CASE("rs485_topic_mapper_to_serial_accepts_numeric_payload_and_rejects_fractional", "[rs485_interface]") {
+    const yaha::Rs485TopicMapper mapper{makeBaseConfig()};
+
+    const yaha::Message numericMessage{"house/room/device/power", 1.0};
+    const yaha::Rs485MappedSerialData numericData = mapper.toSerialData(numericMessage);
+    REQUIRE(numericData.command == 'P');
+    REQUIRE(numericData.value == 1U);
+
+    const yaha::Message fractionalMessage{"house/room/device/power", 1.5};
+    REQUIRE_THROWS_WITH(
+        mapper.toSerialData(fractionalMessage),
+        Catch::Matchers::ContainsSubstring("not an integer"));
+}
+
+TEST_CASE("rs485_topic_mapper_to_serial_rejects_out_of_range_numeric_payload", "[rs485_interface]") {
+    const yaha::Rs485TopicMapper mapper{makeBaseConfig()};
+
+    const yaha::Message outOfRangeMessage{"house/room/device/power", 70000.0};
+    REQUIRE_THROWS_WITH(
+        mapper.toSerialData(outOfRangeMessage),
+        Catch::Matchers::ContainsSubstring("positive two byte value"));
+}
+
+TEST_CASE("rs485_topic_mapper_to_serial_rejects_unknown_setting_suffix", "[rs485_interface]") {
+    const yaha::Rs485TopicMapper mapper{makeBaseConfig()};
+
+    const yaha::Message message{"house/room/device/unknown", std::string{"on"}};
+    REQUIRE_THROWS_WITH(
+        mapper.toSerialData(message),
+        Catch::Matchers::ContainsSubstring("undefined device setting"));
+}
+
+TEST_CASE("rs485_topic_mapper_to_mqtt_covers_non_switch_and_numeric_fallback", "[rs485_interface]") {
+    yaha::Rs485InterfaceConfig config = makeBaseConfig();
+    config.topics["house/light"].value = k_explicit_non_switch_bit_value;
+
+    const yaha::Rs485TopicMapper mapper{config};
+
+    yaha::Rs485SerialMessage explicitMessage{};
+    explicitMessage.sender = k_explicit_topic_address;
+    explicitMessage.command = 'L';
+    explicitMessage.value = k_explicit_non_switch_bit_value;
+
+    const auto explicitMapped = mapper.toMqttMessages(explicitMessage);
+    REQUIRE(explicitMapped.size() == 1U);
+    REQUIRE(std::holds_alternative<std::string>(explicitMapped.front().value()));
+    REQUIRE(std::get<std::string>(explicitMapped.front().value()) == "on");
+
+    yaha::Rs485InterfaceConfig numericConfig = makeBaseConfig();
+    numericConfig.topics.clear();
+    const yaha::Rs485TopicMapper numericMapper{numericConfig};
+
+    yaha::Rs485SerialMessage numericSerial{};
+    numericSerial.sender = k_device_address;
+    numericSerial.command = 'P';
+    numericSerial.value = k_numeric_unmapped_value;
+
+    const auto numericMapped = numericMapper.toMqttMessages(numericSerial);
+    REQUIRE(numericMapped.size() == 1U);
+    REQUIRE(std::holds_alternative<double>(numericMapped.front().value()));
+    REQUIRE(std::get<double>(numericMapped.front().value()) == k_numeric_unmapped_value);
+}
+
+TEST_CASE("rs485_topic_mapper_to_mqtt_rejects_unknown_sender_address", "[rs485_interface]") {
+    yaha::Rs485InterfaceConfig config = makeBaseConfig();
+    config.topics.clear();
+
+    const yaha::Rs485TopicMapper mapper{config};
+
+    yaha::Rs485SerialMessage serial{};
+    serial.sender = k_unknown_sender_address;
+    serial.command = 'P';
+    serial.value = 1.0;
+
+    REQUIRE_THROWS_WITH(
+        mapper.toMqttMessages(serial),
+        Catch::Matchers::ContainsSubstring("Unknown serial address"));
 }

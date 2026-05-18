@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -33,6 +34,11 @@ constexpr double k_value_1024{1024.0};
 constexpr double k_value_513{513.0};
 constexpr double k_value_2585{2585.0};
 constexpr double k_value_10_25{10.25};
+constexpr double k_out_of_range_encode_value{70000.0};
+constexpr std::uint8_t k_illegal_sender_address{128U};
+constexpr std::uint8_t k_illegal_receiver_address{200U};
+constexpr std::size_t k_v0_parity_index{6U};
+constexpr std::size_t k_v0_payload_length_without_parity{6U};
 
 [[nodiscard]] yaha::Rs485SerialMessage decodeMessage(const std::vector<std::uint8_t>& bytes) {
     return yaha::decodeRs485SerialMessage(bytes, 0U);
@@ -192,4 +198,75 @@ TEST_CASE("rs485_stream_reader_reports_error_and_continues_by_message_length", "
     REQUIRE(results[0].error.empty() == false);
     REQUIRE(results[1].message.has_value());
     REQUIRE(results[1].message->command == 'F');
+}
+
+TEST_CASE("rs485_codec_encode_rejects_non_finite_and_out_of_range_values", "[rs485_protocol]") {
+    yaha::Rs485SerialMessage nonFinite{};
+    nonFinite.version = 0U;
+    nonFinite.command = 'N';
+    nonFinite.value = std::numeric_limits<double>::infinity();
+    REQUIRE_THROWS_WITH(
+        yaha::encodeRs485SerialMessage(nonFinite),
+        Catch::Matchers::ContainsSubstring("non-finite"));
+
+    yaha::Rs485SerialMessage outOfRange{};
+    outOfRange.version = 1U;
+    outOfRange.command = 'N';
+    outOfRange.value = k_out_of_range_encode_value;
+    REQUIRE_THROWS_WITH(
+        yaha::encodeRs485SerialMessage(outOfRange),
+        Catch::Matchers::ContainsSubstring("out of range"));
+}
+
+TEST_CASE("rs485_codec_decode_validates_addresses_and_version", "[rs485_protocol]") {
+    std::vector<std::uint8_t> illegalSender{
+        k_illegal_sender_address,
+        1U,
+        0U,
+        static_cast<std::uint8_t>('A'),
+        0U,
+        1U,
+        0U};
+    illegalSender[k_v0_parity_index] = yaha::calcRs485Parity(illegalSender, 0U, k_v0_payload_length_without_parity);
+    REQUIRE_THROWS_WITH(
+        yaha::decodeRs485SerialMessage(illegalSender, 0U),
+        Catch::Matchers::ContainsSubstring("illegal sender address"));
+
+    std::vector<std::uint8_t> illegalReceiver{
+        1U,
+        k_illegal_receiver_address,
+        0U,
+        static_cast<std::uint8_t>('A'),
+        0U,
+        1U,
+        0U};
+    illegalReceiver[k_v0_parity_index] = yaha::calcRs485Parity(illegalReceiver, 0U, k_v0_payload_length_without_parity);
+    REQUIRE_THROWS_WITH(
+        yaha::decodeRs485SerialMessage(illegalReceiver, 0U),
+        Catch::Matchers::ContainsSubstring("illegal receiver address"));
+
+    std::vector<std::uint8_t> unsupportedVersion{
+        1U,
+        2U,
+        static_cast<std::uint8_t>(2U << 1U),
+        static_cast<std::uint8_t>('A'),
+        0U,
+        1U,
+        0U};
+    REQUIRE_THROWS_WITH(
+        yaha::decodeRs485SerialMessage(unsupportedVersion, 0U),
+        Catch::Matchers::ContainsSubstring("version not supported"));
+}
+
+TEST_CASE("rs485_codec_helpers_cover_internal_and_guard_paths", "[rs485_protocol]") {
+    yaha::Rs485SerialMessage internal{};
+    internal.command = '!';
+    REQUIRE(internal.isInternal());
+
+    yaha::Rs485SerialMessage external{};
+    external.command = 'X';
+    REQUIRE_FALSE(external.isInternal());
+
+    const std::vector<std::uint8_t> bytes{1U, 2U, 3U};
+    REQUIRE(yaha::calcRs485Parity(bytes, 99U, 4U) == 0U);
 }
