@@ -103,7 +103,7 @@ SERVICE_COMPONENTS = (
         "name": "rs485interface",
         "binary": "yahars485interfaceclient",
         "ini": "rs485interface.ini",
-        "service": "yahars485interfaceclient.service",
+        "service": "rs485if.service",
         "log_namespace": "rs485if",
         "description": "Yaha RS485 Interface Client",
         "exec": (

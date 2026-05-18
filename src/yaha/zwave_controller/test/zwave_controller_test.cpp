@@ -242,6 +242,45 @@ TEST_CASE("on_value_changed_publishes_mapped_switch_as_on_off", "[zwave_controll
     CHECK(std::get<std::string>(published.back().value()) == "on");
 }
 
+TEST_CASE("on_value_refreshed_publishes_mapped_switch_as_on_off", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/lamp",
+            kNodeIdFourteen,
+            kSwitchBinaryClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"switch"},
+            std::nullopt)});
+
+    std::vector<yaha::Message> published{};
+    controller.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    controller.onValueRefreshed(
+        kNodeIdFourteen,
+        kSwitchBinaryClass,
+        yaha::ZwaveControllerValueEvent{
+            .nodeId = kNodeIdFourteen,
+            .classId = kSwitchBinaryClass,
+            .instance = kInstanceOne,
+            .index = kIndexZero,
+            .label = std::nullopt,
+            .valueId = kValueIdSample,
+            .value = yaha::Value{1.0},
+            .type = "switch",
+            .readOnly = false});
+
+    REQUIRE_FALSE(published.empty());
+    CHECK(published.back().topic() == "ground/livingroom/lamp");
+    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+    CHECK(std::get<std::string>(published.back().value()) == "on");
+}
+
 TEST_CASE("on_controller_command_publishes_monitoring_notification", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);

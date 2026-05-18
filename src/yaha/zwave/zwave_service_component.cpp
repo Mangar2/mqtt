@@ -7,6 +7,7 @@
 #include <exception>
 #include <iomanip>
 #include <iostream>
+#include <mutex>
 #include <optional>
 #include <ranges>
 #include <sstream>
@@ -38,11 +39,15 @@ constexpr std::int64_t kMillisecondsPerSecond = 1000;
     }
 
     if (std::holds_alternative<std::string>(left) && std::holds_alternative<double>(right)) {
-        std::size_t consumedChars = 0U;
-        const auto& textValue = std::get<std::string>(left);
-        const double parsed = std::stod(textValue, &consumedChars);
-        return consumedChars == textValue.size()
-            && std::fabs(parsed - std::get<double>(right)) < kNumericValueTolerance;
+        try {
+            std::size_t consumedChars = 0U;
+            const auto& textValue = std::get<std::string>(left);
+            const double parsed = std::stod(textValue, &consumedChars);
+            return consumedChars == textValue.size()
+                && std::fabs(parsed - std::get<double>(right)) < kNumericValueTolerance;
+        } catch (...) {
+            return false;
+        }
     }
 
     if (std::holds_alternative<double>(left) && std::holds_alternative<std::string>(right)) {
@@ -106,6 +111,7 @@ constexpr std::int64_t kMillisecondsPerSecond = 1000;
 class ReplyMatcher {
 public:
     void addReceivedMessage(const Message& message) {
+        std::scoped_lock lock{mutex_};
         const auto splitResult = splitActionTopic(message.topic());
         if (!splitResult.has_value()) {
             return;
@@ -115,6 +121,7 @@ public:
     }
 
     [[nodiscard]] Message matchAndUpdateReplyMessage(const Message& outgoingMessage) {
+        std::scoped_lock lock{mutex_};
         const auto iterator = receivedByReplyTopic_.find(outgoingMessage.topic());
         const bool hasStoredMessage = iterator != receivedByReplyTopic_.end();
         if (!hasStoredMessage) {
@@ -154,6 +161,7 @@ private:
     }
 
     std::unordered_map<std::string, Message> receivedByReplyTopic_{};
+    std::mutex mutex_{};
 };
 
 [[nodiscard]] Message withPublishFlags(const Message& input, const Qos qos, const bool retain) {

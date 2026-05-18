@@ -229,9 +229,16 @@ void ZwaveController::onValueRefreshed(
     const std::uint16_t nodeId,
     const std::uint16_t classId,
     const ZwaveControllerValueEvent& event) {
-    (void)nodeId;
     (void)classId;
-    (void)event;
+
+    storeNodeValue(event);
+
+    std::string reason = "refreshed from zwave";
+    if (event.valueId.has_value()) {
+        reason += ", id: " + std::to_string(*event.valueId);
+    }
+
+    publishValue(nodeId, event, std::move(reason));
 }
 
 std::optional<std::uint16_t> ZwaveController::parseNodeIdFromValue(const Value& value) {

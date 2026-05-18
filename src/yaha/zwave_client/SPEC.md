@@ -38,11 +38,14 @@ OpenZWave runtime driver behavior:
 - translates OpenZWave watcher notifications to `ZwaveController` callback methods
 - maps value callbacks to normalized `ZwaveControllerValueEvent` payloads
 - maps `/set` write requests to typed OpenZWave `SetValue` overloads
+  - write path first uses runtime-cached ValueID from observed callbacks (node/class/instance/index)
+  - if no cached ValueID exists yet, it falls back to constructed ValueID from resolved mapping fields
 - routes config writes through `SetConfigParam`
 - handles add/remove-failed node controller commands
 - requests node state for known nodes on scan trigger
 - requests all config params per configured node
 - enables polling for cached value ids by node/class
+- tracks cached value ids by node/class/instance/index from OpenZWave notifications
 - on shutdown removes driver + watcher and destroys owned OpenZWave manager/options
 - resolves OpenZWave config path in this order:
   - env `YAHA_OPENZWAVE_CONFIG_PATH`
@@ -58,6 +61,7 @@ Runtime startup prints a deterministic summary:
 - MQTT host/port/client id
 - zwave usb device/topic and configured device count
 - subscribe/publish qos and retain flags
+- unified zwave log level
 - incoming/outgoing message logging flags
 
 ## Configuration format
@@ -67,7 +71,7 @@ Supported INI sections:
 - `[mqtt]`
   - `host`, `port`, `clientId`, `reconnectDelayMs`, `keepAliveIntervalMs`, `loopSleepMs`, `logReason`
 - `[zwave]`
-  - `subscribeQoS`, `qos`, `retain`, `logIncomingMessages`, `logOutgoingMessages`, `usbDevice`, `usbTopic`, `device`
+  - `subscribeQoS`, `qos`, `retain`, `logLevel`, `logIncomingMessages`, `logOutgoingMessages`, `usbDevice`, `usbTopic`, `device`
 
 Device row format (`zwave.device` can appear multiple times):
 
@@ -80,6 +84,7 @@ Validation rules:
 - `zwave.subscribeQoS` must be in range `0..2` when set.
 - `zwave.qos` must be in range `0..2` when set.
 - `zwave.retain` must be valid boolean token when set.
+- `zwave.logLevel` must be in range `0..4` when set.
 - `zwave.logIncomingMessages` must be valid boolean token when set.
 - `zwave.logOutgoingMessages` must be valid boolean token when set.
 - `zwave.usbDevice` must be present and non-empty.
@@ -89,6 +94,14 @@ Validation rules:
 - Optional `classId` must be in range `0..65535` when set.
 - Optional `instance` must be in range `0..255` when set.
 - Optional `index` must be in range `0..255` when set.
+
+Unified logging semantics:
+
+- `logLevel=0`: disable OpenZWave protocol console output and disable `zwave_service[in|out]` message logs.
+- `logLevel=1`: protocol error-focused logging.
+- `logLevel=2`: protocol info logging.
+- `logLevel>=3`: protocol detail/debug logging and force-enable `logIncomingMessages` + `logOutgoingMessages`.
+- If `logLevel` is not set, legacy `logIncomingMessages`/`logOutgoingMessages` remain supported.
 
 ## Files
 

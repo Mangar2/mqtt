@@ -28,8 +28,9 @@ public:
     /**
      * @brief Constructs runtime driver port.
      * @param controllerPath Serial or transport path to the USB controller.
+        * @param logLevel Unified logging level (0..4).
      */
-    explicit OpenZwaveRuntimeDriverPort(std::string controllerPath);
+        explicit OpenZwaveRuntimeDriverPort(std::string controllerPath, std::uint8_t logLevel);
 
     /**
      * @brief Cleans up OpenZWave watcher, driver and manager ownership.
@@ -99,7 +100,8 @@ public:
 
 private:
     using ValueIndexMap = std::unordered_map<std::uint16_t, std::uint64_t>;
-    using ValueClassMap = std::unordered_map<std::uint16_t, ValueIndexMap>;
+    using ValueInstanceMap = std::unordered_map<std::uint8_t, ValueIndexMap>;
+    using ValueClassMap = std::unordered_map<std::uint16_t, ValueInstanceMap>;
 
     static void watcherThunk(OpenZWave::Notification const* notification, void* context);
 
@@ -118,6 +120,7 @@ private:
     void ensureStarted();
 
     std::string controllerPath_{};
+    std::uint8_t logLevel_{2U};
 
     mutable std::mutex mutex_{};
     ZwaveController* controller_{nullptr};

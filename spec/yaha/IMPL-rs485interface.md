@@ -82,7 +82,7 @@ Implementation is complete only when all artifacts below exist and are wired.
 - create_yaha_deployment.py includes component rs485interface with:
   - binary yahars485interfaceclient
   - ini rs485interface.ini
-  - service unit yahars485interfaceclient.service
+  - service unit rs485if.service
   - install command wiring
 - deploy_yaha_scp.py supports copy/install of rs485interface component
 - deployment output contains:

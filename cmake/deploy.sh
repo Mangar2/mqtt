@@ -104,7 +104,7 @@ service_unit_for_component() {
     msgstore) printf '%s' "msgstore.service" ;;
     automation) printf '%s' "autom.service" ;;
     valueservice) printf '%s' "valuesvc.service" ;;
-    rs485interface) printf '%s' "yahars485interfaceclient.service" ;;
+    rs485interface) printf '%s' "rs485if.service" ;;
     zwave) printf '%s' "zwave.service" ;;
     brokerconnector) printf '%s' "brkconn.service" ;;
     httpmqttinterface) printf '%s' "httpmqtt.service" ;;

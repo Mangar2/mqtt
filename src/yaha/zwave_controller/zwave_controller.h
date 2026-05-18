@@ -314,7 +314,7 @@ public:
      * @param classId Command class id.
      * @param event Value event payload.
      */
-    static void onValueRefreshed(
+    void onValueRefreshed(
         std::uint16_t nodeId,
         std::uint16_t classId,
         const ZwaveControllerValueEvent& event);

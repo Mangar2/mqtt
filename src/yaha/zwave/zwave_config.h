@@ -42,6 +42,7 @@ struct ZwaveConfig {
     Qos subscribeQos{Qos::AtLeastOnce};       ///< MQTT subscribe QoS for inbound commands.
     Qos qos{Qos::AtLeastOnce};                ///< MQTT publish QoS for outbound messages.
     bool retain{false};                       ///< MQTT retain flag for outbound messages.
+    std::uint8_t logLevel{2U};                ///< Unified ZWave logging level (0..4).
     bool logIncomingMessages{false};          ///< Logs all incoming MQTT messages handled by ZWave service.
     bool logOutgoingMessages{false};          ///< Logs all outgoing MQTT messages published by ZWave service.
     ZwaveUsbConfig usb{};                     ///< USB/controller endpoint configuration.

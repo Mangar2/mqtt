@@ -221,6 +221,67 @@ TEST_CASE("load_zwave_config_parses_log_message_flags", "[zwave_client]") {
     CHECK(config.logOutgoingMessages);
 }
 
+TEST_CASE("load_zwave_config_applies_unified_log_level", "[zwave_client]") {
+    const yaha::IniDocument document = loadIni(
+        "[zwave]\n"
+        "logLevel=3\n"
+        "logIncomingMessages=false\n"
+        "logOutgoingMessages=false\n"
+        "usbDevice=/dev/ttyUSB0\n"
+        "usbTopic=home/zwave/controller\n"
+        "device=home/lamp|7\n");
+
+    yaha::ZwaveConfig config{};
+    std::string errorMessage{};
+
+    const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
+
+    REQUIRE(loaded);
+    CHECK(errorMessage.empty());
+    CHECK(config.logLevel == 3U);
+    CHECK(config.logIncomingMessages);
+    CHECK(config.logOutgoingMessages);
+}
+
+TEST_CASE("load_zwave_config_disables_message_logs_for_log_level_zero", "[zwave_client]") {
+    const yaha::IniDocument document = loadIni(
+        "[zwave]\n"
+        "logLevel=0\n"
+        "logIncomingMessages=true\n"
+        "logOutgoingMessages=true\n"
+        "usbDevice=/dev/ttyUSB0\n"
+        "usbTopic=home/zwave/controller\n"
+        "device=home/lamp|7\n");
+
+    yaha::ZwaveConfig config{};
+    std::string errorMessage{};
+
+    const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
+
+    REQUIRE(loaded);
+    CHECK(errorMessage.empty());
+    CHECK(config.logLevel == 0U);
+    CHECK_FALSE(config.logIncomingMessages);
+    CHECK_FALSE(config.logOutgoingMessages);
+}
+
+TEST_CASE("load_zwave_config_rejects_invalid_log_level", "[zwave_client]") {
+    const yaha::IniDocument document = loadIni(
+        "[zwave]\n"
+        "logLevel=7\n"
+        "usbDevice=/dev/ttyUSB0\n"
+        "usbTopic=home/zwave/controller\n"
+        "device=home/lamp|7\n");
+
+    yaha::ZwaveConfig config{};
+    std::string errorMessage{};
+
+    const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
+
+    CHECK_FALSE(loaded);
+    CHECK(errorMessage.find("zwave.logLevel") != std::string::npos);
+}
+
 TEST_CASE("load_zwave_config_rejects_invalid_log_outgoing_messages_value", "[zwave_client]") {
     const yaha::IniDocument document = loadIni(
         "[zwave]\n"

@@ -481,6 +481,30 @@ TEST_CASE("regular_set_message_value_mismatch_skips_reason_merge", "[zwave_servi
     CHECK_FALSE(hasReasonMessage(published.front(), "received by zwave service"));
 }
 
+TEST_CASE("regular_set_message_type_mismatch_does_not_drop_publish", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    yaha::Message incoming{"home/phase6/lamp/set", yaha::Value{std::string{"on"}}};
+    service.handleMessage(incoming);
+
+    yaha::Message controllerPublish{"home/phase6/lamp", yaha::Value{1.0}};
+    controllerPublish.addReason("device feedback");
+    REQUIRE_NOTHROW(controller->emitControllerPublish(controllerPublish));
+
+    REQUIRE(published.size() == 1U);
+    CHECK(published.front().topic() == "home/phase6/lamp");
+    REQUIRE(std::holds_alternative<double>(published.front().value()));
+    CHECK(std::get<double>(published.front().value()) == 1.0);
+    CHECK(hasReasonMessage(published.front(), "device feedback"));
+    CHECK_FALSE(hasReasonMessage(published.front(), "received by zwave service"));
+}
+
 TEST_CASE("regular_set_message_invalid_received_timestamp_skips_reason_merge", "[zwave_service]") {
     auto controller = std::make_shared<FakeController>();
     yaha::ZwaveServiceComponent service{makeConfig(), controller};
