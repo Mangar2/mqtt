@@ -48,7 +48,7 @@ constexpr double kIntegerTolerance = 1e-9;
     }
 
     std::size_t parsedChars = 0U;
-    const std::string& text = std::get<std::string>(value);
+    const auto& text = std::get<std::string>(value);
     const double parsed = std::stod(text, &parsedChars);
     if (parsedChars != text.size()) {
         throw std::runtime_error("invalid numeric value '" + text + "'");

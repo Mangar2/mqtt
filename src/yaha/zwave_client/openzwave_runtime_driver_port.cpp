@@ -184,7 +184,7 @@ void OpenZwaveRuntimeDriverPort::setValue(
         return;
     }
 
-    const std::string& textValue = std::get<std::string>(value);
+    const auto& textValue = std::get<std::string>(value);
     if (valueType == OpenZWave::ValueID::ValueType_List) {
         (void)manager->SetValueListSelection(valueId, textValue);
         return;
@@ -581,7 +581,7 @@ ZwaveControllerValueEvent OpenZwaveRuntimeDriverPort::buildValueEvent(OpenZWave:
 }
 
 std::string OpenZwaveRuntimeDriverPort::toLower(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
+    std::ranges::transform(value, value.begin(), [](unsigned char character) {
         return static_cast<char>(std::tolower(character));
     });
     return value;
