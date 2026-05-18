@@ -282,3 +282,199 @@ TEST_CASE("rs485_runtime_config_rejects_invalid_interface_map_value", "[rs485_in
     REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
     REQUIRE(errorMessage.find("[rs485interface.interfaces]") != std::string::npos);
 }
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("rs485_runtime_config_rejects_invalid_command_keys_and_topics_values", "[rs485_interface]") {
+    {
+        const std::string iniText =
+            "[mqtt]\n"
+            "host=127.0.0.1\n"
+            "\n"
+            "[rs485interface]\n"
+            "serialPortName=/dev/ttyUSB0\n"
+            "\n"
+            "[rs485interface.interfaces]\n"
+            "LightOnOff=usedby=V;map=on:3600|off:0\n"
+            "\n"
+            "[rs485interface.settings]\n"
+            "VV=light/light on time\n"
+            "\n"
+            "[rs485interface.status]\n"
+            "v=light/light voltage\n"
+            "\n"
+            "[rs485interface.addresses]\n"
+            "my/floor/device/=20\n";
+
+        yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
+        std::string errorMessage{};
+        REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+        REQUIRE(errorMessage.find("single-character command") != std::string::npos);
+    }
+
+    {
+        const std::string iniText =
+            "[mqtt]\n"
+            "host=127.0.0.1\n"
+            "\n"
+            "[rs485interface]\n"
+            "serialPortName=/dev/ttyUSB0\n"
+            "\n"
+            "[rs485interface.interfaces]\n"
+            "LightOnOff=usedby=V;map=on:3600|off:0\n"
+            "\n"
+            "[rs485interface.settings]\n"
+            "V=light/light on time\n"
+            "\n"
+            "[rs485interface.status]\n"
+            "v=light/light voltage\n"
+            "\n"
+            "[rs485interface.addresses]\n"
+            "my/floor/device/=20\n"
+            "\n"
+            "[rs485interface.topics]\n"
+            "my/floor/device/switch/s1=AB,1,20\n";
+
+        yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
+        std::string errorMessage{};
+        REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+        REQUIRE(errorMessage.find("single-character command") != std::string::npos);
+    }
+
+    {
+        const std::string iniText =
+            "[mqtt]\n"
+            "host=127.0.0.1\n"
+            "\n"
+            "[rs485interface]\n"
+            "serialPortName=/dev/ttyUSB0\n"
+            "\n"
+            "[rs485interface.interfaces]\n"
+            "LightOnOff=usedby=V;map=on:3600|off:0\n"
+            "\n"
+            "[rs485interface.settings]\n"
+            "V=light/light on time\n"
+            "\n"
+            "[rs485interface.status]\n"
+            "v=light/light voltage\n"
+            "\n"
+            "[rs485interface.addresses]\n"
+            "my/floor/device/=20\n"
+            "\n"
+            "[rs485interface.topics]\n"
+            "my/floor/device/switch/s1=X,abc,20\n";
+
+        yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
+        std::string errorMessage{};
+        REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+        REQUIRE(errorMessage.find("expected unsigned 0..65535") != std::string::npos);
+    }
+
+    {
+        const std::string iniText =
+            "[mqtt]\n"
+            "host=127.0.0.1\n"
+            "\n"
+            "[rs485interface]\n"
+            "serialPortName=/dev/ttyUSB0\n"
+            "\n"
+            "[rs485interface.interfaces]\n"
+            "LightOnOff=usedby=V;map=on:3600|off:0\n"
+            "\n"
+            "[rs485interface.settings]\n"
+            "V=light/light on time\n"
+            "\n"
+            "[rs485interface.status]\n"
+            "v=light/light voltage\n"
+            "\n"
+            "[rs485interface.addresses]\n"
+            "my/floor/device/=20\n"
+            "\n"
+            "[rs485interface.topics]\n"
+            "my/floor/device/switch/s1=X,1,999\n";
+
+        yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
+        std::string errorMessage{};
+        REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+        REQUIRE(errorMessage.find("expected unsigned 1..127") != std::string::npos);
+    }
+}
+
+TEST_CASE("rs485_runtime_config_rejects_invalid_interface_segment_shapes", "[rs485_interface]") {
+    {
+        const std::string iniText =
+            "[mqtt]\n"
+            "host=127.0.0.1\n"
+            "\n"
+            "[rs485interface]\n"
+            "serialPortName=/dev/ttyUSB0\n"
+            "\n"
+            "[rs485interface.interfaces]\n"
+            "LightOnOff=map=on:3600|off:0\n"
+            "\n"
+            "[rs485interface.settings]\n"
+            "V=light/light on time\n"
+            "\n"
+            "[rs485interface.status]\n"
+            "v=light/light voltage\n"
+            "\n"
+            "[rs485interface.addresses]\n"
+            "my/floor/device/=20\n";
+
+        yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
+        std::string errorMessage{};
+        REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+        REQUIRE(errorMessage.find("missing usedby") != std::string::npos);
+    }
+
+    {
+        const std::string iniText =
+            "[mqtt]\n"
+            "host=127.0.0.1\n"
+            "\n"
+            "[rs485interface]\n"
+            "serialPortName=/dev/ttyUSB0\n"
+            "\n"
+            "[rs485interface.interfaces]\n"
+            "LightOnOff=usedby=VV;map=on:3600|off:0\n"
+            "\n"
+            "[rs485interface.settings]\n"
+            "V=light/light on time\n"
+            "\n"
+            "[rs485interface.status]\n"
+            "v=light/light voltage\n"
+            "\n"
+            "[rs485interface.addresses]\n"
+            "my/floor/device/=20\n";
+
+        yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
+        std::string errorMessage{};
+        REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+        REQUIRE(errorMessage.find("usedby token") != std::string::npos);
+    }
+
+    {
+        const std::string iniText =
+            "[mqtt]\n"
+            "host=127.0.0.1\n"
+            "\n"
+            "[rs485interface]\n"
+            "serialPortName=/dev/ttyUSB0\n"
+            "\n"
+            "[rs485interface.interfaces]\n"
+            "LightOnOff=usedby=V;map=broken-token\n"
+            "\n"
+            "[rs485interface.settings]\n"
+            "V=light/light on time\n"
+            "\n"
+            "[rs485interface.status]\n"
+            "v=light/light voltage\n"
+            "\n"
+            "[rs485interface.addresses]\n"
+            "my/floor/device/=20\n";
+
+        yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
+        std::string errorMessage{};
+        REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+        REQUIRE(errorMessage.find("expected key:value") != std::string::npos);
+    }
+}

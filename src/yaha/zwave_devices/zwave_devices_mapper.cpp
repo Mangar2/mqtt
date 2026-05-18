@@ -13,22 +13,14 @@ namespace {
 
 constexpr std::uint16_t kZwaveConfigurationClass = 0x70U;
 constexpr std::uint16_t kZwaveSwitchBinaryClass = 0x25U;
-constexpr std::uint16_t kZwaveSwitchMultilevelClass = 0x26U;
 constexpr double kUnitMatchTolerance = 1e-9;
 
 [[nodiscard]] std::string defaultTypeForClassId(const std::optional<std::uint16_t>& classId) {
-    if (!classId.has_value()) {
-        return "bool";
-    }
-
-    if (*classId == kZwaveSwitchBinaryClass) {
+    if (classId.has_value() && *classId == kZwaveSwitchBinaryClass) {
         return "switch";
     }
 
-    if (*classId == kZwaveSwitchMultilevelClass) {
-        return "byte";
-    }
-
+    // Legacy parity: absent explicit type defaults to bool, including class 0x26 rows.
     return "bool";
 }
 

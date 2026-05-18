@@ -7,7 +7,9 @@
 
 #include <chrono>
 #include <fcntl.h>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <unistd.h>
 #include <utility>
 #include <vector>
@@ -24,6 +26,8 @@ constexpr std::uint32_t k_serial_test_baudrate{57600U};
 constexpr std::int64_t k_keep_alive_seconds{30};
 constexpr std::int64_t k_reconnect_delay_ms{1000};
 constexpr std::int64_t k_loop_sleep_ms{10};
+constexpr int k_callback_wait_attempts{30};
+constexpr int k_callback_wait_sleep_ms{10};
 
 struct PseudoTerminal {
     PseudoTerminal() = default;
@@ -208,4 +212,68 @@ TEST_CASE("rs485_serial_adapter_send_fails_when_not_open", "[rs485_interface]") 
         errorMessage = exceptionValue.buildMessage();
     }
     REQUIRE(errorMessage.find("serial interface is not open") != std::string::npos);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("rs485_serial_adapter_send_writes_payload_to_serial_master", "[rs485_interface]") {
+    PseudoTerminal pseudoTerminal{};
+    std::string setupError{};
+    REQUIRE(createPseudoTerminal(pseudoTerminal, setupError));
+    REQUIRE(setupError.empty());
+
+    yaha::Rs485SerialAdapter adapter{};
+    REQUIRE_NOTHROW(adapter.open(pseudoTerminal.slavePath, k_serial_test_baudrate));
+    REQUIRE(adapter.isOpen());
+
+    const std::vector<std::uint8_t> payload{0x11U, 0x22U, 0x33U, 0x44U};
+    REQUIRE_NOTHROW(adapter.send(payload));
+
+    std::vector<std::uint8_t> readBuffer(payload.size(), 0U);
+    const ssize_t readCount = ::read(pseudoTerminal.masterFd, readBuffer.data(), readBuffer.size());
+    REQUIRE(readCount == static_cast<ssize_t>(payload.size()));
+    CHECK(readBuffer == payload);
+
+    adapter.close();
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("rs485_serial_adapter_receive_callback_gets_serial_bytes", "[rs485_interface]") {
+    PseudoTerminal pseudoTerminal{};
+    std::string setupError{};
+    REQUIRE(createPseudoTerminal(pseudoTerminal, setupError));
+    REQUIRE(setupError.empty());
+
+    yaha::Rs485SerialAdapter adapter{};
+    REQUIRE_NOTHROW(adapter.open(pseudoTerminal.slavePath, k_serial_test_baudrate));
+
+    std::mutex callbackMutex{};
+    std::vector<std::uint8_t> callbackPayload{};
+    adapter.setReceiveCallback([&callbackMutex, &callbackPayload](const std::vector<std::uint8_t>& payload) {
+        std::lock_guard<std::mutex> lock{callbackMutex};
+        callbackPayload = payload;
+    });
+
+    const std::vector<std::uint8_t> serialPayload{0xABU, 0xCDU, 0xEFU};
+    const ssize_t writeCount = ::write(pseudoTerminal.masterFd, serialPayload.data(), serialPayload.size());
+    REQUIRE(writeCount == static_cast<ssize_t>(serialPayload.size()));
+
+    bool callbackReceived = false;
+    for (int attemptIndex = 0; attemptIndex < k_callback_wait_attempts; ++attemptIndex) {
+        {
+            std::lock_guard<std::mutex> lock{callbackMutex};
+            if (!callbackPayload.empty()) {
+                callbackReceived = true;
+                break;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds{k_callback_wait_sleep_ms});
+    }
+
+    REQUIRE(callbackReceived);
+    {
+        std::lock_guard<std::mutex> lock{callbackMutex};
+        CHECK(callbackPayload == serialPayload);
+    }
+
+    adapter.close();
 }

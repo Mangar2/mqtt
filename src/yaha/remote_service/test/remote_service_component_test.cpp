@@ -21,6 +21,12 @@ constexpr int kWaitSleepMs{10};
 constexpr int kHttpStatusOk{200};
 constexpr int kHttpStatusNotFound{404};
 constexpr int kHttpStatusInternalServerError{500};
+constexpr int kHealthConnectTimeoutSec{0};
+constexpr int kHealthConnectTimeoutUsec{200000};
+constexpr int kHealthReadTimeoutSec{0};
+constexpr int kHealthReadTimeoutUsec{200000};
+constexpr int kHealthWriteTimeoutSec{0};
+constexpr int kHealthWriteTimeoutUsec{200000};
 
 [[nodiscard]] std::uint16_t reserveFreeLocalPort() {
     httplib::Server probeServer;
@@ -36,6 +42,9 @@ constexpr int kHttpStatusInternalServerError{500};
 
 bool waitForHttpServer(const std::uint16_t port) {
     httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    client.set_connection_timeout(kHealthConnectTimeoutSec, kHealthConnectTimeoutUsec);
+    client.set_read_timeout(kHealthReadTimeoutSec, kHealthReadTimeoutUsec);
+    client.set_write_timeout(kHealthWriteTimeoutSec, kHealthWriteTimeoutUsec);
     for (int attempt = 0; attempt < kWaitAttempts; ++attempt) {
         if (const auto response = client.Get("/health")) {
             return response->status == kHttpStatusOk;

@@ -73,3 +73,19 @@ Phase-6 extension:
 16. rs485_serial_adapter_send_fails_when_not_open
 - Scenario: call send before opening serial adapter.
 - Expected: send returns false with deterministic error text.
+
+17. rs485_runtime_config_rejects_invalid_command_keys_and_topics_values
+- Scenario: invalid single-character command keys and invalid topic mapping value/address tokens.
+- Expected: parsing fails with field-specific validation messages.
+
+18. rs485_runtime_config_rejects_invalid_interface_segment_shapes
+- Scenario: malformed interface definitions (missing usedby, invalid usedby token, invalid map token).
+- Expected: parsing fails with deterministic interface validation error.
+
+19. rs485_serial_adapter_send_writes_payload_to_serial_master
+- Scenario: adapter opened on pseudo-terminal slave sends payload.
+- Expected: bytes are readable unchanged from pseudo-terminal master fd.
+
+20. rs485_serial_adapter_receive_callback_gets_serial_bytes
+- Scenario: bytes written to pseudo-terminal master while callback is installed.
+- Expected: receive callback is invoked with the transmitted payload bytes.

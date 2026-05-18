@@ -15,6 +15,9 @@ namespace yaha {
 namespace {
 
 constexpr int kHttpStatusOk{200};
+constexpr int kFileStoreConnectTimeoutSeconds{1};
+constexpr int kFileStoreReadTimeoutSeconds{1};
+constexpr int kFileStoreWriteTimeoutSeconds{1};
 
 void skipWhitespace(const std::string& textValue, std::size_t& parseIndex) {
     while (parseIndex < textValue.size()
@@ -465,7 +468,7 @@ void skipWhitespace(const std::string& textValue, std::size_t& parseIndex) {
 }
 
 [[nodiscard]] bool startsWithText(const std::string& textValue, const std::string& prefix) {
-    return textValue.size() >= prefix.size() && textValue.compare(0U, prefix.size(), prefix) == 0;
+    return textValue.starts_with(prefix);
 }
 
 [[nodiscard]] bool parseServicesArray(
@@ -742,6 +745,9 @@ std::optional<std::string> RemoteServiceComponent::mappedTopicFor(
 
 bool RemoteServiceComponent::reloadMappingFromFileStore(const std::string& triggerText) {
     httplib::Client client{config_.fileStoreHost, static_cast<int>(config_.fileStorePort)};
+    client.set_connection_timeout(kFileStoreConnectTimeoutSeconds, 0);
+    client.set_read_timeout(kFileStoreReadTimeoutSeconds, 0);
+    client.set_write_timeout(kFileStoreWriteTimeoutSeconds, 0);
     const auto response = client.Get(config_.mappingKeyPath);
     if (!response || response->status != kHttpStatusOk) {
         const int statusCode = response ? response->status : -1;

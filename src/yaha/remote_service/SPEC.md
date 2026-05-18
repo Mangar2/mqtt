@@ -108,6 +108,7 @@ Member function:
 ### Startup and reload lifecycle
 
 - `run()` sets lifecycle running and issues one FileStore HTTP `GET <mappingKeyPath>`.
+- FileStore HTTP reload requests use bounded client timeouts (connect/read/write) to avoid long blocking during startup/reload failure paths.
 - Successful GET with valid payload atomically replaces full in-memory map.
 - Startup load failure keeps empty map and continues runtime.
 - `handleMessage()` inspects monitor payloads on `<monitorTopicPrefix>/#`.

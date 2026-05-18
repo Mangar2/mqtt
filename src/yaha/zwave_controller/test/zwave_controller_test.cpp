@@ -177,6 +177,30 @@ TEST_CASE("set_value_routes_configuration_class_to_set_config_param", "[zwave_co
     CHECK(driver.lastConfigValue == kConfigValueFifteen);
 }
 
+TEST_CASE("set_value_routes_multilevel_without_explicit_type_as_bool_for_legacy_parity", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/zwave/shutter/southwest",
+            kNodeIdThirteen,
+            yaha::kZwaveSwitchMultilevelClass,
+            kInstanceOne,
+            kIndexZero,
+            std::nullopt,
+            std::nullopt)});
+
+    controller.setValue("ground/livingroom/zwave/shutter/southwest/set", yaha::Value{std::string{"on"}});
+
+    CHECK(driver.setValueCalls == 1U);
+    CHECK(driver.lastSetValueTarget.nodeId == kNodeIdThirteen);
+    CHECK(driver.lastSetValueTarget.classId == yaha::kZwaveSwitchMultilevelClass);
+    CHECK(driver.lastSetValueTarget.type == "bool");
+    REQUIRE(std::holds_alternative<bool>(driver.lastSetValuePayload));
+    CHECK(std::get<bool>(driver.lastSetValuePayload));
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("controller_operations_forward_to_driver_port", "[zwave_controller]") {
     FakeDriverPort driver{};

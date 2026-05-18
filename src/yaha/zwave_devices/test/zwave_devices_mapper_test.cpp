@@ -162,7 +162,7 @@ TEST_CASE("topic_to_id_label_lookup_reports_missing_node_and_label", "[zwave_dev
         Catch::Matchers::ContainsSubstring("label not found"));
 }
 
-TEST_CASE("topic_to_id_defaults_multilevel_class_to_byte_when_type_missing", "[zwave_devices]") {
+TEST_CASE("topic_to_id_defaults_multilevel_class_to_bool_when_type_missing", "[zwave_devices]") {
     yaha::ZwaveDevicesMapper mapper{{
         makeDevice("home/shutter", kNodeIdEleven, kSwitchMultilevelClass, 1U, 0U, std::nullopt, std::nullopt),
     }};
@@ -174,7 +174,7 @@ TEST_CASE("topic_to_id_defaults_multilevel_class_to_byte_when_type_missing", "[z
     CHECK(resolved.classId == kSwitchMultilevelClass);
     CHECK(resolved.instance == 1U);
     CHECK(resolved.index == 0U);
-    CHECK(resolved.type == "byte");
+    CHECK(resolved.type == "bool");
 }
 
 TEST_CASE("build_write_request_covers_byte_numeric_and_text_passthrough", "[zwave_devices]") {

@@ -653,3 +653,57 @@ TEST_CASE("relay_component_maps_legacy_sys_topic_prefix_to_status", "[broker_con
 
     component.close();
 }
+
+TEST_CASE("relay_component_maps_exact_sys_topic_to_status_and_skips_malformed_payload", "[broker_connector]") {
+    yaha::RelayPolicyConfig config{};
+    config.normalizeQosToAtLeastOnce = true;
+    config.maxPublishRetries = 0U;
+
+    std::vector<yaha::Message> published{};
+    yaha::BrokerConnectorComponent component{config};
+    component.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message);
+    });
+    component.run();
+
+    yaha::SourcePublishMeta sourceMeta{};
+    sourceMeta.qos = yaha::Qos::AtLeastOnce;
+
+    yaha::Message sourceMessage{"$SYS", std::string{"ok"}, yaha::Qos::AtLeastOnce, false};
+    sourceMessage.setRawPayload("not-a-forward-envelope");
+    REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
+    REQUIRE(published.size() == 1U);
+    CHECK(published.front().topic() == "status");
+    CHECK_FALSE(published.front().rawPayload().has_value());
+
+    component.close();
+}
+
+TEST_CASE("relay_component_rewrites_status_topic_with_json_escaping", "[broker_connector]") {
+    yaha::RelayPolicyConfig config{};
+    config.normalizeQosToAtLeastOnce = true;
+    config.maxPublishRetries = 0U;
+
+    std::vector<yaha::Message> published{};
+    yaha::BrokerConnectorComponent component{config};
+    component.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message);
+    });
+    component.run();
+
+    yaha::SourcePublishMeta sourceMeta{};
+    sourceMeta.qos = yaha::Qos::AtLeastOnce;
+
+    const std::string sourceTopic{"$SYS/a\\b\"c\n\r\td"};
+    yaha::Message sourceMessage{sourceTopic, std::string{"v"}, yaha::Qos::AtLeastOnce, false};
+    sourceMessage.setRawPayload(R"({"token":"x","message":{"topic":"$SYS/original","value":"v","reason":[]}})");
+
+    REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
+    REQUIRE(published.size() == 1U);
+    REQUIRE(published.front().rawPayload().has_value());
+
+    const std::string& rewritten = *published.front().rawPayload();
+    CHECK(rewritten.find("status/a\\\\b\\\"c\\n\\r\\td") != std::string::npos);
+
+    component.close();
+}
