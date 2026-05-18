@@ -28,9 +28,13 @@ public:
     /**
      * @brief Constructs runtime driver port.
      * @param controllerPath Serial or transport path to the USB controller.
-        * @param logLevel Unified logging level (0..4).
+      * @param logLevel Unified logging level (0..4).
+      * @param pollIntervalMs OpenZWave poll interval in milliseconds.
      */
-        explicit OpenZwaveRuntimeDriverPort(std::string controllerPath, std::uint8_t logLevel);
+     explicit OpenZwaveRuntimeDriverPort(
+          std::string controllerPath,
+          std::uint8_t logLevel,
+          std::uint32_t pollIntervalMs);
 
     /**
      * @brief Cleans up OpenZWave watcher, driver and manager ownership.
@@ -121,6 +125,7 @@ private:
 
     std::string controllerPath_{};
     std::uint8_t logLevel_{2U};
+    std::uint32_t pollIntervalMs_{kZwaveDefaultPollIntervalMs};
 
     mutable std::mutex mutex_{};
     ZwaveController* controller_{nullptr};

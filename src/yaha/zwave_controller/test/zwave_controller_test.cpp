@@ -244,7 +244,7 @@ TEST_CASE("on_value_changed_publishes_mapped_switch_as_on_off", "[zwave_controll
     CHECK(std::get<std::string>(published.back().value()) == "on");
 }
 
-TEST_CASE("on_value_refreshed_publishes_mapped_switch_as_on_off", "[zwave_controller]") {
+TEST_CASE("on_value_refreshed_updates_cache_without_publishing", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
 
@@ -277,28 +277,7 @@ TEST_CASE("on_value_refreshed_publishes_mapped_switch_as_on_off", "[zwave_contro
             .type = "switch",
             .readOnly = false});
 
-    REQUIRE_FALSE(published.empty());
-    CHECK(published.back().topic() == "ground/livingroom/lamp");
-    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
-    CHECK(std::get<std::string>(published.back().value()) == "on");
-}
-
-TEST_CASE("on_value_changed_logs_switch_on_detection_with_zwave_id_and_topic", "[zwave_controller]") {
-    FakeDriverPort driver{};
-    auto controller = makeController(driver);
-
-    controller.setDeviceConfiguration({
-        makeDevice(
-            "ground/livingroom/lamp",
-            kNodeIdFourteen,
-            kSwitchBinaryClass,
-            kInstanceOne,
-            kIndexZero,
-            std::string{"switch"},
-            std::nullopt)});
-
-    std::ostringstream outputStream{};
-    auto* previousBuffer = std::cout.rdbuf(outputStream.rdbuf());
+    CHECK(published.empty());
 
     controller.onValueChanged(yaha::ZwaveControllerValueEvent{
         .nodeId = kNodeIdFourteen,
@@ -311,12 +290,48 @@ TEST_CASE("on_value_changed_logs_switch_on_detection_with_zwave_id_and_topic", "
         .type = "switch",
         .readOnly = false});
 
+    REQUIRE_FALSE(published.empty());
+    CHECK(published.back().topic() == "ground/livingroom/lamp");
+    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+    CHECK(std::get<std::string>(published.back().value()) == "on");
+}
+
+TEST_CASE("feedback_logs_switch_detection_using_ini_mapping_for_non_37_class", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/lamp",
+            kNodeIdFourteen,
+            yaha::kZwaveSwitchMultilevelClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"switch"},
+            std::nullopt)});
+
+    std::ostringstream outputStream{};
+    auto* previousBuffer = std::cout.rdbuf(outputStream.rdbuf());
+
+    controller.onValueChanged(yaha::ZwaveControllerValueEvent{
+        .nodeId = kNodeIdFourteen,
+        .classId = yaha::kZwaveSwitchMultilevelClass,
+        .instance = kInstanceOne,
+        .index = kIndexZero,
+        .label = std::nullopt,
+        .valueId = kValueIdSample,
+        .value = yaha::Value{1.0},
+        .type = "switch",
+        .readOnly = false});
+
     std::cout.rdbuf(previousBuffer);
 
     const std::string logText = outputStream.str();
-    CHECK(logText.find("habe erkannt zwave meldet, ein switch wird geschaltet") != std::string::npos);
-    CHECK(logText.find("zwave_id={node=14 class=37 instance=1 index=0 valueId=1001}") != std::string::npos);
+    CHECK(logText.find("habe erkannt zwave meldet, switch zustand aus ini-mapping") != std::string::npos);
+    CHECK(logText.find("zwave_id={node=14 class=38 instance=1 index=0 valueId=1001}") != std::string::npos);
     CHECK(logText.find("mapped_topic=ground/livingroom/lamp") != std::string::npos);
+    CHECK(logText.find("recognized_state=on") != std::string::npos);
+    CHECK(logText.find("source=feedback_event_ini_mapping") != std::string::npos);
 }
 
 TEST_CASE("on_controller_command_publishes_monitoring_notification", "[zwave_controller]") {

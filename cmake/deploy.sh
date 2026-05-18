@@ -45,7 +45,7 @@ cleanup_tmp_dir() {
 usage() {
   cat <<'EOF'
 Usage:
-  deploy.sh --zip <deployment-zip> [--target-dir <dir>] [--no-overwrite-ini] [--skip-install]
+  deploy.sh --zip <deployment-zip> [--target-dir <dir>] [--no-overwrite-ini] [--skip-install] [--verbose-identical]
 
 Description:
   Local deployment on the target host.
@@ -59,6 +59,7 @@ Options:
   --target-dir <dir>        Deployment target directory (default: ~/mqtt)
   --no-overwrite-ini        Never overwrite changed .ini files
   --skip-install            Copy only, do not apply install/restart actions
+  --verbose-identical       Also print per-file logs for identical OpenZWave third-party files
   -h, --help                Show this help
 EOF
 }
@@ -271,6 +272,7 @@ zip_file=""
 target_dir="~/mqtt"
 overwrite_mode="ask"
 skip_install=0
+verbose_identical=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -296,6 +298,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-install)
       skip_install=1
+      shift
+      ;;
+    --verbose-identical)
+      verbose_identical=1
       shift
       ;;
     -h|--help)
@@ -326,6 +332,7 @@ log_info "ZIP file: ${zip_file}"
 log_info "Target dir (raw): ${target_dir}"
 log_info "Overwrite mode: ${overwrite_mode}"
 log_info "Skip install: ${skip_install}"
+log_info "Verbose identical logs: ${verbose_identical}"
 
 if [[ "${target_dir}" == ~* ]]; then
   if [[ ${EUID} -eq 0 && -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
@@ -393,6 +400,7 @@ done < "${dir_list_file}"
 
 copied=0
 skipped_identical=0
+skipped_identical_openzwave=0
 skipped_prompt=0
 journald_changed=0
 nginx_changed=0
@@ -416,7 +424,14 @@ while IFS= read -r src_file; do
 
   if [[ -n "${dst_hash}" && "${src_hash}" == "${dst_hash}" ]]; then
     skipped_identical=$((skipped_identical + 1))
-    log_info "SKIP identical ${rel_path}"
+    if [[ "${rel_path}" == third_party/openzwave/config/* ]]; then
+      skipped_identical_openzwave=$((skipped_identical_openzwave + 1))
+      if [[ ${verbose_identical} -eq 1 ]]; then
+        log_info "SKIP identical ${rel_path}"
+      fi
+    else
+      log_info "SKIP identical ${rel_path}"
+    fi
     continue
   fi
 
@@ -464,6 +479,9 @@ while IFS= read -r src_file; do
 done < "${file_list_file}"
 
 log_info "DEPLOY done copied=${copied} skipped_identical=${skipped_identical} skipped_prompt=${skipped_prompt}"
+if [[ ${skipped_identical_openzwave} -gt 0 && ${verbose_identical} -eq 0 ]]; then
+  log_info "SKIP identical third_party/openzwave/config/* files=${skipped_identical_openzwave}"
+fi
 
 if [[ ${skip_install} -eq 1 ]]; then
   log_info "Skipping install/restart actions by request (--skip-install)."

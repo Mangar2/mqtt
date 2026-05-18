@@ -271,9 +271,13 @@ void applyTypedValueWrite(
 
 } // namespace
 
-OpenZwaveRuntimeDriverPort::OpenZwaveRuntimeDriverPort(std::string controllerPath, const std::uint8_t logLevel)
+OpenZwaveRuntimeDriverPort::OpenZwaveRuntimeDriverPort(
+    std::string controllerPath,
+    const std::uint8_t logLevel,
+    const std::uint32_t pollIntervalMs)
     : controllerPath_(std::move(controllerPath))
     , logLevel_(logLevel) {
+    pollIntervalMs_ = pollIntervalMs;
 }
 
 OpenZwaveRuntimeDriverPort::~OpenZwaveRuntimeDriverPort() {
@@ -818,6 +822,7 @@ void OpenZwaveRuntimeDriverPort::ensureStarted() {
         const bool enableProtocolLogging = logLevel_ > 0U;
         (void)options->AddOptionBool("Logging", enableProtocolLogging);
         (void)options->AddOptionBool("ConsoleOutput", enableProtocolLogging);
+        (void)options->AddOptionInt("PollInterval", static_cast<int>(pollIntervalMs_));
         (void)options->AddOptionInt("SaveLogLevel", mapSaveLogLevel(logLevel_));
         (void)options->AddOptionInt("QueueLogLevel", mapQueueLogLevel(logLevel_));
         (void)options->AddOptionInt("DumpTriggerLevel", kOzwLogLevelNone);

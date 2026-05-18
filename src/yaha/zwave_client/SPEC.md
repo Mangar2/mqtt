@@ -45,6 +45,7 @@ OpenZWave runtime driver behavior:
 - requests node state for known nodes on scan trigger
 - requests all config params per configured node
 - enables polling for cached value ids by node/class
+- configures OpenZWave runtime `PollInterval` from `zwave.pollIntervalMs` (default `500ms`) for legacy polling cadence parity
 - tracks cached value ids by node/class/instance/index from OpenZWave notifications
 - on shutdown removes driver + watcher and destroys owned OpenZWave manager/options
 - resolves OpenZWave config path in this order:
@@ -71,7 +72,7 @@ Supported INI sections:
 - `[mqtt]`
   - `host`, `port`, `clientId`, `reconnectDelayMs`, `keepAliveIntervalMs`, `loopSleepMs`, `logReason`
 - `[zwave]`
-  - `subscribeQoS`, `qos`, `retain`, `logLevel`, `logIncomingMessages`, `logOutgoingMessages`, `usbDevice`, `usbTopic`, `device`
+  - `subscribeQoS`, `qos`, `retain`, `logLevel`, `logIncomingMessages`, `logOutgoingMessages`, `pollIntervalMs`, `usbDevice`, `usbTopic`, `device`
 
 Device row format (`zwave.device` can appear multiple times):
 
@@ -87,6 +88,7 @@ Validation rules:
 - `zwave.logLevel` must be in range `0..4` when set.
 - `zwave.logIncomingMessages` must be valid boolean token when set.
 - `zwave.logOutgoingMessages` must be valid boolean token when set.
+- `zwave.pollIntervalMs` must be in range `1..60000` when set.
 - `zwave.usbDevice` must be present and non-empty.
 - `zwave.usbTopic` must be present and non-empty.
 - At least one `zwave.device` entry must be present.

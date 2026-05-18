@@ -33,6 +33,7 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 | `subscribeQos` | `Qos` | Default `AtLeastOnce` |
 | `qos` | `Qos` | Default `AtLeastOnce` |
 | `retain` | `bool` | Default `false` |
+| `pollIntervalMs` | `std::uint32_t` | OpenZWave poll interval in milliseconds, default `500` |
 | `logIncomingMessages` | `bool` | Default `false`; logs inbound MQTT messages handled by ZWave service |
 | `logOutgoingMessages` | `bool` | Default `false`; logs outbound MQTT messages emitted by ZWave service |
 | `usb` | `ZwaveUsbConfig` | Required |

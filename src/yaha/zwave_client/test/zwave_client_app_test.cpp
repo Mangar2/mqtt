@@ -60,6 +60,7 @@ TEST_CASE("load_zwave_config_applies_defaults_and_parses_required_device", "[zwa
     CHECK(config.subscribeQos == yaha::Qos::AtLeastOnce);
     CHECK(config.qos == yaha::Qos::AtLeastOnce);
     CHECK_FALSE(config.retain);
+    CHECK(config.pollIntervalMs == 500U);
     CHECK(config.usb.device == "/dev/ttyUSB0");
     CHECK(config.usb.topic == "home/zwave/controller");
     REQUIRE(config.devices.size() == 1U);
@@ -299,6 +300,43 @@ TEST_CASE("load_zwave_config_rejects_invalid_log_outgoing_messages_value", "[zwa
     CHECK(errorMessage.find("zwave.logOutgoingMessages") != std::string::npos);
 }
 
+TEST_CASE("load_zwave_config_parses_poll_interval_ms_and_rejects_out_of_range", "[zwave_client]") {
+    {
+        const yaha::IniDocument document = loadIni(
+            "[zwave]\n"
+            "pollIntervalMs=750\n"
+            "usbDevice=/dev/ttyUSB0\n"
+            "usbTopic=home/zwave/controller\n"
+            "device=home/lamp|7\n");
+
+        yaha::ZwaveConfig config{};
+        std::string errorMessage{};
+
+        const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
+
+        REQUIRE(loaded);
+        CHECK(errorMessage.empty());
+        CHECK(config.pollIntervalMs == 750U);
+    }
+
+    {
+        const yaha::IniDocument document = loadIni(
+            "[zwave]\n"
+            "pollIntervalMs=0\n"
+            "usbDevice=/dev/ttyUSB0\n"
+            "usbTopic=home/zwave/controller\n"
+            "device=home/lamp|7\n");
+
+        yaha::ZwaveConfig config{};
+        std::string errorMessage{};
+
+        const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
+
+        CHECK_FALSE(loaded);
+        CHECK(errorMessage.find("zwave.pollIntervalMs") != std::string::npos);
+    }
+}
+
 TEST_CASE("load_zwave_config_requires_usb_settings", "[zwave_client]") {
     {
         const yaha::IniDocument document = loadIni(
@@ -341,6 +379,7 @@ TEST_CASE("load_zwave_runtime_config_combines_zwave_and_mqtt_sections", "[zwave_
         "subscribeQoS=2\n"
         "qos=0\n"
         "retain=true\n"
+        "pollIntervalMs=750\n"
         "usbDevice=/dev/ttyUSB9\n"
         "usbTopic=home/zwave/controller\n"
         "device=home/lamp|9|37|1|0|switch|power\n");
@@ -356,6 +395,7 @@ TEST_CASE("load_zwave_runtime_config_combines_zwave_and_mqtt_sections", "[zwave_
     CHECK(runtimeConfig.zwaveConfig.subscribeQos == yaha::Qos::ExactlyOnce);
     CHECK(runtimeConfig.zwaveConfig.qos == yaha::Qos::AtMostOnce);
     CHECK(runtimeConfig.zwaveConfig.retain);
+    CHECK(runtimeConfig.zwaveConfig.pollIntervalMs == 750U);
     CHECK(runtimeConfig.zwaveConfig.usb.device == "/dev/ttyUSB9");
     CHECK(runtimeConfig.zwaveConfig.usb.topic == "home/zwave/controller");
     REQUIRE(runtimeConfig.zwaveConfig.devices.size() == 1U);

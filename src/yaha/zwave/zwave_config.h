@@ -14,6 +14,8 @@
 
 namespace yaha {
 
+inline constexpr std::uint32_t kZwaveDefaultPollIntervalMs = 500U;
+
 /**
  * @brief USB controller endpoint configuration for ZWave runtime.
  */
@@ -45,6 +47,7 @@ struct ZwaveConfig {
     std::uint8_t logLevel{2U};                ///< Unified ZWave logging level (0..4).
     bool logIncomingMessages{false};          ///< Logs all incoming MQTT messages handled by ZWave service.
     bool logOutgoingMessages{false};          ///< Logs all outgoing MQTT messages published by ZWave service.
+    std::uint32_t pollIntervalMs{kZwaveDefaultPollIntervalMs}; ///< OpenZWave poll interval in milliseconds.
     ZwaveUsbConfig usb{};                     ///< USB/controller endpoint configuration.
     std::vector<ZwaveDeviceConfig> devices{}; ///< Required list of configured ZWave devices.
 };

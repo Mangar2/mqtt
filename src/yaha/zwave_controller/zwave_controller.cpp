@@ -69,10 +69,15 @@ constexpr double kIntegerTolerance = 1e-9;
     return stream.str();
 }
 
-void logRecognizedSwitchOn(const ZwaveControllerValueEvent& event, const std::string& topic) {
-    std::cout << "habe erkannt zwave meldet, ein switch wird geschaltet"
+void logRecognizedSwitchFeedbackFromIni(
+    const ZwaveControllerValueEvent& event,
+    const std::string& mappedTopic,
+    const std::string& stateText) {
+    std::cout << "habe erkannt zwave meldet, switch zustand aus ini-mapping"
               << " zwave_id={" << zwaveIdText(event) << "}"
-              << " mapped_topic=" << topic
+              << " mapped_topic=" << mappedTopic
+              << " recognized_state=" << stateText
+              << " source=feedback_event_ini_mapping"
               << '\n' << std::flush;
 }
 
@@ -249,16 +254,10 @@ void ZwaveController::onValueRefreshed(
     const std::uint16_t nodeId,
     const std::uint16_t classId,
     const ZwaveControllerValueEvent& event) {
+    (void)nodeId;
     (void)classId;
-
+    // Legacy parity: refresh updates cached state only; outbound publish happens on value changed.
     storeNodeValue(event);
-
-    std::string reason = "refreshed from zwave";
-    if (event.valueId.has_value()) {
-        reason += ", id: " + std::to_string(*event.valueId);
-    }
-
-    publishValue(nodeId, event, std::move(reason));
 }
 
 std::optional<std::uint16_t> ZwaveController::parseNodeIdFromValue(const Value& value) {
@@ -396,8 +395,11 @@ void ZwaveController::publishValue(
             topic = mapping->topic;
             reason += ", Zwave value: " + valueToString(event.value);
             outputValue = applySwitchOutboundConversion(event.value, mapping->type);
-            if (mapping->type == "switch" && valueAsBool(event.value)) {
-                logRecognizedSwitchOn(event, topic);
+            if (mapping->type == "switch") {
+                logRecognizedSwitchFeedbackFromIni(
+                    event,
+                    topic,
+                    valueAsBool(event.value) ? "on" : "off");
             }
         }
 

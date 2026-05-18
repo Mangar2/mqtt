@@ -95,7 +95,7 @@ Concrete parity adapter implementation with additional callback entry points:
 - Controller command callback publishes to `$MONITOR/zwave/notification`.
 - Node/value callbacks maintain in-memory node/class cache.
 - `onValueChanged` updates cache and publishes mapped value.
-- `onValueRefreshed` updates cache and publishes mapped value with reason prefix `refreshed from zwave`.
+- `onValueRefreshed` updates cache only and does not publish outbound device messages.
 - Value publish behavior:
   - node `1` publishes to configured USB topic
   - mapped devices publish via `valueToTopicAndType`

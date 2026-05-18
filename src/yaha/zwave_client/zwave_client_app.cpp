@@ -44,6 +44,8 @@ constexpr std::uint64_t kIndexMin = 0U;
 constexpr std::uint64_t kIndexMax = 255U;
 constexpr std::uint64_t kLogLevelMin = 0U;
 constexpr std::uint64_t kLogLevelMax = 4U;
+constexpr std::uint64_t kPollIntervalMsMin = 1U;
+constexpr std::uint64_t kPollIntervalMsMax = 60000U;
 
 struct ZwaveLoggingParseState {
     bool logIncomingConfigured{false};
@@ -277,6 +279,16 @@ bool tryLoadZwaveConfigFromIni(
 
     if (!parseZwaveLoggingSettings(document, parsed, errorMessage)) {
         return false;
+    }
+
+    const auto pollIntervalResult =
+        document.readUnsigned("zwave", "pollIntervalMs", kPollIntervalMsMin, kPollIntervalMsMax);
+    if (!pollIntervalResult.second.empty()) {
+        errorMessage = pollIntervalResult.second;
+        return false;
+    }
+    if (pollIntervalResult.first.has_value()) {
+        parsed.pollIntervalMs = static_cast<std::uint32_t>(*pollIntervalResult.first);
     }
 
     if (!requireSetting(document, "zwave", "usbDevice", parsed.usb.device, errorMessage)) {

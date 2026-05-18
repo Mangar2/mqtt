@@ -158,8 +158,10 @@ bash deploy.sh --zip yaha.zip --target-dir ~/mqtt
 
 - unpacks deployment zip locally on the remote host
 - copies files with checksum compare and skips identical files
+- logs identical skipped files in detail, but summarizes `third_party/openzwave/config/*` into one line
 - protects existing changed `.ini` files (prompt by default)
-- supports `--yes-overwrite-ini` and `--no-overwrite-ini`
+- supports `--no-overwrite-ini`
+- supports `--verbose-identical` to also print per-file logs for `third_party/openzwave/config/*`
 - restarts only changed services (component install runs only when files changed)
 
 `yahamsgstoreclient` accepts one optional positional config path and optional flags:
@@ -278,7 +280,7 @@ RS485 Interface client INI sections:
 ZWave client INI sections:
 
 - `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs, logReason)
-- `[zwave]`: `subscribeQoS`, `qos`, `retain`, `logIncomingMessages`, `logOutgoingMessages`, `usbDevice`, `usbTopic`, repeated `device`
+- `[zwave]`: `subscribeQoS`, `qos`, `retain`, `logLevel`, `logIncomingMessages`, `logOutgoingMessages`, `pollIntervalMs`, `usbDevice`, `usbTopic`, repeated `device`
 
 RS485 Interface client INI sections:
 
