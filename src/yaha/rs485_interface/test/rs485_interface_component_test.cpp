@@ -75,11 +75,11 @@ TEST_CASE("rs485_interface_component_derives_expected_subscriptions", "[rs485_in
 
     const auto subscriptions = component.getSubscriptions();
 
-    REQUIRE(subscriptions.contains("+/+/+//power/set"));
+    REQUIRE(subscriptions.contains("+/+/+/power/set"));
     REQUIRE(subscriptions.contains("house/room/device/switch/s1/+") );
     REQUIRE(subscriptions.contains("$SYS/rs485Interface/#"));
     REQUIRE(subscriptions.contains("$MONITOR/rs485Interface/#"));
-    REQUIRE(subscriptions.at("+/+/+//power/set") == yaha::Qos::AtLeastOnce);
+    REQUIRE(subscriptions.at("+/+/+/power/set") == yaha::Qos::AtLeastOnce);
 }
 
 TEST_CASE("rs485_interface_component_set_action_emits_serial_message_after_enable_send", "[rs485_interface]") {

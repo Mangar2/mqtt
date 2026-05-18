@@ -18,6 +18,25 @@ constexpr std::uint32_t k_interruptible_sleep_quantum_ms{50U};
 constexpr const char* k_trace_topic_set{"$SYS/rs485Interface/trace/set"};
 constexpr const char* k_monitor_trace_topic_set{"$MONITOR/rs485Interface/trace/set"};
 
+[[nodiscard]] std::string joinTopicPath(const std::string& base, const std::string& suffix) {
+    if (base.empty()) {
+        return suffix;
+    }
+    if (suffix.empty()) {
+        return base;
+    }
+
+    const bool baseEndsWithSlash = base.back() == '/';
+    const bool suffixStartsWithSlash = suffix.front() == '/';
+    if (baseEndsWithSlash && suffixStartsWithSlash) {
+        return base + suffix.substr(1U);
+    }
+    if (!baseEndsWithSlash && !suffixStartsWithSlash) {
+        return base + "/" + suffix;
+    }
+    return base + suffix;
+}
+
 [[nodiscard]] Value toggledValueFromState(const std::string& cachedState) {
     if (cachedState == "on") {
         return std::string{"off"};
@@ -69,7 +88,7 @@ SubscriptionMap Rs485InterfaceComponent::getSubscriptions() const {
         (void)included;
         for (const auto& [command, settingSuffix] : config_.settings) {
             (void)command;
-            subscriptions[startTopic + settingSuffix + "/set"] = config_.subscribeQos;
+            subscriptions[joinTopicPath(startTopic, settingSuffix) + "/set"] = config_.subscribeQos;
         }
     }
 

@@ -98,6 +98,18 @@ SERVICE_COMPONENTS = (
         ),
     },
     {
+        "name": "rs485interface",
+        "binary": "yahars485interfaceclient",
+        "ini": "rs485interface.ini",
+        "service": "yahars485interfaceclient.service",
+        "log_namespace": "rs485if",
+        "description": "Yaha RS485 Interface Client",
+        "exec": (
+            "__INSTALL_ROOT__/rs485interface/yahars485interfaceclient "
+            "__INSTALL_ROOT__/rs485interface/rs485interface.ini"
+        ),
+    },
+    {
         "name": "brokerconnector",
         "binary": "yahabrokerconnectorclient",
         "ini": "brokerconnector.ini",
@@ -314,6 +326,7 @@ def render_root_install_script(*, journal_namespaces: list[str]) -> str:
         "msgstore",
         "automation",
         "valueservice",
+        "rs485interface",
         "brokerconnector",
         "httpmqttinterface",
         "remoteservice",

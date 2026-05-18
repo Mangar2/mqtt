@@ -356,6 +356,7 @@ install(TARGETS yahabroker
     yahaautomationclient
     yahahttpmqttinterfaceclient
     yahavalueserviceclient
+    yahars485interfaceclient
     yaharemoteserviceclient
     yahazwaveclient
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

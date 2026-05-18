@@ -26,6 +26,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LOCAL_DIR = PROJECT_ROOT / "deployment" / "yaha"
 DEFAULT_REMOTE_HOST = "pi@raspberrypi"
 DEFAULT_REMOTE_DIR = "~/mqtt/yaha"
+KNOWN_INSTALL_COMPONENTS = (
+    "broker",
+    "filestore",
+    "msgstore",
+    "automation",
+    "valueservice",
+    "rs485interface",
+    "brokerconnector",
+    "httpmqttinterface",
+    "remoteservice",
+)
 
 
 @dataclass
@@ -325,6 +336,23 @@ def main() -> int:
 
     if not local_root.exists() or not local_root.is_dir():
         print(f"ERROR: local directory does not exist: {local_root}", file=sys.stderr)
+        return 1
+
+    unknown_components = sorted(
+        {
+            name.strip()
+            for name in args.install_component
+            if name.strip() and name.strip() not in KNOWN_INSTALL_COMPONENTS
+        }
+    )
+    if unknown_components:
+        known = ", ".join(KNOWN_INSTALL_COMPONENTS)
+        unknown = ", ".join(unknown_components)
+        print(
+            "ERROR: unknown --install-component value(s): "
+            f"{unknown}. Known: {known}",
+            file=sys.stderr,
+        )
         return 1
 
     files = list_local_files(local_root)
