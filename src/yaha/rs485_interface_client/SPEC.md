@@ -105,10 +105,13 @@ All parse failures return false and set errorMessage.
 Error text identifies section/key and reason in deterministic form.
 
 Runtime composition helper:
-- `tryBuildRs485InterfaceClientRuntime(...)` returns false with deterministic `errorMessage` on construction failures.
+- `tryBuildRs485InterfaceClientRuntime(...)` opens the configured serial adapter during runtime object composition.
+- runtime-build failures return false with deterministic `errorMessage` formatted through `YahaError::buildMessage()`.
+- serial-open failure in runtime-build path returns code `RS485_RUNTIME_SERIAL_OPEN_FAILED`.
 
 Phase-6 runtime verification:
 - runtime build/object composition tests cover component + adapter + MQTT runtime creation.
+- runtime-build tests verify serial adapter is opened on successful composition and report deterministic failure on serial open error.
 - adapter open/send failure paths are verified for deterministic runtime behavior.
 - component startup/shutdown lifecycle is verified through runtime-composed object usage.
 

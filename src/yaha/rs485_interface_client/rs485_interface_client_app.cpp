@@ -2,6 +2,7 @@
 
 #include "yaha/mqtt_client/broker_transport.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
+#include "yaha/error_handling/yaha_error.h"
 #include "yaha/rs485_interface/rs485_interface_component.h"
 
 #include <algorithm>
@@ -540,6 +541,20 @@ bool tryBuildRs485InterfaceClientRuntime(
 
         auto runtime = std::make_unique<YahaMqttClientRuntime>(*mqttClient, *component);
 
+        std::string serialOpenError{};
+        if (!serialAdapter->open(
+                runtimeConfig.rs485Config.serialPortName,
+                runtimeConfig.rs485Config.baudrate,
+                serialOpenError)) {
+            errorMessage = YahaError{
+                "RS485_RUNTIME_SERIAL_OPEN_FAILED",
+                "failed to open serial adapter during runtime build",
+                "Failed to initialize RS485 serial interface.",
+                serialOpenError}
+                               .buildMessage();
+            return false;
+        }
+
         output.rs485Config = runtimeConfig.rs485Config;
         output.component = std::move(component);
         output.serialAdapter = std::move(serialAdapter);
@@ -547,7 +562,12 @@ bool tryBuildRs485InterfaceClientRuntime(
         output.runtime = std::move(runtime);
         return true;
     } catch (const std::exception& exceptionValue) {
-        errorMessage = exceptionValue.what();
+        errorMessage = YahaError{
+            "RS485_RUNTIME_BUILD_FAILED",
+            "failed to build RS485 runtime objects",
+            "Failed to initialize RS485 client runtime.",
+            exceptionValue.what()}
+                           .buildMessage();
         return false;
     }
 }
