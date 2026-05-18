@@ -32,10 +32,9 @@ public:
      * @brief Opens serial port and starts read loop.
      * @param portName Device path.
      * @param baudrate Baudrate.
-     * @param errorMessage Error output text on failure.
-     * @return True on success.
+        * @throws YahaError on failure.
      */
-    [[nodiscard]] bool open(const std::string& portName, std::uint32_t baudrate, std::string& errorMessage);
+        void open(const std::string& portName, std::uint32_t baudrate);
 
     /**
      * @brief Closes serial port and stops read loop.
@@ -45,10 +44,9 @@ public:
     /**
      * @brief Sends one binary frame to serial interface.
      * @param payload Bytes to send.
-     * @param errorMessage Error output text on failure.
-     * @return True on success.
+        * @throws YahaError on failure.
      */
-    [[nodiscard]] bool send(const std::vector<std::uint8_t>& payload, std::string& errorMessage);
+        void send(const std::vector<std::uint8_t>& payload);
 
     /**
      * @brief Sets receive callback for read-loop data chunks.

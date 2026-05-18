@@ -88,8 +88,7 @@ TEST_CASE("rs485_interface_component_set_action_emits_serial_message_after_enabl
     std::mutex sentMutex{};
     std::vector<yaha::Rs485SerialMessage> sentMessages{};
     component.setSerialSendCallback([&sentMutex, &sentMessages](const std::vector<std::uint8_t>& bytes) {
-        yaha::Rs485SerialMessage message{};
-        yaha::decodeRs485SerialMessage(bytes, 0U, message);
+           const yaha::Rs485SerialMessage message = yaha::decodeRs485SerialMessage(bytes, 0U);
         std::lock_guard<std::mutex> lock{sentMutex};
         sentMessages.push_back(message);
     });

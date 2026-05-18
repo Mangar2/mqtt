@@ -5,6 +5,7 @@
  * @brief RS485 serial codec and stream-reader API.
  */
 
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -75,19 +76,18 @@ struct Rs485ReadResult {
  * @brief Decodes one RS485 frame at a byte offset.
  * @param byteArray Source bytes.
  * @param startIndex Start index of potential frame.
- * @param output Parsed message output.
- * @throws std::runtime_error on parse errors.
+ * @return Parsed message output.
+ * @throws YahaError on parse errors.
  */
-void decodeRs485SerialMessage(
+[[nodiscard]] Rs485SerialMessage decodeRs485SerialMessage(
     const std::vector<std::uint8_t>& byteArray,
-    std::size_t startIndex,
-    Rs485SerialMessage& output);
+    std::size_t startIndex);
 
 /**
  * @brief Encodes one RS485 frame.
  * @param message Message to encode.
  * @return Encoded byte vector.
- * @throws std::runtime_error for unsupported version.
+ * @throws YahaError for unsupported version.
  */
 [[nodiscard]] std::vector<std::uint8_t> encodeRs485SerialMessage(const Rs485SerialMessage& message);
 

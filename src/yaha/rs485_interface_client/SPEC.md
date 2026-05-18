@@ -47,9 +47,9 @@ Fields:
 ### Class Rs485SerialAdapter
 
 Methods:
-- `open(portName, baudrate, errorMessage)` opens serial device and starts read loop
+- `open(portName, baudrate)` opens serial device and starts read loop
 - `close()` stops read loop and closes descriptor
-- `send(payload, errorMessage)` writes all payload bytes
+- `send(payload)` writes all payload bytes
 - `setReceiveCallback(callback)` installs receive callback for read chunks
 - `isOpen()` returns descriptor state
 
@@ -101,12 +101,14 @@ Keys:
 
 ## Error contract
 
-All parse failures return false and set errorMessage.
+All parse failures throw `YahaError` with deterministic `buildMessage()` output.
 Error text identifies section/key and reason in deterministic form.
 
 Runtime composition helper:
-- `tryBuildRs485InterfaceClientRuntime(...)` opens the configured serial adapter during runtime object composition.
-- runtime-build failures return false with deterministic `errorMessage` formatted through `YahaError::buildMessage()`.
+- `loadRs485InterfaceConfigFromIni(...)` returns parsed RS485 config or throws `YahaError`.
+- `loadRs485InterfaceClientRuntimeConfigFromIni(...)` returns parsed runtime config or throws `YahaError`.
+- `buildRs485InterfaceClientRuntime(...)` opens the configured serial adapter during runtime object composition and returns runtime objects by value.
+- runtime-build failures throw `YahaError` formatted through `YahaError::buildMessage()`.
 - serial-open failure in runtime-build path returns code `RS485_RUNTIME_SERIAL_OPEN_FAILED`.
 
 Phase-6 runtime verification:

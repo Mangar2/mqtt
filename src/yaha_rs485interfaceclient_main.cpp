@@ -23,7 +23,7 @@ void printUsage() {
               << std::flush;
 }
 
-bool tryParseCli(const int argc, char* const* argv, CliOptions& options, std::string& errorText) {
+bool parseCli(const int argc, char* const* argv, CliOptions& options, std::string& errorText) {
     for (int argIndex = 1; argIndex < argc; ++argIndex) {
         const std::string argument{argv[argIndex]};
         if (argument == "--help" || argument == "-h") {
@@ -74,7 +74,7 @@ void printStartupSummary(
 int main(int argc, char* argv[]) {
     CliOptions cliOptions{};
     std::string cliError{};
-    if (!tryParseCli(argc, argv, cliOptions, cliError)) {
+    if (!parseCli(argc, argv, cliOptions, cliError)) {
         std::cerr << yaha::YahaError{
             "RS485_MAIN_CLI_PARSE_FAILED",
             "failed to parse command line arguments",
@@ -106,15 +106,10 @@ int main(int argc, char* argv[]) {
     }
 
     yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
-    std::string configError{};
-    if (!yaha::tryLoadRs485InterfaceClientRuntimeConfigFromIni(configDocument, runtimeConfig, configError)) {
-        std::cerr << yaha::YahaError{
-            "RS485_MAIN_CONFIG_PARSE_FAILED",
-            "failed to parse rs485 runtime config",
-            "Invalid RS485 client configuration.",
-            configError}
-                         .buildMessage()
-                  << '\n';
+    try {
+        runtimeConfig = yaha::loadRs485InterfaceClientRuntimeConfigFromIni(configDocument);
+    } catch (const yaha::YahaError& exceptionValue) {
+        std::cerr << exceptionValue.buildMessage() << '\n';
         return 1;
     }
 
@@ -122,18 +117,10 @@ int main(int argc, char* argv[]) {
     printStartupSummary(cliOptions.configPath, runtimeConfig);
 
     yaha::Rs485InterfaceClientRuntimeObjects runtimeObjects{};
-    std::string runtimeBuildError{};
-    if (!yaha::tryBuildRs485InterfaceClientRuntime(
-            std::move(runtimeConfig),
-            runtimeObjects,
-            runtimeBuildError)) {
-        std::cerr << yaha::YahaError{
-            "RS485_MAIN_RUNTIME_BUILD_FAILED",
-            "failed to build rs485 runtime",
-            "Failed to initialize RS485 client runtime.",
-            runtimeBuildError}
-                         .buildMessage()
-                  << '\n';
+    try {
+        runtimeObjects = yaha::buildRs485InterfaceClientRuntime(std::move(runtimeConfig));
+    } catch (const yaha::YahaError& exceptionValue) {
+        std::cerr << exceptionValue.buildMessage() << '\n';
         return 1;
     }
 

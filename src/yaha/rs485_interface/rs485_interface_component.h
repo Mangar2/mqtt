@@ -17,6 +17,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -57,7 +58,7 @@ private:
     [[nodiscard]] static std::string removeSuffix(const std::string& text, const std::string& suffix);
 
     [[nodiscard]] static std::string deriveWildcardStartTopic(const std::string& addressTopic);
-    [[nodiscard]] static bool tryParsePositiveInteger(const Value& value, std::uint32_t& output);
+    [[nodiscard]] static std::optional<std::uint32_t> parsePositiveInteger(const Value& value);
 
     void processActionMessage(const Message& message);
     void enqueueSet(const std::string& topic, const Value& value);

@@ -1,5 +1,7 @@
 #include "yaha/rs485_interface_client/rs485_serial_adapter.h"
 
+#include "yaha/error_handling/yaha_error.h"
+
 #include <cerrno>
 #include <cstring>
 #include <string>
@@ -62,37 +64,45 @@ Rs485SerialAdapter::~Rs485SerialAdapter() {
     close();
 }
 
-bool Rs485SerialAdapter::open(
-    const std::string& portName,
-    const std::uint32_t baudrate,
-    std::string& errorMessage) {
+void Rs485SerialAdapter::open(const std::string& portName, const std::uint32_t baudrate) {
     close();
 
 #if defined(_WIN32)
     (void)portName;
     (void)baudrate;
-    errorMessage = "RS485 serial adapter is not implemented on Windows in this build";
-    return false;
+    throw YahaError{
+        "RS485_SERIAL_UNSUPPORTED_PLATFORM",
+        "RS485 serial adapter is not implemented on Windows in this build",
+        "Failed to open RS485 serial adapter."};
 #else
     const int descriptor = ::open(portName.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (descriptor < 0) {
-        errorMessage = "failed to open serial port '" + portName + "': " + std::strerror(errno);
-        return false;
+        throw YahaError{
+            "RS485_SERIAL_OPEN_FAILED",
+            "failed to open serial port",
+            "Failed to open RS485 serial adapter.",
+            "port=" + portName + " | error=" + std::strerror(errno)};
     }
 
     struct termios ttySettings {};
     if (::tcgetattr(descriptor, &ttySettings) != 0) {
-        errorMessage = "failed to read serial attributes: " + std::string{std::strerror(errno)};
+        throw YahaError{
+            "RS485_SERIAL_OPEN_FAILED",
+            "failed to read serial attributes",
+            "Failed to open RS485 serial adapter.",
+            std::string{std::strerror(errno)}};
         ::close(descriptor);
-        return false;
     }
 
     ::cfmakeraw(&ttySettings);
     const speed_t speed = mapBaudrate(baudrate);
     if (::cfsetispeed(&ttySettings, speed) != 0 || ::cfsetospeed(&ttySettings, speed) != 0) {
-        errorMessage = "failed to apply serial baudrate: " + std::string{std::strerror(errno)};
+        throw YahaError{
+            "RS485_SERIAL_OPEN_FAILED",
+            "failed to apply serial baudrate",
+            "Failed to open RS485 serial adapter.",
+            std::string{std::strerror(errno)}};
         ::close(descriptor);
-        return false;
     }
 
     ttySettings.c_cflag |= static_cast<tcflag_t>(CLOCAL | CREAD);
@@ -104,9 +114,12 @@ bool Rs485SerialAdapter::open(
     ttySettings.c_cc[VTIME] = 1;
 
     if (::tcsetattr(descriptor, TCSANOW, &ttySettings) != 0) {
-        errorMessage = "failed to set serial attributes: " + std::string{std::strerror(errno)};
+        throw YahaError{
+            "RS485_SERIAL_OPEN_FAILED",
+            "failed to set serial attributes",
+            "Failed to open RS485 serial adapter.",
+            std::string{std::strerror(errno)}};
         ::close(descriptor);
-        return false;
     }
 
     {
@@ -118,8 +131,6 @@ bool Rs485SerialAdapter::open(
     readThread_ = std::thread([this]() {
         readLoop();
     });
-
-    return true;
 #endif
 }
 
@@ -144,11 +155,13 @@ void Rs485SerialAdapter::close() {
 #endif
 }
 
-bool Rs485SerialAdapter::send(const std::vector<std::uint8_t>& payload, std::string& errorMessage) {
+void Rs485SerialAdapter::send(const std::vector<std::uint8_t>& payload) {
 #if defined(_WIN32)
     (void)payload;
-    errorMessage = "send is not implemented on Windows in this build";
-    return false;
+    throw YahaError{
+        "RS485_SERIAL_SEND_FAILED",
+        "send is not implemented on Windows in this build",
+        "Failed to send RS485 serial payload."};
 #else
     int descriptor = -1;
     {
@@ -157,8 +170,10 @@ bool Rs485SerialAdapter::send(const std::vector<std::uint8_t>& payload, std::str
     }
 
     if (descriptor < 0) {
-        errorMessage = "serial interface is not open";
-        return false;
+        throw YahaError{
+            "RS485_SERIAL_SEND_FAILED",
+            "serial interface is not open",
+            "Failed to send RS485 serial payload."};
     }
 
     std::size_t bytesSent = 0U;
@@ -172,14 +187,15 @@ bool Rs485SerialAdapter::send(const std::vector<std::uint8_t>& payload, std::str
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 continue;
             }
-            errorMessage = "failed to write serial data: " + std::string{std::strerror(errno)};
-            return false;
+            throw YahaError{
+                "RS485_SERIAL_SEND_FAILED",
+                "failed to write serial data",
+                "Failed to send RS485 serial payload.",
+                std::string{std::strerror(errno)}};
         }
 
         bytesSent += static_cast<std::size_t>(written);
     }
-
-    return true;
 #endif
 }
 

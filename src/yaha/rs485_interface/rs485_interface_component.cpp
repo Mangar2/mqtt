@@ -251,29 +251,27 @@ std::string Rs485InterfaceComponent::deriveWildcardStartTopic(const std::string&
     return topic;
 }
 
-bool Rs485InterfaceComponent::tryParsePositiveInteger(const Value& value, std::uint32_t& output) {
+std::optional<std::uint32_t> Rs485InterfaceComponent::parsePositiveInteger(const Value& value) {
     if (const auto* number = std::get_if<double>(&value); number != nullptr) {
         const double rounded = std::round(*number);
         if (std::fabs(*number - rounded) > k_integer_epsilon || rounded < 0.0) {
-            return false;
+            return std::nullopt;
         }
-        output = static_cast<std::uint32_t>(rounded);
-        return true;
+        return static_cast<std::uint32_t>(rounded);
     }
 
     const auto* text = std::get_if<std::string>(&value);
     if (text == nullptr || text->empty()) {
-        return false;
+        return std::nullopt;
     }
 
     std::size_t consumed = 0U;
     const auto parsed = std::stoul(*text, &consumed);
     if (consumed != text->size()) {
-        return false;
+        return std::nullopt;
     }
 
-    output = static_cast<std::uint32_t>(parsed);
-    return true;
+    return static_cast<std::uint32_t>(parsed);
 }
 
 void Rs485InterfaceComponent::processActionMessage(const Message& message) {
@@ -320,9 +318,9 @@ void Rs485InterfaceComponent::enqueueSet(const std::string& topic, const Value& 
 
 void Rs485InterfaceComponent::enqueueTemporary(const std::string& topic, const Value& value) {
     std::uint32_t temporarySeconds = config_.temporaryOnSeconds;
-    std::uint32_t parsedValue = 0U;
-    if (tryParsePositiveInteger(value, parsedValue) && parsedValue > 0U) {
-        temporarySeconds = parsedValue;
+    const auto parsedValue = parsePositiveInteger(value);
+    if (parsedValue.has_value() && *parsedValue > 0U) {
+        temporarySeconds = *parsedValue;
     }
 
     launchActionThread([this, topic, temporarySeconds]() {
@@ -337,9 +335,9 @@ void Rs485InterfaceComponent::enqueueTemporary(const std::string& topic, const V
 
 void Rs485InterfaceComponent::enqueueBlink(const std::string& topic, const Value& value) {
     std::uint32_t amount = k_default_blink_cycles;
-    std::uint32_t parsedAmount = 0U;
-    if (tryParsePositiveInteger(value, parsedAmount) && parsedAmount > 0U) {
-        amount = parsedAmount;
+    const auto parsedAmount = parsePositiveInteger(value);
+    if (parsedAmount.has_value() && *parsedAmount > 0U) {
+        amount = *parsedAmount;
     }
 
     const std::uint32_t toggleCount = amount * k_blink_toggle_multiplier;

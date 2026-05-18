@@ -1,10 +1,10 @@
 #include "yaha/rs485_protocol/rs485_serial_protocol.h"
+#include "yaha/error_handling/yaha_error.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <format>
-#include <stdexcept>
 #include <string>
 
 namespace yaha {
@@ -90,10 +90,10 @@ constexpr std::size_t k_field_v1_crc_high{8U};
 
 void ensureHeaderReadable(const std::vector<std::uint8_t>& byteArray, const std::size_t startIndex) {
     if (startIndex >= byteArray.size()) {
-        throw std::runtime_error("Insufficient data received");
+        throw YahaError{"RS485_PROTOCOL_INSUFFICIENT_DATA", "insufficient data received", "Failed to decode RS485 frame."};
     }
     if (byteArray.size() < startIndex + 3U) {
-        throw std::runtime_error("Insufficient data received");
+        throw YahaError{"RS485_PROTOCOL_INSUFFICIENT_DATA", "insufficient data received", "Failed to decode RS485 frame."};
     }
 }
 
@@ -141,13 +141,12 @@ std::uint8_t calcRs485Parity(
     return parity;
 }
 
-void decodeRs485SerialMessage(
+Rs485SerialMessage decodeRs485SerialMessage(
     const std::vector<std::uint8_t>& byteArray,
-    const std::size_t startIndex,
-    Rs485SerialMessage& output) {
+    const std::size_t startIndex) {
     ensureHeaderReadable(byteArray, startIndex);
 
-    output = Rs485SerialMessage{};
+    Rs485SerialMessage output{};
     output.sender = byteArray[startIndex + k_field_sender];
     output.receiver = byteArray[startIndex + k_field_receiver];
     const std::uint8_t flags = byteArray[startIndex + k_field_flags];
@@ -160,7 +159,7 @@ void decodeRs485SerialMessage(
         break;
     case 1U:
         if (byteArray.size() < startIndex + k_field_v1_command) {
-            throw std::runtime_error("Insufficient data received");
+            throw YahaError{"RS485_PROTOCOL_INSUFFICIENT_DATA", "insufficient data received", "Failed to decode RS485 frame."};
         }
         output.length = byteArray[startIndex + k_field_v1_length];
         break;
@@ -170,16 +169,24 @@ void decodeRs485SerialMessage(
     }
 
     if (output.sender > k_max_address) {
-        throw std::runtime_error(std::format("Illegal sender address {}", output.sender));
+        throw YahaError{
+            "RS485_PROTOCOL_ILLEGAL_SENDER_ADDRESS",
+            std::format("illegal sender address {}", output.sender),
+            "Failed to decode RS485 frame.",
+            std::format("sender={}", output.sender)};
     }
 
     if (output.receiver > k_max_address) {
-        throw std::runtime_error(std::format("Illegal receiver address {}", output.receiver));
+        throw YahaError{
+            "RS485_PROTOCOL_ILLEGAL_RECEIVER_ADDRESS",
+            std::format("illegal receiver address {}", output.receiver),
+            "Failed to decode RS485 frame.",
+            std::format("receiver={}", output.receiver)};
     }
 
     if (output.version == 0U) {
         if (byteArray.size() < startIndex + output.length) {
-            throw std::runtime_error("Insufficient data received");
+            throw YahaError{"RS485_PROTOCOL_INSUFFICIENT_DATA", "insufficient data received", "Failed to decode RS485 frame."};
         }
 
         output.command = static_cast<char>(byteArray[startIndex + k_field_v0_command]);
@@ -190,24 +197,26 @@ void decodeRs485SerialMessage(
 
         const std::uint8_t calculatedParity = calcRs485Parity(byteArray, startIndex, k_rs485_message_size_v0 - 1U);
         if (calculatedParity != output.parity) {
-            throw std::runtime_error(std::format(
-                "Parity does not match, expected: {} received: {}",
-                calculatedParity,
-                output.parity));
+            throw YahaError{
+                "RS485_PROTOCOL_PARITY_MISMATCH",
+                std::format("Parity does not match, expected: {} received: {}", calculatedParity, output.parity),
+                "Failed to decode RS485 frame.",
+                std::format("expected={} received={}", calculatedParity, output.parity)};
         }
-        return;
+        return output;
     }
 
     if (output.version == 1U) {
         if (byteArray.size() < startIndex + output.length) {
-            throw std::runtime_error("Insufficient data received");
+            throw YahaError{"RS485_PROTOCOL_INSUFFICIENT_DATA", "insufficient data received", "Failed to decode RS485 frame."};
         }
 
         if (output.length != k_rs485_message_size_v1) {
-            throw std::runtime_error(std::format(
-                "Illegal message length, expected: {} received: {}",
-            k_rs485_message_size_v1,
-                output.length));
+            throw YahaError{
+                "RS485_PROTOCOL_ILLEGAL_LENGTH",
+                std::format("illegal message length, expected: {} received: {}", k_rs485_message_size_v1, output.length),
+                "Failed to decode RS485 frame.",
+                std::format("expected={} received={}", k_rs485_message_size_v1, output.length)};
         }
 
         output.command = static_cast<char>(byteArray[startIndex + k_field_v1_command]);
@@ -221,15 +230,20 @@ void decodeRs485SerialMessage(
         output.crc16 = static_cast<std::uint16_t>((static_cast<std::uint16_t>(crcHigh) << k_bits_in_byte) | crcLow);
 
         if (output.crc16 != calculatedCrc16) {
-            throw std::runtime_error(std::format(
-                "CRC does not match. Expected: {:x} Found: {:x}",
-                calculatedCrc16,
-                output.crc16));
+            throw YahaError{
+                "RS485_PROTOCOL_CRC_MISMATCH",
+                std::format("CRC does not match. Expected: {:x} Found: {:x}", calculatedCrc16, output.crc16),
+                "Failed to decode RS485 frame.",
+                std::format("expected={:x} received={:x}", calculatedCrc16, output.crc16)};
         }
-        return;
+        return output;
     }
 
-    throw std::runtime_error(std::format("Version not supported: {}", output.version));
+    throw YahaError{
+        "RS485_PROTOCOL_UNSUPPORTED_VERSION",
+        std::format("version not supported: {}", output.version),
+        "Failed to decode RS485 frame.",
+        std::format("version={}", output.version)};
 }
 
 std::vector<std::uint8_t> encodeRs485SerialMessage(const Rs485SerialMessage& message) {
@@ -265,7 +279,11 @@ std::vector<std::uint8_t> encodeRs485SerialMessage(const Rs485SerialMessage& mes
         return byteArray;
     }
 
-    throw std::runtime_error(std::format("Unsupported message version {}", message.version));
+    throw YahaError{
+        "RS485_PROTOCOL_UNSUPPORTED_VERSION",
+        std::format("Unsupported message version {}", message.version),
+        "Failed to encode RS485 frame.",
+        std::format("version={}", message.version)};
 }
 
 std::size_t Rs485StreamReader::skipNoise(
@@ -288,20 +306,20 @@ std::optional<Rs485ReadResult> Rs485StreamReader::readMessage(
 
     Rs485SerialMessage message{};
     try {
-        decodeRs485SerialMessage(byteArray, startIndex, message);
+        message = decodeRs485SerialMessage(byteArray, startIndex);
         const std::string hex = toHexString(byteArray, startIndex, message.length);
         return Rs485ReadResult{
             .startIndex = startIndex + message.length,
             .message = message,
             .hex = hex,
             .error = {}};
-    } catch (const std::exception& exception) {
+    } catch (const YahaError& exception) {
         const std::string hex = toHexString(byteArray, startIndex, byteArray.size() - startIndex);
         return Rs485ReadResult{
             .startIndex = startIndex + message.length,
             .message = std::nullopt,
             .hex = hex,
-            .error = exception.what()};
+            .error = exception.buildMessage()};
     }
 }
 

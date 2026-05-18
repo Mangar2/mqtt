@@ -2,6 +2,8 @@
 
 #include "yaha/rs485_interface/rs485_interface_component.h"
 #include "yaha/rs485_interface_client/rs485_interface_client_app.h"
+#include "yaha/error_handling/yaha_error.h"
+
 
 #include <chrono>
 #include <fcntl.h>
@@ -43,7 +45,7 @@ struct PseudoTerminal {
 
 [[nodiscard]] yaha::Rs485InterfaceRuntimeConfig makeRuntimeConfig(const std::string& serialPortName);
 
-[[nodiscard]] bool tryCreatePseudoTerminal(PseudoTerminal& output, std::string& errorMessage) {
+[[nodiscard]] bool createPseudoTerminal(PseudoTerminal& output, std::string& errorMessage) {
     const int masterFd = ::posix_openpt(O_RDWR | O_NOCTTY);
     if (masterFd < 0) {
         errorMessage = "posix_openpt failed";
@@ -74,20 +76,23 @@ struct PseudoTerminal {
     return true;
 }
 
-[[nodiscard]] bool tryBuildRuntimeWithPseudoTerminal(
+[[nodiscard]] bool buildRuntimeWithPseudoTerminal(
     PseudoTerminal& pseudoTerminal,
     yaha::Rs485InterfaceClientRuntimeObjects& runtimeObjects,
     std::string& errorMessage) {
     std::string pseudoTerminalError{};
-    if (!tryCreatePseudoTerminal(pseudoTerminal, pseudoTerminalError)) {
+    if (!createPseudoTerminal(pseudoTerminal, pseudoTerminalError)) {
         errorMessage = pseudoTerminalError;
         return false;
     }
 
-    return yaha::tryBuildRs485InterfaceClientRuntime(
-        makeRuntimeConfig(pseudoTerminal.slavePath),
-        runtimeObjects,
-        errorMessage);
+    try {
+        runtimeObjects = yaha::buildRs485InterfaceClientRuntime(makeRuntimeConfig(pseudoTerminal.slavePath));
+        return true;
+    } catch (const yaha::YahaError& exceptionValue) {
+        errorMessage = exceptionValue.buildMessage();
+        return false;
+    }
 }
 
 [[nodiscard]] yaha::Rs485InterfaceRuntimeConfig makeRuntimeConfig(const std::string& serialPortName) {
@@ -124,7 +129,7 @@ TEST_CASE("rs485_runtime_build_creates_all_runtime_object_pointers", "[rs485_int
     yaha::Rs485InterfaceClientRuntimeObjects runtimeObjects{};
     std::string errorMessage{};
 
-    const bool success = tryBuildRuntimeWithPseudoTerminal(
+    const bool success = buildRuntimeWithPseudoTerminal(
         pseudoTerminal,
         runtimeObjects,
         errorMessage);
@@ -142,7 +147,7 @@ TEST_CASE("rs485_runtime_build_opens_serial_adapter", "[rs485_interface]") {
     yaha::Rs485InterfaceClientRuntimeObjects runtimeObjects{};
     std::string errorMessage{};
 
-    REQUIRE(tryBuildRuntimeWithPseudoTerminal(pseudoTerminal, runtimeObjects, errorMessage));
+    REQUIRE(buildRuntimeWithPseudoTerminal(pseudoTerminal, runtimeObjects, errorMessage));
     REQUIRE(errorMessage.empty());
     REQUIRE(runtimeObjects.serialAdapter->isOpen());
 }
@@ -153,12 +158,14 @@ TEST_CASE("rs485_runtime_build_fails_when_serial_open_fails", "[rs485_interface]
     yaha::Rs485InterfaceClientRuntimeObjects runtimeObjects{};
     std::string errorMessage{};
 
-    const bool success = yaha::tryBuildRs485InterfaceClientRuntime(
-        std::move(runtimeConfig),
-        runtimeObjects,
-        errorMessage);
+    try {
+        runtimeObjects = yaha::buildRs485InterfaceClientRuntime(std::move(runtimeConfig));
+        errorMessage.clear();
+        REQUIRE_FALSE(true);
+    } catch (const yaha::YahaError& exceptionValue) {
+        errorMessage = exceptionValue.buildMessage();
+    }
 
-    REQUIRE_FALSE(success);
     REQUIRE(errorMessage.find("RS485_RUNTIME_SERIAL_OPEN_FAILED") != std::string::npos);
 }
 
@@ -167,7 +174,7 @@ TEST_CASE("rs485_runtime_component_startup_and_shutdown_is_clean", "[rs485_inter
     yaha::Rs485InterfaceClientRuntimeObjects runtimeObjects{};
     std::string errorMessage{};
 
-    REQUIRE(tryBuildRuntimeWithPseudoTerminal(pseudoTerminal, runtimeObjects, errorMessage));
+    REQUIRE(buildRuntimeWithPseudoTerminal(pseudoTerminal, runtimeObjects, errorMessage));
 
     auto* component = dynamic_cast<yaha::Rs485InterfaceComponent*>(runtimeObjects.component.get());
     REQUIRE(component != nullptr);
@@ -180,9 +187,12 @@ TEST_CASE("rs485_serial_adapter_open_fails_for_invalid_path", "[rs485_interface]
     yaha::Rs485SerialAdapter adapter{};
     std::string errorMessage{};
 
-    const bool success = adapter.open("/definitely/not/a/serial/device", k_serial_test_baudrate, errorMessage);
-
-    REQUIRE_FALSE(success);
+    REQUIRE_THROWS_AS(adapter.open("/definitely/not/a/serial/device", k_serial_test_baudrate), yaha::YahaError);
+    try {
+        adapter.open("/definitely/not/a/serial/device", k_serial_test_baudrate);
+    } catch (const yaha::YahaError& exceptionValue) {
+        errorMessage = exceptionValue.buildMessage();
+    }
     REQUIRE(errorMessage.empty() == false);
     REQUIRE(adapter.isOpen() == false);
 }
@@ -191,8 +201,11 @@ TEST_CASE("rs485_serial_adapter_send_fails_when_not_open", "[rs485_interface]") 
     yaha::Rs485SerialAdapter adapter{};
     std::string errorMessage{};
 
-    const bool success = adapter.send(std::vector<std::uint8_t>{1U, 2U, 3U}, errorMessage);
-
-    REQUIRE_FALSE(success);
-    REQUIRE(errorMessage == "serial interface is not open");
+    REQUIRE_THROWS_AS(adapter.send(std::vector<std::uint8_t>{1U, 2U, 3U}), yaha::YahaError);
+    try {
+        adapter.send(std::vector<std::uint8_t>{1U, 2U, 3U});
+    } catch (const yaha::YahaError& exceptionValue) {
+        errorMessage = exceptionValue.buildMessage();
+    }
+    REQUIRE(errorMessage.find("serial interface is not open") != std::string::npos);
 }

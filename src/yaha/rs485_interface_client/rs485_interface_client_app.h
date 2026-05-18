@@ -91,10 +91,7 @@ struct Rs485InterfaceClientRuntimeObjects {
  * @param errorMessage Human-readable parser error text.
  * @return True on success.
  */
-[[nodiscard]] bool tryLoadRs485InterfaceConfigFromIni(
-    const IniDocument& document,
-    Rs485InterfaceConfig& output,
-    std::string& errorMessage);
+[[nodiscard]] Rs485InterfaceConfig loadRs485InterfaceConfigFromIni(const IniDocument& document);
 
 /**
  * @brief Loads full RS485 runtime config from INI document.
@@ -103,10 +100,8 @@ struct Rs485InterfaceClientRuntimeObjects {
  * @param errorMessage Human-readable parser error text.
  * @return True on success.
  */
-[[nodiscard]] bool tryLoadRs485InterfaceClientRuntimeConfigFromIni(
-    const IniDocument& document,
-    Rs485InterfaceRuntimeConfig& output,
-    std::string& errorMessage);
+[[nodiscard]] Rs485InterfaceRuntimeConfig loadRs485InterfaceClientRuntimeConfigFromIni(
+    const IniDocument& document);
 
 /**
  * @brief Builds runtime objects for RS485 standalone process composition.
@@ -115,9 +110,7 @@ struct Rs485InterfaceClientRuntimeObjects {
  * @param errorMessage Error text on failure.
  * @return True when all runtime objects were created and wired.
  */
-[[nodiscard]] bool tryBuildRs485InterfaceClientRuntime(
-    Rs485InterfaceRuntimeConfig runtimeConfig,
-    Rs485InterfaceClientRuntimeObjects& output,
-    std::string& errorMessage);
+[[nodiscard]] Rs485InterfaceClientRuntimeObjects buildRs485InterfaceClientRuntime(
+    Rs485InterfaceRuntimeConfig runtimeConfig);
 
 } // namespace yaha

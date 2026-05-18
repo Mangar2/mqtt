@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "yaha/error_handling/yaha_error.h"
 #include "yaha/rs485_interface_client/rs485_interface_client_app.h"
 
 #include <chrono>
@@ -19,7 +20,7 @@ std::filesystem::path writeTempIni(const std::string& content) {
     return path;
 }
 
-bool tryLoadRuntimeConfigFromIniText(
+bool loadRuntimeConfigFromIniText(
     const std::string& iniText,
     yaha::Rs485InterfaceRuntimeConfig& output,
     std::string& errorMessage) {
@@ -34,9 +35,15 @@ bool tryLoadRuntimeConfigFromIniText(
         return false;
     }
 
-    const bool success = yaha::tryLoadRs485InterfaceClientRuntimeConfigFromIni(document, output, errorMessage);
+    try {
+        output = yaha::loadRs485InterfaceClientRuntimeConfigFromIni(document);
+    } catch (const yaha::YahaError& exceptionValue) {
+        errorMessage = exceptionValue.buildMessage();
+        std::filesystem::remove(iniPath);
+        return false;
+    }
     std::filesystem::remove(iniPath);
-    return success;
+    return true;
 }
 
 } // namespace
@@ -81,7 +88,7 @@ bool tryLoadRuntimeConfigFromIniText(
 [[nodiscard]] yaha::Rs485InterfaceRuntimeConfig loadValidRuntimeConfig() {
     yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
-    REQUIRE(tryLoadRuntimeConfigFromIniText(validRuntimeIniText(), runtimeConfig, errorMessage));
+    REQUIRE(loadRuntimeConfigFromIniText(validRuntimeIniText(), runtimeConfig, errorMessage));
     REQUIRE(errorMessage.empty());
     return runtimeConfig;
 }
@@ -158,7 +165,7 @@ TEST_CASE("rs485_runtime_config_rejects_missing_serial_port", "[rs485_interface]
     yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
     REQUIRE(errorMessage.find("rs485interface.serialPortName") != std::string::npos);
 }
 
@@ -186,7 +193,7 @@ TEST_CASE("rs485_runtime_config_rejects_invalid_trace_value", "[rs485_interface]
     yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
     REQUIRE(errorMessage.find("rs485interface.trace") != std::string::npos);
 }
 
@@ -210,7 +217,7 @@ TEST_CASE("rs485_runtime_config_rejects_missing_required_interfaces_section", "[
     yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
     REQUIRE(errorMessage.find("[rs485interface.interfaces]") != std::string::npos);
 }
 
@@ -240,7 +247,7 @@ TEST_CASE("rs485_runtime_config_rejects_invalid_topic_mapping_format", "[rs485_i
     yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
     REQUIRE(errorMessage.find("[rs485interface.topics]") != std::string::npos);
 }
 
@@ -267,6 +274,6 @@ TEST_CASE("rs485_runtime_config_rejects_invalid_interface_map_value", "[rs485_in
     yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
     REQUIRE(errorMessage.find("[rs485interface.interfaces]") != std::string::npos);
 }

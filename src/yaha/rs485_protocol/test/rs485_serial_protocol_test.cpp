@@ -35,9 +35,7 @@ constexpr double k_value_2585{2585.0};
 constexpr double k_value_10_25{10.25};
 
 [[nodiscard]] yaha::Rs485SerialMessage decodeMessage(const std::vector<std::uint8_t>& bytes) {
-    yaha::Rs485SerialMessage decoded{};
-    yaha::decodeRs485SerialMessage(bytes, 0U, decoded);
-    return decoded;
+    return yaha::decodeRs485SerialMessage(bytes, 0U);
 }
 
 } // namespace
@@ -115,9 +113,8 @@ TEST_CASE("rs485_codec_rejects_crc_mismatch", "[rs485_protocol]") {
     std::vector<std::uint8_t> encoded = yaha::encodeRs485SerialMessage(message);
     encoded[k_crc_high_index] ^= k_corrupt_crc_mask;
 
-    yaha::Rs485SerialMessage decoded{};
     REQUIRE_THROWS_WITH(
-        yaha::decodeRs485SerialMessage(encoded, 0U, decoded),
+        yaha::decodeRs485SerialMessage(encoded, 0U),
         Catch::Matchers::ContainsSubstring("CRC does not match"));
 }
 
