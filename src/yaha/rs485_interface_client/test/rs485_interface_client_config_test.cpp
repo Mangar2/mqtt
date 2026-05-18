@@ -41,8 +41,8 @@ bool tryLoadRuntimeConfigFromIniText(
 
 } // namespace
 
-TEST_CASE("rs485_runtime_config_parses_all_required_sections", "[rs485_interface]") {
-    const std::string iniText =
+[[nodiscard]] std::string validRuntimeIniText() {
+    return
         "[mqtt]\n"
         "host=127.0.0.1\n"
         "port=1883\n"
@@ -76,12 +76,18 @@ TEST_CASE("rs485_runtime_config_parses_all_required_sections", "[rs485_interface
         "\n"
         "[rs485interface.topics]\n"
         "my/floor/device/switch/s1=X,1,20\n";
+}
 
+[[nodiscard]] yaha::Rs485InterfaceRuntimeConfig loadValidRuntimeConfig() {
     yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
-
-    REQUIRE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(tryLoadRuntimeConfigFromIniText(validRuntimeIniText(), runtimeConfig, errorMessage));
     REQUIRE(errorMessage.empty());
+    return runtimeConfig;
+}
+
+TEST_CASE("rs485_runtime_config_parses_rs485_core_transport_fields", "[rs485_interface]") {
+    const auto runtimeConfig = loadValidRuntimeConfig();
 
     REQUIRE(runtimeConfig.rs485Config.serialPortName == "/dev/ttyUSB0");
     REQUIRE(runtimeConfig.rs485Config.baudrate == 115200U);
@@ -89,16 +95,37 @@ TEST_CASE("rs485_runtime_config_parses_all_required_sections", "[rs485_interface
     REQUIRE(runtimeConfig.rs485Config.maxVersion == 1U);
     REQUIRE(runtimeConfig.rs485Config.tickDelayMs == 150U);
     REQUIRE(runtimeConfig.rs485Config.timeOfDayDelaySeconds == 30U);
+}
+
+TEST_CASE("rs485_runtime_config_parses_rs485_behavior_fields", "[rs485_interface]") {
+    const auto runtimeConfig = loadValidRuntimeConfig();
+
     REQUIRE(runtimeConfig.rs485Config.subscribeQos == yaha::Qos::ExactlyOnce);
     REQUIRE(runtimeConfig.rs485Config.traceLevel == "internal");
     REQUIRE(runtimeConfig.rs485Config.blinkDelaySeconds == 4U);
     REQUIRE(runtimeConfig.rs485Config.temporaryOnSeconds == 20U);
+}
+
+TEST_CASE("rs485_runtime_config_parses_mqtt_connection_fields", "[rs485_interface]") {
+    const auto runtimeConfig = loadValidRuntimeConfig();
+
+    REQUIRE(runtimeConfig.mqttConfig.brokerHost == "127.0.0.1");
+    REQUIRE(runtimeConfig.mqttConfig.brokerPort == 1883U);
+    REQUIRE(runtimeConfig.mqttConfig.clientId == "rs485-client");
+}
+
+TEST_CASE("rs485_runtime_config_parses_interfaces_and_value_map", "[rs485_interface]") {
+    const auto runtimeConfig = loadValidRuntimeConfig();
 
     REQUIRE(runtimeConfig.rs485Config.interfaces.contains("LightOnOff"));
     REQUIRE(runtimeConfig.rs485Config.interfaces.at("LightOnOff").usedBy.size() == 1U);
     REQUIRE(runtimeConfig.rs485Config.interfaces.at("LightOnOff").usedBy.front() == 'V');
     REQUIRE(runtimeConfig.rs485Config.interfaces.at("LightOnOff").map.at("on") == 3600U);
     REQUIRE(runtimeConfig.rs485Config.interfaces.at("LightOnOff").map.at("off") == 0U);
+}
+
+TEST_CASE("rs485_runtime_config_parses_command_address_and_topic_sections", "[rs485_interface]") {
+    const auto runtimeConfig = loadValidRuntimeConfig();
 
     REQUIRE(runtimeConfig.rs485Config.settings.at('V') == "light/light on time");
     REQUIRE(runtimeConfig.rs485Config.status.at('v') == "light/light voltage");
@@ -106,10 +133,6 @@ TEST_CASE("rs485_runtime_config_parses_all_required_sections", "[rs485_interface
     REQUIRE(runtimeConfig.rs485Config.topics.at("my/floor/device/switch/s1").command == 'X');
     REQUIRE(runtimeConfig.rs485Config.topics.at("my/floor/device/switch/s1").value == 1U);
     REQUIRE(runtimeConfig.rs485Config.topics.at("my/floor/device/switch/s1").address == 20U);
-
-    REQUIRE(runtimeConfig.mqttConfig.brokerHost == "127.0.0.1");
-    REQUIRE(runtimeConfig.mqttConfig.brokerPort == 1883U);
-    REQUIRE(runtimeConfig.mqttConfig.clientId == "rs485-client");
 }
 
 TEST_CASE("rs485_runtime_config_rejects_missing_serial_port", "[rs485_interface]") {

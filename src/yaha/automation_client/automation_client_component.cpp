@@ -35,12 +35,12 @@ struct RuleValidationResult {
 [[nodiscard]] RuleValidationResult validateIncomingRule(const RuleTreeNode& ruleNode) {
     RuleValidationResult result{};
     if (!ruleNode.isObject()) {
-        result.errors.push_back("rule payload must be a JSON object");
+        result.errors.emplace_back("rule payload must be a JSON object");
         return result;
     }
 
     if (!RuleRuntimeEngine::isRuleNodeStructureValid(ruleNode)) {
-        result.errors.push_back("invalid rule: required field 'topic' is missing or malformed");
+        result.errors.emplace_back("invalid rule: required field 'topic' is missing or malformed");
         return result;
     }
 
