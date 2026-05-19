@@ -64,10 +64,16 @@ the callback contract into real TCP MQTT packet I/O.
 - Active-subscription state tracks broker-confirmed filters only; failed subscribe/unsubscribe confirmations do not mutate the active map.
 - During `close()`, unsubscribes active filters before transport disconnect for deterministic broker-side teardown.
 - Inbound polling forwards only messages that match active subscriptions.
-- Broker transport publish path forwards `Message.rawPayload()` bytes unchanged when present; otherwise it encodes from `Message.value()`.
+- Broker transport publish payload format:
+	- payload is always serialized in canonical YAHA envelope JSON: `{"message":{"topic":<string>,"value":<string|number>,"reason"?:<ReasonEntry[]>}}`.
+	- envelope reason serialization order is oldest-first (matching original JS/TS message format behavior).
 - Broker transport publish waits for broker acknowledgements on QoS1/QoS2 (`PUBACK` for QoS1, `PUBREC` + `PUBCOMP` for QoS2) before returning.
 - If broker ACK is missing within timeout during publish (`PUBACK`/`PUBREC`/`PUBCOMP`), broker transport disconnects and throws.
 - Broker transport inbound path parses forwarded payload envelopes into internal `Message.topic()/value()/reason()` fields for runtime semantics while preserving the exact original payload text in `Message.rawPayload()` for lossless forwarding.
+- Broker transport outbound publish path emits debug trace of exact payload bytes at handoff point:
+	- `broker_transport[outbound-raw-meta] ... payload_bytes=<N>`
+	- `broker_transport[outbound-raw-begin]` / raw payload text / `broker_transport[outbound-raw-end]`
+	- raw block is logged without JSON reconstruction so runtime output reflects actual bytes chosen for MQTT PUBLISH.
 - Broker transport maps `Message.dup()` to MQTT PUBLISH DUP on outgoing packets for QoS>0 and normalizes DUP to false for QoS0.
 - Broker transport preserves incoming MQTT PUBLISH DUP in the produced `Message` objects.
 - Keep-alive sends `ping()` every `keepAliveInterval` while connected.
@@ -80,7 +86,7 @@ the callback contract into real TCP MQTT packet I/O.
 - Lifecycle tracing is handled in this generic layer (`connect`, `connected`, `reconnect`, `reconnected`, `subscribe`, `unsubscribe`, `disconnect`, `connection lost`, `reconnecting`).
 - Optional message tracing (`sent`/`recv`) is controlled by config flag `enableMessageTrace`.
 - Trace reason output is controlled by config flag `logReason` (default `true`); when enabled, output contains a structured JSON-style reason array (`reason=[{"message":"...","timestamp":"..."},...]`) in chronological order (oldest to newest).
-- `sent` trace output prints `Message.rawPayload()` as `raw="..."` when available, so forwarded payload bytes are visible unchanged at send point.
+- `sent` trace output prints `Message.rawPayload()` as `raw="..."` when available for diagnostics only; broker transport outbound publish still serializes canonical envelope JSON.
 
 ## Topic matching
 

@@ -58,7 +58,7 @@ std::string trim(const std::string& value) {
 }
 
 std::string toLower(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char currentChar) {
+    std::ranges::transform(value, value.begin(), [](unsigned char currentChar) {
         return static_cast<char>(std::tolower(currentChar));
     });
     return value;
@@ -288,7 +288,7 @@ std::string toIsoTimestamp(std::int64_t millisecondsSinceEpoch) {
         secondsSinceEpoch -= 1;
     }
 
-    const std::time_t rawTime = static_cast<std::time_t>(secondsSinceEpoch);
+    const auto rawTime = static_cast<std::time_t>(secondsSinceEpoch);
     std::tm utc{};
 #if defined(_WIN32)
     if (gmtime_s(&utc, &rawTime) != 0) {
@@ -357,8 +357,8 @@ std::string reasonsToJson(const std::vector<ReasonEntry>& reasons) {
         if (i > 0U) {
             result += ',';
         }
-        result += "{\"message\":\"" + jsonEscape(reasons[i].message)
-            + "\",\"timestamp\":\"" + jsonEscape(reasons[i].timestamp) + "\"}";
+        result += std::string{R"({"message":")"} + jsonEscape(reasons[i].message)
+            + std::string{R"(","timestamp":")"} + jsonEscape(reasons[i].timestamp) + "\"}";
     }
     result += "]";
     return result;
@@ -375,7 +375,7 @@ std::string historyToJson(const std::vector<MessageTreeHistoryEntry>& history,
         const MessageTreeHistoryEntry& item = history[i];
         result += "{\"value\":" + valueToJson(item.value);
         if (includeTime) {
-            result += ",\"time\":\"" + jsonEscape(toIsoTimestamp(item.timeMs)) + "\"";
+            result += std::string{R"(,"time":")"} + jsonEscape(toIsoTimestamp(item.timeMs)) + '"';
         }
         if (includeReason) {
             result += ",\"reason\":" + reasonsToJson(item.reason);
@@ -391,10 +391,10 @@ std::string nodeToJson(const MessageTreeNode& node,
                        const bool includeReason,
                        const bool includeTime) {
     std::string result{"{"};
-    result += "\"topic\":\"" + jsonEscape(node.topic) + "\"";
+    result += std::string{R"("topic":")"} + jsonEscape(node.topic) + '"';
     result += ",\"value\":" + valueToJson(node.value);
     if (includeTime) {
-        result += ",\"time\":\"" + jsonEscape(toIsoTimestamp(node.timeMs)) + "\"";
+        result += std::string{R"(,"time":")"} + jsonEscape(toIsoTimestamp(node.timeMs)) + '"';
     }
     if (includeReason) {
         result += ",\"reason\":" + reasonsToJson(node.reason);
@@ -700,7 +700,7 @@ std::optional<std::uint32_t> MessageStore::parseCleanupDays(const Value& value) 
         return static_cast<std::uint32_t>(number);
     }
 
-    const std::string& text = std::get<std::string>(value);
+    const auto& text = std::get<std::string>(value);
     if (text.empty()) {
         return std::nullopt;
     }

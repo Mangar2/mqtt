@@ -54,6 +54,32 @@ A valid Message must have:
 
 Messages that fail validation must be rejected at the system boundary (e.g. when received from the broker). Internal components may assume they receive valid Messages.
 
+## Canonical Transport Payload (MQTT)
+
+For YAHA forwarded payloads, the canonical wire JSON is:
+
+```json
+{
+	"message": {
+		"topic": "<topic>",
+		"value": "<string>|<number>",
+		"reason": [
+			{
+				"timestamp": "<ISO-8601>",
+				"message": "<reason text>"
+			}
+		]
+	}
+}
+```
+
+Rules:
+- `message.topic` and `message.value` are required.
+- `message.reason` is optional and omitted when undefined/empty.
+- `reason` entries are serialized oldest-first (JS/TS reference behavior).
+- `timestamp` and `message` field names are mandatory when a reason entry is present.
+- Transport serialization must always emit this canonical envelope JSON format (no alternate scalar/raw payload on wire).
+
 ## Architectural notes
 
 - The Message type is the one data format shared by all YAHA components. It must be defined once and referenced everywhere — no component defines its own message type.

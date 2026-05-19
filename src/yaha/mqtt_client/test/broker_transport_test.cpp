@@ -43,25 +43,23 @@ constexpr std::size_t k_expected_malformed_messages{4U};
 constexpr double k_forwarded_numeric_value{77.5};
 
 const std::string k_forwarded_inbound_payload =
-    "{\"token\":\"abc\",\"message\":{\"topic\":\"transport/forwarded\",\"value\":\"sensor\",\"reason\":[{\"message\":\"src\",\"timestamp\":\"2026-05-08T10:00:00Z\"}]}}";
-const std::string k_forwarded_outbound_payload =
-    "{\"token\":\"forward\",\"message\":{\"topic\":\"out/raw\",\"value\":\"keep\",\"reason\":[{\"message\":\"why\",\"timestamp\":\"2026-05-08T10:00:00Z\"}]}}";
+    R"({"token":"abc","message":{"topic":"transport/forwarded","value":"sensor","reason":[{"message":"src","timestamp":"2026-05-08T10:00:00Z"}]}})";
 const std::string k_forwarded_numeric_reason_payload =
-    "{\"message\":{\"topic\":\"transport/forwarded_numeric\",\"value\":77.5,\"reason\":\"manual\"}}";
+    R"({"message":{"topic":"transport/forwarded_numeric","value":77.5,"reason":"manual"}})";
 const std::string k_forwarded_bool_payload =
-    "{\"message\":{\"topic\":\"transport/forwarded_bool\",\"value\":true}}";
+    R"({"message":{"topic":"transport/forwarded_bool","value":true}})";
 const std::string k_forwarded_escaped_payload =
-    "{\"message\":{\"topic\":\"transport\\/forwarded_escaped\",\"value\":\"line\\nvalue\",\"reason\":[{\"message\":\"plain\"}]}}";
+    R"({"message":{"topic":"transport\/forwarded_escaped","value":"line\nvalue","reason":[{"message":"plain"}]}})";
 const std::string k_forwarded_invalid_value_payload =
-    "{\"message\":{\"topic\":\"transport/forwarded_invalid\",\"value\":{}}}";
+    R"({"message":{"topic":"transport/forwarded_invalid","value":{}}})";
 const std::string k_malformed_missing_colon_payload =
-    "{\"message\" {\"topic\":\"transport/malformed_missing_colon\",\"value\":\"x\"}}";
+    R"({"message" {"topic":"transport/malformed_missing_colon","value":"x"}})";
 const std::string k_malformed_topic_mismatch_payload =
-    "{\"message\":{\"topic\":\"transport/not_matching_topic\",\"value\":\"x\"}}";
+    R"({"message":{"topic":"transport/not_matching_topic","value":"x"}})";
 const std::string k_malformed_reason_array_payload =
-    "{\"message\":{\"topic\":\"transport/malformed_reason_array\",\"value\":\"x\",\"reason\":[{\"message\":\"broken\"}}";
+    R"({"message":{"topic":"transport/malformed_reason_array","value":"x","reason":[{"message":"broken"}})";
 const std::string k_malformed_reason_token_payload =
-    "{\"message\":{\"topic\":\"transport/malformed_reason_token\",\"value\":\"x\",\"reason\":{}}}";
+    R"({"message":{"topic":"transport/malformed_reason_token","value":"x","reason":{}}})";
 
 class FakeBrokerForTransportTest {
 public:
@@ -617,9 +615,9 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
     transport.publish(yaha::Message{"out/qos0", std::string{"a"}, yaha::Qos::AtMostOnce, false});
     transport.publish(yaha::Message{"out/qos1", std::string{"b"}, yaha::Qos::AtLeastOnce, true, true});
     transport.publish(yaha::Message{"out/qos2", k_outgoing_qos2_value, yaha::Qos::ExactlyOnce, false});
-    yaha::Message rawPublish{"out/raw", std::string{"fallback"}, yaha::Qos::AtLeastOnce, false};
-    rawPublish.setRawPayload(k_forwarded_outbound_payload);
-    transport.publish(rawPublish);
+    yaha::Message envelopePublish{"out/raw", std::string{"fallback"}, yaha::Qos::AtLeastOnce, false};
+    envelopePublish.addReason("why", "2026-05-08T10:00:00Z");
+    transport.publish(envelopePublish);
 
     transport.ping();
     transport.unsubscribe("transport/#");
@@ -627,19 +625,25 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
 
     const auto publishedRecords = fake_broker.publishedRecords();
     REQUIRE(publishedRecords.size() >= 4U);
-    const auto rawRecord = std::find_if(publishedRecords.begin(), publishedRecords.end(),
+    const auto rawRecord = std::ranges::find_if(publishedRecords,
                                         [](const auto& item) {
         return item.topic == "out/raw";
     });
     REQUIRE(rawRecord != publishedRecords.end());
-    CHECK(rawRecord->payload == k_forwarded_outbound_payload);
+    CHECK(rawRecord->payload.find("\"message\":{") != std::string::npos);
+    CHECK(rawRecord->payload.find("\"topic\":\"out/raw\"") != std::string::npos);
+    CHECK(rawRecord->payload.find("\"value\":\"fallback\"") != std::string::npos);
+    CHECK(rawRecord->payload.find("\"reason\":[") != std::string::npos);
 
-    const auto qos1Record = std::find_if(publishedRecords.begin(), publishedRecords.end(),
+    const auto qos1Record = std::ranges::find_if(publishedRecords,
                                          [](const auto& item) {
         return item.topic == "out/qos1";
     });
     REQUIRE(qos1Record != publishedRecords.end());
     CHECK(qos1Record->dup);
+    CHECK(qos1Record->payload.find("\"message\":{") != std::string::npos);
+    CHECK(qos1Record->payload.find("\"topic\":\"out/qos1\"") != std::string::npos);
+    CHECK(qos1Record->payload.find("\"value\":\"b\"") != std::string::npos);
 
     CHECK_FALSE(transport.isConnected());
 

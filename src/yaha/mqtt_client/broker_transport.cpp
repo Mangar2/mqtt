@@ -24,6 +24,7 @@
 #include <stdexcept>
 #include <span>
 #include <string>
+#include <iostream>
 #include <vector>
 
 namespace yaha {
@@ -34,6 +35,8 @@ constexpr std::uint32_t k_connect_timeout_ms{5000U};
 constexpr std::uint32_t k_ack_timeout_ms{5000U};
 constexpr std::uint32_t k_poll_timeout_ms{20U};
 constexpr std::size_t k_receive_buffer_size{4096U};
+constexpr unsigned char k_ascii_control_max{0x20U};
+constexpr unsigned char k_low_nibble_mask{0x0FU};
 
 struct ParsedRange {
     std::size_t start{0U};
@@ -84,6 +87,86 @@ Value decodePayloadValue(const mqtt::BinaryData& payload) {
     return text;
 }
 
+std::string jsonEscapeString(const std::string& text) {
+    std::string result{"\""};
+    constexpr std::array<char, 16U> k_hex_digits{
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+
+    for (const unsigned char currentChar : text) {
+        switch (currentChar) {
+        case '\\':
+            result += "\\\\";
+            break;
+        case '"':
+            result += "\\\"";
+            break;
+        case '\n':
+            result += "\\n";
+            break;
+        case '\r':
+            result += "\\r";
+            break;
+        case '\t':
+            result += "\\t";
+            break;
+        case '\b':
+            result += "\\b";
+            break;
+        case '\f':
+            result += "\\f";
+            break;
+        default:
+            if (currentChar < k_ascii_control_max) {
+                result += "\\u00";
+                result.push_back(k_hex_digits[(currentChar >> 4U) & k_low_nibble_mask]);
+                result.push_back(k_hex_digits[currentChar & k_low_nibble_mask]);
+            } else {
+                result.push_back(static_cast<char>(currentChar));
+            }
+            break;
+        }
+    }
+
+    result.push_back('"');
+    return result;
+}
+
+std::string valueToJson(const Value& value) {
+    if (std::holds_alternative<std::string>(value)) {
+        return jsonEscapeString(std::get<std::string>(value));
+    }
+
+    return std::to_string(std::get<double>(value));
+}
+
+std::string reasonsToJsonOldestFirst(const std::vector<ReasonEntry>& reasons) {
+    std::string reasonJson{"["};
+    for (std::size_t reverseIndex = reasons.size(); reverseIndex > 0U; --reverseIndex) {
+        if (reverseIndex != reasons.size()) {
+            reasonJson.push_back(',');
+        }
+        const auto& reasonEntry = reasons[reverseIndex - 1U];
+        reasonJson += std::string{"{\"timestamp\":"}
+            + jsonEscapeString(reasonEntry.timestamp)
+            + std::string{",\"message\":"}
+            + jsonEscapeString(reasonEntry.message)
+            + "}";
+    }
+    reasonJson.push_back(']');
+    return reasonJson;
+}
+
+std::string serializeMessageEnvelopePayload(const Message& message) {
+    std::string payload{"{\"message\":{"};
+    payload += std::string{"\"topic\":"} + jsonEscapeString(message.topic());
+    payload += std::string{",\"value\":"} + valueToJson(message.value());
+    if (!message.reason().empty()) {
+        payload += std::string{",\"reason\":"} + reasonsToJsonOldestFirst(message.reason());
+    }
+    payload += "}}";
+    return payload;
+}
+
 std::optional<ParsedRange> tryFindObjectRange(const std::string& text,
                                               const std::string& key) {
     const std::string keyToken = "\"" + key + "\"";
@@ -113,7 +196,7 @@ std::optional<ParsedRange> tryFindObjectRange(const std::string& text,
         } else if (text[indexPos] == '}') {
             --depth;
             if (depth == 0) {
-                return ParsedRange{cursorPos, indexPos};
+                return ParsedRange{.start = cursorPos, .end = indexPos};
             }
         }
     }
@@ -150,7 +233,7 @@ std::optional<ParsedRange> tryFindArrayRange(const std::string& text,
         } else if (text[indexPos] == ']') {
             --depth;
             if (depth == 0) {
-                return ParsedRange{cursorPos, indexPos};
+                return ParsedRange{.start = cursorPos, .end = indexPos};
             }
         }
     }
@@ -234,7 +317,7 @@ std::optional<ParsedRange> tryExtractKeyValueToken(const std::string& objectText
                 continue;
             }
             if (objectText[cursorPos] == '"') {
-                return ParsedRange{tokenStart, cursorPos};
+                return ParsedRange{.start = tokenStart, .end = cursorPos};
             }
             ++cursorPos;
         }
@@ -250,7 +333,7 @@ std::optional<ParsedRange> tryExtractKeyValueToken(const std::string& objectText
         return std::nullopt;
     }
 
-    return ParsedRange{tokenStart, tokenEnd};
+    return ParsedRange{.start = tokenStart, .end = tokenEnd};
 }
 
 std::string trimCopy(const std::string& text) {
@@ -313,7 +396,7 @@ std::optional<ReasonEntry> tryParseReasonObject(const std::string& reasonObjectT
 
     const std::optional<std::string> timestampText =
         tryExtractKeyStringValue(reasonObjectText, "timestamp");
-    return ReasonEntry{*messageText, timestampText.value_or(std::string{})};
+    return ReasonEntry{.message = *messageText, .timestamp = timestampText.value_or(std::string{})};
 }
 
 std::optional<std::size_t> findReasonObjectEnd(const std::string& reasonArrayText,
@@ -449,7 +532,7 @@ std::optional<Message> tryParseForwardedEnvelope(const std::string& payloadText,
             return std::nullopt;
         }
         if (std::holds_alternative<std::string>(*reasonValue)) {
-            const std::string& reasonText = std::get<std::string>(*reasonValue);
+            const auto& reasonText = std::get<std::string>(*reasonValue);
             if (!reasonText.empty()) {
                 parsedMessage.addReason(reasonText);
             }
@@ -461,7 +544,7 @@ std::optional<Message> tryParseForwardedEnvelope(const std::string& payloadText,
 }
 
 std::span<const std::uint8_t> asSpan(const mqtt::WriteBuffer& buffer) {
-    return std::span<const std::uint8_t>(buffer.data(), buffer.size());
+    return {buffer.data(), buffer.size()};
 }
 
 class BrokerTransportAdapter {
@@ -506,16 +589,22 @@ public:
 
         mqtt::PublishPacket packet{};
         packet.topic = mqtt::Utf8String{message.topic()};
-        if (message.rawPayload().has_value()) {
-            packet.payload = mqtt::BinaryData::from_string(*message.rawPayload());
-        } else {
-            packet.payload = std::holds_alternative<std::string>(message.value())
-                ? mqtt::BinaryData::from_string(std::get<std::string>(message.value()))
-                : mqtt::BinaryData::from_string(std::to_string(std::get<double>(message.value())));
-        }
+        packet.payload = mqtt::BinaryData::from_string(serializeMessageEnvelopePayload(message));
         packet.qos = toMqttQos(message.qos());
         packet.retain = message.retain();
         packet.dup = message.dup() && packet.qos != mqtt::QoS::AtMostOnce;
+
+        const std::string outboundPayloadText{packet.payload.data.begin(), packet.payload.data.end()};
+        std::cout << "broker_transport[outbound-raw-meta] topic=" << message.topic()
+                  << " qos=" << static_cast<unsigned int>(message.qos())
+                  << " retain=" << (message.retain() ? "1" : "0")
+                  << " dup=" << (packet.dup ? "1" : "0")
+                  << " payload_bytes=" << outboundPayloadText.size()
+                  << '\n';
+        std::cout << "broker_transport[outbound-raw-begin]" << '\n';
+        std::cout << outboundPayloadText << '\n';
+        std::cout << "broker_transport[outbound-raw-end]" << '\n' << std::flush;
+
         if (packet.qos != mqtt::QoS::AtMostOnce) {
             packet.packet_id = nextPacketId_++;
             if (nextPacketId_ == 0U) {
