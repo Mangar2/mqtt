@@ -155,3 +155,41 @@ TEST_CASE("Payload codec parse and rebuild keeps TS compatible envelope", "[mess
     REQUIRE(reparsed->reason()[0].message == "beta\tvalue");
     REQUIRE(reparsed->reason()[1].message == "alpha\nvalue");
 }
+
+TEST_CASE("Payload codec decodes full JSON escape set", "[message][payload_codec]") {
+    const std::string payload =
+        R"({"message":{"topic":"topic/escape/full","value":"quote:\" slash:\/ backslash:\\ cr:\r bs:\b ff:\f u-upper:\u0041 u-lower:\u0061"}})";
+
+    const std::optional<yaha::Message> parsed = yaha::parseEnvelopePayload(
+        payload,
+        "topic/escape/full",
+        yaha::Qos::AtLeastOnce,
+        false,
+        false);
+
+    REQUIRE(parsed.has_value());
+    REQUIRE(std::holds_alternative<std::string>(parsed->value()));
+
+    const std::string expected = std::string{"quote:\" slash:/ backslash:\\ cr:"}
+        + '\r'
+        + std::string{" bs:"}
+        + '\b'
+        + std::string{" ff:"}
+        + '\f'
+        + std::string{" u-upper:A u-lower:a"};
+    REQUIRE(std::get<std::string>(parsed->value()) == expected);
+}
+
+TEST_CASE("Payload codec rejects invalid escaped token", "[message][payload_codec]") {
+    const std::string payload =
+        R"({"message":{"topic":"topic/escape/invalid","value":"bad\qescape"}})";
+
+    const std::optional<yaha::Message> parsed = yaha::parseEnvelopePayload(
+        payload,
+        "topic/escape/invalid",
+        yaha::Qos::AtMostOnce,
+        false,
+        false);
+
+    REQUIRE_FALSE(parsed.has_value());
+}
