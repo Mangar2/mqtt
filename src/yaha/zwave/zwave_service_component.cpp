@@ -25,6 +25,10 @@ constexpr std::int64_t kMaxReplyMatchTimespanMs = 30000;
 constexpr double kNumericValueTolerance = 1e-9;
 constexpr std::int64_t kMillisecondsPerSecond = 1000;
 
+[[nodiscard]] bool importantLogEnabled(const ZwaveConfig& config) {
+    return config.logLevel >= 1U;
+}
+
 [[nodiscard]] bool isActionSegment(const std::string& segment) {
     static const std::array<std::string, 4> actionSegments{"set", "get", "temporary", "blink"};
     return std::ranges::find(actionSegments, segment) != actionSegments.end();
@@ -259,13 +263,17 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
     logIncomingMessageIfEnabled(message);
 
     if (isRemoveFailedTopic(message.topic())) {
+        logImportantEvent("removefailednode", "request received");
         try {
             controller_->removeFailedNode(message.value());
+            logImportantEvent("removefailednode", "request forwarded");
         } catch (const std::exception& exceptionValue) {
+            logImportantError("removefailednode", exceptionValue.what());
             publish(withPublishFlags(makeOperationErrorMessage("removefailednode", exceptionValue.what()),
                                      config_.qos,
                                      config_.retain));
         } catch (...) {
+            logImportantError("removefailednode", "unknown");
             publish(withPublishFlags(makeOperationErrorMessage("removefailednode", "unknown"),
                                      config_.qos,
                                      config_.retain));
@@ -274,13 +282,17 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
     }
 
     if (isAddNodeTopic(message.topic())) {
+        logImportantEvent("addnode", "request received");
         try {
             controller_->addDevice();
+            logImportantEvent("addnode", "request forwarded");
         } catch (const std::exception& exceptionValue) {
+            logImportantError("addnode", exceptionValue.what());
             publish(withPublishFlags(makeOperationErrorMessage("addnode", exceptionValue.what()),
                                      config_.qos,
                                      config_.retain));
         } catch (...) {
+            logImportantError("addnode", "unknown");
             publish(withPublishFlags(makeOperationErrorMessage("addnode", "unknown"),
                                      config_.qos,
                                      config_.retain));
@@ -289,16 +301,20 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
     }
 
     if (isScanTopic(message.topic())) {
+        logImportantEvent("scan", "request received");
         try {
             controller_->startScan();
+            logImportantEvent("scan", "request accepted");
             Message notification{"$MONITOR/zwave/notification", std::string{"scan command accepted"}};
             notification.addReason("scan command accepted by controller");
             publish(withPublishFlags(notification, config_.qos, config_.retain));
         } catch (const std::exception& exception) {
+            logImportantError("scan", exception.what());
             Message error{"$MONITOR/zwave/error", std::string{"scan command failed"}};
             error.addReason(exception.what());
             publish(withPublishFlags(error, config_.qos, config_.retain));
         } catch (...) {
+            logImportantError("scan", "unknown");
             Message error{"$MONITOR/zwave/error", std::string{"scan command failed"}};
             error.addReason("unknown");
             publish(withPublishFlags(error, config_.qos, config_.retain));
@@ -315,11 +331,14 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
     sharedReplyMatcher().addReceivedMessage(routedMessage);
     try {
         controller_->setValue(message.topic(), message.value());
+        logImportantEvent("setvalue", "request forwarded");
     } catch (const std::exception& exceptionValue) {
+        logImportantError("setvalue", exceptionValue.what());
         publish(withPublishFlags(makeOperationErrorMessage("setvalue", exceptionValue.what()),
                                  config_.qos,
                                  config_.retain));
     } catch (...) {
+        logImportantError("setvalue", "unknown");
         publish(withPublishFlags(makeOperationErrorMessage("setvalue", "unknown"),
                                  config_.qos,
                                  config_.retain));
@@ -327,6 +346,8 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
 }
 
 void ZwaveServiceComponent::run() {
+    logImportantEvent("run", "startup");
+
     Message removeFailedRestart{"$MONITOR/zwave/removefailednode", std::string{"nop"}};
     removeFailedRestart.addReason("zwave restarted");
     publish(withPublishFlags(removeFailedRestart, config_.qos, config_.retain));
@@ -337,11 +358,14 @@ void ZwaveServiceComponent::run() {
 
     try {
         controller_->requestConfigParametersForAllNodes();
+        logImportantEvent("requestconfig", "requested for all nodes");
     } catch (const std::exception& exceptionValue) {
+        logImportantError("requestconfig", exceptionValue.what());
         publish(withPublishFlags(makeOperationErrorMessage("requestconfig", exceptionValue.what()),
                                  config_.qos,
                                  config_.retain));
     } catch (...) {
+        logImportantError("requestconfig", "unknown");
         publish(withPublishFlags(makeOperationErrorMessage("requestconfig", "unknown"),
                                  config_.qos,
                                  config_.retain));
@@ -349,13 +373,18 @@ void ZwaveServiceComponent::run() {
 }
 
 void ZwaveServiceComponent::close() {
+    logImportantEvent("close", "shutdown requested");
+
     try {
         controller_->close();
+        logImportantEvent("close", "shutdown complete");
     } catch (const std::exception& exceptionValue) {
+        logImportantError("close", exceptionValue.what());
         publish(withPublishFlags(makeOperationErrorMessage("close", exceptionValue.what()),
                                  config_.qos,
                                  config_.retain));
     } catch (...) {
+        logImportantError("close", "unknown");
         publish(withPublishFlags(makeOperationErrorMessage("close", "unknown"),
                                  config_.qos,
                                  config_.retain));
@@ -367,6 +396,7 @@ void ZwaveServiceComponent::setPublishCallback(PublishCallback callback) {
 }
 
 void ZwaveServiceComponent::handleControllerPublish(const Message& message) {
+    logImportantEvent("controller_publish", "received");
     const Message matched = sharedReplyMatcher().matchAndUpdateReplyMessage(message);
     publish(withPublishFlags(matched, config_.qos, config_.retain));
 }
@@ -401,6 +431,26 @@ void ZwaveServiceComponent::logOutgoingMessageIfEnabled(const Message& message) 
         std::cout << "  reason: [" << entry.timestamp << "] " << entry.message << '\n';
     }
     std::cout << std::flush;
+}
+
+void ZwaveServiceComponent::logImportantEvent(const std::string_view operation, const std::string_view detail) const {
+    if (!importantLogEnabled(config_)) {
+        return;
+    }
+
+    std::cout << "zwave_service[event] op=" << operation
+              << " detail=\"" << detail << "\""
+              << '\n' << std::flush;
+}
+
+void ZwaveServiceComponent::logImportantError(const std::string_view operation, const std::string_view detail) const {
+    if (!importantLogEnabled(config_)) {
+        return;
+    }
+
+    std::cout << "zwave_service[error] op=" << operation
+              << " detail=\"" << detail << "\""
+              << '\n' << std::flush;
 }
 
 void ZwaveServiceComponent::publish(const Message& message) const {

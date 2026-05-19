@@ -19,6 +19,11 @@ constexpr std::uint32_t k_wait_timeout_ms{800U};
 constexpr std::uint32_t k_wait_step_ms{10U};
 constexpr std::uint32_t k_time_of_day_delay_seconds{3600U};
 constexpr double k_value_on{1.0};
+constexpr double k_blink_cycles_numeric{2.0};
+constexpr double k_non_integer_blink_value{1.25};
+constexpr double k_trace_numeric_payload_one{1.0};
+constexpr double k_trace_numeric_payload_two{2.0};
+constexpr std::uint8_t k_unknown_sender_address{99U};
 constexpr std::uint32_t k_value_on_raw{1U};
 
 [[nodiscard]] yaha::Rs485InterfaceConfig makeComponentConfig() {
@@ -161,4 +166,151 @@ TEST_CASE("rs485_interface_component_accepts_trace_topics_in_sys_and_monitor_nam
 
     REQUIRE(published.size() == 1U);
     REQUIRE(published[0].topic() == "house/room/device/power");
+}
+
+TEST_CASE("rs485_interface_component_ignores_unknown_action_suffix", "[rs485_interface]") {
+    yaha::Rs485InterfaceComponent component{makeComponentConfig()};
+
+    std::mutex sentMutex{};
+    std::vector<yaha::Rs485SerialMessage> sentMessages{};
+    component.setSerialSendCallback([&sentMutex, &sentMessages](const std::vector<std::uint8_t>& bytes) {
+        const yaha::Rs485SerialMessage message = yaha::decodeRs485SerialMessage(bytes, 0U);
+        std::lock_guard<std::mutex> lock{sentMutex};
+        sentMessages.push_back(message);
+    });
+
+    component.run();
+    component.handleMessage(yaha::Message{"house/room/device/power/invalid", std::string{"on"}});
+
+    const bool hasNoSends = waitUntil([&component, &sentMutex, &sentMessages]() {
+        component.feedSerialBytes(encodeEnableSendForMe());
+        std::lock_guard<std::mutex> lock{sentMutex};
+        return sentMessages.empty();
+    });
+
+    component.close();
+    REQUIRE(hasNoSends);
+}
+
+TEST_CASE("rs485_interface_component_trace_topics_accept_non_string_payload_without_change", "[rs485_interface]") {
+    yaha::Rs485InterfaceConfig config = makeComponentConfig();
+    config.traceLevel = "error";
+    yaha::Rs485InterfaceComponent component{config};
+
+    REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"$SYS/rs485Interface/trace/set", k_trace_numeric_payload_one}));
+    REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"$MONITOR/rs485Interface/trace/set", k_trace_numeric_payload_two}));
+}
+
+TEST_CASE("rs485_interface_component_run_and_close_are_idempotent", "[rs485_interface]") {
+    yaha::Rs485InterfaceComponent component{makeComponentConfig()};
+
+    REQUIRE_NOTHROW(component.close());
+    REQUIRE_NOTHROW(component.run());
+    REQUIRE_NOTHROW(component.run());
+    REQUIRE_NOTHROW(component.close());
+    REQUIRE_NOTHROW(component.close());
+}
+
+TEST_CASE("rs485_interface_component_decode_and_map_errors_are_handled", "[rs485_interface]") {
+    yaha::Rs485InterfaceConfig config = makeComponentConfig();
+    config.traceLevel = "error";
+
+    yaha::Rs485InterfaceComponent component{config};
+
+    const std::vector<std::uint8_t> invalidFrame{255U, 1U, 2U};
+    REQUIRE_NOTHROW(component.feedSerialBytes(invalidFrame));
+
+    yaha::Rs485SerialMessage unknownMapping{};
+    unknownMapping.sender = k_unknown_sender_address;
+    unknownMapping.receiver = k_my_address;
+    unknownMapping.command = 'P';
+    unknownMapping.value = 1.0;
+    unknownMapping.version = 1U;
+    unknownMapping.reply = false;
+    REQUIRE_NOTHROW(component.feedSerialBytes(yaha::encodeRs485SerialMessage(unknownMapping)));
+}
+
+TEST_CASE("rs485_interface_component_log_flags_cover_incoming_and_outgoing_paths", "[rs485_interface]") {
+    yaha::Rs485InterfaceConfig config = makeComponentConfig();
+    config.logIncomingMessages = true;
+    config.logOutgoingMessages = true;
+
+    yaha::Rs485InterfaceComponent component{config};
+    component.setPublishCallback([](const yaha::Message&) {
+        return yaha::PublishResult::ok();
+    });
+    component.setSerialSendCallback([](const std::vector<std::uint8_t>&) {
+    });
+
+    component.run();
+    REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"house/room/device/power/set", 1.0}));
+    REQUIRE_NOTHROW(component.feedSerialBytes(encodeEnableSendForMe()));
+
+    yaha::Rs485SerialMessage serial{};
+    serial.sender = k_device_address;
+    serial.receiver = k_my_address;
+    serial.command = 'P';
+    serial.value = 1.0;
+    serial.version = 1U;
+    serial.reply = false;
+    REQUIRE_NOTHROW(component.feedSerialBytes(yaha::encodeRs485SerialMessage(serial)));
+    REQUIRE_NOTHROW(component.close());
+}
+
+TEST_CASE("rs485_interface_component_get_subscriptions_covers_join_topic_variants", "[rs485_interface]") {
+    yaha::Rs485InterfaceConfig config = makeComponentConfig();
+    config.settings['P'] = "power";
+    config.settings['X'] = "";
+
+    yaha::Rs485InterfaceComponent component{config};
+    const yaha::SubscriptionMap subscriptions = component.getSubscriptions();
+
+    CHECK(subscriptions.contains("+/+/+/power/set"));
+    CHECK(subscriptions.contains("+/+/+//set"));
+}
+
+TEST_CASE("rs485_interface_component_inbound_publish_without_callback_is_ignored", "[rs485_interface]") {
+    yaha::Rs485InterfaceConfig config = makeComponentConfig();
+    yaha::Rs485InterfaceComponent component{config};
+
+    yaha::Rs485SerialMessage serial{};
+    serial.sender = k_device_address;
+    serial.receiver = k_my_address;
+    serial.command = 'P';
+    serial.value = 1.0;
+    serial.version = 1U;
+    serial.reply = false;
+
+    REQUIRE_NOTHROW(component.feedSerialBytes(yaha::encodeRs485SerialMessage(serial)));
+}
+
+TEST_CASE("rs485_interface_component_blink_actions_when_stopped_do_not_throw", "[rs485_interface]") {
+    yaha::Rs485InterfaceConfig config = makeComponentConfig();
+    config.blinkDelaySeconds = 0U;
+
+    yaha::Rs485InterfaceComponent component{config};
+    REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"house/room/device/power/blink", std::string{"2"}}));
+    REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"house/room/device/power/blink", k_non_integer_blink_value}));
+    REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"house/room/device/power/blink", std::string{"0"}}));
+    REQUIRE_NOTHROW(component.close());
+}
+
+TEST_CASE("rs485_interface_component_numeric_state_cache_and_cached_blink_path", "[rs485_interface]") {
+    yaha::Rs485InterfaceConfig config = makeComponentConfig();
+    config.interfaces.clear();
+    config.blinkDelaySeconds = 0U;
+
+    yaha::Rs485InterfaceComponent component{config};
+
+    yaha::Rs485SerialMessage serial{};
+    serial.sender = k_device_address;
+    serial.receiver = k_my_address;
+    serial.command = 'P';
+    serial.value = 1.0;
+    serial.version = 1U;
+    serial.reply = false;
+    REQUIRE_NOTHROW(component.feedSerialBytes(yaha::encodeRs485SerialMessage(serial)));
+
+    REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"house/room/device/power/blink", k_blink_cycles_numeric}));
+    REQUIRE_NOTHROW(component.close());
 }

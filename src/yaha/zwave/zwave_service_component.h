@@ -11,6 +11,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 
 namespace yaha {
 
@@ -72,6 +73,20 @@ private:
      * @param message Message emitted on outbound processing path.
      */
     void logOutgoingMessageIfEnabled(const Message& message) const;
+
+    /**
+     * @brief Logs one important service event when logLevel >= 1.
+     * @param operation Event operation name.
+     * @param detail Event detail text.
+     */
+    void logImportantEvent(std::string_view operation, std::string_view detail) const;
+
+    /**
+     * @brief Logs one important service error when logLevel >= 1.
+     * @param operation Error operation name.
+     * @param detail Error detail text.
+     */
+    void logImportantError(std::string_view operation, std::string_view detail) const;
 
     /**
      * @brief Handles one publish received from controller.

@@ -47,11 +47,6 @@ constexpr std::uint64_t kLogLevelMax = 4U;
 constexpr std::uint64_t kPollIntervalMsMin = 1U;
 constexpr std::uint64_t kPollIntervalMsMax = 60000U;
 
-struct ZwaveLoggingParseState {
-    bool logIncomingConfigured{false};
-    bool logOutgoingConfigured{false};
-};
-
 [[nodiscard]] std::vector<std::string> splitDeviceLine(const std::string& line) {
     std::vector<std::string> fields{};
     std::size_t fieldStart = 0U;
@@ -200,15 +195,12 @@ struct ZwaveLoggingParseState {
     const IniDocument& document,
     ZwaveConfig& parsed,
     std::string& errorMessage) {
-    ZwaveLoggingParseState parseState{};
-
     const auto logIncomingResult = document.readBool("zwave", "logIncomingMessages");
     if (!logIncomingResult.second.empty()) {
         errorMessage = logIncomingResult.second;
         return false;
     }
     if (logIncomingResult.first.has_value()) {
-        parseState.logIncomingConfigured = true;
         parsed.logIncomingMessages = *logIncomingResult.first;
     }
 
@@ -218,7 +210,6 @@ struct ZwaveLoggingParseState {
         return false;
     }
     if (logOutgoingResult.first.has_value()) {
-        parseState.logOutgoingConfigured = true;
         parsed.logOutgoingMessages = *logOutgoingResult.first;
     }
 
@@ -229,14 +220,6 @@ struct ZwaveLoggingParseState {
     }
     if (logLevelResult.first.has_value()) {
         parsed.logLevel = static_cast<std::uint8_t>(*logLevelResult.first);
-        parsed.logIncomingMessages = parsed.logLevel >= 3U;
-        parsed.logOutgoingMessages = parsed.logLevel >= 3U;
-        return true;
-    }
-
-    if ((parseState.logIncomingConfigured && parsed.logIncomingMessages)
-        || (parseState.logOutgoingConfigured && parsed.logOutgoingMessages)) {
-        parsed.logLevel = 2U;
     }
 
     return true;

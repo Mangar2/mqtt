@@ -45,6 +45,7 @@ for FileStore-backed value-map lifecycle.
 	- accepts only string and integral numeric values
 	- updates in-memory map and publishes retained `<key>` state message
 	- persists full map to FileStore via HTTP POST (failure does not block publish and emits structured error log)
+	- uses bounded FileStore HTTP timeouts for connect/read/write to avoid long runtime stalls on unreachable endpoints
 - Monitor reload handling:
 	- listens to `<monitorTopicPrefix>/#`
 	- reloads from FileStore when payload `keyPath` matches `valuesKeyPath`

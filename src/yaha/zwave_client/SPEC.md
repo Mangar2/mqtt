@@ -62,7 +62,7 @@ Runtime startup prints a deterministic summary:
 - MQTT host/port/client id
 - zwave usb device/topic and configured device count
 - subscribe/publish qos and retain flags
-- unified zwave log level
+- zwave log level
 - incoming/outgoing message logging flags
 
 ## Configuration format
@@ -97,13 +97,13 @@ Validation rules:
 - Optional `instance` must be in range `0..255` when set.
 - Optional `index` must be in range `0..255` when set.
 
-Unified logging semantics:
+Logging semantics:
 
-- `logLevel=0`: disable OpenZWave protocol console output and disable `zwave_service[in|out]` message logs.
-- `logLevel=1`: protocol error-focused logging.
-- `logLevel=2`: protocol info logging.
-- `logLevel>=3`: protocol detail/debug logging and force-enable `logIncomingMessages` + `logOutgoingMessages`.
-- If `logLevel` is not set, legacy `logIncomingMessages`/`logOutgoingMessages` remain supported.
+- `logLevel=0`: disable OpenZWave protocol console output and suppress `zwave_service[event]` logs.
+- `logLevel=1`: OpenZWave error logging plus important `zwave_service[event|error]` logs.
+- `logLevel=2`: OpenZWave info logging plus important `zwave_service[event|error]` logs.
+- `logLevel>=3`: OpenZWave detail/debug logging plus important `zwave_service[event|error]` logs.
+- `logIncomingMessages` and `logOutgoingMessages` are independent MQTT trace flags and are never overridden by `logLevel`.
 
 ## Files
 

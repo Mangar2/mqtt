@@ -22,6 +22,9 @@ constexpr std::size_t k_set_suffix_size{4U};
 constexpr std::size_t k_json_escape_reserve_extra{8U};
 constexpr int k_decimal_base{10};
 constexpr std::size_t k_max_pending_publish_attempts{3U};
+constexpr int k_file_store_connect_timeout_seconds{1};
+constexpr int k_file_store_read_timeout_seconds{1};
+constexpr int k_file_store_write_timeout_seconds{1};
 
 [[nodiscard]] std::string publishFailureCategoryToText(const PublishFailureCategory categoryValue) {
     switch (categoryValue) {
@@ -167,6 +170,16 @@ void skipWhitespace(const std::string& text, std::size_t& parseIndex) {
     while (parseIndex < text.size() && std::isspace(static_cast<unsigned char>(text[parseIndex])) != 0) {
         parseIndex += 1U;
     }
+}
+
+void configureFileStoreClientTimeouts(httplib::Client* client) {
+    if (client == nullptr) {
+        return;
+    }
+
+    client->set_connection_timeout(k_file_store_connect_timeout_seconds, 0);
+    client->set_read_timeout(k_file_store_read_timeout_seconds, 0);
+    client->set_write_timeout(k_file_store_write_timeout_seconds, 0);
 }
 
 [[nodiscard]] bool consumeChar(const std::string& text, std::size_t& parseIndex, const char expectedChar) {
@@ -336,6 +349,7 @@ std::optional<Value> ValueServiceComponent::valueForKey(const std::string& key) 
 
 bool ValueServiceComponent::loadValuesFromFileStore() {
     httplib::Client client{config_.fileStoreHost, static_cast<int>(config_.fileStorePort)};
+    configureFileStoreClientTimeouts(&client);
     const auto response = client.Get(config_.valuesKeyPath);
     if (!response || response->status != k_http_ok_status) {
         const std::string statusText = response ? std::to_string(response->status) : "no_response";
@@ -373,6 +387,7 @@ bool ValueServiceComponent::persistValuesToFileStore() const {
     }();
 
     httplib::Client client{config_.fileStoreHost, static_cast<int>(config_.fileStorePort)};
+    configureFileStoreClientTimeouts(&client);
     const auto response = client.Post(config_.valuesKeyPath, payloadText, "application/json");
     if (!response || response->status != k_http_ok_status) {
         const std::string statusText = response ? std::to_string(response->status) : "no_response";

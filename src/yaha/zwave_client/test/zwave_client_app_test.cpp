@@ -222,12 +222,12 @@ TEST_CASE("load_zwave_config_parses_log_message_flags", "[zwave_client]") {
     CHECK(config.logOutgoingMessages);
 }
 
-TEST_CASE("load_zwave_config_applies_unified_log_level", "[zwave_client]") {
+TEST_CASE("load_zwave_config_keeps_message_flags_when_log_level_is_set", "[zwave_client]") {
     const yaha::IniDocument document = loadIni(
         "[zwave]\n"
         "logLevel=3\n"
-        "logIncomingMessages=false\n"
-        "logOutgoingMessages=false\n"
+        "logIncomingMessages=true\n"
+        "logOutgoingMessages=true\n"
         "usbDevice=/dev/ttyUSB0\n"
         "usbTopic=home/zwave/controller\n"
         "device=home/lamp|7\n");
@@ -244,7 +244,7 @@ TEST_CASE("load_zwave_config_applies_unified_log_level", "[zwave_client]") {
     CHECK(config.logOutgoingMessages);
 }
 
-TEST_CASE("load_zwave_config_disables_message_logs_for_log_level_zero", "[zwave_client]") {
+TEST_CASE("load_zwave_config_keeps_message_flags_for_log_level_zero", "[zwave_client]") {
     const yaha::IniDocument document = loadIni(
         "[zwave]\n"
         "logLevel=0\n"
@@ -262,8 +262,8 @@ TEST_CASE("load_zwave_config_disables_message_logs_for_log_level_zero", "[zwave_
     REQUIRE(loaded);
     CHECK(errorMessage.empty());
     CHECK(config.logLevel == 0U);
-    CHECK_FALSE(config.logIncomingMessages);
-    CHECK_FALSE(config.logOutgoingMessages);
+    CHECK(config.logIncomingMessages);
+    CHECK(config.logOutgoingMessages);
 }
 
 TEST_CASE("load_zwave_config_rejects_invalid_log_level", "[zwave_client]") {

@@ -89,3 +89,27 @@ Phase-6 extension:
 20. rs485_serial_adapter_receive_callback_gets_serial_bytes
 - Scenario: bytes written to pseudo-terminal master while callback is installed.
 - Expected: receive callback is invoked with the transmitted payload bytes.
+
+21. rs485_serial_adapter_open_supports_all_configured_baudrates
+- Scenario: open adapter on pseudo-terminal slave with each supported configured baudrate.
+- Expected: open succeeds for every configured baudrate path and adapter closes cleanly afterwards.
+
+22. rs485_serial_adapter_receive_without_callback_is_ignored
+- Scenario: open adapter, write bytes to pseudo-terminal master, and keep receive callback unset.
+- Expected: read loop consumes bytes without exception and close remains clean.
+
+23. rs485_serial_adapter_open_with_unknown_baudrate_uses_default_mapping
+- Scenario: open adapter on pseudo-terminal with unsupported baudrate value.
+- Expected: adapter opens successfully using default baudrate mapping path and closes cleanly.
+
+24. rs485_serial_adapter_close_is_idempotent
+- Scenario: call close repeatedly without opening adapter first.
+- Expected: close is a no-op and never throws.
+
+25. rs485_serial_adapter_open_fails_for_non_tty_device
+- Scenario: open adapter against a non-TTY path (`/dev/null`) where `open()` succeeds but termios attribute read fails.
+- Expected: open throws with deterministic `failed to read serial attributes` details and adapter remains closed.
+
+26. rs485_serial_adapter_send_reports_write_failure
+- Scenario: open adapter on pseudo-terminal slave, close pseudo-terminal master, then send payload.
+- Expected: send throws with deterministic `failed to write serial data` details and adapter closes cleanly.

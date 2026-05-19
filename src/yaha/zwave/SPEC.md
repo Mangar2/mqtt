@@ -33,6 +33,7 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 | `subscribeQos` | `Qos` | Default `AtLeastOnce` |
 | `qos` | `Qos` | Default `AtLeastOnce` |
 | `retain` | `bool` | Default `false` |
+| `logLevel` | `std::uint8_t` | OpenZWave/service event logging level (`0..4`), default `2` |
 | `pollIntervalMs` | `std::uint32_t` | OpenZWave poll interval in milliseconds, default `500` |
 | `logIncomingMessages` | `bool` | Default `false`; logs inbound MQTT messages handled by ZWave service |
 | `logOutgoingMessages` | `bool` | Default `false`; logs outbound MQTT messages emitted by ZWave service |
@@ -68,6 +69,7 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 
 `handleMessage(...)`:
 - optional inbound log line `zwave_service[in] ...` when `logIncomingMessages=true`
+- important event/error logs `zwave_service[event|error] ...` when `logLevel>=1`
 - remove-failed topic -> `controller.removeFailedNode(...)`
 - add-node topic -> `controller.addDevice()`
 - scan topic -> `controller.startScan()` with deterministic success/failure publish:
@@ -88,6 +90,7 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 	- `qos = config.qos`
 	- `retain = config.retain`
 - optional outbound log line `zwave_service[out] ...` only after successful callback publish when `logOutgoingMessages=true`
+- outgoing message trace logs stay independent from `logLevel`
 - Publish callback missing/non-success/exception branches emit deterministic
 	`zwave_service[error] op=publish ...` logs.
 

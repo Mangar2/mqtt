@@ -281,6 +281,8 @@ ZWave client INI sections:
 
 - `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs, logReason)
 - `[zwave]`: `subscribeQoS`, `qos`, `retain`, `logLevel`, `logIncomingMessages`, `logOutgoingMessages`, `pollIntervalMs`, `usbDevice`, `usbTopic`, repeated `device`
+    - `logLevel=1` logs OpenZWave errors plus important ZWave service events/errors.
+    - `logIncomingMessages` and `logOutgoingMessages` are independent MQTT trace flags and are not overridden by `logLevel`.
 
 RS485 Interface client INI sections:
 

@@ -28,6 +28,21 @@ constexpr std::int64_t k_reconnect_delay_ms{1000};
 constexpr std::int64_t k_loop_sleep_ms{10};
 constexpr int k_callback_wait_attempts{30};
 constexpr int k_callback_wait_sleep_ms{10};
+constexpr std::uint8_t k_send_error_payload_byte_1{0x11U};
+constexpr std::uint8_t k_send_error_payload_byte_2{0x22U};
+constexpr std::uint32_t k_baudrate_1200{1200U};
+constexpr std::uint32_t k_baudrate_2400{2400U};
+constexpr std::uint32_t k_baudrate_4800{4800U};
+constexpr std::uint32_t k_baudrate_9600{9600U};
+constexpr std::uint32_t k_baudrate_19200{19200U};
+constexpr std::uint32_t k_baudrate_38400{38400U};
+constexpr std::uint32_t k_baudrate_57600{57600U};
+#ifdef B115200
+constexpr std::uint32_t k_baudrate_115200{115200U};
+#endif
+#ifdef B230400
+constexpr std::uint32_t k_baudrate_230400{230400U};
+#endif
 
 struct PseudoTerminal {
     PseudoTerminal() = default;
@@ -201,6 +216,22 @@ TEST_CASE("rs485_serial_adapter_open_fails_for_invalid_path", "[rs485_interface]
     REQUIRE(adapter.isOpen() == false);
 }
 
+TEST_CASE("rs485_serial_adapter_open_fails_for_non_tty_device", "[rs485_interface]") {
+    yaha::Rs485SerialAdapter adapter{};
+    std::string errorMessage{};
+
+    REQUIRE_THROWS_AS(adapter.open("/dev/null", k_serial_test_baudrate), yaha::YahaError);
+    try {
+        adapter.open("/dev/null", k_serial_test_baudrate);
+    } catch (const yaha::YahaError& exceptionValue) {
+        errorMessage = exceptionValue.buildMessage();
+    }
+
+    REQUIRE_FALSE(errorMessage.empty());
+    REQUIRE(errorMessage.find("failed to read serial attributes") != std::string::npos);
+    REQUIRE_FALSE(adapter.isOpen());
+}
+
 TEST_CASE("rs485_serial_adapter_send_fails_when_not_open", "[rs485_interface]") {
     yaha::Rs485SerialAdapter adapter{};
     std::string errorMessage{};
@@ -233,6 +264,33 @@ TEST_CASE("rs485_serial_adapter_send_writes_payload_to_serial_master", "[rs485_i
     REQUIRE(readCount == static_cast<ssize_t>(payload.size()));
     CHECK(readBuffer == payload);
 
+    adapter.close();
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("rs485_serial_adapter_send_reports_write_failure", "[rs485_interface]") {
+    PseudoTerminal pseudoTerminal{};
+    std::string setupError{};
+    REQUIRE(createPseudoTerminal(pseudoTerminal, setupError));
+    REQUIRE(setupError.empty());
+
+    yaha::Rs485SerialAdapter adapter{};
+    REQUIRE_NOTHROW(adapter.open(pseudoTerminal.slavePath, k_serial_test_baudrate));
+    REQUIRE(adapter.isOpen());
+
+    REQUIRE(pseudoTerminal.masterFd >= 0);
+    ::close(pseudoTerminal.masterFd);
+    pseudoTerminal.masterFd = -1;
+
+    std::string errorMessage{};
+    try {
+        adapter.send(std::vector<std::uint8_t>{k_send_error_payload_byte_1, k_send_error_payload_byte_2});
+    } catch (const yaha::YahaError& exceptionValue) {
+        errorMessage = exceptionValue.buildMessage();
+    }
+
+    REQUIRE_FALSE(errorMessage.empty());
+    REQUIRE(errorMessage.find("failed to write serial data") != std::string::npos);
     adapter.close();
 }
 
@@ -276,4 +334,74 @@ TEST_CASE("rs485_serial_adapter_receive_callback_gets_serial_bytes", "[rs485_int
     }
 
     adapter.close();
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("rs485_serial_adapter_open_supports_all_configured_baudrates", "[rs485_interface]") {
+    std::vector<std::uint32_t> baudrates{
+        k_baudrate_1200,
+        k_baudrate_2400,
+        k_baudrate_4800,
+        k_baudrate_9600,
+        k_baudrate_19200,
+        k_baudrate_38400,
+        k_baudrate_57600,
+    };
+#ifdef B115200
+    baudrates.push_back(k_baudrate_115200);
+#endif
+#ifdef B230400
+    baudrates.push_back(k_baudrate_230400);
+#endif
+
+    for (const std::uint32_t baudrate : baudrates) {
+        PseudoTerminal pseudoTerminal{};
+        std::string setupError{};
+        REQUIRE(createPseudoTerminal(pseudoTerminal, setupError));
+        REQUIRE(setupError.empty());
+
+        yaha::Rs485SerialAdapter adapter{};
+        REQUIRE_NOTHROW(adapter.open(pseudoTerminal.slavePath, baudrate));
+        REQUIRE(adapter.isOpen());
+        adapter.close();
+        REQUIRE_FALSE(adapter.isOpen());
+    }
+}
+
+TEST_CASE("rs485_serial_adapter_receive_without_callback_is_ignored", "[rs485_interface]") {
+    PseudoTerminal pseudoTerminal{};
+    std::string setupError{};
+    REQUIRE(createPseudoTerminal(pseudoTerminal, setupError));
+    REQUIRE(setupError.empty());
+
+    yaha::Rs485SerialAdapter adapter{};
+    REQUIRE_NOTHROW(adapter.open(pseudoTerminal.slavePath, k_serial_test_baudrate));
+    REQUIRE(adapter.isOpen());
+
+    const std::vector<std::uint8_t> serialPayload{0x10U, 0x20U, 0x30U};
+    const ssize_t writeCount = ::write(pseudoTerminal.masterFd, serialPayload.data(), serialPayload.size());
+    REQUIRE(writeCount == static_cast<ssize_t>(serialPayload.size()));
+
+    std::this_thread::sleep_for(std::chrono::milliseconds{k_callback_wait_sleep_ms});
+    adapter.close();
+    REQUIRE_FALSE(adapter.isOpen());
+}
+
+TEST_CASE("rs485_serial_adapter_open_with_unknown_baudrate_uses_default_mapping", "[rs485_interface]") {
+    PseudoTerminal pseudoTerminal{};
+    std::string setupError{};
+    REQUIRE(createPseudoTerminal(pseudoTerminal, setupError));
+    REQUIRE(setupError.empty());
+
+    yaha::Rs485SerialAdapter adapter{};
+    REQUIRE_NOTHROW(adapter.open(pseudoTerminal.slavePath, 12345U));
+    REQUIRE(adapter.isOpen());
+    adapter.close();
+    REQUIRE_FALSE(adapter.isOpen());
+}
+
+TEST_CASE("rs485_serial_adapter_close_is_idempotent", "[rs485_interface]") {
+    yaha::Rs485SerialAdapter adapter{};
+    REQUIRE_NOTHROW(adapter.close());
+    REQUIRE_NOTHROW(adapter.close());
 }

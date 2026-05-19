@@ -143,10 +143,7 @@ void Rs485InterfaceComponent::run() {
 }
 
 void Rs485InterfaceComponent::close() {
-    bool expected = true;
-    if (!running_.compare_exchange_strong(expected, false)) {
-        return;
-    }
+    running_.store(false);
 
     if (schedulerThread_.joinable()) {
         schedulerThread_.join();
@@ -379,7 +376,13 @@ void Rs485InterfaceComponent::enqueueBlink(const std::string& topic, const Value
 
 void Rs485InterfaceComponent::launchActionThread(std::function<void()> job) {
     std::thread worker{[job = std::move(job)]() {
-        job();
+        try {
+            job();
+        } catch (const std::exception& exceptionValue) {
+            std::cout << "rs485_interface[action_error] worker exception " << exceptionValue.what() << '\n';
+        } catch (...) {
+            std::cout << "rs485_interface[action_error] worker exception unknown" << '\n';
+        }
     }};
 
     std::lock_guard<std::mutex> lock{actionThreadsMutex_};
