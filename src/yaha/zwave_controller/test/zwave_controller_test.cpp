@@ -428,7 +428,7 @@ TEST_CASE("driver_failed_callback_is_invoked", "[zwave_controller]") {
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("notification_callback_maps_all_codes_and_uses_unknown_topic_fallback", "[zwave_controller]") {
+TEST_CASE("notification_callback_maps_all_codes_to_monitoring_topic", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
 
@@ -462,14 +462,54 @@ TEST_CASE("notification_callback_maps_all_codes_and_uses_unknown_topic_fallback"
 
     REQUIRE(published.size() == expectedText.size() + 1U);
     for (std::size_t index = 0U; index < expectedText.size(); ++index) {
-        CHECK(published[index].topic() == "/$MONITOR/zwave/unknown node 20");
+        CHECK(published[index].topic() == "$MONITOR/zwave/notification");
         REQUIRE(std::holds_alternative<std::string>(published[index].value()));
         CHECK(std::get<std::string>(published[index].value()) == expectedText[index]);
+        REQUIRE_FALSE(published[index].reason().empty());
+        CHECK(published[index].reason().front().message.find("node=20") != std::string::npos);
     }
 
-    CHECK(published.back().topic() == "/$MONITOR/zwave/unknown node 20");
+    CHECK(published.back().topic() == "$MONITOR/zwave/notification");
     REQUIRE(std::holds_alternative<std::string>(published.back().value()));
     CHECK(std::get<std::string>(published.back().value()) == "unknown");
+}
+
+TEST_CASE("notification_callback_never_publishes_to_device_topic", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/zwave/sys/floodlight",
+            kNodeIdTwentyThree,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt,
+            std::string{"string"},
+            std::nullopt),
+        makeDevice(
+            "ground/livingroom/zwave/switch/floodlight",
+            kNodeIdTwentyThree,
+            kSwitchBinaryClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"switch"},
+            std::nullopt)});
+
+    std::vector<yaha::Message> published{};
+    controller.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    controller.onNotification(kNodeIdTwentyThree, yaha::ZwaveNotificationCode::Nop);
+    controller.onNotification(kNodeIdTwentyThree, yaha::ZwaveNotificationCode::Timeout);
+
+    REQUIRE(published.size() == 2U);
+    for (const auto& message : published) {
+        CHECK(message.topic() == "$MONITOR/zwave/notification");
+    }
+    CHECK(std::get<std::string>(published[0].value()) == "nop");
+    CHECK(std::get<std::string>(published[1].value()) == "timeout");
 }
 
 TEST_CASE("node_ready_does_not_enable_global_polling", "[zwave_controller]") {

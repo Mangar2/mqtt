@@ -216,21 +216,10 @@ void ZwaveController::onScanComplete() {
 
 void ZwaveController::onNotification(const std::uint16_t nodeId, const ZwaveNotificationCode notification) {
     try {
-        const ZwaveValueDescriptor descriptor{
-            .nodeId = nodeId,
-            .classId = 0U,
-            .instance = 1U,
-            .index = 0U,
-            .label = std::nullopt,
-            .valueId = std::nullopt};
-
-        const std::optional<ZwaveTopicMapping> mapping = devicesMapper_.valueToTopicAndType(descriptor);
-        std::string topic = "/$MONITOR/zwave/unknown node " + std::to_string(nodeId);
-        if (mapping.has_value() && !mapping->topic.empty()) {
-            topic = mapping->topic;
-        }
-
-        publish(topic, notificationText(notification), "zwave notification");
+        publish(
+            "$MONITOR/zwave/notification",
+            notificationText(notification),
+            "zwave notification node=" + std::to_string(nodeId));
     } catch (...) {
         const std::string text = notificationText(notification);
         publish("$MONITOR/zwave/error", text, "node: " + std::to_string(nodeId) + " " + text);
