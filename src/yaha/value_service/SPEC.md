@@ -70,6 +70,8 @@ for FileStore-backed value-map lifecycle.
 - Persistence format:
 	- full JSON object map `key -> value`
 	- values restricted to `string` or integer numbers
+	- JSON escaping for keys/string values uses shared utility
+	  `yaha/message/message_payload_codec.*`.
 
 ## Files
 

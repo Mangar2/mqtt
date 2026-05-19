@@ -1,4 +1,5 @@
 #include "yaha/value_service/value_service_component.h"
+#include "yaha/message/message_payload_codec.h"
 
 #include "httplib.h"
 
@@ -19,7 +20,6 @@ namespace {
 
 constexpr int k_http_ok_status{200};
 constexpr std::size_t k_set_suffix_size{4U};
-constexpr std::size_t k_json_escape_reserve_extra{8U};
 constexpr int k_decimal_base{10};
 constexpr std::size_t k_max_pending_publish_attempts{3U};
 constexpr int k_file_store_connect_timeout_seconds{1};
@@ -82,7 +82,7 @@ void logMessage(const char* directionText, const Message& message) {
 }
 
 [[nodiscard]] bool startsWithText(const std::string& textValue, const std::string& prefix) {
-    return textValue.size() >= prefix.size() && textValue.compare(0U, prefix.size(), prefix) == 0;
+    return textValue.starts_with(prefix);
 }
 
 [[nodiscard]] bool endsWithSetSuffix(const std::string& textValue) {
@@ -137,33 +137,6 @@ void logMessage(const char* directionText, const Message& message) {
     }
 
     return false;
-}
-
-[[nodiscard]] std::string jsonEscape(const std::string& input) {
-    std::string result{};
-    result.reserve(input.size() + k_json_escape_reserve_extra);
-    for (const char currentChar : input) {
-        switch (currentChar) {
-        case '"':
-        case '\\':
-            result.push_back('\\');
-            result.push_back(currentChar);
-            break;
-        case '\n':
-            result.append("\\n");
-            break;
-        case '\r':
-            result.append("\\r");
-            break;
-        case '\t':
-            result.append("\\t");
-            break;
-        default:
-            result.push_back(currentChar);
-            break;
-        }
-    }
-    return result;
 }
 
 void skipWhitespace(const std::string& text, std::size_t& parseIndex) {
@@ -533,12 +506,12 @@ std::string ValueServiceComponent::serializeValueMap(const ValueMap& values) {
         }
         firstEntry = false;
         jsonText.append("\"");
-        jsonText.append(jsonEscape(key));
+        jsonText.append(escapeJsonString(key));
         jsonText.append("\":");
 
         if (std::holds_alternative<std::string>(value)) {
             jsonText.push_back('"');
-            jsonText.append(jsonEscape(std::get<std::string>(value)));
+            jsonText.append(escapeJsonString(std::get<std::string>(value)));
             jsonText.push_back('"');
         } else {
             const auto integerValue = static_cast<std::int64_t>(std::get<double>(value));
@@ -661,7 +634,10 @@ bool ValueServiceComponent::tryPublishMessage(const Message& message,
 void ValueServiceComponent::enqueuePendingPublish(const Message& message,
                                                   const std::string& channelText) const {
     std::lock_guard<std::mutex> lock{pendingPublishQueueMutex_};
-    pendingPublishQueue_.push_back(PendingPublishEntry{message.clone(), channelText, 0U});
+    pendingPublishQueue_.push_back(PendingPublishEntry{
+        .message = message.clone(),
+        .channelText = channelText,
+        .attemptCount = 0U});
 }
 
 void ValueServiceComponent::processPendingPublishQueue() const {

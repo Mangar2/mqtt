@@ -1,7 +1,7 @@
 #include "yaha/remote_service_http/remote_service_http_adapter.h"
+#include "yaha/message/message_payload_codec.h"
 
 #include <cctype>
-#include <cstdlib>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -223,17 +223,7 @@ std::optional<Value> parseStateFromToken(const std::string& tokenValue, const bo
         return Value{tokenValue};
     }
 
-    if (tokenValue == "true" || tokenValue == "false" || tokenValue == "null") {
-        return Value{tokenValue};
-    }
-
-    char* parseEnd = nullptr;
-    const double parsedNumber = std::strtod(tokenValue.c_str(), &parseEnd);
-    if (parseEnd == nullptr || *parseEnd != '\0') {
-        return std::nullopt;
-    }
-
-    return Value{parsedNumber};
+    return parseValueToken(tokenValue);
 }
 
 bool validateToken(

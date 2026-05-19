@@ -22,3 +22,16 @@ Unit tests for Message value-type behavior and validation guarantees.
 | `Message validate rejects ReasonEntry with empty message` | reason validation | reason entry with empty message | throws invalid_argument |
 | `Message qos AtMostOnce construction` | QoS enum path | qos=AtMostOnce | qos getter returns enum value |
 | `Message dup flag can be constructed and updated` | DUP state API | construct with dup=true then setDup(false) | dup getter reflects both states |
+
+## Payload codec test cases
+
+| Name | Scenario | Input | Expected |
+|------|----------|-------|----------|
+| `Payload codec escapes JSON control characters` | string escaping for shared builder path | text with quotes, slash, newline, tab | escaped JSON content contains escaped tokens |
+| `Payload codec serializes reasons oldest first` | reason order on wire | Message with two reasons (newest-first in object) | serialized reason JSON places oldest entry first |
+| `Payload codec buildEnvelopePayload emits canonical envelope` | canonical payload build | Message with topic/value/reason | payload contains top-level message object with required keys |
+| `Payload codec parseEnvelopePayload parses numeric value` | numeric payload parsing | envelope with value=77.5 | parsed Message value is double 77.5 |
+| `Payload codec parseEnvelopePayload coerces bool token to string` | backward-compatible token coercion | envelope with value=true | parsed Message value is string "true" |
+| `Payload codec parseEnvelopePayload rejects malformed envelope` | malformed JSON token handling | envelope missing colon in message object | parse returns empty optional |
+| `Payload codec parseReasonArray rejects missing message field` | malformed reason object handling | reason array with entry missing message | parse returns empty optional |
+| `Payload codec validateEnvelopeShape enforces topic and value` | shape validation | valid payload and payloads missing topic/value | true for valid; false for invalid |

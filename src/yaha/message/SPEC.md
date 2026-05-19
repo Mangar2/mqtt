@@ -3,8 +3,9 @@
 ## Purpose
 
 Defines the universal `Message` value type and its supporting types (`ReasonEntry`, `Qos`,
-`Value`). Every YAHA component sends and receives `Message` objects; this is the one data
-format shared across the entire YAHA home automation system.
+`Value`) plus shared message-envelope payload parser/builder utilities. Every YAHA component
+sends and receives `Message` objects; this is the one data format shared across the entire YAHA
+home automation system.
 
 ## Public API
 
@@ -24,6 +25,25 @@ enum class Qos : std::uint8_t {
 struct ReasonEntry { std::string message; std::string timestamp; };
 using Value = std::variant<std::string, double>;
 ```
+
+### Payload Codec Helpers
+
+```cpp
+std::string escapeJsonString(std::string_view);
+std::string serializeReasonArrayOldestFirst(const std::vector<ReasonEntry>&);
+std::string buildEnvelopePayload(const Message&);
+std::optional<Value> parseValueToken(std::string_view);
+std::optional<std::vector<ReasonEntry>> parseReasonArray(std::string_view);
+std::optional<Message> parseEnvelopePayload(const std::string&, const std::string&, Qos, bool, bool);
+bool validateEnvelopeShape(std::string_view);
+```
+
+Notes:
+- `buildEnvelopePayload` emits canonical YAHA transport envelope JSON.
+- `serializeReasonArrayOldestFirst` writes reason entries in oldest-first wire order.
+- `parseEnvelopePayload` validates topic consistency (`message.topic` must match MQTT topic).
+- `parseValueToken` supports canonical string/number values and accepts `true`/`false`/`null`
+    as string tokens for backward compatibility behavior already used by transports.
 
 ### Class `Message`
 
@@ -53,6 +73,8 @@ using Value = std::variant<std::string, double>;
 - DUP flag is part of message state and can be propagated by transports for QoS>0 duplicate-delivery semantics.
 - `rawPayload()` is optional and carries exact original payload text when an adapter chooses lossless forwarding.
 - `validate()` rejects: empty topic, ReasonEntry with empty message field.
+- Envelope payload parser/builder functions are the shared format utility for YAHA modules and
+    must be reused instead of private per-module envelope implementations.
 - No external dependencies. Header includes only: `<string>`, `<variant>`, `<vector>`, `<cstdint>`.
 
 ## Files
@@ -61,5 +83,8 @@ using Value = std::variant<std::string, double>;
 |------|------|
 | `message.h` | Type declarations |
 | `message.cpp` | Method implementations |
+| `message_payload_codec.h` | Shared YAHA envelope parser/builder declarations |
+| `message_payload_codec.cpp` | Shared YAHA envelope parser/builder implementations |
 | `test/TEST_SPEC.md` | Unit-test specification |
 | `test/message_test.cpp` | Catch2 unit tests |
+| `test/message_payload_codec_test.cpp` | Catch2 unit tests for parser/builder edge cases |

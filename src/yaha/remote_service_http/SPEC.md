@@ -55,6 +55,8 @@ Token validator callback used for request-mode specific token checks.
 - `deviceToken` is validated via configured POST token validator.
 - Invalid token returns `400`.
 - On valid input, adapter calls `publishCommand` on component.
+- `state` token parsing reuses shared token parser from
+  `yaha/message/message_payload_codec.*` for non-string JSON tokens.
 
 ### Domain-result to HTTP mapping
 

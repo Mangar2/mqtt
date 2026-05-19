@@ -97,6 +97,8 @@ Member function:
 - Optional fields:
 	- `qos` integer in range `0..2`
 	- `reason` string
+- Numeric token parsing for mapping `qos` uses shared message token parsing utility
+  from `yaha/message/message_payload_codec.*` and then enforces integral range checks.
 - Validation is all-or-nothing:
 	- any invalid structure rejects the full payload
 	- output mapping is not modified on failure

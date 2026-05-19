@@ -115,6 +115,8 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
   - Raw trace payload serialization JSON-escapes control characters
     (including newline/tab/carriage-return and other ASCII control codes)
     to keep forwarded envelopes parseable by downstream consumers.
+  - Trace payload envelope serialization is delegated to shared message utility
+    `yaha/message/message_payload_codec.*`.
 - Logging behavior:
   - If `logIncomingMessages=true`, each inbound message handled by component is logged.
   - If `logOutgoingMessages=true`, each outbound rule/ack message is logged only after successful callback send.

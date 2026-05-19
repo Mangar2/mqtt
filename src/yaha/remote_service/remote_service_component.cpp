@@ -1,4 +1,5 @@
 #include "yaha/remote_service/remote_service_component.h"
+#include "yaha/message/message_payload_codec.h"
 
 #include "httplib.h"
 
@@ -99,7 +100,10 @@ void skipWhitespace(const std::string& textValue, std::size_t& parseIndex) {
     }
 
     std::size_t tokenEnd = parseIndex;
-    while (tokenEnd < textValue.size() && std::isdigit(static_cast<unsigned char>(textValue[tokenEnd])) != 0) {
+    while (tokenEnd < textValue.size()
+        && textValue[tokenEnd] != ','
+        && textValue[tokenEnd] != '}'
+        && std::isspace(static_cast<unsigned char>(textValue[tokenEnd])) == 0) {
         tokenEnd += 1U;
     }
 
@@ -107,13 +111,23 @@ void skipWhitespace(const std::string& textValue, std::size_t& parseIndex) {
         return false;
     }
 
-    const std::string numberText = textValue.substr(parseIndex, tokenEnd - parseIndex);
-    try {
-        output = static_cast<std::uint64_t>(std::stoull(numberText));
-    } catch (...) {
+    const std::optional<Value> parsedToken =
+        parseValueToken(textValue.substr(parseIndex, tokenEnd - parseIndex));
+    if (!parsedToken.has_value() || !std::holds_alternative<double>(*parsedToken)) {
         return false;
     }
 
+    const double numericToken = std::get<double>(*parsedToken);
+    if (!std::isfinite(numericToken) || numericToken < 0.0) {
+        return false;
+    }
+
+    const auto integerToken = static_cast<std::uint64_t>(numericToken);
+    if (static_cast<double>(integerToken) != numericToken) {
+        return false;
+    }
+
+    output = integerToken;
     parseIndex = tokenEnd;
     return true;
 }

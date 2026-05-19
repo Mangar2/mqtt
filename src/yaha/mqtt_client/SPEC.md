@@ -67,6 +67,7 @@ the callback contract into real TCP MQTT packet I/O.
 - Broker transport publish payload format:
 	- payload is always serialized in canonical YAHA envelope JSON: `{"message":{"topic":<string>,"value":<string|number>,"reason"?:<ReasonEntry[]>}}`.
 	- envelope reason serialization order is oldest-first (matching original JS/TS message format behavior).
+	- serialization and forwarded-envelope parsing are delegated to shared utilities in `yaha/message/message_payload_codec.*`.
 - Broker transport publish waits for broker acknowledgements on QoS1/QoS2 (`PUBACK` for QoS1, `PUBREC` + `PUBCOMP` for QoS2) before returning.
 - If broker ACK is missing within timeout during publish (`PUBACK`/`PUBREC`/`PUBCOMP`), broker transport disconnects and throws.
 - Broker transport inbound path parses forwarded payload envelopes into internal `Message.topic()/value()/reason()` fields for runtime semantics while preserving the exact original payload text in `Message.rawPayload()` for lossless forwarding.
