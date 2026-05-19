@@ -1,10 +1,10 @@
 #include "yaha/rs485_interface/rs485_interface_component.h"
+#include "yaha/message/message_log_service.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
-#include <format>
 #include <iostream>
 #include <thread>
 #include <utility>
@@ -43,13 +43,6 @@ constexpr const char* k_monitor_trace_topic_set{"$MONITOR/rs485Interface/trace/s
         return std::string{"off"};
     }
     return std::string{"on"};
-}
-
-[[nodiscard]] std::string valueToText(const Value& value) {
-    if (const auto* text = std::get_if<std::string>(&value); text != nullptr) {
-        return *text;
-    }
-    return std::format("{}", std::get<double>(value));
 }
 
 void sleepInterruptible(
@@ -113,8 +106,20 @@ SubscriptionMap Rs485InterfaceComponent::getSubscriptions() const {
 
 void Rs485InterfaceComponent::handleMessage(const Message& message) {
     if (config_.logIncomingMessages) {
-        std::cout << "rs485_interface[incoming_mqtt] topic=" << message.topic()
-                  << " value=" << valueToText(message.value()) << '\n';
+        const MessageLogConfig logConfig{
+            .enableIncoming = true,
+            .enableOutgoing = false,
+            .includeReasonChain = true,
+            .incomingTopicFilter = std::nullopt,
+            .outgoingTopicFilter = std::nullopt};
+        const std::optional<std::string> logLine = buildMessageLogLine(
+            "rs485_interface",
+            MessageLogDirection::Incoming,
+            message,
+            logConfig);
+        if (logLine.has_value()) {
+            std::cout << *logLine << '\n';
+        }
     }
 
     const std::string topicLower = toLowerCopy(message.topic());
@@ -450,15 +455,28 @@ void Rs485InterfaceComponent::publishMappedMessages(const std::vector<Message>& 
     }
 
     for (const auto& message : messages) {
-        if (config_.logOutgoingMessages) {
-            std::cout << "rs485_interface[outgoing_mqtt] topic=" << message.topic()
-                      << " value=" << valueToText(message.value()) << '\n';
-        }
-
         Message publishMessage{message.topic(), message.value(), config_.subscribeQos, false, false};
         for (const auto& reasonEntry : message.reason()) {
             publishMessage.addReason(reasonEntry.message, reasonEntry.timestamp);
         }
+
+        if (config_.logOutgoingMessages) {
+            const MessageLogConfig logConfig{
+                .enableIncoming = false,
+                .enableOutgoing = true,
+                .includeReasonChain = true,
+                .incomingTopicFilter = std::nullopt,
+                .outgoingTopicFilter = std::nullopt};
+            const std::optional<std::string> logLine = buildMessageLogLine(
+                "rs485_interface",
+                MessageLogDirection::Outgoing,
+                publishMessage,
+                logConfig);
+            if (logLine.has_value()) {
+                std::cout << *logLine << '\n';
+            }
+        }
+
         (void)publishCallback_(publishMessage);
     }
 }

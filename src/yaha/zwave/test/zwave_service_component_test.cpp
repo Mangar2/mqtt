@@ -432,8 +432,10 @@ TEST_CASE("logging_flags_emit_incoming_and_outgoing_lines", "[zwave_service]") {
     std::cout.rdbuf(previousBuffer);
 
     const std::string logText = outputStream.str();
-    REQUIRE(logText.find("zwave_service[in] topic=home/phase6/lamp/set") != std::string::npos);
-    REQUIRE(logText.find("zwave_service[out] topic=home/phase6/lamp") != std::string::npos);
+        REQUIRE(logText.find("component=\"zwave_service\" direction=\"incoming\" topic=\"home/phase6/lamp/set\"")
+            != std::string::npos);
+        REQUIRE(logText.find("component=\"zwave_service\" direction=\"outgoing\" topic=\"home/phase6/lamp\"")
+            != std::string::npos);
 }
 
 TEST_CASE("log_level_one_emits_important_events_without_forcing_message_traces", "[zwave_service]") {
@@ -460,8 +462,8 @@ TEST_CASE("log_level_one_emits_important_events_without_forcing_message_traces",
     REQUIRE(logText.find("zwave_service[event] op=run detail=\"startup\"") != std::string::npos);
     REQUIRE(logText.find("zwave_service[event] op=addnode detail=\"request received\"") != std::string::npos);
     REQUIRE(logText.find("zwave_service[event] op=addnode detail=\"request forwarded\"") != std::string::npos);
-    CHECK(logText.find("zwave_service[in]") == std::string::npos);
-    CHECK(logText.find("zwave_service[out]") == std::string::npos);
+    CHECK(logText.find("component=\"zwave_service\" direction=\"incoming\"") == std::string::npos);
+    CHECK(logText.find("component=\"zwave_service\" direction=\"outgoing\"") == std::string::npos);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)

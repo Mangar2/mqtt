@@ -1,9 +1,9 @@
 #include "yaha/mqtt_client/mqtt_client.h"
+#include "yaha/message/message_log_service.h"
 
 #include <algorithm>
 #include <exception>
 #include <iostream>
-#include <sstream>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -53,69 +53,6 @@ const char* qosToText(const Qos qosLevel) {
     }
 
     return "0";
-}
-
-std::string valueToText(const Value& value) {
-    if (std::holds_alternative<std::string>(value)) {
-        return std::get<std::string>(value);
-    }
-
-    std::ostringstream stream{};
-    stream << std::get<double>(value);
-    return stream.str();
-}
-
-std::string escapeLogText(const std::string& text) {
-    std::string escaped{};
-    escaped.reserve(text.size());
-    for (const char chr : text) {
-        switch (chr) {
-            case '\\':
-                escaped += "\\\\";
-                break;
-            case '"':
-                escaped += "\\\"";
-                break;
-            case '\n':
-                escaped += "\\n";
-                break;
-            case '\r':
-                escaped += "\\r";
-                break;
-            case '\t':
-                escaped += "\\t";
-                break;
-            default:
-                escaped.push_back(chr);
-                break;
-        }
-    }
-    return escaped;
-}
-
-std::string reasonEntriesToLogText(const std::vector<ReasonEntry>& reasonEntries) {
-    if (reasonEntries.empty()) {
-        return "none";
-    }
-
-    std::string reasonJson{"["};
-    bool firstEntry = true;
-    for (std::size_t reverseIndex = reasonEntries.size(); reverseIndex > 0U; --reverseIndex) {
-        const ReasonEntry& reasonEntry = reasonEntries[reverseIndex - 1U];
-        if (!firstEntry) {
-            reasonJson.push_back(',');
-        }
-        firstEntry = false;
-
-        reasonJson += R"({"message":")" + escapeLogText(reasonEntry.message) + '"';
-        if (!reasonEntry.timestamp.empty()) {
-            reasonJson += R"(,"timestamp":")" + escapeLogText(reasonEntry.timestamp) + '"';
-        }
-        reasonJson.push_back('}');
-    }
-    reasonJson.push_back(']');
-
-    return reasonJson;
 }
 
 } // namespace
@@ -207,7 +144,7 @@ void YahaMqttClient::publish(const Message& message) {
         throw std::runtime_error{"YahaMqttClient publish requested while disconnected"};
     }
     transport_.publish(message);
-    traceMessage("outgoing", message);
+    traceMessage(MessageLogDirection::Outgoing, message);
 }
 
 bool YahaMqttClient::isRunning() const {
@@ -387,7 +324,7 @@ void YahaMqttClient::processIncoming() {
         return;
     }
 
-    traceMessage("incoming", *maybe_message);
+    traceMessage(MessageLogDirection::Incoming, *maybe_message);
     component_.handleMessage(*maybe_message);
     resyncSubscriptions();
 }
@@ -453,26 +390,28 @@ void YahaMqttClient::traceLifecycle(const std::string& text) const {
     std::cout << text << '\n' << std::flush;
 }
 
-void YahaMqttClient::traceMessage(const std::string& direction, const Message& message) const {
+void YahaMqttClient::traceMessage(const MessageLogDirection direction, const Message& message) const {
     if (!config_.enableLifecycleTrace || !config_.enableMessageTrace) {
         return;
     }
 
-    std::cout << "  mqtt: " << direction << " topic=" << message.topic()
-              << " qos=" << qosToText(message.qos())
-              << " retain=" << (message.retain() ? "1" : "0")
-              << " value=" << valueToText(message.value());
+    const MessageLogConfig logConfig{
+        .enableIncoming = true,
+        .enableOutgoing = true,
+        .includeReasonChain = config_.logReason,
+        .incomingTopicFilter = std::nullopt,
+        .outgoingTopicFilter = std::nullopt};
 
-    if (message.rawPayload().has_value()) {
-        std::cout << " raw=\"" << escapeLogText(*message.rawPayload()) << '"';
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "mqtt_client",
+        direction,
+        message,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
     }
 
-    if (config_.logReason) {
-        const std::string reasonText = reasonEntriesToLogText(message.reason());
-        std::cout << " reason=" << reasonText;
-    }
-
-    std::cout << '\n' << std::flush;
+    std::cout << "  mqtt: " << *logLine << '\n' << std::flush;
 }
 
 } // namespace yaha

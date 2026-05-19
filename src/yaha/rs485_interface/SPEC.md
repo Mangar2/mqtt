@@ -71,4 +71,5 @@ Serial -> MQTT:
 - Serial receive pipeline uses `Rs485StreamReader`, scheduler token processing, and publishes only messages accepted by scheduler state.
 - scheduler, time-of-day, temporary, and blink waits are interruptible by `close()` so shutdown does not block for full configured delay windows.
 - temporary/blink action worker threads catch and log runtime exceptions with `rs485_interface[action_error]` to prevent process aborts from background action failures.
+- MQTT message-flow logs (`logIncomingMessages`, `logOutgoingMessages`) are emitted via shared message logging service (`yaha/message/message_log_service.*`) with deterministic field order and full structured reason output.
 - phase-6 tests verify subscription contract, action-to-serial emission, serial-to-publish mapping, and trace-topic handling.

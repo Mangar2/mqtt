@@ -214,3 +214,12 @@ Added `src/yaha/message/test/message_log_filter_test.cpp`, `message_log_formatte
 
 ### [MILESTONE] Logging unification Phase 2 completed
 Phase 2 of `spec/yaha/IMPL-message-logging-unification.md` is complete: shared logging services and focused unit tests are in place under `src/yaha/message/`.
+
+### [ARTIFACT] Wave-A clients migrated to shared message logging
+Migrated message-flow logging paths in `src/yaha/mqtt_client/mqtt_client.cpp`, `src/yaha/automation_client/automation_client_component.cpp`, `src/yaha/zwave/zwave_service_component.cpp`, and `src/yaha/rs485_interface/rs485_interface_component.cpp` to shared message logging service APIs. Local duplicated incoming/outgoing message formatting paths were replaced by centralized direction-aware logging calls.
+
+### [ARTIFACT] Wave-A test/spec expectations updated for shared log format
+Updated affected tests and test specifications for mqtt client, automation client, and zwave service to assert shared log-line markers (`component=... direction=...`) instead of legacy per-module log prefixes. Updated module specs to document shared logging-service ownership and structured reason-chain output behavior.
+
+### [MILESTONE] Logging unification Phase 3 completed
+Phase 3 of `spec/yaha/IMPL-message-logging-unification.md` is complete with wave-A client adoption on shared logging services.

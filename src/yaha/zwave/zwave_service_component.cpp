@@ -1,4 +1,5 @@
 #include "yaha/zwave/zwave_service_component.h"
+#include "yaha/message/message_log_service.h"
 
 #include <exception>
 #include <iostream>
@@ -34,29 +35,6 @@ namespace {
         error.addReason(detail);
     }
     return error;
-}
-
-[[nodiscard]] std::string valueToLogText(const Value& messageValue) {
-    if (const auto* textValue = std::get_if<std::string>(&messageValue); textValue != nullptr) {
-        return *textValue;
-    }
-
-    std::ostringstream stream{};
-    stream << std::get<double>(messageValue);
-    return stream.str();
-}
-
-[[nodiscard]] std::string qosToLogText(const Qos qosValue) {
-    switch (qosValue) {
-    case Qos::AtMostOnce:
-        return "0";
-    case Qos::AtLeastOnce:
-        return "1";
-    case Qos::ExactlyOnce:
-        return "2";
-    }
-
-    return "?";
 }
 
 } // namespace
@@ -246,15 +224,22 @@ void ZwaveServiceComponent::logIncomingMessageIfEnabled(const Message& message) 
         return;
     }
 
-    std::cout << "zwave_service[in] topic=" << message.topic()
-              << " qos=" << qosToLogText(message.qos())
-              << " retain=" << (message.retain() ? "1" : "0")
-              << " value=" << valueToLogText(message.value())
-              << '\n';
-    for (const auto& entry : message.reason()) {
-        std::cout << "  reason: [" << entry.timestamp << "] " << entry.message << '\n';
+    const MessageLogConfig logConfig{
+        .enableIncoming = true,
+        .enableOutgoing = false,
+        .includeReasonChain = true,
+        .incomingTopicFilter = std::nullopt,
+        .outgoingTopicFilter = std::nullopt};
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "zwave_service",
+        MessageLogDirection::Incoming,
+        message,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
     }
-    std::cout << std::flush;
+
+    std::cout << *logLine << '\n' << std::flush;
 }
 
 void ZwaveServiceComponent::logOutgoingMessageIfEnabled(const Message& message) const {
@@ -262,15 +247,22 @@ void ZwaveServiceComponent::logOutgoingMessageIfEnabled(const Message& message) 
         return;
     }
 
-    std::cout << "zwave_service[out] topic=" << message.topic()
-              << " qos=" << qosToLogText(message.qos())
-              << " retain=" << (message.retain() ? "1" : "0")
-              << " value=" << valueToLogText(message.value())
-              << '\n';
-    for (const auto& entry : message.reason()) {
-        std::cout << "  reason: [" << entry.timestamp << "] " << entry.message << '\n';
+    const MessageLogConfig logConfig{
+        .enableIncoming = false,
+        .enableOutgoing = true,
+        .includeReasonChain = true,
+        .incomingTopicFilter = std::nullopt,
+        .outgoingTopicFilter = std::nullopt};
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "zwave_service",
+        MessageLogDirection::Outgoing,
+        message,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
     }
-    std::cout << std::flush;
+
+    std::cout << *logLine << '\n' << std::flush;
 }
 
 void ZwaveServiceComponent::logImportantEvent(const std::string_view operation, const std::string_view detail) const {

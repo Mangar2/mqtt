@@ -515,7 +515,8 @@ TEST_CASE("automation_component_publish_failure_logs_out_fail_without_false_out_
 
     const std::string logOutput = capturedOutput.str();
     REQUIRE(logOutput.find("automation_client[out-fail] topic=house/light/set") != std::string::npos);
-    REQUIRE(logOutput.find("automation_client[out] topic=house/light/set") == std::string::npos);
+        REQUIRE(logOutput.find("component=\"automation_client\" direction=\"outgoing\" topic=\"house/light/set\"")
+            == std::string::npos);
 
     component.close();
 }
@@ -844,8 +845,10 @@ TEST_CASE("automation_component_logs_incoming_and_outgoing_messages_when_enabled
     std::cout.rdbuf(previousBuffer);
 
     const std::string logOutput = capturedOutput.str();
-    REQUIRE(logOutput.find("automation_client[in] topic=$MONITOR/presence/set") != std::string::npos);
-    REQUIRE(logOutput.find("automation_client[out] topic=house/light/set") != std::string::npos);
+        REQUIRE(logOutput.find("component=\"automation_client\" direction=\"incoming\" topic=\"$MONITOR/presence/set\"")
+            != std::string::npos);
+        REQUIRE(logOutput.find("component=\"automation_client\" direction=\"outgoing\" topic=\"house/light/set\"")
+            != std::string::npos);
     REQUIRE(logOutput.find("Rule: presenceOn") != std::string::npos);
 
     component.close();

@@ -11,6 +11,7 @@
 #include "yaha/automation_client/automation_rule_lookup.h"
 #include "yaha/automation_client/automation_rule_tree_access.h"
 #include "yaha/automation_client/automation_trace_format.h"
+#include "yaha/message/message_log_service.h"
 
 #include <chrono>
 #include <exception>
@@ -579,15 +580,22 @@ void AutomationClientComponent::logIncomingMessageIfEnabled(const Message& messa
         return;
     }
 
-    std::cout << "automation_client[in] topic=" << message.topic()
-              << " qos=" << automation_message_values::qosToLogText(message.qos())
-              << " retain=" << (message.retain() ? "1" : "0")
-              << " value=" << automation_message_values::valueToLogText(message.value())
-              << '\n';
-    for (const auto& entry : message.reason()) {
-        std::cout << "  reason: [" << entry.timestamp << "] " << entry.message << '\n';
+    const MessageLogConfig logConfig{
+        .enableIncoming = true,
+        .enableOutgoing = false,
+        .includeReasonChain = true,
+        .incomingTopicFilter = std::nullopt,
+        .outgoingTopicFilter = std::nullopt};
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "automation_client",
+        MessageLogDirection::Incoming,
+        message,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
     }
-    std::cout << std::flush;
+
+    std::cout << *logLine << '\n' << std::flush;
 }
 
 void AutomationClientComponent::logOutgoingMessageIfEnabled(const Message& message) const {
@@ -595,15 +603,22 @@ void AutomationClientComponent::logOutgoingMessageIfEnabled(const Message& messa
         return;
     }
 
-    std::cout << "automation_client[out] topic=" << message.topic()
-              << " qos=" << automation_message_values::qosToLogText(message.qos())
-              << " retain=" << (message.retain() ? "1" : "0")
-              << " value=" << automation_message_values::valueToLogText(message.value())
-              << '\n';
-    for (const auto& entry : message.reason()) {
-        std::cout << "  reason: [" << entry.timestamp << "] " << entry.message << '\n';
+    const MessageLogConfig logConfig{
+        .enableIncoming = false,
+        .enableOutgoing = true,
+        .includeReasonChain = true,
+        .incomingTopicFilter = std::nullopt,
+        .outgoingTopicFilter = std::nullopt};
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "automation_client",
+        MessageLogDirection::Outgoing,
+        message,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
     }
-    std::cout << std::flush;
+
+    std::cout << *logLine << '\n' << std::flush;
 }
 
 void AutomationClientComponent::logOutgoingFailure(const Message& message,

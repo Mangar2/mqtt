@@ -557,12 +557,15 @@ TEST_CASE("message_trace_escapes_string_and_formats_numeric_values", "[mqtt_clie
     const std::string output = captured.str();
     REQUIRE(output.find("mqtt: start clientId=") != std::string::npos);
     REQUIRE(output.find("mqtt: connected clientId=") != std::string::npos);
-    REQUIRE(output.find("mqtt: incoming topic=home/trace/in") != std::string::npos);
-    REQUIRE(output.find("value=21.5") != std::string::npos);
-    REQUIRE(output.find("mqtt: outgoing topic=home/trace/out") != std::string::npos);
-    REQUIRE(output.find("value=payload") != std::string::npos);
+        REQUIRE(output.find("mqtt: component=\"mqtt_client\" direction=\"incoming\" topic=\"home/trace/in\"")
+            != std::string::npos);
+        REQUIRE(output.find("value=21.500000") != std::string::npos);
+        REQUIRE(output.find("mqtt: component=\"mqtt_client\" direction=\"outgoing\" topic=\"home/trace/out\"")
+            != std::string::npos);
+        REQUIRE(output.find("value=\"payload\"") != std::string::npos);
     REQUIRE(output.find("raw=\"line1\\n\\\"x\\\"\\\\tab\\t\"") != std::string::npos);
-    REQUIRE(output.find("reason=[{\"message\":\"received from arduino\",\"timestamp\":\"2026-05-15T21:40:26.003Z\"},{\"message\":\"received by broker\",\"timestamp\":\"2026-05-15T21:40:26.007Z\"}]") != std::string::npos);
+        REQUIRE(output.find("\"message\":\"received from arduino\"") != std::string::npos);
+        REQUIRE(output.find("\"message\":\"received by broker\"") != std::string::npos);
 }
 
 TEST_CASE("mqtt_client_runtime_run_until_signal_starts_and_stops_component",

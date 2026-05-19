@@ -86,9 +86,10 @@ the callback contract into real TCP MQTT packet I/O.
 - `close()` always ends with one `disconnect()` call if currently connected.
 - `close()` ignores transport disconnect exceptions to preserve no-throw shutdown behavior.
 - Lifecycle tracing is handled in this generic layer (`connect`, `connected`, `reconnect`, `reconnected`, `subscribe`, `unsubscribe`, `disconnect`, `connection lost`, `reconnecting`).
-- Optional message tracing (`sent`/`recv`) is controlled by config flag `enableMessageTrace`.
-- Trace reason output is controlled by config flag `logReason` (default `true`); when enabled, output contains a structured JSON-style reason array (`reason=[{"message":"...","timestamp":"..."},...]`) in chronological order (oldest to newest).
-- `sent` trace output prints `Message.rawPayload()` as `raw="..."` when available for diagnostics only; broker transport outbound publish still serializes canonical envelope JSON.
+- Optional message tracing (`incoming`/`outgoing`) is controlled by config flag `enableMessageTrace`.
+- Message trace lines are emitted through shared message logging service (`yaha/message/message_log_service.*`) with deterministic field order.
+- Trace reason output is controlled by config flag `logReason` (default `true`); when enabled, output contains full structured reason entries in `Message.reason()` order.
+- Outgoing trace output prints `Message.rawPayload()` as `raw="..."` when available for diagnostics only; broker transport outbound publish still serializes canonical envelope JSON.
 
 ## Topic matching
 

@@ -141,6 +141,9 @@ Adopt shared service in:
 
 Remove local duplicate message formatting helpers once each client is migrated.
 
+Status:
+- Completed on 2026-05-19.
+
 ## Phase 4: Client adoption wave B
 
 Adopt shared service in:

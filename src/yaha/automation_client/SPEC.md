@@ -118,8 +118,9 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
   - Trace payload envelope serialization is delegated to shared message utility
     `yaha/message/message_payload_codec.*`.
 - Logging behavior:
-  - If `logIncomingMessages=true`, each inbound message handled by component is logged.
-  - If `logOutgoingMessages=true`, each outbound rule/ack message is logged only after successful callback send.
+  - If `logIncomingMessages=true`, each inbound message handled by component is logged through shared message logging service (`yaha/message/message_log_service.*`).
+  - If `logOutgoingMessages=true`, each outbound rule/ack message is logged through shared message logging service only after successful callback send.
+  - Shared log lines use deterministic field order and include full structured reason chain.
   - Outbound rule message reasons use the rule identifier (for example rule name/path)
     rather than the emitted topic name when available.
   - Failed outbound sends are logged as `automation_client[out-fail]` with category and reason.

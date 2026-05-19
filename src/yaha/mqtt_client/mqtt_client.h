@@ -6,6 +6,7 @@
  */
 
 #include "yaha/message/message.h"
+#include "yaha/message/message_log_formatter.h"
 #include "yaha/mqtt_component/mqtt_component.h"
 
 #include <chrono>
@@ -110,7 +111,7 @@ private:
     void processIncoming();
     void processKeepAlive();
     void traceLifecycle(const std::string& text) const;
-    void traceMessage(const std::string& direction, const Message& message) const;
+    void traceMessage(MessageLogDirection direction, const Message& message) const;
     [[nodiscard]] bool isTopicSubscribed(const std::string& topic) const;
     [[nodiscard]] static bool topicMatchesFilter(const std::string& filter,
                                                  const std::string& topic);
