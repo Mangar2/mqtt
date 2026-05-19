@@ -832,6 +832,55 @@ TEST_CASE("pending_command_timeout_publishes_last_cached_value_with_timeout_reas
         published.front().reason()[1].message == "timeout waiting for zwave network id: " + std::to_string(kValueIdSample));
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("pending_command_timeout_without_value_id_uses_unknown_reason", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver, kCommandReactionFastPollMs, kCommandReactionShortTimeoutMs);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/lamp",
+            kNodeIdEleven,
+            kSwitchBinaryClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"switch"},
+            std::nullopt)});
+
+    std::vector<yaha::Message> published{};
+    controller.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    controller.onValueChanged(yaha::ZwaveControllerValueEvent{
+        .nodeId = kNodeIdEleven,
+        .classId = kSwitchBinaryClass,
+        .instance = kInstanceOne,
+        .index = kIndexZero,
+        .label = std::nullopt,
+        .valueId = std::nullopt,
+        .value = yaha::Value{1.0},
+        .type = "switch",
+        .readOnly = false});
+
+    published.clear();
+
+    controller.setValue(
+        "ground/livingroom/lamp/power/set",
+        yaha::Value{std::string{"off"}},
+        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{.message = "Request by User", .timestamp = "2026-05-19T08:18:30Z"}});
+
+    std::this_thread::sleep_for(std::chrono::milliseconds{kPendingTimeoutPublishWaitMs});
+
+    REQUIRE(published.size() == 1U);
+    CHECK(published.front().topic() == "ground/livingroom/lamp");
+    REQUIRE(std::holds_alternative<std::string>(published.front().value()));
+    CHECK(std::get<std::string>(published.front().value()) == "on");
+    REQUIRE(published.front().reason().size() >= 2U);
+    CHECK(published.front().reason().front().message == "Request by User");
+    CHECK(published.front().reason()[1].message == "timeout waiting for zwave network id: unknown");
+}
+
 TEST_CASE("pending_command_polling_targets_only_affected_node", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver, kCommandReactionPollMs, kCommandReactionDefaultTimeoutMs);
