@@ -934,3 +934,48 @@ TEST_CASE("pending_match_accepts_bool_string_numeric_equivalence", "[zwave_contr
     REQUIRE_FALSE(published.front().reason().empty());
     CHECK(published.front().reason().front().message == "Request by User");
 }
+
+TEST_CASE("matching_feedback_sanitizes_reason_entries_to_message_spec", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/lamp",
+            kNodeIdEleven,
+            kSwitchBinaryClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"switch"},
+            std::nullopt)});
+
+    std::vector<yaha::Message> published{};
+    controller.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    const std::string browserReasonWithControl = std::string{"browser"} + std::string{"\x01"};
+    const std::vector<yaha::ReasonEntry> reasons{
+        yaha::ReasonEntry{.message = "", .timestamp = "2026-05-19T10:00:00Z"},
+        yaha::ReasonEntry{.message = browserReasonWithControl, .timestamp = "not-a-timestamp"},
+        yaha::ReasonEntry{.message = "rule", .timestamp = "2026-05-19T10:01:00.123Z"}};
+
+    controller.setValue("ground/livingroom/lamp/power/set", yaha::Value{std::string{"on"}}, reasons);
+    controller.onValueChanged(yaha::ZwaveControllerValueEvent{
+        .nodeId = kNodeIdEleven,
+        .classId = kSwitchBinaryClass,
+        .instance = kInstanceOne,
+        .index = kIndexZero,
+        .label = std::nullopt,
+        .valueId = kValueIdSample,
+        .value = yaha::Value{1.0},
+        .type = "switch",
+        .readOnly = false});
+
+    REQUIRE(published.size() == 1U);
+    REQUIRE(published.front().reason().size() >= 3U);
+    CHECK(published.front().reason()[0].message == "browser ");
+    CHECK(published.front().reason()[0].timestamp != "not-a-timestamp");
+    CHECK(published.front().reason()[1].message == "rule");
+    CHECK(published.front().reason()[1].timestamp == "2026-05-19T10:01:00.123Z");
+}

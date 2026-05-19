@@ -70,8 +70,9 @@ Concrete parity adapter implementation with additional callback entry points:
 
 `setValue(topic, value)` behavior:
 - requires trailing `/set`
-- derives label/topic using legacy split order
 - resolves ZWave id through `ZwaveDevicesMapper::topicToZwaveId(...)`
+  - first tries direct device topic: incoming topic without trailing `/set`
+  - falls back to legacy label/topic split when direct mapping is unavailable
 - converts payload via `ZwaveDevicesMapper::buildWriteRequest(...)`
 - for regular `setValue` writes, stores a pending command entry with:
   - reply topic identity (incoming topic without trailing `/set`)
@@ -97,16 +98,18 @@ Concrete parity adapter implementation with additional callback entry points:
   - `onDriverReady` publishes `$MONITOR/zwave/notification` value `starting scan`
   - `onDriverFailed` publishes `$MONITOR/zwave/error` value `driver failure`
   - `onScanComplete` publishes `$MONITOR/zwave/notification` value `scan complete`
-- Notification callback publishes mapped notification text; on failures publishes to `$MONITOR/zwave/error`.
+- Notification callback publishes only to `$MONITOR/zwave/notification` (never to device topics); on failures publishes to `$MONITOR/zwave/error`.
 - Controller command callback publishes to `$MONITOR/zwave/notification`.
 - Node/value callbacks maintain in-memory node/class cache.
 - `onValueChanged` updates cache and publishes mapped value.
-- `onValueRefreshed` updates cache only and does not publish outbound device messages.
+- `onValueRefreshed` updates cache and publishes outbound mapped value only when it matches a pending command.
 - Pending command feedback behavior:
   - controller runs a background poll loop and requests `driver.requestNodeState(nodeId)` per pending command on `commandReactionPollIntervalMs`
   - temporary debug trace `zwave_controller[pending-trace] ...` logs command tracking, poll cycles, timeout removals, feedback matching, and no-match feedback
-  - if a value-changed event matches pending reply topic + target + expected value and is still within timeout, the pending command is consumed
+  - if a value-changed/value-refreshed event matches pending reply topic + target + expected value and is still within timeout, the pending command is consumed
+  - expected value comparison accepts semantic bool equivalence across representations (`on/true/1`, `off/false/0`)
   - consumed pending command reasons are prepended to outbound message reasons in original order
+  - prepended reasons are sanitized for YAHA Message conformance: empty reason messages are dropped; invalid reason timestamps are replaced with freshly generated ISO-8601 UTC timestamps
   - pending command entries expire and are removed after `commandReactionTimeoutMs`
   - same action (same reply topic + same target + same expected value) replaces previous pending entry
   - different action on same target is kept as independent pending entry

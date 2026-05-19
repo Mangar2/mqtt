@@ -8,10 +8,12 @@
 #include <limits>
 #include <mutex>
 #include <ranges>
+#include <regex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <algorithm>
+#include <cctype>
 #include <thread>
 #include <unordered_set>
 #include <utility>
@@ -25,6 +27,14 @@ constexpr std::uint16_t kUsbControllerNodeId = 1U;
 constexpr double kIntegerTolerance = 1e-9;
 constexpr std::uint32_t kPendingCommandLoopSleepMs = 20U;
 constexpr bool kPendingPollingDebugTrace = true;
+constexpr unsigned char kJsonControlThreshold = 0x20U;
+
+const std::regex& iso8601TimestampRegex() {
+    static const std::regex regex{
+        R"(^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+\-]\d{2}:\d{2})$)",
+        std::regex::ECMAScript};
+    return regex;
+}
 
 void logPendingPollingTrace(const std::string& text) {
     if (!kPendingPollingDebugTrace) {
@@ -82,6 +92,37 @@ void logPendingPollingTrace(const std::string& text) {
     }
 
     return std::nullopt;
+}
+
+[[nodiscard]] bool isSpecCompliantReasonTimestamp(const std::string& timestamp) {
+    if (timestamp.empty()) {
+        return false;
+    }
+    return std::regex_match(timestamp, iso8601TimestampRegex());
+}
+
+[[nodiscard]] std::string sanitizeReasonMessageForJson(std::string text) {
+    for (char& character : text) {
+        const auto unsignedCharacter = static_cast<unsigned char>(character);
+        if (unsignedCharacter < kJsonControlThreshold && character != '\n' && character != '\r' && character != '\t') {
+            character = ' ';
+        }
+    }
+    return text;
+}
+
+void addSpecCompliantReason(Message& message, const ReasonEntry& reasonEntry) {
+    const std::string sanitizedMessage = sanitizeReasonMessageForJson(reasonEntry.message);
+    if (sanitizedMessage.empty()) {
+        return;
+    }
+
+    if (isSpecCompliantReasonTimestamp(reasonEntry.timestamp)) {
+        message.addReason(sanitizedMessage, reasonEntry.timestamp);
+        return;
+    }
+
+    message.addReason(sanitizedMessage);
 }
 
 [[nodiscard]] double valueAsDouble(const Value& value) {
@@ -433,7 +474,7 @@ void ZwaveController::publish(
     Message message{topic, value};
     message.addReason(reason);
     for (const auto& entry : prependedReasons | std::views::reverse) {
-        message.addReason(entry.message, entry.timestamp);
+        addSpecCompliantReason(message, entry);
     }
     publishCallback_(message);
 }
