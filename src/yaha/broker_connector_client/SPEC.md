@@ -77,6 +77,8 @@ Protocol and domain logic remain in `broker_connector/`. Runtime orchestration i
 - `logIncomingMessage` bool (optional, default `true`, controls source publish-recv logs)
 - `logOutgoingMessage` bool (optional, default `true`, controls receiver mqtt sent/recv trace logs)
 
+Monitoring message-log booleans are mapped through shared message-log INI helper (`tryLoadMessageLogConfigFromIni`) with unchanged legacy singular key names.
+
 ## Default handling
 
 All fields use the defaults from their target config structs when keys are missing.

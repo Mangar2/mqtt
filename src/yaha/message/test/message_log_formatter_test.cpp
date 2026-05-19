@@ -14,6 +14,7 @@ namespace {
 
 } // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("Message log formatter emits deterministic required field order", "[message][message_log_formatter]") {
     yaha::Message message{"topic/order", std::string{"on"}, yaha::Qos::AtLeastOnce, false, true};
     message.addReason("rule triggered", "2026-05-19T11:00:00Z");

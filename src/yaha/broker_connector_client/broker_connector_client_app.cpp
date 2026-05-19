@@ -1,6 +1,7 @@
 #include "yaha/broker_connector_client/broker_connector_client_app.h"
 
 #include "yaha/ini/ini_document.h"
+#include "yaha/message/message_log_service.h"
 
 #include <chrono>
 #include <cstdint>
@@ -315,21 +316,26 @@ BrokerConnectorClientRuntimeConfigLoadResult tryLoadBrokerConnectorClientRuntime
         parsed.sourceLifecycleConfig.enableTrace = *sourceTraceResult.first;
     }
 
-    const auto logIncomingResult = document.readBool("monitoring", "logIncomingMessage");
-    if (!logIncomingResult.second.empty()) {
-        return {.config = std::nullopt, .errorMessage = logIncomingResult.second};
-    }
-    if (logIncomingResult.first.has_value()) {
-        parsed.sourceConfig.logIncomingMessages = *logIncomingResult.first;
+    MessageLogConfig messageLogConfig{
+        .enableIncoming = parsed.sourceConfig.logIncomingMessages,
+        .enableOutgoing = parsed.receiverConfig.enableMessageTrace,
+        .includeReasonChain = true,
+    };
+    std::string messageLogConfigError{};
+    if (!tryLoadMessageLogConfigFromIni(
+            document,
+            MessageLogIniKeys{
+                .incomingEnabled = MessageLogIniBoolKey{.section = "monitoring", .key = "logIncomingMessage"},
+                .outgoingEnabled = MessageLogIniBoolKey{.section = "monitoring", .key = "logOutgoingMessage"},
+                .includeReasonChain = std::nullopt,
+            },
+            messageLogConfig,
+            messageLogConfigError)) {
+        return {.config = std::nullopt, .errorMessage = messageLogConfigError};
     }
 
-    const auto logOutgoingResult = document.readBool("monitoring", "logOutgoingMessage");
-    if (!logOutgoingResult.second.empty()) {
-        return {.config = std::nullopt, .errorMessage = logOutgoingResult.second};
-    }
-    if (logOutgoingResult.first.has_value()) {
-        parsed.receiverConfig.enableMessageTrace = *logOutgoingResult.first;
-    }
+    parsed.sourceConfig.logIncomingMessages = messageLogConfig.enableIncoming;
+    parsed.receiverConfig.enableMessageTrace = messageLogConfig.enableOutgoing;
 
     return {.config = std::move(parsed), .errorMessage = ""};
 }

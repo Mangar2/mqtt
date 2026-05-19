@@ -61,10 +61,25 @@ struct MessageLogConfig {
     std::optional<std::string> outgoingTopicFilter{};
 };
 
+struct MessageLogIniBoolKey {
+    std::string_view section{};
+    std::string_view key{};
+};
+
+struct MessageLogIniKeys {
+    std::optional<MessageLogIniBoolKey> incomingEnabled{};
+    std::optional<MessageLogIniBoolKey> outgoingEnabled{};
+    std::optional<MessageLogIniBoolKey> includeReasonChain{};
+};
+
 bool matchesTopicFilter(std::string_view topicName, std::string_view topicFilter);
 bool shouldLogMessage(MessageLogDirection direction,
                       const Message& message,
                       const MessageLogConfig& config);
+bool tryLoadMessageLogConfigFromIni(const IniDocument& document,
+                                    const MessageLogIniKeys& keys,
+                                    MessageLogConfig& config,
+                                    std::string& errorMessage);
 std::string formatMessageLogLine(std::string_view componentName,
                                  MessageLogDirection direction,
                                  const Message& message,
@@ -84,6 +99,12 @@ Deterministic formatting contract:
 - Optional fields (`raw`, transport metadata) append after required fields in stable order.
 - String escaping uses the same JSON-compatible escaping rules as message payload helpers.
 - Full reason output must preserve `Message.reason()` order and must never be flattened to one plain string in unified paths.
+
+INI compatibility mapping contract:
+- shared helper `tryLoadMessageLogConfigFromIni(...)` maps per-client boolean INI keys into `MessageLogConfig`.
+- missing keys keep caller defaults unchanged.
+- invalid bool values return `false` and preserve field-specific parser errors from `IniDocument::readBool`.
+- callers can map both plural keys (`logIncomingMessages` / `logOutgoingMessages`) and legacy singular monitoring keys (`logIncomingMessage` / `logOutgoingMessage`).
 
 ### Class `Message`
 

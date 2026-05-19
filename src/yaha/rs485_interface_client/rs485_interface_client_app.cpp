@@ -3,6 +3,7 @@
 #include "yaha/mqtt_client/broker_transport.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 #include "yaha/error_handling/yaha_error.h"
+#include "yaha/message/message_log_service.h"
 #include "yaha/rs485_interface/rs485_interface_component.h"
 
 #include <algorithm>
@@ -381,29 +382,31 @@ struct ParsedInterfaceSegments {
 void parseRs485LoggingFlags(
     const IniDocument& document,
     Rs485InterfaceConfig& output) {
-    const auto logIncomingResult = document.readBool("rs485interface", "logIncomingMessages");
-    if (!logIncomingResult.second.empty()) {
+    MessageLogConfig messageLogConfig{
+        .enableIncoming = output.logIncomingMessages,
+        .enableOutgoing = output.logOutgoingMessages,
+        .includeReasonChain = true,
+    };
+
+    std::string errorMessage{};
+    if (!tryLoadMessageLogConfigFromIni(
+            document,
+            MessageLogIniKeys{
+                .incomingEnabled = MessageLogIniBoolKey{.section = "rs485interface", .key = "logIncomingMessages"},
+                .outgoingEnabled = MessageLogIniBoolKey{.section = "rs485interface", .key = "logOutgoingMessages"},
+                .includeReasonChain = std::nullopt,
+            },
+            messageLogConfig,
+            errorMessage)) {
         throw YahaError{
             "RS485_CONFIG_PARSE_FAILED",
             "failed to parse rs485 config",
             "Invalid RS485 client configuration.",
-            logIncomingResult.second};
-    }
-    if (logIncomingResult.first.has_value()) {
-        output.logIncomingMessages = *logIncomingResult.first;
+            errorMessage};
     }
 
-    const auto logOutgoingResult = document.readBool("rs485interface", "logOutgoingMessages");
-    if (!logOutgoingResult.second.empty()) {
-        throw YahaError{
-            "RS485_CONFIG_PARSE_FAILED",
-            "failed to parse rs485 config",
-            "Invalid RS485 client configuration.",
-            logOutgoingResult.second};
-    }
-    if (logOutgoingResult.first.has_value()) {
-        output.logOutgoingMessages = *logOutgoingResult.first;
-    }
+    output.logIncomingMessages = messageLogConfig.enableIncoming;
+    output.logOutgoingMessages = messageLogConfig.enableOutgoing;
 }
 
 } // namespace

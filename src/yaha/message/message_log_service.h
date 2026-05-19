@@ -1,5 +1,6 @@
 #pragma once
 
+#include "yaha/ini/ini_document.h"
 #include "yaha/message/message.h"
 #include "yaha/message/message_log_formatter.h"
 
@@ -16,6 +17,23 @@ struct MessageLogConfig {
     std::optional<std::string> incomingTopicFilter{};
     std::optional<std::string> outgoingTopicFilter{};
 };
+
+struct MessageLogIniBoolKey {
+    std::string_view section{};
+    std::string_view key{};
+};
+
+struct MessageLogIniKeys {
+    std::optional<MessageLogIniBoolKey> incomingEnabled{};
+    std::optional<MessageLogIniBoolKey> outgoingEnabled{};
+    std::optional<MessageLogIniBoolKey> includeReasonChain{};
+};
+
+[[nodiscard]] bool tryLoadMessageLogConfigFromIni(
+    const IniDocument& document,
+    const MessageLogIniKeys& keys,
+    MessageLogConfig& config,
+    std::string& errorMessage);
 
 [[nodiscard]] bool shouldLogMessage(
     MessageLogDirection direction,

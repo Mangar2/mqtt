@@ -1,5 +1,6 @@
 #include "yaha/automation_client/automation_client_app.h"
 
+#include "yaha/message/message_log_service.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <cstdint>
@@ -93,23 +94,25 @@ bool tryLoadAutomationClientConfigFromIni(
         output.subscribeQos = static_cast<Qos>(*qosResult.first);
     }
 
-    const auto logIncomingResult = document.readBool("automation", "logIncomingMessages");
-    if (!logIncomingResult.second.empty()) {
-        errorMessage = logIncomingResult.second;
+    MessageLogConfig messageLogConfig{
+        .enableIncoming = output.logIncomingMessages,
+        .enableOutgoing = output.logOutgoingMessages,
+        .includeReasonChain = true,
+    };
+    if (!tryLoadMessageLogConfigFromIni(
+            document,
+            MessageLogIniKeys{
+                .incomingEnabled = MessageLogIniBoolKey{.section = "automation", .key = "logIncomingMessages"},
+                .outgoingEnabled = MessageLogIniBoolKey{.section = "automation", .key = "logOutgoingMessages"},
+                .includeReasonChain = std::nullopt,
+            },
+            messageLogConfig,
+            errorMessage)) {
         return false;
-    }
-    if (logIncomingResult.first.has_value()) {
-        output.logIncomingMessages = *logIncomingResult.first;
     }
 
-    const auto logOutgoingResult = document.readBool("automation", "logOutgoingMessages");
-    if (!logOutgoingResult.second.empty()) {
-        errorMessage = logOutgoingResult.second;
-        return false;
-    }
-    if (logOutgoingResult.first.has_value()) {
-        output.logOutgoingMessages = *logOutgoingResult.first;
-    }
+    output.logIncomingMessages = messageLogConfig.enableIncoming;
+    output.logOutgoingMessages = messageLogConfig.enableOutgoing;
 
     return true;
 }

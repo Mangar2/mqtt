@@ -70,6 +70,7 @@ all YAHA apps can share the same non-domain runtime behavior.
 - optional MQTT message logs (`sent`, `recv`) when enabled by CLI flag `--trace-messages`
 - optional incoming-only logs via shared message logging service when INI key `[messagestore] logIncomingMessages=true` and CLI message tracing is off
 - incoming logs use deterministic structured fields (`component`, `direction`, `topic`, `value`, `qos`, `retain`, `dup`, `reason`) and include full reason chain when `messagestore.logReason=true`
+- `messagestore.logIncomingMessages` and `messagestore.logReason` are mapped through shared message-log INI helper (`tryLoadMessageLogConfigFromIni`) with unchanged key names and defaults
 - signal handling and shutdown progress lines (`received`, `disconnecting`, `shutting down`, `stopped`)
 
 ## CLI behavior

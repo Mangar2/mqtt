@@ -116,6 +116,7 @@ Logging semantics:
 - `logLevel=2`: OpenZWave info logging plus important `zwave_service[event|error]` logs.
 - `logLevel>=3`: OpenZWave detail/debug logging plus important `zwave_service[event|error]` logs.
 - `logIncomingMessages` and `logOutgoingMessages` are independent MQTT trace flags and are never overridden by `logLevel`.
+- `[zwave]` logging flags are parsed through shared message-log INI helper (`tryLoadMessageLogConfigFromIni`) with unchanged key names and defaults.
 
 ## Files
 

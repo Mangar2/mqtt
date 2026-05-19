@@ -1,5 +1,6 @@
 #include "yaha/zwave_client/zwave_client_app.h"
 
+#include "yaha/message/message_log_service.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <algorithm>
@@ -199,23 +200,25 @@ constexpr std::uint64_t kCommandReactionTimeoutMsMax = 600000U;
     const IniDocument& document,
     ZwaveConfig& parsed,
     std::string& errorMessage) {
-    const auto logIncomingResult = document.readBool("zwave", "logIncomingMessages");
-    if (!logIncomingResult.second.empty()) {
-        errorMessage = logIncomingResult.second;
+    MessageLogConfig messageLogConfig{
+        .enableIncoming = parsed.logIncomingMessages,
+        .enableOutgoing = parsed.logOutgoingMessages,
+        .includeReasonChain = true,
+    };
+    if (!tryLoadMessageLogConfigFromIni(
+            document,
+            MessageLogIniKeys{
+                .incomingEnabled = MessageLogIniBoolKey{.section = "zwave", .key = "logIncomingMessages"},
+                .outgoingEnabled = MessageLogIniBoolKey{.section = "zwave", .key = "logOutgoingMessages"},
+                .includeReasonChain = std::nullopt,
+            },
+            messageLogConfig,
+            errorMessage)) {
         return false;
-    }
-    if (logIncomingResult.first.has_value()) {
-        parsed.logIncomingMessages = *logIncomingResult.first;
     }
 
-    const auto logOutgoingResult = document.readBool("zwave", "logOutgoingMessages");
-    if (!logOutgoingResult.second.empty()) {
-        errorMessage = logOutgoingResult.second;
-        return false;
-    }
-    if (logOutgoingResult.first.has_value()) {
-        parsed.logOutgoingMessages = *logOutgoingResult.first;
-    }
+    parsed.logIncomingMessages = messageLogConfig.enableIncoming;
+    parsed.logOutgoingMessages = messageLogConfig.enableOutgoing;
 
     const auto logLevelResult = document.readUnsigned("zwave", "logLevel", kLogLevelMin, kLogLevelMax);
     if (!logLevelResult.second.empty()) {

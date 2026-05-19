@@ -187,6 +187,7 @@ TEST_CASE("automation_component_monitoring_event_reload_rules", "[automation_cli
     component.close();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("automation_component_management_update_persists_and_acks", "[automation_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
@@ -366,6 +367,7 @@ TEST_CASE("automation_component_management_non_string_payload_acks_invalid", "[a
     component.close();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("automation_component_management_invalid_rule_persists_and_publishes_isvalid_false", "[automation_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};

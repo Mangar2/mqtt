@@ -1,6 +1,7 @@
 #include "yaha/message_store_client/message_store_client_app.h"
 
 #include "yaha/ini/ini_document.h"
+#include "yaha/message/message_log_service.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <cerrno>
@@ -268,24 +269,26 @@ bool tryLoadMessageStoreClientRuntimeConfigFromIni(
         return false;
     }
 
-    const auto logIncomingResult = document.readBool("messagestore", "logIncomingMessages");
-    if (!logIncomingResult.second.empty()) {
-        errorMessage = logIncomingResult.second;
+    MessageLogConfig messageLogConfig{
+        .enableIncoming = parsed.logIncomingMessages,
+        .enableOutgoing = false,
+        .includeReasonChain = parsed.logReason,
+    };
+    if (!tryLoadMessageLogConfigFromIni(
+            document,
+            MessageLogIniKeys{
+                .incomingEnabled = MessageLogIniBoolKey{.section = "messagestore", .key = "logIncomingMessages"},
+                .outgoingEnabled = std::nullopt,
+                .includeReasonChain = MessageLogIniBoolKey{.section = "messagestore", .key = "logReason"},
+            },
+            messageLogConfig,
+            errorMessage)) {
         return false;
-    }
-    if (logIncomingResult.first.has_value()) {
-        parsed.logIncomingMessages = *logIncomingResult.first;
     }
 
-    const auto logReasonResult = document.readBool("messagestore", "logReason");
-    if (!logReasonResult.second.empty()) {
-        errorMessage = logReasonResult.second;
-        return false;
-    }
-    if (logReasonResult.first.has_value()) {
-        parsed.logReason = *logReasonResult.first;
-        parsed.mqttConfig.logReason = *logReasonResult.first;
-    }
+    parsed.logIncomingMessages = messageLogConfig.enableIncoming;
+    parsed.logReason = messageLogConfig.includeReasonChain;
+    parsed.mqttConfig.logReason = messageLogConfig.includeReasonChain;
 
     output = std::move(parsed);
     return true;

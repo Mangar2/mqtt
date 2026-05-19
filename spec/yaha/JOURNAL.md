@@ -232,3 +232,12 @@ Updated HTTP MQTT interface client tests and module/test specs to assert shared 
 
 ### [MILESTONE] Logging unification Phase 4 completed
 Phase 4 of `spec/yaha/IMPL-message-logging-unification.md` is complete with wave-B client adoption on shared logging services.
+
+### [ARTIFACT] Shared message-log INI mapping helper added and adopted
+Extended `src/yaha/message/message_log_service.*` with shared INI mapping helper contracts (`MessageLogIniBoolKey`, `MessageLogIniKeys`, `tryLoadMessageLogConfigFromIni`). Migrated message-log flag parsing in `automation_client_app.cpp`, `zwave_client_app.cpp`, `rs485_interface_client_app.cpp`, `broker_connector_client_app.cpp`, and `message_store_client_app.cpp` to this shared helper.
+
+### [ARTIFACT] Message-log config compatibility tests added
+Extended `src/yaha/message/test/message_log_service_test.cpp` and `src/yaha/message/test/TEST_SPEC.md` with compatibility coverage for missing keys (default-preserving behavior), plural legacy keys (`logIncomingMessages`/`logOutgoingMessages`), singular monitoring keys (`logIncomingMessage`/`logOutgoingMessage`), and invalid bool error propagation.
+
+### [MILESTONE] Logging unification Phase 5 completed
+Phase 5 of `spec/yaha/IMPL-message-logging-unification.md` is complete with shared config mapping helper adoption and compatibility-lock test coverage.

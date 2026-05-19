@@ -163,6 +163,9 @@ Status:
 - Keep backward-compatible parsing of existing INI keys.
 - Add compatibility tests proving old keys still produce same enable/disable behavior.
 
+Status:
+- Completed on 2026-05-19.
+
 ## Phase 6: Cleanup and guardrails
 
 - Delete obsolete per-client formatting/filter helpers.

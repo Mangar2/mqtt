@@ -56,3 +56,7 @@ Unit tests for Message value-type behavior and validation guarantees.
 | `Message log formatter escapes control characters deterministically` | escape contract | message value/reason text with quote, backslash, newline, tab | escaped output uses JSON-compatible tokens |
 | `Message log formatter emits full reason chain` | reason completeness contract | message with multiple reason entries | all reasons rendered in message order |
 | `Message log service can omit reason chain by config` | optional reason rendering branch | includeReasonChain=false | reason field omitted or empty per contract |
+| `Message log service ini loader keeps defaults when keys are missing` | compatibility default behavior for shared INI mapping helper | empty INI and non-default initial config | loader keeps existing enable/disable defaults |
+| `Message log service ini loader parses plural legacy keys` | compatibility with existing plural per-section keys | `[automation] logIncomingMessages/logOutgoingMessages` and `[messagestore] logReason` | incoming/outgoing/reason flags mapped exactly as configured |
+| `Message log service ini loader parses singular legacy monitoring keys` | compatibility with existing broker-connector monitoring keys | `[monitoring] logIncomingMessage/logOutgoingMessage` | incoming/outgoing flags mapped exactly as configured |
+| `Message log service ini loader reports invalid bool key` | shared helper propagates existing field-specific bool parse errors | invalid bool token on configured key | loader fails and returns key-specific parse error |

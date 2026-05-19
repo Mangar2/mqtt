@@ -112,6 +112,7 @@ Runtime composition helper:
 - `loadRs485InterfaceConfigFromIni(...)` returns parsed RS485 config or throws `YahaError`.
 - `loadRs485InterfaceClientRuntimeConfigFromIni(...)` returns parsed runtime config or throws `YahaError`.
 - rs485interface `logIncomingMessages` or `logOutgoingMessages` enables `mqttConfig.enableMessageTrace` from INI.
+- rs485interface logging booleans are parsed through shared message-log INI helper (`tryLoadMessageLogConfigFromIni`) with unchanged key names and error behavior.
 - `buildRs485InterfaceClientRuntime(...)` opens the configured serial adapter during runtime object composition and returns runtime objects by value.
 - runtime-build failures throw `YahaError` formatted through `YahaError::buildMessage()`.
 - serial-open failure in runtime-build path returns code `RS485_RUNTIME_SERIAL_OPEN_FAILED`.
