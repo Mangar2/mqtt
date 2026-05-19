@@ -150,8 +150,9 @@ Adapter listener handles callbacks:
 - PUT `/publish`
 - PUT `/pubrel`
 
-Inbound `/publish` trace output is emitted directly at receive-point and prints parsed `topic`, `qos`, `retain`, `dup`, and `value` fields.
-When `SourceHttpBrokerConfig.logIncomingMessages` is enabled, trace output includes one plain full reason string (`reason="..."`) built from all reason entries.
+Inbound `/publish` trace output is emitted via shared YAHA message logging service (`src/yaha/message/message_log_service.*`).
+When `SourceHttpBrokerConfig.logIncomingMessages` is enabled, one structured message log line is emitted with deterministic fields (`component`, `direction`, `topic`, `value`, `qos`, `retain`, `dup`, `reason`) and optional `raw` payload.
+The source adapter appends `packetid` metadata when present.
 
 Ack behavior for callback listener:
 - qos 1 publish -> 204 with `packet=puback`

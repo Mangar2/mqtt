@@ -1,5 +1,7 @@
 #include "yaha/broker_connector/source_http_adapter.h"
 
+#include "yaha/message/message_log_service.h"
+
 #include <httplib.h>
 
 #include <algorithm>
@@ -9,6 +11,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <ranges>
 #include <sstream>
 #include <thread>
 #include <utility>
@@ -75,22 +78,6 @@ std::string escapeJson(const std::string& text) {
         }
     }
     return escaped;
-}
-
-std::string reasonEntriesToLogText(const std::vector<ReasonEntry>& reasonEntries) {
-    if (reasonEntries.empty()) {
-        return "none";
-    }
-
-    std::string combined{};
-    for (std::size_t index = 0U; index < reasonEntries.size(); ++index) {
-        if (index > 0U) {
-            combined += " | ";
-        }
-        combined += reasonEntries[index].message;
-    }
-
-    return combined;
 }
 
 bool parseBool(const std::string& text, const bool defaultValue) {
@@ -540,16 +527,6 @@ std::optional<std::vector<int>> tryParseQosArray(const std::string& payload) {
     return qosValues;
 }
 
-std::string valueToText(const Value& value) {
-    if (std::holds_alternative<std::string>(value)) {
-        return std::get<std::string>(value);
-    }
-
-    std::ostringstream stream{};
-    stream << std::get<double>(value);
-    return stream.str();
-}
-
 std::string qosValuesToText(const std::vector<int>& qosValues) {
     std::ostringstream stream{};
     stream << '[';
@@ -764,19 +741,32 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
         message.setRawPayload(request.body);
 
         if (config_.logIncomingMessages) {
-            std::cout << "  source: publish recv topic=" << message.topic()
-                      << " qos=" << static_cast<int>(meta.qos)
-                      << " retain=" << (meta.retain ? "1" : "0")
-                      << " dup=" << (meta.dup ? "1" : "0")
-                      << " value=" << valueToText(message.value());
+            constexpr MessageLogConfig k_log_config{
+                .enableIncoming = true,
+                .enableOutgoing = false,
+                .includeReasonChain = true,
+            };
 
-            if (meta.packetId.has_value()) {
-                std::cout << " packetid=" << *meta.packetId;
+            Message logMessage{message.topic(), message.value(), meta.qos, meta.retain, meta.dup};
+            for (const auto& reasonEntry : std::views::reverse(message.reason())) {
+                logMessage.addReason(reasonEntry.message, reasonEntry.timestamp);
+            }
+            if (message.rawPayload().has_value()) {
+                logMessage.setRawPayload(*message.rawPayload());
             }
 
-            const std::string reasonText = reasonEntriesToLogText(message.reason());
-            std::cout << " reason=\"" << escapeJson(reasonText) << '\"';
-            std::cout << '\n' << std::flush;
+            if (const auto line = buildMessageLogLine(
+                    "broker_connector_source",
+                    MessageLogDirection::Incoming,
+                    logMessage,
+                    k_log_config);
+                line.has_value()) {
+                std::cout << *line;
+                if (meta.packetId.has_value()) {
+                    std::cout << " packetid=" << *meta.packetId;
+                }
+                std::cout << '\n' << std::flush;
+            }
         }
 
         SourcePublishCallback callback{};

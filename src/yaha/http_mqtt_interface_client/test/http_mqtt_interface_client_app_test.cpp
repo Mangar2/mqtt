@@ -348,7 +348,8 @@ TEST_CASE("http_mqtt_interface_component_serves_endpoints_logs_publish_and_stops
 
     const std::string outputText = capturedOutput.str();
     REQUIRE(outputText.find("http_mqtt_interface_client[in] method=POST endpoint=/publish") != std::string::npos);
-    REQUIRE(outputText.find("http_mqtt_interface_client[out] broker_publish_ack") != std::string::npos);
+    REQUIRE(outputText.find("component=\"http_mqtt_interface_client\" direction=\"outgoing\"") != std::string::npos);
+    REQUIRE(outputText.find("event=broker_publish_ack") != std::string::npos);
     REQUIRE(outputText.find("Request by User") != std::string::npos);
     REQUIRE(harness.resultCode() == 0);
 }
@@ -403,7 +404,8 @@ TEST_CASE("http_mqtt_interface_component_logs_broker_publish_error_when_ack_miss
     std::cerr.rdbuf(previousErrorBuffer);
 
     const std::string outputText = capturedOutput.str();
-    REQUIRE(outputText.find("http_mqtt_interface_client[error] broker_publish_failed") != std::string::npos);
+    REQUIRE(outputText.find("component=\"http_mqtt_interface_client\" direction=\"outgoing\"") != std::string::npos);
+    REQUIRE(outputText.find("event=broker_publish_failed") != std::string::npos);
     REQUIRE(outputText.find("detail=message_was_sent_but_broker_reported_no_ack") != std::string::npos);
 
     const std::string errorOutputText = capturedErrorOutput.str();

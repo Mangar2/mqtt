@@ -223,3 +223,12 @@ Updated affected tests and test specifications for mqtt client, automation clien
 
 ### [MILESTONE] Logging unification Phase 3 completed
 Phase 3 of `spec/yaha/IMPL-message-logging-unification.md` is complete with wave-A client adoption on shared logging services.
+
+### [ARTIFACT] Wave-B clients migrated to shared message logging
+Migrated message-flow logging paths in `src/yaha/broker_connector/source_http_adapter.cpp`, `src/yaha/http_mqtt_interface_client/http_mqtt_interface_client_app.cpp`, and `src/yaha_msgstoreclient_main.cpp` to shared message logging service APIs. Legacy per-module formatting helpers for these paths were removed.
+
+### [ARTIFACT] Wave-B test/spec expectations updated for shared log format
+Updated HTTP MQTT interface client tests and module/test specs to assert shared structured log markers (`component=... direction=...`) with event tags (`broker_publish_ack`, `broker_publish_failed`). Updated broker connector and message store client specs to document shared-service ownership and full reason-chain output behavior.
+
+### [MILESTONE] Logging unification Phase 4 completed
+Phase 4 of `spec/yaha/IMPL-message-logging-unification.md` is complete with wave-B client adoption on shared logging services.

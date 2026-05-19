@@ -1,4 +1,5 @@
 #include "yaha/message_store_client/message_store_client_app.h"
+#include "yaha/message/message_log_service.h"
 #include "yaha/mqtt_client/broker_transport.h"
 #include "yaha/mqtt_client/mqtt_client_runtime.h"
 
@@ -7,7 +8,7 @@
 #include <filesystem>
 #include <iostream>
 #include <optional>
-#include <sstream>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -41,9 +42,11 @@ void printUsage() {
               << std::flush;
 }
 
-bool tryParseCli(int argc, char* argv[], CliOptions& options, std::string& errorText) {
-    for (int argIndex = 1; argIndex < argc; ++argIndex) {
-        const std::string argument{argv[argIndex]};
+bool tryParseCli(const std::span<char*> arguments,
+                 CliOptions& options,
+                 std::string& errorText) {
+    for (std::size_t argIndex = 1U; argIndex < arguments.size(); ++argIndex) {
+        const std::string argument{arguments[argIndex]};
         if (argument == "--help" || argument == "-h") {
             options.showHelp = true;
             continue;
@@ -89,57 +92,21 @@ const char* qosToText(const yaha::Qos qos) {
     return "0";
 }
 
-std::string valueToText(const yaha::Value& value) {
-    if (std::holds_alternative<std::string>(value)) {
-        return std::get<std::string>(value);
-    }
-
-    std::ostringstream stream{};
-    stream << std::get<double>(value);
-    return stream.str();
-}
-
-std::string escapeLogText(const std::string_view text) {
-    std::string escaped{};
-    escaped.reserve(text.size());
-    for (const char character : text) {
-        switch (character) {
-            case '\\':
-                escaped += "\\\\";
-                break;
-            case '"':
-                escaped += "\\\"";
-                break;
-            case '\n':
-                escaped += "\\n";
-                break;
-            case '\r':
-                escaped += "\\r";
-                break;
-            case '\t':
-                escaped += "\\t";
-                break;
-            default:
-                escaped.push_back(character);
-                break;
-        }
-    }
-    return escaped;
-}
-
 void traceIncomingMessage(const yaha::Message& message, const bool includeReason) {
-    std::cout << "  broker: recv topic=" << message.topic()
-              << " qos=" << qosToText(message.qos())
-              << " retain=" << (message.retain() ? "1" : "0")
-              << " value=" << valueToText(message.value());
+    const yaha::MessageLogConfig logConfig{
+        .enableIncoming = true,
+        .enableOutgoing = false,
+        .includeReasonChain = includeReason,
+    };
 
-    if (includeReason) {
-        const std::string reasonText =
-            message.reason().empty() ? "none" : escapeLogText(message.reason().front().message);
-        std::cout << " reason=\"" << reasonText << '"';
+    if (const auto line = yaha::buildMessageLogLine(
+            "message_store_client",
+            yaha::MessageLogDirection::Incoming,
+            message,
+            logConfig);
+        line.has_value()) {
+        std::cout << *line << '\n' << std::flush;
     }
-
-    std::cout << '\n' << std::flush;
 }
 
 class IncomingMessageLoggingComponent final : public yaha::IMqttComponent {
@@ -208,7 +175,7 @@ void printStartupConfiguration(const std::filesystem::path& configPath,
 int main(int argc, char* argv[]) {
     CliOptions cliOptions{};
     std::string cliError{};
-    if (!tryParseCli(argc, argv, cliOptions, cliError)) {
+    if (!tryParseCli(std::span<char*>{argv, static_cast<std::size_t>(argc)}, cliOptions, cliError)) {
         std::cerr << "Failed to parse arguments: " << cliError << '\n';
         printUsage();
         return 1;

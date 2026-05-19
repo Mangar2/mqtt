@@ -154,6 +154,9 @@ Adopt shared service in:
 
 Replace partial/plain reason output with full reason chain output.
 
+Status:
+- Completed on 2026-05-19.
+
 ## Phase 5: Config unification and compatibility lock
 
 - Introduce shared config mapping helper for message-log settings.

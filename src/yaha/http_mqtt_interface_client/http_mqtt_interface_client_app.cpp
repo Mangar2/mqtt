@@ -2,6 +2,8 @@
 
 #include "yaha/error_handling/yaha_error.h"
 #include "yaha/http_mqtt_interface/http_mqtt_interface_operations.h"
+#include "yaha/message/message_log_service.h"
+#include "yaha/message/message_payload_codec.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <httplib.h>
@@ -37,58 +39,18 @@ constexpr std::string_view k_publishCorsHeaders{"Content-Type, Authorization, X-
 constexpr const char* k_error_code_broker_publish_failed{"HTTP_MQTT_BROKER_PUBLISH_FAILED"};
 constexpr const char* k_error_code_listener_start_failed{"HTTP_MQTT_LISTENER_START_FAILED"};
 
-[[nodiscard]] std::string messageValueToText(const Value& messageValue) {
-    if (std::holds_alternative<std::string>(messageValue)) {
-        return std::get<std::string>(messageValue);
-    }
+[[nodiscard]] std::optional<std::string> buildBrokerForwardLogLine(const Message& message) {
+    constexpr MessageLogConfig k_log_config{
+        .enableIncoming = false,
+        .enableOutgoing = true,
+        .includeReasonChain = true,
+    };
 
-    std::ostringstream outputStream{};
-    outputStream << std::get<double>(messageValue);
-    return outputStream.str();
-}
-
-[[nodiscard]] std::string qosToText(const Qos qosValue) {
-    switch (qosValue) {
-        case Qos::AtMostOnce:
-            return "0";
-        case Qos::AtLeastOnce:
-            return "1";
-        case Qos::ExactlyOnce:
-            return "2";
-    }
-
-    return "0";
-}
-
-[[nodiscard]] std::string reasonEntriesToText(const Message& message) {
-    if (message.reason().empty()) {
-        return "none";
-    }
-
-    std::ostringstream output{};
-    output << '[';
-    bool firstEntry = true;
-    for (const auto& entry : message.reason()) {
-        if (!firstEntry) {
-            output << ',';
-        }
-        firstEntry = false;
-        output << "{timestamp=" << entry.timestamp << ",message=" << entry.message << '}';
-    }
-    output << ']';
-    return output.str();
-}
-
-[[nodiscard]] std::string describeBrokerForwardMessage(const Message& message) {
-    std::ostringstream output{};
-    output << " topic=" << message.topic()
-           << " qos=" << qosToText(message.qos())
-           << " retain=" << (message.retain() ? "1" : "0")
-           << " dup=" << (message.dup() ? "1" : "0");
-
-    output << " value=" << messageValueToText(message.value());
-    output << " reason=" << reasonEntriesToText(message);
-    return output.str();
+    return buildMessageLogLine(
+        "http_mqtt_interface_client",
+        MessageLogDirection::Outgoing,
+        message,
+        k_log_config);
 }
 
 [[nodiscard]] bool isBrokerNoAckError(const std::string_view errorText) {
@@ -98,22 +60,23 @@ constexpr const char* k_error_code_listener_start_failed{"HTTP_MQTT_LISTENER_STA
 }
 
 void logBrokerForwardPublishAck(const Message& message) {
-    std::cout << "http_mqtt_interface_client[out] broker_publish_ack"
-              << describeBrokerForwardMessage(message)
-              << '\n' << std::flush;
+    if (const auto line = buildBrokerForwardLogLine(message); line.has_value()) {
+        std::cout << *line << " event=broker_publish_ack" << '\n' << std::flush;
+    }
 }
 
 void logBrokerForwardPublishError(
     const Message& message,
-    const HttpMqttRequestData& /*mappedRequest*/,
     const std::string_view errorText) {
-    std::cout << "http_mqtt_interface_client[error] broker_publish_failed"
-              << describeBrokerForwardMessage(message)
-              << " error=" << errorText;
-    if (isBrokerNoAckError(errorText)) {
-        std::cout << " detail=message_was_sent_but_broker_reported_no_ack";
+    if (const auto line = buildBrokerForwardLogLine(message); line.has_value()) {
+        std::cout << *line
+                  << " event=broker_publish_failed"
+                  << " error=\"" << escapeJsonString(errorText) << '\"';
+        if (isBrokerNoAckError(errorText)) {
+            std::cout << " detail=message_was_sent_but_broker_reported_no_ack";
+        }
+        std::cout << '\n' << std::flush;
     }
-    std::cout << '\n' << std::flush;
 }
 
 void logCompatibilityRequestFailure(const std::string_view endpoint, const std::string_view errorText) {
@@ -298,7 +261,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(HttpMqttInter
                         const std::string publishReason = publishResult.reason.empty()
                             ? "broker publish callback failed"
                             : publishResult.reason;
-                        logBrokerForwardPublishError(mappedMessage, downstreamRequest, publishReason);
+                        logBrokerForwardPublishError(mappedMessage, publishReason);
                         throw YahaError{
                             k_error_code_broker_publish_failed,
                             publishReason,
