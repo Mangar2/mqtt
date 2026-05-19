@@ -1,4 +1,5 @@
 #include "yaha/zwave/zwave_service_component.h"
+#include "yaha/message/message_payload_codec.h"
 #include "yaha/message/message_log_service.h"
 
 #include <exception>
@@ -286,35 +287,53 @@ void ZwaveServiceComponent::logImportantError(const std::string_view operation, 
 }
 
 void ZwaveServiceComponent::publish(const Message& message) const {
+    const auto logPublishFailure = [&message](const std::string_view reason,
+                                              const std::string_view detail,
+                                              const std::optional<int> category) {
+        const MessageLogConfig logConfig{
+            .enableIncoming = false,
+            .enableOutgoing = true,
+            .includeReasonChain = true,
+            .incomingTopicFilter = std::nullopt,
+            .outgoingTopicFilter = std::nullopt};
+        const std::optional<std::string> logLine = buildMessageLogLine(
+            "zwave_service",
+            MessageLogDirection::Outgoing,
+            message,
+            logConfig);
+        if (!logLine.has_value()) {
+            return;
+        }
+
+        std::cout << *logLine
+                  << " event=publish_failed"
+                  << " reason=" << reason;
+        if (category.has_value()) {
+            std::cout << " category=" << *category;
+        }
+        if (!detail.empty()) {
+            std::cout << " detail=\"" << escapeJsonString(detail) << '\"';
+        }
+        std::cout << '\n' << std::flush;
+    };
+
     if (!publishCallback_) {
-        std::cout << "zwave_service[error] op=publish reason=callback_missing"
-                  << " topic=" << message.topic()
-                  << '\n' << std::flush;
+        logPublishFailure("callback_missing", "", std::nullopt);
         return;
     }
 
     try {
         const PublishResult result = publishCallback_(message);
         if (!result.success) {
-            std::cout << "zwave_service[error] op=publish reason=publish_rejected"
-                      << " topic=" << message.topic()
-                      << " category=" << static_cast<int>(result.category)
-                      << " detail=\"" << result.reason << "\""
-                      << '\n' << std::flush;
+            logPublishFailure("publish_rejected", result.reason, static_cast<int>(result.category));
             return;
         }
 
         logOutgoingMessageIfEnabled(message);
     } catch (const std::exception& exceptionValue) {
-        std::cout << "zwave_service[error] op=publish reason=exception"
-                  << " topic=" << message.topic()
-                  << " detail=\"" << exceptionValue.what() << "\""
-                  << '\n' << std::flush;
+        logPublishFailure("exception", exceptionValue.what(), std::nullopt);
     } catch (...) {
-        std::cout << "zwave_service[error] op=publish reason=exception"
-                  << " topic=" << message.topic()
-                  << " detail=\"unknown\""
-                  << '\n' << std::flush;
+        logPublishFailure("exception", "unknown", std::nullopt);
     }
 }
 

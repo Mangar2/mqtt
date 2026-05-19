@@ -23,7 +23,6 @@
 #include <stdexcept>
 #include <span>
 #include <string>
-#include <iostream>
 #include <vector>
 
 namespace yaha {
@@ -129,17 +128,6 @@ public:
         packet.qos = toMqttQos(message.qos());
         packet.retain = message.retain();
         packet.dup = message.dup() && packet.qos != mqtt::QoS::AtMostOnce;
-
-        const std::string outboundPayloadText{packet.payload.data.begin(), packet.payload.data.end()};
-        std::cout << "broker_transport[outbound-raw-meta] topic=" << message.topic()
-                  << " qos=" << static_cast<unsigned int>(message.qos())
-                  << " retain=" << (message.retain() ? "1" : "0")
-                  << " dup=" << (packet.dup ? "1" : "0")
-                  << " payload_bytes=" << outboundPayloadText.size()
-                  << '\n';
-        std::cout << "broker_transport[outbound-raw-begin]" << '\n';
-        std::cout << outboundPayloadText << '\n';
-        std::cout << "broker_transport[outbound-raw-end]" << '\n' << std::flush;
 
         if (packet.qos != mqtt::QoS::AtMostOnce) {
             packet.packet_id = nextPacketId_++;

@@ -352,7 +352,9 @@ TEST_CASE("publish_without_callback_logs_error", "[zwave_service]") {
     service.run();
     std::cout.rdbuf(previousBuffer);
 
-    REQUIRE(outputStream.str().find("zwave_service[error] op=publish reason=callback_missing")
+        REQUIRE(outputStream.str().find("component=\"zwave_service\" direction=\"outgoing\"")
+            != std::string::npos);
+        REQUIRE(outputStream.str().find("event=publish_failed reason=callback_missing")
             != std::string::npos);
 }
 
@@ -369,7 +371,9 @@ TEST_CASE("publish_failure_result_logs_error", "[zwave_service]") {
     service.run();
     std::cout.rdbuf(previousBuffer);
 
-    REQUIRE(outputStream.str().find("zwave_service[error] op=publish reason=publish_rejected")
+        REQUIRE(outputStream.str().find("component=\"zwave_service\" direction=\"outgoing\"")
+            != std::string::npos);
+        REQUIRE(outputStream.str().find("event=publish_failed reason=publish_rejected")
             != std::string::npos);
     REQUIRE(outputStream.str().find("category=2") != std::string::npos);
     REQUIRE(outputStream.str().find("detail=\"no_ack\"") != std::string::npos);
@@ -388,7 +392,9 @@ TEST_CASE("publish_callback_exception_logs_error", "[zwave_service]") {
     service.run();
     std::cout.rdbuf(previousBuffer);
 
-    REQUIRE(outputStream.str().find("zwave_service[error] op=publish reason=exception")
+        REQUIRE(outputStream.str().find("component=\"zwave_service\" direction=\"outgoing\"")
+            != std::string::npos);
+        REQUIRE(outputStream.str().find("event=publish_failed reason=exception")
             != std::string::npos);
     REQUIRE(outputStream.str().find("detail=\"publish failed in fake callback\"")
             != std::string::npos);
@@ -407,7 +413,9 @@ TEST_CASE("publish_callback_unknown_exception_logs_error", "[zwave_service]") {
     service.run();
     std::cout.rdbuf(previousBuffer);
 
-    REQUIRE(outputStream.str().find("zwave_service[error] op=publish reason=exception")
+        REQUIRE(outputStream.str().find("component=\"zwave_service\" direction=\"outgoing\"")
+            != std::string::npos);
+        REQUIRE(outputStream.str().find("event=publish_failed reason=exception")
             != std::string::npos);
     REQUIRE(outputStream.str().find("detail=\"unknown\"") != std::string::npos);
 }

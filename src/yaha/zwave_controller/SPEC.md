@@ -105,7 +105,6 @@ Concrete parity adapter implementation with additional callback entry points:
 - `onValueRefreshed` updates cache and publishes outbound mapped value only when it matches a pending command.
 - Pending command feedback behavior:
   - controller runs a background poll loop and requests `driver.requestNodeState(nodeId)` per pending command on `commandReactionPollIntervalMs`
-  - temporary debug trace `zwave_controller[pending-trace] ...` logs command tracking, poll cycles, timeout removals, feedback matching, and no-match feedback
   - if a value-changed/value-refreshed event matches pending reply topic + target + expected value and is still within timeout, the pending command is consumed
   - expected value comparison accepts semantic bool equivalence across representations (`on/true/1`, `off/false/0`)
   - consumed pending command reasons are prepended to outbound message reasons in original order

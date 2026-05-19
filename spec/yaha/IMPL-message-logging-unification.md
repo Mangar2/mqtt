@@ -172,6 +172,9 @@ Status:
 - Add regression tests that compare old expected behavior (where required) with unified output contract.
 - Ensure no module bypasses shared service for message-flow logs.
 
+Status:
+- Completed on 2026-05-19.
+
 ## Acceptance Criteria
 
 - All in-scope clients use shared message logging service for incoming/outgoing message-flow logs.

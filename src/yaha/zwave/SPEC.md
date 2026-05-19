@@ -95,7 +95,7 @@ that orchestrates MQTT routing and controller lifecycle.
 - optional outbound message-flow log line via shared message logging service (`component="zwave_service" direction="outgoing" ...`) only after successful callback publish when `logOutgoingMessages=true`
 - outgoing message trace logs stay independent from `logLevel`
 - Publish callback missing/non-success/exception branches emit deterministic
-	`zwave_service[error] op=publish ...` logs.
+	shared structured outgoing logs with `event=publish_failed`, reason markers, and optional category/detail metadata.
 
 ## Lifecycle
 

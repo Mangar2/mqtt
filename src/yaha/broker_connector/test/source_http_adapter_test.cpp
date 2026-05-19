@@ -80,7 +80,7 @@ public:
 
             if (failFirstConnect_ && connectCalls_.load() == 1) {
                 response.status = k_http_status_service_unavailable;
-                response.set_content("{\"error\":\"unavailable\"}", "application/json");
+                response.set_content(R"({"error":"unavailable"})", "application/json");
                 return;
             }
 
@@ -90,7 +90,7 @@ public:
             response.set_header("version", "1.0");
             response.set_content(
                 std::format(
-                    "{{\"present\":0,\"token\":{{\"send\":\"{}\",\"receive\":\"{}\"}}}}",
+                    R"({{"present":0,"token":{{"send":"{}","receive":"{}"}}}})",
                     connectSendToken_,
                     connectReceiveToken_),
                 "application/json");
@@ -101,7 +101,7 @@ public:
             lastSubscribeBody_ = request.body;
             if (subscribeStatusCode_ != k_http_status_ok) {
                 response.status = subscribeStatusCode_;
-                response.set_content("{\"error\":\"subscribe_failed\"}", "application/json");
+                response.set_content(R"({"error":"subscribe_failed"})", "application/json");
                 return;
             }
             response.status = k_http_status_ok;
@@ -119,9 +119,9 @@ public:
             pingCalls_.fetch_add(1);
             lastPingBody_ = request.body;
             if (requireSendTokenForPing_ &&
-                request.body.find("\"token\":\"send-token\"") == std::string::npos) {
+                request.body.find(R"("token":"send-token")") == std::string::npos) {
                 response.status = k_http_status_bad_request;
-                response.set_content("{\"error\":\"invalid_token\"}", "application/json");
+                response.set_content(R"({"error":"invalid_token"})", "application/json");
                 return;
             }
             response.status = k_http_status_no_content;
@@ -231,7 +231,7 @@ public:
             {"version", "1.0"},
             {"packetid", packetId}
         };
-        return client.Put("/pubrel", headers, "{\"token\":\"recv-token\"}", "application/json");
+        return client.Put("/pubrel", headers, R"({"token":"recv-token"})", "application/json");
     }
 
 private:
@@ -357,6 +357,9 @@ TEST_CASE("source_adapter_connect_subscribe_and_callback_publish", "[broker_conn
         callbackMeta.push_back(meta);
     });
 
+    std::ostringstream outputStream{};
+    auto* previousOutputBuffer = std::cout.rdbuf(outputStream.rdbuf());
+
     std::string errorMessage{};
     if (!adapter.connectAndSubscribe(errorMessage)) {
         FAIL("connectAndSubscribe failed: " + errorMessage
@@ -373,7 +376,7 @@ TEST_CASE("source_adapter_connect_subscribe_and_callback_publish", "[broker_conn
         adapter.listenerPort(),
         "1",
         "7",
-        "{\"token\":\"send-token\",\"message\":{\"topic\":\"home/kitchen/temp\",\"value\":21.5,\"reason\":[{\"message\":\"sensor update\",\"timestamp\":\"2026-05-08T10:00:00Z\"}]}}"
+        R"({"token":"send-token","message":{"topic":"home/kitchen/temp","value":21.5,"reason":[{"message":"sensor update","timestamp":"2026-05-08T10:00:00Z"}]}})"
     );
 
     REQUIRE(publishResponse != nullptr);
@@ -401,6 +404,12 @@ TEST_CASE("source_adapter_connect_subscribe_and_callback_publish", "[broker_conn
         REQUIRE(callbackMeta.front().packetId.has_value());
         REQUIRE(*callbackMeta.front().packetId == 7U);
     }
+
+    std::cout.rdbuf(previousOutputBuffer);
+    REQUIRE(outputStream.str().find("component=\"broker_connector_source\" direction=\"incoming\"")
+            != std::string::npos);
+    REQUIRE(outputStream.str().find("topic=\"home/kitchen/temp\"") != std::string::npos);
+    REQUIRE(outputStream.str().find("packetid=7") != std::string::npos);
 
     adapter.close();
     REQUIRE(sourceBroker.disconnectCalls() == 1);
@@ -430,7 +439,7 @@ TEST_CASE("source_adapter_qos2_publish_and_pubrel_ack_sequence", "[broker_connec
         adapter.listenerPort(),
         "2",
         "42",
-        "{\"token\":\"send-token\",\"message\":{\"topic\":\"home/door/state\",\"value\":\"open\"}}"
+        R"({"token":"send-token","message":{"topic":"home/door/state","value":"open"}})"
     );
 
     REQUIRE(publishResponse != nullptr);
@@ -478,7 +487,7 @@ TEST_CASE("source_adapter_qos1_puback_preserves_exact_packetid_header", "[broker
         adapter.listenerPort(),
         "1",
         "00042",
-        "{\"token\":\"send-token\",\"message\":{\"topic\":\"home/qos1\",\"value\":\"on\"}}",
+        R"({"token":"send-token","message":{"topic":"home/qos1","value":"on"}})",
         "0",
         "0");
 
@@ -530,7 +539,7 @@ TEST_CASE("source_adapter_qos1_publish_without_valid_packetid_returns_400", "[br
         adapter.listenerPort(),
         "1",
         "",
-        "{\"token\":\"send-token\",\"message\":{\"topic\":\"home/qos1\",\"value\":\"on\"}}",
+        R"({"token":"send-token","message":{"topic":"home/qos1","value":"on"}})",
         "0",
         "0");
 
@@ -573,7 +582,7 @@ TEST_CASE("source_adapter_qos1_publish_with_large_packetid_echoes_and_acks", "[b
         adapter.listenerPort(),
         "1",
         "342524",
-        "{\"token\":\"send-token\",\"message\":{\"topic\":\"home/qos1\",\"value\":\"on\"}}",
+        R"({"token":"send-token","message":{"topic":"home/qos1","value":"on"}})",
         "0",
         "0");
 
@@ -671,7 +680,7 @@ TEST_CASE("source_adapter_qos0_publish_with_dup_retain_flags", "[broker_connecto
         adapter.listenerPort(),
         "0",
         "abc",
-        "{\"token\":\"send-token\",\"message\":{\"topic\":\"home/lamp\",\"value\":\"on\"}}",
+        R"({"token":"send-token","message":{"topic":"home/lamp","value":"on"}})",
         "1",
         "1");
 
@@ -723,7 +732,7 @@ TEST_CASE("source_adapter_invalid_publish_payload_returns_400", "[broker_connect
         adapter.listenerPort(),
         "1",
         "9",
-        "{\"token\":\"send-token\",\"message\":{\"value\":21.5}}"
+        R"({"token":"send-token","message":{"value":21.5}})"
     );
 
     REQUIRE(publishResponse != nullptr);
@@ -762,7 +771,7 @@ TEST_CASE("source_adapter_publish_invalid_bool_headers_fallback_to_false", "[bro
         adapter.listenerPort(),
         "0",
         "",
-        "{\"message\":{\"topic\":\"home/state\",\"value\":\"ok\"}}",
+        R"({"message":{"topic":"home/state","value":"ok"}})",
         "  maybe  ",
         "  ???  ");
 

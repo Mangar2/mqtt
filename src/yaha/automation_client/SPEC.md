@@ -123,7 +123,7 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
   - Shared log lines use deterministic field order and include full structured reason chain.
   - Outbound rule message reasons use the rule identifier (for example rule name/path)
     rather than the emitted topic name when available.
-  - Failed outbound sends are logged as `automation_client[out-fail]` with category and reason.
+  - Failed outbound sends are logged as shared structured outgoing lines with `event=publish_failed`, `category=<publish-failure-category>`, and escaped failure reason detail.
   - FileStore GET/POST failures and internal-variable calculation failures emit structured `automation_client[error]` lines.
 
 ## Files

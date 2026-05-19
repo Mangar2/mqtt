@@ -241,3 +241,12 @@ Extended `src/yaha/message/test/message_log_service_test.cpp` and `src/yaha/mess
 
 ### [MILESTONE] Logging unification Phase 5 completed
 Phase 5 of `spec/yaha/IMPL-message-logging-unification.md` is complete with shared config mapping helper adoption and compatibility-lock test coverage.
+
+### [ARTIFACT] Remaining publish-failure message-flow logs unified
+Updated `src/yaha/automation_client/automation_client_component.cpp` and `src/yaha/zwave/zwave_service_component.cpp` so publish-failure branches now emit shared structured outgoing message logs via `yaha/message/message_log_service.*` with deterministic markers (`component=... direction="outgoing" event=publish_failed`) plus category/reason detail metadata.
+
+### [ARTIFACT] Phase-6 guardrail regression expectations added
+Updated affected tests/specs in `src/yaha/automation_client/test/automation_client_component_test.cpp`, `src/yaha/zwave/test/zwave_service_component_test.cpp`, `src/yaha/automation_client/test/TEST_SPEC.md`, and `src/yaha/zwave/test/TEST_SPEC.md` to assert shared structured failure-log markers. Added broker connector incoming-log guardrail assertion in `src/yaha/broker_connector/test/source_http_adapter_test.cpp` and documented it in `src/yaha/broker_connector/test/TEST_SPEC.md`.
+
+### [MILESTONE] Logging unification Phase 6 completed
+Phase 6 of `spec/yaha/IMPL-message-logging-unification.md` is complete: remaining bypass-style message-flow logs were migrated to shared service output and guardrail regression expectations were aligned to the unified contract.

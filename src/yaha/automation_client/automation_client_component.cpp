@@ -11,6 +11,7 @@
 #include "yaha/automation_client/automation_rule_lookup.h"
 #include "yaha/automation_client/automation_rule_tree_access.h"
 #include "yaha/automation_client/automation_trace_format.h"
+#include "yaha/message/message_payload_codec.h"
 #include "yaha/message/message_log_service.h"
 
 #include <chrono>
@@ -624,12 +625,26 @@ void AutomationClientComponent::logOutgoingMessageIfEnabled(const Message& messa
 void AutomationClientComponent::logOutgoingFailure(const Message& message,
                                                    const std::string& categoryText,
                                                    const std::string& reasonText) {
-    std::cerr << "automation_client[out-fail] topic=" << message.topic()
-              << " qos=" << automation_message_values::qosToLogText(message.qos())
-              << " retain=" << (message.retain() ? "1" : "0")
-              << " value=" << automation_message_values::valueToLogText(message.value())
+    const MessageLogConfig logConfig{
+        .enableIncoming = false,
+        .enableOutgoing = true,
+        .includeReasonChain = true,
+        .incomingTopicFilter = std::nullopt,
+        .outgoingTopicFilter = std::nullopt};
+
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "automation_client",
+        MessageLogDirection::Outgoing,
+        message,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cerr << *logLine
+              << " event=publish_failed"
               << " category=" << categoryText
-              << " reason=" << reasonText
+              << " reason=\"" << escapeJsonString(reasonText) << '\"'
               << '\n'
               << std::flush;
 }

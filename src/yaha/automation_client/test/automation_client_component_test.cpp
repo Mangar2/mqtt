@@ -516,9 +516,9 @@ TEST_CASE("automation_component_publish_failure_logs_out_fail_without_false_out_
     std::cerr.rdbuf(previousStderrBuffer);
 
     const std::string logOutput = capturedOutput.str();
-    REQUIRE(logOutput.find("automation_client[out-fail] topic=house/light/set") != std::string::npos);
-        REQUIRE(logOutput.find("component=\"automation_client\" direction=\"outgoing\" topic=\"house/light/set\"")
-            == std::string::npos);
+    REQUIRE(logOutput.find("component=\"automation_client\" direction=\"outgoing\" topic=\"house/light/set\"")
+        != std::string::npos);
+    REQUIRE(logOutput.find("event=publish_failed") != std::string::npos);
 
     component.close();
 }
