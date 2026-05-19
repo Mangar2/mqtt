@@ -34,16 +34,6 @@ const std::regex& iso8601TimestampRegex() {
     return regex;
 }
 
-[[nodiscard]] std::string valueToString(const Value& value) {
-    if (const auto* text = std::get_if<std::string>(&value); text != nullptr) {
-        return *text;
-    }
-
-    std::ostringstream stream{};
-    stream << std::get<double>(value);
-    return stream.str();
-}
-
 [[nodiscard]] bool valueAsBool(const Value& value) {
     if (const auto* text = std::get_if<std::string>(&value); text != nullptr) {
         return *text == "on" || *text == "1" || *text == "true";
@@ -90,6 +80,13 @@ const std::regex& iso8601TimestampRegex() {
         return false;
     }
     return std::regex_match(timestamp, iso8601TimestampRegex());
+}
+
+[[nodiscard]] std::string buildZwaveNetworkReason(const std::optional<std::uint64_t>& valueId) {
+    if (!valueId.has_value()) {
+        return "received from zwave network";
+    }
+    return "received from zwave network id: " + std::to_string(*valueId);
 }
 
 [[nodiscard]] std::string sanitizeReasonMessageForJson(std::string text) {
@@ -300,12 +297,7 @@ void ZwaveController::onValueRemoved(const std::uint16_t nodeId, const std::uint
 void ZwaveController::onValueChanged(const ZwaveControllerValueEvent& event) {
     storeNodeValue(event);
 
-    std::string reason = "received from zwave";
-    if (event.valueId.has_value()) {
-        reason += ", id: " + std::to_string(*event.valueId);
-    }
-
-    publishValue(event.nodeId, event, std::move(reason));
+    publishValue(event.nodeId, event, buildZwaveNetworkReason(event.valueId));
 }
 
 void ZwaveController::onValueRefreshed(
@@ -332,12 +324,7 @@ void ZwaveController::onValueRefreshed(
             return;
         }
 
-        std::string reason = "received from zwave refresh";
-        if (event.valueId.has_value()) {
-            reason += ", id: " + std::to_string(*event.valueId);
-        }
-
-        publish(mapping->topic, outboundValue, reason, pendingMatch.reasons);
+        publish(mapping->topic, outboundValue, buildZwaveNetworkReason(event.valueId), pendingMatch.reasons);
     } catch (...) {
     }
 }
@@ -473,7 +460,7 @@ void ZwaveController::publish(
 void ZwaveController::publishValue(
     const std::uint16_t nodeId,
     const ZwaveControllerValueEvent& event,
-    std::string reason) {
+    const std::string& reason) {
     try {
         std::string topic{};
         Value outputValue = event.value;
@@ -487,7 +474,6 @@ void ZwaveController::publishValue(
             }
 
             topic = mapping->topic;
-            reason += ", Zwave value: " + valueToString(event.value);
             outputValue = applySwitchOutboundConversion(event.value, mapping->type);
             prependedReasons = takeMatchingPendingReasons(topic, event, outputValue).reasons;
         }

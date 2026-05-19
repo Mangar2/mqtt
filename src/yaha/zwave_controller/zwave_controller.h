@@ -391,7 +391,7 @@ private:
         const Value& value,
         const std::string& reason,
         const std::vector<ReasonEntry>& prependedReasons);
-    void publishValue(std::uint16_t nodeId, const ZwaveControllerValueEvent& event, std::string reason);
+    void publishValue(std::uint16_t nodeId, const ZwaveControllerValueEvent& event, const std::string& reason);
     void storeNodeValue(const ZwaveControllerValueEvent& event);
 
     ZwaveUsbConfig usb_{};
