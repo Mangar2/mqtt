@@ -72,6 +72,8 @@ Check main uses IMqttComponent boundary only for runtime orchestration.
 Check main file size stays small and orchestration only.
 Check all error outputs use YahaError.
 Check all throw paths use YahaError.
+Check CMake source ownership keeps this client files out of shared source sets.
+Check client specific file change does not force unrelated client relink.
 
 Anti patterns
 Moving generic code from app class into main is forbidden.
@@ -115,6 +117,11 @@ No duplicated generic parser logic in main.
 6 Error contract preserved.
 All error outputs use YahaError buildMessage.
 All throw paths use YahaError only.
+
+7 CMake ownership preserved.
+Client specific yaha dirs not in shared source sets.
+Each client target owns its own yaha source group.
+No unrelated client relink from client local change.
 
 Required final confirmation text
 Use this exact line in final report:

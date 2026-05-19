@@ -81,8 +81,89 @@ list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_valueserviceclient_main\\.cpp$
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_rs485interfaceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_remoteserviceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_zwaveclient_main\\.cpp$")
-list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/.+_client/.+_client_app\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/automation/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/automation_client/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/broker_connector/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/broker_connector_client/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/file_store/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/file_store_client/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/http_mqtt_interface/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/http_mqtt_interface_client/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/message_store/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/message_store_client/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/remote_service/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/remote_service_client/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/remote_service_http/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/rs485_interface/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/rs485_interface_client/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/rs485_protocol/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/rs485_state/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/value_service/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/value_service_client/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/zwave/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/zwave_client/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/zwave_controller/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/zwave_devices/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/openzwave_runtime_driver_port\\.cpp$")
+
+file(GLOB_RECURSE YAHA_AUTOMATION_SOURCES CONFIGURE_DEPENDS
+    "src/yaha/automation/*.cpp"
+    "src/yaha/automation_client/*.cpp"
+)
+list(FILTER YAHA_AUTOMATION_SOURCES EXCLUDE REGEX "/test/")
+
+file(GLOB_RECURSE YAHA_BROKERCONNECTOR_SOURCES CONFIGURE_DEPENDS
+    "src/yaha/broker_connector/*.cpp"
+    "src/yaha/broker_connector_client/*.cpp"
+)
+list(FILTER YAHA_BROKERCONNECTOR_SOURCES EXCLUDE REGEX "/test/")
+
+file(GLOB_RECURSE YAHA_FILESTORE_SOURCES CONFIGURE_DEPENDS
+    "src/yaha/file_store/*.cpp"
+    "src/yaha/file_store_client/*.cpp"
+)
+list(FILTER YAHA_FILESTORE_SOURCES EXCLUDE REGEX "/test/")
+
+file(GLOB_RECURSE YAHA_HTTPMQTT_SOURCES CONFIGURE_DEPENDS
+    "src/yaha/http_mqtt_interface/*.cpp"
+    "src/yaha/http_mqtt_interface_client/*.cpp"
+)
+list(FILTER YAHA_HTTPMQTT_SOURCES EXCLUDE REGEX "/test/")
+
+file(GLOB_RECURSE YAHA_MSGSTORE_SOURCES CONFIGURE_DEPENDS
+    "src/yaha/message_store/*.cpp"
+    "src/yaha/message_store_client/*.cpp"
+)
+list(FILTER YAHA_MSGSTORE_SOURCES EXCLUDE REGEX "/test/")
+
+file(GLOB_RECURSE YAHA_REMOTESERVICE_SOURCES CONFIGURE_DEPENDS
+    "src/yaha/remote_service/*.cpp"
+    "src/yaha/remote_service_client/*.cpp"
+    "src/yaha/remote_service_http/*.cpp"
+)
+list(FILTER YAHA_REMOTESERVICE_SOURCES EXCLUDE REGEX "/test/")
+
+file(GLOB_RECURSE YAHA_RS485INTERFACE_SOURCES CONFIGURE_DEPENDS
+    "src/yaha/rs485_interface/*.cpp"
+    "src/yaha/rs485_interface_client/*.cpp"
+    "src/yaha/rs485_protocol/*.cpp"
+    "src/yaha/rs485_state/*.cpp"
+)
+list(FILTER YAHA_RS485INTERFACE_SOURCES EXCLUDE REGEX "/test/")
+
+file(GLOB_RECURSE YAHA_VALUESERVICE_SOURCES CONFIGURE_DEPENDS
+    "src/yaha/value_service/*.cpp"
+    "src/yaha/value_service_client/*.cpp"
+)
+list(FILTER YAHA_VALUESERVICE_SOURCES EXCLUDE REGEX "/test/")
+
+file(GLOB_RECURSE YAHA_ZWAVE_SOURCES CONFIGURE_DEPENDS
+    "src/yaha/zwave/*.cpp"
+    "src/yaha/zwave_client/*.cpp"
+    "src/yaha/zwave_controller/*.cpp"
+    "src/yaha/zwave_devices/*.cpp"
+)
+list(FILTER YAHA_ZWAVE_SOURCES EXCLUDE REGEX "/test/")
 
 if(WIN32)
     list(FILTER MQTT_ALL_SOURCES  EXCLUDE REGEX "_posix\\.cpp$")
@@ -157,7 +238,7 @@ endif()
 #  YAHA MessageStore standalone executable
 add_executable(yahamsgstoreclient
     src/yaha_msgstoreclient_main.cpp
-    src/yaha/message_store_client/message_store_client_app.cpp
+    ${YAHA_MSGSTORE_SOURCES}
     ${MQTT_LIBRARY_SOURCES}
 )
 
@@ -175,7 +256,7 @@ endif()
 #  YAHA BrokerConnector standalone executable
 add_executable(yahabrokerconnectorclient
     src/yaha_brokerconnectorclient_main.cpp
-    src/yaha/broker_connector_client/broker_connector_client_app.cpp
+    ${YAHA_BROKERCONNECTOR_SOURCES}
     ${MQTT_LIBRARY_SOURCES}
 )
 
@@ -192,7 +273,7 @@ endif()
 #  YAHA FileStore standalone executable
 add_executable(yahafilestoreclient
     src/yaha_filestoreclient_main.cpp
-    src/yaha/file_store_client/file_store_client_app.cpp
+    ${YAHA_FILESTORE_SOURCES}
     ${MQTT_LIBRARY_SOURCES}
 )
 
@@ -209,7 +290,7 @@ endif()
 #  YAHA Automation standalone executable
 add_executable(yahaautomationclient
     src/yaha_automationclient_main.cpp
-    src/yaha/automation_client/automation_client_app.cpp
+    ${YAHA_AUTOMATION_SOURCES}
     ${MQTT_LIBRARY_SOURCES}
 )
 
@@ -226,7 +307,7 @@ endif()
 #  YAHA HTTP MQTT Interface standalone executable
 add_executable(yahahttpmqttinterfaceclient
     src/yaha_httpmqttinterfaceclient_main.cpp
-    src/yaha/http_mqtt_interface_client/http_mqtt_interface_client_app.cpp
+    ${YAHA_HTTPMQTT_SOURCES}
     ${MQTT_LIBRARY_SOURCES}
 )
 
@@ -243,7 +324,7 @@ endif()
 #  YAHA ValueService standalone executable
 add_executable(yahavalueserviceclient
     src/yaha_valueserviceclient_main.cpp
-    src/yaha/value_service_client/value_service_client_app.cpp
+    ${YAHA_VALUESERVICE_SOURCES}
     ${MQTT_LIBRARY_SOURCES}
 )
 
@@ -260,7 +341,7 @@ endif()
 #  YAHA RS485Interface standalone executable
 add_executable(yahars485interfaceclient
     src/yaha_rs485interfaceclient_main.cpp
-    src/yaha/rs485_interface_client/rs485_interface_client_app.cpp
+    ${YAHA_RS485INTERFACE_SOURCES}
     ${MQTT_LIBRARY_SOURCES}
 )
 
@@ -277,7 +358,7 @@ endif()
 #  YAHA RemoteService standalone executable
 add_executable(yaharemoteserviceclient
     src/yaha_remoteserviceclient_main.cpp
-    src/yaha/remote_service_client/remote_service_client_app.cpp
+    ${YAHA_REMOTESERVICE_SOURCES}
     ${MQTT_LIBRARY_SOURCES}
 )
 
@@ -294,8 +375,7 @@ endif()
 #  YAHA ZWave standalone executable
 add_executable(yahazwaveclient
     src/yaha_zwaveclient_main.cpp
-    src/yaha/zwave_client/zwave_client_app.cpp
-    src/yaha/zwave_client/openzwave_runtime_driver_port.cpp
+    ${YAHA_ZWAVE_SOURCES}
     ${MQTT_LIBRARY_SOURCES}
 )
 

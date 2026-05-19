@@ -183,6 +183,35 @@ def run_or_fail(command: list[str], cwd: Path) -> None:
         )
 
 
+def binary_signature(path: Path) -> tuple[int, int] | None:
+    if not path.exists():
+        return None
+    stat_result = path.stat()
+    return (stat_result.st_mtime_ns, stat_result.st_size)
+
+
+def collect_deployment_binary_signatures(
+    build_dir: Path,
+) -> dict[str, tuple[int, int] | None]:
+    signatures: dict[str, tuple[int, int] | None] = {}
+    for component in SERVICE_COMPONENTS:
+        binary_name = str(component["binary"])
+        binary_path = build_dir / binary_name
+        signatures[binary_name] = binary_signature(binary_path)
+    return signatures
+
+
+def detect_rebuilt_binaries(
+    before: dict[str, tuple[int, int] | None],
+    after: dict[str, tuple[int, int] | None],
+) -> list[str]:
+    rebuilt: list[str] = []
+    for binary_name in sorted(after.keys()):
+        if before.get(binary_name) != after[binary_name]:
+            rebuilt.append(binary_name)
+    return rebuilt
+
+
 def normalize_remote_target(remote_target: str) -> str:
     cleaned_target = remote_target.strip()
     if not cleaned_target:
@@ -532,8 +561,10 @@ def main() -> int:
         output_dir = Path(args.output_dir).expanduser()
         nginx_controlapp_content = NGINX_CONTROLAPP_SOURCE.read_text(encoding="utf-8")
         nginx_controlapp_hash = sha256_text(nginx_controlapp_content)
+        rebuilt_binaries: list[str] = []
 
         if args.build:
+            binary_signatures_before_build = collect_deployment_binary_signatures(build_dir)
             run_or_fail(
                 [
                     "cmake",
@@ -542,6 +573,11 @@ def main() -> int:
                     args.preset,
                 ],
                 PROJECT_ROOT,
+            )
+            binary_signatures_after_build = collect_deployment_binary_signatures(build_dir)
+            rebuilt_binaries = detect_rebuilt_binaries(
+                binary_signatures_before_build,
+                binary_signatures_after_build,
             )
 
         if output_dir.exists():
@@ -644,6 +680,13 @@ def main() -> int:
         print(f"OpenZWave config source used: {OPENZWAVE_CONFIG_SOURCE}")
         print(f"Nginx source used: {NGINX_CONTROLAPP_SOURCE}")
         print("Nginx source->deployment verification: OK")
+        if args.build:
+            if rebuilt_binaries:
+                print("Rebuilt executables: " + ", ".join(rebuilt_binaries))
+            else:
+                print("Rebuilt executables: none")
+        else:
+            print("Rebuilt executables: build skipped (--build not set)")
         if args.remote.strip():
             print("Deployment archive was already copied to remote target.")
         else:

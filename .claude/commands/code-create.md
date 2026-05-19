@@ -59,6 +59,20 @@ Other facts (do not read CMakePresets.json):
 - Compile flags: `-Wall -Wextra -Wpedantic -Werror` on both targets.
 - CMake re-globs at every build invocation — no manual file registration needed.
 
+### Mandatory YAHA client source ownership in CMake
+
+For YAHA client modules, keep source ownership explicit per executable target.
+
+- `MQTT_ALL_SOURCES` / `MQTT_LIBRARY_SOURCES` must contain only truly shared sources.
+- Client-specific YAHA directories must be excluded from shared source lists.
+- Each YAHA client executable must add its own module source group explicitly.
+- After adding or moving `.cpp` files in `src/yaha/**`, update these source groups in `CMakeLists.txt` in the same change.
+- Guardrail: a change limited to one client-specific YAHA directory must not force unrelated YAHA client executables to relink.
+
+Required verification for this guardrail:
+- Rebuild at least the changed client target and one unrelated client target.
+- If the unrelated target relinks only because of source ownership drift, fix `CMakeLists.txt` before completion.
+
 ## Directory structure rule — flat source layout
 
 A directory that contains source-code files (`.h` / `.cpp`) must never have
