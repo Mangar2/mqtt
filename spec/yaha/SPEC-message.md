@@ -8,6 +8,9 @@ The Message is the universal data carrier of the YAHA home automation system. Ev
 
 All YAHA components that implement `IMqttComponent` send and receive Messages. The Message type is the argument of `handleMessage` and the payload of every publish call. It is the shared contract that makes components interoperable — a component does not need to know who created a Message or who will receive it; it only needs to understand the Message format.
 
+Normative format reference:
+- [spec/@mangar2/mqtt-utils/src/message.ts](spec/@mangar2/mqtt-utils/src/message.ts)
+
 ## Fields
 
 | Field   | Type               | Required | Default | Meaning                                                                 |
@@ -56,7 +59,7 @@ Messages that fail validation must be rejected at the system boundary (e.g. when
 
 ## Canonical Transport Payload (MQTT)
 
-For YAHA forwarded payloads, the canonical wire JSON is:
+For YAHA forwarded payloads, the canonical wire JSON is mandatory:
 
 ```json
 {
@@ -79,6 +82,27 @@ Rules:
 - `reason` entries are serialized oldest-first (JS/TS reference behavior).
 - `timestamp` and `message` field names are mandatory when a reason entry is present.
 - Transport serialization must always emit this canonical envelope JSON format (no alternate scalar/raw payload on wire).
+
+### Normative Semantics
+
+- Field access semantics are identical across clients:
+	- topic read/write uses `message.topic`
+	- value read/write uses `message.value`
+	- reason chain uses `message.reason` with `ReasonEntry` objects
+- Reason chain order contract:
+	- on wire: oldest-first
+	- consumers must preserve order and must not reorder by timestamp
+- Timestamp contract:
+	- newly generated timestamps must be ISO 8601 UTC (`YYYY-MM-DDTHH:MM:SS(.sss)Z`)
+	- parser accepts any string for backward compatibility, but new writes must follow ISO 8601 UTC
+- Value contract:
+	- wire value is JSON string or JSON number
+	- booleans/null in payload are not part of canonical value type and must not be emitted by builders
+
+### Compliance Requirement
+
+All YAHA clients and adapters that build or parse YAHA message payloads must use the same canonical envelope rules above.
+Any deviation is a format bug.
 
 ## Architectural notes
 
