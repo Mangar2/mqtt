@@ -515,6 +515,7 @@ TEST_CASE("regular_set_message_value_mismatch_skips_reason_merge", "[zwave_servi
     CHECK_FALSE(hasReasonMessage(published.front(), "received by zwave service"));
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("regular_set_message_type_mismatch_does_not_drop_publish", "[zwave_service]") {
     auto controller = std::make_shared<FakeController>();
     yaha::ZwaveServiceComponent service{makeConfig(), controller};

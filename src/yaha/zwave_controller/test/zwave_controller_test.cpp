@@ -37,6 +37,12 @@ constexpr std::int32_t kControllerResultCode = 7;
 constexpr std::uint32_t kDriverReadyHomeId = 0xABCDU;
 constexpr std::uint16_t kUnknownNodeId = 99U;
 constexpr std::uint8_t kUnknownNotificationCodeRaw = 99U;
+constexpr std::uint32_t kCommandReactionFastPollMs = 10U;
+constexpr std::uint32_t kCommandReactionShortTimeoutMs = 30U;
+constexpr std::uint32_t kCommandReactionPollMs = 20U;
+constexpr std::uint32_t kCommandReactionDefaultTimeoutMs = 30000U;
+constexpr std::uint32_t kPendingTimeoutWaitMs = 150U;
+constexpr std::uint32_t kPendingPollWaitMs = 180U;
 
 struct FakeDriverPort final : yaha::IZwaveDriverPort {
     std::size_t setValueCalls{0U};
@@ -576,8 +582,8 @@ TEST_CASE("matching_feedback_prepends_tracked_reasons", "[zwave_controller]") {
     });
 
     const std::vector<yaha::ReasonEntry> reasons{
-        yaha::ReasonEntry{"rule", "2026-05-19T10:00:00Z"},
-        yaha::ReasonEntry{"ui", "2026-05-19T09:59:00Z"}};
+        yaha::ReasonEntry{.message = "rule", .timestamp = "2026-05-19T10:00:00Z"},
+        yaha::ReasonEntry{.message = "ui", .timestamp = "2026-05-19T09:59:00Z"}};
 
     controller.setValue("ground/livingroom/lamp/power/set", yaha::Value{std::string{"on"}}, reasons);
     controller.onValueChanged(yaha::ZwaveControllerValueEvent{
@@ -620,11 +626,11 @@ TEST_CASE("same_action_replaces_pending_entry", "[zwave_controller]") {
     controller.setValue(
         "ground/livingroom/lamp/power/set",
         yaha::Value{std::string{"on"}},
-        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{"old", "2026-05-19T10:00:00Z"}});
+        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{.message = "old", .timestamp = "2026-05-19T10:00:00Z"}});
     controller.setValue(
         "ground/livingroom/lamp/power/set",
         yaha::Value{std::string{"on"}},
-        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{"new", "2026-05-19T10:01:00Z"}});
+        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{.message = "new", .timestamp = "2026-05-19T10:01:00Z"}});
 
     controller.onValueChanged(yaha::ZwaveControllerValueEvent{
         .nodeId = kNodeIdEleven,
@@ -664,7 +670,7 @@ TEST_CASE("different_feedback_keeps_pending_command", "[zwave_controller]") {
     controller.setValue(
         "ground/livingroom/lamp/power/set",
         yaha::Value{std::string{"on"}},
-        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{"await-on", "2026-05-19T10:00:00Z"}});
+        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{.message = "await-on", .timestamp = "2026-05-19T10:00:00Z"}});
 
     controller.onValueChanged(yaha::ZwaveControllerValueEvent{
         .nodeId = kNodeIdEleven,
@@ -695,7 +701,7 @@ TEST_CASE("different_feedback_keeps_pending_command", "[zwave_controller]") {
 
 TEST_CASE("pending_command_times_out_and_is_removed", "[zwave_controller]") {
     FakeDriverPort driver{};
-    auto controller = makeController(driver, 10U, 30U);
+    auto controller = makeController(driver, kCommandReactionFastPollMs, kCommandReactionShortTimeoutMs);
 
     controller.setDeviceConfiguration({
         makeDevice(
@@ -715,9 +721,9 @@ TEST_CASE("pending_command_times_out_and_is_removed", "[zwave_controller]") {
     controller.setValue(
         "ground/livingroom/lamp/power/set",
         yaha::Value{std::string{"on"}},
-        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{"will-timeout", "2026-05-19T10:00:00Z"}});
+        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{.message = "will-timeout", .timestamp = "2026-05-19T10:00:00Z"}});
 
-    std::this_thread::sleep_for(std::chrono::milliseconds{150});
+    std::this_thread::sleep_for(std::chrono::milliseconds{kPendingTimeoutWaitMs});
 
     controller.onValueChanged(yaha::ZwaveControllerValueEvent{
         .nodeId = kNodeIdEleven,
@@ -736,7 +742,7 @@ TEST_CASE("pending_command_times_out_and_is_removed", "[zwave_controller]") {
 
 TEST_CASE("pending_command_polling_targets_only_affected_node", "[zwave_controller]") {
     FakeDriverPort driver{};
-    auto controller = makeController(driver, 20U, 30000U);
+    auto controller = makeController(driver, kCommandReactionPollMs, kCommandReactionDefaultTimeoutMs);
 
     controller.setDeviceConfiguration({
         makeDevice(
@@ -751,9 +757,9 @@ TEST_CASE("pending_command_polling_targets_only_affected_node", "[zwave_controll
     controller.setValue(
         "ground/livingroom/lamp/power/set",
         yaha::Value{std::string{"on"}},
-        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{"poll", "2026-05-19T10:00:00Z"}});
+        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{.message = "poll", .timestamp = "2026-05-19T10:00:00Z"}});
 
-    std::this_thread::sleep_for(std::chrono::milliseconds{180});
+    std::this_thread::sleep_for(std::chrono::milliseconds{kPendingPollWaitMs});
 
     CHECK(driver.requestNodeStateCalls >= 1U);
     CHECK(driver.lastRequestedNodeState == kNodeIdEleven);

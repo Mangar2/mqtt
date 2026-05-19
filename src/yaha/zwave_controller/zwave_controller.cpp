@@ -21,6 +21,7 @@ namespace {
 constexpr std::size_t kSetTopicMinimumParts = 2U;
 constexpr std::uint16_t kUsbControllerNodeId = 1U;
 constexpr double kIntegerTolerance = 1e-9;
+constexpr std::uint32_t kPendingCommandLoopSleepMs = 20U;
 
 [[nodiscard]] std::string valueToString(const Value& value) {
     if (const auto* text = std::get_if<std::string>(&value); text != nullptr) {
@@ -73,14 +74,15 @@ ZwaveController::ZwaveController(
     , devicesMapper_(std::vector<ZwaveDeviceConfig>{})
     , commandReactionPollInterval_(commandReactionPollIntervalMs)
     , commandReactionTimeout_(commandReactionTimeoutMs) {
-    pendingCommandPollThread_ = std::jthread([this](std::stop_token stopToken) {
-        runPendingCommandPollLoop(stopToken);
+    pendingCommandPollThread_ = std::thread([this] {
+        runPendingCommandPollLoop();
     });
 }
 
 ZwaveController::~ZwaveController() {
     if (pendingCommandPollThread_.joinable()) {
-        pendingCommandPollThread_.request_stop();
+        pendingCommandPollStop_.store(true);
+        pendingCommandPollThread_.join();
     }
 }
 
@@ -511,14 +513,14 @@ void ZwaveController::pollPendingCommands() {
     }
 }
 
-void ZwaveController::runPendingCommandPollLoop(const std::stop_token stopToken) {
-    while (!stopToken.stop_requested()) {
+void ZwaveController::runPendingCommandPollLoop() {
+    while (!pendingCommandPollStop_.load()) {
         try {
             pollPendingCommands();
         } catch (...) {
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds{100});
+        std::this_thread::sleep_for(std::chrono::milliseconds{kPendingCommandLoopSleepMs});
     }
 }
 

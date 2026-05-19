@@ -11,6 +11,7 @@
 #include "yaha/zwave_devices/zwave_devices_mapper.h"
 
 #include <cstdint>
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <mutex>
@@ -372,7 +373,7 @@ private:
         const ZwaveControllerValueEvent& event,
         const Value& outboundValue);
     void pollPendingCommands();
-    void runPendingCommandPollLoop(std::stop_token stopToken);
+    void runPendingCommandPollLoop();
 
     void publish(const std::string& topic, const Value& value, const std::string& reason);
     void publish(
@@ -391,9 +392,10 @@ private:
     std::unordered_map<std::uint16_t, NodeRuntimeState> nodes_{};
     std::vector<PendingCommand> pendingCommands_{};
     std::mutex pendingCommandsMutex_{};
-    std::jthread pendingCommandPollThread_{};
-    std::chrono::milliseconds commandReactionPollInterval_{500};
-    std::chrono::milliseconds commandReactionTimeout_{30000};
+    std::thread pendingCommandPollThread_{};
+    std::atomic_bool pendingCommandPollStop_{false};
+    std::chrono::milliseconds commandReactionPollInterval_{kZwaveDefaultCommandReactionPollIntervalMs};
+    std::chrono::milliseconds commandReactionTimeout_{kZwaveDefaultCommandReactionTimeoutMs};
     PublishCallback publishCallback_{};
     std::function<void()> driverFailedCallback_{};
 };
