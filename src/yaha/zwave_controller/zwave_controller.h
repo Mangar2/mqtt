@@ -346,7 +346,13 @@ private:
     struct NodeRuntimeState {
         ZwaveNodeInfo info{};
         bool ready{false};
+        bool dead{false};
         std::unordered_map<std::uint16_t, std::unordered_map<std::uint8_t, ZwaveControllerValueEvent>> classes{};
+    };
+
+    struct CachedTopicState {
+        Value value{std::string{}};
+        std::optional<std::uint64_t> valueId{};
     };
 
     struct PendingCommand {
@@ -382,6 +388,9 @@ private:
         const std::string& replyTopic,
         const ZwaveControllerValueEvent& event,
         const Value& outboundValue);
+    void cacheLastKnownTopicState(const ZwaveControllerValueEvent& event);
+    [[nodiscard]] std::optional<CachedTopicState> findCachedTopicState(const std::string& topic) const;
+    void publishTimeoutForPendingCommand(const PendingCommand& pendingCommand);
     void pollPendingCommands();
     void runPendingCommandPollLoop();
 
@@ -400,6 +409,8 @@ private:
     std::vector<ZwaveDeviceConfig> devices_{};
     ZwaveDevicesMapper devicesMapper_{std::vector<ZwaveDeviceConfig>{}};
     std::unordered_map<std::uint16_t, NodeRuntimeState> nodes_{};
+    std::unordered_map<std::string, CachedTopicState> cachedTopicStates_{};
+    mutable std::mutex cachedTopicStatesMutex_{};
     std::vector<PendingCommand> pendingCommands_{};
     std::mutex pendingCommandsMutex_{};
     std::thread pendingCommandPollThread_{};

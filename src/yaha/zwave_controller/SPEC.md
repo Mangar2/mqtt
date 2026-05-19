@@ -101,6 +101,9 @@ Concrete parity adapter implementation with additional callback entry points:
 - Notification callback publishes only to `$MONITOR/zwave/notification` (never to device topics); on failures publishes to `$MONITOR/zwave/error`.
 - Controller command callback publishes to `$MONITOR/zwave/notification`.
 - Node/value callbacks maintain in-memory node/class cache.
+- Controller keeps local runtime state in unordered maps:
+  - node runtime map keyed by `nodeId` with `ready/dead` status and latest value events per class/index
+  - topic state map keyed by mapped MQTT topic with latest locally observed outbound value and optional zwave network value id
 - `onValueChanged` updates cache and publishes mapped value.
 - `onValueRefreshed` updates cache and publishes outbound mapped value only when it matches a pending command.
 - Pending command feedback behavior:
@@ -109,7 +112,9 @@ Concrete parity adapter implementation with additional callback entry points:
   - expected value comparison accepts semantic bool equivalence across representations (`on/true/1`, `off/false/0`)
   - consumed pending command reasons are prepended to outbound message reasons in original order
   - prepended reasons are sanitized for YAHA Message conformance: empty reason messages are dropped; invalid reason timestamps are replaced with freshly generated ISO-8601 UTC timestamps
-  - pending command entries expire and are removed after `commandReactionTimeoutMs`
+  - pending command entries expire after `commandReactionTimeoutMs`
+  - on timeout, controller publishes one feedback message on the pending reply topic using only locally cached topic state (no device fetch)
+  - timeout feedback keeps the original command reasons prepended and appends reason `timeout waiting for zwave network id: <id>` (`unknown` when id is unavailable)
   - same action (same reply topic + same target + same expected value) replaces previous pending entry
   - different action on same target is kept as independent pending entry
 - Value publish behavior:
