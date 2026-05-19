@@ -188,3 +188,11 @@ Extended `src/yaha/http_mqtt_interface_client/test/http_mqtt_interface_client_ap
 
 ### [MILESTONE] Full unit-only Python scripts green after follow-up fixes
 Executed `python3 test/run_coverage_broker.py --unit-only` and `python3 test/run_coverage_clients.py --unit-only` to completion after fixes; both reports are OK with selected broker/client tests passing.
+
+## 2026-05-19
+
+### [ARTIFACT] spec/yaha/IMPL-message-logging-unification.md created
+Created a dedicated YAHA implementation plan to unify incoming/outgoing message logging across all client modules that already emit message-flow logs. The plan defines shared message-service ownership (`src/yaha/message/*`), phased client adoption, compatibility mapping, and deterministic log contract requirements.
+
+### [DECISION] Message logging becomes shared message-service capability
+Logging of YAHA message flow is now planned as a centralized capability in message services, not per-client formatting logic. The plan makes full reason-chain output mandatory in unified paths and requires a central topic-wildcard filter extension point (for example `/a/+/+`) so future filtering can be added without client-specific rewrites.
