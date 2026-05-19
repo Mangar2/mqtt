@@ -11,6 +11,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <algorithm>
 #include <thread>
 #include <unordered_set>
 #include <utility>
@@ -55,6 +56,32 @@ void logPendingPollingTrace(const std::string& text) {
     }
 
     return valueAsBool(value) ? Value{std::string{"on"}} : Value{std::string{"off"}};
+}
+
+[[nodiscard]] std::optional<bool> valueAsSemanticBool(const Value& value) {
+    if (const auto* numericValue = std::get_if<double>(&value); numericValue != nullptr) {
+        if (std::fabs(*numericValue - 1.0) < kIntegerTolerance) {
+            return true;
+        }
+        if (std::fabs(*numericValue) < kIntegerTolerance) {
+            return false;
+        }
+        return std::nullopt;
+    }
+
+    std::string normalized = std::get<std::string>(value);
+    std::ranges::transform(normalized, normalized.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+
+    if (normalized == "on" || normalized == "true" || normalized == "1") {
+        return true;
+    }
+    if (normalized == "off" || normalized == "false" || normalized == "0") {
+        return false;
+    }
+
+    return std::nullopt;
 }
 
 [[nodiscard]] double valueAsDouble(const Value& value) {
@@ -114,10 +141,20 @@ void ZwaveController::setValue(const std::string& topic, const Value& value, con
         throw std::runtime_error("set expected as last element in topic " + topic);
     }
 
-    const std::optional<std::string> objectLabel = parseOptionalLabelFromSetTopic(topicParts);
-    const std::string deviceTopic = joinTopicParts(topicParts, topicParts.size() - kSetTopicMinimumParts);
+    const ZwaveNodeMap nodeMap = buildNodeMap();
+    const std::string directTopic = joinTopicParts(topicParts, topicParts.size() - 1U);
 
-    const ZwaveResolvedId target = devicesMapper_.topicToZwaveId(buildNodeMap(), deviceTopic, objectLabel);
+    std::string replyTopic = directTopic;
+    ZwaveResolvedId target{};
+    try {
+        target = devicesMapper_.topicToZwaveId(nodeMap, directTopic, std::nullopt);
+    } catch (...) {
+        const std::optional<std::string> objectLabel = parseOptionalLabelFromSetTopic(topicParts);
+        const std::string deviceTopic = joinTopicParts(topicParts, topicParts.size() - kSetTopicMinimumParts);
+        target = devicesMapper_.topicToZwaveId(nodeMap, deviceTopic, objectLabel);
+        replyTopic = objectLabel.has_value() ? deviceTopic + "/" + *objectLabel : deviceTopic;
+    }
+
     const ZwaveWriteRequest writeRequest = ZwaveDevicesMapper::buildWriteRequest(target, value);
 
     if (writeRequest.kind == ZwaveWriteKind::SetConfigParam) {
@@ -126,7 +163,7 @@ void ZwaveController::setValue(const std::string& topic, const Value& value, con
     }
 
     driverPort_.setValue(target, writeRequest.value);
-    rememberPendingCommand(deviceTopic, writeRequest, reasons);
+    rememberPendingCommand(replyTopic, writeRequest, reasons);
 }
 
 void ZwaveController::addDevice() {
@@ -449,7 +486,10 @@ bool ZwaveController::valuesEquivalent(const Value& leftValue, const Value& righ
     const auto* leftNumber = std::get_if<double>(&leftValue);
     const auto* rightNumber = std::get_if<double>(&rightValue);
     if (leftNumber == nullptr || rightNumber == nullptr) {
-        return false;
+        const std::optional<bool> leftSemanticBool = valueAsSemanticBool(leftValue);
+        const std::optional<bool> rightSemanticBool = valueAsSemanticBool(rightValue);
+        return leftSemanticBool.has_value() && rightSemanticBool.has_value()
+            && *leftSemanticBool == *rightSemanticBool;
     }
 
     return std::fabs(*leftNumber - *rightNumber) < kIntegerTolerance;
@@ -566,6 +606,20 @@ ZwaveController::PendingCommandMatch ZwaveController::takeMatchingPendingReasons
             pendingCommands_.erase(iterator);
             return PendingCommandMatch{.matched = true, .reasons = std::move(reasons)};
         }
+
+        std::ostringstream mismatchTrace{};
+        mismatchTrace << "pending candidate mismatch"
+                      << " candidate_topic=" << iterator->replyTopic
+                      << " candidate_node=" << iterator->target.nodeId
+                      << " candidate_class=" << iterator->target.classId
+                      << " candidate_instance=" << static_cast<unsigned int>(iterator->target.instance)
+                      << " candidate_index=" << static_cast<unsigned int>(iterator->target.index)
+                      << " candidate_expected=" << valueToString(iterator->expectedValue)
+                      << " same_topic=" << (sameReplyTopic ? "1" : "0")
+                      << " same_target=" << (sameTarget ? "1" : "0")
+                      << " same_value=" << (sameExpectedValue ? "1" : "0");
+        logPendingPollingTrace(mismatchTrace.str());
+
         ++iterator;
     }
 

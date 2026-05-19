@@ -21,6 +21,7 @@ constexpr std::uint16_t kNodeIdFourteen = 14U;
 constexpr std::uint16_t kNodeIdTwenty = 20U;
 constexpr std::uint16_t kNodeIdTwentyOne = 21U;
 constexpr std::uint16_t kNodeIdTwentyTwo = 22U;
+constexpr std::uint16_t kNodeIdTwentyThree = 23U;
 constexpr std::uint8_t kIndexZero = 0U;
 constexpr std::uint8_t kIndexOne = 1U;
 constexpr std::uint8_t kInstanceOne = 1U;
@@ -809,4 +810,87 @@ TEST_CASE("matching_value_refreshed_publishes_pending_feedback", "[zwave_control
     CHECK(std::get<std::string>(published.front().value()) == "on");
     REQUIRE_FALSE(published.front().reason().empty());
     CHECK(published.front().reason().front().message == "await-refresh");
+}
+
+TEST_CASE("direct_device_set_topic_matches_pending_feedback", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/zwave/switch/floodlight",
+            kNodeIdTwentyThree,
+            kSwitchBinaryClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"switch"},
+            std::nullopt)});
+
+    std::vector<yaha::Message> published{};
+    controller.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    controller.setValue(
+        "ground/livingroom/zwave/switch/floodlight/set",
+        yaha::Value{std::string{"off"}},
+        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{.message = "Request by User", .timestamp = "2026-05-19T08:18:30Z"}});
+
+    controller.onValueChanged(yaha::ZwaveControllerValueEvent{
+        .nodeId = kNodeIdTwentyThree,
+        .classId = kSwitchBinaryClass,
+        .instance = kInstanceOne,
+        .index = kIndexZero,
+        .label = std::nullopt,
+        .valueId = kValueIdSample,
+        .value = yaha::Value{0.0},
+        .type = "switch",
+        .readOnly = false});
+
+    REQUIRE(published.size() == 1U);
+    CHECK(published.front().topic() == "ground/livingroom/zwave/switch/floodlight");
+    REQUIRE(std::holds_alternative<std::string>(published.front().value()));
+    CHECK(std::get<std::string>(published.front().value()) == "off");
+    REQUIRE_FALSE(published.front().reason().empty());
+    CHECK(published.front().reason().front().message == "Request by User");
+}
+
+TEST_CASE("pending_match_accepts_bool_string_numeric_equivalence", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/zwave/switch/floodlight",
+            kNodeIdTwentyThree,
+            kSwitchBinaryClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"bool"},
+            std::nullopt)});
+
+    std::vector<yaha::Message> published{};
+    controller.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    controller.setValue(
+        "ground/livingroom/zwave/switch/floodlight/set",
+        yaha::Value{std::string{"off"}},
+        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{.message = "Request by User", .timestamp = "2026-05-19T08:18:30Z"}});
+
+    controller.onValueChanged(yaha::ZwaveControllerValueEvent{
+        .nodeId = kNodeIdTwentyThree,
+        .classId = kSwitchBinaryClass,
+        .instance = kInstanceOne,
+        .index = kIndexZero,
+        .label = std::nullopt,
+        .valueId = kValueIdSample,
+        .value = yaha::Value{std::string{"off"}},
+        .type = "bool",
+        .readOnly = false});
+
+    REQUIRE(published.size() == 1U);
+    REQUIRE_FALSE(published.front().reason().empty());
+    CHECK(published.front().reason().front().message == "Request by User");
 }
