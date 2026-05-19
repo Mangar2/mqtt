@@ -142,6 +142,7 @@ Implemented compatibility behavior:
 - mapping:
 	- compatibility input is translated to native Publish 1.0 request data through `HttpMqttInterfaces::publish("1.0", ...)`
 	- downstream compatibility forwarder receives both mapped native request data and mapped MQTT `Message`
+	- mapped MQTT `Message.rawPayload()` is set to mapped Publish 1.0 request payload so broker transport forwards full envelope including reason chain unchanged
 - response modes:
 	- `Native`: downstream `204` response is forwarded unchanged
 	- `LegacyPhp`: returns `200` with JSON-stringified downstream payload string

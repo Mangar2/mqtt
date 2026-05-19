@@ -405,13 +405,14 @@ TEST_CASE("compat_publish_post_form_maps_to_publish_v1_defaults", "[http_mqtt_in
         .token = "token-compat"};
 
     yaha::HttpMqttRequestData capturedRequest{};
+    yaha::Message capturedMappedMessage{"", yaha::Value{std::string{""}}};
     const yaha::HttpMqttResult response = yaha::handlePublishCompatibilityRequest(
         interfaces,
         requestInput,
         yaha::HttpMqttPublishCompatibilityConfig{},
         [&](const yaha::HttpMqttRequestData& mappedRequest, const yaha::Message& mappedMessage) {
-            (void)mappedMessage;
             capturedRequest = mappedRequest;
+            capturedMappedMessage = mappedMessage.clone();
             return makeResult(k_statusNoContent, {{"content-type", "application/json; charset=UTF-8"}}, "");
         });
 
@@ -420,6 +421,8 @@ TEST_CASE("compat_publish_post_form_maps_to_publish_v1_defaults", "[http_mqtt_in
     REQUIRE(capturedRequest.headers.at("retain") == "0");
     REQUIRE(capturedRequest.payload.find("\"topic\":\"sensor/temp\"") != std::string::npos);
     REQUIRE(capturedRequest.payload.find("\"message\":\"Request by User\"") != std::string::npos);
+    REQUIRE(capturedMappedMessage.rawPayload().has_value());
+    REQUIRE(*capturedMappedMessage.rawPayload() == capturedRequest.payload);
 }
 
 TEST_CASE("compat_publish_falls_back_to_json_body_when_topic_missing", "[http_mqtt_interface]") {

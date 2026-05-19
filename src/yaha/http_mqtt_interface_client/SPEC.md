@@ -71,6 +71,7 @@ Publish broker-forward logging:
 
 - successful callback publish emits `broker_publish_ack` with message fields
 - failed callback publish emits `broker_publish_failed` with message fields and error text
+- broker publish logs include full message reason list (`reason=[...]`) from mapped incoming publish payload
 - timeout-style failures add `detail=message_was_sent_but_broker_reported_no_ack`
 
 Native PUT error mapping:

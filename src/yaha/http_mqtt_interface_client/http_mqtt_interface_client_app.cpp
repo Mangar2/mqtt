@@ -60,6 +60,25 @@ constexpr const char* k_error_code_listener_start_failed{"HTTP_MQTT_LISTENER_STA
     return "0";
 }
 
+[[nodiscard]] std::string reasonEntriesToText(const Message& message) {
+    if (message.reason().empty()) {
+        return "none";
+    }
+
+    std::ostringstream output{};
+    output << '[';
+    bool firstEntry = true;
+    for (const auto& entry : message.reason()) {
+        if (!firstEntry) {
+            output << ',';
+        }
+        firstEntry = false;
+        output << "{timestamp=" << entry.timestamp << ",message=" << entry.message << '}';
+    }
+    output << ']';
+    return output.str();
+}
+
 [[nodiscard]] std::string describeBrokerForwardMessage(const Message& message) {
     std::ostringstream output{};
     output << " topic=" << message.topic()
@@ -68,6 +87,7 @@ constexpr const char* k_error_code_listener_start_failed{"HTTP_MQTT_LISTENER_STA
            << " dup=" << (message.dup() ? "1" : "0");
 
     output << " value=" << messageValueToText(message.value());
+    output << " reason=" << reasonEntriesToText(message);
     return output.str();
 }
 
@@ -116,7 +136,7 @@ void logCompatibilityInternalResultFailure(const std::string_view endpoint, cons
     HttpMqttResult result{};
     result.statusCode = k_httpStatusInternalServerError;
     result.headers["content-type"] = "application/json";
-    result.payload = "{\"error\":\"internal_error\"}";
+    result.payload = R"({"error":"internal_error"})";
     return result;
 }
 

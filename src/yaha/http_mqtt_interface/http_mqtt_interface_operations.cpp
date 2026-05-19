@@ -1275,7 +1275,7 @@ HttpMqttResult handlePublishCompatibilityRequest(
         return *topicError;
     }
 
-    const Message mappedMessage = buildCompatibilityMessage(resolvedFields);
+    Message mappedMessage = buildCompatibilityMessage(resolvedFields);
 
     const HttpMqttPublishOptions mappedOptions{
         .token = requestInput.token,
@@ -1283,6 +1283,7 @@ HttpMqttResult handlePublishCompatibilityRequest(
         .dup = std::nullopt,
         .packetId = std::nullopt};
     const HttpMqttRequestData mappedRequest = interfaces.publish(k_versionValue, mappedOptions);
+    mappedMessage.setRawPayload(mappedRequest.payload);
 
     const HttpMqttResult downstreamResult =
         tryForwardCompatibilityPublish(forwarder, mappedRequest, mappedMessage);

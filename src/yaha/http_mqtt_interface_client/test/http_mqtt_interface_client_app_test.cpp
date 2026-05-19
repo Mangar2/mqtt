@@ -349,6 +349,7 @@ TEST_CASE("http_mqtt_interface_component_serves_endpoints_logs_publish_and_stops
     const std::string outputText = capturedOutput.str();
     REQUIRE(outputText.find("http_mqtt_interface_client[in] method=POST endpoint=/publish") != std::string::npos);
     REQUIRE(outputText.find("http_mqtt_interface_client[out] broker_publish_ack") != std::string::npos);
+    REQUIRE(outputText.find("Request by User") != std::string::npos);
     REQUIRE(harness.resultCode() == 0);
 }
 
