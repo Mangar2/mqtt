@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <chrono>
+#include <iostream>
 #include <limits>
 #include <mutex>
 #include <ranges>
@@ -22,6 +23,14 @@ constexpr std::size_t kSetTopicMinimumParts = 2U;
 constexpr std::uint16_t kUsbControllerNodeId = 1U;
 constexpr double kIntegerTolerance = 1e-9;
 constexpr std::uint32_t kPendingCommandLoopSleepMs = 20U;
+constexpr bool kPendingPollingDebugTrace = true;
+
+void logPendingPollingTrace(const std::string& text) {
+    if (!kPendingPollingDebugTrace) {
+        return;
+    }
+    std::cout << "zwave_controller[pending-trace] " << text << '\n' << std::flush;
+}
 
 [[nodiscard]] std::string valueToString(const Value& value) {
     if (const auto* text = std::get_if<std::string>(&value); text != nullptr) {
@@ -452,6 +461,7 @@ void ZwaveController::rememberPendingCommand(
     ;
 
     std::scoped_lock lock{pendingCommandsMutex_};
+    bool replacedExistingEntry = false;
     auto iterator = pendingCommands_.begin();
     while (iterator != pendingCommands_.end()) {
         const bool sameReplyTopic = iterator->replyTopic == pendingCommand.replyTopic;
@@ -461,12 +471,25 @@ void ZwaveController::rememberPendingCommand(
             && iterator->target.index == pendingCommand.target.index;
         const bool sameExpectedValue = valuesEquivalent(iterator->expectedValue, pendingCommand.expectedValue);
         if (sameReplyTopic && sameTarget && sameExpectedValue) {
+            replacedExistingEntry = true;
             iterator = pendingCommands_.erase(iterator);
             continue;
         }
         ++iterator;
     }
     pendingCommands_.push_back(std::move(pendingCommand));
+
+    std::ostringstream trace{};
+    trace << "track command topic=" << replyTopic
+          << " node=" << writeRequest.target.nodeId
+          << " class=" << writeRequest.target.classId
+          << " instance=" << static_cast<unsigned int>(writeRequest.target.instance)
+          << " index=" << static_cast<unsigned int>(writeRequest.target.index)
+          << " expected=" << valueToString(writeValueToExpectedValue(writeRequest))
+          << " reasons=" << reasons.size()
+          << " replaced=" << (replacedExistingEntry ? "1" : "0")
+          << " pending_total=" << pendingCommands_.size();
+    logPendingPollingTrace(trace.str());
 }
 
 std::vector<ReasonEntry> ZwaveController::takeMatchingPendingReasons(
@@ -476,9 +499,26 @@ std::vector<ReasonEntry> ZwaveController::takeMatchingPendingReasons(
     std::scoped_lock lock{pendingCommandsMutex_};
     const auto nowValue = std::chrono::steady_clock::now();
 
+    std::ostringstream feedbackTrace{};
+    feedbackTrace << "feedback topic=" << replyTopic
+                  << " node=" << event.nodeId
+                  << " class=" << event.classId
+                  << " instance=" << static_cast<unsigned int>(event.instance)
+                  << " index=" << static_cast<unsigned int>(event.index)
+                  << " value=" << valueToString(outboundValue)
+                  << " pending_total=" << pendingCommands_.size();
+    logPendingPollingTrace(feedbackTrace.str());
+
     auto iterator = pendingCommands_.begin();
     while (iterator != pendingCommands_.end()) {
         if (nowValue - iterator->sentAt >= commandReactionTimeout_) {
+            std::ostringstream timeoutTrace{};
+            timeoutTrace << "drop timed-out before match topic=" << iterator->replyTopic
+                         << " node=" << iterator->target.nodeId
+                         << " class=" << iterator->target.classId
+                         << " instance=" << static_cast<unsigned int>(iterator->target.instance)
+                         << " index=" << static_cast<unsigned int>(iterator->target.index);
+            logPendingPollingTrace(timeoutTrace.str());
             iterator = pendingCommands_.erase(iterator);
             continue;
         }
@@ -491,11 +531,21 @@ std::vector<ReasonEntry> ZwaveController::takeMatchingPendingReasons(
         const bool sameExpectedValue = valuesEquivalent(iterator->expectedValue, outboundValue);
         if (sameReplyTopic && sameTarget && sameExpectedValue) {
             std::vector<ReasonEntry> reasons = iterator->reasons;
+            std::ostringstream matchTrace{};
+            matchTrace << "match topic=" << replyTopic
+                       << " node=" << event.nodeId
+                       << " class=" << event.classId
+                       << " instance=" << static_cast<unsigned int>(event.instance)
+                       << " index=" << static_cast<unsigned int>(event.index)
+                       << " prepended_reasons=" << reasons.size();
+            logPendingPollingTrace(matchTrace.str());
             pendingCommands_.erase(iterator);
             return reasons;
         }
         ++iterator;
     }
+
+    logPendingPollingTrace("no pending match for feedback");
 
     return std::vector<ReasonEntry>{};
 }
@@ -509,6 +559,13 @@ void ZwaveController::pollPendingCommands() {
         auto iterator = pendingCommands_.begin();
         while (iterator != pendingCommands_.end()) {
             if (nowValue - iterator->sentAt >= commandReactionTimeout_) {
+                std::ostringstream timeoutTrace{};
+                timeoutTrace << "drop timed-out pending topic=" << iterator->replyTopic
+                             << " node=" << iterator->target.nodeId
+                             << " class=" << iterator->target.classId
+                             << " instance=" << static_cast<unsigned int>(iterator->target.instance)
+                             << " index=" << static_cast<unsigned int>(iterator->target.index);
+                logPendingPollingTrace(timeoutTrace.str());
                 iterator = pendingCommands_.erase(iterator);
                 continue;
             }
@@ -518,6 +575,20 @@ void ZwaveController::pollPendingCommands() {
                 nodesToPoll.insert(iterator->target.nodeId);
             }
             ++iterator;
+        }
+
+        if (!nodesToPoll.empty()) {
+            std::ostringstream pollTrace{};
+            pollTrace << "poll cycle pending_total=" << pendingCommands_.size() << " nodes=";
+            bool first = true;
+            for (const auto nodeId : nodesToPoll) {
+                if (!first) {
+                    pollTrace << ",";
+                }
+                first = false;
+                pollTrace << nodeId;
+            }
+            logPendingPollingTrace(pollTrace.str());
         }
     }
 

@@ -104,6 +104,7 @@ Concrete parity adapter implementation with additional callback entry points:
 - `onValueRefreshed` updates cache only and does not publish outbound device messages.
 - Pending command feedback behavior:
   - controller runs a background poll loop and requests `driver.requestNodeState(nodeId)` per pending command on `commandReactionPollIntervalMs`
+  - temporary debug trace `zwave_controller[pending-trace] ...` logs command tracking, poll cycles, timeout removals, feedback matching, and no-match feedback
   - if a value-changed event matches pending reply topic + target + expected value and is still within timeout, the pending command is consumed
   - consumed pending command reasons are prepended to outbound message reasons in original order
   - pending command entries expire and are removed after `commandReactionTimeoutMs`

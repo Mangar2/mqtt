@@ -165,10 +165,10 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
     }
 
     Message routedMessage{message.topic(), message.value(), message.qos(), message.retain(), message.dup()};
+    routedMessage.addReason("received by zwave service");
     for (const auto& entry : message.reason() | std::views::reverse) {
         routedMessage.addReason(entry.message, entry.timestamp);
     }
-    routedMessage.addReason("received by zwave service");
 
     try {
         controller_->setValue(message.topic(), message.value(), routedMessage.reason());

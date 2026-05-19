@@ -79,7 +79,9 @@ that orchestrates MQTT routing and controller lifecycle.
 	- failure: `$MONITOR/zwave/error` value `scan command failed`
 	- unknown scan exceptions are contained and reported with reason `unknown`
 - other topics:
-	- adds reason `received by zwave service`
+	- preserves incoming reason list order exactly as received
+	- inserts reason `received by zwave service` directly after the incoming reasons
+	- never sorts reasons by timestamp
 	- routes to `controller.setValue(topic, value, reasons)`
 - remove-failed/add-node/setValue exceptions are contained and emitted as deterministic
 	`$MONITOR/zwave/error` messages with operation reason metadata.

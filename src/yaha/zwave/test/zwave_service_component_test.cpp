@@ -482,7 +482,7 @@ TEST_CASE("regular_set_message_forwards_reasons_and_publish_flags", "[zwave_serv
     REQUIRE(std::holds_alternative<std::string>(controller->lastSetValue()));
     CHECK(std::get<std::string>(controller->lastSetValue()) == "on");
     REQUIRE_FALSE(controller->lastSetReasons().empty());
-    CHECK(controller->lastSetReasons().front().message == "received by zwave service");
+    CHECK(controller->lastSetReasons().back().message == "received by zwave service");
 
     yaha::Message controllerPublish{"home/phase6/lamp", yaha::Value{std::string{"on"}}};
     controllerPublish.addReason("device feedback");

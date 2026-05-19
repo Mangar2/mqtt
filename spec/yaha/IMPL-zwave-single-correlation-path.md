@@ -51,7 +51,9 @@ On each incoming `/set` command:
   - expected outbound value
   - command timestamp (`sentAt`)
   - last poll timestamp (`lastPollAt`)
-  - full incoming reason chain (including service hop reason)
+  - full incoming reason chain with original entry order preserved exactly
+  - service hop reason `received by zwave service` inserted directly after incoming reasons
+  - no reordering or sorting by timestamp
 
 ### 2) Poll only affected nodes
 
@@ -90,7 +92,7 @@ For each Z-Wave value feedback (`onValueChanged`):
 
 - Remove service-local reply matcher storage and merge logic from `zwave_service_component.cpp`.
 - Service keeps routing and error/log behavior only.
-- Service still appends `received by zwave service` before forwarding to controller.
+- Service forwards reasons in insertion order and never reorders by timestamp.
 
 ### Step B: Extend controller pending entry identity
 
@@ -117,9 +119,10 @@ For each Z-Wave value feedback (`onValueChanged`):
 1. Only one active command-reaction correlation mechanism exists in production code.
 2. No duplicated incoming reason chain in `zwave_service[out]` messages.
 3. Stored incoming reasons are prepended exactly once on matched feedback.
-4. Polling touches only nodes with pending entries.
-5. Timeout and replacement semantics match requirements exactly.
-6. All updated module specs and test specs match final implementation.
+4. Reason order is insertion-order based; timestamp-based sorting is forbidden.
+5. Polling touches only nodes with pending entries.
+6. Timeout and replacement semantics match requirements exactly.
+7. All updated module specs and test specs match final implementation.
 
 ## Compatibility and Constraints
 
