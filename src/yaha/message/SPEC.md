@@ -44,6 +44,9 @@ Notes:
 - `parseEnvelopePayload` validates topic consistency (`message.topic` must match MQTT topic).
 - `parseValueToken` supports canonical string/number values and accepts `true`/`false`/`null`
     as string tokens for backward compatibility behavior already used by transports.
+- String parsing decodes JSON escapes for control tokens and ASCII unicode escapes (`\\u00XX`).
+- Regression tests in `test/message_payload_codec_test.cpp` pin TS-reference-compatible
+    envelope semantics (message shape, escaping, and reason ordering).
 
 ### Class `Message`
 

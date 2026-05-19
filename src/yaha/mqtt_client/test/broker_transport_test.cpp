@@ -599,7 +599,7 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
 
     CHECK(received_messages[6].topic() == "transport/forwarded_escaped");
     REQUIRE(std::holds_alternative<std::string>(received_messages[6].value()));
-    CHECK(std::get<std::string>(received_messages[6].value()) == "linenvalue");
+    CHECK(std::get<std::string>(received_messages[6].value()) == "line\nvalue");
     REQUIRE(received_messages[6].reason().size() == 1U);
     CHECK(received_messages[6].reason().front().message == "plain");
     REQUIRE(received_messages[6].rawPayload().has_value());

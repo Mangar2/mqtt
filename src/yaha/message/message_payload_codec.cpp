@@ -3,6 +3,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 
 namespace yaha {
@@ -11,11 +12,100 @@ namespace {
 
 constexpr unsigned char k_ascii_control_max{0x20U};
 constexpr unsigned char k_low_nibble_mask{0x0FU};
+constexpr std::uint32_t k_ascii_max_single_byte_codepoint{0x7FU};
+constexpr std::uint32_t k_hex_alpha_offset{10U};
 
 struct ParsedRange {
     std::size_t start{0U};
     std::size_t end{0U};
 };
+
+[[nodiscard]] std::optional<std::uint32_t> decodeHexCharacter(const char hexCharacter) {
+    if (hexCharacter >= '0' && hexCharacter <= '9') {
+        return static_cast<std::uint32_t>(hexCharacter - '0');
+    }
+    if (hexCharacter >= 'a' && hexCharacter <= 'f') {
+        return k_hex_alpha_offset + static_cast<std::uint32_t>(hexCharacter - 'a');
+    }
+    if (hexCharacter >= 'A' && hexCharacter <= 'F') {
+        return k_hex_alpha_offset + static_cast<std::uint32_t>(hexCharacter - 'A');
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] std::optional<std::uint32_t> decodeUnicodeEscapeCodePoint(
+    const std::string& objectText,
+    const std::size_t codePointStart) {
+    if (codePointStart + 3U >= objectText.size()) {
+        return std::nullopt;
+    }
+
+    std::uint32_t codePoint = 0U;
+    for (std::size_t hexOffset = 0U; hexOffset < 4U; ++hexOffset) {
+        const auto hexValue = decodeHexCharacter(objectText[codePointStart + hexOffset]);
+        if (!hexValue.has_value()) {
+            return std::nullopt;
+        }
+
+        codePoint <<= 4U;
+        codePoint += *hexValue;
+    }
+
+    return codePoint;
+}
+
+[[nodiscard]] std::optional<char> decodeEscapedCharacter(const char escapedCharacter) {
+    switch (escapedCharacter) {
+        case '"':
+        case '\\':
+        case '/':
+            return escapedCharacter;
+        case 'n':
+            return '\n';
+        case 'r':
+            return '\r';
+        case 't':
+            return '\t';
+        case 'b':
+            return '\b';
+        case 'f':
+            return '\f';
+        default:
+            return std::nullopt;
+    }
+}
+
+[[nodiscard]] bool parseEscapedSequence(const std::string& objectText,
+                                        std::size_t& cursorPosition,
+                                        std::string& parsedValue) {
+    if (cursorPosition >= objectText.size()) {
+        return false;
+    }
+
+    const char escapedCharacter = objectText[cursorPosition];
+    if (escapedCharacter == 'u') {
+        const auto codePoint = decodeUnicodeEscapeCodePoint(objectText, cursorPosition + 1U);
+        if (!codePoint.has_value()) {
+            return false;
+        }
+
+        if (*codePoint <= k_ascii_max_single_byte_codepoint) {
+            parsedValue.push_back(static_cast<char>(*codePoint));
+        } else {
+            parsedValue.push_back('?');
+        }
+        cursorPosition += 4U;
+        return true;
+    }
+
+    const auto decodedCharacter = decodeEscapedCharacter(escapedCharacter);
+    if (!decodedCharacter.has_value()) {
+        return false;
+    }
+
+    parsedValue.push_back(*decodedCharacter);
+    return true;
+}
 
 [[nodiscard]] std::string quoteJsonString(const std::string_view textValue) {
     std::string result{"\""};
@@ -174,7 +264,10 @@ struct ParsedRange {
             if (cursorPosition >= objectText.size()) {
                 return std::nullopt;
             }
-            parsedValue.push_back(objectText[cursorPosition]);
+
+            if (!parseEscapedSequence(objectText, cursorPosition, parsedValue)) {
+                return std::nullopt;
+            }
             ++cursorPosition;
             continue;
         }
@@ -291,8 +384,7 @@ struct ParsedRange {
 
 void appendReasonEntries(const std::vector<ReasonEntry>& reasonEntries,
                          Message& outputMessage) {
-    for (std::size_t reverseIndex = reasonEntries.size(); reverseIndex > 0U; --reverseIndex) {
-        const ReasonEntry& reasonEntry = reasonEntries[reverseIndex - 1U];
+    for (const ReasonEntry& reasonEntry : reasonEntries) {
         if (reasonEntry.timestamp.empty()) {
             outputMessage.addReason(reasonEntry.message);
         } else {

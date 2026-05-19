@@ -71,6 +71,7 @@ the callback contract into real TCP MQTT packet I/O.
 - Broker transport publish waits for broker acknowledgements on QoS1/QoS2 (`PUBACK` for QoS1, `PUBREC` + `PUBCOMP` for QoS2) before returning.
 - If broker ACK is missing within timeout during publish (`PUBACK`/`PUBREC`/`PUBCOMP`), broker transport disconnects and throws.
 - Broker transport inbound path parses forwarded payload envelopes into internal `Message.topic()/value()/reason()` fields for runtime semantics while preserving the exact original payload text in `Message.rawPayload()` for lossless forwarding.
+- Forwarded envelope parsing decodes JSON string escapes (`\\n`, `\\t`, `\\r`, `\\b`, `\\f`, `\\u00XX`) into internal message text values.
 - Broker transport outbound publish path emits debug trace of exact payload bytes at handoff point:
 	- `broker_transport[outbound-raw-meta] ... payload_bytes=<N>`
 	- `broker_transport[outbound-raw-begin]` / raw payload text / `broker_transport[outbound-raw-end]`

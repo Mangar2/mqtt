@@ -35,3 +35,7 @@ Unit tests for Message value-type behavior and validation guarantees.
 | `Payload codec parseEnvelopePayload rejects malformed envelope` | malformed JSON token handling | envelope missing colon in message object | parse returns empty optional |
 | `Payload codec parseReasonArray rejects missing message field` | malformed reason object handling | reason array with entry missing message | parse returns empty optional |
 | `Payload codec validateEnvelopeShape enforces topic and value` | shape validation | valid payload and payloads missing topic/value | true for valid; false for invalid |
+| `Payload codec envelope matches TS reference ordering` | compatibility with TS reference envelope semantics | message with two reasons added in chronological order | built payload contains reasons in same oldest-first order as TS class |
+| `Payload codec parse and rebuild keeps TS compatible envelope` | regression guardrail for canonical behavior | TS-style envelope payload with escaped strings and numeric value | parse succeeds and rebuilt payload keeps canonical message shape and values |
+| `Payload codec decodes full JSON escape set` | string unescape compatibility guardrail | envelope with escaped quote, slash, backslash, r, b, f, and unicode | parsed value decodes escapes to expected in-memory text |
+| `Payload codec rejects invalid escaped token` | malformed escape rejection guardrail | envelope containing unsupported escaped sequence | parse returns empty optional |

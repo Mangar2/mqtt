@@ -410,6 +410,18 @@ if(BUILD_TESTING)
     set(MQTT_LIB_SOURCES ${MQTT_ALL_SOURCES})
     list(FILTER MQTT_LIB_SOURCES EXCLUDE REGEX "/main\\.cpp$")
     list(APPEND MQTT_LIB_SOURCES
+        ${YAHA_AUTOMATION_SOURCES}
+        ${YAHA_BROKERCONNECTOR_SOURCES}
+        ${YAHA_FILESTORE_SOURCES}
+        ${YAHA_HTTPMQTT_SOURCES}
+        ${YAHA_MSGSTORE_SOURCES}
+        ${YAHA_REMOTESERVICE_SOURCES}
+        ${YAHA_RS485INTERFACE_SOURCES}
+        ${YAHA_VALUESERVICE_SOURCES}
+        ${YAHA_ZWAVE_SOURCES})
+    list(FILTER MQTT_LIB_SOURCES EXCLUDE REGEX "/main\\.cpp$")
+    list(FILTER MQTT_LIB_SOURCES EXCLUDE REGEX "/openzwave_runtime_driver_port\\.cpp$")
+    list(APPEND MQTT_LIB_SOURCES
         src/yaha/automation_client/automation_client_app.cpp
         src/yaha/broker_connector_client/broker_connector_client_app.cpp
         src/yaha/file_store_client/file_store_client_app.cpp

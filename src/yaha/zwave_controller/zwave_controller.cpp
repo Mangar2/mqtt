@@ -193,7 +193,7 @@ void ZwaveController::setValue(const std::string& topic, const Value& value, con
         const std::optional<std::string> objectLabel = parseOptionalLabelFromSetTopic(topicParts);
         const std::string deviceTopic = joinTopicParts(topicParts, topicParts.size() - kSetTopicMinimumParts);
         target = devicesMapper_.topicToZwaveId(nodeMap, deviceTopic, objectLabel);
-        replyTopic = objectLabel.has_value() ? deviceTopic + "/" + *objectLabel : deviceTopic;
+        replyTopic = deviceTopic;
     }
 
     const ZwaveWriteRequest writeRequest = ZwaveDevicesMapper::buildWriteRequest(target, value);

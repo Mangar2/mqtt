@@ -109,6 +109,11 @@ Introduce one shared message-format utility surface under `src/yaha/message/`.
 - Remove duplicate local parser/serializer helpers.
 - Add regression tests proving identical behavior against TS reference format.
 
+Status:
+- Completed: shared message-format helpers are now reused by mqtt transport and phase-4 client modules.
+- Completed: regression tests added in `src/yaha/message/test/message_payload_codec_test.cpp`
+  for TS-compatible envelope ordering and parse/rebuild behavior.
+
 ## Acceptance Criteria
 
 - One canonical envelope format for all outbound YAHA client messages.

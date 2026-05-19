@@ -109,3 +109,49 @@ TEST_CASE("Payload codec validateEnvelopeShape enforces topic and value", "[mess
     REQUIRE_FALSE(yaha::validateEnvelopeShape(missingTopicPayload));
     REQUIRE_FALSE(yaha::validateEnvelopeShape(missingValuePayload));
 }
+
+TEST_CASE("Payload codec envelope matches TS reference ordering", "[message][payload_codec]") {
+    yaha::Message messageValue{"topic/ts", std::string{"on"}};
+    messageValue.addReason("first", "2026-05-19T10:00:00.000Z");
+    messageValue.addReason("second", "2026-05-19T10:00:01.000Z");
+
+    const std::string payload = yaha::buildEnvelopePayload(messageValue);
+    const std::size_t firstPosition = payload.find(R"("message":"first")");
+    const std::size_t secondPosition = payload.find(R"("message":"second")");
+
+    REQUIRE(firstPosition != std::string::npos);
+    REQUIRE(secondPosition != std::string::npos);
+    REQUIRE(firstPosition < secondPosition);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("Payload codec parse and rebuild keeps TS compatible envelope", "[message][payload_codec]") {
+    const std::string sourcePayload =
+        R"({"message":{"topic":"topic/ts/parse","value":12.5,"reason":[{"timestamp":"2026-05-19T10:00:00.000Z","message":"alpha\nvalue"},{"timestamp":"2026-05-19T10:00:01.000Z","message":"beta\tvalue"}]}})";
+
+    const std::optional<yaha::Message> parsed = yaha::parseEnvelopePayload(
+        sourcePayload,
+        "topic/ts/parse",
+        yaha::Qos::AtLeastOnce,
+        false,
+        false);
+
+    REQUIRE(parsed.has_value());
+    REQUIRE(yaha::validateEnvelopeShape(sourcePayload));
+
+    const std::string rebuiltPayload = yaha::buildEnvelopePayload(*parsed);
+    REQUIRE(yaha::validateEnvelopeShape(rebuiltPayload));
+    REQUIRE(rebuiltPayload.find(R"("topic":"topic/ts/parse")") != std::string::npos);
+    REQUIRE(rebuiltPayload.find(R"("value":12.500000)") != std::string::npos);
+
+    const std::optional<yaha::Message> reparsed = yaha::parseEnvelopePayload(
+        rebuiltPayload,
+        "topic/ts/parse",
+        yaha::Qos::AtLeastOnce,
+        false,
+        false);
+    REQUIRE(reparsed.has_value());
+    REQUIRE(reparsed->reason().size() == 2U);
+    REQUIRE(reparsed->reason()[0].message == "beta\tvalue");
+    REQUIRE(reparsed->reason()[1].message == "alpha\nvalue");
+}
