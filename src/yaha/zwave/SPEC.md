@@ -3,7 +3,7 @@
 ## Purpose
 
 Provides ZWave domain configuration contracts and the phase-3 service component
-that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
+that orchestrates MQTT routing and controller lifecycle.
 
 ## Public API
 
@@ -80,14 +80,13 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 	- unknown scan exceptions are contained and reported with reason `unknown`
 - other topics:
 	- adds reason `received by zwave service`
-	- stores incoming message in reply matcher
-	- routes to `controller.setValue(topic, value, reasons)` and forwards original incoming reason chain
+	- routes to `controller.setValue(topic, value, reasons)`
 - remove-failed/add-node/setValue exceptions are contained and emitted as deterministic
 	`$MONITOR/zwave/error` messages with operation reason metadata.
 
-## Publish and matcher flow
+## Publish flow
 
-- Controller publishes are passed through reply-matcher update.
+- Controller publishes are forwarded without service-side reason merge.
 - Outbound messages are emitted with configured publish flags:
 	- `qos = config.qos`
 	- `retain = config.retain`

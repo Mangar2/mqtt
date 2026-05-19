@@ -81,6 +81,7 @@ list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_valueserviceclient_main\\.cpp$
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_rs485interfaceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_remoteserviceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_zwaveclient_main\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/.+_client/.+_client_app\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/openzwave_runtime_driver_port\\.cpp$")
 
 if(WIN32)
@@ -156,6 +157,7 @@ endif()
 #  YAHA MessageStore standalone executable
 add_executable(yahamsgstoreclient
     src/yaha_msgstoreclient_main.cpp
+    src/yaha/message_store_client/message_store_client_app.cpp
     ${MQTT_LIBRARY_SOURCES}
 )
 
@@ -173,6 +175,7 @@ endif()
 #  YAHA BrokerConnector standalone executable
 add_executable(yahabrokerconnectorclient
     src/yaha_brokerconnectorclient_main.cpp
+    src/yaha/broker_connector_client/broker_connector_client_app.cpp
     ${MQTT_LIBRARY_SOURCES}
 )
 
@@ -189,6 +192,7 @@ endif()
 #  YAHA FileStore standalone executable
 add_executable(yahafilestoreclient
     src/yaha_filestoreclient_main.cpp
+    src/yaha/file_store_client/file_store_client_app.cpp
     ${MQTT_LIBRARY_SOURCES}
 )
 
@@ -205,6 +209,7 @@ endif()
 #  YAHA Automation standalone executable
 add_executable(yahaautomationclient
     src/yaha_automationclient_main.cpp
+    src/yaha/automation_client/automation_client_app.cpp
     ${MQTT_LIBRARY_SOURCES}
 )
 
@@ -221,6 +226,7 @@ endif()
 #  YAHA HTTP MQTT Interface standalone executable
 add_executable(yahahttpmqttinterfaceclient
     src/yaha_httpmqttinterfaceclient_main.cpp
+    src/yaha/http_mqtt_interface_client/http_mqtt_interface_client_app.cpp
     ${MQTT_LIBRARY_SOURCES}
 )
 
@@ -237,6 +243,7 @@ endif()
 #  YAHA ValueService standalone executable
 add_executable(yahavalueserviceclient
     src/yaha_valueserviceclient_main.cpp
+    src/yaha/value_service_client/value_service_client_app.cpp
     ${MQTT_LIBRARY_SOURCES}
 )
 
@@ -253,6 +260,7 @@ endif()
 #  YAHA RS485Interface standalone executable
 add_executable(yahars485interfaceclient
     src/yaha_rs485interfaceclient_main.cpp
+    src/yaha/rs485_interface_client/rs485_interface_client_app.cpp
     ${MQTT_LIBRARY_SOURCES}
 )
 
@@ -269,6 +277,7 @@ endif()
 #  YAHA RemoteService standalone executable
 add_executable(yaharemoteserviceclient
     src/yaha_remoteserviceclient_main.cpp
+    src/yaha/remote_service_client/remote_service_client_app.cpp
     ${MQTT_LIBRARY_SOURCES}
 )
 
@@ -285,6 +294,7 @@ endif()
 #  YAHA ZWave standalone executable
 add_executable(yahazwaveclient
     src/yaha_zwaveclient_main.cpp
+    src/yaha/zwave_client/zwave_client_app.cpp
     src/yaha/zwave_client/openzwave_runtime_driver_port.cpp
     ${MQTT_LIBRARY_SOURCES}
 )
@@ -319,6 +329,16 @@ if(BUILD_TESTING)
     # Exclude main.cpp from the test binary (it defines main; Catch2 provides its own).
     set(MQTT_LIB_SOURCES ${MQTT_ALL_SOURCES})
     list(FILTER MQTT_LIB_SOURCES EXCLUDE REGEX "/main\\.cpp$")
+    list(APPEND MQTT_LIB_SOURCES
+        src/yaha/automation_client/automation_client_app.cpp
+        src/yaha/broker_connector_client/broker_connector_client_app.cpp
+        src/yaha/file_store_client/file_store_client_app.cpp
+        src/yaha/http_mqtt_interface_client/http_mqtt_interface_client_app.cpp
+        src/yaha/message_store_client/message_store_client_app.cpp
+        src/yaha/remote_service_client/remote_service_client_app.cpp
+        src/yaha/rs485_interface_client/rs485_interface_client_app.cpp
+        src/yaha/value_service_client/value_service_client_app.cpp
+        src/yaha/zwave_client/zwave_client_app.cpp)
 
     add_executable(yahabroker-tests
         ${MQTT_PLACEHOLDER}

@@ -350,6 +350,7 @@ private:
     };
 
     struct PendingCommand {
+        std::string replyTopic{};
         ZwaveResolvedId target{};
         Value expectedValue{std::string{}};
         std::vector<ReasonEntry> reasons{};
@@ -368,8 +369,12 @@ private:
     [[nodiscard]] static Value writeValueToExpectedValue(const ZwaveWriteRequest& writeRequest);
     [[nodiscard]] static Value toExpectedOutboundValue(const Value& value, const std::string& typeName);
 
-    void rememberPendingCommand(const ZwaveWriteRequest& writeRequest, const std::vector<ReasonEntry>& reasons);
+    void rememberPendingCommand(
+        const std::string& replyTopic,
+        const ZwaveWriteRequest& writeRequest,
+        const std::vector<ReasonEntry>& reasons);
     [[nodiscard]] std::vector<ReasonEntry> takeMatchingPendingReasons(
+        const std::string& replyTopic,
         const ZwaveControllerValueEvent& event,
         const Value& outboundValue);
     void pollPendingCommands();

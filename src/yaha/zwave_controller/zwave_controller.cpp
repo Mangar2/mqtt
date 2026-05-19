@@ -117,7 +117,7 @@ void ZwaveController::setValue(const std::string& topic, const Value& value, con
     }
 
     driverPort_.setValue(target, writeRequest.value);
-    rememberPendingCommand(writeRequest, reasons);
+    rememberPendingCommand(deviceTopic, writeRequest, reasons);
 }
 
 void ZwaveController::addDevice() {
@@ -398,7 +398,7 @@ void ZwaveController::publishValue(
             topic = mapping->topic;
             reason += ", Zwave value: " + valueToString(event.value);
             outputValue = applySwitchOutboundConversion(event.value, mapping->type);
-            prependedReasons = takeMatchingPendingReasons(event, outputValue);
+            prependedReasons = takeMatchingPendingReasons(topic, event, outputValue);
         }
 
         publish(topic, outputValue, reason, prependedReasons);
@@ -438,8 +438,12 @@ Value ZwaveController::toExpectedOutboundValue(const Value& value, const std::st
     return applySwitchOutboundConversion(value, typeName);
 }
 
-void ZwaveController::rememberPendingCommand(const ZwaveWriteRequest& writeRequest, const std::vector<ReasonEntry>& reasons) {
+void ZwaveController::rememberPendingCommand(
+    const std::string& replyTopic,
+    const ZwaveWriteRequest& writeRequest,
+    const std::vector<ReasonEntry>& reasons) {
     PendingCommand pendingCommand{
+        .replyTopic = replyTopic,
         .target = writeRequest.target,
         .expectedValue = toExpectedOutboundValue(writeValueToExpectedValue(writeRequest), writeRequest.target.type),
         .reasons = reasons,
@@ -450,12 +454,13 @@ void ZwaveController::rememberPendingCommand(const ZwaveWriteRequest& writeReque
     std::scoped_lock lock{pendingCommandsMutex_};
     auto iterator = pendingCommands_.begin();
     while (iterator != pendingCommands_.end()) {
+        const bool sameReplyTopic = iterator->replyTopic == pendingCommand.replyTopic;
         const bool sameTarget = iterator->target.nodeId == pendingCommand.target.nodeId
             && iterator->target.classId == pendingCommand.target.classId
             && iterator->target.instance == pendingCommand.target.instance
             && iterator->target.index == pendingCommand.target.index;
         const bool sameExpectedValue = valuesEquivalent(iterator->expectedValue, pendingCommand.expectedValue);
-        if (sameTarget && sameExpectedValue) {
+        if (sameReplyTopic && sameTarget && sameExpectedValue) {
             iterator = pendingCommands_.erase(iterator);
             continue;
         }
@@ -465,18 +470,26 @@ void ZwaveController::rememberPendingCommand(const ZwaveWriteRequest& writeReque
 }
 
 std::vector<ReasonEntry> ZwaveController::takeMatchingPendingReasons(
+    const std::string& replyTopic,
     const ZwaveControllerValueEvent& event,
     const Value& outboundValue) {
     std::scoped_lock lock{pendingCommandsMutex_};
+    const auto nowValue = std::chrono::steady_clock::now();
 
     auto iterator = pendingCommands_.begin();
     while (iterator != pendingCommands_.end()) {
+        if (nowValue - iterator->sentAt >= commandReactionTimeout_) {
+            iterator = pendingCommands_.erase(iterator);
+            continue;
+        }
+
+        const bool sameReplyTopic = iterator->replyTopic == replyTopic;
         const bool sameTarget = iterator->target.nodeId == event.nodeId
             && iterator->target.classId == event.classId
             && iterator->target.instance == event.instance
             && iterator->target.index == event.index;
         const bool sameExpectedValue = valuesEquivalent(iterator->expectedValue, outboundValue);
-        if (sameTarget && sameExpectedValue) {
+        if (sameReplyTopic && sameTarget && sameExpectedValue) {
             std::vector<ReasonEntry> reasons = iterator->reasons;
             pendingCommands_.erase(iterator);
             return reasons;

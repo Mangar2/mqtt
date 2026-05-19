@@ -465,7 +465,7 @@ TEST_CASE("log_level_one_emits_important_events_without_forcing_message_traces",
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("regular_set_message_updates_matcher_and_publish_flags", "[zwave_service]") {
+TEST_CASE("regular_set_message_forwards_reasons_and_publish_flags", "[zwave_service]") {
     auto controller = std::make_shared<FakeController>();
     yaha::ZwaveServiceComponent service{makeConfig(), controller};
 
@@ -481,6 +481,8 @@ TEST_CASE("regular_set_message_updates_matcher_and_publish_flags", "[zwave_servi
     CHECK(controller->lastSetTopic() == "home/phase6/lamp/set");
     REQUIRE(std::holds_alternative<std::string>(controller->lastSetValue()));
     CHECK(std::get<std::string>(controller->lastSetValue()) == "on");
+    REQUIRE_FALSE(controller->lastSetReasons().empty());
+    CHECK(controller->lastSetReasons().front().message == "received by zwave service");
 
     yaha::Message controllerPublish{"home/phase6/lamp", yaha::Value{std::string{"on"}}};
     controllerPublish.addReason("device feedback");
@@ -490,8 +492,8 @@ TEST_CASE("regular_set_message_updates_matcher_and_publish_flags", "[zwave_servi
     CHECK(published.front().topic() == "home/phase6/lamp");
     CHECK(published.front().qos() == yaha::Qos::ExactlyOnce);
     CHECK(published.front().retain());
-    CHECK(hasReasonMessage(published.front(), "received by zwave service"));
     CHECK(hasReasonMessage(published.front(), "device feedback"));
+    CHECK_FALSE(hasReasonMessage(published.front(), "received by zwave service"));
 }
 
 TEST_CASE("regular_set_message_value_mismatch_skips_reason_merge", "[zwave_service]") {

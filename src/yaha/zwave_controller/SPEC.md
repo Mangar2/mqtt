@@ -74,6 +74,7 @@ Concrete parity adapter implementation with additional callback entry points:
 - resolves ZWave id through `ZwaveDevicesMapper::topicToZwaveId(...)`
 - converts payload via `ZwaveDevicesMapper::buildWriteRequest(...)`
 - for regular `setValue` writes, stores a pending command entry with:
+  - reply topic identity (incoming topic without trailing `/set`)
   - resolved target (`nodeId`, `classId`, `instance`, `index`)
   - expected outbound value
   - command timestamp
@@ -103,10 +104,10 @@ Concrete parity adapter implementation with additional callback entry points:
 - `onValueRefreshed` updates cache only and does not publish outbound device messages.
 - Pending command feedback behavior:
   - controller runs a background poll loop and requests `driver.requestNodeState(nodeId)` per pending command on `commandReactionPollIntervalMs`
-  - if a value-changed event matches pending target+expected value, the pending command is consumed
+  - if a value-changed event matches pending reply topic + target + expected value and is still within timeout, the pending command is consumed
   - consumed pending command reasons are prepended to outbound message reasons in original order
   - pending command entries expire and are removed after `commandReactionTimeoutMs`
-  - same action (same target + same expected value) replaces previous pending entry
+  - same action (same reply topic + same target + same expected value) replaces previous pending entry
   - different action on same target is kept as independent pending entry
 - Value publish behavior:
   - node `1` publishes to configured USB topic
