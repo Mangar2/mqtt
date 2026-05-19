@@ -183,17 +183,24 @@ def run_or_fail(command: list[str], cwd: Path) -> None:
         )
 
 
-def binary_signature(path: Path) -> tuple[int, int] | None:
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file_handle:
+        for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def binary_signature(path: Path) -> str | None:
     if not path.exists():
         return None
-    stat_result = path.stat()
-    return (stat_result.st_mtime_ns, stat_result.st_size)
+    return sha256_file(path)
 
 
 def collect_deployment_binary_signatures(
     build_dir: Path,
-) -> dict[str, tuple[int, int] | None]:
-    signatures: dict[str, tuple[int, int] | None] = {}
+) -> dict[str, str | None]:
+    signatures: dict[str, str | None] = {}
     for component in SERVICE_COMPONENTS:
         binary_name = str(component["binary"])
         binary_path = build_dir / binary_name
@@ -202,8 +209,8 @@ def collect_deployment_binary_signatures(
 
 
 def detect_rebuilt_binaries(
-    before: dict[str, tuple[int, int] | None],
-    after: dict[str, tuple[int, int] | None],
+    before: dict[str, str | None],
+    after: dict[str, str | None],
 ) -> list[str]:
     rebuilt: list[str] = []
     for binary_name in sorted(after.keys()):

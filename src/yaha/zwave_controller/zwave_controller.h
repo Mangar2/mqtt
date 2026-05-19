@@ -358,6 +358,11 @@ private:
         std::chrono::steady_clock::time_point lastPollAt{};
     };
 
+    struct PendingCommandMatch {
+        bool matched{false};
+        std::vector<ReasonEntry> reasons{};
+    };
+
     [[nodiscard]] static std::optional<std::uint16_t> parseNodeIdFromValue(const Value& value);
     [[nodiscard]] static std::optional<std::string> parseOptionalLabelFromSetTopic(const std::vector<std::string>& topicParts);
     [[nodiscard]] static std::string joinTopicParts(const std::vector<std::string>& parts, std::size_t count);
@@ -373,7 +378,7 @@ private:
         const std::string& replyTopic,
         const ZwaveWriteRequest& writeRequest,
         const std::vector<ReasonEntry>& reasons);
-    [[nodiscard]] std::vector<ReasonEntry> takeMatchingPendingReasons(
+    [[nodiscard]] PendingCommandMatch takeMatchingPendingReasons(
         const std::string& replyTopic,
         const ZwaveControllerValueEvent& event,
         const Value& outboundValue);

@@ -764,3 +764,49 @@ TEST_CASE("pending_command_polling_targets_only_affected_node", "[zwave_controll
     CHECK(driver.requestNodeStateCalls >= 1U);
     CHECK(driver.lastRequestedNodeState == kNodeIdEleven);
 }
+
+TEST_CASE("matching_value_refreshed_publishes_pending_feedback", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/lamp",
+            kNodeIdEleven,
+            kSwitchBinaryClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"switch"},
+            std::nullopt)});
+
+    std::vector<yaha::Message> published{};
+    controller.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    controller.setValue(
+        "ground/livingroom/lamp/power/set",
+        yaha::Value{std::string{"on"}},
+        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{.message = "await-refresh", .timestamp = "2026-05-19T10:00:00Z"}});
+
+    controller.onValueRefreshed(
+        kNodeIdEleven,
+        kSwitchBinaryClass,
+        yaha::ZwaveControllerValueEvent{
+            .nodeId = kNodeIdEleven,
+            .classId = kSwitchBinaryClass,
+            .instance = kInstanceOne,
+            .index = kIndexZero,
+            .label = std::nullopt,
+            .valueId = kValueIdSample,
+            .value = yaha::Value{1.0},
+            .type = "switch",
+            .readOnly = false});
+
+    REQUIRE(published.size() == 1U);
+    CHECK(published.front().topic() == "ground/livingroom/lamp");
+    REQUIRE(std::holds_alternative<std::string>(published.front().value()));
+    CHECK(std::get<std::string>(published.front().value()) == "on");
+    REQUIRE_FALSE(published.front().reason().empty());
+    CHECK(published.front().reason().front().message == "await-refresh");
+}

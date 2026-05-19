@@ -256,8 +256,32 @@ void ZwaveController::onValueRefreshed(
     const ZwaveControllerValueEvent& event) {
     (void)nodeId;
     (void)classId;
-    // Legacy parity: refresh updates cached state only; outbound publish happens on value changed.
     storeNodeValue(event);
+
+    try {
+        if (event.nodeId == kUsbControllerNodeId) {
+            return;
+        }
+
+        const std::optional<ZwaveTopicMapping> mapping = devicesMapper_.valueToTopicAndType(buildDescriptor(event));
+        if (!mapping.has_value() || mapping->topic.empty()) {
+            return;
+        }
+
+        const Value outboundValue = applySwitchOutboundConversion(event.value, mapping->type);
+        PendingCommandMatch pendingMatch = takeMatchingPendingReasons(mapping->topic, event, outboundValue);
+        if (!pendingMatch.matched) {
+            return;
+        }
+
+        std::string reason = "received from zwave refresh";
+        if (event.valueId.has_value()) {
+            reason += ", id: " + std::to_string(*event.valueId);
+        }
+
+        publish(mapping->topic, outboundValue, reason, pendingMatch.reasons);
+    } catch (...) {
+    }
 }
 
 std::optional<std::uint16_t> ZwaveController::parseNodeIdFromValue(const Value& value) {
@@ -407,7 +431,7 @@ void ZwaveController::publishValue(
             topic = mapping->topic;
             reason += ", Zwave value: " + valueToString(event.value);
             outputValue = applySwitchOutboundConversion(event.value, mapping->type);
-            prependedReasons = takeMatchingPendingReasons(topic, event, outputValue);
+            prependedReasons = takeMatchingPendingReasons(topic, event, outputValue).reasons;
         }
 
         publish(topic, outputValue, reason, prependedReasons);
@@ -492,7 +516,7 @@ void ZwaveController::rememberPendingCommand(
     logPendingPollingTrace(trace.str());
 }
 
-std::vector<ReasonEntry> ZwaveController::takeMatchingPendingReasons(
+ZwaveController::PendingCommandMatch ZwaveController::takeMatchingPendingReasons(
     const std::string& replyTopic,
     const ZwaveControllerValueEvent& event,
     const Value& outboundValue) {
@@ -540,14 +564,14 @@ std::vector<ReasonEntry> ZwaveController::takeMatchingPendingReasons(
                        << " prepended_reasons=" << reasons.size();
             logPendingPollingTrace(matchTrace.str());
             pendingCommands_.erase(iterator);
-            return reasons;
+            return PendingCommandMatch{.matched = true, .reasons = std::move(reasons)};
         }
         ++iterator;
     }
 
     logPendingPollingTrace("no pending match for feedback");
 
-    return std::vector<ReasonEntry>{};
+    return PendingCommandMatch{};
 }
 
 void ZwaveController::pollPendingCommands() {
