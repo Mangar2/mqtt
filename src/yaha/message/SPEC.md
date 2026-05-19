@@ -48,6 +48,43 @@ Notes:
 - Regression tests in `test/message_payload_codec_test.cpp` pin TS-reference-compatible
     envelope semantics (message shape, escaping, and reason ordering).
 
+### Message Logging Helpers
+
+```cpp
+enum class MessageLogDirection : std::uint8_t { Incoming = 0U, Outgoing = 1U };
+
+struct MessageLogConfig {
+    bool enableIncoming{false};
+    bool enableOutgoing{false};
+    bool includeReasonChain{true};
+    std::optional<std::string> incomingTopicFilter{};
+    std::optional<std::string> outgoingTopicFilter{};
+};
+
+bool matchesTopicFilter(std::string_view topicName, std::string_view topicFilter);
+bool shouldLogMessage(MessageLogDirection direction,
+                      const Message& message,
+                      const MessageLogConfig& config);
+std::string formatMessageLogLine(std::string_view componentName,
+                                 MessageLogDirection direction,
+                                 const Message& message,
+                                 bool includeReasonChain = true);
+std::optional<std::string> buildMessageLogLine(std::string_view componentName,
+                                               MessageLogDirection direction,
+                                               const Message& message,
+                                               const MessageLogConfig& config);
+```
+
+Implementation status:
+- Implemented in Phase 2 under `message_log_filter.*`, `message_log_formatter.*`, and
+    `message_log_service.*`.
+
+Deterministic formatting contract:
+- Required field order in one log line: `component`, `direction`, `topic`, `value`, `qos`, `retain`, `dup`, `reason`.
+- Optional fields (`raw`, transport metadata) append after required fields in stable order.
+- String escaping uses the same JSON-compatible escaping rules as message payload helpers.
+- Full reason output must preserve `Message.reason()` order and must never be flattened to one plain string in unified paths.
+
 ### Class `Message`
 
 | Member | Signature | Notes |
@@ -88,6 +125,15 @@ Notes:
 | `message.cpp` | Method implementations |
 | `message_payload_codec.h` | Shared YAHA envelope parser/builder declarations |
 | `message_payload_codec.cpp` | Shared YAHA envelope parser/builder implementations |
+| `message_log_filter.h` | Shared topic-filter matcher declarations for message-flow logging |
+| `message_log_filter.cpp` | Shared topic-filter matcher implementation |
+| `message_log_formatter.h` | Shared deterministic message-flow log formatter declarations |
+| `message_log_formatter.cpp` | Shared deterministic message-flow log formatter implementation |
+| `message_log_service.h` | Shared message-flow logging service declarations |
+| `message_log_service.cpp` | Shared message-flow logging service implementation |
 | `test/TEST_SPEC.md` | Unit-test specification |
 | `test/message_test.cpp` | Catch2 unit tests |
 | `test/message_payload_codec_test.cpp` | Catch2 unit tests for parser/builder edge cases |
+| `test/message_log_filter_test.cpp` | Catch2 unit tests for topic wildcard filter behavior |
+| `test/message_log_formatter_test.cpp` | Catch2 unit tests for deterministic message-flow log formatting |
+| `test/message_log_service_test.cpp` | Catch2 unit tests for direction/config/filter logging decisions |

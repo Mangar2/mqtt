@@ -114,6 +114,9 @@ Reason rule:
 - Add test specs for formatter/filter/service modules.
 - Define exact field order and escaping rules for deterministic output.
 
+Status:
+- Completed on 2026-05-19.
+
 ## Phase 2: Shared message logging services
 
 - Implement `message_log_filter.*`, `message_log_formatter.*`, `message_log_service.*`.
@@ -123,6 +126,9 @@ Reason rule:
   - topic wildcard filtering (`+`, `#`)
   - direction-aware filter behavior
   - disabled logging bypass
+
+Status:
+- Completed on 2026-05-19.
 
 ## Phase 3: Client adoption wave A
 

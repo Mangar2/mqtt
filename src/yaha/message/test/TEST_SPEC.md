@@ -39,3 +39,20 @@ Unit tests for Message value-type behavior and validation guarantees.
 | `Payload codec parse and rebuild keeps TS compatible envelope` | regression guardrail for canonical behavior | TS-style envelope payload with escaped strings and numeric value | parse succeeds and rebuilt payload keeps canonical message shape and values |
 | `Payload codec decodes full JSON escape set` | string unescape compatibility guardrail | envelope with escaped quote, slash, backslash, r, b, f, and unicode | parsed value decodes escapes to expected in-memory text |
 | `Payload codec rejects invalid escaped token` | malformed escape rejection guardrail | envelope containing unsupported escaped sequence | parse returns empty optional |
+
+## Message logging service test cases
+
+| Name | Scenario | Input | Expected |
+|------|----------|-------|----------|
+| `Message log filter matches exact topic` | exact-match filter behavior | topic `a/b/c`, filter `a/b/c` | match=true |
+| `Message log filter supports plus wildcard` | single-level wildcard match | topic `a/b/c`, filter `a/+/c` | match=true |
+| `Message log filter supports hash wildcard tail` | multi-level tail wildcard | topic `a/b/c/d`, filter `a/#` | match=true |
+| `Message log filter rejects non-matching topic` | negative filter branch | topic `a/b/c`, filter `a/+/d` | match=false |
+| `Message log service disables incoming when flag false` | incoming gate behavior | direction incoming with enableIncoming=false | no log line returned |
+| `Message log service disables outgoing when flag false` | outgoing gate behavior | direction outgoing with enableOutgoing=false | no log line returned |
+| `Message log service applies incoming topic filter` | direction-aware incoming filter | incoming message with non-matching incoming filter | no log line returned |
+| `Message log service applies outgoing topic filter` | direction-aware outgoing filter | outgoing message with non-matching outgoing filter | no log line returned |
+| `Message log formatter emits deterministic required field order` | schema ordering contract | message with string value and one reason | log line field order follows required sequence |
+| `Message log formatter escapes control characters deterministically` | escape contract | message value/reason text with quote, backslash, newline, tab | escaped output uses JSON-compatible tokens |
+| `Message log formatter emits full reason chain` | reason completeness contract | message with multiple reason entries | all reasons rendered in message order |
+| `Message log service can omit reason chain by config` | optional reason rendering branch | includeReasonChain=false | reason field omitted or empty per contract |

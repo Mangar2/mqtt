@@ -104,6 +104,72 @@ Rules:
 All YAHA clients and adapters that build or parse YAHA message payloads must use the same canonical envelope rules above.
 Any deviation is a format bug.
 
+## Canonical Message-Flow Logging Contract
+
+Message-flow logging (incoming/outgoing message logs) is a shared message-service capability and must use one unified contract across YAHA clients.
+
+Mandatory shared behavior:
+- message-flow logs must be produced via shared message logging services in `src/yaha/message/`.
+- every log path must be able to emit the full reason chain (`ReasonEntry[]`), not a flattened single reason string.
+- topic-based filtering must be centralized and direction-aware (`incoming`, `outgoing`).
+
+### Required log fields
+
+Every unified message-flow log line must include:
+- `component`
+- `direction`
+- `topic`
+- `value`
+- `qos`
+- `retain`
+- `dup`
+- `reason`
+
+Optional fields (only when available):
+- `raw`
+- transport metadata fields
+
+### Deterministic field order
+
+Unified log formatting must serialize fields in this order:
+1. `component`
+2. `direction`
+3. `topic`
+4. `value`
+5. `qos`
+6. `retain`
+7. `dup`
+8. `reason`
+9. optional fields (`raw`, transport metadata) in stable append order
+
+### Escaping rules
+
+String values in unified message logs must use deterministic JSON-compatible escaping:
+- `\\` for backslash
+- `\"` for quote
+- `\n`, `\r`, `\t`, `\b`, `\f` for control escapes
+- control bytes below `0x20` must be emitted as `\u00XX`
+
+### Reason-chain rule
+
+- unified logging must never truncate reason entries.
+- unified logging must never collapse `ReasonEntry[]` into one plain reason string.
+- reason order in logs must follow `Message.reason()` order.
+
+### Filter extension point
+
+Shared logging services must provide a central filter extension point.
+
+Required baseline behavior:
+- topic wildcard matching with MQTT semantics (`+`, `#`)
+- separate incoming and outgoing filter checks
+- example supported filter shape: `/a/+/+`
+
+Prepared extension behavior (implementation may come later):
+- include/exclude filter chains
+- central filter registry
+- reloadable filter policy
+
 ## Architectural notes
 
 - The Message type is the one data format shared by all YAHA components. It must be defined once and referenced everywhere — no component defines its own message type.

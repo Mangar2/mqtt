@@ -196,3 +196,21 @@ Created a dedicated YAHA implementation plan to unify incoming/outgoing message 
 
 ### [DECISION] Message logging becomes shared message-service capability
 Logging of YAHA message flow is now planned as a centralized capability in message services, not per-client formatting logic. The plan makes full reason-chain output mandatory in unified paths and requires a central topic-wildcard filter extension point (for example `/a/+/+`) so future filtering can be added without client-specific rewrites.
+
+### [ARTIFACT] Message specs extended with unified logging contracts
+Updated `spec/yaha/SPEC-message.md`, `src/yaha/message/SPEC.md`, and `src/yaha/SPEC.md` with a canonical message-flow logging contract. Added deterministic field order, escaping rules, mandatory full-reason output requirement, and direction-aware topic filter extension point as Phase-1 normative contract.
+
+### [ARTIFACT] Message logging test contracts added
+Updated `src/yaha/message/test/TEST_SPEC.md` with dedicated test cases for shared log filter, formatter, and service behavior. The test contract now covers wildcard matching (`+`, `#`), direction-aware filtering, deterministic field ordering, escaping, and full reason-chain rendering.
+
+### [MILESTONE] Logging unification Phase 1 completed
+Phase 1 of `spec/yaha/IMPL-message-logging-unification.md` is complete with spec-level API and behavior contracts in place. The implementation plan now marks Phase 1 as completed and provides the formal baseline for Phase 2 code implementation.
+
+### [ARTIFACT] Shared message logging services implemented
+Implemented `src/yaha/message/message_log_filter.*`, `message_log_formatter.*`, and `message_log_service.*` as reusable message-flow logging infrastructure. The new shared layer now provides wildcard topic matching, deterministic log-line formatting, and direction-aware incoming/outgoing gating with optional per-direction topic filters.
+
+### [ARTIFACT] Message logging unit tests added
+Added `src/yaha/message/test/message_log_filter_test.cpp`, `message_log_formatter_test.cpp`, and `message_log_service_test.cpp`. Tests cover wildcard semantics (`+`, `#`), deterministic field ordering, escape behavior, full reason-chain output, direction-aware filtering, and disabled-log bypass behavior.
+
+### [MILESTONE] Logging unification Phase 2 completed
+Phase 2 of `spec/yaha/IMPL-message-logging-unification.md` is complete: shared logging services and focused unit tests are in place under `src/yaha/message/`.
