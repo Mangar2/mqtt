@@ -40,12 +40,21 @@ OpenZWave runtime driver behavior:
 - maps `/set` write requests to typed OpenZWave `SetValue` overloads
   - write path first uses runtime-cached ValueID from observed callbacks (node/class/instance/index)
   - if no cached ValueID exists yet, it falls back to constructed ValueID from resolved mapping fields
+    - special case: class `0x26` (switch multilevel) falls back to `Byte` write type even when mapping type is `bool`
+  - typed write dispatch uses the resolved OpenZWave `ValueID` type as authoritative target type
+  - bool payloads (`on`/`off` mapped to `true`/`false`) are coerced by target ValueID type to avoid bool-write type mismatch:
+    - bool ValueID: writes bool
+    - numeric ValueID (byte/short/int/decimal): writes `1`/`0`
+    - list/string ValueID: writes `on`/`off`
 - routes config writes through `SetConfigParam`
 - handles add/remove-failed node controller commands
 - requests node state for known nodes on scan trigger
 - requests all config params per configured node
 - enables polling for cached value ids by node/class
 - configures OpenZWave runtime `PollInterval` from `zwave.pollIntervalMs` (default `500ms`) for legacy polling cadence parity
+- passes command feedback timing settings to `ZwaveController`:
+  - `zwave.commandReactionPollIntervalMs` (default `500ms`)
+  - `zwave.commandReactionTimeoutMs` (default `30000ms`)
 - tracks cached value ids by node/class/instance/index from OpenZWave notifications
 - on shutdown removes driver + watcher and destroys owned OpenZWave manager/options
 - resolves OpenZWave config path in this order:
@@ -64,6 +73,7 @@ Runtime startup prints a deterministic summary:
 - subscribe/publish qos and retain flags
 - zwave log level
 - incoming/outgoing message logging flags
+- command reaction poll interval and timeout
 
 ## Configuration format
 
@@ -72,7 +82,7 @@ Supported INI sections:
 - `[mqtt]`
   - `host`, `port`, `clientId`, `reconnectDelayMs`, `keepAliveIntervalMs`, `loopSleepMs`, `logReason`
 - `[zwave]`
-  - `subscribeQoS`, `qos`, `retain`, `logLevel`, `logIncomingMessages`, `logOutgoingMessages`, `pollIntervalMs`, `usbDevice`, `usbTopic`, `device`
+  - `subscribeQoS`, `qos`, `retain`, `logLevel`, `logIncomingMessages`, `logOutgoingMessages`, `pollIntervalMs`, `commandReactionPollIntervalMs`, `commandReactionTimeoutMs`, `usbDevice`, `usbTopic`, `device`
 
 Device row format (`zwave.device` can appear multiple times):
 
@@ -89,6 +99,8 @@ Validation rules:
 - `zwave.logIncomingMessages` must be valid boolean token when set.
 - `zwave.logOutgoingMessages` must be valid boolean token when set.
 - `zwave.pollIntervalMs` must be in range `1..60000` when set.
+- `zwave.commandReactionPollIntervalMs` must be in range `1..60000` when set.
+- `zwave.commandReactionTimeoutMs` must be in range `1..600000` when set.
 - `zwave.usbDevice` must be present and non-empty.
 - `zwave.usbTopic` must be present and non-empty.
 - At least one `zwave.device` entry must be present.

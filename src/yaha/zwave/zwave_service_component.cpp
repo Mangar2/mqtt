@@ -330,7 +330,7 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
 
     sharedReplyMatcher().addReceivedMessage(routedMessage);
     try {
-        controller_->setValue(message.topic(), message.value());
+        controller_->setValue(message.topic(), message.value(), message.reason());
         logImportantEvent("setvalue", "request forwarded");
     } catch (const std::exception& exceptionValue) {
         logImportantError("setvalue", exceptionValue.what());

@@ -78,7 +78,10 @@ void printStartupConfiguration(
               << (runtimeConfig.zwaveConfig.logIncomingMessages ? "1" : "0")
               << " outgoing="
               << (runtimeConfig.zwaveConfig.logOutgoingMessages ? "1" : "0")
-              << " pollIntervalMs=" << runtimeConfig.zwaveConfig.pollIntervalMs << '\n';
+              << " pollIntervalMs=" << runtimeConfig.zwaveConfig.pollIntervalMs
+              << " commandReactionPollIntervalMs=" << runtimeConfig.zwaveConfig.commandReactionPollIntervalMs
+              << " commandReactionTimeoutMs=" << runtimeConfig.zwaveConfig.commandReactionTimeoutMs
+              << '\n';
     std::cout << std::flush;
 }
 
@@ -126,7 +129,11 @@ int main(int argc, char* argv[]) {
         runtimeConfig.zwaveConfig.usb.device,
         runtimeConfig.zwaveConfig.logLevel,
         runtimeConfig.zwaveConfig.pollIntervalMs);
-    auto controller = std::make_shared<yaha::ZwaveController>(runtimeConfig.zwaveConfig.usb, *driverPort);
+    auto controller = std::make_shared<yaha::ZwaveController>(
+        runtimeConfig.zwaveConfig.usb,
+        *driverPort,
+        runtimeConfig.zwaveConfig.commandReactionPollIntervalMs,
+        runtimeConfig.zwaveConfig.commandReactionTimeoutMs);
     controller->setDriverFailedCallback([] {
         std::cerr << "fatal: OpenZWave reported driver failure, terminating process for systemd restart\n";
         std::cerr << std::flush;

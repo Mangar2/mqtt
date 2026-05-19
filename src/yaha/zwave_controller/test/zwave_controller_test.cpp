@@ -2,11 +2,11 @@
 
 #include "yaha/zwave_controller/zwave_controller.h"
 
+#include <chrono>
 #include <optional>
-#include <iostream>
-#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <variant>
 #include <vector>
 
@@ -46,6 +46,7 @@ struct FakeDriverPort final : yaha::IZwaveDriverPort {
     std::size_t startScanCalls{0U};
     std::size_t requestConfigCalls{0U};
     std::size_t enablePollCalls{0U};
+    std::size_t requestNodeStateCalls{0U};
     std::size_t disconnectCalls{0U};
 
     yaha::ZwaveResolvedId lastSetValueTarget{};
@@ -59,6 +60,7 @@ struct FakeDriverPort final : yaha::IZwaveDriverPort {
     std::uint16_t lastRequestConfigNode{0U};
     std::uint16_t lastEnablePollNode{0U};
     std::uint16_t lastEnablePollClass{0U};
+    std::uint16_t lastRequestedNodeState{0U};
     std::string lastDisconnectPath{};
 
     void setValue(const yaha::ZwaveResolvedId& target, const std::variant<bool, double, std::string>& value) override {
@@ -98,17 +100,25 @@ struct FakeDriverPort final : yaha::IZwaveDriverPort {
         lastEnablePollClass = classId;
     }
 
+    void requestNodeState(const std::uint16_t nodeId) override {
+        requestNodeStateCalls += 1U;
+        lastRequestedNodeState = nodeId;
+    }
+
     void disconnect(const std::string& devicePath) override {
         disconnectCalls += 1U;
         lastDisconnectPath = devicePath;
     }
 };
 
-yaha::ZwaveController makeController(FakeDriverPort& driver) {
+yaha::ZwaveController makeController(
+    FakeDriverPort& driver,
+    const std::uint32_t commandReactionPollIntervalMs = 500U,
+    const std::uint32_t commandReactionTimeoutMs = 30000U) {
     yaha::ZwaveUsbConfig usb{};
     usb.device = "/dev/ttyUSB0";
     usb.topic = "controller/topic";
-    return yaha::ZwaveController{usb, driver};
+    return yaha::ZwaveController{usb, driver, commandReactionPollIntervalMs, commandReactionTimeoutMs};
 }
 
 yaha::ZwaveDeviceConfig makeDevice(
@@ -320,44 +330,6 @@ TEST_CASE("on_value_refreshed_updates_cache_without_publishing", "[zwave_control
     CHECK(std::get<std::string>(published.back().value()) == "on");
 }
 
-TEST_CASE("feedback_logs_switch_detection_using_ini_mapping_for_non_37_class", "[zwave_controller]") {
-    FakeDriverPort driver{};
-    auto controller = makeController(driver);
-
-    controller.setDeviceConfiguration({
-        makeDevice(
-            "ground/livingroom/lamp",
-            kNodeIdFourteen,
-            yaha::kZwaveSwitchMultilevelClass,
-            kInstanceOne,
-            kIndexZero,
-            std::string{"switch"},
-            std::nullopt)});
-
-    std::ostringstream outputStream{};
-    auto* previousBuffer = std::cout.rdbuf(outputStream.rdbuf());
-
-    controller.onValueChanged(yaha::ZwaveControllerValueEvent{
-        .nodeId = kNodeIdFourteen,
-        .classId = yaha::kZwaveSwitchMultilevelClass,
-        .instance = kInstanceOne,
-        .index = kIndexZero,
-        .label = std::nullopt,
-        .valueId = kValueIdSample,
-        .value = yaha::Value{1.0},
-        .type = "switch",
-        .readOnly = false});
-
-    std::cout.rdbuf(previousBuffer);
-
-    const std::string logText = outputStream.str();
-    CHECK(logText.find("habe erkannt zwave meldet, switch zustand aus ini-mapping") != std::string::npos);
-    CHECK(logText.find("zwave_id={node=14 class=38 instance=1 index=0 valueId=1001}") != std::string::npos);
-    CHECK(logText.find("mapped_topic=ground/livingroom/lamp") != std::string::npos);
-    CHECK(logText.find("recognized_state=on") != std::string::npos);
-    CHECK(logText.find("source=feedback_event_ini_mapping") != std::string::npos);
-}
-
 TEST_CASE("on_controller_command_publishes_monitoring_notification", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
@@ -493,7 +465,7 @@ TEST_CASE("notification_callback_maps_all_codes_and_uses_unknown_topic_fallback"
     CHECK(std::get<std::string>(published.back().value()) == "unknown");
 }
 
-TEST_CASE("node_ready_enables_poll_for_switch_classes", "[zwave_controller]") {
+TEST_CASE("node_ready_does_not_enable_global_polling", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
 
@@ -521,13 +493,11 @@ TEST_CASE("node_ready_enables_poll_for_switch_classes", "[zwave_controller]") {
 
     controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{});
 
-    CHECK(driver.enablePollCalls == 1U);
-    CHECK(driver.lastEnablePollNode == kNodeIdTwentyOne);
-    CHECK(driver.lastEnablePollClass == kSwitchBinaryClass);
+    CHECK(driver.enablePollCalls == 0U);
 
     controller.onValueRemoved(kNodeIdTwentyOne, kSwitchBinaryClass, kIndexZero);
     controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{});
-    CHECK(driver.enablePollCalls == 2U);
+    CHECK(driver.enablePollCalls == 0U);
 
     controller.onValueRemoved(kNodeIdTwentyOne, kSensorMultilevelClass, kIndexOne);
     controller.onValueRemoved(kNodeIdTwentyOne, kSensorMultilevelClass, kIndexOne);
@@ -584,4 +554,207 @@ TEST_CASE("on_value_changed_without_mapping_falls_back_to_monitoring_topic", "[z
     CHECK(published.front().topic() == "$MONITOR/zwave/22");
     REQUIRE(std::holds_alternative<std::string>(published.front().value()));
     CHECK(std::get<std::string>(published.front().value()) == "open");
+}
+
+TEST_CASE("matching_feedback_prepends_tracked_reasons", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/lamp",
+            kNodeIdEleven,
+            kSwitchBinaryClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"switch"},
+            std::nullopt)});
+
+    std::vector<yaha::Message> published{};
+    controller.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    const std::vector<yaha::ReasonEntry> reasons{
+        yaha::ReasonEntry{"rule", "2026-05-19T10:00:00Z"},
+        yaha::ReasonEntry{"ui", "2026-05-19T09:59:00Z"}};
+
+    controller.setValue("ground/livingroom/lamp/power/set", yaha::Value{std::string{"on"}}, reasons);
+    controller.onValueChanged(yaha::ZwaveControllerValueEvent{
+        .nodeId = kNodeIdEleven,
+        .classId = kSwitchBinaryClass,
+        .instance = kInstanceOne,
+        .index = kIndexZero,
+        .label = std::nullopt,
+        .valueId = kValueIdSample,
+        .value = yaha::Value{1.0},
+        .type = "switch",
+        .readOnly = false});
+
+    REQUIRE(published.size() == 1U);
+    REQUIRE(published.front().reason().size() >= 3U);
+    CHECK(published.front().reason()[0].message == "rule");
+    CHECK(published.front().reason()[1].message == "ui");
+    CHECK(published.front().reason()[2].message.find("received from zwave") != std::string::npos);
+}
+
+TEST_CASE("same_action_replaces_pending_entry", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/lamp",
+            kNodeIdEleven,
+            kSwitchBinaryClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"switch"},
+            std::nullopt)});
+
+    std::vector<yaha::Message> published{};
+    controller.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    controller.setValue(
+        "ground/livingroom/lamp/power/set",
+        yaha::Value{std::string{"on"}},
+        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{"old", "2026-05-19T10:00:00Z"}});
+    controller.setValue(
+        "ground/livingroom/lamp/power/set",
+        yaha::Value{std::string{"on"}},
+        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{"new", "2026-05-19T10:01:00Z"}});
+
+    controller.onValueChanged(yaha::ZwaveControllerValueEvent{
+        .nodeId = kNodeIdEleven,
+        .classId = kSwitchBinaryClass,
+        .instance = kInstanceOne,
+        .index = kIndexZero,
+        .label = std::nullopt,
+        .valueId = kValueIdSample,
+        .value = yaha::Value{1.0},
+        .type = "switch",
+        .readOnly = false});
+
+    REQUIRE(published.size() == 1U);
+    REQUIRE_FALSE(published.front().reason().empty());
+    CHECK(published.front().reason().front().message == "new");
+}
+
+TEST_CASE("different_feedback_keeps_pending_command", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/lamp",
+            kNodeIdEleven,
+            kSwitchBinaryClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"switch"},
+            std::nullopt)});
+
+    std::vector<yaha::Message> published{};
+    controller.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    controller.setValue(
+        "ground/livingroom/lamp/power/set",
+        yaha::Value{std::string{"on"}},
+        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{"await-on", "2026-05-19T10:00:00Z"}});
+
+    controller.onValueChanged(yaha::ZwaveControllerValueEvent{
+        .nodeId = kNodeIdEleven,
+        .classId = kSwitchBinaryClass,
+        .instance = kInstanceOne,
+        .index = kIndexZero,
+        .label = std::nullopt,
+        .valueId = kValueIdSample,
+        .value = yaha::Value{0.0},
+        .type = "switch",
+        .readOnly = false});
+
+    controller.onValueChanged(yaha::ZwaveControllerValueEvent{
+        .nodeId = kNodeIdEleven,
+        .classId = kSwitchBinaryClass,
+        .instance = kInstanceOne,
+        .index = kIndexZero,
+        .label = std::nullopt,
+        .valueId = kValueIdSample,
+        .value = yaha::Value{1.0},
+        .type = "switch",
+        .readOnly = false});
+
+    REQUIRE(published.size() == 2U);
+    CHECK(published[0].reason().front().message.find("received from zwave") != std::string::npos);
+    CHECK(published[1].reason().front().message == "await-on");
+}
+
+TEST_CASE("pending_command_times_out_and_is_removed", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver, 10U, 30U);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/lamp",
+            kNodeIdEleven,
+            kSwitchBinaryClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"switch"},
+            std::nullopt)});
+
+    std::vector<yaha::Message> published{};
+    controller.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    controller.setValue(
+        "ground/livingroom/lamp/power/set",
+        yaha::Value{std::string{"on"}},
+        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{"will-timeout", "2026-05-19T10:00:00Z"}});
+
+    std::this_thread::sleep_for(std::chrono::milliseconds{150});
+
+    controller.onValueChanged(yaha::ZwaveControllerValueEvent{
+        .nodeId = kNodeIdEleven,
+        .classId = kSwitchBinaryClass,
+        .instance = kInstanceOne,
+        .index = kIndexZero,
+        .label = std::nullopt,
+        .valueId = kValueIdSample,
+        .value = yaha::Value{1.0},
+        .type = "switch",
+        .readOnly = false});
+
+    REQUIRE(published.size() == 1U);
+    CHECK(published.front().reason().front().message.find("received from zwave") != std::string::npos);
+}
+
+TEST_CASE("pending_command_polling_targets_only_affected_node", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver, 20U, 30000U);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/lamp",
+            kNodeIdEleven,
+            kSwitchBinaryClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"switch"},
+            std::nullopt)});
+
+    controller.setValue(
+        "ground/livingroom/lamp/power/set",
+        yaha::Value{std::string{"on"}},
+        std::vector<yaha::ReasonEntry>{yaha::ReasonEntry{"poll", "2026-05-19T10:00:00Z"}});
+
+    std::this_thread::sleep_for(std::chrono::milliseconds{180});
+
+    CHECK(driver.requestNodeStateCalls >= 1U);
+    CHECK(driver.lastRequestedNodeState == kNodeIdEleven);
 }

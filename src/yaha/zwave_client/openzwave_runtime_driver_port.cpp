@@ -26,6 +26,7 @@ using RuntimeValueInstanceMap = std::unordered_map<std::uint8_t, RuntimeValueInd
 using RuntimeValueClassMap = std::unordered_map<std::uint16_t, RuntimeValueInstanceMap>;
 
 constexpr std::uint16_t kMaxNodeId = 255U;
+constexpr std::uint16_t kRuntimeSwitchMultilevelClass = 0x26U;
 constexpr std::uint16_t kConfigParamValueSize = 2U;
 constexpr float kNumericTolerance = 1e-6F;
 constexpr std::uint8_t kPollIntensity = 1U;
@@ -211,62 +212,115 @@ constexpr int kOzwLogLevelStreamDetail = 10;
         valueType};
 }
 
-void applyTypedValueWrite(
+void writeBooleanValue(
     OpenZWave::Manager& manager,
     const OpenZWave::ValueID& valueId,
     const OpenZWave::ValueID::ValueType valueType,
-    const std::variant<bool, double, std::string>& value) {
-    if (const auto* booleanValue = std::get_if<bool>(&value); booleanValue != nullptr) {
-        (void)manager.SetValue(valueId, *booleanValue);
+    const bool booleanValue) {
+    if (valueType == OpenZWave::ValueID::ValueType_Bool) {
+        (void)manager.SetValue(valueId, booleanValue);
         return;
     }
 
-    if (const auto* numericValue = std::get_if<double>(&value); numericValue != nullptr) {
-        if (valueType == OpenZWave::ValueID::ValueType_Bool) {
-            (void)manager.SetValue(valueId, std::fabs(*numericValue - 0.0) > kNumericTolerance);
-            return;
-        }
-
-        if (valueType == OpenZWave::ValueID::ValueType_Byte) {
-            const int32_t rounded = roundToInt32(*numericValue, "byte value");
-            if (rounded < 0 || rounded > static_cast<int32_t>(std::numeric_limits<std::uint8_t>::max())) {
-                throw std::runtime_error("byte value out of range");
-            }
-            (void)manager.SetValue(valueId, static_cast<std::uint8_t>(rounded));
-            return;
-        }
-
-        if (valueType == OpenZWave::ValueID::ValueType_Short) {
-            const int32_t rounded = roundToInt32(*numericValue, "short value");
-            if (rounded < static_cast<int32_t>(std::numeric_limits<int16_t>::min())
-                || rounded > static_cast<int32_t>(std::numeric_limits<int16_t>::max())) {
-                throw std::runtime_error("short value out of range");
-            }
-            (void)manager.SetValue(valueId, static_cast<int16_t>(rounded));
-            return;
-        }
-
-        if (valueType == OpenZWave::ValueID::ValueType_Int) {
-            (void)manager.SetValue(valueId, roundToInt32(*numericValue, "int value"));
-            return;
-        }
-
-        if (valueType == OpenZWave::ValueID::ValueType_Decimal) {
-            (void)manager.SetValue(valueId, static_cast<float>(*numericValue));
-            return;
-        }
-
-        (void)manager.SetValue(valueId, std::to_string(*numericValue));
+    if (valueType == OpenZWave::ValueID::ValueType_Byte) {
+        (void)manager.SetValue(valueId, static_cast<std::uint8_t>(booleanValue ? 1U : 0U));
         return;
     }
 
-    const auto& textValue = std::get<std::string>(value);
+    if (valueType == OpenZWave::ValueID::ValueType_Short) {
+        (void)manager.SetValue(valueId, static_cast<int16_t>(booleanValue ? 1 : 0));
+        return;
+    }
+
+    if (valueType == OpenZWave::ValueID::ValueType_Int) {
+        (void)manager.SetValue(valueId, static_cast<int32_t>(booleanValue ? 1 : 0));
+        return;
+    }
+
+    if (valueType == OpenZWave::ValueID::ValueType_Decimal) {
+        (void)manager.SetValue(valueId, booleanValue ? 1.0F : 0.0F);
+        return;
+    }
+
+    if (valueType == OpenZWave::ValueID::ValueType_List) {
+        (void)manager.SetValueListSelection(valueId, booleanValue ? "on" : "off");
+        return;
+    }
+
+    (void)manager.SetValue(valueId, std::string{booleanValue ? "on" : "off"});
+}
+
+void writeNumericValue(
+    OpenZWave::Manager& manager,
+    const OpenZWave::ValueID& valueId,
+    const OpenZWave::ValueID::ValueType valueType,
+    const double numericValue) {
+    if (valueType == OpenZWave::ValueID::ValueType_Bool) {
+        (void)manager.SetValue(valueId, std::fabs(numericValue - 0.0) > kNumericTolerance);
+        return;
+    }
+
+    if (valueType == OpenZWave::ValueID::ValueType_Byte) {
+        const int32_t rounded = roundToInt32(numericValue, "byte value");
+        if (rounded < 0 || rounded > static_cast<int32_t>(std::numeric_limits<std::uint8_t>::max())) {
+            throw std::runtime_error("byte value out of range");
+        }
+        (void)manager.SetValue(valueId, static_cast<std::uint8_t>(rounded));
+        return;
+    }
+
+    if (valueType == OpenZWave::ValueID::ValueType_Short) {
+        const int32_t rounded = roundToInt32(numericValue, "short value");
+        if (rounded < static_cast<int32_t>(std::numeric_limits<int16_t>::min())
+            || rounded > static_cast<int32_t>(std::numeric_limits<int16_t>::max())) {
+            throw std::runtime_error("short value out of range");
+        }
+        (void)manager.SetValue(valueId, static_cast<int16_t>(rounded));
+        return;
+    }
+
+    if (valueType == OpenZWave::ValueID::ValueType_Int) {
+        (void)manager.SetValue(valueId, roundToInt32(numericValue, "int value"));
+        return;
+    }
+
+    if (valueType == OpenZWave::ValueID::ValueType_Decimal) {
+        (void)manager.SetValue(valueId, static_cast<float>(numericValue));
+        return;
+    }
+
+    (void)manager.SetValue(valueId, std::to_string(numericValue));
+}
+
+void writeTextValue(
+    OpenZWave::Manager& manager,
+    const OpenZWave::ValueID& valueId,
+    const OpenZWave::ValueID::ValueType valueType,
+    const std::string& textValue) {
     if (valueType == OpenZWave::ValueID::ValueType_List) {
         (void)manager.SetValueListSelection(valueId, textValue);
         return;
     }
 
     (void)manager.SetValue(valueId, textValue);
+}
+
+void applyTypedValueWrite(
+    OpenZWave::Manager& manager,
+    const OpenZWave::ValueID& valueId,
+    const OpenZWave::ValueID::ValueType valueType,
+    const std::variant<bool, double, std::string>& value) {
+    if (const auto* booleanValue = std::get_if<bool>(&value); booleanValue != nullptr) {
+        writeBooleanValue(manager, valueId, valueType, *booleanValue);
+        return;
+    }
+
+    if (const auto* numericValue = std::get_if<double>(&value); numericValue != nullptr) {
+        writeNumericValue(manager, valueId, valueType, *numericValue);
+        return;
+    }
+
+    writeTextValue(manager, valueId, valueType, std::get<std::string>(value));
 }
 
 } // namespace
@@ -304,6 +358,11 @@ void OpenZwaveRuntimeDriverPort::setValue(
     const std::uint32_t homeId = requireHomeId();
     const std::string typeName = toLower(target.type);
     const auto valueType = toValueType(typeName);
+    auto fallbackValueType = valueType;
+    if (valueType == OpenZWave::ValueID::ValueType_Bool && target.classId == kRuntimeSwitchMultilevelClass) {
+        // Switch Multilevel writes use numeric levels in OpenZWave (e.g. 0/99), not bool.
+        fallbackValueType = OpenZWave::ValueID::ValueType_Byte;
+    }
 
     OpenZWave::ValueID valueId{};
     {
@@ -315,7 +374,7 @@ void OpenZwaveRuntimeDriverPort::setValue(
     }
 
     if (valueId.GetId() == 0U) {
-        valueId = buildFallbackValueId(homeId, target, valueType);
+        valueId = buildFallbackValueId(homeId, target, fallbackValueType);
     }
 
     OpenZWave::Manager* manager = OpenZWave::Manager::Get();
@@ -323,7 +382,8 @@ void OpenZwaveRuntimeDriverPort::setValue(
         throw std::runtime_error("OpenZWave manager unavailable");
     }
 
-    applyTypedValueWrite(*manager, valueId, valueType, value);
+    const auto resolvedValueType = valueId.GetType();
+    applyTypedValueWrite(*manager, valueId, resolvedValueType, value);
 }
 
 void OpenZwaveRuntimeDriverPort::setConfigParam(
@@ -427,6 +487,17 @@ void OpenZwaveRuntimeDriverPort::enablePoll(const std::uint16_t nodeId, const st
             (void)manager->EnablePoll(OpenZWave::ValueID(homeId, valueId), kPollIntensity);
         }
     }
+}
+
+void OpenZwaveRuntimeDriverPort::requestNodeState(const std::uint16_t nodeId) {
+    ensureStarted();
+
+    OpenZWave::Manager* manager = OpenZWave::Manager::Get();
+    if (manager == nullptr) {
+        throw std::runtime_error("OpenZWave manager unavailable");
+    }
+
+    (void)manager->RequestNodeState(requireHomeId(), requireUint8(nodeId, "node id"));
 }
 
 void OpenZwaveRuntimeDriverPort::disconnect(const std::string& devicePath) {

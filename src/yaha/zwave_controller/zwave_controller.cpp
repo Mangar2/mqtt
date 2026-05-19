@@ -3,11 +3,15 @@
 #include <cstddef>
 #include <cmath>
 #include <cstdint>
-#include <iostream>
+#include <chrono>
 #include <limits>
+#include <mutex>
+#include <ranges>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <unordered_set>
 #include <utility>
 
 namespace yaha {
@@ -57,36 +61,27 @@ constexpr double kIntegerTolerance = 1e-9;
     return parsed;
 }
 
-[[nodiscard]] std::string zwaveIdText(const ZwaveControllerValueEvent& event) {
-    std::ostringstream stream{};
-    stream << "node=" << event.nodeId
-           << " class=" << event.classId
-           << " instance=" << static_cast<unsigned int>(event.instance)
-           << " index=" << static_cast<unsigned int>(event.index);
-    if (event.valueId.has_value()) {
-        stream << " valueId=" << *event.valueId;
-    }
-    return stream.str();
-}
-
-void logRecognizedSwitchFeedbackFromIni(
-    const ZwaveControllerValueEvent& event,
-    const std::string& mappedTopic,
-    const std::string& stateText) {
-    std::cout << "habe erkannt zwave meldet, switch zustand aus ini-mapping"
-              << " zwave_id={" << zwaveIdText(event) << "}"
-              << " mapped_topic=" << mappedTopic
-              << " recognized_state=" << stateText
-              << " source=feedback_event_ini_mapping"
-              << '\n' << std::flush;
-}
-
 } // namespace
 
-ZwaveController::ZwaveController(ZwaveUsbConfig usbConfig, IZwaveDriverPort& driverPort)
+ZwaveController::ZwaveController(
+    ZwaveUsbConfig usbConfig,
+    IZwaveDriverPort& driverPort,
+    const std::uint32_t commandReactionPollIntervalMs,
+    const std::uint32_t commandReactionTimeoutMs)
     : usb_(std::move(usbConfig))
     , driverPort_(driverPort)
-    , devicesMapper_(std::vector<ZwaveDeviceConfig>{}) {
+    , devicesMapper_(std::vector<ZwaveDeviceConfig>{})
+    , commandReactionPollInterval_(commandReactionPollIntervalMs)
+    , commandReactionTimeout_(commandReactionTimeoutMs) {
+    pendingCommandPollThread_ = std::jthread([this](std::stop_token stopToken) {
+        runPendingCommandPollLoop(stopToken);
+    });
+}
+
+ZwaveController::~ZwaveController() {
+    if (pendingCommandPollThread_.joinable()) {
+        pendingCommandPollThread_.request_stop();
+    }
 }
 
 void ZwaveController::setPublishCallback(PublishCallback callback) {
@@ -98,7 +93,7 @@ void ZwaveController::setDeviceConfiguration(const std::vector<ZwaveDeviceConfig
     devicesMapper_ = ZwaveDevicesMapper{devices_};
 }
 
-void ZwaveController::setValue(const std::string& topic, const Value& value) {
+void ZwaveController::setValue(const std::string& topic, const Value& value, const std::vector<ReasonEntry>& reasons) {
     const std::vector<std::string> topicParts = splitTopic(topic);
     if (topicParts.size() < kSetTopicMinimumParts) {
         throw std::runtime_error("set expected as last element in topic " + topic);
@@ -120,6 +115,7 @@ void ZwaveController::setValue(const std::string& topic, const Value& value) {
     }
 
     driverPort_.setValue(target, writeRequest.value);
+    rememberPendingCommand(writeRequest, reasons);
 }
 
 void ZwaveController::addDevice() {
@@ -212,13 +208,6 @@ void ZwaveController::onNodeReady(const std::uint16_t nodeId, const ZwaveNodeInf
 
     nodeIterator->second.info = nodeInfo;
     nodeIterator->second.ready = true;
-
-    for (const auto& [classId, values] : nodeIterator->second.classes) {
-        (void)values;
-        if (classId == kZwaveSwitchBinaryClass || classId == kZwaveSwitchMultilevelClass) {
-            driverPort_.enablePoll(nodeId, classId);
-        }
-    }
 }
 
 void ZwaveController::onValueAdded(const ZwaveControllerValueEvent& event) {
@@ -368,12 +357,23 @@ std::string ZwaveController::notificationText(const ZwaveNotificationCode notifi
 }
 
 void ZwaveController::publish(const std::string& topic, const Value& value, const std::string& reason) {
+    publish(topic, value, reason, std::vector<ReasonEntry>{});
+}
+
+void ZwaveController::publish(
+    const std::string& topic,
+    const Value& value,
+    const std::string& reason,
+    const std::vector<ReasonEntry>& prependedReasons) {
     if (!publishCallback_) {
         return;
     }
 
     Message message{topic, value};
     message.addReason(reason);
+    for (const auto& entry : prependedReasons | std::views::reverse) {
+        message.addReason(entry.message, entry.timestamp);
+    }
     publishCallback_(message);
 }
 
@@ -384,6 +384,7 @@ void ZwaveController::publishValue(
     try {
         std::string topic{};
         Value outputValue = event.value;
+        std::vector<ReasonEntry> prependedReasons{};
         if (nodeId == kUsbControllerNodeId) {
             topic = usb_.topic;
         } else {
@@ -395,17 +396,129 @@ void ZwaveController::publishValue(
             topic = mapping->topic;
             reason += ", Zwave value: " + valueToString(event.value);
             outputValue = applySwitchOutboundConversion(event.value, mapping->type);
-            if (mapping->type == "switch") {
-                logRecognizedSwitchFeedbackFromIni(
-                    event,
-                    topic,
-                    valueAsBool(event.value) ? "on" : "off");
-            }
+            prependedReasons = takeMatchingPendingReasons(event, outputValue);
         }
 
-        publish(topic, outputValue, reason);
+        publish(topic, outputValue, reason, prependedReasons);
     } catch (...) {
         publish("$MONITOR/zwave/" + std::to_string(nodeId), event.value, reason);
+    }
+}
+
+bool ZwaveController::valuesEquivalent(const Value& leftValue, const Value& rightValue) {
+    if (const auto* leftText = std::get_if<std::string>(&leftValue); leftText != nullptr) {
+        const auto* rightText = std::get_if<std::string>(&rightValue);
+        return rightText != nullptr && *leftText == *rightText;
+    }
+
+    const auto* leftNumber = std::get_if<double>(&leftValue);
+    const auto* rightNumber = std::get_if<double>(&rightValue);
+    if (leftNumber == nullptr || rightNumber == nullptr) {
+        return false;
+    }
+
+    return std::fabs(*leftNumber - *rightNumber) < kIntegerTolerance;
+}
+
+Value ZwaveController::writeValueToExpectedValue(const ZwaveWriteRequest& writeRequest) {
+    if (const auto* boolValue = std::get_if<bool>(&writeRequest.value); boolValue != nullptr) {
+        return Value{*boolValue ? 1.0 : 0.0};
+    }
+
+    if (const auto* numericValue = std::get_if<double>(&writeRequest.value); numericValue != nullptr) {
+        return Value{*numericValue};
+    }
+
+    return Value{std::get<std::string>(writeRequest.value)};
+}
+
+Value ZwaveController::toExpectedOutboundValue(const Value& value, const std::string& typeName) {
+    return applySwitchOutboundConversion(value, typeName);
+}
+
+void ZwaveController::rememberPendingCommand(const ZwaveWriteRequest& writeRequest, const std::vector<ReasonEntry>& reasons) {
+    PendingCommand pendingCommand{
+        .target = writeRequest.target,
+        .expectedValue = toExpectedOutboundValue(writeValueToExpectedValue(writeRequest), writeRequest.target.type),
+        .reasons = reasons,
+        .sentAt = std::chrono::steady_clock::now(),
+        .lastPollAt = std::chrono::steady_clock::time_point{}}
+    ;
+
+    std::scoped_lock lock{pendingCommandsMutex_};
+    auto iterator = pendingCommands_.begin();
+    while (iterator != pendingCommands_.end()) {
+        const bool sameTarget = iterator->target.nodeId == pendingCommand.target.nodeId
+            && iterator->target.classId == pendingCommand.target.classId
+            && iterator->target.instance == pendingCommand.target.instance
+            && iterator->target.index == pendingCommand.target.index;
+        const bool sameExpectedValue = valuesEquivalent(iterator->expectedValue, pendingCommand.expectedValue);
+        if (sameTarget && sameExpectedValue) {
+            iterator = pendingCommands_.erase(iterator);
+            continue;
+        }
+        ++iterator;
+    }
+    pendingCommands_.push_back(std::move(pendingCommand));
+}
+
+std::vector<ReasonEntry> ZwaveController::takeMatchingPendingReasons(
+    const ZwaveControllerValueEvent& event,
+    const Value& outboundValue) {
+    std::scoped_lock lock{pendingCommandsMutex_};
+
+    auto iterator = pendingCommands_.begin();
+    while (iterator != pendingCommands_.end()) {
+        const bool sameTarget = iterator->target.nodeId == event.nodeId
+            && iterator->target.classId == event.classId
+            && iterator->target.instance == event.instance
+            && iterator->target.index == event.index;
+        const bool sameExpectedValue = valuesEquivalent(iterator->expectedValue, outboundValue);
+        if (sameTarget && sameExpectedValue) {
+            std::vector<ReasonEntry> reasons = iterator->reasons;
+            pendingCommands_.erase(iterator);
+            return reasons;
+        }
+        ++iterator;
+    }
+
+    return std::vector<ReasonEntry>{};
+}
+
+void ZwaveController::pollPendingCommands() {
+    const auto nowValue = std::chrono::steady_clock::now();
+    std::unordered_set<std::uint16_t> nodesToPoll{};
+
+    {
+        std::scoped_lock lock{pendingCommandsMutex_};
+        auto iterator = pendingCommands_.begin();
+        while (iterator != pendingCommands_.end()) {
+            if (nowValue - iterator->sentAt >= commandReactionTimeout_) {
+                iterator = pendingCommands_.erase(iterator);
+                continue;
+            }
+
+            if (nowValue - iterator->lastPollAt >= commandReactionPollInterval_) {
+                iterator->lastPollAt = nowValue;
+                nodesToPoll.insert(iterator->target.nodeId);
+            }
+            ++iterator;
+        }
+    }
+
+    for (const auto nodeId : nodesToPoll) {
+        driverPort_.requestNodeState(nodeId);
+    }
+}
+
+void ZwaveController::runPendingCommandPollLoop(const std::stop_token stopToken) {
+    while (!stopToken.stop_requested()) {
+        try {
+            pollPendingCommands();
+        } catch (...) {
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds{100});
     }
 }
 

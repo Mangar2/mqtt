@@ -46,6 +46,10 @@ constexpr std::uint64_t kLogLevelMin = 0U;
 constexpr std::uint64_t kLogLevelMax = 4U;
 constexpr std::uint64_t kPollIntervalMsMin = 1U;
 constexpr std::uint64_t kPollIntervalMsMax = 60000U;
+constexpr std::uint64_t kCommandReactionPollIntervalMsMin = 1U;
+constexpr std::uint64_t kCommandReactionPollIntervalMsMax = 60000U;
+constexpr std::uint64_t kCommandReactionTimeoutMsMin = 1U;
+constexpr std::uint64_t kCommandReactionTimeoutMsMax = 600000U;
 
 [[nodiscard]] std::vector<std::string> splitDeviceLine(const std::string& line) {
     std::vector<std::string> fields{};
@@ -272,6 +276,32 @@ bool tryLoadZwaveConfigFromIni(
     }
     if (pollIntervalResult.first.has_value()) {
         parsed.pollIntervalMs = static_cast<std::uint32_t>(*pollIntervalResult.first);
+    }
+
+    const auto commandReactionPollIntervalResult = document.readUnsigned(
+        "zwave",
+        "commandReactionPollIntervalMs",
+        kCommandReactionPollIntervalMsMin,
+        kCommandReactionPollIntervalMsMax);
+    if (!commandReactionPollIntervalResult.second.empty()) {
+        errorMessage = commandReactionPollIntervalResult.second;
+        return false;
+    }
+    if (commandReactionPollIntervalResult.first.has_value()) {
+        parsed.commandReactionPollIntervalMs = static_cast<std::uint32_t>(*commandReactionPollIntervalResult.first);
+    }
+
+    const auto commandReactionTimeoutResult = document.readUnsigned(
+        "zwave",
+        "commandReactionTimeoutMs",
+        kCommandReactionTimeoutMsMin,
+        kCommandReactionTimeoutMsMax);
+    if (!commandReactionTimeoutResult.second.empty()) {
+        errorMessage = commandReactionTimeoutResult.second;
+        return false;
+    }
+    if (commandReactionTimeoutResult.first.has_value()) {
+        parsed.commandReactionTimeoutMs = static_cast<std::uint32_t>(*commandReactionTimeoutResult.first);
     }
 
     if (!requireSetting(document, "zwave", "usbDevice", parsed.usb.device, errorMessage)) {

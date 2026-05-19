@@ -337,6 +337,45 @@ TEST_CASE("load_zwave_config_parses_poll_interval_ms_and_rejects_out_of_range", 
     }
 }
 
+TEST_CASE("load_zwave_config_parses_command_reaction_timing_and_rejects_out_of_range", "[zwave_client]") {
+    {
+        const yaha::IniDocument document = loadIni(
+            "[zwave]\n"
+            "commandReactionPollIntervalMs=200\n"
+            "commandReactionTimeoutMs=30000\n"
+            "usbDevice=/dev/ttyUSB0\n"
+            "usbTopic=home/zwave/controller\n"
+            "device=home/lamp|7\n");
+
+        yaha::ZwaveConfig config{};
+        std::string errorMessage{};
+
+        const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
+
+        REQUIRE(loaded);
+        CHECK(errorMessage.empty());
+        CHECK(config.commandReactionPollIntervalMs == 200U);
+        CHECK(config.commandReactionTimeoutMs == 30000U);
+    }
+
+    {
+        const yaha::IniDocument document = loadIni(
+            "[zwave]\n"
+            "commandReactionTimeoutMs=0\n"
+            "usbDevice=/dev/ttyUSB0\n"
+            "usbTopic=home/zwave/controller\n"
+            "device=home/lamp|7\n");
+
+        yaha::ZwaveConfig config{};
+        std::string errorMessage{};
+
+        const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
+
+        CHECK_FALSE(loaded);
+        CHECK(errorMessage.find("zwave.commandReactionTimeoutMs") != std::string::npos);
+    }
+}
+
 TEST_CASE("load_zwave_config_requires_usb_settings", "[zwave_client]") {
     {
         const yaha::IniDocument document = loadIni(

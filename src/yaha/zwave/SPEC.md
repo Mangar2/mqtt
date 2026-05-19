@@ -35,6 +35,8 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 | `retain` | `bool` | Default `false` |
 | `logLevel` | `std::uint8_t` | OpenZWave/service event logging level (`0..4`), default `2` |
 | `pollIntervalMs` | `std::uint32_t` | OpenZWave poll interval in milliseconds, default `500` |
+| `commandReactionPollIntervalMs` | `std::uint32_t` | Poll interval for tracked command confirmation, default `500` |
+| `commandReactionTimeoutMs` | `std::uint32_t` | Timeout for tracked command confirmation, default `30000` |
 | `logIncomingMessages` | `bool` | Default `false`; logs inbound MQTT messages handled by ZWave service |
 | `logOutgoingMessages` | `bool` | Default `false`; logs outbound MQTT messages emitted by ZWave service |
 | `usb` | `ZwaveUsbConfig` | Required |
@@ -79,7 +81,7 @@ that orchestrates MQTT routing, reply-matcher flow, and controller lifecycle.
 - other topics:
 	- adds reason `received by zwave service`
 	- stores incoming message in reply matcher
-	- routes to `controller.setValue(topic, value)`
+	- routes to `controller.setValue(topic, value, reasons)` and forwards original incoming reason chain
 - remove-failed/add-node/setValue exceptions are contained and emitted as deterministic
 	`$MONITOR/zwave/error` messages with operation reason metadata.
 

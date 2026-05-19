@@ -97,6 +97,12 @@ public:
     void enablePoll(std::uint16_t nodeId, std::uint16_t classId) override;
 
     /**
+     * @brief Requests one immediate state refresh for one node.
+     * @param nodeId Node id.
+     */
+    void requestNodeState(std::uint16_t nodeId) override;
+
+    /**
      * @brief Disconnects driver and releases owned OpenZWave runtime resources.
      * @param devicePath Controller device path used for removal.
      */

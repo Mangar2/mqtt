@@ -34,7 +34,7 @@ public:
         configuredDevices_ = devices;
     }
 
-    void setValue(const std::string& topic, const yaha::Value& value) override {
+    void setValue(const std::string& topic, const yaha::Value& value, const std::vector<yaha::ReasonEntry>& reasons) override {
         if (throwUnknownOnSetValue_) {
             throw kUnknownThrowSetValue;
         }
@@ -44,6 +44,7 @@ public:
         setValueCalls_ += 1U;
         lastSetTopic_ = topic;
         lastSetValue_ = value;
+        lastSetReasons_ = reasons;
     }
 
     void addDevice() override {
@@ -163,6 +164,10 @@ public:
         return lastSetValue_;
     }
 
+    [[nodiscard]] const std::vector<yaha::ReasonEntry>& lastSetReasons() const {
+        return lastSetReasons_;
+    }
+
     [[nodiscard]] std::size_t addDeviceCalls() const {
         return addDeviceCalls_;
     }
@@ -193,6 +198,7 @@ private:
     std::size_t setValueCalls_{0U};
     std::string lastSetTopic_{};
     yaha::Value lastSetValue_{std::string{}};
+    std::vector<yaha::ReasonEntry> lastSetReasons_{};
 
     std::size_t addDeviceCalls_{0U};
     std::size_t removeFailedCalls_{0U};

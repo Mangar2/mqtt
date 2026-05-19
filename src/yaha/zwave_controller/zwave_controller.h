@@ -11,9 +11,12 @@
 #include "yaha/zwave_devices/zwave_devices_mapper.h"
 
 #include <cstdint>
+#include <chrono>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -120,6 +123,12 @@ public:
     virtual void enablePoll(std::uint16_t nodeId, std::uint16_t classId) = 0;
 
     /**
+     * @brief Requests one immediate node-state refresh.
+     * @param nodeId Node id.
+     */
+    virtual void requestNodeState(std::uint16_t nodeId) = 0;
+
+    /**
      * @brief Disconnects from configured USB device.
      * @param devicePath USB device path.
      */
@@ -152,8 +161,9 @@ public:
      * @brief Routes one incoming MQTT set message by topic.
      * @param topic Incoming `/set` topic.
      * @param value Incoming payload.
+        * @param reasons Incoming reason chain from the command message.
      */
-    virtual void setValue(const std::string& topic, const Value& value) = 0;
+        virtual void setValue(const std::string& topic, const Value& value, const std::vector<ReasonEntry>& reasons = {}) = 0;
 
     /**
      * @brief Starts add-node operation.
@@ -191,8 +201,19 @@ public:
      * @brief Constructs controller adapter.
      * @param usbConfig Controller USB configuration.
      * @param driverPort Low-level driver port.
+     * @param commandReactionPollIntervalMs Poll interval for tracked command confirmation.
+     * @param commandReactionTimeoutMs Timeout for tracked command confirmation.
      */
-    ZwaveController(ZwaveUsbConfig usbConfig, IZwaveDriverPort& driverPort);
+    ZwaveController(
+        ZwaveUsbConfig usbConfig,
+        IZwaveDriverPort& driverPort,
+        std::uint32_t commandReactionPollIntervalMs,
+        std::uint32_t commandReactionTimeoutMs);
+
+    /**
+     * @brief Destructor.
+     */
+    ~ZwaveController() override;
 
     /**
      * @brief Sets publish callback used by controller outputs.
@@ -210,8 +231,9 @@ public:
      * @brief Routes one incoming MQTT set message by topic.
      * @param topic Incoming `/set` topic.
      * @param value Incoming payload.
+        * @param reasons Incoming reason chain from the command message.
      */
-    void setValue(const std::string& topic, const Value& value) override;
+        void setValue(const std::string& topic, const Value& value, const std::vector<ReasonEntry>& reasons = {}) override;
 
     /**
      * @brief Starts add-node operation.
@@ -326,6 +348,14 @@ private:
         std::unordered_map<std::uint16_t, std::unordered_map<std::uint8_t, ZwaveControllerValueEvent>> classes{};
     };
 
+    struct PendingCommand {
+        ZwaveResolvedId target{};
+        Value expectedValue{std::string{}};
+        std::vector<ReasonEntry> reasons{};
+        std::chrono::steady_clock::time_point sentAt{};
+        std::chrono::steady_clock::time_point lastPollAt{};
+    };
+
     [[nodiscard]] static std::optional<std::uint16_t> parseNodeIdFromValue(const Value& value);
     [[nodiscard]] static std::optional<std::string> parseOptionalLabelFromSetTopic(const std::vector<std::string>& topicParts);
     [[nodiscard]] static std::string joinTopicParts(const std::vector<std::string>& parts, std::size_t count);
@@ -333,8 +363,23 @@ private:
     [[nodiscard]] ZwaveNodeMap buildNodeMap() const;
     [[nodiscard]] static ZwaveValueDescriptor buildDescriptor(const ZwaveControllerValueEvent& event);
     [[nodiscard]] static std::string notificationText(ZwaveNotificationCode notification);
+    [[nodiscard]] static bool valuesEquivalent(const Value& leftValue, const Value& rightValue);
+    [[nodiscard]] static Value writeValueToExpectedValue(const ZwaveWriteRequest& writeRequest);
+    [[nodiscard]] static Value toExpectedOutboundValue(const Value& value, const std::string& typeName);
+
+    void rememberPendingCommand(const ZwaveWriteRequest& writeRequest, const std::vector<ReasonEntry>& reasons);
+    [[nodiscard]] std::vector<ReasonEntry> takeMatchingPendingReasons(
+        const ZwaveControllerValueEvent& event,
+        const Value& outboundValue);
+    void pollPendingCommands();
+    void runPendingCommandPollLoop(std::stop_token stopToken);
 
     void publish(const std::string& topic, const Value& value, const std::string& reason);
+    void publish(
+        const std::string& topic,
+        const Value& value,
+        const std::string& reason,
+        const std::vector<ReasonEntry>& prependedReasons);
     void publishValue(std::uint16_t nodeId, const ZwaveControllerValueEvent& event, std::string reason);
     void storeNodeValue(const ZwaveControllerValueEvent& event);
 
@@ -344,6 +389,11 @@ private:
     std::vector<ZwaveDeviceConfig> devices_{};
     ZwaveDevicesMapper devicesMapper_{std::vector<ZwaveDeviceConfig>{}};
     std::unordered_map<std::uint16_t, NodeRuntimeState> nodes_{};
+    std::vector<PendingCommand> pendingCommands_{};
+    std::mutex pendingCommandsMutex_{};
+    std::jthread pendingCommandPollThread_{};
+    std::chrono::milliseconds commandReactionPollInterval_{500};
+    std::chrono::milliseconds commandReactionTimeout_{30000};
     PublishCallback publishCallback_{};
     std::function<void()> driverFailedCallback_{};
 };
