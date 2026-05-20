@@ -381,6 +381,12 @@ private:
         Timeout = 1U
     };
 
+    enum class NodeHealthState : std::uint8_t {
+        Unknown = 0U,
+        Alive = 1U,
+        Dead = 2U
+    };
+
     [[nodiscard]] static std::optional<std::uint16_t> parseNodeIdFromValue(const Value& value);
     [[nodiscard]] static std::optional<std::string> parseOptionalLabelFromSetTopic(const std::vector<std::string>& topicParts);
     [[nodiscard]] static std::string joinTopicParts(const std::vector<std::string>& parts, std::size_t count);
@@ -424,6 +430,7 @@ private:
         const std::string& value,
         ErrorStateSeverity severity,
         const std::string& reason);
+    void updateNodeHealthState(std::uint16_t nodeId, NodeHealthState targetState, const std::string& reason);
     void updateNodeCommState(std::uint16_t nodeId, NodeCommState targetState, const std::string& reason);
     void clearNodeErrorState(std::uint16_t nodeId, const std::string& reason);
     static std::string buildNodeBaseTopic(std::uint16_t nodeId);
@@ -440,6 +447,8 @@ private:
     std::mutex nodeErrorStatesMutex_{};
     std::unordered_map<std::uint16_t, NodeCommState> nodeCommStates_{};
     std::mutex nodeCommStatesMutex_{};
+    std::unordered_map<std::uint16_t, NodeHealthState> nodeHealthStates_{};
+    std::mutex nodeHealthStatesMutex_{};
     std::vector<PendingCommand> pendingCommands_{};
     std::mutex pendingCommandsMutex_{};
     std::thread pendingCommandPollThread_{};

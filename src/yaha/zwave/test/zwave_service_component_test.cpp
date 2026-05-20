@@ -304,16 +304,16 @@ TEST_CASE("management_messages_are_forwarded_and_scan_success_is_published", "[z
 
     REQUIRE(std::holds_alternative<double>(published[0].value()));
     CHECK(std::get<double>(published[0].value()) == kRemoveFailedPayload);
-    REQUIRE(std::holds_alternative<double>(published[1].value()));
-    CHECK(std::get<double>(published[1].value()) == 0.0);
-    REQUIRE(std::holds_alternative<double>(published[0].value()));
-    CHECK(std::get<double>(published[0].value()) == kRemoveFailedPayload);
-    REQUIRE(std::holds_alternative<double>(published[1].value()));
-    CHECK(std::get<double>(published[1].value()) == 0.0);
+    REQUIRE(std::holds_alternative<std::string>(published[1].value()));
+    CHECK(std::get<std::string>(published[1].value()) == "deleted");
+    REQUIRE(std::holds_alternative<std::string>(published[2].value()));
+    CHECK(std::get<std::string>(published[2].value()) == "on");
+    REQUIRE(std::holds_alternative<std::string>(published[3].value()));
+    CHECK(std::get<std::string>(published[3].value()) == "on");
     REQUIRE(std::holds_alternative<std::string>(published[4].value()));
     CHECK(std::get<std::string>(published[4].value()) == "scan command accepted");
     CHECK(hasReasonMessage(published[0], "removefailednode requested"));
-    CHECK(hasReasonMessage(published[1], "removefailednode completed"));
+    CHECK(hasReasonMessage(published[1], "removefailednode deleted"));
     CHECK(hasReasonMessage(published[2], "addnode inclusion mode requested"));
     CHECK(hasReasonMessage(published[3], "scan mode requested"));
 }

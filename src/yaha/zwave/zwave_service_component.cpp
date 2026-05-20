@@ -111,7 +111,7 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
         try {
             controller_->removeFailedNode(message.value());
             logImportantEvent("removefailednode", "request forwarded");
-            publishManagementStatus("removefailednode", Value{0.0}, "removefailednode completed");
+            publishManagementStatus("removefailednode", Value{std::string{"deleted"}}, "removefailednode deleted");
         } catch (const std::exception& exceptionValue) {
             logImportantError("removefailednode", exceptionValue.what());
             publishManagementStatus("removefailednode", Value{0.0}, "removefailednode failed");

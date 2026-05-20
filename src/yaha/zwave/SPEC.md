@@ -73,6 +73,7 @@ that orchestrates MQTT routing and controller lifecycle.
 - optional inbound message-flow log line via shared message logging service (`component="zwave_service" direction="incoming" ...`) when `logIncomingMessages=true`
 - important event/error logs `zwave_service[event|error] ...` when `logLevel>=1`
 - remove-failed topic -> `controller.removeFailedNode(...)`
+	- success status: `system/zwave/removefailednode` value `deleted`
 - add-node topic -> `controller.addDevice()`
 - scan topic -> `controller.startScan()` with deterministic success/failure publish:
 	- success: `system/zwave/scan` value `on`

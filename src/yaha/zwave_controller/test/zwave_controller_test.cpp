@@ -603,6 +603,24 @@ TEST_CASE("node_ready_does_not_enable_global_polling", "[zwave_controller]") {
     controller.onValueRemoved(kUnknownNodeId, kSensorMultilevelClass, kIndexOne);
 }
 
+TEST_CASE("node_ready_publishes_health_alive_once", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    std::vector<yaha::Message> published{};
+    controller.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{});
+    controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{});
+
+    REQUIRE(published.size() == 1U);
+    CHECK(published[0].topic() == "$MONITOR/zwave/node/21/health");
+    REQUIRE(std::holds_alternative<std::string>(published[0].value()));
+    CHECK(std::get<std::string>(published[0].value()) == "alive");
+}
+
 TEST_CASE("on_value_changed_for_usb_controller_publishes_to_usb_topic", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
