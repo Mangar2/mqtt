@@ -59,9 +59,9 @@ that orchestrates MQTT routing and controller lifecycle.
 ## Subscriptions
 
 - Fixed management topics with QoS 2:
-	- `$MONITOR/zwave/removefailednode/set`
-	- `$MONITOR/zwave/addnode/set`
-	- `$MONITOR/zwave/scan/set`
+	- `system/zwave/removefailednode/set`
+	- `system/zwave/addnode/set`
+	- `system/zwave/scan/set`
 - Device topics from config:
 	- with `classId`: `<topic>/set`
 	- without `classId`: `<topic>/+/set`
@@ -75,8 +75,8 @@ that orchestrates MQTT routing and controller lifecycle.
 - remove-failed topic -> `controller.removeFailedNode(...)`
 - add-node topic -> `controller.addDevice()`
 - scan topic -> `controller.startScan()` with deterministic success/failure publish:
-	- success: `$MONITOR/zwave/notification` value `scan command accepted`
-	- failure: `$MONITOR/zwave/error` value `scan command failed`
+	- success: `system/zwave/scan` value `on`
+	- failure: `system/zwave/scan` value `off`
 	- unknown scan exceptions are contained and reported with reason `unknown`
 - other topics:
 	- preserves incoming reason list order exactly as received
@@ -101,8 +101,9 @@ that orchestrates MQTT routing and controller lifecycle.
 
 - `setDeviceConfiguration(...)` publishes `$MONITOR/zwave/info` value `configuration reloaded`.
 - `run()` publishes startup markers:
-	- `$MONITOR/zwave/removefailednode` value `nop`
-	- `$MONITOR/zwave/addnode` value `nop`
+	- `system/zwave/removefailednode` value `0`
+	- `system/zwave/addnode` value `off`
+	- `system/zwave/scan` value `off`
 	- reason `zwave restarted`
 - `run()` then calls `controller.requestConfigParametersForAllNodes()`.
 - request-config exceptions are contained and emitted as deterministic

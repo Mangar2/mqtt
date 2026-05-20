@@ -95,11 +95,24 @@ Concrete parity adapter implementation with additional callback entry points:
 ## Event and publish contract
 
 - Driver lifecycle:
-  - `onDriverReady` publishes `$MONITOR/zwave/notification` value `starting scan`
-  - `onDriverFailed` publishes `$MONITOR/zwave/error` value `driver failure`
-  - `onScanComplete` publishes `$MONITOR/zwave/notification` value `scan complete`
-- Notification callback publishes only to `$MONITOR/zwave/notification` (never to device topics); on failures publishes to `$MONITOR/zwave/error`.
-- Controller command callback publishes to `$MONITOR/zwave/notification`.
+  - `onDriverReady` publishes `$MONITOR/zwave/scan/state` value `scanning`
+  - `onDriverFailed` publishes `$MONITOR/zwave/driver/error/state` value `driver_failed`
+  - `onDriverFailed` publishes `$MONITOR/zwave/scan/result` value `scanning_failed`
+  - `onScanComplete` publishes `$MONITOR/zwave/scan/state` value `idle`
+  - `onScanComplete` publishes `$MONITOR/zwave/scan/result` value `scanning_completed`
+- Notification callback is resource-oriented:
+  - `Timeout` -> `$MONITOR/zwave/node/<nodeId>/comm/state` value `timeout`
+  - `NodeAwake` -> `$MONITOR/zwave/node/<nodeId>/power_state` value `awake` plus `comm/state=ok`
+  - `NodeSleep` -> `$MONITOR/zwave/node/<nodeId>/power_state` value `sleep` plus `comm/state=ok`
+  - `NodeDead` -> `$MONITOR/zwave/node/<nodeId>/health` value `dead` plus `comm/state=ok`
+  - `NodeAlive` -> `$MONITOR/zwave/node/<nodeId>/health` value `alive` plus `comm/state=ok`
+  - `MessageComplete` and `Nop` are suppressed
+- Notification publish failures are reported as node-scoped error state:
+  - `$MONITOR/zwave/node/<nodeId>/error/state` value `publish_failed`
+  - severity order is enforced (`publish_failed` < `decode_failed` < `driver_failed`)
+  - lower severity never overwrites higher severity
+  - successful communication clears to `no_error`
+- Controller command callback publishes to `$MONITOR/zwave/controller/command/last_status`.
 - Node/value callbacks maintain in-memory node/class cache.
 - Controller keeps local runtime state in unordered maps:
   - node runtime map keyed by `nodeId` with `ready/dead` status and latest value events per class/index
@@ -121,7 +134,7 @@ Concrete parity adapter implementation with additional callback entry points:
   - node `1` publishes to configured USB topic
   - mapped devices publish via `valueToTopicAndType`
   - `switch` type converts bool to `on`/`off`
-  - mapping failures fall back to `$MONITOR/zwave/<nodeId>`
+  - mapping failures fall back to `$MONITOR/zwave/node/<nodeId>/class/<classId>/instance/<instance>/index/<index>/value/unmapped`
 
 ## Files
 

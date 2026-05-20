@@ -458,15 +458,23 @@ TEST_CASE("notification_callback_maps_all_codes_to_monitoring_topic", "[zwave_co
     const std::vector<std::string> expectedTopics{
         "$MONITOR/zwave/node/20/comm/state",
         "$MONITOR/zwave/node/20/power_state",
+        "$MONITOR/zwave/node/20/comm/state",
         "$MONITOR/zwave/node/20/power_state",
+        "$MONITOR/zwave/node/20/comm/state",
         "$MONITOR/zwave/node/20/health",
-        "$MONITOR/zwave/node/20/health"};
+        "$MONITOR/zwave/node/20/comm/state",
+        "$MONITOR/zwave/node/20/health",
+        "$MONITOR/zwave/node/20/comm/state"};
     const std::vector<std::string> expectedValues{
         "timeout",
         "awake",
+        "ok",
         "sleep",
+        "ok",
         "dead",
-        "alive"};
+        "ok",
+        "alive",
+        "ok"};
 
     for (const auto notification : notifications) {
         controller.onNotification(kNodeIdTwenty, notification);
@@ -603,14 +611,10 @@ TEST_CASE("on_value_changed_without_mapping_falls_back_to_monitoring_topic", "[z
         .readOnly = false});
 
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITOR/zwave/node/22/comm/state");
+    CHECK(published.front().topic() == "$MONITOR/zwave/node/22/class/37/instance/1/index/0/value/unmapped");
     REQUIRE(std::holds_alternative<std::string>(published.front().value()));
-    CHECK(std::get<std::string>(published.front().value()) == "ok");
-
-    REQUIRE(published.size() == 2U);
-    CHECK(published.back().topic() == "$MONITOR/zwave/node/22/class/37/instance/1/index/0/value/unmapped");
-    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
-    CHECK(std::get<std::string>(published.back().value()) == "open");
+    CHECK(std::get<std::string>(published.front().value()) == "open");
+    REQUIRE(published.size() == 1U);
 }
 
 TEST_CASE("matching_feedback_prepends_tracked_reasons", "[zwave_controller]") {
