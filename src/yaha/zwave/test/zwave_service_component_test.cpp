@@ -295,14 +295,30 @@ TEST_CASE("management_messages_are_forwarded_and_scan_success_is_published", "[z
     REQUIRE(std::holds_alternative<double>(controller->lastRemoveFailedValue()));
     CHECK(std::get<double>(controller->lastRemoveFailedValue()) == kRemoveFailedPayload);
 
-    REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "system/zwave/notification");
-    REQUIRE(std::holds_alternative<std::string>(published.front().value()));
-    CHECK(std::get<std::string>(published.front().value()) == "scan command accepted");
-    CHECK(published.front().qos() == yaha::Qos::ExactlyOnce);
-    CHECK(published.front().retain());
+    REQUIRE(published.size() == 5U);
+    CHECK(published[0].topic() == "system/zwave/removefailednode");
+    CHECK(published[1].topic() == "system/zwave/removefailednode");
+    CHECK(published[2].topic() == "system/zwave/addnode");
+    CHECK(published[3].topic() == "system/zwave/scan");
+    CHECK(published[4].topic() == "system/zwave/notification");
+
+    REQUIRE(std::holds_alternative<double>(published[0].value()));
+    CHECK(std::get<double>(published[0].value()) == kRemoveFailedPayload);
+    REQUIRE(std::holds_alternative<double>(published[1].value()));
+    CHECK(std::get<double>(published[1].value()) == 0.0);
+    REQUIRE(std::holds_alternative<std::string>(published[2].value()));
+    CHECK(std::get<std::string>(published[2].value()) == "on");
+    REQUIRE(std::holds_alternative<std::string>(published[3].value()));
+    CHECK(std::get<std::string>(published[3].value()) == "on");
+    REQUIRE(std::holds_alternative<std::string>(published[4].value()));
+    CHECK(std::get<std::string>(published[4].value()) == "scan command accepted");
+    CHECK(hasReasonMessage(published[0], "removefailednode requested"));
+    CHECK(hasReasonMessage(published[1], "removefailednode completed"));
+    CHECK(hasReasonMessage(published[2], "addnode inclusion mode requested"));
+    CHECK(hasReasonMessage(published[3], "scan mode requested"));
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("scan_failure_publishes_error_message", "[zwave_service]") {
     auto controller = std::make_shared<FakeController>();
     controller->setThrowOnScan(true);
@@ -316,13 +332,20 @@ TEST_CASE("scan_failure_publishes_error_message", "[zwave_service]") {
     service.handleMessage(yaha::Message{"system/zwave/scan/set", yaha::Value{std::string{"now"}}});
 
     REQUIRE(controller->startScanCalls() == 1U);
-    REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "system/zwave/error");
-    REQUIRE(std::holds_alternative<std::string>(published.front().value()));
-    CHECK(std::get<std::string>(published.front().value()) == "scan command failed");
-    CHECK(hasReasonMessage(published.front(), "scan failed in fake controller"));
+    REQUIRE(published.size() == 3U);
+    CHECK(published[0].topic() == "system/zwave/scan");
+    CHECK(published[1].topic() == "system/zwave/scan");
+    CHECK(published[2].topic() == "system/zwave/error");
+    REQUIRE(std::holds_alternative<std::string>(published[0].value()));
+    REQUIRE(std::holds_alternative<std::string>(published[1].value()));
+    CHECK(std::get<std::string>(published[0].value()) == "on");
+    CHECK(std::get<std::string>(published[1].value()) == "off");
+    REQUIRE(std::holds_alternative<std::string>(published[2].value()));
+    CHECK(std::get<std::string>(published[2].value()) == "scan command failed");
+    CHECK(hasReasonMessage(published[2], "scan failed in fake controller"));
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("scan_unknown_failure_publishes_error_message", "[zwave_service]") {
     auto controller = std::make_shared<FakeController>();
     controller->setThrowUnknownOnScan(true);
@@ -336,11 +359,64 @@ TEST_CASE("scan_unknown_failure_publishes_error_message", "[zwave_service]") {
     service.handleMessage(yaha::Message{"system/zwave/scan/set", yaha::Value{std::string{"now"}}});
 
     REQUIRE(controller->startScanCalls() == 0U);
-    REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "system/zwave/error");
-    REQUIRE(std::holds_alternative<std::string>(published.front().value()));
-    CHECK(std::get<std::string>(published.front().value()) == "scan command failed");
-    CHECK(hasReasonMessage(published.front(), "unknown"));
+    REQUIRE(published.size() == 3U);
+    CHECK(published[0].topic() == "system/zwave/scan");
+    CHECK(published[1].topic() == "system/zwave/scan");
+    CHECK(published[2].topic() == "system/zwave/error");
+    REQUIRE(std::holds_alternative<std::string>(published[0].value()));
+    REQUIRE(std::holds_alternative<std::string>(published[1].value()));
+    CHECK(std::get<std::string>(published[0].value()) == "on");
+    CHECK(std::get<std::string>(published[1].value()) == "off");
+    REQUIRE(std::holds_alternative<std::string>(published[2].value()));
+    CHECK(std::get<std::string>(published[2].value()) == "scan command failed");
+    CHECK(hasReasonMessage(published[2], "unknown"));
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("scan_status_turns_off_when_controller_reports_scan_complete", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    service.handleMessage(yaha::Message{"system/zwave/scan/set", yaha::Value{std::string{"now"}}});
+    controller->emitControllerPublish(yaha::Message{"$MONITOR/zwave/notification", yaha::Value{std::string{"scan complete"}}});
+
+    REQUIRE(published.size() == 4U);
+    CHECK(published[0].topic() == "system/zwave/scan");
+    CHECK(published[1].topic() == "system/zwave/notification");
+    CHECK(published[2].topic() == "system/zwave/scan");
+    CHECK(published[3].topic() == "$MONITOR/zwave/notification");
+    REQUIRE(std::holds_alternative<std::string>(published[2].value()));
+    CHECK(std::get<std::string>(published[2].value()) == "off");
+    CHECK(hasReasonMessage(published[2], "scan completed (controller feedback)"));
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("addnode_status_turns_off_when_controller_reports_completion", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    service.handleMessage(yaha::Message{"system/zwave/addnode/set", yaha::Value{std::string{"start"}}});
+    controller->emitControllerPublish(yaha::Message{"$MONITOR/zwave/notification", yaha::Value{std::string{"done"}}});
+
+    REQUIRE(published.size() == 3U);
+    CHECK(published[0].topic() == "system/zwave/addnode");
+    CHECK(published[1].topic() == "system/zwave/addnode");
+    CHECK(published[2].topic() == "$MONITOR/zwave/notification");
+    REQUIRE(std::holds_alternative<std::string>(published[0].value()));
+    REQUIRE(std::holds_alternative<std::string>(published[1].value()));
+    CHECK(std::get<std::string>(published[0].value()) == "on");
+    CHECK(std::get<std::string>(published[1].value()) == "off");
+    CHECK(hasReasonMessage(published[1], "addnode mode ended (controller feedback)"));
 }
 
 TEST_CASE("publish_without_callback_logs_error", "[zwave_service]") {
@@ -608,9 +684,11 @@ TEST_CASE("remove_failed_exception_publishes_error_message", "[zwave_service]") 
 
     service.handleMessage(yaha::Message{"system/zwave/removefailednode/set", yaha::Value{kRemoveFailedPayload}});
 
-    REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "system/zwave/error");
-    CHECK(hasReasonMessage(published.front(), "operation=removefailednode"));
+    REQUIRE(published.size() == 3U);
+    CHECK(published[0].topic() == "system/zwave/removefailednode");
+    CHECK(published[1].topic() == "system/zwave/removefailednode");
+    CHECK(published[2].topic() == "system/zwave/error");
+    CHECK(hasReasonMessage(published[2], "operation=removefailednode"));
 }
 
 TEST_CASE("remove_failed_unknown_exception_publishes_error_message", "[zwave_service]") {
@@ -625,10 +703,12 @@ TEST_CASE("remove_failed_unknown_exception_publishes_error_message", "[zwave_ser
 
     service.handleMessage(yaha::Message{"system/zwave/removefailednode/set", yaha::Value{kRemoveFailedPayload}});
 
-    REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "system/zwave/error");
-    CHECK(hasReasonMessage(published.front(), "operation=removefailednode"));
-    CHECK(hasReasonMessage(published.front(), "unknown"));
+    REQUIRE(published.size() == 3U);
+    CHECK(published[0].topic() == "system/zwave/removefailednode");
+    CHECK(published[1].topic() == "system/zwave/removefailednode");
+    CHECK(published[2].topic() == "system/zwave/error");
+    CHECK(hasReasonMessage(published[2], "operation=removefailednode"));
+    CHECK(hasReasonMessage(published[2], "unknown"));
 }
 
 TEST_CASE("add_node_exception_publishes_error_message", "[zwave_service]") {
@@ -643,9 +723,11 @@ TEST_CASE("add_node_exception_publishes_error_message", "[zwave_service]") {
 
     service.handleMessage(yaha::Message{"system/zwave/addnode/set", yaha::Value{std::string{"ignored"}}});
 
-    REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "system/zwave/error");
-    CHECK(hasReasonMessage(published.front(), "operation=addnode"));
+    REQUIRE(published.size() == 3U);
+    CHECK(published[0].topic() == "system/zwave/addnode");
+    CHECK(published[1].topic() == "system/zwave/addnode");
+    CHECK(published[2].topic() == "system/zwave/error");
+    CHECK(hasReasonMessage(published[2], "operation=addnode"));
 }
 
 TEST_CASE("add_node_unknown_exception_publishes_error_message", "[zwave_service]") {
@@ -660,10 +742,12 @@ TEST_CASE("add_node_unknown_exception_publishes_error_message", "[zwave_service]
 
     service.handleMessage(yaha::Message{"system/zwave/addnode/set", yaha::Value{std::string{"ignored"}}});
 
-    REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "system/zwave/error");
-    CHECK(hasReasonMessage(published.front(), "operation=addnode"));
-    CHECK(hasReasonMessage(published.front(), "unknown"));
+    REQUIRE(published.size() == 3U);
+    CHECK(published[0].topic() == "system/zwave/addnode");
+    CHECK(published[1].topic() == "system/zwave/addnode");
+    CHECK(published[2].topic() == "system/zwave/error");
+    CHECK(hasReasonMessage(published[2], "operation=addnode"));
+    CHECK(hasReasonMessage(published[2], "unknown"));
 }
 
 TEST_CASE("set_value_exception_publishes_error_message", "[zwave_service]") {
@@ -714,16 +798,20 @@ TEST_CASE("run_publishes_startup_markers_and_requests_controller_sync", "[zwave_
     service.run();
 
     CHECK(controller->requestConfigCalls() == 1U);
-    REQUIRE(published.size() == 2U);
+    REQUIRE(published.size() == 3U);
     CHECK(published[0].topic() == "system/zwave/removefailednode");
     CHECK(published[1].topic() == "system/zwave/addnode");
+    CHECK(published[2].topic() == "system/zwave/scan");
 
-    REQUIRE(std::holds_alternative<std::string>(published[0].value()));
+    REQUIRE(std::holds_alternative<double>(published[0].value()));
     REQUIRE(std::holds_alternative<std::string>(published[1].value()));
-    CHECK(std::get<std::string>(published[0].value()) == "nop");
-    CHECK(std::get<std::string>(published[1].value()) == "nop");
-    CHECK(hasReasonMessage(published[0], "zwave restarted"));
-    CHECK(hasReasonMessage(published[1], "zwave restarted"));
+    REQUIRE(std::holds_alternative<std::string>(published[2].value()));
+    CHECK(std::get<double>(published[0].value()) == 0.0);
+    CHECK(std::get<std::string>(published[1].value()) == "off");
+    CHECK(std::get<std::string>(published[2].value()) == "off");
+    CHECK(hasReasonMessage(published[0], "zwave service restarted"));
+    CHECK(hasReasonMessage(published[1], "zwave service restarted"));
+    CHECK(hasReasonMessage(published[2], "zwave service restarted"));
 }
 
 TEST_CASE("run_request_config_exception_publishes_error_message", "[zwave_service]") {
@@ -738,7 +826,7 @@ TEST_CASE("run_request_config_exception_publishes_error_message", "[zwave_servic
 
     service.run();
 
-    REQUIRE(published.size() == 3U);
+    REQUIRE(published.size() == 4U);
     CHECK(published.back().topic() == "system/zwave/error");
     CHECK(hasReasonMessage(published.back(), "operation=requestconfig"));
 }
@@ -755,7 +843,7 @@ TEST_CASE("run_request_config_unknown_exception_publishes_error_message", "[zwav
 
     service.run();
 
-    REQUIRE(published.size() == 3U);
+    REQUIRE(published.size() == 4U);
     CHECK(published.back().topic() == "system/zwave/error");
     CHECK(hasReasonMessage(published.back(), "operation=requestconfig"));
     CHECK(hasReasonMessage(published.back(), "unknown"));

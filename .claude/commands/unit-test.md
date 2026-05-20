@@ -37,8 +37,9 @@ All commands are run from the **project root**: `c:\Development\mqtt`.
 ### Mandatory execution rule
 
 For any code change in broker scope, always run `python3 test/run_coverage_broker.py` before completion.
-For any code change in client scope, always run `python3 test/run_coverage_clients.py` before completion.
-If the touched scope is unclear or spans both, run both scripts.
+For any code change in YAHA client scope, always run `python3 test/run_coverage_clients.py` before completion.
+If both scopes were touched, run both scripts.
+If the touched scope is unclear, run both scripts.
 Do not stop after editing code without running the matching script(s).
 
 The scripts live at `test/run_coverage_broker.py` and `test/run_coverage_clients.py`.  

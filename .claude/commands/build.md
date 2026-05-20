@@ -8,18 +8,18 @@ Hard rule: zero problems only. No warning, no hint, no exception.
 
 Never start build/test commands while any `get_errors` problem is still open.
 
-Broker scope:
+Broker scope (only when working on broker code):
 
 ```sh
 python test/run_coverage_broker.py
 ```
 
-Client scopes (YAHA plus generic client):
+YAHA client scope (when working on YAHA clients):
 
 ```sh
 python test/run_coverage_clients.py
 ```
 
-Run both commands for full validation.
+Run both commands only when both scopes were touched or the scope is unclear.
 Stops on first failure. Logs: test/run_broker.log and test/run_clients.log
 Never call cmake/ctest/llvm directly.
