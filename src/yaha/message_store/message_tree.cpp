@@ -189,20 +189,18 @@ MessageTree::TreeNode* MessageTree::ensurePath(const std::string& topic) {
         }
         currentPath += segment;
 
-        auto iter = std::find_if(current->children.begin(), current->children.end(),
-                                 [&segment](const auto& child) {
-            return child.first == segment;
-        });
-
-        if (iter == current->children.end()) {
+        const auto lookupIter = current->childLookup.find(segment);
+        if (lookupIter == current->childLookup.end()) {
             TreeNode child{};
             child.topicPath = currentPath;
-            current->children.push_back({segment, std::move(child)});
-            current = &current->children.back().second;
+            current->children.emplace_back(segment, std::move(child));
+            const std::size_t newIndex = current->children.size() - 1U;
+            current->childLookup.emplace(current->children.back().first, newIndex);
+            current = &current->children[newIndex].second;
             continue;
         }
 
-        current = &iter->second;
+        current = &current->children[lookupIter->second].second;
     }
 
     return current;
@@ -211,14 +209,11 @@ MessageTree::TreeNode* MessageTree::ensurePath(const std::string& topic) {
 const MessageTree::TreeNode* MessageTree::findPath(const std::string& topic) const {
     const TreeNode* current = &root_;
     for (const auto& segment : splitTopic(topic)) {
-        const auto iter = std::find_if(current->children.begin(), current->children.end(),
-                                       [&segment](const auto& child) {
-            return child.first == segment;
-        });
-        if (iter == current->children.end()) {
+        const auto lookupIter = current->childLookup.find(segment);
+        if (lookupIter == current->childLookup.end()) {
             return nullptr;
         }
-        current = &iter->second;
+        current = &current->children[lookupIter->second].second;
     }
     return current;
 }
@@ -229,17 +224,29 @@ std::vector<std::string> MessageTree::splitTopic(const std::string& topic) {
     }
 
     std::vector<std::string> parts{};
-    std::string current{};
-    for (const char chr : topic) {
-        if (chr == '/') {
-            parts.push_back(current);
-            current.clear();
-            continue;
+    parts.reserve(static_cast<std::size_t>(
+        std::count(topic.begin(), topic.end(), '/')) + 1U);
+
+    std::size_t start = 0U;
+    while (start <= topic.size()) {
+        const std::size_t slashPos = topic.find('/', start);
+        if (slashPos == std::string::npos) {
+            parts.emplace_back(topic.substr(start));
+            break;
         }
-        current.push_back(chr);
+        parts.emplace_back(topic.substr(start, slashPos - start));
+        start = slashPos + 1U;
     }
-    parts.push_back(current);
+
     return parts;
+}
+
+void MessageTree::rebuildChildLookup(TreeNode& node) {
+    node.childLookup.clear();
+    node.childLookup.reserve(node.children.size());
+    for (std::size_t index = 0U; index < node.children.size(); ++index) {
+        node.childLookup.emplace(node.children[index].first, index);
+    }
 }
 
 void MessageTree::collectSection(const TreeNode& node,
@@ -293,14 +300,20 @@ bool MessageTree::snapshotEquals(const MessageTreeNode& current,
 
 std::size_t MessageTree::cleanupNode(TreeNode& node, std::int64_t cutoffMs) {
     std::size_t removed = 0U;
+    bool erasedChild = false;
 
     for (auto iter = node.children.begin(); iter != node.children.end();) {
         removed += cleanupNode(iter->second, cutoffMs);
         if (!iter->second.hasData && iter->second.children.empty()) {
             iter = node.children.erase(iter);
+            erasedChild = true;
             continue;
         }
         ++iter;
+    }
+
+    if (erasedChild) {
+        rebuildChildLookup(node);
     }
 
     if (node.hasData && node.data.timeMs < cutoffMs) {

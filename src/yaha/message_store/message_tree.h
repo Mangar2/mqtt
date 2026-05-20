@@ -8,9 +8,11 @@
 #include "yaha/message/message.h"
 
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -179,7 +181,7 @@ private:
         std::int64_t timeMs{0};                               ///< Current timestamp.
         Value value{std::string{}};                           ///< Current value.
         std::vector<ReasonEntry> reason;                      ///< Current reason.
-        std::vector<CompressedHistoryEntry> compressedHistory; ///< Compressed historic values.
+        std::deque<CompressedHistoryEntry> compressedHistory; ///< Compressed historic values.
     };
 
     /**
@@ -188,6 +190,7 @@ private:
     struct TreeNode {
         std::string topicPath;                                ///< Full topic path for this node.
         std::vector<std::pair<std::string, TreeNode>> children; ///< Child segments.
+        std::unordered_map<std::string, std::size_t> childLookup; ///< Child segment to vector index lookup cache.
         bool hasData{false};                                  ///< True when current data is present.
         NodeData data{};                                      ///< Current data payload.
     };
@@ -223,7 +226,7 @@ private:
      * @param history Mutable compressed history list.
      * @param entryToAdd New entry to add as newest history item.
      */
-    void addHistoryEntry(std::vector<CompressedHistoryEntry>& history,
+    void addHistoryEntry(std::deque<CompressedHistoryEntry>& history,
                          const MessageTreeHistoryEntry& entryToAdd) const;
 
     /**
@@ -249,7 +252,7 @@ private:
      * @param entryToAdd New history entry to integrate.
      */
     void addOrConvertTimeValueEntry(CompressedHistoryEntry& newest,
-                                    std::vector<CompressedHistoryEntry>& history,
+                                    std::deque<CompressedHistoryEntry>& history,
                                     const MessageTreeHistoryEntry& entryToAdd) const;
 
     /**
@@ -259,7 +262,7 @@ private:
      * @param entryToAdd New history entry to integrate.
      */
     void addOrConvertTimeEntry(CompressedHistoryEntry& newest,
-                               std::vector<CompressedHistoryEntry>& history,
+                               std::deque<CompressedHistoryEntry>& history,
                                const MessageTreeHistoryEntry& entryToAdd) const;
 
     /**
@@ -269,7 +272,7 @@ private:
      * @param entryToAdd New history entry to integrate.
      */
     void addOrConvertIntervalEntry(CompressedHistoryEntry& newest,
-                                   std::vector<CompressedHistoryEntry>& history,
+                                   std::deque<CompressedHistoryEntry>& history,
                                    const MessageTreeHistoryEntry& entryToAdd) const;
 
     /**
@@ -326,13 +329,19 @@ private:
     [[nodiscard]] static std::vector<std::string> splitTopic(const std::string& topic);
 
     /**
+     * @brief Rebuilds child lookup cache after child erasures.
+     * @param node Node whose child lookup cache should be rebuilt.
+     */
+    static void rebuildChildLookup(TreeNode& node);
+
+    /**
      * @brief Expands compressed history for API output.
      * @param compressed Internal compressed history.
      * @param includeReason Include reason in expanded entries.
      * @return Decompressed history list.
      */
     [[nodiscard]] static std::vector<MessageTreeHistoryEntry>
-    decompressHistory(const std::vector<CompressedHistoryEntry>& compressed,
+    decompressHistory(const std::deque<CompressedHistoryEntry>& compressed,
                       bool includeReason);
 
     /**
@@ -380,7 +389,7 @@ private:
      * @param history Decompressed history list in newest-first order.
      * @return Compressed representation.
      */
-    [[nodiscard]] std::vector<CompressedHistoryEntry>
+    [[nodiscard]] std::deque<CompressedHistoryEntry>
     compressHistory(const std::vector<MessageTreeHistoryEntry>& history) const;
 
     /**

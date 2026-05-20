@@ -61,6 +61,8 @@ struct MessageTreeNode;
   (for example server port, history limits, retention count) to avoid literal coupling.
 
 - Tree keys are topic path segments split by `/`.
+- Internal topic traversal keeps a per-node child-segment lookup cache so segment navigation is
+  direct-index based instead of linear child scans.
 - Every update moves previous `{timeMs,value,reason}` into history.
 - Node timestamp source on `addData(message)`:
   - prefer `message.reason().front().timestamp` when it is a valid ISO-8601 timestamp with timezone,
@@ -73,6 +75,8 @@ struct MessageTreeNode;
   - `interval`: regular updates with one shared value, represented by `{firstTime,lastTime,amount}`.
 - Compression grouping uses reason message text equality (timestamp differences in reasons do not break grouping).
 - Internal compressed history order is newest-first.
+- Internal compressed history storage uses a front-efficient container to keep newest-first insertions
+  at constant complexity.
 - History is decompressed for output APIs in newest-first order.
 - Compression transitions from `time` to `interval` must not overlap timestamps between entries;
   for monotonic input timestamps, each historic timestamp appears at most once in decompressed history.

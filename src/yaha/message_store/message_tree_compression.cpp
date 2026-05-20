@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <format>
+#include <ranges>
 #include <utility>
 #include <vector>
 
@@ -33,10 +34,10 @@ void MessageTree::appendHistory(NodeData& data) const {
     addHistoryEntry(data.compressedHistory, entry);
 }
 
-void MessageTree::addHistoryEntry(std::vector<CompressedHistoryEntry>& history,
+void MessageTree::addHistoryEntry(std::deque<CompressedHistoryEntry>& history,
                                   const MessageTreeHistoryEntry& entryToAdd) const {
     const auto insertSingleAsNewest = [&history, &entryToAdd]() {
-        history.insert(history.begin(), CompressedHistoryEntry{SingleHistoryEntry{entryToAdd}});
+        history.emplace_front(CompressedHistoryEntry{SingleHistoryEntry{entryToAdd}});
     };
 
     if (history.empty()) {
@@ -52,8 +53,8 @@ void MessageTree::addHistoryEntry(std::vector<CompressedHistoryEntry>& history,
 
     if (auto* singleEntry = std::get_if<SingleHistoryEntry>(&newest.data)) {
         TimeValueHistoryEntry timeValueEntry{};
-        timeValueEntry.values.push_back({singleEntry->entry.timeMs, singleEntry->entry.value});
-        timeValueEntry.values.push_back({entryToAdd.timeMs, entryToAdd.value});
+        timeValueEntry.values.emplace_back(singleEntry->entry.timeMs, singleEntry->entry.value);
+        timeValueEntry.values.emplace_back(entryToAdd.timeMs, entryToAdd.value);
         timeValueEntry.reason = singleEntry->entry.reason;
         newest.data = std::move(timeValueEntry);
         return;
@@ -73,14 +74,14 @@ void MessageTree::addHistoryEntry(std::vector<CompressedHistoryEntry>& history,
 }
 
 void MessageTree::addOrConvertTimeValueEntry(CompressedHistoryEntry& newest,
-                                             std::vector<CompressedHistoryEntry>& history,
+                                             std::deque<CompressedHistoryEntry>& history,
                                              const MessageTreeHistoryEntry& entryToAdd) const {
     auto* timeValueEntry = std::get_if<TimeValueHistoryEntry>(&newest.data);
     if (timeValueEntry == nullptr) {
         return;
     }
 
-    timeValueEntry->values.push_back({entryToAdd.timeMs, entryToAdd.value});
+    timeValueEntry->values.emplace_back(entryToAdd.timeMs, entryToAdd.value);
 
     if (timeValueEntry->values.size() == config_.lengthForFurtherCompression) {
         const std::vector<std::int64_t> timestamps = newestIdenticalValueTimestamps(*timeValueEntry);
@@ -120,15 +121,15 @@ void MessageTree::addOrConvertTimeValueEntry(CompressedHistoryEntry& newest,
     newTimeEntry.reason = currentTimeValueEntry->reason;
 
     if (auto intervalEntry = tryConvertTimeToInterval(newTimeEntry); intervalEntry.has_value()) {
-        history.insert(history.begin(), CompressedHistoryEntry{std::move(*intervalEntry)});
+        history.emplace_front(CompressedHistoryEntry{std::move(*intervalEntry)});
         return;
     }
 
-    history.insert(history.begin(), CompressedHistoryEntry{std::move(newTimeEntry)});
+    history.emplace_front(CompressedHistoryEntry{std::move(newTimeEntry)});
 }
 
 void MessageTree::addOrConvertTimeEntry(CompressedHistoryEntry& newest,
-                                        std::vector<CompressedHistoryEntry>& history,
+                                        std::deque<CompressedHistoryEntry>& history,
                                         const MessageTreeHistoryEntry& entryToAdd) const {
     auto* timeEntry = std::get_if<TimeHistoryEntry>(&newest.data);
     if (timeEntry == nullptr) {
@@ -136,7 +137,7 @@ void MessageTree::addOrConvertTimeEntry(CompressedHistoryEntry& newest,
     }
 
     if (timeEntry->value != entryToAdd.value) {
-        history.insert(history.begin(), CompressedHistoryEntry{SingleHistoryEntry{entryToAdd}});
+        history.emplace_front(CompressedHistoryEntry{SingleHistoryEntry{entryToAdd}});
         return;
     }
 
@@ -148,15 +149,15 @@ void MessageTree::addOrConvertTimeEntry(CompressedHistoryEntry& newest,
     }
 
     timeEntry->timestamps.resize(timeEntry->timestamps.size() - intervalEntry.amount);
-    history.insert(history.begin(), CompressedHistoryEntry{intervalEntry});
+    history.emplace_front(CompressedHistoryEntry{intervalEntry});
 }
 
 void MessageTree::addOrConvertIntervalEntry(CompressedHistoryEntry& newest,
-                                            std::vector<CompressedHistoryEntry>& history,
+                                            std::deque<CompressedHistoryEntry>& history,
                                             const MessageTreeHistoryEntry& entryToAdd) const {
     auto* intervalEntry = std::get_if<IntervalHistoryEntry>(&newest.data);
     if (intervalEntry == nullptr || intervalEntry->amount <= 1U) {
-        history.insert(history.begin(), CompressedHistoryEntry{SingleHistoryEntry{entryToAdd}});
+        history.emplace_front(CompressedHistoryEntry{SingleHistoryEntry{entryToAdd}});
         return;
     }
 
@@ -167,7 +168,7 @@ void MessageTree::addOrConvertIntervalEntry(CompressedHistoryEntry& newest,
 
     if (intervalEntry->value != entryToAdd.value ||
         !isMatchingInterval(newIntervalMs, referenceIntervalMs)) {
-        history.insert(history.begin(), CompressedHistoryEntry{SingleHistoryEntry{entryToAdd}});
+        history.emplace_front(CompressedHistoryEntry{SingleHistoryEntry{entryToAdd}});
         return;
     }
 
@@ -221,8 +222,8 @@ bool MessageTree::hasSpaceLeft(const CompressedHistoryEntry& entry) const {
 
 bool MessageTree::isMatchingInterval(std::int64_t newIntervalMs,
                                      std::int64_t referenceIntervalMs) const {
-    const double newInterval = static_cast<double>(newIntervalMs);
-    const double referenceInterval = static_cast<double>(referenceIntervalMs);
+    const auto newInterval = static_cast<double>(newIntervalMs);
+    const auto referenceInterval = static_cast<double>(referenceIntervalMs);
     const double upperBound =
         (referenceInterval * config_.upperBoundFactor) +
         static_cast<double>(config_.upperBoundAddInMilliseconds);
@@ -281,7 +282,7 @@ MessageTree::newestIdenticalValueTimestamps(const TimeValueHistoryEntry& entry) 
         timestamps.push_back(timeValue.first);
     }
 
-    std::reverse(timestamps.begin(), timestamps.end());
+    std::ranges::reverse(timestamps);
     return timestamps;
 }
 
@@ -340,9 +341,27 @@ void MessageTree::trimHistory(NodeData& data) const {
 }
 
 std::vector<MessageTreeHistoryEntry>
-MessageTree::decompressHistory(const std::vector<CompressedHistoryEntry>& compressed,
+MessageTree::decompressHistory(const std::deque<CompressedHistoryEntry>& compressed,
                                bool includeReason) {
     std::vector<MessageTreeHistoryEntry> history{};
+    std::size_t expectedEntries = 0U;
+    for (const auto& item : compressed) {
+        if (std::holds_alternative<SingleHistoryEntry>(item.data)) {
+            expectedEntries += 1U;
+            continue;
+        }
+        if (const auto* timeValueEntry = std::get_if<TimeValueHistoryEntry>(&item.data)) {
+            expectedEntries += timeValueEntry->values.size();
+            continue;
+        }
+        if (const auto* timeEntry = std::get_if<TimeHistoryEntry>(&item.data)) {
+            expectedEntries += timeEntry->timestamps.size();
+            continue;
+        }
+
+        expectedEntries += 1U;
+    }
+    history.reserve(expectedEntries);
 
     for (const auto& item : compressed) {
         std::visit(VariantVisitor{
@@ -377,44 +396,34 @@ void MessageTree::appendSingleHistoryEntry(std::vector<MessageTreeHistoryEntry>&
 void MessageTree::appendTimeValueHistoryEntries(std::vector<MessageTreeHistoryEntry>& history,
                                                 const TimeValueHistoryEntry& entry,
                                                 bool includeReason) {
-    std::vector<MessageTreeHistoryEntry> expanded{};
-    expanded.reserve(entry.values.size());
-
     for (std::size_t idx = entry.values.size(); idx > 0U; --idx) {
         const auto& timeValue = entry.values[idx - 1U];
-        expanded.push_back(MessageTreeHistoryEntry{
+        history.push_back(MessageTreeHistoryEntry{
             .timeMs = timeValue.first,
             .value = timeValue.second,
             .reason = {}
         });
     }
 
-    if (includeReason && !expanded.empty()) {
-        expanded.back().reason = entry.reason;
+    if (includeReason && !entry.values.empty()) {
+        history.back().reason = entry.reason;
     }
-
-    history.insert(history.end(), expanded.begin(), expanded.end());
 }
 
 void MessageTree::appendTimeHistoryEntries(std::vector<MessageTreeHistoryEntry>& history,
                                            const TimeHistoryEntry& entry,
                                            bool includeReason) {
-    std::vector<MessageTreeHistoryEntry> expanded{};
-    expanded.reserve(entry.timestamps.size());
-
     for (std::size_t idx = entry.timestamps.size(); idx > 0U; --idx) {
-        expanded.push_back(MessageTreeHistoryEntry{
+        history.push_back(MessageTreeHistoryEntry{
             .timeMs = entry.timestamps[idx - 1U],
             .value = entry.value,
             .reason = {}
         });
     }
 
-    if (includeReason && !expanded.empty()) {
-        expanded.back().reason = entry.reason;
+    if (includeReason && !entry.timestamps.empty()) {
+        history.back().reason = entry.reason;
     }
-
-    history.insert(history.end(), expanded.begin(), expanded.end());
 }
 
 void MessageTree::appendIntervalHistoryEntry(std::vector<MessageTreeHistoryEntry>& history,
@@ -436,11 +445,11 @@ void MessageTree::appendIntervalHistoryEntry(std::vector<MessageTreeHistoryEntry
     history.push_back(std::move(decompressedEntry));
 }
 
-std::vector<MessageTree::CompressedHistoryEntry>
+std::deque<MessageTree::CompressedHistoryEntry>
 MessageTree::compressHistory(const std::vector<MessageTreeHistoryEntry>& history) const {
-    std::vector<CompressedHistoryEntry> compressed{};
-    for (auto iter = history.rbegin(); iter != history.rend(); ++iter) {
-        addHistoryEntry(compressed, *iter);
+    std::deque<CompressedHistoryEntry> compressed{};
+    for (const auto& historyEntry : std::views::reverse(history)) {
+        addHistoryEntry(compressed, historyEntry);
     }
     return compressed;
 }
