@@ -27,7 +27,16 @@ void YahaMqttClientRuntime::runUntilSignal() {
     std::signal(SIGTERM, handleSignal);
 
     mqttClient_.run();
-    component_.run();
+
+    // Start component only after the MQTT session is connected so startup
+    // status publishes are not rejected as "disconnected".
+    while (!shutdownRequested.load() && mqttClient_.isRunning() && !mqttClient_.isConnected()) {
+        std::this_thread::sleep_for(pollInterval_);
+    }
+
+    if (!shutdownRequested.load() && mqttClient_.isRunning()) {
+        component_.run();
+    }
 
     while (!shutdownRequested.load()) {
         std::this_thread::sleep_for(pollInterval_);

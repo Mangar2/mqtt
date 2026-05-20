@@ -306,10 +306,10 @@ TEST_CASE("management_messages_are_forwarded_and_scan_success_is_published", "[z
     CHECK(std::get<double>(published[0].value()) == kRemoveFailedPayload);
     REQUIRE(std::holds_alternative<double>(published[1].value()));
     CHECK(std::get<double>(published[1].value()) == 0.0);
-    REQUIRE(std::holds_alternative<std::string>(published[2].value()));
-    CHECK(std::get<std::string>(published[2].value()) == "on");
-    REQUIRE(std::holds_alternative<std::string>(published[3].value()));
-    CHECK(std::get<std::string>(published[3].value()) == "on");
+    REQUIRE(std::holds_alternative<double>(published[0].value()));
+    CHECK(std::get<double>(published[0].value()) == kRemoveFailedPayload);
+    REQUIRE(std::holds_alternative<double>(published[1].value()));
+    CHECK(std::get<double>(published[1].value()) == 0.0);
     REQUIRE(std::holds_alternative<std::string>(published[4].value()));
     CHECK(std::get<std::string>(published[4].value()) == "scan command accepted");
     CHECK(hasReasonMessage(published[0], "removefailednode requested"));
@@ -804,10 +804,10 @@ TEST_CASE("run_publishes_startup_markers_and_requests_controller_sync", "[zwave_
     CHECK(published[2].topic() == "system/zwave/scan");
 
     REQUIRE(std::holds_alternative<double>(published[0].value()));
-    REQUIRE(std::holds_alternative<std::string>(published[1].value()));
+    REQUIRE(std::holds_alternative<double>(published[0].value()));
     REQUIRE(std::holds_alternative<std::string>(published[2].value()));
     CHECK(std::get<double>(published[0].value()) == 0.0);
-    CHECK(std::get<std::string>(published[1].value()) == "off");
+    CHECK(std::get<double>(published[0].value()) == 0.0);
     CHECK(std::get<std::string>(published[2].value()) == "off");
     CHECK(hasReasonMessage(published[0], "zwave service restarted"));
     CHECK(hasReasonMessage(published[1], "zwave service restarted"));

@@ -156,6 +156,7 @@ struct TransportState {
     std::atomic<int> publish_calls{0};
     std::atomic<int> unsubscribe_calls{0};
     std::atomic<int> ping_calls{0};
+    std::atomic<int> connect_fail_countdown{0};
     std::atomic<bool> connected{false};
     std::atomic<int> poll_throw_countdown{0};
     std::atomic<int> subscribe_fail_on_call{0};
@@ -171,6 +172,11 @@ yaha::YahaMqttClient::Transport makeTransport(TransportState& state) {
 
     transport.connect = [&state](const yaha::YahaMqttClient::Config&) {
         state.connect_calls.fetch_add(1);
+        if (state.connect_fail_countdown.load() > 0
+            && state.connect_fail_countdown.fetch_sub(1) > 0) {
+            state.connected.store(false);
+            return false;
+        }
         state.connected.store(true);
         return true;
     };
@@ -568,6 +574,7 @@ TEST_CASE("message_trace_escapes_string_and_formats_numeric_values", "[mqtt_clie
         REQUIRE(output.find("\"message\":\"received by broker\"") != std::string::npos);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("mqtt_client_runtime_run_until_signal_starts_and_stops_component",
           "[mqtt_client]") {
     class RuntimeRecordingComponent final : public yaha::IMqttComponent {
@@ -626,11 +633,107 @@ TEST_CASE("mqtt_client_runtime_run_until_signal_starts_and_stops_component",
     }
     REQUIRE(client.isRunning());
 
+    const auto connectDeadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds{500};
+    while (!client.isConnected() && std::chrono::steady_clock::now() < connectDeadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+    REQUIRE(client.isConnected());
+
+    const auto runDeadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds{500};
+    while (component.runCalls() == 0 && std::chrono::steady_clock::now() < runDeadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+    REQUIRE(component.runCalls() == 1);
+
     std::raise(SIGTERM);
     runtime_thread.join();
 
     CHECK_FALSE(client.isRunning());
     CHECK(component.runCalls() == 1);
     CHECK(component.closeCalls() == 1);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("runtime_waits_for_connection_before_component_run", "[mqtt_client]") {
+    class RuntimeRecordingComponent final : public yaha::IMqttComponent {
+    public:
+        [[nodiscard]] yaha::SubscriptionMap getSubscriptions() const override {
+            return {};
+        }
+
+        void handleMessage([[maybe_unused]] const yaha::Message& message) override {
+        }
+
+        void setPublishCallback(yaha::PublishCallback callback) override {
+            callback_ = std::move(callback);
+        }
+
+        void run() override {
+            run_calls_.fetch_add(1);
+        }
+
+        void close() override {
+            close_calls_.fetch_add(1);
+        }
+
+        [[nodiscard]] int runCalls() const {
+            return run_calls_.load();
+        }
+
+        [[nodiscard]] int closeCalls() const {
+            return close_calls_.load();
+        }
+
+    private:
+        yaha::PublishCallback callback_{};
+        std::atomic<int> run_calls_{0};
+        std::atomic<int> close_calls_{0};
+    };
+
+    TransportState state{};
+    state.connect_fail_countdown.store(20);
+    RuntimeRecordingComponent component{};
+
+    yaha::YahaMqttClient::Config config{};
+    config.loopSleep = std::chrono::milliseconds{5};
+    config.reconnectDelay = std::chrono::milliseconds{5};
+
+    yaha::YahaMqttClient client{config, component, makeTransport(state)};
+    yaha::YahaMqttClientRuntime runtime{client, component};
+
+    std::thread runtime_thread([&runtime]() {
+        runtime.runUntilSignal();
+    });
+
+    const auto preConnectDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{120};
+    while (state.connected.load() && std::chrono::steady_clock::now() < preConnectDeadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+    }
+
+    CHECK_FALSE(state.connected.load());
+    CHECK(component.runCalls() == 0);
+
+    state.connect_fail_countdown.store(0);
+    const auto connectDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{1000};
+    while (!state.connected.load() && std::chrono::steady_clock::now() < connectDeadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+
+    REQUIRE(state.connected.load());
+
+    const auto runDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{500};
+    while (component.runCalls() == 0 && std::chrono::steady_clock::now() < runDeadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+
+    CHECK(component.runCalls() == 1);
+
+    std::raise(SIGTERM);
+    runtime_thread.join();
+
+    CHECK(component.closeCalls() == 1);
+    CHECK_FALSE(client.isRunning());
 }
 // NOLINTEND(readability-magic-numbers)
