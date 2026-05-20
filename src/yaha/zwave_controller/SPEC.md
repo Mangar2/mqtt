@@ -144,7 +144,8 @@ Concrete parity adapter implementation with additional callback entry points:
   - node `1` publishes to configured USB topic
   - mapped devices publish via `valueToTopicAndType`
   - `switch` type converts bool to `on`/`off`
-  - mapping failures fall back to `$MONITOR/zwave/node/<nodeId>/class/<classId>/instance/<instance>/index/<index>/value/unmapped`
+  - mapping failures fall back to `$MONITOR/<device-topic>/class/<classId>/instance/<instance>/index/<index>/value/unmapped`
+  - when no device-topic mapping is available, fallback uses `$MONITOR/unmapped/class/<classId>/instance/<instance>/index/<index>/value/unmapped`
 
 ## Files
 

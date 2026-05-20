@@ -286,6 +286,7 @@ TEST_CASE("on_value_changed_publishes_mapped_switch_as_on_off", "[zwave_controll
     CHECK(std::get<std::string>(published.back().value()) == "on");
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("on_value_refreshed_updates_cache_and_sets_initial_health", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
@@ -680,6 +681,16 @@ TEST_CASE("on_value_changed_without_mapping_falls_back_to_monitoring_topic", "[z
     FakeDriverPort driver{};
     auto controller = makeController(driver);
 
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/zwave/node22",
+            kNodeIdTwentyTwo,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt,
+            std::string{"string"},
+            std::nullopt)});
+
     std::vector<yaha::Message> published{};
     controller.setPublishCallback([&published](const yaha::Message& message) {
         published.push_back(message.clone());
@@ -697,7 +708,7 @@ TEST_CASE("on_value_changed_without_mapping_falls_back_to_monitoring_topic", "[z
         .readOnly = false});
 
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITOR/zwave/node/22/class/37/instance/1/index/0/value/unmapped");
+    CHECK(published.front().topic() == "$MONITOR/ground/livingroom/zwave/node22/class/37/instance/1/index/0/value/unmapped");
     REQUIRE(std::holds_alternative<std::string>(published.front().value()));
     CHECK(std::get<std::string>(published.front().value()) == "open");
     REQUIRE(published.size() == 1U);

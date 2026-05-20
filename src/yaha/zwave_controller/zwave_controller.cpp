@@ -578,7 +578,8 @@ void ZwaveController::publishValue(
 
         publish(topic, outputValue, reason, prependedReasons);
     } catch (...) {
-        const std::string topic = buildNodeBaseTopic(nodeId)
+        const std::optional<std::string> baseTopic = resolveNodeMonitorBaseTopic(nodeId);
+        const std::string topic = (baseTopic.has_value() ? *baseTopic : std::string{"$MONITOR/unmapped"})
             + "/class/" + std::to_string(event.classId)
             + "/instance/" + std::to_string(event.instance)
             + "/index/" + std::to_string(event.index)
