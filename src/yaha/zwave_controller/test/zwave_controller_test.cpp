@@ -460,7 +460,6 @@ TEST_CASE("notification_callback_maps_all_codes_to_monitoring_topic", "[zwave_co
         "$MONITOR/zwave/node/20/power_state",
         "$MONITOR/zwave/node/20/comm/state",
         "$MONITOR/zwave/node/20/power_state",
-        "$MONITOR/zwave/node/20/comm/state",
         "$MONITOR/zwave/node/20/health",
         "$MONITOR/zwave/node/20/comm/state",
         "$MONITOR/zwave/node/20/health",
@@ -470,9 +469,8 @@ TEST_CASE("notification_callback_maps_all_codes_to_monitoring_topic", "[zwave_co
         "awake",
         "ok",
         "sleep",
-        "ok",
         "dead",
-        "ok",
+        "timeout",
         "alive",
         "ok"};
 
@@ -522,6 +520,48 @@ TEST_CASE("notification_callback_never_publishes_to_device_topic", "[zwave_contr
     REQUIRE(published.size() == 1U);
     CHECK(published[0].topic() == "$MONITOR/zwave/node/23/comm/state");
     CHECK(std::get<std::string>(published[0].value()) == "timeout");
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("value_changed_clears_previous_timeout_state", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    std::vector<yaha::Message> published{};
+    controller.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    controller.onNotification(kNodeIdTwentyThree, yaha::ZwaveNotificationCode::Timeout);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/zwave/switch/floodlight",
+            kNodeIdTwentyThree,
+            kSwitchBinaryClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"switch"},
+            std::nullopt)});
+
+    controller.onValueChanged(yaha::ZwaveControllerValueEvent{
+        .nodeId = kNodeIdTwentyThree,
+        .classId = kSwitchBinaryClass,
+        .instance = kInstanceOne,
+        .index = kIndexZero,
+        .label = std::optional<std::string>{"floodlight"},
+        .valueId = std::nullopt,
+        .value = yaha::Value{1.0},
+        .type = "switch",
+        .readOnly = false});
+
+    REQUIRE(published.size() == 3U);
+    CHECK(published[0].topic() == "$MONITOR/zwave/node/23/comm/state");
+    CHECK(std::get<std::string>(published[0].value()) == "timeout");
+    CHECK(published[1].topic() == "ground/livingroom/zwave/switch/floodlight");
+    CHECK(std::get<std::string>(published[1].value()) == "on");
+    CHECK(published[2].topic() == "$MONITOR/zwave/node/23/comm/state");
+    CHECK(std::get<std::string>(published[2].value()) == "ok");
 }
 
 TEST_CASE("node_ready_does_not_enable_global_polling", "[zwave_controller]") {

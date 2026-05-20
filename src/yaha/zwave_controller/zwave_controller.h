@@ -376,6 +376,11 @@ private:
         DriverFailed = 3U
     };
 
+    enum class NodeCommState : std::uint8_t {
+        Ok = 0U,
+        Timeout = 1U
+    };
+
     [[nodiscard]] static std::optional<std::uint16_t> parseNodeIdFromValue(const Value& value);
     [[nodiscard]] static std::optional<std::string> parseOptionalLabelFromSetTopic(const std::vector<std::string>& topicParts);
     [[nodiscard]] static std::string joinTopicParts(const std::vector<std::string>& parts, std::size_t count);
@@ -419,6 +424,7 @@ private:
         const std::string& value,
         ErrorStateSeverity severity,
         const std::string& reason);
+    void updateNodeCommState(std::uint16_t nodeId, NodeCommState targetState, const std::string& reason);
     void clearNodeErrorState(std::uint16_t nodeId, const std::string& reason);
     static std::string buildNodeBaseTopic(std::uint16_t nodeId);
 
@@ -432,6 +438,8 @@ private:
     mutable std::mutex cachedTopicStatesMutex_{};
     std::unordered_map<std::uint16_t, ErrorStateSeverity> nodeErrorStates_{};
     std::mutex nodeErrorStatesMutex_{};
+    std::unordered_map<std::uint16_t, NodeCommState> nodeCommStates_{};
+    std::mutex nodeCommStatesMutex_{};
     std::vector<PendingCommand> pendingCommands_{};
     std::mutex pendingCommandsMutex_{};
     std::thread pendingCommandPollThread_{};

@@ -264,26 +264,25 @@ void ZwaveController::onNotification(const std::uint16_t nodeId, const ZwaveNoti
         switch (notification) {
         case ZwaveNotificationCode::NodeDead:
             publishNodeState(nodeId, "health", "dead", "zwave notification node=" + std::to_string(nodeId));
-            publishNodeState(nodeId, "comm/state", "ok", "node communication succeeded");
-            clearNodeErrorState(nodeId, "node communication recovered");
+            updateNodeCommState(nodeId, NodeCommState::Timeout, "node reported dead");
             return;
         case ZwaveNotificationCode::NodeAlive:
             publishNodeState(nodeId, "health", "alive", "zwave notification node=" + std::to_string(nodeId));
-            publishNodeState(nodeId, "comm/state", "ok", "node communication succeeded");
+            updateNodeCommState(nodeId, NodeCommState::Ok, "node communication succeeded");
             clearNodeErrorState(nodeId, "node communication recovered");
             return;
         case ZwaveNotificationCode::NodeAwake:
             publishNodeState(nodeId, "power_state", "awake", "zwave notification node=" + std::to_string(nodeId));
-            publishNodeState(nodeId, "comm/state", "ok", "node communication succeeded");
+            updateNodeCommState(nodeId, NodeCommState::Ok, "node communication succeeded");
             clearNodeErrorState(nodeId, "node communication recovered");
             return;
         case ZwaveNotificationCode::NodeSleep:
             publishNodeState(nodeId, "power_state", "sleep", "zwave notification node=" + std::to_string(nodeId));
-            publishNodeState(nodeId, "comm/state", "ok", "node communication succeeded");
+            updateNodeCommState(nodeId, NodeCommState::Ok, "node communication succeeded");
             clearNodeErrorState(nodeId, "node communication recovered");
             return;
         case ZwaveNotificationCode::Timeout:
-            publishNodeState(nodeId, "comm/state", "timeout", "zwave notification node=" + std::to_string(nodeId));
+            updateNodeCommState(nodeId, NodeCommState::Timeout, "zwave notification node=" + std::to_string(nodeId));
             return;
         case ZwaveNotificationCode::MessageComplete:
         case ZwaveNotificationCode::Nop:
@@ -343,6 +342,8 @@ void ZwaveController::onValueChanged(const ZwaveControllerValueEvent& event) {
     cacheLastKnownTopicState(event);
 
     publishValue(event.nodeId, event, buildZwaveNetworkReason(event.valueId));
+    updateNodeCommState(event.nodeId, NodeCommState::Ok, "node communication succeeded");
+    clearNodeErrorState(event.nodeId, "node communication recovered");
 }
 
 void ZwaveController::onValueRefreshed(
@@ -353,6 +354,8 @@ void ZwaveController::onValueRefreshed(
     (void)classId;
     storeNodeValue(event);
     cacheLastKnownTopicState(event);
+    updateNodeCommState(event.nodeId, NodeCommState::Ok, "node communication succeeded");
+    clearNodeErrorState(event.nodeId, "node communication recovered");
 
     try {
         if (event.nodeId == kUsbControllerNodeId) {
@@ -754,6 +757,28 @@ void ZwaveController::publishNodeErrorState(
 
     nodeErrorStates_[nodeId] = severity;
     publish(buildNodeBaseTopic(nodeId) + "/error/state", Value{value}, reason);
+}
+
+void ZwaveController::updateNodeCommState(
+    const std::uint16_t nodeId,
+    const NodeCommState targetState,
+    const std::string& reason) {
+    std::scoped_lock lock{nodeCommStatesMutex_};
+    const NodeCommState currentState = [&] {
+        const auto iterator = nodeCommStates_.find(nodeId);
+        if (iterator == nodeCommStates_.end()) {
+            return NodeCommState::Ok;
+        }
+        return iterator->second;
+    }();
+
+    if (currentState == targetState) {
+        return;
+    }
+
+    nodeCommStates_[nodeId] = targetState;
+    const std::string value = targetState == NodeCommState::Ok ? "ok" : "timeout";
+    publishNodeState(nodeId, "comm/state", value, reason);
 }
 
 void ZwaveController::clearNodeErrorState(const std::uint16_t nodeId, const std::string& reason) {

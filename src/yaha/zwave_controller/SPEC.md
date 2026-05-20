@@ -104,9 +104,13 @@ Concrete parity adapter implementation with additional callback entry points:
   - `Timeout` -> `$MONITOR/zwave/node/<nodeId>/comm/state` value `timeout`
   - `NodeAwake` -> `$MONITOR/zwave/node/<nodeId>/power_state` value `awake` plus `comm/state=ok`
   - `NodeSleep` -> `$MONITOR/zwave/node/<nodeId>/power_state` value `sleep` plus `comm/state=ok`
-  - `NodeDead` -> `$MONITOR/zwave/node/<nodeId>/health` value `dead` plus `comm/state=ok`
+  - `NodeDead` -> `$MONITOR/zwave/node/<nodeId>/health` value `dead` plus `comm/state=timeout`
   - `NodeAlive` -> `$MONITOR/zwave/node/<nodeId>/health` value `alive` plus `comm/state=ok`
   - `MessageComplete` and `Nop` are suppressed
+- Communication state machine:
+  - default state is `ok` and is published only on state transitions
+  - `Timeout` or `NodeDead` transitions to `comm/state=timeout`
+  - any successful communication callback (`onValueChanged`, `onValueRefreshed`, `NodeAlive`, `NodeAwake`, `NodeSleep`) transitions to `comm/state=ok`
 - Notification publish failures are reported as node-scoped error state:
   - `$MONITOR/zwave/node/<nodeId>/error/state` value `publish_failed`
   - severity order is enforced (`publish_failed` < `decode_failed` < `driver_failed`)
