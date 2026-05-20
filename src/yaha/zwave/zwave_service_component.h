@@ -121,9 +121,19 @@ private:
      */
     [[nodiscard]] static bool isScanTopic(const std::string& topic);
 
+    void publishManagementStatus(const std::string& topicSuffix,
+                                 const Value& value,
+                                 const std::string& reason) const;
+
+    void updateScanStatusFromControllerMessage(const Message& message);
+
+    void updateAddNodeStatusFromControllerMessage(const Message& message);
+
     ZwaveConfig config_{};
     std::shared_ptr<IZwaveController> controller_{};
     PublishCallback publishCallback_{};
+    bool addNodeActive_{false};
+    bool scanActive_{false};
 };
 
 } // namespace yaha

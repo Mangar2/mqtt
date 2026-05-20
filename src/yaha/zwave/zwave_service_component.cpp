@@ -3,6 +3,7 @@
 #include "yaha/message/message_log_service.h"
 
 #include <exception>
+#include <cctype>
 #include <iostream>
 #include <ranges>
 #include <stdexcept>
@@ -13,8 +14,15 @@ namespace yaha {
 
 namespace {
 
+constexpr std::string_view kSystemZwavePrefix = "system/zwave";
+constexpr std::string_view kMonitorZwavePrefix = "$MONITOR/zwave";
+
 [[nodiscard]] bool importantLogEnabled(const ZwaveConfig& config) {
     return config.logLevel >= 1U;
+}
+
+[[nodiscard]] std::string makeTopic(const std::string_view prefix, const std::string_view suffix) {
+    return std::string{prefix} + "/" + std::string{suffix};
 }
 
 [[nodiscard]] Message withPublishFlags(const Message& input, const Qos qos, const bool retain) {
@@ -30,12 +38,26 @@ namespace {
 
 [[nodiscard]] Message makeOperationErrorMessage(const std::string& operation,
                                                 const std::string& detail) {
-    Message error{"$MONITOR/zwave/error", std::string{operation + " failed"}};
+    Message error{makeTopic(kSystemZwavePrefix, "error"), std::string{operation + " failed"}};
     error.addReason("operation=" + operation);
     if (!detail.empty()) {
         error.addReason(detail);
     }
     return error;
+}
+
+[[nodiscard]] std::string toLower(std::string value) {
+    for (char& character : value) {
+        character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+    }
+    return value;
+}
+
+[[nodiscard]] std::optional<std::string> valueAsString(const Value& value) {
+    if (const auto* text = std::get_if<std::string>(&value); text != nullptr) {
+        return *text;
+    }
+    return std::nullopt;
 }
 
 } // namespace
@@ -56,16 +78,16 @@ ZwaveServiceComponent::ZwaveServiceComponent(ZwaveConfig config, std::shared_ptr
 void ZwaveServiceComponent::setDeviceConfiguration(const std::vector<ZwaveDeviceConfig>& config) {
     controller_->setDeviceConfiguration(config);
 
-    Message infoMessage{"$MONITOR/zwave/info", std::string{"configuration reloaded"}};
+    Message infoMessage{makeTopic(kSystemZwavePrefix, "info"), std::string{"configuration reloaded"}};
     infoMessage.addReason("updated");
     publish(withPublishFlags(infoMessage, config_.qos, config_.retain));
 }
 
 SubscriptionMap ZwaveServiceComponent::getSubscriptions() const {
     SubscriptionMap subscriptions{};
-    subscriptions.insert({"$MONITOR/zwave/removefailednode/set", Qos::ExactlyOnce});
-    subscriptions.insert({"$MONITOR/zwave/addnode/set", Qos::ExactlyOnce});
-    subscriptions.insert({"$MONITOR/zwave/scan/set", Qos::ExactlyOnce});
+    subscriptions.insert({makeTopic(kSystemZwavePrefix, "removefailednode/set"), Qos::ExactlyOnce});
+    subscriptions.insert({makeTopic(kSystemZwavePrefix, "addnode/set"), Qos::ExactlyOnce});
+    subscriptions.insert({makeTopic(kSystemZwavePrefix, "scan/set"), Qos::ExactlyOnce});
 
     for (const auto& device : config_.devices) {
         std::string topic = device.topic;
@@ -85,16 +107,20 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
 
     if (isRemoveFailedTopic(message.topic())) {
         logImportantEvent("removefailednode", "request received");
+        publishManagementStatus("removefailednode", message.value(), "removefailednode requested");
         try {
             controller_->removeFailedNode(message.value());
             logImportantEvent("removefailednode", "request forwarded");
+            publishManagementStatus("removefailednode", Value{0.0}, "removefailednode completed");
         } catch (const std::exception& exceptionValue) {
             logImportantError("removefailednode", exceptionValue.what());
+            publishManagementStatus("removefailednode", Value{0.0}, "removefailednode failed");
             publish(withPublishFlags(makeOperationErrorMessage("removefailednode", exceptionValue.what()),
                                      config_.qos,
                                      config_.retain));
         } catch (...) {
             logImportantError("removefailednode", "unknown");
+            publishManagementStatus("removefailednode", Value{0.0}, "removefailednode failed with unknown error");
             publish(withPublishFlags(makeOperationErrorMessage("removefailednode", "unknown"),
                                      config_.qos,
                                      config_.retain));
@@ -104,16 +130,22 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
 
     if (isAddNodeTopic(message.topic())) {
         logImportantEvent("addnode", "request received");
+        addNodeActive_ = true;
+        publishManagementStatus("addnode", Value{std::string{"on"}}, "addnode inclusion mode requested");
         try {
             controller_->addDevice();
             logImportantEvent("addnode", "request forwarded");
         } catch (const std::exception& exceptionValue) {
             logImportantError("addnode", exceptionValue.what());
+            addNodeActive_ = false;
+            publishManagementStatus("addnode", Value{std::string{"off"}}, "addnode failed");
             publish(withPublishFlags(makeOperationErrorMessage("addnode", exceptionValue.what()),
                                      config_.qos,
                                      config_.retain));
         } catch (...) {
             logImportantError("addnode", "unknown");
+            addNodeActive_ = false;
+            publishManagementStatus("addnode", Value{std::string{"off"}}, "addnode failed with unknown error");
             publish(withPublishFlags(makeOperationErrorMessage("addnode", "unknown"),
                                      config_.qos,
                                      config_.retain));
@@ -123,20 +155,26 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
 
     if (isScanTopic(message.topic())) {
         logImportantEvent("scan", "request received");
+        scanActive_ = true;
+        publishManagementStatus("scan", Value{std::string{"on"}}, "scan mode requested");
         try {
             controller_->startScan();
             logImportantEvent("scan", "request accepted");
-            Message notification{"$MONITOR/zwave/notification", std::string{"scan command accepted"}};
+            Message notification{makeTopic(kSystemZwavePrefix, "notification"), std::string{"scan command accepted"}};
             notification.addReason("scan command accepted by controller");
             publish(withPublishFlags(notification, config_.qos, config_.retain));
         } catch (const std::exception& exception) {
             logImportantError("scan", exception.what());
-            Message error{"$MONITOR/zwave/error", std::string{"scan command failed"}};
+            scanActive_ = false;
+            publishManagementStatus("scan", Value{std::string{"off"}}, "scan mode ended due to error");
+            Message error{makeTopic(kSystemZwavePrefix, "error"), std::string{"scan command failed"}};
             error.addReason(exception.what());
             publish(withPublishFlags(error, config_.qos, config_.retain));
         } catch (...) {
             logImportantError("scan", "unknown");
-            Message error{"$MONITOR/zwave/error", std::string{"scan command failed"}};
+            scanActive_ = false;
+            publishManagementStatus("scan", Value{std::string{"off"}}, "scan mode ended with unknown error");
+            Message error{makeTopic(kSystemZwavePrefix, "error"), std::string{"scan command failed"}};
             error.addReason("unknown");
             publish(withPublishFlags(error, config_.qos, config_.retain));
         }
@@ -168,13 +206,11 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
 void ZwaveServiceComponent::run() {
     logImportantEvent("run", "startup");
 
-    Message removeFailedRestart{"$MONITOR/zwave/removefailednode", std::string{"nop"}};
-    removeFailedRestart.addReason("zwave restarted");
-    publish(withPublishFlags(removeFailedRestart, config_.qos, config_.retain));
-
-    Message addNodeRestart{"$MONITOR/zwave/addnode", std::string{"nop"}};
-    addNodeRestart.addReason("zwave restarted");
-    publish(withPublishFlags(addNodeRestart, config_.qos, config_.retain));
+    addNodeActive_ = false;
+    scanActive_ = false;
+    publishManagementStatus("removefailednode", Value{0.0}, "zwave service restarted");
+    publishManagementStatus("addnode", Value{std::string{"off"}}, "zwave service restarted");
+    publishManagementStatus("scan", Value{std::string{"off"}}, "zwave service restarted");
 
     try {
         controller_->requestConfigParametersForAllNodes();
@@ -216,8 +252,76 @@ void ZwaveServiceComponent::setPublishCallback(PublishCallback callback) {
 }
 
 void ZwaveServiceComponent::handleControllerPublish(const Message& message) {
+    updateScanStatusFromControllerMessage(message);
+    updateAddNodeStatusFromControllerMessage(message);
     logImportantEvent("controller_publish", "received");
     publish(withPublishFlags(message, config_.qos, config_.retain));
+}
+
+void ZwaveServiceComponent::publishManagementStatus(const std::string& topicSuffix,
+                                                    const Value& value,
+                                                    const std::string& reason) const {
+    Message status{makeTopic(kSystemZwavePrefix, topicSuffix), value};
+    status.addReason(reason);
+    publish(withPublishFlags(status, config_.qos, config_.retain));
+}
+
+void ZwaveServiceComponent::updateScanStatusFromControllerMessage(const Message& message) {
+    if (!scanActive_) {
+        return;
+    }
+
+    const bool isNotificationTopic = message.topic() == makeTopic(kMonitorZwavePrefix, "notification")
+        || message.topic() == makeTopic(kSystemZwavePrefix, "notification");
+    if (!isNotificationTopic) {
+        return;
+    }
+
+    const std::optional<std::string> value = valueAsString(message.value());
+    if (!value.has_value()) {
+        return;
+    }
+
+    const std::string normalizedValue = toLower(*value);
+    const bool scanCompleted = normalizedValue == "scan complete"
+        || normalizedValue.find("scan completed") != std::string::npos
+        || normalizedValue.find("scan done") != std::string::npos;
+    if (!scanCompleted) {
+        return;
+    }
+
+    scanActive_ = false;
+    publishManagementStatus("scan", Value{std::string{"off"}}, "scan completed (controller feedback)");
+}
+
+void ZwaveServiceComponent::updateAddNodeStatusFromControllerMessage(const Message& message) {
+    if (!addNodeActive_) {
+        return;
+    }
+
+    const bool isNotificationTopic = message.topic() == makeTopic(kMonitorZwavePrefix, "notification")
+        || message.topic() == makeTopic(kSystemZwavePrefix, "notification");
+    if (!isNotificationTopic) {
+        return;
+    }
+
+    const std::optional<std::string> value = valueAsString(message.value());
+    if (!value.has_value()) {
+        return;
+    }
+
+    const std::string normalizedValue = toLower(*value);
+    const bool inclusionFinished = normalizedValue.find("done") != std::string::npos
+        || normalizedValue.find("complete") != std::string::npos
+        || normalizedValue.find("failed") != std::string::npos
+        || normalizedValue.find("cancel") != std::string::npos
+        || normalizedValue.find("timeout") != std::string::npos;
+    if (!inclusionFinished) {
+        return;
+    }
+
+    addNodeActive_ = false;
+    publishManagementStatus("addnode", Value{std::string{"off"}}, "addnode mode ended (controller feedback)");
 }
 
 void ZwaveServiceComponent::logIncomingMessageIfEnabled(const Message& message) const {
@@ -338,15 +442,15 @@ void ZwaveServiceComponent::publish(const Message& message) const {
 }
 
 bool ZwaveServiceComponent::isRemoveFailedTopic(const std::string& topic) {
-    return topic == "$MONITOR/zwave/removefailednode/set";
+    return topic == makeTopic(kSystemZwavePrefix, "removefailednode/set");
 }
 
 bool ZwaveServiceComponent::isAddNodeTopic(const std::string& topic) {
-    return topic == "$MONITOR/zwave/addnode/set";
+    return topic == makeTopic(kSystemZwavePrefix, "addnode/set");
 }
 
 bool ZwaveServiceComponent::isScanTopic(const std::string& topic) {
-    return topic == "$MONITOR/zwave/scan/set";
+    return topic == makeTopic(kSystemZwavePrefix, "scan/set");
 }
 
 } // namespace yaha
