@@ -23,6 +23,7 @@ namespace {
 
 constexpr std::size_t kSetTopicMinimumParts = 2U;
 constexpr std::uint16_t kUsbControllerNodeId = 1U;
+constexpr std::uint16_t kConfigCommandClassId = 0x70U;
 constexpr double kIntegerTolerance = 1e-9;
 constexpr std::uint32_t kPendingCommandLoopSleepMs = 20U;
 constexpr unsigned char kJsonControlThreshold = 0x20U;
@@ -98,6 +99,15 @@ const std::regex& iso8601TimestampRegex() {
         }
     }
     return text;
+}
+
+[[nodiscard]] std::string valueToDebugText(const Value& value) {
+    if (const auto* numericValue = std::get_if<double>(&value); numericValue != nullptr) {
+        std::ostringstream stream{};
+        stream << *numericValue;
+        return stream.str();
+    }
+    return std::get<std::string>(value);
 }
 
 void addSpecCompliantReason(Message& message, const ReasonEntry& reasonEntry) {
@@ -225,14 +235,14 @@ void ZwaveController::close() {
 void ZwaveController::onDriverReady(const std::uint32_t homeId) {
     std::ostringstream reason{};
     reason << "scanning homeid=0x" << std::hex << homeId;
-    publish(std::string{kMonitorZwavePrefix} + "/scan/state", std::string{"scanning"}, reason.str());
+    publish(std::string{kMonitorZwavePrefix} + "/scan", std::string{"scanning"}, reason.str());
 }
 
 void ZwaveController::onDriverFailed() {
     publish(std::string{kMonitorZwavePrefix} + "/driver/error/state",
             std::string{"driver_failed"},
             "failed to start driver. Stopping module");
-    publish(std::string{kMonitorZwavePrefix} + "/scan/result", std::string{"scanning_failed"}, "driver failed");
+    publish(std::string{kMonitorZwavePrefix} + "/scan", std::string{"failed"}, "driver failed");
 
     if (driverFailedCallback_) {
         driverFailedCallback_();
@@ -244,8 +254,7 @@ void ZwaveController::setDriverFailedCallback(std::function<void()> callback) {
 }
 
 void ZwaveController::onScanComplete() {
-    publish(std::string{kMonitorZwavePrefix} + "/scan/state", std::string{"idle"}, "scan completed");
-    publish(std::string{kMonitorZwavePrefix} + "/scan/result", std::string{"scanning_completed"}, "zwave info");
+    publish(std::string{kMonitorZwavePrefix} + "/scan", std::string{"scanning_complete"}, "scan completed");
 }
 
 void ZwaveController::onNotification(const std::uint16_t nodeId, const ZwaveNotificationCode notification) {
@@ -304,10 +313,14 @@ void ZwaveController::onNotification(const std::uint16_t nodeId, const ZwaveNoti
             clearNodeErrorState(nodeId, "node " + std::to_string(nodeId) + " communication recovered");
             return;
         case ZwaveNotificationCode::Timeout:
+            {
+                const std::string reason =
+                    "node " + std::to_string(nodeId) + " sent \"timeout\" information; " + describeTimeoutSource(nodeId);
             updateNodeCommState(
                 nodeId,
                 NodeCommState::Timeout,
-                "node " + std::to_string(nodeId) + " sent \"timeout\" information");
+                    reason);
+            }
             return;
         case ZwaveNotificationCode::MessageComplete:
         case ZwaveNotificationCode::Nop:
@@ -346,6 +359,7 @@ void ZwaveController::onNodeReady(const std::uint16_t nodeId, const ZwaveNodeInf
 void ZwaveController::onValueAdded(const ZwaveControllerValueEvent& event) {
     storeNodeValue(event);
     cacheLastKnownTopicState(event);
+    publishConfigParameterCapabilities(event);
     updateNodeHealthState(
         event.nodeId,
         NodeHealthState::Alive,
@@ -369,6 +383,7 @@ void ZwaveController::onValueRemoved(const std::uint16_t nodeId, const std::uint
 void ZwaveController::onValueChanged(const ZwaveControllerValueEvent& event) {
     storeNodeValue(event);
     cacheLastKnownTopicState(event);
+    publishConfigParameterCapabilities(event);
 
     auto nodeIterator = nodes_.find(event.nodeId);
     if (nodeIterator != nodes_.end()) {
@@ -588,6 +603,38 @@ void ZwaveController::publishValue(
     }
 }
 
+void ZwaveController::publishConfigParameterCapabilities(const ZwaveControllerValueEvent& event) {
+    if (event.classId != kConfigCommandClassId) {
+        return;
+    }
+
+    const std::optional<std::string> baseTopic = resolveNodeMonitorBaseTopic(event.nodeId);
+    if (!baseTopic.has_value()) {
+        return;
+    }
+
+    const std::string dedupeKey = std::to_string(event.nodeId) + ":" + std::to_string(event.instance)
+        + ":" + std::to_string(event.index);
+    {
+        std::scoped_lock lock{publishedConfigCapabilityKeysMutex_};
+        const auto [_, inserted] = publishedConfigCapabilityKeys_.insert(dedupeKey);
+        if (!inserted) {
+            return;
+        }
+    }
+
+    const std::string parameterTopic = *baseTopic + "/config/param/" + std::to_string(event.index);
+    const std::string reason = "discovered configuration parameter capability from " + buildZwaveNetworkReason(event.valueId);
+
+    publish(parameterTopic + "/supported", Value{std::string{"on"}}, reason);
+    publish(parameterTopic + "/type", Value{event.type.empty() ? std::string{"unknown"} : event.type}, reason);
+    publish(parameterTopic + "/read_only", Value{event.readOnly ? std::string{"on"} : std::string{"off"}}, reason);
+
+    if (event.label.has_value() && !event.label->empty()) {
+        publish(parameterTopic + "/label", Value{*event.label}, reason);
+    }
+}
+
 bool ZwaveController::valuesEquivalent(const Value& leftValue, const Value& rightValue) {
     if (const auto* leftText = std::get_if<std::string>(&leftValue); leftText != nullptr) {
         const auto* rightText = std::get_if<std::string>(&rightValue);
@@ -620,6 +667,24 @@ Value ZwaveController::writeValueToExpectedValue(const ZwaveWriteRequest& writeR
 
 Value ZwaveController::toExpectedOutboundValue(const Value& value, const std::string& typeName) {
     return applySwitchOutboundConversion(value, typeName);
+}
+
+std::string ZwaveController::describeTimeoutSource(const std::uint16_t nodeId) {
+    std::scoped_lock lock{pendingCommandsMutex_};
+    const auto match = std::ranges::find_if(pendingCommands_, [nodeId](const PendingCommand& pendingCommand) {
+        return pendingCommand.target.nodeId == nodeId;
+    });
+
+    if (match == pendingCommands_.end()) {
+        return "source=openzwave_notification_timeout context=no_pending_command";
+    }
+
+    return "source=openzwave_notification_timeout context=pending_command topic=" + match->replyTopic
+        + " target=node/" + std::to_string(match->target.nodeId)
+        + "/class/" + std::to_string(match->target.classId)
+        + "/instance/" + std::to_string(match->target.instance)
+        + "/index/" + std::to_string(match->target.index)
+        + " expected=" + valueToDebugText(match->expectedValue);
 }
 
 void ZwaveController::cacheLastKnownTopicState(const ZwaveControllerValueEvent& event) {

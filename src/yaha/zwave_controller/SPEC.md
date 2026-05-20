@@ -95,11 +95,10 @@ Concrete parity adapter implementation with additional callback entry points:
 ## Event and publish contract
 
 - Driver lifecycle:
-  - `onDriverReady` publishes `$MONITOR/zwave/scan/state` value `scanning`
+  - `onDriverReady` publishes `$MONITOR/zwave/scan` value `scanning`
   - `onDriverFailed` publishes `$MONITOR/zwave/driver/error/state` value `driver_failed`
-  - `onDriverFailed` publishes `$MONITOR/zwave/scan/result` value `scanning_failed`
-  - `onScanComplete` publishes `$MONITOR/zwave/scan/state` value `idle`
-  - `onScanComplete` publishes `$MONITOR/zwave/scan/result` value `scanning_completed`
+  - `onDriverFailed` publishes `$MONITOR/zwave/scan` value `failed`
+  - `onScanComplete` publishes `$MONITOR/zwave/scan` value `scanning_complete`
 - Notification callback is resource-oriented:
   - all node-scoped state topics use mapped device paths: `$MONITOR/<device-topic>/<state>`
   - `Timeout` -> `$MONITOR/<device-topic>/comm/state` value `timeout`
@@ -108,6 +107,10 @@ Concrete parity adapter implementation with additional callback entry points:
   - `NodeDead` -> `$MONITOR/<device-topic>/health` value `dead` plus `comm/state=timeout`
   - `NodeAlive` -> `$MONITOR/<device-topic>/health` value `alive` plus `comm/state=ok`
   - `MessageComplete` and `Nop` are suppressed
+- Configuration capability discovery:
+  - on class `0x70` value discovery (`onValueAdded`/`onValueChanged`), controller publishes one capability snapshot per node+instance+parameter index
+  - capability topics: `$MONITOR/<device-topic>/config/param/<id>/supported`, `/type`, `/read_only`, and optional `/label`
+  - capability publish is deduplicated per discovered parameter key to avoid repeated metadata spam
 - Health state machine:
   - internal initial state is `unknown` and is never published
   - no health publish on `onNodeReady` alone
@@ -116,6 +119,7 @@ Concrete parity adapter implementation with additional callback entry points:
 - Communication state machine:
   - default state is `ok` and is published only on state transitions
   - `Timeout` or `NodeDead` transitions to `comm/state=timeout`
+  - `Timeout` transition reason includes source context marker `source=openzwave_notification_timeout` and context detail (`context=pending_command ...` or `context=no_pending_command`)
   - any successful communication callback (`onValueChanged`, `onValueRefreshed`, `NodeAlive`, `NodeAwake`, `NodeSleep`) transitions to `comm/state=ok`
 - Notification publish failures are reported as node-scoped error state:
   - `$MONITOR/<device-topic>/error/state` value `publish_failed`

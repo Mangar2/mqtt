@@ -3,6 +3,7 @@
 #include "yaha/zwave_controller/zwave_controller.h"
 
 #include <chrono>
+#include <algorithm>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -401,9 +402,9 @@ TEST_CASE("driver_lifecycle_callbacks_publish_expected_monitoring_messages", "[z
     controller.onDriverFailed();
     controller.onScanComplete();
 
-    REQUIRE(published.size() == 5U);
+    REQUIRE(published.size() == 4U);
 
-    CHECK(published[0].topic() == "$MONITOR/zwave/scan/state");
+    CHECK(published[0].topic() == "$MONITOR/zwave/scan");
     REQUIRE(std::holds_alternative<std::string>(published[0].value()));
     CHECK(std::get<std::string>(published[0].value()) == "scanning");
     REQUIRE(published[0].reason().size() == 1U);
@@ -413,17 +414,13 @@ TEST_CASE("driver_lifecycle_callbacks_publish_expected_monitoring_messages", "[z
     REQUIRE(std::holds_alternative<std::string>(published[1].value()));
     CHECK(std::get<std::string>(published[1].value()) == "driver_failed");
 
-    CHECK(published[2].topic() == "$MONITOR/zwave/scan/result");
+    CHECK(published[2].topic() == "$MONITOR/zwave/scan");
     REQUIRE(std::holds_alternative<std::string>(published[2].value()));
-    CHECK(std::get<std::string>(published[2].value()) == "scanning_failed");
+    CHECK(std::get<std::string>(published[2].value()) == "failed");
 
-    CHECK(published[3].topic() == "$MONITOR/zwave/scan/state");
+    CHECK(published[3].topic() == "$MONITOR/zwave/scan");
     REQUIRE(std::holds_alternative<std::string>(published[3].value()));
-    CHECK(std::get<std::string>(published[3].value()) == "idle");
-
-    CHECK(published[4].topic() == "$MONITOR/zwave/scan/result");
-    REQUIRE(std::holds_alternative<std::string>(published[4].value()));
-    CHECK(std::get<std::string>(published[4].value()) == "scanning_completed");
+    CHECK(std::get<std::string>(published[3].value()) == "scanning_complete");
 }
 
 TEST_CASE("driver_failed_callback_is_invoked", "[zwave_controller]") {
@@ -540,6 +537,43 @@ TEST_CASE("notification_callback_never_publishes_to_device_topic", "[zwave_contr
     REQUIRE(published.size() == 1U);
     CHECK(published[0].topic() == "$MONITOR/ground/livingroom/zwave/sys/floodlight/comm/state");
     CHECK(std::get<std::string>(published[0].value()) == "timeout");
+    REQUIRE(published[0].reason().size() == 1U);
+    CHECK(published[0].reason().front().message.find("context=no_pending_command") != std::string::npos);
+}
+
+TEST_CASE("timeout_reason_includes_pending_command_source_context", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/zwave/switch/floodlight",
+            kNodeIdTwentyThree,
+            kSwitchBinaryClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"switch"},
+            std::nullopt)});
+
+    std::vector<yaha::Message> published{};
+    controller.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    controller.setValue("ground/livingroom/zwave/switch/floodlight/set", yaha::Value{std::string{"on"}});
+    controller.onNotification(kNodeIdTwentyThree, yaha::ZwaveNotificationCode::Timeout);
+
+    REQUIRE_FALSE(published.empty());
+    const auto timeoutMessage = std::ranges::find_if(published, [](const yaha::Message& message) {
+        return message.topic() == "$MONITOR/ground/livingroom/zwave/switch/floodlight/comm/state"
+            && std::holds_alternative<std::string>(message.value())
+            && std::get<std::string>(message.value()) == "timeout";
+    });
+    REQUIRE(timeoutMessage != published.end());
+    REQUIRE(timeoutMessage->reason().size() == 1U);
+    CHECK(timeoutMessage->reason().front().message.find("context=pending_command") != std::string::npos);
+    CHECK(timeoutMessage->reason().front().message.find("topic=ground/livingroom/zwave/switch/floodlight")
+          != std::string::npos);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -677,6 +711,52 @@ TEST_CASE("on_value_changed_for_usb_controller_publishes_to_usb_topic", "[zwave_
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("on_value_added_for_config_class_publishes_parameter_capabilities", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/zwave/sys/floodlight",
+            kNodeIdTwentyThree,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt,
+            std::string{"string"},
+            std::nullopt)});
+
+    std::vector<yaha::Message> published{};
+    controller.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    controller.onValueAdded(yaha::ZwaveControllerValueEvent{
+        .nodeId = kNodeIdTwentyThree,
+        .classId = kConfigClass,
+        .instance = kInstanceOne,
+        .index = kConfigParamSeven,
+        .label = std::optional<std::string>{"auto off minutes"},
+        .valueId = std::optional<std::uint64_t>{kValueIdSample},
+        .value = yaha::Value{kConfigValueFifteen},
+        .type = "number",
+        .readOnly = false});
+
+    const std::string base = "$MONITOR/ground/livingroom/zwave/sys/floodlight/config/param/7";
+    const auto containsTopic = [&published](const std::string& expectedTopic, const std::string& expectedValue) {
+        return std::ranges::any_of(published, [&expectedTopic, &expectedValue](const yaha::Message& message) {
+            return message.topic() == expectedTopic
+                && std::holds_alternative<std::string>(message.value())
+                && std::get<std::string>(message.value()) == expectedValue;
+        });
+    };
+
+    CHECK(containsTopic(base + "/supported", "on"));
+    CHECK(containsTopic(base + "/type", "number"));
+    CHECK(containsTopic(base + "/read_only", "off"));
+    CHECK(containsTopic(base + "/label", "auto off minutes"));
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("on_value_changed_without_mapping_falls_back_to_monitoring_topic", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
@@ -685,9 +765,9 @@ TEST_CASE("on_value_changed_without_mapping_falls_back_to_monitoring_topic", "[z
         makeDevice(
             "ground/livingroom/zwave/node22",
             kNodeIdTwentyTwo,
-            std::nullopt,
-            std::nullopt,
-            std::nullopt,
+            kSensorMultilevelClass,
+            kInstanceOne,
+            kIndexOne,
             std::string{"string"},
             std::nullopt)});
 
@@ -707,11 +787,13 @@ TEST_CASE("on_value_changed_without_mapping_falls_back_to_monitoring_topic", "[z
         .type = "switch",
         .readOnly = false});
 
-    REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITOR/ground/livingroom/zwave/node22/class/37/instance/1/index/0/value/unmapped");
-    REQUIRE(std::holds_alternative<std::string>(published.front().value()));
-    CHECK(std::get<std::string>(published.front().value()) == "open");
-    REQUIRE(published.size() == 1U);
+    REQUIRE(published.size() == 2U);
+    CHECK(published[0].topic() == "$MONITOR/ground/livingroom/zwave/node22/health");
+    REQUIRE(std::holds_alternative<std::string>(published[0].value()));
+    CHECK(std::get<std::string>(published[0].value()) == "alive");
+    CHECK(published[1].topic() == "$MONITOR/ground/livingroom/zwave/node22/class/37/instance/1/index/0/value/unmapped");
+    REQUIRE(std::holds_alternative<std::string>(published[1].value()));
+    CHECK(std::get<std::string>(published[1].value()) == "open");
 }
 
 TEST_CASE("matching_feedback_prepends_tracked_reasons", "[zwave_controller]") {

@@ -19,6 +19,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -397,6 +398,8 @@ private:
     [[nodiscard]] static bool valuesEquivalent(const Value& leftValue, const Value& rightValue);
     [[nodiscard]] static Value writeValueToExpectedValue(const ZwaveWriteRequest& writeRequest);
     [[nodiscard]] static Value toExpectedOutboundValue(const Value& value, const std::string& typeName);
+    [[nodiscard]] std::string describeTimeoutSource(std::uint16_t nodeId);
+    void publishConfigParameterCapabilities(const ZwaveControllerValueEvent& event);
 
     void rememberPendingCommand(
         const std::string& replyTopic,
@@ -450,6 +453,8 @@ private:
     std::mutex nodeCommStatesMutex_{};
     std::unordered_map<std::uint16_t, NodeHealthState> nodeHealthStates_{};
     std::mutex nodeHealthStatesMutex_{};
+    std::unordered_set<std::string> publishedConfigCapabilityKeys_{};
+    std::mutex publishedConfigCapabilityKeysMutex_{};
     std::vector<PendingCommand> pendingCommands_{};
     std::mutex pendingCommandsMutex_{};
     std::thread pendingCommandPollThread_{};

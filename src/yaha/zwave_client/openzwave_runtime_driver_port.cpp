@@ -212,52 +212,45 @@ constexpr int kOzwLogLevelStreamDetail = 10;
         valueType};
 }
 
-void writeBooleanValue(
+bool writeBooleanValue(
     OpenZWave::Manager& manager,
     const OpenZWave::ValueID& valueId,
     const OpenZWave::ValueID::ValueType valueType,
     const bool booleanValue) {
     if (valueType == OpenZWave::ValueID::ValueType_Bool) {
-        (void)manager.SetValue(valueId, booleanValue);
-        return;
+        return manager.SetValue(valueId, booleanValue);
     }
 
     if (valueType == OpenZWave::ValueID::ValueType_Byte) {
-        (void)manager.SetValue(valueId, static_cast<std::uint8_t>(booleanValue ? 1U : 0U));
-        return;
+        return manager.SetValue(valueId, static_cast<std::uint8_t>(booleanValue ? 1U : 0U));
     }
 
     if (valueType == OpenZWave::ValueID::ValueType_Short) {
-        (void)manager.SetValue(valueId, static_cast<int16_t>(booleanValue ? 1 : 0));
-        return;
+        return manager.SetValue(valueId, static_cast<int16_t>(booleanValue ? 1 : 0));
     }
 
     if (valueType == OpenZWave::ValueID::ValueType_Int) {
-        (void)manager.SetValue(valueId, static_cast<int32_t>(booleanValue ? 1 : 0));
-        return;
+        return manager.SetValue(valueId, static_cast<int32_t>(booleanValue ? 1 : 0));
     }
 
     if (valueType == OpenZWave::ValueID::ValueType_Decimal) {
-        (void)manager.SetValue(valueId, booleanValue ? 1.0F : 0.0F);
-        return;
+        return manager.SetValue(valueId, booleanValue ? 1.0F : 0.0F);
     }
 
     if (valueType == OpenZWave::ValueID::ValueType_List) {
-        (void)manager.SetValueListSelection(valueId, booleanValue ? "on" : "off");
-        return;
+        return manager.SetValueListSelection(valueId, booleanValue ? "on" : "off");
     }
 
-    (void)manager.SetValue(valueId, std::string{booleanValue ? "on" : "off"});
+    return manager.SetValue(valueId, std::string{booleanValue ? "on" : "off"});
 }
 
-void writeNumericValue(
+bool writeNumericValue(
     OpenZWave::Manager& manager,
     const OpenZWave::ValueID& valueId,
     const OpenZWave::ValueID::ValueType valueType,
     const double numericValue) {
     if (valueType == OpenZWave::ValueID::ValueType_Bool) {
-        (void)manager.SetValue(valueId, std::fabs(numericValue - 0.0) > kNumericTolerance);
-        return;
+        return manager.SetValue(valueId, std::fabs(numericValue - 0.0) > kNumericTolerance);
     }
 
     if (valueType == OpenZWave::ValueID::ValueType_Byte) {
@@ -265,8 +258,7 @@ void writeNumericValue(
         if (rounded < 0 || rounded > static_cast<int32_t>(std::numeric_limits<std::uint8_t>::max())) {
             throw std::runtime_error("byte value out of range");
         }
-        (void)manager.SetValue(valueId, static_cast<std::uint8_t>(rounded));
-        return;
+        return manager.SetValue(valueId, static_cast<std::uint8_t>(rounded));
     }
 
     if (valueType == OpenZWave::ValueID::ValueType_Short) {
@@ -275,52 +267,46 @@ void writeNumericValue(
             || rounded > static_cast<int32_t>(std::numeric_limits<int16_t>::max())) {
             throw std::runtime_error("short value out of range");
         }
-        (void)manager.SetValue(valueId, static_cast<int16_t>(rounded));
-        return;
+        return manager.SetValue(valueId, static_cast<int16_t>(rounded));
     }
 
     if (valueType == OpenZWave::ValueID::ValueType_Int) {
-        (void)manager.SetValue(valueId, roundToInt32(numericValue, "int value"));
-        return;
+        return manager.SetValue(valueId, roundToInt32(numericValue, "int value"));
     }
 
     if (valueType == OpenZWave::ValueID::ValueType_Decimal) {
-        (void)manager.SetValue(valueId, static_cast<float>(numericValue));
-        return;
+        return manager.SetValue(valueId, static_cast<float>(numericValue));
     }
 
-    (void)manager.SetValue(valueId, std::to_string(numericValue));
+    return manager.SetValue(valueId, std::to_string(numericValue));
 }
 
-void writeTextValue(
+bool writeTextValue(
     OpenZWave::Manager& manager,
     const OpenZWave::ValueID& valueId,
     const OpenZWave::ValueID::ValueType valueType,
     const std::string& textValue) {
     if (valueType == OpenZWave::ValueID::ValueType_List) {
-        (void)manager.SetValueListSelection(valueId, textValue);
-        return;
+        return manager.SetValueListSelection(valueId, textValue);
     }
 
-    (void)manager.SetValue(valueId, textValue);
+    return manager.SetValue(valueId, textValue);
 }
 
-void applyTypedValueWrite(
+bool applyTypedValueWrite(
     OpenZWave::Manager& manager,
     const OpenZWave::ValueID& valueId,
     const OpenZWave::ValueID::ValueType valueType,
     const std::variant<bool, double, std::string>& value) {
     if (const auto* booleanValue = std::get_if<bool>(&value); booleanValue != nullptr) {
-        writeBooleanValue(manager, valueId, valueType, *booleanValue);
-        return;
+        return writeBooleanValue(manager, valueId, valueType, *booleanValue);
     }
 
     if (const auto* numericValue = std::get_if<double>(&value); numericValue != nullptr) {
-        writeNumericValue(manager, valueId, valueType, *numericValue);
-        return;
+        return writeNumericValue(manager, valueId, valueType, *numericValue);
     }
 
-    writeTextValue(manager, valueId, valueType, std::get<std::string>(value));
+    return writeTextValue(manager, valueId, valueType, std::get<std::string>(value));
 }
 
 } // namespace
@@ -383,7 +369,19 @@ void OpenZwaveRuntimeDriverPort::setValue(
     }
 
     const auto resolvedValueType = valueId.GetType();
-    applyTypedValueWrite(*manager, valueId, resolvedValueType, value);
+    const bool writeAccepted = applyTypedValueWrite(*manager, valueId, resolvedValueType, value);
+    if (!writeAccepted) {
+        ZwaveController* controller = nullptr;
+        {
+            std::scoped_lock lock{mutex_};
+            controller = controller_;
+        }
+        if (controller != nullptr) {
+            controller->onNotification(target.nodeId, ZwaveNotificationCode::NodeDead);
+        }
+        throw std::runtime_error(
+            "OpenZWave rejected setValue for node " + std::to_string(target.nodeId) + " (presumed dead)");
+    }
 }
 
 void OpenZwaveRuntimeDriverPort::setConfigParam(
@@ -605,9 +603,17 @@ void OpenZwaveRuntimeDriverPort::handleNotification(OpenZWave::Notification cons
         }
         return;
     case OpenZWave::Notification::Type_ControllerCommand:
-        controller->onControllerCommand(
-            static_cast<std::int32_t>(notification.GetNotification()),
-            controllerStateText(notification.GetNotification()));
+        {
+            const auto stateCode = notification.GetNotification();
+            controller->onControllerCommand(
+                static_cast<std::int32_t>(stateCode),
+                controllerStateText(stateCode));
+            if (stateCode == OpenZWave::Driver::ControllerState_NodeFailed) {
+                controller->onNotification(nodeId, ZwaveNotificationCode::NodeDead);
+            } else if (stateCode == OpenZWave::Driver::ControllerState_NodeOK) {
+                controller->onNotification(nodeId, ZwaveNotificationCode::NodeAlive);
+            }
+        }
         return;
     case OpenZWave::Notification::Type_AllNodesQueried:
     case OpenZWave::Notification::Type_AllNodesQueriedSomeDead:

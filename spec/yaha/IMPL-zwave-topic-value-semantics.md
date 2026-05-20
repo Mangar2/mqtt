@@ -126,13 +126,10 @@ Examples observed in runtime logs include `topic="$MONITOR/zwave/notification" v
   - topic identifies exactly which resource produced the value
   - value is the current state of that one resource
 
-4. Scan state vocabulary
-- use explicit scan state variable:
-  - topic: `$MONITOR/zwave/scan/state`
-  - value set: `scanning`, `idle`
-- use explicit scan result variable:
-  - topic: `$MONITOR/zwave/scan/result`
-  - value set: `scanning_completed`, `scanning_failed`
+4. Scan status vocabulary
+- use one explicit scan status variable:
+  - topic: `$MONITOR/zwave/scan`
+  - value set: `scanning`, `scanning_complete`, `failed`
 
 ## Planned Code Changes
 
