@@ -26,6 +26,7 @@ constexpr std::uint16_t kUsbControllerNodeId = 1U;
 constexpr double kIntegerTolerance = 1e-9;
 constexpr std::uint32_t kPendingCommandLoopSleepMs = 20U;
 constexpr unsigned char kJsonControlThreshold = 0x20U;
+constexpr std::string_view kMonitorZwavePrefix = "$MONITOR/zwave";
 
 const std::regex& iso8601TimestampRegex() {
     static const std::regex regex{
@@ -224,11 +225,14 @@ void ZwaveController::close() {
 void ZwaveController::onDriverReady(const std::uint32_t homeId) {
     std::ostringstream reason{};
     reason << "scanning homeid=0x" << std::hex << homeId;
-    publish("$MONITOR/zwave/notification", std::string{"starting scan"}, reason.str());
+    publish(std::string{kMonitorZwavePrefix} + "/scan/state", std::string{"scanning"}, reason.str());
 }
 
 void ZwaveController::onDriverFailed() {
-    publish("$MONITOR/zwave/error", std::string{"driver failure"}, "failed to start driver. Stopping module");
+    publish(std::string{kMonitorZwavePrefix} + "/driver/error/state",
+            std::string{"driver_failed"},
+            "failed to start driver. Stopping module");
+    publish(std::string{kMonitorZwavePrefix} + "/scan/result", std::string{"scanning_failed"}, "driver failed");
 
     if (driverFailedCallback_) {
         driverFailedCallback_();
@@ -240,7 +244,8 @@ void ZwaveController::setDriverFailedCallback(std::function<void()> callback) {
 }
 
 void ZwaveController::onScanComplete() {
-    publish("$MONITOR/zwave/notification", std::string{"scan complete"}, "zwave info");
+    publish(std::string{kMonitorZwavePrefix} + "/scan/state", std::string{"idle"}, "scan completed");
+    publish(std::string{kMonitorZwavePrefix} + "/scan/result", std::string{"scanning_completed"}, "zwave info");
 }
 
 void ZwaveController::onNotification(const std::uint16_t nodeId, const ZwaveNotificationCode notification) {
@@ -256,19 +261,45 @@ void ZwaveController::onNotification(const std::uint16_t nodeId, const ZwaveNoti
     }
 
     try {
-        publish(
-            "$MONITOR/zwave/notification",
-            notificationText(notification),
-            "zwave notification node=" + std::to_string(nodeId));
+        switch (notification) {
+        case ZwaveNotificationCode::NodeDead:
+            publishNodeState(nodeId, "health", "dead", "zwave notification node=" + std::to_string(nodeId));
+            publishNodeState(nodeId, "comm/state", "ok", "node communication succeeded");
+            clearNodeErrorState(nodeId, "node communication recovered");
+            return;
+        case ZwaveNotificationCode::NodeAlive:
+            publishNodeState(nodeId, "health", "alive", "zwave notification node=" + std::to_string(nodeId));
+            publishNodeState(nodeId, "comm/state", "ok", "node communication succeeded");
+            clearNodeErrorState(nodeId, "node communication recovered");
+            return;
+        case ZwaveNotificationCode::NodeAwake:
+            publishNodeState(nodeId, "power_state", "awake", "zwave notification node=" + std::to_string(nodeId));
+            publishNodeState(nodeId, "comm/state", "ok", "node communication succeeded");
+            clearNodeErrorState(nodeId, "node communication recovered");
+            return;
+        case ZwaveNotificationCode::NodeSleep:
+            publishNodeState(nodeId, "power_state", "sleep", "zwave notification node=" + std::to_string(nodeId));
+            publishNodeState(nodeId, "comm/state", "ok", "node communication succeeded");
+            clearNodeErrorState(nodeId, "node communication recovered");
+            return;
+        case ZwaveNotificationCode::Timeout:
+            publishNodeState(nodeId, "comm/state", "timeout", "zwave notification node=" + std::to_string(nodeId));
+            return;
+        case ZwaveNotificationCode::MessageComplete:
+        case ZwaveNotificationCode::Nop:
+            return;
+        }
     } catch (...) {
-        const std::string text = notificationText(notification);
-        publish("$MONITOR/zwave/error", text, "node: " + std::to_string(nodeId) + " " + text);
+        publishNodeErrorState(nodeId,
+                              "publish_failed",
+                              ErrorStateSeverity::PublishFailed,
+                              "failed to publish notification state");
     }
 }
 
 void ZwaveController::onControllerCommand(const std::int32_t resultCode, const std::string& statusText) {
     publish(
-        "$MONITOR/zwave/notification",
+        std::string{kMonitorZwavePrefix} + "/controller/command/last_status",
         statusText,
         "controller commmand feedback: r=" + std::to_string(resultCode) + " s=" + statusText);
 }
@@ -447,7 +478,7 @@ std::string ZwaveController::notificationText(const ZwaveNotificationCode notifi
     case ZwaveNotificationCode::NodeAlive:
         return "node alive";
     default:
-        return "unknown";
+        return "unknown_notification";
     }
 }
 
@@ -495,7 +526,12 @@ void ZwaveController::publishValue(
 
         publish(topic, outputValue, reason, prependedReasons);
     } catch (...) {
-        publish("$MONITOR/zwave/" + std::to_string(nodeId), event.value, reason);
+        const std::string topic = buildNodeBaseTopic(nodeId)
+            + "/class/" + std::to_string(event.classId)
+            + "/instance/" + std::to_string(event.instance)
+            + "/index/" + std::to_string(event.index)
+            + "/value/unmapped";
+        publish(topic, event.value, reason);
     }
 }
 
@@ -688,6 +724,51 @@ void ZwaveController::storeNodeValue(const ZwaveControllerValueEvent& event) {
     }
 
     nodeIterator->second.classes[event.classId][event.index] = event;
+}
+
+void ZwaveController::publishNodeState(
+    const std::uint16_t nodeId,
+    const std::string& stateName,
+    const std::string& value,
+    const std::string& reason) {
+    publish(buildNodeBaseTopic(nodeId) + "/" + stateName, Value{value}, reason);
+}
+
+void ZwaveController::publishNodeErrorState(
+    const std::uint16_t nodeId,
+    const std::string& value,
+    const ErrorStateSeverity severity,
+    const std::string& reason) {
+    std::scoped_lock lock{nodeErrorStatesMutex_};
+    const ErrorStateSeverity currentSeverity = [&] {
+        const auto iterator = nodeErrorStates_.find(nodeId);
+        if (iterator == nodeErrorStates_.end()) {
+            return ErrorStateSeverity::NoError;
+        }
+        return iterator->second;
+    }();
+
+    if (static_cast<std::uint8_t>(severity) < static_cast<std::uint8_t>(currentSeverity)) {
+        return;
+    }
+
+    nodeErrorStates_[nodeId] = severity;
+    publish(buildNodeBaseTopic(nodeId) + "/error/state", Value{value}, reason);
+}
+
+void ZwaveController::clearNodeErrorState(const std::uint16_t nodeId, const std::string& reason) {
+    std::scoped_lock lock{nodeErrorStatesMutex_};
+    const auto iterator = nodeErrorStates_.find(nodeId);
+    if (iterator == nodeErrorStates_.end() || iterator->second == ErrorStateSeverity::NoError) {
+        return;
+    }
+
+    iterator->second = ErrorStateSeverity::NoError;
+    publish(buildNodeBaseTopic(nodeId) + "/error/state", Value{std::string{"no_error"}}, reason);
+}
+
+std::string ZwaveController::buildNodeBaseTopic(const std::uint16_t nodeId) {
+    return std::string{kMonitorZwavePrefix} + "/node/" + std::to_string(nodeId);
 }
 
 } // namespace yaha

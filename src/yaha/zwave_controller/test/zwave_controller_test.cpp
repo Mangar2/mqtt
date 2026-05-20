@@ -350,7 +350,7 @@ TEST_CASE("on_controller_command_publishes_monitoring_notification", "[zwave_con
     controller.onControllerCommand(kControllerResultCode, "in-progress");
 
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITOR/zwave/notification");
+    CHECK(published.front().topic() == "$MONITOR/zwave/controller/command/last_status");
     REQUIRE(std::holds_alternative<std::string>(published.front().value()));
     CHECK(std::get<std::string>(published.front().value()) == "in-progress");
 }
@@ -397,21 +397,29 @@ TEST_CASE("driver_lifecycle_callbacks_publish_expected_monitoring_messages", "[z
     controller.onDriverFailed();
     controller.onScanComplete();
 
-    REQUIRE(published.size() == 3U);
+    REQUIRE(published.size() == 5U);
 
-    CHECK(published[0].topic() == "$MONITOR/zwave/notification");
+    CHECK(published[0].topic() == "$MONITOR/zwave/scan/state");
     REQUIRE(std::holds_alternative<std::string>(published[0].value()));
-    CHECK(std::get<std::string>(published[0].value()) == "starting scan");
+    CHECK(std::get<std::string>(published[0].value()) == "scanning");
     REQUIRE(published[0].reason().size() == 1U);
     CHECK(published[0].reason().front().message.find("homeid=0xabcd") != std::string::npos);
 
-    CHECK(published[1].topic() == "$MONITOR/zwave/error");
+    CHECK(published[1].topic() == "$MONITOR/zwave/driver/error/state");
     REQUIRE(std::holds_alternative<std::string>(published[1].value()));
-    CHECK(std::get<std::string>(published[1].value()) == "driver failure");
+    CHECK(std::get<std::string>(published[1].value()) == "driver_failed");
 
-    CHECK(published[2].topic() == "$MONITOR/zwave/notification");
+    CHECK(published[2].topic() == "$MONITOR/zwave/scan/result");
     REQUIRE(std::holds_alternative<std::string>(published[2].value()));
-    CHECK(std::get<std::string>(published[2].value()) == "scan complete");
+    CHECK(std::get<std::string>(published[2].value()) == "scanning_failed");
+
+    CHECK(published[3].topic() == "$MONITOR/zwave/scan/state");
+    REQUIRE(std::holds_alternative<std::string>(published[3].value()));
+    CHECK(std::get<std::string>(published[3].value()) == "idle");
+
+    CHECK(published[4].topic() == "$MONITOR/zwave/scan/result");
+    REQUIRE(std::holds_alternative<std::string>(published[4].value()));
+    CHECK(std::get<std::string>(published[4].value()) == "scanning_completed");
 }
 
 TEST_CASE("driver_failed_callback_is_invoked", "[zwave_controller]") {
@@ -447,32 +455,30 @@ TEST_CASE("notification_callback_maps_all_codes_to_monitoring_topic", "[zwave_co
         yaha::ZwaveNotificationCode::NodeDead,
         yaha::ZwaveNotificationCode::NodeAlive};
 
-    const std::vector<std::string> expectedText{
-        "message completed",
+    const std::vector<std::string> expectedTopics{
+        "$MONITOR/zwave/node/20/comm/state",
+        "$MONITOR/zwave/node/20/power_state",
+        "$MONITOR/zwave/node/20/power_state",
+        "$MONITOR/zwave/node/20/health",
+        "$MONITOR/zwave/node/20/health"};
+    const std::vector<std::string> expectedValues{
         "timeout",
-        "nop",
-        "node awake",
-        "node sleep",
-        "node dead",
-        "node alive"};
+        "awake",
+        "sleep",
+        "dead",
+        "alive"};
 
     for (const auto notification : notifications) {
         controller.onNotification(kNodeIdTwenty, notification);
     }
     controller.onNotification(kNodeIdTwenty, static_cast<yaha::ZwaveNotificationCode>(kUnknownNotificationCodeRaw));
 
-    REQUIRE(published.size() == expectedText.size() + 1U);
-    for (std::size_t index = 0U; index < expectedText.size(); ++index) {
-        CHECK(published[index].topic() == "$MONITOR/zwave/notification");
+    REQUIRE(published.size() == expectedTopics.size());
+    for (std::size_t index = 0U; index < expectedTopics.size(); ++index) {
+        CHECK(published[index].topic() == expectedTopics[index]);
         REQUIRE(std::holds_alternative<std::string>(published[index].value()));
-        CHECK(std::get<std::string>(published[index].value()) == expectedText[index]);
-        REQUIRE_FALSE(published[index].reason().empty());
-        CHECK(published[index].reason().front().message.find("node=20") != std::string::npos);
+        CHECK(std::get<std::string>(published[index].value()) == expectedValues[index]);
     }
-
-    CHECK(published.back().topic() == "$MONITOR/zwave/notification");
-    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
-    CHECK(std::get<std::string>(published.back().value()) == "unknown");
 }
 
 TEST_CASE("notification_callback_never_publishes_to_device_topic", "[zwave_controller]") {
@@ -505,12 +511,9 @@ TEST_CASE("notification_callback_never_publishes_to_device_topic", "[zwave_contr
     controller.onNotification(kNodeIdTwentyThree, yaha::ZwaveNotificationCode::Nop);
     controller.onNotification(kNodeIdTwentyThree, yaha::ZwaveNotificationCode::Timeout);
 
-    REQUIRE(published.size() == 2U);
-    for (const auto& message : published) {
-        CHECK(message.topic() == "$MONITOR/zwave/notification");
-    }
-    CHECK(std::get<std::string>(published[0].value()) == "nop");
-    CHECK(std::get<std::string>(published[1].value()) == "timeout");
+    REQUIRE(published.size() == 1U);
+    CHECK(published[0].topic() == "$MONITOR/zwave/node/23/comm/state");
+    CHECK(std::get<std::string>(published[0].value()) == "timeout");
 }
 
 TEST_CASE("node_ready_does_not_enable_global_polling", "[zwave_controller]") {
@@ -578,6 +581,7 @@ TEST_CASE("on_value_changed_for_usb_controller_publishes_to_usb_topic", "[zwave_
     CHECK(std::get<std::string>(published.front().value()) == "state");
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("on_value_changed_without_mapping_falls_back_to_monitoring_topic", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
@@ -599,9 +603,14 @@ TEST_CASE("on_value_changed_without_mapping_falls_back_to_monitoring_topic", "[z
         .readOnly = false});
 
     REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITOR/zwave/22");
+    CHECK(published.front().topic() == "$MONITOR/zwave/node/22/comm/state");
     REQUIRE(std::holds_alternative<std::string>(published.front().value()));
-    CHECK(std::get<std::string>(published.front().value()) == "open");
+    CHECK(std::get<std::string>(published.front().value()) == "ok");
+
+    REQUIRE(published.size() == 2U);
+    CHECK(published.back().topic() == "$MONITOR/zwave/node/22/class/37/instance/1/index/0/value/unmapped");
+    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+    CHECK(std::get<std::string>(published.back().value()) == "open");
 }
 
 TEST_CASE("matching_feedback_prepends_tracked_reasons", "[zwave_controller]") {

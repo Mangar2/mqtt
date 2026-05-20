@@ -369,6 +369,13 @@ private:
         std::vector<ReasonEntry> reasons{};
     };
 
+    enum class ErrorStateSeverity : std::uint8_t {
+        NoError = 0U,
+        PublishFailed = 1U,
+        DecodeFailed = 2U,
+        DriverFailed = 3U
+    };
+
     [[nodiscard]] static std::optional<std::uint16_t> parseNodeIdFromValue(const Value& value);
     [[nodiscard]] static std::optional<std::string> parseOptionalLabelFromSetTopic(const std::vector<std::string>& topicParts);
     [[nodiscard]] static std::string joinTopicParts(const std::vector<std::string>& parts, std::size_t count);
@@ -402,6 +409,18 @@ private:
         const std::vector<ReasonEntry>& prependedReasons);
     void publishValue(std::uint16_t nodeId, const ZwaveControllerValueEvent& event, const std::string& reason);
     void storeNodeValue(const ZwaveControllerValueEvent& event);
+    void publishNodeState(
+        std::uint16_t nodeId,
+        const std::string& stateName,
+        const std::string& value,
+        const std::string& reason);
+    void publishNodeErrorState(
+        std::uint16_t nodeId,
+        const std::string& value,
+        ErrorStateSeverity severity,
+        const std::string& reason);
+    void clearNodeErrorState(std::uint16_t nodeId, const std::string& reason);
+    static std::string buildNodeBaseTopic(std::uint16_t nodeId);
 
     ZwaveUsbConfig usb_{};
     IZwaveDriverPort& driverPort_;
@@ -411,6 +430,8 @@ private:
     std::unordered_map<std::uint16_t, NodeRuntimeState> nodes_{};
     std::unordered_map<std::string, CachedTopicState> cachedTopicStates_{};
     mutable std::mutex cachedTopicStatesMutex_{};
+    std::unordered_map<std::uint16_t, ErrorStateSeverity> nodeErrorStates_{};
+    std::mutex nodeErrorStatesMutex_{};
     std::vector<PendingCommand> pendingCommands_{};
     std::mutex pendingCommandsMutex_{};
     std::thread pendingCommandPollThread_{};
