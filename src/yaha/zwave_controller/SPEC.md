@@ -101,18 +101,24 @@ Concrete parity adapter implementation with additional callback entry points:
   - `onScanComplete` publishes `$MONITOR/zwave/scan/state` value `idle`
   - `onScanComplete` publishes `$MONITOR/zwave/scan/result` value `scanning_completed`
 - Notification callback is resource-oriented:
-  - `Timeout` -> `$MONITOR/zwave/node/<nodeId>/comm/state` value `timeout`
-  - `NodeAwake` -> `$MONITOR/zwave/node/<nodeId>/power_state` value `awake` plus `comm/state=ok`
-  - `NodeSleep` -> `$MONITOR/zwave/node/<nodeId>/power_state` value `sleep` plus `comm/state=ok`
-  - `NodeDead` -> `$MONITOR/zwave/node/<nodeId>/health` value `dead` plus `comm/state=timeout`
-  - `NodeAlive` -> `$MONITOR/zwave/node/<nodeId>/health` value `alive` plus `comm/state=ok`
+  - all node-scoped state topics use mapped device paths: `$MONITOR/<device-topic>/<state>`
+  - `Timeout` -> `$MONITOR/<device-topic>/comm/state` value `timeout`
+  - `NodeAwake` -> `$MONITOR/<device-topic>/power_state` value `awake` plus `comm/state=ok`
+  - `NodeSleep` -> `$MONITOR/<device-topic>/power_state` value `sleep` plus `comm/state=ok`
+  - `NodeDead` -> `$MONITOR/<device-topic>/health` value `dead` plus `comm/state=timeout`
+  - `NodeAlive` -> `$MONITOR/<device-topic>/health` value `alive` plus `comm/state=ok`
   - `MessageComplete` and `Nop` are suppressed
+- Health state machine:
+  - internal initial state is `unknown` and is never published
+  - no health publish on `onNodeReady` alone
+  - publish `alive` when first real node information arrives (`onValueAdded`, `onValueChanged`, `onValueRefreshed`) or when transitioning from `dead`
+  - publish `dead` on `NodeDead` notification
 - Communication state machine:
   - default state is `ok` and is published only on state transitions
   - `Timeout` or `NodeDead` transitions to `comm/state=timeout`
   - any successful communication callback (`onValueChanged`, `onValueRefreshed`, `NodeAlive`, `NodeAwake`, `NodeSleep`) transitions to `comm/state=ok`
 - Notification publish failures are reported as node-scoped error state:
-  - `$MONITOR/zwave/node/<nodeId>/error/state` value `publish_failed`
+  - `$MONITOR/<device-topic>/error/state` value `publish_failed`
   - severity order is enforced (`publish_failed` < `decode_failed` < `driver_failed`)
   - lower severity never overwrites higher severity
   - successful communication clears to `no_error`

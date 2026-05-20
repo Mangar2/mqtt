@@ -263,26 +263,51 @@ void ZwaveController::onNotification(const std::uint16_t nodeId, const ZwaveNoti
     try {
         switch (notification) {
         case ZwaveNotificationCode::NodeDead:
-            updateNodeHealthState(nodeId, NodeHealthState::Dead, "zwave notification node=" + std::to_string(nodeId));
-            updateNodeCommState(nodeId, NodeCommState::Timeout, "node reported dead");
+            updateNodeHealthState(
+                nodeId,
+                NodeHealthState::Dead,
+                "node " + std::to_string(nodeId) + " sent \"death\" information");
+            updateNodeCommState(nodeId, NodeCommState::Timeout, "node " + std::to_string(nodeId) + " reported dead");
             return;
         case ZwaveNotificationCode::NodeAlive:
-            updateNodeHealthState(nodeId, NodeHealthState::Alive, "zwave notification node=" + std::to_string(nodeId));
-            updateNodeCommState(nodeId, NodeCommState::Ok, "node communication succeeded");
-            clearNodeErrorState(nodeId, "node communication recovered");
+            updateNodeHealthState(
+                nodeId,
+                NodeHealthState::Alive,
+                "node " + std::to_string(nodeId) + " sent \"alive\" information");
+            updateNodeCommState(nodeId, NodeCommState::Ok, "node " + std::to_string(nodeId) + " communication succeeded");
+            clearNodeErrorState(nodeId, "node " + std::to_string(nodeId) + " communication recovered");
             return;
         case ZwaveNotificationCode::NodeAwake:
-            publishNodeState(nodeId, "power_state", "awake", "zwave notification node=" + std::to_string(nodeId));
-            updateNodeCommState(nodeId, NodeCommState::Ok, "node communication succeeded");
-            clearNodeErrorState(nodeId, "node communication recovered");
+            publishNodeState(
+                nodeId,
+                "power_state",
+                "awake",
+                "node " + std::to_string(nodeId) + " sent \"awake\" information");
+            updateNodeHealthState(
+                nodeId,
+                NodeHealthState::Alive,
+                "node " + std::to_string(nodeId) + " sent first value information");
+            updateNodeCommState(nodeId, NodeCommState::Ok, "node " + std::to_string(nodeId) + " communication succeeded");
+            clearNodeErrorState(nodeId, "node " + std::to_string(nodeId) + " communication recovered");
             return;
         case ZwaveNotificationCode::NodeSleep:
-            publishNodeState(nodeId, "power_state", "sleep", "zwave notification node=" + std::to_string(nodeId));
-            updateNodeCommState(nodeId, NodeCommState::Ok, "node communication succeeded");
-            clearNodeErrorState(nodeId, "node communication recovered");
+            publishNodeState(
+                nodeId,
+                "power_state",
+                "sleep",
+                "node " + std::to_string(nodeId) + " sent \"sleep\" information");
+            updateNodeHealthState(
+                nodeId,
+                NodeHealthState::Alive,
+                "node " + std::to_string(nodeId) + " sent first value information");
+            updateNodeCommState(nodeId, NodeCommState::Ok, "node " + std::to_string(nodeId) + " communication succeeded");
+            clearNodeErrorState(nodeId, "node " + std::to_string(nodeId) + " communication recovered");
             return;
         case ZwaveNotificationCode::Timeout:
-            updateNodeCommState(nodeId, NodeCommState::Timeout, "zwave notification node=" + std::to_string(nodeId));
+            updateNodeCommState(
+                nodeId,
+                NodeCommState::Timeout,
+                "node " + std::to_string(nodeId) + " sent \"timeout\" information");
             return;
         case ZwaveNotificationCode::MessageComplete:
         case ZwaveNotificationCode::Nop:
@@ -316,12 +341,15 @@ void ZwaveController::onNodeReady(const std::uint16_t nodeId, const ZwaveNodeInf
     nodeIterator->second.info = nodeInfo;
     nodeIterator->second.ready = true;
     nodeIterator->second.dead = false;
-    updateNodeHealthState(nodeId, NodeHealthState::Alive, "node ready");
 }
 
 void ZwaveController::onValueAdded(const ZwaveControllerValueEvent& event) {
     storeNodeValue(event);
     cacheLastKnownTopicState(event);
+    updateNodeHealthState(
+        event.nodeId,
+        NodeHealthState::Alive,
+        "node " + std::to_string(event.nodeId) + " sent first value information");
 }
 
 void ZwaveController::onValueRemoved(const std::uint16_t nodeId, const std::uint16_t classId, const std::uint8_t index) {
@@ -343,14 +371,17 @@ void ZwaveController::onValueChanged(const ZwaveControllerValueEvent& event) {
     cacheLastKnownTopicState(event);
 
     auto nodeIterator = nodes_.find(event.nodeId);
-    if (nodeIterator != nodes_.end() && nodeIterator->second.dead) {
+    if (nodeIterator != nodes_.end()) {
         nodeIterator->second.dead = false;
-        updateNodeHealthState(event.nodeId, NodeHealthState::Alive, "node communication restored");
     }
+    updateNodeHealthState(
+        event.nodeId,
+        NodeHealthState::Alive,
+        "node " + std::to_string(event.nodeId) + " sent value information");
 
     publishValue(event.nodeId, event, buildZwaveNetworkReason(event.valueId));
-    updateNodeCommState(event.nodeId, NodeCommState::Ok, "node communication succeeded");
-    clearNodeErrorState(event.nodeId, "node communication recovered");
+    updateNodeCommState(event.nodeId, NodeCommState::Ok, "node " + std::to_string(event.nodeId) + " communication succeeded");
+    clearNodeErrorState(event.nodeId, "node " + std::to_string(event.nodeId) + " communication recovered");
 }
 
 void ZwaveController::onValueRefreshed(
@@ -363,13 +394,17 @@ void ZwaveController::onValueRefreshed(
     cacheLastKnownTopicState(event);
 
     auto nodeIterator = nodes_.find(event.nodeId);
-    if (nodeIterator != nodes_.end() && nodeIterator->second.dead) {
+    if (nodeIterator != nodes_.end()) {
         nodeIterator->second.dead = false;
-        updateNodeHealthState(event.nodeId, NodeHealthState::Alive, "node communication restored");
     }
 
-    updateNodeCommState(event.nodeId, NodeCommState::Ok, "node communication succeeded");
-    clearNodeErrorState(event.nodeId, "node communication recovered");
+    updateNodeHealthState(
+        event.nodeId,
+        NodeHealthState::Alive,
+        "node " + std::to_string(event.nodeId) + " sent value information");
+
+    updateNodeCommState(event.nodeId, NodeCommState::Ok, "node " + std::to_string(event.nodeId) + " communication succeeded");
+    clearNodeErrorState(event.nodeId, "node " + std::to_string(event.nodeId) + " communication recovered");
 
     try {
         if (event.nodeId == kUsbControllerNodeId) {
@@ -748,7 +783,11 @@ void ZwaveController::publishNodeState(
     const std::string& stateName,
     const std::string& value,
     const std::string& reason) {
-    publish(buildNodeBaseTopic(nodeId) + "/" + stateName, Value{value}, reason);
+    const std::optional<std::string> baseTopic = resolveNodeMonitorBaseTopic(nodeId);
+    if (!baseTopic.has_value()) {
+        return;
+    }
+    publish(*baseTopic + "/" + stateName, Value{value}, reason);
 }
 
 void ZwaveController::publishNodeErrorState(
@@ -770,7 +809,11 @@ void ZwaveController::publishNodeErrorState(
     }
 
     nodeErrorStates_[nodeId] = severity;
-    publish(buildNodeBaseTopic(nodeId) + "/error/state", Value{value}, reason);
+    const std::optional<std::string> baseTopic = resolveNodeMonitorBaseTopic(nodeId);
+    if (!baseTopic.has_value()) {
+        return;
+    }
+    publish(*baseTopic + "/error/state", Value{value}, reason);
 }
 
 void ZwaveController::updateNodeHealthState(
@@ -825,7 +868,38 @@ void ZwaveController::clearNodeErrorState(const std::uint16_t nodeId, const std:
     }
 
     iterator->second = ErrorStateSeverity::NoError;
-    publish(buildNodeBaseTopic(nodeId) + "/error/state", Value{std::string{"no_error"}}, reason);
+    const std::optional<std::string> baseTopic = resolveNodeMonitorBaseTopic(nodeId);
+    if (!baseTopic.has_value()) {
+        return;
+    }
+    publish(*baseTopic + "/error/state", Value{std::string{"no_error"}}, reason);
+}
+
+std::optional<std::string> ZwaveController::resolveNodeMonitorBaseTopic(const std::uint16_t nodeId) const {
+    std::optional<std::string> preferredTopic{};
+    std::optional<std::string> fallbackTopic{};
+
+    for (const auto& device : devices_) {
+        if (device.nodeId != nodeId || device.topic.empty()) {
+            continue;
+        }
+
+        if (!device.classId.has_value()) {
+            preferredTopic = device.topic;
+            break;
+        }
+
+        if (!fallbackTopic.has_value() || device.topic.size() < fallbackTopic->size()) {
+            fallbackTopic = device.topic;
+        }
+    }
+
+    const std::optional<std::string> chosenTopic = preferredTopic.has_value() ? preferredTopic : fallbackTopic;
+    if (!chosenTopic.has_value()) {
+        return std::nullopt;
+    }
+
+    return std::string{"$MONITOR/"} + *chosenTopic;
 }
 
 std::string ZwaveController::buildNodeBaseTopic(const std::uint16_t nodeId) {

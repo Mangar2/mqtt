@@ -433,6 +433,7 @@ private:
     void updateNodeHealthState(std::uint16_t nodeId, NodeHealthState targetState, const std::string& reason);
     void updateNodeCommState(std::uint16_t nodeId, NodeCommState targetState, const std::string& reason);
     void clearNodeErrorState(std::uint16_t nodeId, const std::string& reason);
+    [[nodiscard]] std::optional<std::string> resolveNodeMonitorBaseTopic(std::uint16_t nodeId) const;
     static std::string buildNodeBaseTopic(std::uint16_t nodeId);
 
     ZwaveUsbConfig usb_{};

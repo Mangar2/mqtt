@@ -286,7 +286,7 @@ TEST_CASE("on_value_changed_publishes_mapped_switch_as_on_off", "[zwave_controll
     CHECK(std::get<std::string>(published.back().value()) == "on");
 }
 
-TEST_CASE("on_value_refreshed_updates_cache_without_publishing", "[zwave_controller]") {
+TEST_CASE("on_value_refreshed_updates_cache_and_sets_initial_health", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
 
@@ -319,7 +319,10 @@ TEST_CASE("on_value_refreshed_updates_cache_without_publishing", "[zwave_control
             .type = "switch",
             .readOnly = false});
 
-    CHECK(published.empty());
+    REQUIRE(published.size() == 1U);
+    CHECK(published[0].topic() == "$MONITOR/ground/livingroom/lamp/health");
+    REQUIRE(std::holds_alternative<std::string>(published[0].value()));
+    CHECK(std::get<std::string>(published[0].value()) == "alive");
 
     controller.onValueChanged(yaha::ZwaveControllerValueEvent{
         .nodeId = kNodeIdFourteen,
@@ -332,7 +335,7 @@ TEST_CASE("on_value_refreshed_updates_cache_without_publishing", "[zwave_control
         .type = "switch",
         .readOnly = false});
 
-    REQUIRE_FALSE(published.empty());
+    REQUIRE(published.size() == 2U);
     CHECK(published.back().topic() == "ground/livingroom/lamp");
     REQUIRE(std::holds_alternative<std::string>(published.back().value()));
     CHECK(std::get<std::string>(published.back().value()) == "on");
@@ -441,6 +444,16 @@ TEST_CASE("notification_callback_maps_all_codes_to_monitoring_topic", "[zwave_co
     FakeDriverPort driver{};
     auto controller = makeController(driver);
 
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/zwave/node20",
+            kNodeIdTwenty,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt,
+            std::string{"string"},
+            std::nullopt)});
+
     std::vector<yaha::Message> published{};
     controller.setPublishCallback([&published](const yaha::Message& message) {
         published.push_back(message.clone());
@@ -456,17 +469,19 @@ TEST_CASE("notification_callback_maps_all_codes_to_monitoring_topic", "[zwave_co
         yaha::ZwaveNotificationCode::NodeAlive};
 
     const std::vector<std::string> expectedTopics{
-        "$MONITOR/zwave/node/20/comm/state",
-        "$MONITOR/zwave/node/20/power_state",
-        "$MONITOR/zwave/node/20/comm/state",
-        "$MONITOR/zwave/node/20/power_state",
-        "$MONITOR/zwave/node/20/health",
-        "$MONITOR/zwave/node/20/comm/state",
-        "$MONITOR/zwave/node/20/health",
-        "$MONITOR/zwave/node/20/comm/state"};
+        "$MONITOR/ground/livingroom/zwave/node20/comm/state",
+        "$MONITOR/ground/livingroom/zwave/node20/power_state",
+        "$MONITOR/ground/livingroom/zwave/node20/health",
+        "$MONITOR/ground/livingroom/zwave/node20/comm/state",
+        "$MONITOR/ground/livingroom/zwave/node20/power_state",
+        "$MONITOR/ground/livingroom/zwave/node20/health",
+        "$MONITOR/ground/livingroom/zwave/node20/comm/state",
+        "$MONITOR/ground/livingroom/zwave/node20/health",
+        "$MONITOR/ground/livingroom/zwave/node20/comm/state"};
     const std::vector<std::string> expectedValues{
         "timeout",
         "awake",
+        "alive",
         "ok",
         "sleep",
         "dead",
@@ -485,6 +500,10 @@ TEST_CASE("notification_callback_maps_all_codes_to_monitoring_topic", "[zwave_co
         REQUIRE(std::holds_alternative<std::string>(published[index].value()));
         CHECK(std::get<std::string>(published[index].value()) == expectedValues[index]);
     }
+
+    REQUIRE_FALSE(published.empty());
+    REQUIRE_FALSE(published[5].reason().empty());
+    CHECK(published[5].reason().front().message.find("node 20") != std::string::npos);
 }
 
 TEST_CASE("notification_callback_never_publishes_to_device_topic", "[zwave_controller]") {
@@ -518,7 +537,7 @@ TEST_CASE("notification_callback_never_publishes_to_device_topic", "[zwave_contr
     controller.onNotification(kNodeIdTwentyThree, yaha::ZwaveNotificationCode::Timeout);
 
     REQUIRE(published.size() == 1U);
-    CHECK(published[0].topic() == "$MONITOR/zwave/node/23/comm/state");
+    CHECK(published[0].topic() == "$MONITOR/ground/livingroom/zwave/sys/floodlight/comm/state");
     CHECK(std::get<std::string>(published[0].value()) == "timeout");
 }
 
@@ -532,8 +551,6 @@ TEST_CASE("value_changed_clears_previous_timeout_state", "[zwave_controller]") {
         published.push_back(message.clone());
     });
 
-    controller.onNotification(kNodeIdTwentyThree, yaha::ZwaveNotificationCode::Timeout);
-
     controller.setDeviceConfiguration({
         makeDevice(
             "ground/livingroom/zwave/switch/floodlight",
@@ -543,6 +560,8 @@ TEST_CASE("value_changed_clears_previous_timeout_state", "[zwave_controller]") {
             kIndexZero,
             std::string{"switch"},
             std::nullopt)});
+
+    controller.onNotification(kNodeIdTwentyThree, yaha::ZwaveNotificationCode::Timeout);
 
     controller.onValueChanged(yaha::ZwaveControllerValueEvent{
         .nodeId = kNodeIdTwentyThree,
@@ -555,13 +574,15 @@ TEST_CASE("value_changed_clears_previous_timeout_state", "[zwave_controller]") {
         .type = "switch",
         .readOnly = false});
 
-    REQUIRE(published.size() == 3U);
-    CHECK(published[0].topic() == "$MONITOR/zwave/node/23/comm/state");
+    REQUIRE(published.size() == 4U);
+    CHECK(published[0].topic() == "$MONITOR/ground/livingroom/zwave/switch/floodlight/comm/state");
     CHECK(std::get<std::string>(published[0].value()) == "timeout");
-    CHECK(published[1].topic() == "ground/livingroom/zwave/switch/floodlight");
-    CHECK(std::get<std::string>(published[1].value()) == "on");
-    CHECK(published[2].topic() == "$MONITOR/zwave/node/23/comm/state");
-    CHECK(std::get<std::string>(published[2].value()) == "ok");
+    CHECK(published[1].topic() == "$MONITOR/ground/livingroom/zwave/switch/floodlight/health");
+    CHECK(std::get<std::string>(published[1].value()) == "alive");
+    CHECK(published[2].topic() == "ground/livingroom/zwave/switch/floodlight");
+    CHECK(std::get<std::string>(published[2].value()) == "on");
+    CHECK(published[3].topic() == "$MONITOR/ground/livingroom/zwave/switch/floodlight/comm/state");
+    CHECK(std::get<std::string>(published[3].value()) == "ok");
 }
 
 TEST_CASE("node_ready_does_not_enable_global_polling", "[zwave_controller]") {
@@ -603,7 +624,7 @@ TEST_CASE("node_ready_does_not_enable_global_polling", "[zwave_controller]") {
     controller.onValueRemoved(kUnknownNodeId, kSensorMultilevelClass, kIndexOne);
 }
 
-TEST_CASE("node_ready_publishes_health_alive_once", "[zwave_controller]") {
+TEST_CASE("node_ready_does_not_publish_health", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
 
@@ -612,13 +633,20 @@ TEST_CASE("node_ready_publishes_health_alive_once", "[zwave_controller]") {
         published.push_back(message.clone());
     });
 
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/zwave/node21",
+            kNodeIdTwentyOne,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt,
+            std::string{"string"},
+            std::nullopt)});
+
     controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{});
     controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{});
 
-    REQUIRE(published.size() == 1U);
-    CHECK(published[0].topic() == "$MONITOR/zwave/node/21/health");
-    REQUIRE(std::holds_alternative<std::string>(published[0].value()));
-    CHECK(std::get<std::string>(published[0].value()) == "alive");
+    CHECK(published.empty());
 }
 
 TEST_CASE("on_value_changed_for_usb_controller_publishes_to_usb_topic", "[zwave_controller]") {
@@ -710,11 +738,11 @@ TEST_CASE("matching_feedback_prepends_tracked_reasons", "[zwave_controller]") {
         .type = "switch",
         .readOnly = false});
 
-    REQUIRE(published.size() == 1U);
-    REQUIRE(published.front().reason().size() >= 3U);
-    CHECK(published.front().reason()[0].message == "rule");
-    CHECK(published.front().reason()[1].message == "ui");
-    CHECK(published.front().reason()[2].message.find("received from zwave") != std::string::npos);
+    REQUIRE(published.size() == 2U);
+    REQUIRE(published.back().reason().size() >= 3U);
+    CHECK(published.back().reason()[0].message == "rule");
+    CHECK(published.back().reason()[1].message == "ui");
+    CHECK(published.back().reason()[2].message.find("received from zwave") != std::string::npos);
 }
 
 TEST_CASE("same_action_replaces_pending_entry", "[zwave_controller]") {
@@ -756,9 +784,9 @@ TEST_CASE("same_action_replaces_pending_entry", "[zwave_controller]") {
         .type = "switch",
         .readOnly = false});
 
-    REQUIRE(published.size() == 1U);
-    REQUIRE_FALSE(published.front().reason().empty());
-    CHECK(published.front().reason().front().message == "new");
+    REQUIRE(published.size() == 2U);
+    REQUIRE_FALSE(published.back().reason().empty());
+    CHECK(published.back().reason().front().message == "new");
 }
 
 TEST_CASE("different_feedback_keeps_pending_command", "[zwave_controller]") {
@@ -807,9 +835,9 @@ TEST_CASE("different_feedback_keeps_pending_command", "[zwave_controller]") {
         .type = "switch",
         .readOnly = false});
 
-    REQUIRE(published.size() == 2U);
-    CHECK(published[0].reason().front().message.find("received from zwave") != std::string::npos);
-    CHECK(published[1].reason().front().message == "await-on");
+    REQUIRE(published.size() == 3U);
+    CHECK(published[1].reason().front().message.find("received from zwave") != std::string::npos);
+    CHECK(published[2].reason().front().message == "await-on");
 }
 
 TEST_CASE("pending_command_times_out_and_is_removed", "[zwave_controller]") {
@@ -849,8 +877,8 @@ TEST_CASE("pending_command_times_out_and_is_removed", "[zwave_controller]") {
         .type = "switch",
         .readOnly = false});
 
-    REQUIRE(published.size() == 1U);
-    CHECK(published.front().reason().front().message.find("received from zwave") != std::string::npos);
+    REQUIRE(published.size() == 2U);
+    CHECK(published.back().reason().front().message.find("received from zwave") != std::string::npos);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -1015,12 +1043,12 @@ TEST_CASE("matching_value_refreshed_publishes_pending_feedback", "[zwave_control
             .type = "switch",
             .readOnly = false});
 
-    REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "ground/livingroom/lamp");
-    REQUIRE(std::holds_alternative<std::string>(published.front().value()));
-    CHECK(std::get<std::string>(published.front().value()) == "on");
-    REQUIRE_FALSE(published.front().reason().empty());
-    CHECK(published.front().reason().front().message == "await-refresh");
+    REQUIRE(published.size() == 2U);
+    CHECK(published.back().topic() == "ground/livingroom/lamp");
+    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+    CHECK(std::get<std::string>(published.back().value()) == "on");
+    REQUIRE_FALSE(published.back().reason().empty());
+    CHECK(published.back().reason().front().message == "await-refresh");
 }
 
 TEST_CASE("direct_device_set_topic_matches_pending_feedback", "[zwave_controller]") {
@@ -1058,12 +1086,12 @@ TEST_CASE("direct_device_set_topic_matches_pending_feedback", "[zwave_controller
         .type = "switch",
         .readOnly = false});
 
-    REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "ground/livingroom/zwave/switch/floodlight");
-    REQUIRE(std::holds_alternative<std::string>(published.front().value()));
-    CHECK(std::get<std::string>(published.front().value()) == "off");
-    REQUIRE_FALSE(published.front().reason().empty());
-    CHECK(published.front().reason().front().message == "Request by User");
+    REQUIRE(published.size() == 2U);
+    CHECK(published.back().topic() == "ground/livingroom/zwave/switch/floodlight");
+    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+    CHECK(std::get<std::string>(published.back().value()) == "off");
+    REQUIRE_FALSE(published.back().reason().empty());
+    CHECK(published.back().reason().front().message == "Request by User");
 }
 
 TEST_CASE("pending_match_accepts_bool_string_numeric_equivalence", "[zwave_controller]") {
@@ -1101,9 +1129,9 @@ TEST_CASE("pending_match_accepts_bool_string_numeric_equivalence", "[zwave_contr
         .type = "bool",
         .readOnly = false});
 
-    REQUIRE(published.size() == 1U);
-    REQUIRE_FALSE(published.front().reason().empty());
-    CHECK(published.front().reason().front().message == "Request by User");
+    REQUIRE(published.size() == 2U);
+    REQUIRE_FALSE(published.back().reason().empty());
+    CHECK(published.back().reason().front().message == "Request by User");
 }
 
 TEST_CASE("matching_feedback_sanitizes_reason_entries_to_message_spec", "[zwave_controller]") {
@@ -1143,10 +1171,10 @@ TEST_CASE("matching_feedback_sanitizes_reason_entries_to_message_spec", "[zwave_
         .type = "switch",
         .readOnly = false});
 
-    REQUIRE(published.size() == 1U);
-    REQUIRE(published.front().reason().size() >= 3U);
-    CHECK(published.front().reason()[0].message == "browser ");
-    CHECK(published.front().reason()[0].timestamp != "not-a-timestamp");
-    CHECK(published.front().reason()[1].message == "rule");
-    CHECK(published.front().reason()[1].timestamp == "2026-05-19T10:01:00.123Z");
+    REQUIRE(published.size() == 2U);
+    REQUIRE(published.back().reason().size() >= 3U);
+    CHECK(published.back().reason()[0].message == "browser ");
+    CHECK(published.back().reason()[0].timestamp != "not-a-timestamp");
+    CHECK(published.back().reason()[1].message == "rule");
+    CHECK(published.back().reason()[1].timestamp == "2026-05-19T10:01:00.123Z");
 }
