@@ -306,10 +306,11 @@ public:
 
     /**
      * @brief Handles controller command feedback callback.
+        * @param nodeId Related node id reported by OpenZWave.
      * @param resultCode Numeric result code.
      * @param statusText Controller status text.
      */
-    void onControllerCommand(std::int32_t resultCode, const std::string& statusText);
+        void onControllerCommand(std::uint16_t nodeId, std::int32_t resultCode, const std::string& statusText);
 
     /**
      * @brief Handles node-added callback.
@@ -321,8 +322,9 @@ public:
      * @brief Handles node-ready callback.
      * @param nodeId Node id.
      * @param nodeInfo Node metadata.
+        * @param queryStage Query-stage marker from runtime callback.
      */
-    void onNodeReady(std::uint16_t nodeId, const ZwaveNodeInfo& nodeInfo);
+        void onNodeReady(std::uint16_t nodeId, const ZwaveNodeInfo& nodeInfo, const std::string& queryStage);
 
     /**
      * @brief Handles value-added callback.
@@ -440,6 +442,11 @@ private:
         const std::string& stateName,
         const std::string& value,
         const std::string& reason);
+    void publishNodeIncludeState(
+        std::uint16_t nodeId,
+        const std::string& value,
+        const std::string& reason,
+        bool forcePublish = false);
     void publishNodeErrorState(
         std::uint16_t nodeId,
         const std::string& value,
@@ -465,6 +472,8 @@ private:
     std::mutex nodeCommStatesMutex_{};
     std::unordered_map<std::uint16_t, NodeHealthState> nodeHealthStates_{};
     std::mutex nodeHealthStatesMutex_{};
+    std::unordered_map<std::uint16_t, std::string> nodeIncludeStates_{};
+    std::mutex nodeIncludeStatesMutex_{};
     std::unordered_set<std::string> publishedConfigCapabilityKeys_{};
     std::mutex publishedConfigCapabilityKeysMutex_{};
     std::vector<PendingCommand> pendingCommands_{};

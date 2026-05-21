@@ -128,6 +128,11 @@ Concrete parity adapter implementation with additional callback entry points:
   - lower severity never overwrites higher severity
   - successful communication clears to `no_error`
 - Controller command callback publishes to `$MONITOR/zwave/controller/command/last_status`.
+- Node include process monitoring publishes to `$MONITOR/zwave/node/<nodeId>/include`:
+  - `onNodeAdded` publishes `node_added`
+  - `onControllerCommand` publishes per-node controller state text (for example `in-progress`, `completed`, `failed`)
+  - `onNodeReady(..., "essential_queries_complete")` publishes `essential_queries_complete`
+  - `onNodeReady(..., "queries_complete")` publishes `queries_complete` followed by `included`
 - Node/value callbacks maintain in-memory node/class cache.
 - Controller keeps local runtime state in unordered maps:
   - node runtime map keyed by `nodeId` with `ready/dead` status and latest value events per class/index

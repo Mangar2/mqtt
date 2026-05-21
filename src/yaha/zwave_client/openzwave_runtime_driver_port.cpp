@@ -591,8 +591,10 @@ void OpenZwaveRuntimeDriverPort::handleNotification(OpenZWave::Notification cons
         controller->onNodeAdded(nodeId);
         return;
     case OpenZWave::Notification::Type_NodeQueriesComplete:
+        controller->onNodeReady(nodeId, buildNodeInfo(notification.GetHomeId(), nodeId), "queries_complete");
+        return;
     case OpenZWave::Notification::Type_EssentialNodeQueriesComplete:
-        controller->onNodeReady(nodeId, buildNodeInfo(notification.GetHomeId(), nodeId));
+        controller->onNodeReady(nodeId, buildNodeInfo(notification.GetHomeId(), nodeId), "essential_queries_complete");
         return;
     case OpenZWave::Notification::Type_ValueAdded:
         handleValueAddedOrChanged(notification, false);
@@ -621,6 +623,7 @@ void OpenZwaveRuntimeDriverPort::handleNotification(OpenZWave::Notification cons
         {
             const auto stateCode = notification.GetNotification();
             controller->onControllerCommand(
+                nodeId,
                 static_cast<std::int32_t>(stateCode),
                 controllerStateText(stateCode));
             if (stateCode == OpenZWave::Driver::ControllerState_NodeFailed) {

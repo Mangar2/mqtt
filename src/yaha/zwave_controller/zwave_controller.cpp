@@ -363,18 +363,34 @@ void ZwaveController::onNotification(const std::uint16_t nodeId, const ZwaveNoti
     }
 }
 
-void ZwaveController::onControllerCommand(const std::int32_t resultCode, const std::string& statusText) {
+void ZwaveController::onControllerCommand(
+    const std::uint16_t nodeId,
+    const std::int32_t resultCode,
+    const std::string& statusText) {
     publish(
         std::string{kMonitorZwavePrefix} + "/controller/command/last_status",
         statusText,
         "controller commmand feedback: r=" + std::to_string(resultCode) + " s=" + statusText);
+
+    if (nodeId == 0U) {
+        return;
+    }
+
+    publishNodeIncludeState(
+        nodeId,
+        statusText,
+        "include progress from controller command state: " + statusText);
 }
 
 void ZwaveController::onNodeAdded(const std::uint16_t nodeId) {
     nodes_[nodeId] = NodeRuntimeState{};
+    publishNodeIncludeState(nodeId, "node_added", "node announced by openzwave include flow", true);
 }
 
-void ZwaveController::onNodeReady(const std::uint16_t nodeId, const ZwaveNodeInfo& nodeInfo) {
+void ZwaveController::onNodeReady(
+    const std::uint16_t nodeId,
+    const ZwaveNodeInfo& nodeInfo,
+    const std::string& queryStage) {
     auto nodeIterator = nodes_.find(nodeId);
     if (nodeIterator == nodes_.end()) {
         nodeIterator = nodes_.insert({nodeId, NodeRuntimeState{}}).first;
@@ -383,6 +399,14 @@ void ZwaveController::onNodeReady(const std::uint16_t nodeId, const ZwaveNodeInf
     nodeIterator->second.info = nodeInfo;
     nodeIterator->second.ready = true;
     nodeIterator->second.dead = false;
+
+    if (!queryStage.empty()) {
+        publishNodeIncludeState(nodeId, queryStage, "openzwave query stage reached: " + queryStage, true);
+    }
+
+    if (queryStage == "queries_complete") {
+        publishNodeIncludeState(nodeId, "included", "include interview complete", true);
+    }
 }
 
 void ZwaveController::onValueAdded(const ZwaveControllerValueEvent& event) {
@@ -893,6 +917,23 @@ void ZwaveController::publishNodeState(
         return;
     }
     publish(*baseTopic + "/" + stateName, Value{value}, reason);
+}
+
+void ZwaveController::publishNodeIncludeState(
+    const std::uint16_t nodeId,
+    const std::string& value,
+    const std::string& reason,
+    const bool forcePublish) {
+    {
+        std::scoped_lock lock{nodeIncludeStatesMutex_};
+        const auto stateIterator = nodeIncludeStates_.find(nodeId);
+        if (!forcePublish && stateIterator != nodeIncludeStates_.end() && stateIterator->second == value) {
+            return;
+        }
+        nodeIncludeStates_[nodeId] = value;
+    }
+
+    publish(buildNodeBaseTopic(nodeId) + "/include", Value{value}, reason);
 }
 
 void ZwaveController::publishNodeErrorState(

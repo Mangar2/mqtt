@@ -343,6 +343,7 @@ TEST_CASE("on_value_refreshed_updates_cache_and_sets_initial_health", "[zwave_co
     CHECK(std::get<std::string>(published.back().value()) == "on");
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("on_controller_command_publishes_monitoring_notification", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
@@ -352,12 +353,15 @@ TEST_CASE("on_controller_command_publishes_monitoring_notification", "[zwave_con
         published.push_back(message.clone());
     });
 
-    controller.onControllerCommand(kControllerResultCode, "in-progress");
+    controller.onControllerCommand(kNodeIdTwentyTwo, kControllerResultCode, "in-progress");
 
-    REQUIRE(published.size() == 1U);
-    CHECK(published.front().topic() == "$MONITOR/zwave/controller/command/last_status");
-    REQUIRE(std::holds_alternative<std::string>(published.front().value()));
-    CHECK(std::get<std::string>(published.front().value()) == "in-progress");
+    REQUIRE(published.size() == 2U);
+    CHECK(published[0].topic() == "$MONITOR/zwave/controller/command/last_status");
+    REQUIRE(std::holds_alternative<std::string>(published[0].value()));
+    CHECK(std::get<std::string>(published[0].value()) == "in-progress");
+    CHECK(published[1].topic() == "$MONITOR/zwave/node/22/include");
+    REQUIRE(std::holds_alternative<std::string>(published[1].value()));
+    CHECK(std::get<std::string>(published[1].value()) == "in-progress");
 }
 
 TEST_CASE("set_value_rejects_topic_without_trailing_set", "[zwave_controller]") {
@@ -640,12 +644,12 @@ TEST_CASE("node_ready_does_not_enable_global_polling", "[zwave_controller]") {
         .type = "number",
         .readOnly = false});
 
-    controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{});
+    controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{}, "queries_complete");
 
     CHECK(driver.enablePollCalls == 0U);
 
     controller.onValueRemoved(kNodeIdTwentyOne, kSwitchBinaryClass, kIndexZero);
-    controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{});
+    controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{}, "queries_complete");
     CHECK(driver.enablePollCalls == 0U);
 
     controller.onValueRemoved(kNodeIdTwentyOne, kSensorMultilevelClass, kIndexOne);
@@ -653,7 +657,8 @@ TEST_CASE("node_ready_does_not_enable_global_polling", "[zwave_controller]") {
     controller.onValueRemoved(kUnknownNodeId, kSensorMultilevelClass, kIndexOne);
 }
 
-TEST_CASE("node_ready_does_not_publish_health", "[zwave_controller]") {
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("node_ready_publishes_include_progress_without_health", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
 
@@ -672,10 +677,16 @@ TEST_CASE("node_ready_does_not_publish_health", "[zwave_controller]") {
             std::string{"string"},
             std::nullopt)});
 
-    controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{});
-    controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{});
+    controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{}, "essential_queries_complete");
+    controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{}, "queries_complete");
 
-    CHECK(published.empty());
+    REQUIRE(published.size() == 3U);
+    CHECK(published[0].topic() == "$MONITOR/zwave/node/21/include");
+    CHECK(std::get<std::string>(published[0].value()) == "essential_queries_complete");
+    CHECK(published[1].topic() == "$MONITOR/zwave/node/21/include");
+    CHECK(std::get<std::string>(published[1].value()) == "queries_complete");
+    CHECK(published[2].topic() == "$MONITOR/zwave/node/21/include");
+    CHECK(std::get<std::string>(published[2].value()) == "included");
 }
 
 TEST_CASE("on_value_changed_for_usb_controller_publishes_to_usb_topic", "[zwave_controller]") {

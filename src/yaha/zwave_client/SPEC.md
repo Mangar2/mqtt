@@ -36,6 +36,9 @@ and phase-4 standalone composition entrypoint wiring.
 OpenZWave runtime driver behavior:
 
 - translates OpenZWave watcher notifications to `ZwaveController` callback methods
+  - forwards `Type_ControllerCommand` with both node id and controller state text to preserve node-scoped include progress
+  - forwards `Type_EssentialNodeQueriesComplete` as query stage `essential_queries_complete`
+  - forwards `Type_NodeQueriesComplete` as query stage `queries_complete`
 - contains all watcher callback exceptions at the callback boundary; runtime logs deterministic
   `zwave_client[error] op=watcher_notification type=<type> node=<node> detail="..."`
   lines instead of letting callback exceptions terminate the process
