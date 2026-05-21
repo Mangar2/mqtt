@@ -250,6 +250,19 @@ void ZwaveController::requestConfigParametersForAllNodes() {
     }
 }
 
+std::vector<std::uint16_t> ZwaveController::knownNodeIds() const {
+    std::vector<std::uint16_t> nodeIds{};
+    nodeIds.reserve(nodes_.size());
+
+    for (const auto& [nodeId, state] : nodes_) {
+        (void)state;
+        nodeIds.push_back(nodeId);
+    }
+
+    std::ranges::sort(nodeIds);
+    return nodeIds;
+}
+
 void ZwaveController::close() {
     driverPort_.disconnect(usb_.device);
 }

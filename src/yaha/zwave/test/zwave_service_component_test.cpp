@@ -88,6 +88,10 @@ public:
         requestConfigCalls_ += 1U;
     }
 
+    [[nodiscard]] std::vector<std::uint16_t> knownNodeIds() const override {
+        return knownNodeIds_;
+    }
+
     void close() override {
         if (throwUnknownOnClose_) {
             throw kUnknownThrowClose;
@@ -150,6 +154,10 @@ public:
 
     void setThrowUnknownOnClose(const bool enabled) {
         throwUnknownOnClose_ = enabled;
+    }
+
+    void setKnownNodeIds(std::vector<std::uint16_t> nodeIds) {
+        knownNodeIds_ = std::move(nodeIds);
     }
 
     [[nodiscard]] std::size_t setValueCalls() const {
@@ -220,6 +228,7 @@ private:
     bool throwUnknownOnRemoveFailed_{false};
     bool throwUnknownOnRequestConfig_{false};
     bool throwUnknownOnClose_{false};
+    std::vector<std::uint16_t> knownNodeIds_{};
 };
 
 [[nodiscard]] yaha::ZwaveConfig makeConfig() {
@@ -807,6 +816,7 @@ TEST_CASE("set_value_unknown_exception_publishes_error_message", "[zwave_service
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("run_publishes_startup_markers_and_requests_controller_sync", "[zwave_service]") {
     auto controller = std::make_shared<FakeController>();
+    controller->setKnownNodeIds({kNodeIdNine, kNodeIdSeven});
     yaha::ZwaveServiceComponent service{makeConfig(), controller};
 
     std::vector<yaha::Message> published{};
@@ -817,10 +827,11 @@ TEST_CASE("run_publishes_startup_markers_and_requests_controller_sync", "[zwave_
     service.run();
 
     CHECK(controller->requestConfigCalls() == 1U);
-    REQUIRE(published.size() == 3U);
+    REQUIRE(published.size() == 4U);
     CHECK(published[0].topic() == "system/zwave/removefailednode");
     CHECK(published[1].topic() == "system/zwave/addnode");
     CHECK(published[2].topic() == "system/zwave/scan");
+    CHECK(published[3].topic() == "$MONITOR/zwave/nodes/known");
 
     REQUIRE(std::holds_alternative<double>(published[0].value()));
     REQUIRE(std::holds_alternative<double>(published[0].value()));
@@ -828,9 +839,12 @@ TEST_CASE("run_publishes_startup_markers_and_requests_controller_sync", "[zwave_
     CHECK(std::get<double>(published[0].value()) == 0.0);
     CHECK(std::get<double>(published[0].value()) == 0.0);
     CHECK(std::get<std::string>(published[2].value()) == "off");
+    REQUIRE(std::holds_alternative<std::string>(published[3].value()));
+    CHECK(std::get<std::string>(published[3].value()) == "{\"nodes\":[9,7]}");
     CHECK(hasReasonMessage(published[0], "zwave service restarted"));
     CHECK(hasReasonMessage(published[1], "zwave service restarted"));
     CHECK(hasReasonMessage(published[2], "zwave service restarted"));
+    CHECK(hasReasonMessage(published[3], "zwave known nodes snapshot on service startup"));
 }
 
 TEST_CASE("run_request_config_exception_publishes_error_message", "[zwave_service]") {
@@ -845,7 +859,7 @@ TEST_CASE("run_request_config_exception_publishes_error_message", "[zwave_servic
 
     service.run();
 
-    REQUIRE(published.size() == 4U);
+    REQUIRE(published.size() == 5U);
     CHECK(published.back().topic() == "system/zwave/error");
     CHECK(hasReasonMessage(published.back(), "operation=requestconfig"));
 }
@@ -862,7 +876,7 @@ TEST_CASE("run_request_config_unknown_exception_publishes_error_message", "[zwav
 
     service.run();
 
-    REQUIRE(published.size() == 4U);
+    REQUIRE(published.size() == 5U);
     CHECK(published.back().topic() == "system/zwave/error");
     CHECK(hasReasonMessage(published.back(), "operation=requestconfig"));
     CHECK(hasReasonMessage(published.back(), "unknown"));

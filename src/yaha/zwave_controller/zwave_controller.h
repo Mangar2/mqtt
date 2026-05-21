@@ -189,6 +189,12 @@ public:
     virtual void requestConfigParametersForAllNodes() = 0;
 
     /**
+     * @brief Returns node ids currently known by the controller runtime.
+     * @return Sorted list of known node ids.
+     */
+    [[nodiscard]] virtual std::vector<std::uint16_t> knownNodeIds() const = 0;
+
+    /**
      * @brief Disconnects controller.
      */
     virtual void close() = 0;
@@ -257,6 +263,12 @@ public:
      * @brief Requests config parameters for all configured nodes.
      */
     void requestConfigParametersForAllNodes() override;
+
+    /**
+     * @brief Returns node ids currently known by the controller runtime.
+     * @return Sorted list of known node ids.
+     */
+    [[nodiscard]] std::vector<std::uint16_t> knownNodeIds() const override;
 
     /**
      * @brief Disconnects controller.

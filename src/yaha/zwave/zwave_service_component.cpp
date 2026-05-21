@@ -97,6 +97,18 @@ constexpr double kNumericCommandTolerance = 1e-9;
     return std::nullopt;
 }
 
+[[nodiscard]] std::string encodeKnownNodesJson(const std::vector<std::uint16_t>& nodeIds) {
+    std::string json{"{\"nodes\":["};
+    for (std::size_t index = 0U; index < nodeIds.size(); ++index) {
+        json.append(std::to_string(nodeIds[index]));
+        if (index + 1U < nodeIds.size()) {
+            json.push_back(',');
+        }
+    }
+    json.append("]}");
+    return json;
+}
+
 } // namespace
 
 ZwaveServiceComponent::ZwaveServiceComponent(ZwaveConfig config, std::shared_ptr<IZwaveController> controller)
@@ -266,6 +278,18 @@ void ZwaveServiceComponent::run() {
     publishManagementStatus("removefailednode", Value{0.0}, "zwave service restarted");
     publishManagementStatus("addnode", Value{std::string{"off"}}, "zwave service restarted");
     publishManagementStatus("scan", Value{std::string{"off"}}, "zwave service restarted");
+
+    try {
+        const std::vector<std::uint16_t> nodeIds = controller_->knownNodeIds();
+        Message knownNodesStatus{makeTopic(kMonitorZwavePrefix, "nodes/known"), encodeKnownNodesJson(nodeIds)};
+        knownNodesStatus.addReason("zwave known nodes snapshot on service startup");
+        publish(withPublishFlags(knownNodesStatus, config_.qos, config_.retain));
+        logImportantEvent("knownnodes", "startup snapshot published");
+    } catch (const std::exception& exceptionValue) {
+        logImportantError("knownnodes", exceptionValue.what());
+    } catch (...) {
+        logImportantError("knownnodes", "unknown");
+    }
 
     try {
         controller_->requestConfigParametersForAllNodes();
