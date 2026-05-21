@@ -46,9 +46,9 @@ struct ZwaveClientRuntimeConfig {
     std::string& errorMessage);
 
 /**
- * @brief Serializes full ZWave settings to JSON for FileStore persistence.
+ * @brief Serializes only ZWave device rows to JSON for FileStore persistence.
  * @param config Effective ZWave settings.
- * @return JSON string containing all settings and device rows.
+ * @return JSON string containing only the root `devices` array.
  */
 [[nodiscard]] std::string serializeZwaveSettingsToJson(const ZwaveConfig& config);
 

@@ -71,7 +71,7 @@ OpenZWave runtime driver behavior:
   - reads settings JSON from `filestore.filename` when `filestore.use=true`
   - applies per-node override semantics to INI device rows:
     - if FileStore contains any row for node `<N>`, all INI rows for node `<N>` are replaced by FileStore rows for node `<N>`
-  - persists the full effective ZWave settings snapshot (all INI-derived settings plus merged devices) back to FileStore as JSON
+  - persists only the merged `devices` array back to FileStore as JSON root object (`{"devices":[...]}`)
 
 Runtime startup prints a deterministic summary:
 

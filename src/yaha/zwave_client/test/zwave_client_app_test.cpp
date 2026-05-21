@@ -535,6 +535,50 @@ TEST_CASE("apply_zwave_device_settings_from_json_overrides_ini_nodes_completely"
     CHECK(config.devices[2].nodeId == kOverrideNodeIdNine);
 }
 
+TEST_CASE("apply_zwave_device_settings_from_json_rejects_unknown_root_keys", "[zwave_client]") {
+    yaha::ZwaveConfig config{};
+    config.devices = {
+        yaha::ZwaveDeviceConfig{.topic = "ini/node7/switch", .nodeId = kOverrideNodeIdSeven}};
+
+    const std::string jsonText =
+        R"({"devices":[{"topic":"store/node7","nodeId":7}],"qos":1})";
+
+    std::string errorMessage{};
+    const bool applied = yaha::tryApplyZwaveDeviceSettingsFromJson(jsonText, config, errorMessage);
+
+    CHECK_FALSE(applied);
+    CHECK(errorMessage.find("unknown root key") != std::string::npos);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("serialize_zwave_settings_to_json_writes_only_devices_root", "[zwave_client]") {
+    yaha::ZwaveConfig config{};
+    config.subscribeQos = yaha::Qos::ExactlyOnce;
+    config.qos = yaha::Qos::AtMostOnce;
+    config.retain = true;
+    config.logLevel = 4U;
+    config.fileStoreEnabled = true;
+    config.fileStoreHost = "filestore.example";
+    config.settingsKeyPath = "/zwave/custom";
+    config.usb.device = "/dev/ttyUSB7";
+    config.usb.topic = "$SYS/zwave/usb";
+    config.devices = {
+        yaha::ZwaveDeviceConfig{
+            .topic = "store/node7/switch",
+            .nodeId = kOverrideNodeIdSeven,
+            .classId = std::optional<std::uint16_t>{kOverrideClassSwitchBinary}}};
+
+    const std::string jsonText = yaha::serializeZwaveSettingsToJson(config);
+
+    CHECK(jsonText.find("\"devices\"") != std::string::npos);
+    CHECK(jsonText.find("\"topic\":\"store/node7/switch\"") != std::string::npos);
+    CHECK(jsonText.find("\"nodeId\":7") != std::string::npos);
+    CHECK(jsonText.find("\"qos\"") == std::string::npos);
+    CHECK(jsonText.find("\"usb\"") == std::string::npos);
+    CHECK(jsonText.find("\"settingsKeyPath\"") == std::string::npos);
+    CHECK(jsonText.find("\"fileStoreHost\"") == std::string::npos);
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("load_zwave_config_parses_legacy_json_equivalent_device_rows", "[zwave_client]") {
     const yaha::IniDocument document = loadIni(

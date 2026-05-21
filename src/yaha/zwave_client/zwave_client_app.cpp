@@ -60,9 +60,6 @@ constexpr int kFileStoreConnectTimeoutSeconds = 1;
 constexpr int kFileStoreReadTimeoutSeconds = 1;
 constexpr int kFileStoreWriteTimeoutSeconds = 1;
 constexpr int kHttpOkStatus = 200;
-constexpr std::size_t kJsonLiteralTrueLength = 4U;
-constexpr std::size_t kJsonLiteralFalseLength = 5U;
-constexpr std::size_t kJsonLiteralNullLength = 4U;
 
 [[nodiscard]] std::vector<std::string> splitDeviceLine(const std::string& line) {
     std::vector<std::string> fields{};
@@ -417,109 +414,6 @@ void skipWhitespace(const std::string& text, std::size_t& parseIndex) {
     return true;
 }
 
-[[nodiscard]] bool skipJsonValue(const std::string& text, std::size_t& parseIndex);
-
-[[nodiscard]] bool skipJsonObject(const std::string& text, std::size_t& parseIndex) {
-    if (!consumeChar(text, parseIndex, '{')) {
-        return false;
-    }
-
-    while (true) {
-        skipWhitespace(text, parseIndex);
-        if (parseIndex < text.size() && text[parseIndex] == '}') {
-            parseIndex += 1U;
-            return true;
-        }
-
-        std::string ignoredKey{};
-        if (!parseJsonStringToken(text, parseIndex, ignoredKey)) {
-            return false;
-        }
-        if (!consumeChar(text, parseIndex, ':')) {
-            return false;
-        }
-        if (!skipJsonValue(text, parseIndex)) {
-            return false;
-        }
-
-        skipWhitespace(text, parseIndex);
-        if (parseIndex < text.size() && text[parseIndex] == ',') {
-            parseIndex += 1U;
-            continue;
-        }
-        if (parseIndex < text.size() && text[parseIndex] == '}') {
-            parseIndex += 1U;
-            return true;
-        }
-        return false;
-    }
-}
-
-[[nodiscard]] bool skipJsonArray(const std::string& text, std::size_t& parseIndex) {
-    if (!consumeChar(text, parseIndex, '[')) {
-        return false;
-    }
-
-    while (true) {
-        skipWhitespace(text, parseIndex);
-        if (parseIndex < text.size() && text[parseIndex] == ']') {
-            parseIndex += 1U;
-            return true;
-        }
-
-        if (!skipJsonValue(text, parseIndex)) {
-            return false;
-        }
-
-        skipWhitespace(text, parseIndex);
-        if (parseIndex < text.size() && text[parseIndex] == ',') {
-            parseIndex += 1U;
-            continue;
-        }
-        if (parseIndex < text.size() && text[parseIndex] == ']') {
-            parseIndex += 1U;
-            return true;
-        }
-        return false;
-    }
-}
-
-[[nodiscard]] bool skipJsonValue(const std::string& text, std::size_t& parseIndex) {
-    skipWhitespace(text, parseIndex);
-    if (parseIndex >= text.size()) {
-        return false;
-    }
-
-    const char token = text[parseIndex];
-    if (token == '"') {
-        std::string ignored{};
-        return parseJsonStringToken(text, parseIndex, ignored);
-    }
-    if (token == '{') {
-        return skipJsonObject(text, parseIndex);
-    }
-    if (token == '[') {
-        return skipJsonArray(text, parseIndex);
-    }
-    if (std::isdigit(static_cast<unsigned char>(token)) != 0) {
-        std::uint64_t ignoredNumber = 0U;
-        return parseJsonUnsignedToken(text, parseIndex, ignoredNumber);
-    }
-    if (text.compare(parseIndex, kJsonLiteralTrueLength, "true") == 0) {
-        parseIndex += kJsonLiteralTrueLength;
-        return true;
-    }
-    if (text.compare(parseIndex, kJsonLiteralFalseLength, "false") == 0) {
-        parseIndex += kJsonLiteralFalseLength;
-        return true;
-    }
-    if (text.compare(parseIndex, kJsonLiteralNullLength, "null") == 0) {
-        parseIndex += kJsonLiteralNullLength;
-        return true;
-    }
-    return false;
-}
-
 struct DeviceJsonDraft {
     std::optional<std::string> topic{};
     std::optional<std::uint64_t> nodeId{};
@@ -578,11 +472,8 @@ struct DeviceJsonDraft {
         return parseStringValue("device.label must be string", output.label);
     }
 
-    if (!skipJsonValue(text, parseIndex)) {
-        errorMessage = "invalid settings json: unknown device field parse error";
-        return false;
-    }
-    return true;
+    errorMessage = "invalid settings json: unknown device field '" + key + "'";
+    return false;
 }
 
 [[nodiscard]] bool buildDeviceConfigFromDraft(
@@ -733,22 +624,13 @@ struct DeviceJsonDraft {
         return false;
     }
 
-    const bool isDevicesKey = key == "devices";
-    if (isDevicesKey) {
-        hasDevices = true;
-    }
-
-    const bool parsedRootValue = isDevicesKey
-        ? parseJsonDevicesArray(text, parseIndex, devices, errorMessage)
-        : skipJsonValue(text, parseIndex);
-    if (!parsedRootValue) {
-        if (!isDevicesKey && errorMessage.empty()) {
-            errorMessage = "invalid settings json: unknown root value parse error";
-        }
+    if (key != "devices") {
+        errorMessage = "invalid settings json: unknown root key '" + key + "'";
         return false;
     }
 
-    return true;
+    hasDevices = true;
+    return parseJsonDevicesArray(text, parseIndex, devices, errorMessage);
 }
 
 [[nodiscard]] bool parseJsonRootEntries(
@@ -891,16 +773,6 @@ void appendNumberField(std::string& target, const std::string& key, const std::u
     target.append(escapeJsonString(key));
     target.append("\":");
     target.append(std::to_string(value));
-    if (withComma) {
-        target.push_back(',');
-    }
-}
-
-void appendBoolField(std::string& target, const std::string& key, const bool value, const bool withComma) {
-    target.append("\"");
-    target.append(escapeJsonString(key));
-    target.append("\":");
-    target.append(value ? "true" : "false");
     if (withComma) {
         target.push_back(',');
     }
@@ -1069,25 +941,7 @@ bool tryApplyZwaveDeviceSettingsFromJson(
 }
 
 std::string serializeZwaveSettingsToJson(const ZwaveConfig& config) {
-    std::string json{"{"};
-    appendNumberField(json, "subscribeQos", static_cast<std::uint64_t>(config.subscribeQos), true);
-    appendNumberField(json, "qos", static_cast<std::uint64_t>(config.qos), true);
-    appendBoolField(json, "retain", config.retain, true);
-    appendNumberField(json, "logLevel", config.logLevel, true);
-    appendBoolField(json, "logIncomingMessages", config.logIncomingMessages, true);
-    appendBoolField(json, "logOutgoingMessages", config.logOutgoingMessages, true);
-    appendNumberField(json, "pollIntervalMs", config.pollIntervalMs, true);
-    appendNumberField(json, "commandReactionPollIntervalMs", config.commandReactionPollIntervalMs, true);
-    appendNumberField(json, "commandReactionTimeoutMs", config.commandReactionTimeoutMs, true);
-    appendBoolField(json, "fileStoreEnabled", config.fileStoreEnabled, true);
-    appendStringField(json, "fileStoreHost", config.fileStoreHost, true);
-    appendNumberField(json, "fileStorePort", config.fileStorePort, true);
-    appendStringField(json, "settingsKeyPath", config.settingsKeyPath, true);
-
-    json.append("\"usb\":{");
-    appendStringField(json, "device", config.usb.device, true);
-    appendStringField(json, "topic", config.usb.topic, false);
-    json.append("},\"devices\":[");
+    std::string json{"{\"devices\":["};
 
     for (std::size_t index = 0U; index < config.devices.size(); ++index) {
         appendDeviceAsJson(json, config.devices[index]);
