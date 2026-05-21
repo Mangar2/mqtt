@@ -10,6 +10,7 @@
 #include "yaha/mqtt_component/mqtt_component.h"
 
 #include <functional>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -73,6 +74,12 @@ public:
     void handleMessage(const Message& message) override;
 
     /**
+     * @brief Stores one message directly in the internal tree.
+     * @param message Inbound message.
+     */
+    void storeMessageDirect(const Message& message);
+
+    /**
      * @brief Starts component lifecycle: restore, HTTP start, periodic persistence.
      */
     void run() override;
@@ -113,6 +120,18 @@ public:
         queryNodes(const std::vector<MessageTreeSnapshotNode>& snapshot,
                 bool includeHistory,
                 bool includeReason) const;
+
+    /**
+     * @brief Returns compression statistics of the internal tree.
+     * @return Internal compression counters.
+     */
+    [[nodiscard]] MessageTree::CompressionStats queryCompressionStats() const;
+
+    /**
+     * @brief Persists one snapshot immediately and returns written file path.
+     * @return Written snapshot path on success; empty optional on failure.
+     */
+    [[nodiscard]] std::optional<std::filesystem::path> persistSnapshotNow();
 
 private:
     void startHttpServer();

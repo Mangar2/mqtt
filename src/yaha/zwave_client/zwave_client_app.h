@@ -34,6 +34,25 @@ struct ZwaveClientRuntimeConfig {
     std::string& errorMessage);
 
 /**
+ * @brief Applies per-node device overrides from a JSON settings document.
+ * @param jsonText JSON payload loaded from FileStore.
+ * @param output ZWave config to update.
+ * @param errorMessage Human-readable error text on parse/validation failure.
+ * @return True when JSON parsing and device merge succeeded.
+ */
+[[nodiscard]] bool tryApplyZwaveDeviceSettingsFromJson(
+    const std::string& jsonText,
+    ZwaveConfig& output,
+    std::string& errorMessage);
+
+/**
+ * @brief Serializes full ZWave settings to JSON for FileStore persistence.
+ * @param config Effective ZWave settings.
+ * @return JSON string containing all settings and device rows.
+ */
+[[nodiscard]] std::string serializeZwaveSettingsToJson(const ZwaveConfig& config);
+
+/**
  * @brief Maps runtime configuration from parsed INI document.
  * @param document Parsed INI document.
  * @param output Loaded runtime configuration on success.

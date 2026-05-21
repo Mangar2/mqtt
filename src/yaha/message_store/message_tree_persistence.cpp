@@ -5,7 +5,6 @@
 #include <fstream>
 #include <iomanip>
 #include <ios>
-#include <limits>
 #include <sstream>
 #include <utility>
 
@@ -13,21 +12,9 @@ namespace yaha {
 
 namespace {
 
-constexpr int k_double_precision_digits{17};
-
 std::int64_t wallClockMilliseconds() {
     const auto now = std::chrono::system_clock::now().time_since_epoch();
     return std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-}
-
-bool writeValue(std::ofstream& stream, const Value& value) {
-    if (std::holds_alternative<std::string>(value)) {
-        stream << "S " << std::quoted(std::get<std::string>(value)) << '\n';
-        return static_cast<bool>(stream);
-    }
-
-    stream << "N " << std::setprecision(k_double_precision_digits) << std::get<double>(value) << '\n';
-    return static_cast<bool>(stream);
 }
 
 bool readValue(std::ifstream& stream, Value& value) {
@@ -57,15 +44,6 @@ bool readValue(std::ifstream& stream, Value& value) {
     return false;
 }
 
-bool writeReasonList(std::ofstream& stream, const std::vector<ReasonEntry>& reasonList) {
-    stream << reasonList.size() << '\n';
-    for (const auto& reason : reasonList) {
-        stream << std::quoted(reason.message) << ' '
-               << std::quoted(reason.timestamp) << '\n';
-    }
-    return static_cast<bool>(stream);
-}
-
 bool readReasonList(std::ifstream& stream, std::vector<ReasonEntry>& reasonList) {
     std::size_t count = 0U;
     if (!(stream >> count)) {
@@ -83,32 +61,6 @@ bool readReasonList(std::ifstream& stream, std::vector<ReasonEntry>& reasonList)
     }
 
     return true;
-}
-
-bool writeNode(std::ofstream& stream, const MessageTreeNode& node) {
-    stream << std::quoted(node.topic) << '\n';
-    stream << node.timeMs << '\n';
-
-    if (!writeValue(stream, node.value)) {
-        return false;
-    }
-
-    if (!writeReasonList(stream, node.reason)) {
-        return false;
-    }
-
-    stream << node.history.size() << '\n';
-    for (const auto& historyEntry : node.history) {
-        stream << historyEntry.timeMs << '\n';
-        if (!writeValue(stream, historyEntry.value)) {
-            return false;
-        }
-        if (!writeReasonList(stream, historyEntry.reason)) {
-            return false;
-        }
-    }
-
-    return static_cast<bool>(stream);
 }
 
 bool readNode(std::ifstream& stream, MessageTreeNode& node) {
@@ -165,35 +117,34 @@ MessageTreePersistence::~MessageTreePersistence() {
 }
 
 bool MessageTreePersistence::persistNow(const MessageTree& tree) {
+    return persistNowWithPath(tree).has_value();
+}
+
+std::optional<std::filesystem::path>
+MessageTreePersistence::persistNowWithPath(const MessageTree& tree) {
     std::error_code err{};
     std::filesystem::create_directories(config_.directory, err);
     if (err) {
-        return false;
+        return std::nullopt;
     }
 
-    const std::vector<MessageTreeNode> nodes =
-        tree.getSection("", std::numeric_limits<std::uint32_t>::max(), true, true);
-
-    const std::filesystem::path path = makeSnapshotPath(wallClockMilliseconds());
+    std::filesystem::path path = makeSnapshotPath(wallClockMilliseconds());
     std::ofstream stream{path, std::ios::out | std::ios::trunc};
     if (!stream.is_open()) {
-        return false;
+        return std::nullopt;
     }
 
-    stream << "MTREE1\n";
-    stream << nodes.size() << '\n';
-    for (const auto& node : nodes) {
-        if (!writeNode(stream, node)) {
-            return false;
-        }
+    stream << "MTREE2\n";
+    if (!tree.writeCompressed(stream)) {
+        return std::nullopt;
     }
 
     if (!stream.good()) {
-        return false;
+        return std::nullopt;
     }
 
     enforceRetention();
-    return true;
+    return std::move(path);
 }
 
 bool MessageTreePersistence::restoreLatest(MessageTree& tree) {
@@ -205,7 +156,18 @@ bool MessageTreePersistence::restoreLatest(MessageTree& tree) {
         }
 
         std::string magic{};
-        if (!(stream >> magic) || magic != "MTREE1") {
+        if (!(stream >> magic)) {
+            continue;
+        }
+
+        if (magic == "MTREE2") {
+            if (tree.readCompressed(stream)) {
+                return true;
+            }
+            continue;
+        }
+
+        if (magic != "MTREE1") {
             continue;
         }
 
@@ -276,7 +238,7 @@ std::vector<std::filesystem::path> MessageTreePersistence::listSnapshotFilesNewe
         }
 
         const std::string fileName = entry.path().filename().string();
-        if (fileName.rfind(prefix, 0U) != 0U) {
+        if (!fileName.starts_with(prefix)) {
             continue;
         }
         if (entry.path().extension().string() != ".mtree") {
@@ -288,13 +250,13 @@ std::vector<std::filesystem::path> MessageTreePersistence::listSnapshotFilesNewe
 
         try {
             const std::int64_t stamp = std::stoll(number);
-            indexed.push_back({stamp, entry.path()});
+            indexed.emplace_back(stamp, entry.path());
         } catch (...) {
             continue;
         }
     }
 
-    std::sort(indexed.begin(), indexed.end(),
+    std::ranges::sort(indexed,
               [](const auto& left, const auto& right) {
         return left.first > right.first;
     });

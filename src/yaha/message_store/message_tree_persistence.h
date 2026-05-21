@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -57,6 +58,13 @@ public:
      * @return True on successful write.
      */
     [[nodiscard]] bool persistNow(const MessageTree& tree);
+
+    /**
+     * @brief Writes one snapshot file for current tree state and returns its path.
+     * @param tree Source tree.
+     * @return Written snapshot path on success; empty optional on failure.
+     */
+    [[nodiscard]] std::optional<std::filesystem::path> persistNowWithPath(const MessageTree& tree);
 
     /**
      * @brief Restores from the newest valid snapshot file.

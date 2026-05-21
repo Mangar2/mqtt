@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <iostream>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -539,7 +540,21 @@ void OpenZwaveRuntimeDriverPort::watcherThunk(OpenZWave::Notification const* not
     }
 
     auto* self = static_cast<OpenZwaveRuntimeDriverPort*>(context);
-    self->handleNotification(*notification);
+    try {
+        self->handleNotification(*notification);
+    } catch (const std::exception& exceptionValue) {
+        std::cerr << "zwave_client[error] op=watcher_notification"
+                  << " type=" << static_cast<int>(notification->GetType())
+                  << " node=" << notification->GetNodeId()
+                  << " detail=\"" << exceptionValue.what() << "\""
+                  << '\n' << std::flush;
+    } catch (...) {
+        std::cerr << "zwave_client[error] op=watcher_notification"
+                  << " type=" << static_cast<int>(notification->GetType())
+                  << " node=" << notification->GetNodeId()
+                  << " detail=\"unknown\""
+                  << '\n' << std::flush;
+    }
 }
 
 void OpenZwaveRuntimeDriverPort::handleNotification(OpenZWave::Notification const& notification) {

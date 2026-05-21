@@ -286,7 +286,7 @@ TEST_CASE("management_messages_are_forwarded_and_scan_success_is_published", "[z
     });
 
     service.handleMessage(yaha::Message{"system/zwave/removefailednode/set", yaha::Value{kRemoveFailedPayload}});
-    service.handleMessage(yaha::Message{"system/zwave/addnode/set", yaha::Value{std::string{"ignored"}}});
+    service.handleMessage(yaha::Message{"system/zwave/addnode/set", yaha::Value{std::string{"on"}}});
     service.handleMessage(yaha::Message{"system/zwave/scan/set", yaha::Value{std::string{"now"}}});
 
     CHECK(controller->removeFailedCalls() == 1U);
@@ -417,6 +417,25 @@ TEST_CASE("addnode_status_turns_off_when_controller_reports_completion", "[zwave
     CHECK(std::get<std::string>(published[0].value()) == "on");
     CHECK(std::get<std::string>(published[1].value()) == "off");
     CHECK(hasReasonMessage(published[1], "addnode mode ended (controller feedback)"));
+}
+
+TEST_CASE("addnode_off_command_disables_without_forwarding_to_controller", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    service.handleMessage(yaha::Message{"system/zwave/addnode/set", yaha::Value{std::string{"off"}}});
+
+    CHECK(controller->addDeviceCalls() == 0U);
+    REQUIRE(published.size() == 1U);
+    CHECK(published[0].topic() == "system/zwave/addnode");
+    REQUIRE(std::holds_alternative<std::string>(published[0].value()));
+    CHECK(std::get<std::string>(published[0].value()) == "off");
+    CHECK(hasReasonMessage(published[0], "addnode inclusion mode disabled"));
 }
 
 TEST_CASE("publish_without_callback_logs_error", "[zwave_service]") {
@@ -721,7 +740,7 @@ TEST_CASE("add_node_exception_publishes_error_message", "[zwave_service]") {
         published.push_back(message.clone());
     });
 
-    service.handleMessage(yaha::Message{"system/zwave/addnode/set", yaha::Value{std::string{"ignored"}}});
+    service.handleMessage(yaha::Message{"system/zwave/addnode/set", yaha::Value{std::string{"on"}}});
 
     REQUIRE(published.size() == 3U);
     CHECK(published[0].topic() == "system/zwave/addnode");
@@ -740,7 +759,7 @@ TEST_CASE("add_node_unknown_exception_publishes_error_message", "[zwave_service]
         published.push_back(message.clone());
     });
 
-    service.handleMessage(yaha::Message{"system/zwave/addnode/set", yaha::Value{std::string{"ignored"}}});
+    service.handleMessage(yaha::Message{"system/zwave/addnode/set", yaha::Value{std::string{"on"}}});
 
     REQUIRE(published.size() == 3U);
     CHECK(published[0].topic() == "system/zwave/addnode");

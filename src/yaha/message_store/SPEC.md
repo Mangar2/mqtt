@@ -32,6 +32,7 @@ struct MessageTreeNode;
 | `getNodes` | `vector<MessageTreeNode>(const vector<MessageTreeSnapshotNode>&, bool, bool) const` | returns changed nodes for provided snapshot topics only |
 | `cleanup` | `size_t(uint32_t)` | removes stale nodes older than N days |
 | `replaceAllNodes` | `void(const vector<MessageTreeNode>&)` | replaces full tree from persisted snapshot |
+| `compressionStats` | `CompressionStats() const` | returns internal history compression counters |
 
 ### Class `MessageTreePersistence`
 
@@ -50,10 +51,13 @@ struct MessageTreeNode;
 | ctor | `MessageStore(MessageStoreConfig)` | builds tree+persistence from config |
 | `getSubscriptions` | `SubscriptionMap() const` | returns configured topic->QoS map |
 | `handleMessage` | `void(const Message&)` | cleanup-topic dispatch or tree addData |
+| `storeMessageDirect` | `void(const Message&)` | direct tree addData only (no cleanup dispatch/logging) |
 | `run` | `void()` | restore, start HTTP callback, start periodic persistence |
 | `close` | `void()` | stop HTTP callback, stop periodic persistence, final persist |
 | `querySection` | `vector<MessageTreeNode>(...) const` | read API used by future HTTP step |
 | `queryNodes` | `vector<MessageTreeNode>(const vector<MessageTreeSnapshotNode>&, bool, bool) const` | snapshot diff read API |
+| `queryCompressionStats` | `MessageTree::CompressionStats() const` | thread-safe internal compression counters |
+| `persistSnapshotNow` | `optional<filesystem::path>()` | thread-safe immediate snapshot persist returning written path |
 
 ## Data behavior
 
@@ -118,8 +122,9 @@ struct MessageTreeNode;
 ## Persistence behavior
 
 - File naming: `<filename>_<timestamp>.mtree` in configured directory.
-- `persistNow` writes full tree snapshot including current values and history.
+- `persistNow` writes full tree snapshot in compressed internal tree form (`MTREE2`) without history decompression.
 - `restoreLatest` scans candidate files newest-first and loads first valid snapshot.
+- `restoreLatest` supports `MTREE2` direct compressed format and keeps backward-compatible fallback loading for legacy `MTREE1` snapshots.
 - Missing/corrupt files are handled silently; restore returns false and tree remains usable.
 - Retention keeps newest `keepFiles` snapshots and deletes older files.
 - Periodic mode persists every `interval` milliseconds; `interval == 0` disables periodic loop.
@@ -130,6 +135,9 @@ struct MessageTreeNode;
 - `handleMessage()`:
   - cleanup topic: parse payload as days and call `tree.cleanup(days)`.
   - other topics: call `tree.addData(message)`.
+- `storeMessageDirect()` always calls `tree.addData(message)` without cleanup-topic special handling.
+- `queryCompressionStats()` exposes counts of compressed history bucket types (`single`, `timeValue`, `time`, `interval`) and represented logical history message counts.
+- `persistSnapshotNow()` writes one snapshot file immediately and returns the written path on success.
 - Non-numeric cleanup payload emits one structured error log line (`message_store[error] op=cleanup ...`).
 - `run()` restores latest persisted snapshot before serving.
 - `run()` emits structured restore error log when no valid snapshot is available.

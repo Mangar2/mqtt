@@ -465,6 +465,13 @@ void MessageStore::handleMessage(const Message& message) {
     tree_.addData(message);
 }
 
+void MessageStore::storeMessageDirect(const Message& message) {
+    Message::validate(message);
+
+    std::lock_guard<std::mutex> lock{treeStateMutex_};
+    tree_.addData(message);
+}
+
 void MessageStore::run() {
     {
         std::lock_guard<std::mutex> lock{lifecycleStateMutex_};
@@ -556,6 +563,16 @@ MessageStore::queryNodes(const std::vector<MessageTreeSnapshotNode>& snapshot,
                          bool includeReason) const {
     std::lock_guard<std::mutex> lock{treeStateMutex_};
     return tree_.getNodes(snapshot, includeHistory, includeReason);
+}
+
+MessageTree::CompressionStats MessageStore::queryCompressionStats() const {
+    std::lock_guard<std::mutex> lock{treeStateMutex_};
+    return tree_.compressionStats();
+}
+
+std::optional<std::filesystem::path> MessageStore::persistSnapshotNow() {
+    std::lock_guard<std::mutex> lock{treeStateMutex_};
+    return persistence_.persistNowWithPath(tree_);
 }
 
 void MessageStore::startHttpServer() {

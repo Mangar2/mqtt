@@ -17,6 +17,7 @@ namespace yaha {
 inline constexpr std::uint32_t kZwaveDefaultPollIntervalMs = 500U;
 inline constexpr std::uint32_t kZwaveDefaultCommandReactionPollIntervalMs = 500U;
 inline constexpr std::uint32_t kZwaveDefaultCommandReactionTimeoutMs = 30000U;
+inline constexpr std::uint16_t kZwaveDefaultFileStorePort = 8210U;
 
 /**
  * @brief USB controller endpoint configuration for ZWave runtime.
@@ -52,6 +53,10 @@ struct ZwaveConfig {
     std::uint32_t pollIntervalMs{kZwaveDefaultPollIntervalMs}; ///< OpenZWave poll interval in milliseconds.
     std::uint32_t commandReactionPollIntervalMs{kZwaveDefaultCommandReactionPollIntervalMs}; ///< Poll interval in milliseconds for tracked command confirmation.
     std::uint32_t commandReactionTimeoutMs{kZwaveDefaultCommandReactionTimeoutMs}; ///< Timeout in milliseconds for tracked command confirmation.
+    bool fileStoreEnabled{false};             ///< Enables startup device-settings sync with FileStore.
+    std::string fileStoreHost{"127.0.0.1"}; ///< FileStore HTTP host.
+    std::uint16_t fileStorePort{kZwaveDefaultFileStorePort}; ///< FileStore HTTP port.
+    std::string settingsKeyPath{"/zwave/settings"}; ///< FileStore key path for ZWave settings JSON.
     ZwaveUsbConfig usb{};                     ///< USB/controller endpoint configuration.
     std::vector<ZwaveDeviceConfig> devices{}; ///< Required list of configured ZWave devices.
 };

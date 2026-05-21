@@ -4,6 +4,7 @@
 
 #include <exception>
 #include <cctype>
+#include <cmath>
 #include <iostream>
 #include <ranges>
 #include <stdexcept>
@@ -16,6 +17,7 @@ namespace {
 
 constexpr std::string_view kSystemZwavePrefix = "system/zwave";
 constexpr std::string_view kMonitorZwavePrefix = "$MONITOR/zwave";
+constexpr double kNumericCommandTolerance = 1e-9;
 
 [[nodiscard]] bool importantLogEnabled(const ZwaveConfig& config) {
     return config.logLevel >= 1U;
@@ -57,6 +59,41 @@ constexpr std::string_view kMonitorZwavePrefix = "$MONITOR/zwave";
     if (const auto* text = std::get_if<std::string>(&value); text != nullptr) {
         return *text;
     }
+    return std::nullopt;
+}
+
+[[nodiscard]] std::optional<bool> parseStartStopCommand(const Value& value) {
+    if (const auto* numericValue = std::get_if<double>(&value); numericValue != nullptr) {
+        if (std::fabs(*numericValue - 1.0) < kNumericCommandTolerance) {
+            return true;
+        }
+        if (std::fabs(*numericValue) < kNumericCommandTolerance) {
+            return false;
+        }
+        return std::nullopt;
+    }
+
+    const std::string normalized = toLower(std::get<std::string>(value));
+    if (normalized == "on"
+        || normalized == "true"
+        || normalized == "1"
+        || normalized == "start"
+        || normalized == "now"
+        || normalized == "enable"
+        || normalized == "enabled") {
+        return true;
+    }
+
+    if (normalized == "off"
+        || normalized == "false"
+        || normalized == "0"
+        || normalized == "stop"
+        || normalized == "cancel"
+        || normalized == "disable"
+        || normalized == "disabled") {
+        return false;
+    }
+
     return std::nullopt;
 }
 
@@ -130,6 +167,24 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
 
     if (isAddNodeTopic(message.topic())) {
         logImportantEvent("addnode", "request received");
+        const std::optional<bool> addNodeRequested = parseStartStopCommand(message.value());
+        if (!addNodeRequested.has_value()) {
+            logImportantError("addnode", "unsupported payload");
+            addNodeActive_ = false;
+            publishManagementStatus("addnode", Value{std::string{"off"}}, "addnode ignored: unsupported payload");
+            publish(withPublishFlags(makeOperationErrorMessage("addnode", "unsupported payload"),
+                                     config_.qos,
+                                     config_.retain));
+            return;
+        }
+
+        if (!*addNodeRequested) {
+            addNodeActive_ = false;
+            publishManagementStatus("addnode", Value{std::string{"off"}}, "addnode inclusion mode disabled");
+            logImportantEvent("addnode", "request disabled");
+            return;
+        }
+
         addNodeActive_ = true;
         publishManagementStatus("addnode", Value{std::string{"on"}}, "addnode inclusion mode requested");
         try {

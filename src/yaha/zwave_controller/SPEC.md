@@ -95,10 +95,10 @@ Concrete parity adapter implementation with additional callback entry points:
 ## Event and publish contract
 
 - Driver lifecycle:
-  - `onDriverReady` publishes `$MONITOR/zwave/scan` value `scanning`
+  - `onDriverReady` publishes `system/zwave/scan` value `scanning`
   - `onDriverFailed` publishes `$MONITOR/zwave/driver/error/state` value `driver_failed`
-  - `onDriverFailed` publishes `$MONITOR/zwave/scan` value `failed`
-  - `onScanComplete` publishes `$MONITOR/zwave/scan` value `scanning_complete`
+  - `onDriverFailed` publishes `system/zwave/scan` value `failed`
+  - `onScanComplete` publishes `system/zwave/scan` value `off`
 - Notification callback is resource-oriented:
   - all node-scoped state topics use mapped device paths: `$MONITOR/<device-topic>/<state>`
   - `Timeout` -> `$MONITOR/<device-topic>/comm/state` value `timeout`
@@ -149,7 +149,8 @@ Concrete parity adapter implementation with additional callback entry points:
   - mapped devices publish via `valueToTopicAndType`
   - `switch` type converts bool to `on`/`off`
   - mapping failures fall back to `$MONITOR/<device-topic>/class/<classId>/instance/<instance>/index/<index>/value/unmapped`
-  - when no device-topic mapping is available, fallback uses `$MONITOR/unmapped/class/<classId>/instance/<instance>/index/<index>/value/unmapped`
+  - when no device-topic mapping is available, fallback uses `$MONITOR/zwave/node/<nodeId>/class/<classId>/instance/<instance>/index/<index>/value/unmapped`
+  - value/event reasons include actionable context `received from zwave network node: <nodeId>` and append network id when available
 
 ## Files
 

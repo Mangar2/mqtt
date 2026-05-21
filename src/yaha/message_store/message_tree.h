@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <iosfwd>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -80,6 +81,23 @@ struct MessageTreeConfig {
 class MessageTree {
 public:
     /**
+     * @brief Compression status counters of internal history representation.
+     */
+    struct CompressionStats {
+        std::uint64_t currentNodeCount{0U};            ///< Topic nodes that currently hold a value.
+        std::uint64_t totalStoredMessageCount{0U};     ///< Current nodes + represented history messages.
+        std::uint64_t historyBucketCount{0U};          ///< Number of compressed history buckets.
+        std::uint64_t singleBucketCount{0U};           ///< Bucket count of SingleHistoryEntry.
+        std::uint64_t timeValueBucketCount{0U};        ///< Bucket count of TimeValueHistoryEntry.
+        std::uint64_t timeBucketCount{0U};             ///< Bucket count of TimeHistoryEntry.
+        std::uint64_t intervalBucketCount{0U};         ///< Bucket count of IntervalHistoryEntry.
+        std::uint64_t representedSingleCount{0U};      ///< Logical history messages represented by Single buckets.
+        std::uint64_t representedTimeValueCount{0U};   ///< Logical history messages represented by TimeValue buckets.
+        std::uint64_t representedTimeCount{0U};        ///< Logical history messages represented by Time buckets.
+        std::uint64_t representedIntervalCount{0U};    ///< Logical history messages represented by Interval buckets.
+    };
+
+    /**
      * @brief Constructs tree with configuration.
      * @param config Runtime behavior configuration.
     */
@@ -127,6 +145,26 @@ public:
      * @return Number of removed data nodes.
      */
     std::size_t cleanup(std::uint32_t daysWithoutUpdate);
+
+    /**
+     * @brief Returns counters about internal compression state.
+     * @return Compression counters for current tree content.
+     */
+    [[nodiscard]] CompressionStats compressionStats() const;
+
+    /**
+     * @brief Writes full internal tree in compressed form to stream.
+     * @param stream Destination stream.
+     * @return True on successful write.
+     */
+    [[nodiscard]] bool writeCompressed(std::ostream& stream) const;
+
+    /**
+     * @brief Reads full internal tree in compressed form from stream.
+     * @param stream Source stream.
+     * @return True on successful parse and replace.
+     */
+    [[nodiscard]] bool readCompressed(std::istream& stream);
 
 private:
     /**
@@ -416,6 +454,27 @@ private:
      */
     [[nodiscard]] static bool snapshotEquals(const MessageTreeNode& current,
                                              const MessageTreeSnapshotNode& snapshot);
+
+    [[nodiscard]] static bool writeValueToken(std::ostream& stream, const Value& value);
+    [[nodiscard]] static bool readValueToken(std::istream& stream, Value& value);
+    [[nodiscard]] static bool writeReasonListToken(std::ostream& stream,
+                                                   const std::vector<ReasonEntry>& reasonList);
+    [[nodiscard]] static bool readReasonListToken(std::istream& stream,
+                                                  std::vector<ReasonEntry>& reasonList);
+    [[nodiscard]] static bool writeCompressedHistoryEntry(std::ostream& stream,
+                                                          const CompressedHistoryEntry& entry);
+    [[nodiscard]] static bool readCompressedHistoryEntry(std::istream& stream,
+                                                         CompressedHistoryEntry& entry);
+    [[nodiscard]] static bool readSingleHistoryEntry(std::istream& stream,
+                                                     CompressedHistoryEntry& entry);
+    [[nodiscard]] static bool readTimeValueHistoryEntry(std::istream& stream,
+                                                        CompressedHistoryEntry& entry);
+    [[nodiscard]] static bool readTimeHistoryEntry(std::istream& stream,
+                                                   CompressedHistoryEntry& entry);
+    [[nodiscard]] static bool readIntervalHistoryEntry(std::istream& stream,
+                                                       CompressedHistoryEntry& entry);
+    [[nodiscard]] bool writeCompressedTreeNode(std::ostream& stream, const TreeNode& node) const;
+    [[nodiscard]] bool readCompressedTreeNode(std::istream& stream, TreeNode& node);
 
     /**
      * @brief Recursively removes stale data and prunes empty branches.

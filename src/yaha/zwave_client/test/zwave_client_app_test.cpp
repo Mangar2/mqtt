@@ -10,6 +10,12 @@
 
 namespace {
 
+constexpr std::uint16_t kOverrideNodeIdSeven = 7U;
+constexpr std::uint16_t kOverrideNodeIdEight = 8U;
+constexpr std::uint16_t kOverrideNodeIdNine = 9U;
+constexpr std::uint16_t kOverrideClassSwitchBinary = 37U;
+constexpr std::uint16_t kOverrideClassSensorMultilevel = 49U;
+
 [[nodiscard]] std::filesystem::path makeTemporaryDirectory() {
     const auto tickValue = std::chrono::steady_clock::now().time_since_epoch().count();
     const std::filesystem::path directoryPath =
@@ -450,6 +456,83 @@ TEST_CASE("load_zwave_runtime_config_combines_zwave_and_mqtt_sections", "[zwave_
     CHECK(runtimeConfig.mqttConfig.keepAliveInterval.count() == 40000);
     CHECK(runtimeConfig.mqttConfig.loopSleep.count() == 50);
     CHECK_FALSE(runtimeConfig.mqttConfig.logReason);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("load_zwave_config_parses_filestore_settings", "[zwave_client]") {
+    const yaha::IniDocument document = loadIni(
+        "[filestore]\n"
+        "use=true\n"
+        "host=filestore.local\n"
+        "port=9000\n"
+        "filename=/zwave/config/settings\n"
+        "\n"
+        "[zwave]\n"
+        "usbDevice=/dev/ttyUSB9\n"
+        "usbTopic=home/zwave/controller\n"
+        "device=home/lamp|9|37|1|0|switch|power\n");
+
+    yaha::ZwaveConfig config{};
+    std::string errorMessage{};
+
+    const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
+
+    REQUIRE(loaded);
+    CHECK(errorMessage.empty());
+    CHECK(config.fileStoreEnabled);
+    CHECK(config.fileStoreHost == "filestore.local");
+    CHECK(config.fileStorePort == 9000U);
+    CHECK(config.settingsKeyPath == "/zwave/config/settings");
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("apply_zwave_device_settings_from_json_overrides_ini_nodes_completely", "[zwave_client]") {
+    yaha::ZwaveConfig config{};
+    config.devices = {
+        yaha::ZwaveDeviceConfig{
+            .topic = "ini/node7/switch",
+            .nodeId = kOverrideNodeIdSeven,
+            .classId = std::optional<std::uint16_t>{kOverrideClassSwitchBinary},
+            .instance = std::optional<std::uint8_t>{1U},
+            .index = std::optional<std::uint8_t>{0U},
+            .type = std::optional<std::string>{"switch"},
+            .label = std::optional<std::string>{"power"}},
+        yaha::ZwaveDeviceConfig{
+            .topic = "ini/node7/sensor",
+            .nodeId = kOverrideNodeIdSeven,
+            .classId = std::optional<std::uint16_t>{kOverrideClassSensorMultilevel},
+            .instance = std::optional<std::uint8_t>{1U},
+            .index = std::optional<std::uint8_t>{1U},
+            .type = std::optional<std::string>{"number"},
+            .label = std::optional<std::string>{"temperature"}},
+        yaha::ZwaveDeviceConfig{
+            .topic = "ini/node8/switch",
+            .nodeId = kOverrideNodeIdEight,
+            .classId = std::optional<std::uint16_t>{kOverrideClassSwitchBinary},
+            .instance = std::optional<std::uint8_t>{1U},
+            .index = std::optional<std::uint8_t>{0U},
+            .type = std::optional<std::string>{"switch"},
+            .label = std::optional<std::string>{"power"}}};
+
+    const std::string jsonText =
+        "{\"devices\":["
+        "{\"topic\":\"store/node7/replacement\",\"nodeId\":7,\"classId\":39,\"instance\":1,\"index\":0,\"type\":\"list\",\"label\":\"mode\"},"
+        "{\"topic\":\"store/node9/new\",\"nodeId\":9}"
+        "]}";
+
+    std::string errorMessage{};
+    const bool applied = yaha::tryApplyZwaveDeviceSettingsFromJson(jsonText, config, errorMessage);
+
+    REQUIRE(applied);
+    CHECK(errorMessage.empty());
+    REQUIRE(config.devices.size() == 3U);
+
+    CHECK(config.devices[0].topic == "ini/node8/switch");
+    CHECK(config.devices[0].nodeId == kOverrideNodeIdEight);
+    CHECK(config.devices[1].topic == "store/node7/replacement");
+    CHECK(config.devices[1].nodeId == kOverrideNodeIdSeven);
+    CHECK(config.devices[2].topic == "store/node9/new");
+    CHECK(config.devices[2].nodeId == kOverrideNodeIdNine);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)

@@ -22,6 +22,9 @@ constexpr int k_periodic_wait_ms{70};
 constexpr int k_short_wait_ms{30};
 constexpr std::uint32_t k_normal_interval_ms{15U};
 constexpr int k_normal_wait_ms{45};
+constexpr int k_interval_series_count{100};
+constexpr int k_time_value_series_count{120};
+constexpr double k_interval_series_value{34.0};
 
 struct FakeClock {
     std::int64_t nowMs{k_initial_now_ms};
@@ -375,5 +378,108 @@ TEST_CASE("default_constructor_can_persist_and_restore_reason_history", "[messag
 
     std::filesystem::current_path(oldCwd);
     removeDirectoryQuiet(tempDir / "data");
+    removeDirectoryQuiet(tempDir);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("persist_now_writes_mtree2_and_restore_keeps_compression_stats", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree source = makeTree(clock);
+
+    for (int idx = 0; idx < k_interval_series_count; ++idx) {
+        yaha::Message message{"interval/topic", k_interval_series_value};
+        message.addReason("constant reason", "2026-01-01T00:00:00Z");
+        source.addData(message);
+        clock.nowMs += k_tick_ms;
+    }
+
+    for (int idx = 0; idx < k_time_value_series_count; ++idx) {
+        yaha::Message message{"timevalue/topic", static_cast<double>(idx)};
+        message.addReason("constant reason", "2026-01-01T00:00:00Z");
+        source.addData(message);
+        clock.nowMs += k_tick_ms;
+    }
+
+    const auto expectedStats = source.compressionStats();
+    const auto tempDir = makeTempDirectory();
+
+    yaha::MessageTreePersistence::Config persistenceConfig{};
+    persistenceConfig.directory = tempDir;
+    persistenceConfig.filename = "state";
+
+    yaha::MessageTreePersistence persistence{persistenceConfig};
+    REQUIRE(persistence.persistNow(source));
+
+    std::filesystem::path snapshotPath{};
+    for (const auto& entry : std::filesystem::directory_iterator{tempDir}) {
+        if (entry.path().extension().string() == ".mtree") {
+            snapshotPath = entry.path();
+            break;
+        }
+    }
+    REQUIRE(!snapshotPath.empty());
+
+    std::ifstream snapshotStream{snapshotPath};
+    REQUIRE(snapshotStream.is_open());
+    std::string magic{};
+    snapshotStream >> magic;
+    REQUIRE(magic == "MTREE2");
+
+    FakeClock restoreClock{};
+    yaha::MessageTree restored = makeTree(restoreClock);
+    REQUIRE(persistence.restoreLatest(restored));
+    REQUIRE(restored.compressionStats().currentNodeCount == expectedStats.currentNodeCount);
+    REQUIRE(restored.compressionStats().historyBucketCount == expectedStats.historyBucketCount);
+    REQUIRE(restored.compressionStats().singleBucketCount == expectedStats.singleBucketCount);
+    REQUIRE(restored.compressionStats().timeValueBucketCount == expectedStats.timeValueBucketCount);
+    REQUIRE(restored.compressionStats().timeBucketCount == expectedStats.timeBucketCount);
+    REQUIRE(restored.compressionStats().intervalBucketCount == expectedStats.intervalBucketCount);
+    REQUIRE(restored.compressionStats().representedSingleCount == expectedStats.representedSingleCount);
+    REQUIRE(restored.compressionStats().representedTimeValueCount == expectedStats.representedTimeValueCount);
+    REQUIRE(restored.compressionStats().representedTimeCount == expectedStats.representedTimeCount);
+    REQUIRE(restored.compressionStats().representedIntervalCount == expectedStats.representedIntervalCount);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("restore_latest_reads_legacy_mtree1_snapshot", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    const auto legacyPath = tempDir / "state_1.mtree";
+    std::ofstream file{legacyPath, std::ios::out | std::ios::trunc};
+    REQUIRE(file.is_open());
+
+    file << "MTREE1\n";
+    file << "1\n";
+    file << std::quoted(std::string{"legacy/topic"}) << "\n";
+    file << "2000\n";
+    file << "S " << std::quoted(std::string{"new"}) << "\n";
+    file << "1\n";
+    file << std::quoted(std::string{"new reason"}) << ' '
+         << std::quoted(std::string{"2026-01-01T00:00:02Z"}) << "\n";
+    file << "1\n";
+    file << "1000\n";
+    file << "S " << std::quoted(std::string{"old"}) << "\n";
+    file << "1\n";
+    file << std::quoted(std::string{"old reason"}) << ' '
+         << std::quoted(std::string{"2026-01-01T00:00:01Z"}) << "\n";
+    file.close();
+
+    yaha::MessageTreePersistence::Config persistenceConfig{};
+    persistenceConfig.directory = tempDir;
+    persistenceConfig.filename = "state";
+    yaha::MessageTreePersistence persistence{persistenceConfig};
+
+    FakeClock restoreClock{};
+    yaha::MessageTree restored = makeTree(restoreClock);
+    REQUIRE(persistence.restoreLatest(restored));
+
+    const auto nodes = restored.getSection("legacy/topic", 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().topic == "legacy/topic");
+    REQUIRE(std::get<std::string>(nodes.front().value) == "new");
+    REQUIRE(nodes.front().history.size() == 1U);
+    REQUIRE(std::get<std::string>(nodes.front().history.front().value) == "old");
+
     removeDirectoryQuiet(tempDir);
 }

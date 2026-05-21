@@ -100,7 +100,7 @@ bool waitForHttpReady(std::uint16_t port) {
 }
 
 std::string extractFirstTimeIso(const std::string& json) {
-    const std::string token{"\"time\":\""};
+    const std::string token{R"("time":")"};
     const std::size_t start = json.find(token);
     if (start == std::string::npos) {
         return {};
@@ -162,6 +162,42 @@ TEST_CASE("handle_message_adds_regular_topic_to_tree", "[message_store]") {
     REQUIRE(nodes.size() == 1U);
     REQUIRE(nodes.front().topic == "home/lamp");
     REQUIRE(std::get<std::string>(nodes.front().value) == "on");
+}
+
+TEST_CASE("store_message_direct_treats_cleanup_topic_as_regular_data", "[message_store]") {
+    yaha::MessageStoreConfig config{};
+    config.serverPort = 0U;
+    yaha::MessageStore store{config};
+
+    store.storeMessageDirect(yaha::Message{"$MONITOR/messages/cleanup", std::string{"raw"}});
+
+    const auto nodes = store.querySection("$MONITOR/messages/cleanup", 0U, false, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().topic == "$MONITOR/messages/cleanup");
+    REQUIRE(std::get<std::string>(nodes.front().value) == "raw");
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("query_compression_stats_reports_single_bucket_after_one_update", "[message_store]") {
+    yaha::MessageStoreConfig config{};
+    config.serverPort = 0U;
+    yaha::MessageStore store{config};
+
+    store.storeMessageDirect(yaha::Message{"home/lamp", std::string{"off"}});
+    store.storeMessageDirect(yaha::Message{"home/lamp", std::string{"on"}});
+
+    const auto stats = store.queryCompressionStats();
+    REQUIRE(stats.currentNodeCount == 1U);
+    REQUIRE(stats.totalStoredMessageCount == 2U);
+    REQUIRE(stats.historyBucketCount == 1U);
+    REQUIRE(stats.singleBucketCount == 1U);
+    REQUIRE(stats.timeValueBucketCount == 0U);
+    REQUIRE(stats.timeBucketCount == 0U);
+    REQUIRE(stats.intervalBucketCount == 0U);
+    REQUIRE(stats.representedSingleCount == 1U);
+    REQUIRE(stats.representedTimeValueCount == 0U);
+    REQUIRE(stats.representedTimeCount == 0U);
+    REQUIRE(stats.representedIntervalCount == 0U);
 }
 
 TEST_CASE("handle_message_cleanup_topic_uses_numeric_payload", "[message_store]") {
@@ -512,6 +548,7 @@ TEST_CASE("http_get_store_decodes_percent_encoded_hex_bytes", "[message_store]")
     REQUIRE(response->body.find("\"topic\":\"homeAroom/lamp\"") != std::string::npos);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("http_get_store_applies_levelamount_history_reason_headers", "[message_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};
@@ -837,7 +874,7 @@ TEST_CASE("http_get_store_snapshot_body_detects_time_only_updates", "[message_st
     store.handleMessage(yaha::Message{"home/lamp", std::string{"on"}});
 
     const std::string snapshotBody =
-        "[{\"topic\":\"home/lamp\",\"value\":\"on\",\"time\":\"" + previousTimeIso + "\"}]";
+        R"([{"topic":"home/lamp","value":"on","time":")" + previousTimeIso + R"("}])";
 
     httplib::Request request{};
     request.method = "GET";
@@ -919,8 +956,8 @@ TEST_CASE("http_get_store_outputs_iso_time_and_reason_timestamps", "[message_sto
     REQUIRE(response->body.find("\"time\":\"1970-01-01T00:00:00.500Z\"") != std::string::npos);
     REQUIRE(response->body.find("\"timestamp\":\"1970-01-01T00:00:02.000Z\"") != std::string::npos);
 
-    const std::size_t newestPosition = response->body.find("\"time\":\"1970-01-01T00:00:01.250Z\"");
-    const std::size_t oldestPosition = response->body.find("\"time\":\"1970-01-01T00:00:00.500Z\"");
+    const std::size_t newestPosition = response->body.find(R"("time":"1970-01-01T00:00:01.250Z")");
+    const std::size_t oldestPosition = response->body.find(R"("time":"1970-01-01T00:00:00.500Z")");
     REQUIRE(newestPosition != std::string::npos);
     REQUIRE(oldestPosition != std::string::npos);
     REQUIRE(newestPosition < oldestPosition);

@@ -389,7 +389,7 @@ TEST_CASE("remove_failed_node_rejects_non_numeric_or_fractional_values", "[zwave
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("driver_lifecycle_callbacks_publish_expected_monitoring_messages", "[zwave_controller]") {
+TEST_CASE("driver_lifecycle_callbacks_publish_expected_scan_and_monitor_messages", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
 
@@ -404,7 +404,7 @@ TEST_CASE("driver_lifecycle_callbacks_publish_expected_monitoring_messages", "[z
 
     REQUIRE(published.size() == 4U);
 
-    CHECK(published[0].topic() == "$MONITOR/zwave/scan");
+    CHECK(published[0].topic() == "system/zwave/scan");
     REQUIRE(std::holds_alternative<std::string>(published[0].value()));
     CHECK(std::get<std::string>(published[0].value()) == "scanning");
     REQUIRE(published[0].reason().size() == 1U);
@@ -414,13 +414,13 @@ TEST_CASE("driver_lifecycle_callbacks_publish_expected_monitoring_messages", "[z
     REQUIRE(std::holds_alternative<std::string>(published[1].value()));
     CHECK(std::get<std::string>(published[1].value()) == "driver_failed");
 
-    CHECK(published[2].topic() == "$MONITOR/zwave/scan");
+    CHECK(published[2].topic() == "system/zwave/scan");
     REQUIRE(std::holds_alternative<std::string>(published[2].value()));
     CHECK(std::get<std::string>(published[2].value()) == "failed");
 
-    CHECK(published[3].topic() == "$MONITOR/zwave/scan");
+    CHECK(published[3].topic() == "system/zwave/scan");
     REQUIRE(std::holds_alternative<std::string>(published[3].value()));
-    CHECK(std::get<std::string>(published[3].value()) == "scanning_complete");
+    CHECK(std::get<std::string>(published[3].value()) == "off");
 }
 
 TEST_CASE("driver_failed_callback_is_invoked", "[zwave_controller]") {
@@ -794,6 +794,36 @@ TEST_CASE("on_value_changed_without_mapping_falls_back_to_monitoring_topic", "[z
     CHECK(published[1].topic() == "$MONITOR/ground/livingroom/zwave/node22/class/37/instance/1/index/0/value/unmapped");
     REQUIRE(std::holds_alternative<std::string>(published[1].value()));
     CHECK(std::get<std::string>(published[1].value()) == "open");
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("on_value_changed_without_node_mapping_includes_node_id_in_unmapped_topic_and_reason", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    std::vector<yaha::Message> published{};
+    controller.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    controller.onValueChanged(yaha::ZwaveControllerValueEvent{
+        .nodeId = kUnknownNodeId,
+        .classId = kSwitchBinaryClass,
+        .instance = kInstanceOne,
+        .index = kIndexZero,
+        .label = std::optional<std::string>{"missing"},
+        .valueId = std::optional<std::uint64_t>{kValueIdSample},
+        .value = yaha::Value{std::string{"open"}},
+        .type = "switch",
+        .readOnly = false});
+
+    REQUIRE(published.size() == 1U);
+    CHECK(published[0].topic() == "$MONITOR/zwave/node/99/class/37/instance/1/index/0/value/unmapped");
+    REQUIRE(std::holds_alternative<std::string>(published[0].value()));
+    CHECK(std::get<std::string>(published[0].value()) == "open");
+    REQUIRE_FALSE(published[0].reason().empty());
+    CHECK(published[0].reason().front().message.find("node: 99") != std::string::npos);
+    CHECK(published[0].reason().front().message.find("id: 1001") != std::string::npos);
 }
 
 TEST_CASE("matching_feedback_prepends_tracked_reasons", "[zwave_controller]") {

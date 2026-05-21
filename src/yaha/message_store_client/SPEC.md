@@ -79,8 +79,22 @@ all YAHA apps can share the same non-domain runtime behavior.
 
 - optional positional `<config-path>` (default `broker.ini`)
 - `--trace-messages` for transport-level sent/recv traces
+- `--test <input-file>` for synchronous offline ingest benchmark mode (no MQTT/HTTP startup)
 - `--version` (`-V`) to print executable name and semantic version, then exit
 - `--help` (`-h`) to print usage
+
+### Test mode input format
+
+In `--test` mode, each non-empty and non-comment line (`#...`) must be one JSON object in canonical YAHA envelope shape:
+
+- `{"message":{"topic":"...","value":...,"reason":[{"message":"...","timestamp":"..."}]}}`
+
+The mode processes lines synchronously via direct MessageStore tree insertion,
+prints `messages=<count>` and `buildElapsedMs=<duration>`, and then persists one snapshot file.
+After persistence it prints `test.save` with save success flag, save duration, and written file path.
+At test end it also prints `test.stats` with internal compression counters:
+current nodes, total stored messages, bucket type counts (`single`, `timeValue`, `time`, `interval`),
+and represented logical history message counts per bucket type.
 
 ## Transport behavior
 

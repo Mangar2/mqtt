@@ -75,6 +75,10 @@ that orchestrates MQTT routing and controller lifecycle.
 - remove-failed topic -> `controller.removeFailedNode(...)`
 	- success status: `system/zwave/removefailednode` value `deleted`
 - add-node topic -> `controller.addDevice()`
+	- command payload semantics:
+		- start inclusion for values `on|true|1|start|now|enable|enabled`
+		- disable inclusion mode for values `off|false|0|stop|cancel|disable|disabled`
+		- unsupported payloads are rejected, inclusion mode remains `off`, and an operation error publish is emitted
 - scan topic -> `controller.startScan()` with deterministic success/failure publish:
 	- success: `system/zwave/scan` value `on`
 	- failure: `system/zwave/scan` value `off`

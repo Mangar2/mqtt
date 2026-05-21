@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <iomanip>
+#include <istream>
+#include <ostream>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -173,6 +176,402 @@ std::size_t MessageTree::cleanup(std::uint32_t daysWithoutUpdate) {
     const std::int64_t cutoffMs = nowMilliseconds() -
         (static_cast<std::int64_t>(daysWithoutUpdate) * k_millis_per_day);
     return cleanupNode(root_, cutoffMs);
+}
+
+MessageTree::CompressionStats MessageTree::compressionStats() const {
+    CompressionStats stats{};
+
+    const auto accumulateNode = [&](const auto& self, const TreeNode& node) -> void {
+        if (node.hasData) {
+            stats.currentNodeCount += 1U;
+            for (const auto& historyEntry : node.data.compressedHistory) {
+                stats.historyBucketCount += 1U;
+                if (const auto* singleEntry = std::get_if<SingleHistoryEntry>(&historyEntry.data)) {
+                    (void)singleEntry;
+                    stats.singleBucketCount += 1U;
+                    stats.representedSingleCount += 1U;
+                    continue;
+                }
+
+                if (const auto* timeValueEntry = std::get_if<TimeValueHistoryEntry>(&historyEntry.data)) {
+                    stats.timeValueBucketCount += 1U;
+                    stats.representedTimeValueCount +=
+                        static_cast<std::uint64_t>(timeValueEntry->values.size());
+                    continue;
+                }
+
+                if (const auto* timeEntry = std::get_if<TimeHistoryEntry>(&historyEntry.data)) {
+                    stats.timeBucketCount += 1U;
+                    stats.representedTimeCount +=
+                        static_cast<std::uint64_t>(timeEntry->timestamps.size());
+                    continue;
+                }
+
+                const auto* intervalEntry = std::get_if<IntervalHistoryEntry>(&historyEntry.data);
+                if (intervalEntry != nullptr) {
+                    stats.intervalBucketCount += 1U;
+                    stats.representedIntervalCount += intervalEntry->amount;
+                }
+            }
+        }
+
+        for (const auto& child : node.children) {
+            self(self, child.second);
+        }
+    };
+    accumulateNode(accumulateNode, root_);
+
+    const std::uint64_t representedHistoryMessageCount =
+        stats.representedSingleCount +
+        stats.representedTimeValueCount +
+        stats.representedTimeCount +
+        stats.representedIntervalCount;
+    stats.totalStoredMessageCount = stats.currentNodeCount + representedHistoryMessageCount;
+    return stats;
+}
+
+bool MessageTree::writeCompressed(std::ostream& stream) const {
+    return writeCompressedTreeNode(stream, root_);
+}
+
+bool MessageTree::readCompressed(std::istream& stream) {
+    TreeNode parsedRoot{};
+    if (!readCompressedTreeNode(stream, parsedRoot)) {
+        return false;
+    }
+
+    root_ = std::move(parsedRoot);
+    return true;
+}
+
+bool MessageTree::writeValueToken(std::ostream& stream, const Value& value) {
+    if (std::holds_alternative<std::string>(value)) {
+        stream << "S " << std::quoted(std::get<std::string>(value)) << '\n';
+        return static_cast<bool>(stream);
+    }
+
+    stream << "N " << std::get<double>(value) << '\n';
+    return static_cast<bool>(stream);
+}
+
+bool MessageTree::readValueToken(std::istream& stream, Value& value) {
+    std::string kind{};
+    if (!(stream >> kind)) {
+        return false;
+    }
+
+    if (kind == "S") {
+        std::string text{};
+        if (!(stream >> std::quoted(text))) {
+            return false;
+        }
+        value = text;
+        return true;
+    }
+
+    if (kind == "N") {
+        double number = 0.0;
+        if (!(stream >> number)) {
+            return false;
+        }
+        value = number;
+        return true;
+    }
+
+    return false;
+}
+
+bool MessageTree::writeReasonListToken(std::ostream& stream,
+                                       const std::vector<ReasonEntry>& reasonList) {
+    stream << reasonList.size() << '\n';
+    for (const auto& reason : reasonList) {
+        stream << std::quoted(reason.message) << ' '
+               << std::quoted(reason.timestamp) << '\n';
+    }
+    return static_cast<bool>(stream);
+}
+
+bool MessageTree::readReasonListToken(std::istream& stream,
+                                      std::vector<ReasonEntry>& reasonList) {
+    std::size_t count = 0U;
+    if (!(stream >> count)) {
+        return false;
+    }
+
+    reasonList.clear();
+    reasonList.reserve(count);
+    for (std::size_t idx = 0U; idx < count; ++idx) {
+        ReasonEntry reason{};
+        if (!(stream >> std::quoted(reason.message) >> std::quoted(reason.timestamp))) {
+            return false;
+        }
+        reasonList.push_back(std::move(reason));
+    }
+    return true;
+}
+
+bool MessageTree::writeCompressedHistoryEntry(std::ostream& stream,
+                                              const CompressedHistoryEntry& entry) {
+    if (const auto* singleEntry = std::get_if<SingleHistoryEntry>(&entry.data)) {
+        stream << "single\n";
+        stream << singleEntry->entry.timeMs << '\n';
+        if (!writeValueToken(stream, singleEntry->entry.value)) {
+            return false;
+        }
+        return writeReasonListToken(stream, singleEntry->entry.reason);
+    }
+
+    if (const auto* timeValueEntry = std::get_if<TimeValueHistoryEntry>(&entry.data)) {
+        stream << "timeValue\n";
+        stream << timeValueEntry->values.size() << '\n';
+        for (const auto& timeValue : timeValueEntry->values) {
+            stream << timeValue.first << '\n';
+            if (!writeValueToken(stream, timeValue.second)) {
+                return false;
+            }
+        }
+        return writeReasonListToken(stream, timeValueEntry->reason);
+    }
+
+    if (const auto* timeEntry = std::get_if<TimeHistoryEntry>(&entry.data)) {
+        stream << "time\n";
+        if (!writeValueToken(stream, timeEntry->value)) {
+            return false;
+        }
+        stream << timeEntry->timestamps.size() << '\n';
+        for (const std::int64_t timestamp : timeEntry->timestamps) {
+            stream << timestamp << '\n';
+        }
+        return writeReasonListToken(stream, timeEntry->reason);
+    }
+
+    const auto* intervalEntry = std::get_if<IntervalHistoryEntry>(&entry.data);
+    if (intervalEntry == nullptr) {
+        return false;
+    }
+
+    stream << "interval\n";
+    stream << intervalEntry->amount << '\n';
+    if (!writeValueToken(stream, intervalEntry->value)) {
+        return false;
+    }
+    if (!writeReasonListToken(stream, intervalEntry->reason)) {
+        return false;
+    }
+    stream << intervalEntry->firstTimeMs << '\n';
+    stream << intervalEntry->lastTimeMs << '\n';
+    return static_cast<bool>(stream);
+}
+
+bool MessageTree::readCompressedHistoryEntry(std::istream& stream,
+                                             CompressedHistoryEntry& entry) {
+    std::string historyType{};
+    if (!(stream >> historyType)) {
+        return false;
+    }
+
+    if (historyType == "single") {
+        return readSingleHistoryEntry(stream, entry);
+    }
+    if (historyType == "timeValue") {
+        return readTimeValueHistoryEntry(stream, entry);
+    }
+    if (historyType == "time") {
+        return readTimeHistoryEntry(stream, entry);
+    }
+    if (historyType == "interval") {
+        return readIntervalHistoryEntry(stream, entry);
+    }
+    return false;
+}
+
+bool MessageTree::readSingleHistoryEntry(std::istream& stream,
+                                         CompressedHistoryEntry& entry) {
+    SingleHistoryEntry singleEntry{};
+    if (!(stream >> singleEntry.entry.timeMs)) {
+        return false;
+    }
+    if (!readValueToken(stream, singleEntry.entry.value)) {
+        return false;
+    }
+    if (!readReasonListToken(stream, singleEntry.entry.reason)) {
+        return false;
+    }
+    entry.data = std::move(singleEntry);
+    return true;
+}
+
+bool MessageTree::readTimeValueHistoryEntry(std::istream& stream,
+                                            CompressedHistoryEntry& entry) {
+    TimeValueHistoryEntry timeValueEntry{};
+    std::size_t valueCount = 0U;
+    if (!(stream >> valueCount)) {
+        return false;
+    }
+
+    timeValueEntry.values.reserve(valueCount);
+    for (std::size_t idx = 0U; idx < valueCount; ++idx) {
+        std::int64_t timeMs = 0;
+        if (!(stream >> timeMs)) {
+            return false;
+        }
+
+        Value value{};
+        if (!readValueToken(stream, value)) {
+            return false;
+        }
+        timeValueEntry.values.emplace_back(timeMs, std::move(value));
+    }
+
+    if (!readReasonListToken(stream, timeValueEntry.reason)) {
+        return false;
+    }
+    entry.data = std::move(timeValueEntry);
+    return true;
+}
+
+bool MessageTree::readTimeHistoryEntry(std::istream& stream,
+                                       CompressedHistoryEntry& entry) {
+    TimeHistoryEntry timeEntry{};
+    if (!readValueToken(stream, timeEntry.value)) {
+        return false;
+    }
+
+    std::size_t timestampCount = 0U;
+    if (!(stream >> timestampCount)) {
+        return false;
+    }
+    timeEntry.timestamps.reserve(timestampCount);
+    for (std::size_t idx = 0U; idx < timestampCount; ++idx) {
+        std::int64_t timestamp = 0;
+        if (!(stream >> timestamp)) {
+            return false;
+        }
+        timeEntry.timestamps.push_back(timestamp);
+    }
+
+    if (!readReasonListToken(stream, timeEntry.reason)) {
+        return false;
+    }
+    entry.data = std::move(timeEntry);
+    return true;
+}
+
+bool MessageTree::readIntervalHistoryEntry(std::istream& stream,
+                                           CompressedHistoryEntry& entry) {
+    IntervalHistoryEntry intervalEntry{};
+    if (!(stream >> intervalEntry.amount)) {
+        return false;
+    }
+    if (!readValueToken(stream, intervalEntry.value)) {
+        return false;
+    }
+    if (!readReasonListToken(stream, intervalEntry.reason)) {
+        return false;
+    }
+    if (!(stream >> intervalEntry.firstTimeMs)) {
+        return false;
+    }
+    if (!(stream >> intervalEntry.lastTimeMs)) {
+        return false;
+    }
+    entry.data = std::move(intervalEntry);
+    return true;
+}
+
+bool MessageTree::writeCompressedTreeNode(std::ostream& stream, const TreeNode& node) const {
+    stream << std::quoted(node.topicPath) << '\n';
+    stream << node.children.size() << '\n';
+    stream << (node.hasData ? 1 : 0) << '\n';
+
+    if (node.hasData) {
+        stream << node.data.timeMs << '\n';
+        if (!writeValueToken(stream, node.data.value)) {
+            return false;
+        }
+        if (!writeReasonListToken(stream, node.data.reason)) {
+            return false;
+        }
+
+        stream << node.data.compressedHistory.size() << '\n';
+        for (const auto& historyEntry : node.data.compressedHistory) {
+            if (!writeCompressedHistoryEntry(stream, historyEntry)) {
+                return false;
+            }
+        }
+    }
+
+    for (const auto& child : node.children) {
+        stream << std::quoted(child.first) << '\n';
+        if (!writeCompressedTreeNode(stream, child.second)) {
+            return false;
+        }
+    }
+
+    return static_cast<bool>(stream);
+}
+
+bool MessageTree::readCompressedTreeNode(std::istream& stream, TreeNode& node) {
+    if (!(stream >> std::quoted(node.topicPath))) {
+        return false;
+    }
+
+    std::size_t childCount = 0U;
+    if (!(stream >> childCount)) {
+        return false;
+    }
+
+    int hasDataValue = 0;
+    if (!(stream >> hasDataValue)) {
+        return false;
+    }
+
+    node.hasData = (hasDataValue != 0);
+    node.data = NodeData{};
+
+    if (node.hasData) {
+        if (!(stream >> node.data.timeMs)) {
+            return false;
+        }
+        if (!readValueToken(stream, node.data.value)) {
+            return false;
+        }
+        if (!readReasonListToken(stream, node.data.reason)) {
+            return false;
+        }
+
+        std::size_t historyCount = 0U;
+        if (!(stream >> historyCount)) {
+            return false;
+        }
+
+        node.data.compressedHistory.clear();
+        for (std::size_t idx = 0U; idx < historyCount; ++idx) {
+            CompressedHistoryEntry entry{};
+            if (!readCompressedHistoryEntry(stream, entry)) {
+                return false;
+            }
+            node.data.compressedHistory.push_back(std::move(entry));
+        }
+    }
+
+    node.children.clear();
+    node.children.reserve(childCount);
+    for (std::size_t idx = 0U; idx < childCount; ++idx) {
+        std::string childSegment{};
+        if (!(stream >> std::quoted(childSegment))) {
+            return false;
+        }
+
+        TreeNode childNode{};
+        if (!readCompressedTreeNode(stream, childNode)) {
+            return false;
+        }
+        node.children.emplace_back(std::move(childSegment), std::move(childNode));
+    }
+
+    rebuildChildLookup(node);
+    return true;
 }
 
 std::int64_t MessageTree::nowMilliseconds() const {

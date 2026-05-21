@@ -28,6 +28,7 @@ constexpr double kIntegerTolerance = 1e-9;
 constexpr std::uint32_t kPendingCommandLoopSleepMs = 20U;
 constexpr unsigned char kJsonControlThreshold = 0x20U;
 constexpr std::string_view kMonitorZwavePrefix = "$MONITOR/zwave";
+constexpr std::string_view kSystemZwavePrefix = "system/zwave";
 
 const std::regex& iso8601TimestampRegex() {
     static const std::regex regex{
@@ -84,11 +85,13 @@ const std::regex& iso8601TimestampRegex() {
     return std::regex_match(timestamp, iso8601TimestampRegex());
 }
 
-[[nodiscard]] std::string buildZwaveNetworkReason(const std::optional<std::uint64_t>& valueId) {
+[[nodiscard]] std::string buildZwaveNetworkReason(const std::uint16_t nodeId,
+                                                   const std::optional<std::uint64_t>& valueId) {
+    std::string reason = "received from zwave network node: " + std::to_string(nodeId);
     if (!valueId.has_value()) {
-        return "received from zwave network";
+        return reason;
     }
-    return "received from zwave network id: " + std::to_string(*valueId);
+    return reason + " id: " + std::to_string(*valueId);
 }
 
 [[nodiscard]] std::string sanitizeReasonMessageForJson(std::string text) {
@@ -235,14 +238,14 @@ void ZwaveController::close() {
 void ZwaveController::onDriverReady(const std::uint32_t homeId) {
     std::ostringstream reason{};
     reason << "scanning homeid=0x" << std::hex << homeId;
-    publish(std::string{kMonitorZwavePrefix} + "/scan", std::string{"scanning"}, reason.str());
+    publish(std::string{kSystemZwavePrefix} + "/scan", std::string{"scanning"}, reason.str());
 }
 
 void ZwaveController::onDriverFailed() {
     publish(std::string{kMonitorZwavePrefix} + "/driver/error/state",
             std::string{"driver_failed"},
             "failed to start driver. Stopping module");
-    publish(std::string{kMonitorZwavePrefix} + "/scan", std::string{"failed"}, "driver failed");
+    publish(std::string{kSystemZwavePrefix} + "/scan", std::string{"failed"}, "driver failed");
 
     if (driverFailedCallback_) {
         driverFailedCallback_();
@@ -254,7 +257,7 @@ void ZwaveController::setDriverFailedCallback(std::function<void()> callback) {
 }
 
 void ZwaveController::onScanComplete() {
-    publish(std::string{kMonitorZwavePrefix} + "/scan", std::string{"scanning_complete"}, "scan completed");
+    publish(std::string{kSystemZwavePrefix} + "/scan", std::string{"off"}, "scan completed");
 }
 
 void ZwaveController::onNotification(const std::uint16_t nodeId, const ZwaveNotificationCode notification) {
@@ -394,7 +397,7 @@ void ZwaveController::onValueChanged(const ZwaveControllerValueEvent& event) {
         NodeHealthState::Alive,
         "node " + std::to_string(event.nodeId) + " sent value information");
 
-    publishValue(event.nodeId, event, buildZwaveNetworkReason(event.valueId));
+    publishValue(event.nodeId, event, buildZwaveNetworkReason(event.nodeId, event.valueId));
     updateNodeCommState(event.nodeId, NodeCommState::Ok, "node " + std::to_string(event.nodeId) + " communication succeeded");
     clearNodeErrorState(event.nodeId, "node " + std::to_string(event.nodeId) + " communication recovered");
 }
@@ -437,7 +440,10 @@ void ZwaveController::onValueRefreshed(
             return;
         }
 
-        publish(mapping->topic, outboundValue, buildZwaveNetworkReason(event.valueId), pendingMatch.reasons);
+        publish(mapping->topic,
+            outboundValue,
+            buildZwaveNetworkReason(event.nodeId, event.valueId),
+            pendingMatch.reasons);
     } catch (...) {
     }
 }
@@ -594,7 +600,7 @@ void ZwaveController::publishValue(
         publish(topic, outputValue, reason, prependedReasons);
     } catch (...) {
         const std::optional<std::string> baseTopic = resolveNodeMonitorBaseTopic(nodeId);
-        const std::string topic = (baseTopic.has_value() ? *baseTopic : std::string{"$MONITOR/unmapped"})
+        const std::string topic = (baseTopic.has_value() ? *baseTopic : buildNodeBaseTopic(nodeId))
             + "/class/" + std::to_string(event.classId)
             + "/instance/" + std::to_string(event.instance)
             + "/index/" + std::to_string(event.index)
@@ -624,7 +630,8 @@ void ZwaveController::publishConfigParameterCapabilities(const ZwaveControllerVa
     }
 
     const std::string parameterTopic = *baseTopic + "/config/param/" + std::to_string(event.index);
-    const std::string reason = "discovered configuration parameter capability from " + buildZwaveNetworkReason(event.valueId);
+    const std::string reason = "discovered configuration parameter capability from "
+        + buildZwaveNetworkReason(event.nodeId, event.valueId);
 
     publish(parameterTopic + "/supported", Value{std::string{"on"}}, reason);
     publish(parameterTopic + "/type", Value{event.type.empty() ? std::string{"unknown"} : event.type}, reason);

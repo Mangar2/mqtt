@@ -7,6 +7,7 @@ tmp/
 *.profraw
 *.profdata
 *.json
+*.jsonl
 !test/rules.json
 *.log
 *.trace

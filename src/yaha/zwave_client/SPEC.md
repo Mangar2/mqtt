@@ -36,6 +36,9 @@ and phase-4 standalone composition entrypoint wiring.
 OpenZWave runtime driver behavior:
 
 - translates OpenZWave watcher notifications to `ZwaveController` callback methods
+- contains all watcher callback exceptions at the callback boundary; runtime logs deterministic
+  `zwave_client[error] op=watcher_notification type=<type> node=<node> detail="..."`
+  lines instead of letting callback exceptions terminate the process
 - maps value callbacks to normalized `ZwaveControllerValueEvent` payloads
 - maps `/set` write requests to typed OpenZWave `SetValue` overloads
   - write path first uses runtime-cached ValueID from observed callbacks (node/class/instance/index)
@@ -64,6 +67,11 @@ OpenZWave runtime driver behavior:
   - `<cwd>/../third_party/openzwave/config`
   - `/usr/share/openzwave/config`
 - resolves OpenZWave user path from `YAHA_OPENZWAVE_USER_PATH` or `<deploy-root>/tmp/openzwave`
+- optional FileStore-backed device settings sync (same filestore section style as ValueService):
+  - reads settings JSON from `filestore.filename` when `filestore.use=true`
+  - applies per-node override semantics to INI device rows:
+    - if FileStore contains any row for node `<N>`, all INI rows for node `<N>` are replaced by FileStore rows for node `<N>`
+  - persists the full effective ZWave settings snapshot (all INI-derived settings plus merged devices) back to FileStore as JSON
 
 Runtime startup prints a deterministic summary:
 
@@ -83,6 +91,8 @@ Supported INI sections:
   - `host`, `port`, `clientId`, `reconnectDelayMs`, `keepAliveIntervalMs`, `loopSleepMs`, `logReason`
 - `[zwave]`
   - `subscribeQoS`, `qos`, `retain`, `logLevel`, `logIncomingMessages`, `logOutgoingMessages`, `pollIntervalMs`, `commandReactionPollIntervalMs`, `commandReactionTimeoutMs`, `usbDevice`, `usbTopic`, `device`
+- `[filestore]`
+  - `use`, `host`, `port`, `filename`
 
 Device row format (`zwave.device` can appear multiple times):
 
@@ -101,6 +111,8 @@ Validation rules:
 - `zwave.pollIntervalMs` must be in range `1..60000` when set.
 - `zwave.commandReactionPollIntervalMs` must be in range `1..60000` when set.
 - `zwave.commandReactionTimeoutMs` must be in range `1..600000` when set.
+- `filestore.port` must be in range `1..65535` when set.
+- `filestore.use` must be valid boolean token when set.
 - `zwave.usbDevice` must be present and non-empty.
 - `zwave.usbTopic` must be present and non-empty.
 - At least one `zwave.device` entry must be present.

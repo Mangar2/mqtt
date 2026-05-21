@@ -60,8 +60,12 @@ Unit tests for MessageTree behavior required by step 4.
 | `start_periodic_persists_until_stopped` | Periodic persistence loop | short interval + running period | at least one snapshot file created |
 | `start_periodic_noop_when_interval_zero_or_already_running` | startPeriodic guard branches | interval=0 and repeated start call | no periodic files for interval=0 and stable run for repeated start |
 | `default_constructor_can_persist_and_restore_reason_history` | Default-config constructor and reason/history serialization | value + reason + history | roundtrip keeps reason and history entries |
+| `persist_now_writes_mtree2_and_restore_keeps_compression_stats` | Compressed persistence format and roundtrip invariants | mixed interval/timeValue source tree persisted and restored | snapshot magic is `MTREE2` and compression counters match before/after restore |
+| `restore_latest_reads_legacy_mtree1_snapshot` | Backward-compatible restore for old snapshot format | handcrafted valid `MTREE1` file | restore succeeds and node/history content is preserved |
 | `get_subscriptions_returns_configured_map` | MessageStore forwards configured subscriptions | config map with multiple entries | returned map equals config map |
 | `handle_message_adds_regular_topic_to_tree` | Non-cleanup message must be stored | regular topic/value message | querySection contains node |
+| `store_message_direct_treats_cleanup_topic_as_regular_data` | Direct storage path must bypass cleanup special handling | cleanup topic message with string payload | querySection returns cleanup topic node as regular data |
+| `query_compression_stats_reports_single_bucket_after_one_update` | Compression counters should expose bucket distribution | same topic updated once via direct path | current node count is 1, single bucket count is 1, represented single count is 1 |
 | `handle_message_cleanup_topic_uses_numeric_payload` | Cleanup dispatch with numeric payload | old node + cleanup payload 1 | stale node removed |
 | `handle_message_cleanup_topic_ignores_invalid_payload` | Invalid cleanup payload must be ignored | existing node + cleanup payload text | existing node remains |
 | `handle_message_cleanup_topic_logs_invalid_payload` | Invalid cleanup payload should be observable | cleanup payload text | structured cleanup error log is emitted |
