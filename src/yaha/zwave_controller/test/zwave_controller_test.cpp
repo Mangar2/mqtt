@@ -470,22 +470,16 @@ TEST_CASE("notification_callback_maps_all_codes_to_monitoring_topic", "[zwave_co
         "$MONITOR/ground/livingroom/zwave/node20/comm/state",
         "$MONITOR/ground/livingroom/zwave/node20/power_state",
         "$MONITOR/ground/livingroom/zwave/node20/health",
-        "$MONITOR/ground/livingroom/zwave/node20/comm/state",
         "$MONITOR/ground/livingroom/zwave/node20/power_state",
         "$MONITOR/ground/livingroom/zwave/node20/health",
-        "$MONITOR/ground/livingroom/zwave/node20/comm/state",
-        "$MONITOR/ground/livingroom/zwave/node20/health",
-        "$MONITOR/ground/livingroom/zwave/node20/comm/state"};
+        "$MONITOR/ground/livingroom/zwave/node20/health"};
     const std::vector<std::string> expectedValues{
         "timeout",
         "awake",
         "alive",
-        "ok",
         "sleep",
         "dead",
-        "timeout",
-        "alive",
-        "ok"};
+        "alive"};
 
     for (const auto notification : notifications) {
         controller.onNotification(kNodeIdTwenty, notification);

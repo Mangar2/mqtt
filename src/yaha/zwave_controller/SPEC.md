@@ -102,10 +102,10 @@ Concrete parity adapter implementation with additional callback entry points:
 - Notification callback is resource-oriented:
   - all node-scoped state topics use mapped device paths: `$MONITOR/<device-topic>/<state>`
   - `Timeout` -> `$MONITOR/<device-topic>/comm/state` value `timeout`
-  - `NodeAwake` -> `$MONITOR/<device-topic>/power_state` value `awake` plus `comm/state=ok`
-  - `NodeSleep` -> `$MONITOR/<device-topic>/power_state` value `sleep` plus `comm/state=ok`
+  - `NodeAwake` -> `$MONITOR/<device-topic>/power_state` value `awake`
+  - `NodeSleep` -> `$MONITOR/<device-topic>/power_state` value `sleep`
   - `NodeDead` -> `$MONITOR/<device-topic>/health` value `dead` plus `comm/state=timeout`
-  - `NodeAlive` -> `$MONITOR/<device-topic>/health` value `alive` plus `comm/state=ok`
+  - `NodeAlive` -> `$MONITOR/<device-topic>/health` value `alive`
   - `MessageComplete` and `Nop` are suppressed
 - Configuration capability discovery:
   - on class `0x70` value discovery (`onValueAdded`/`onValueChanged`), controller publishes one capability snapshot per node+instance+parameter index
@@ -120,7 +120,8 @@ Concrete parity adapter implementation with additional callback entry points:
   - default state is `ok` and is published only on state transitions
   - `Timeout` or `NodeDead` transitions to `comm/state=timeout`
   - `Timeout` transition reason includes source context marker `source=openzwave_notification_timeout` and context detail (`context=pending_command ...` or `context=no_pending_command`)
-  - any successful communication callback (`onValueChanged`, `onValueRefreshed`, `NodeAlive`, `NodeAwake`, `NodeSleep`) transitions to `comm/state=ok`
+  - only successful value callbacks (`onValueChanged`, `onValueRefreshed`) transition to `comm/state=ok`
+  - `comm/state=ok` reason includes evidence details: source (`openzwave_value_changed` or `openzwave_value_refreshed`) and target `node/class/instance/index` plus `valueId`
 - Notification publish failures are reported as node-scoped error state:
   - `$MONITOR/<device-topic>/error/state` value `publish_failed`
   - severity order is enforced (`publish_failed` < `decode_failed` < `driver_failed`)
