@@ -105,6 +105,7 @@ that orchestrates MQTT routing and controller lifecycle.
 ## Lifecycle
 
 - `setDeviceConfiguration(...)` publishes `$MONITOR/zwave/info` value `configuration reloaded`.
+- `setDeviceConfiguration(...)` replaces the service-side device list used by `getSubscriptions()` and updates controller mapping to the same list.
 - `run()` publishes startup markers:
 	- `system/zwave/removefailednode` value `0`
 	- `system/zwave/addnode` value `off`

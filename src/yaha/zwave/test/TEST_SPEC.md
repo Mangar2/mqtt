@@ -7,6 +7,7 @@ All tests are tagged `[zwave_service]`.
 | Test case | Scenario | Input | Expected |
 |-----------|----------|-------|----------|
 | `subscriptions_include_management_and_device_topics` | Derive management + device subscriptions from config | one class-bound and one class-free device mapping | management topics present with QoS 2; mapped topics use configured subscribe QoS and wildcard rule |
+| `set_device_configuration_replaces_subscription_topics` | Runtime device reload must replace old topic subscriptions with new topic set | create service from default config, then call `setDeviceConfiguration` with one replacement device row | new replacement topic subscription exists, old initial topics are removed from `getSubscriptions()` |
 | `management_messages_are_forwarded_and_scan_success_is_published` | Inbound management topics are routed to controller and successful scan emits notification | removefailed/addnode(on)/scan messages | controller receives matching operations; publish emits `scan command accepted` with configured qos/retain |
 | `addnode_off_command_disables_without_forwarding_to_controller` | Explicit addnode off command must not start inclusion mode | addnode message with value `off` | controller `addDevice` is not called; service publishes `system/zwave/addnode` value `off` with disable reason |
 | `scan_failure_publishes_error_message` | Scan exception path emits deterministic error publish | scan command with controller throwing exception | publish emits `$MONITOR/zwave/error` value `scan command failed` with exception reason |

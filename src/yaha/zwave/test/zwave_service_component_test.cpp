@@ -284,6 +284,26 @@ TEST_CASE("subscriptions_include_management_and_device_topics", "[zwave_service]
     CHECK(subscriptions.at("home/climate/+/set") == yaha::Qos::AtMostOnce);
 }
 
+    TEST_CASE("set_device_configuration_replaces_subscription_topics", "[zwave_service]") {
+        auto controller = std::make_shared<FakeController>();
+        yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+        yaha::ZwaveDeviceConfig replacement{};
+        replacement.topic = "home/reloaded";
+        replacement.nodeId = kNodeIdSeven;
+        replacement.classId = kSwitchClass;
+        replacement.instance = 1U;
+        replacement.index = 0U;
+        replacement.type = std::string{"switch"};
+
+        service.setDeviceConfiguration({replacement});
+
+        const yaha::SubscriptionMap subscriptions = service.getSubscriptions();
+        CHECK(subscriptions.contains("home/reloaded/set"));
+        CHECK_FALSE(subscriptions.contains("home/lamp/set"));
+        CHECK_FALSE(subscriptions.contains("home/climate/+/set"));
+    }
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("management_messages_are_forwarded_and_scan_success_is_published", "[zwave_service]") {
     auto controller = std::make_shared<FakeController>();

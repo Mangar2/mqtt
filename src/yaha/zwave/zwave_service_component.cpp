@@ -125,6 +125,7 @@ ZwaveServiceComponent::ZwaveServiceComponent(ZwaveConfig config, std::shared_ptr
 }
 
 void ZwaveServiceComponent::setDeviceConfiguration(const std::vector<ZwaveDeviceConfig>& config) {
+    config_.devices = config;
     controller_->setDeviceConfiguration(config);
 
     Message infoMessage{makeTopic(kSystemZwavePrefix, "info"), std::string{"configuration reloaded"}};
