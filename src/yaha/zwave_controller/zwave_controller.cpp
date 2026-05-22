@@ -407,6 +407,8 @@ void ZwaveController::onNodeReady(
     }
 
     if (queryStage == "queries_complete") {
+        driverPort_.enablePoll(nodeId, kZwaveSwitchBinaryClass);
+        driverPort_.enablePoll(nodeId, kZwaveSwitchMultilevelClass);
         publishNodeIncludeState(nodeId, "included", "include interview complete", true);
     }
 }

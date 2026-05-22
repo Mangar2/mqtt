@@ -132,7 +132,7 @@ Concrete parity adapter implementation with additional callback entry points:
   - `onNodeAdded` publishes `node_added`
   - `onControllerCommand` publishes per-node controller state text (for example `in-progress`, `completed`, `failed`)
   - `onNodeReady(..., "essential_queries_complete")` publishes `essential_queries_complete`
-  - `onNodeReady(..., "queries_complete")` publishes `queries_complete` followed by `included`
+  - `onNodeReady(..., "queries_complete")` enables legacy-equivalent value polling for switch classes `0x25` and `0x26`, then publishes `queries_complete` followed by `included`
 - Node/value callbacks maintain in-memory node/class cache.
 - Controller keeps local runtime state in unordered maps:
   - node runtime map keyed by `nodeId` with `ready/dead` status and latest value events per class/index

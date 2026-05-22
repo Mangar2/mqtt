@@ -14,6 +14,7 @@
 namespace {
 
 constexpr std::uint16_t kSwitchBinaryClass = 0x25U;
+constexpr std::uint16_t kSwitchMultilevelClass = 0x26U;
 constexpr std::uint16_t kConfigClass = 0x70U;
 constexpr std::uint16_t kNodeIdEleven = 11U;
 constexpr std::uint16_t kNodeIdTwelve = 12U;
@@ -618,7 +619,7 @@ TEST_CASE("value_changed_clears_previous_timeout_state", "[zwave_controller]") {
     CHECK(std::get<std::string>(published[3].value()) == "ok");
 }
 
-TEST_CASE("node_ready_does_not_enable_global_polling", "[zwave_controller]") {
+TEST_CASE("node_ready_enables_switch_class_polling", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
 
@@ -646,11 +647,15 @@ TEST_CASE("node_ready_does_not_enable_global_polling", "[zwave_controller]") {
 
     controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{}, "queries_complete");
 
-    CHECK(driver.enablePollCalls == 0U);
+    CHECK(driver.enablePollCalls == 2U);
+    CHECK(driver.lastEnablePollNode == kNodeIdTwentyOne);
+    CHECK(driver.lastEnablePollClass == kSwitchMultilevelClass);
 
     controller.onValueRemoved(kNodeIdTwentyOne, kSwitchBinaryClass, kIndexZero);
     controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{}, "queries_complete");
-    CHECK(driver.enablePollCalls == 0U);
+    CHECK(driver.enablePollCalls == 4U);
+    CHECK(driver.lastEnablePollNode == kNodeIdTwentyOne);
+    CHECK(driver.lastEnablePollClass == kSwitchMultilevelClass);
 
     controller.onValueRemoved(kNodeIdTwentyOne, kSensorMultilevelClass, kIndexOne);
     controller.onValueRemoved(kNodeIdTwentyOne, kSensorMultilevelClass, kIndexOne);
