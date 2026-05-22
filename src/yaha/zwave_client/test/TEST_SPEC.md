@@ -6,7 +6,7 @@ All tests are tagged `[zwave_client]`.
 
 | Test case | Scenario | Input | Expected |
 |-----------|----------|-------|----------|
-| `load_zwave_config_applies_defaults_and_parses_required_device` | Unit validation for defaults and required fields | minimal valid `[zwave]` section with one `device` row | parse success; default qos/retain values preserved; required usb/topic/device loaded |
+| `load_zwave_config_applies_defaults_and_parses_device` | Unit validation for defaults and device row parsing | minimal valid `[zwave]` section with one `device` row | parse success; default qos/retain values preserved; required usb/topic loaded; device row parsed |
 | `load_zwave_config_rejects_invalid_device_row` | Unit validation for schema bounds | `zwave.device` row with invalid node id | parse fails with deterministic error containing `nodeId` range text |
 | `load_zwave_config_rejects_invalid_device_field_count` | Device entry must include topic and node id | `zwave.device` row with only topic field | parse fails with deterministic field-count error |
 | `load_zwave_config_rejects_empty_device_topic` | Device topic must be non-empty | `zwave.device` row with empty topic token | parse fails with deterministic topic-empty error |
@@ -28,7 +28,7 @@ All tests are tagged `[zwave_client]`.
 | `serialize_zwave_settings_to_json_writes_only_devices_root` | Filestore persistence writes only device mappings | config populated with many non-device fields plus one device | serialized JSON contains only root `devices` and no non-device fields |
 | `load_zwave_config_parses_legacy_json_equivalent_device_rows` | Legacy migration compatibility for topics with spaces and class rows without explicit type | `[zwave]` with topic containing spaces and `classId=38` row | parse success; topic text is preserved and class id/instance are mapped correctly |
 | `load_zwave_runtime_config_reports_mqtt_validation_error` | Runtime integration error propagation | invalid mqtt port value | parse fails and reports mqtt range validation error |
-| `load_zwave_config_requires_device_setting` | Unit validation for mandatory device list | `[zwave]` without `device` key | parse fails with `missing required setting 'zwave.device'` |
+| `load_zwave_config_allows_missing_device_setting` | Unit validation for optional device list | `[zwave]` without `device` key | parse succeeds and device list remains empty |
 | `sync_zwave_settings_from_filestore_merges_and_persists` | FileStore startup sync helper merges node-overrides and persists merged snapshot | enabled filestore config with mock GET payload and one overlapping node | helper returns true, overlapping node rows are replaced, merged snapshot POST is emitted |
 | `sync_zwave_settings_from_filestore_returns_true_when_disabled` | FileStore startup sync helper is a no-op when disabled | filestore.use=false with pre-populated devices | helper returns true and config remains unchanged |
 | `sync_zwave_settings_from_filestore_reports_load_failure` | FileStore startup sync helper reports GET failure | enabled filestore config with mock GET status 500 | helper returns false and error text is set |

@@ -135,7 +135,7 @@ Validation rules:
 - `filestore.startupRetryIntervalSeconds` must be in range `1..3600` when set.
 - `zwave.usbDevice` must be present and non-empty.
 - `zwave.usbTopic` must be present and non-empty.
-- At least one `zwave.device` entry must be present.
+- `zwave.device` entries are optional; when absent, startup config keeps an empty device list.
 - `zwave.device` row `nodeId` must be in range `1..255`.
 - Optional `classId` must be in range `0..65535` when set.
 - Optional `instance` must be in range `0..255` when set.
@@ -170,6 +170,6 @@ Unit/runtime-integration verification for this module is provided by:
 Covered phase-6 behavior:
 
 - config schema/default validation for `[zwave]` mapping
-- deterministic validation failures for malformed `zwave.device` rows and missing required keys
+- deterministic validation failures for malformed `zwave.device` rows and missing required keys (`zwave.usbDevice`, `zwave.usbTopic`)
 - combined runtime mapping of `[zwave]` and `[mqtt]` to `ZwaveClientRuntimeConfig`
 - error propagation for mqtt validation failures in runtime config loading

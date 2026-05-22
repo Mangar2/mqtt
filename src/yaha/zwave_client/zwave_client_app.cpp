@@ -920,14 +920,14 @@ bool tryLoadZwaveConfigFromIni(
 
     const IniDocument::Section* zwaveSection = document.findSection("zwave");
     if (zwaveSection == nullptr) {
-        errorMessage = "missing required setting 'zwave.device'";
-        return false;
+        output = std::move(parsed);
+        return true;
     }
 
     const auto deviceRows = zwaveSection->valuesForKey("device");
     if (!deviceRows.has_value() || deviceRows->empty()) {
-        errorMessage = "missing required setting 'zwave.device'";
-        return false;
+        output = std::move(parsed);
+        return true;
     }
 
     std::vector<ZwaveDeviceConfig> parsedDevices{};

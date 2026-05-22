@@ -302,6 +302,7 @@ ZWave client INI sections:
 - `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs, logReason)
 - `[zwave]`: `subscribeQoS`, `qos`, `retain`, `logLevel`, `logIncomingMessages`, `logOutgoingMessages`, `pollIntervalMs`, `usbDevice`, `usbTopic`, repeated `device`
 - `[filestore]`: `use`, `host`, `port`, `filename`, `startupRetryCount`, `startupRetryIntervalSeconds` (optional JSON settings sync)
+    - `device` rows are optional; if omitted, the client starts with an empty device mapping and can still merge FileStore overrides when enabled.
     - `logLevel=1` logs OpenZWave errors plus important ZWave service events/errors.
     - `logIncomingMessages` and `logOutgoingMessages` are independent MQTT trace flags and are not overridden by `logLevel`.
     - if `filestore.use=true`, the ZWave client loads device rows from FileStore JSON and applies node-priority override: any FileStore row for node `N` replaces all INI device rows for node `N`.

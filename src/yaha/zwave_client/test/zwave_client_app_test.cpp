@@ -115,7 +115,7 @@ void removeDirectoryQuiet(const std::filesystem::path& directoryPath) {
 } // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("load_zwave_config_applies_defaults_and_parses_required_device", "[zwave_client]") {
+TEST_CASE("load_zwave_config_applies_defaults_and_parses_device", "[zwave_client]") {
     const yaha::IniDocument document = loadIni(
         "[zwave]\n"
         "usbDevice=/dev/ttyUSB0\n"
@@ -722,7 +722,7 @@ TEST_CASE("load_zwave_runtime_config_reports_mqtt_validation_error", "[zwave_cli
     CHECK(errorMessage.find("mqtt.port") != std::string::npos);
 }
 
-TEST_CASE("load_zwave_config_requires_device_setting", "[zwave_client]") {
+TEST_CASE("load_zwave_config_allows_missing_device_setting", "[zwave_client]") {
     const yaha::IniDocument document = loadIni(
         "[zwave]\n"
         "usbDevice=/dev/ttyUSB0\n"
@@ -733,8 +733,9 @@ TEST_CASE("load_zwave_config_requires_device_setting", "[zwave_client]") {
 
     const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
 
-    CHECK_FALSE(loaded);
-    CHECK(errorMessage == "missing required setting 'zwave.device'");
+    REQUIRE(loaded);
+    CHECK(errorMessage.empty());
+    CHECK(config.devices.empty());
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
