@@ -44,6 +44,9 @@ constexpr std::uint32_t kCommandReactionFastPollMs = 10U;
 constexpr std::uint32_t kCommandReactionShortTimeoutMs = 30U;
 constexpr std::uint32_t kCommandReactionPollMs = 20U;
 constexpr std::uint32_t kCommandReactionDefaultTimeoutMs = 30000U;
+constexpr std::uint32_t kUnresponsiveWatchdogShortWindowMs = 50U;
+constexpr std::size_t kUnresponsiveWatchdogShortErrorThreshold = 3U;
+constexpr std::uint32_t kWatchdogWindowWaitMs = 60U;
 constexpr std::uint32_t kPendingTimeoutWaitMs = 150U;
 constexpr std::uint32_t kPendingTimeoutPublishWaitMs = 180U;
 constexpr std::uint32_t kPendingPollWaitMs = 180U;
@@ -128,7 +131,9 @@ yaha::ZwaveController makeController(
     FakeDriverPort& driver,
     const std::uint32_t commandReactionPollIntervalMs = 500U,
     const std::uint32_t commandReactionTimeoutMs = 30000U,
-    const std::uint32_t fullDevicePollIntervalMs = kFullDevicePollDisabledForTestsMs) {
+    const std::uint32_t fullDevicePollIntervalMs = kFullDevicePollDisabledForTestsMs,
+    const std::uint32_t unresponsiveInputTimeoutMs = 180000U,
+    const std::size_t unresponsiveTimeoutErrorThreshold = 100U) {
     yaha::ZwaveUsbConfig usb{};
     usb.device = "/dev/ttyUSB0";
     usb.topic = "controller/topic";
@@ -137,7 +142,9 @@ yaha::ZwaveController makeController(
         driver,
         fullDevicePollIntervalMs,
         commandReactionPollIntervalMs,
-        commandReactionTimeoutMs};
+        commandReactionTimeoutMs,
+        unresponsiveInputTimeoutMs,
+        unresponsiveTimeoutErrorThreshold};
 }
 
 yaha::ZwaveDeviceConfig makeDevice(
@@ -449,6 +456,50 @@ TEST_CASE("driver_failed_callback_is_invoked", "[zwave_controller]") {
     controller.onDriverFailed();
 
     CHECK(callbackCalls == 1U);
+}
+
+TEST_CASE("unresponsive_network_callback_is_invoked_after_timeout_storm_without_success", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(
+        driver,
+        yaha::kZwaveDefaultCommandReactionPollIntervalMs,
+        kCommandReactionDefaultTimeoutMs,
+        kFullDevicePollDisabledForTestsMs,
+        kUnresponsiveWatchdogShortWindowMs,
+        kUnresponsiveWatchdogShortErrorThreshold);
+
+    std::size_t callbackCalls = 0U;
+    controller.setUnresponsiveNetworkCallback([&callbackCalls] {
+        ++callbackCalls;
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds{kWatchdogWindowWaitMs});
+
+    controller.onNotification(kNodeIdTwenty, yaha::ZwaveNotificationCode::Timeout);
+    controller.onNotification(kNodeIdTwentyOne, yaha::ZwaveNotificationCode::Timeout);
+    controller.onNotification(kNodeIdTwentyTwo, yaha::ZwaveNotificationCode::Timeout);
+
+    CHECK(callbackCalls == 1U);
+
+    controller.onNotification(kNodeIdTwentyThree, yaha::ZwaveNotificationCode::Timeout);
+    CHECK(callbackCalls == 1U);
+
+    controller.onValueChanged(yaha::ZwaveControllerValueEvent{
+        .nodeId = kNodeIdTwenty,
+        .classId = kSwitchBinaryClass,
+        .instance = kInstanceOne,
+        .index = kIndexZero,
+        .label = std::nullopt,
+        .valueId = kValueIdSample,
+        .value = yaha::Value{1.0},
+        .type = "switch",
+        .readOnly = false});
+
+    std::this_thread::sleep_for(std::chrono::milliseconds{kWatchdogWindowWaitMs});
+    controller.onNotification(kNodeIdTwenty, yaha::ZwaveNotificationCode::Timeout);
+    controller.onNotification(kNodeIdTwentyOne, yaha::ZwaveNotificationCode::Timeout);
+    controller.onNotification(kNodeIdTwentyTwo, yaha::ZwaveNotificationCode::Timeout);
+    CHECK(callbackCalls == 2U);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)

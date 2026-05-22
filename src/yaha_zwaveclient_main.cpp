@@ -201,6 +201,13 @@ int main(int argc, char* argv[]) {
         std::cerr << std::flush;
         std::exit(2);
     });
+    controller->setUnresponsiveNetworkCallback([] {
+        std::cerr
+            << "fatal: OpenZWave input unresponsive (>=100 timeout drops and >=3min without successful input), "
+            << "terminating process for systemd restart\n";
+        std::cerr << std::flush;
+        std::exit(2);
+    });
     driverPort->bindController(*controller);
     driverPort->start();
 

@@ -590,6 +590,14 @@ void OpenZwaveRuntimeDriverPort::handleNotification(OpenZWave::Notification cons
         }
         controller->onNodeAdded(nodeId);
         return;
+    case OpenZWave::Notification::Type_NodeRemoved:
+        {
+            std::scoped_lock lock{mutex_};
+            knownNodes_.erase(nodeId);
+            valueIdCache_.erase(nodeId);
+        }
+        controller->onNodeRemoved(nodeId);
+        return;
     case OpenZWave::Notification::Type_NodeQueriesComplete:
         controller->onNodeReady(nodeId, buildNodeInfo(notification.GetHomeId(), nodeId), "queries_complete");
         return;
@@ -683,7 +691,17 @@ void OpenZwaveRuntimeDriverPort::handleValueRemoved(OpenZWave::Notification cons
                 auto instanceIterator = classIterator->second.find(valueId.GetInstance());
                 if (instanceIterator != classIterator->second.end()) {
                     instanceIterator->second.erase(valueId.GetIndex());
+                    if (instanceIterator->second.empty()) {
+                        classIterator->second.erase(instanceIterator);
+                    }
                 }
+                if (classIterator->second.empty()) {
+                    nodeIterator->second.erase(classIterator);
+                }
+            }
+            if (nodeIterator->second.empty()) {
+                valueIdCache_.erase(nodeIterator);
+                knownNodes_.erase(valueId.GetNodeId());
             }
         }
     }

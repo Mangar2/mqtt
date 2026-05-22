@@ -59,6 +59,7 @@ Concrete parity adapter implementation with additional callback entry points:
 - `onControllerCommand(...)`
 - `onNodeAdded(...)`
 - `onNodeReady(...)`
+- `onNodeRemoved(...)`
 - `onValueAdded(...)`
 - `onValueRemoved(...)`
 - `onValueChanged(...)`
@@ -98,6 +99,12 @@ Concrete parity adapter implementation with additional callback entry points:
   - `onDriverReady` publishes `system/zwave/scan` value `scanning`
   - `onDriverFailed` publishes `$MONITOR/zwave/driver/error/state` value `driver_failed`
   - `onDriverFailed` publishes `system/zwave/scan` value `failed`
+  - controller tracks timeout-storm watchdog state for process self-termination integration:
+    - counts only `Timeout` notifications (`openzwave_notification_timeout`) as timeout-drop errors
+    - resets watchdog counters on successful inbound events (`onValueAdded`, `onValueChanged`, `onValueRefreshed`, `NodeAlive`, `NodeAwake`)
+    - triggers unresponsive-network callback once when both are true since last successful input:
+      - at least `100` timeout-drop errors
+      - at least `180000ms` elapsed without successful inbound input
   - `onScanComplete` publishes `system/zwave/scan` value `off`
 - Notification callback is resource-oriented:
   - all node-scoped state topics use mapped device paths: `$MONITOR/<device-topic>/<state>`
@@ -134,9 +141,11 @@ Concrete parity adapter implementation with additional callback entry points:
   - when values are discovered after interview completion (`onValueAdded`/`onValueChanged` on ready node), controller enables polling for the discovered class id to avoid missed polling activation when value-id cache was not ready at node-ready time
   - `onNodeReady(..., "queries_complete")` publishes `included` only when the node was previously marked by `onNodeAdded`
 - Node/value callbacks maintain in-memory node/class cache.
+- `onNodeRemoved` clears runtime state for that node from node/value cache, node-monitor state caches, pending-command tracking, include-flow tracking, and discovered config-capability keys.
 - Controller keeps local runtime state in unordered maps:
   - node runtime map keyed by `nodeId` with `ready/dead` status and latest value events per class/index
   - topic state map keyed by mapped MQTT topic with latest locally observed outbound value and optional zwave network value id
+- `onValueRemoved` prunes empty class containers after index removal so repeated remove/add cycles do not retain unneeded empty nested maps.
 - `onValueChanged` updates cache and publishes mapped value.
 - `onValueRefreshed` updates cache and always publishes mapped outbound value (including non-command refreshes).
 - Pending command feedback behavior:

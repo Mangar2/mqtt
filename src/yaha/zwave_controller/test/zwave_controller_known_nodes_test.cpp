@@ -83,3 +83,26 @@ TEST_CASE("known_node_ids_include_configured_and_runtime_nodes_sorted_unique", "
     const std::vector<std::uint16_t> knownNodeIds = controller.knownNodeIds();
     CHECK(knownNodeIds == std::vector<std::uint16_t>{kNodeIdSeven, kNodeIdNine, kNodeIdEleven});
 }
+
+TEST_CASE("known_node_ids_drop_removed_runtime_nodes_but_keep_configured_nodes", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    yaha::ZwaveUsbConfig usb{};
+    usb.device = "/dev/ttyUSB0";
+    usb.topic = "controller/topic";
+
+    yaha::ZwaveController controller{
+        usb,
+        driver,
+        kFullDevicePollMs,
+        kCommandReactionPollMs,
+        kCommandReactionTimeoutMs};
+    controller.setDeviceConfiguration({
+        makeDevice("home/node7/sensor", kNodeIdSeven)});
+
+    controller.onNodeAdded(kNodeIdNine);
+    controller.onNodeAdded(kNodeIdEleven);
+    controller.onNodeRemoved(kNodeIdEleven);
+
+    const std::vector<std::uint16_t> knownNodeIds = controller.knownNodeIds();
+    CHECK(knownNodeIds == std::vector<std::uint16_t>{kNodeIdSeven, kNodeIdNine});
+}

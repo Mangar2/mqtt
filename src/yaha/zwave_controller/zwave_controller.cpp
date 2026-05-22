@@ -167,13 +167,17 @@ ZwaveController::ZwaveController(
     IZwaveDriverPort& driverPort,
     const std::uint32_t fullDevicePollIntervalMs,
     const std::uint32_t commandReactionPollIntervalMs,
-    const std::uint32_t commandReactionTimeoutMs)
+    const std::uint32_t commandReactionTimeoutMs,
+    const std::uint32_t unresponsiveInputTimeoutMs,
+    const std::size_t unresponsiveTimeoutErrorThreshold)
     : usb_(std::move(usbConfig))
     , driverPort_(driverPort)
     , devicesMapper_(std::vector<ZwaveDeviceConfig>{})
     , fullDevicePollInterval_(fullDevicePollIntervalMs)
     , commandReactionPollInterval_(commandReactionPollIntervalMs)
-    , commandReactionTimeout_(commandReactionTimeoutMs) {
+    , commandReactionTimeout_(commandReactionTimeoutMs)
+    , unresponsiveInputTimeout_(unresponsiveInputTimeoutMs)
+    , unresponsiveTimeoutErrorThreshold_(std::max<std::size_t>(1U, unresponsiveTimeoutErrorThreshold)) {
     lastFullDevicePollAt_ = std::chrono::steady_clock::now();
     pendingCommandPollThread_ = std::thread([this] {
         runPendingCommandPollLoop();
@@ -306,6 +310,11 @@ void ZwaveController::setDriverFailedCallback(std::function<void()> callback) {
     driverFailedCallback_ = std::move(callback);
 }
 
+void ZwaveController::setUnresponsiveNetworkCallback(std::function<void()> callback) {
+    std::scoped_lock lock{unresponsiveNetworkMutex_};
+    unresponsiveNetworkCallback_ = std::move(callback);
+}
+
 void ZwaveController::onScanComplete() {
     publish(std::string{kSystemZwavePrefix} + "/scan", std::string{"off"}, "scan completed");
 }
@@ -332,12 +341,14 @@ void ZwaveController::onNotification(const std::uint16_t nodeId, const ZwaveNoti
             updateNodeCommState(nodeId, NodeCommState::Timeout, "node " + std::to_string(nodeId) + " reported dead");
             return;
         case ZwaveNotificationCode::NodeAlive:
+            markSuccessfulZwaveInput();
             updateNodeHealthState(
                 nodeId,
                 NodeHealthState::Alive,
                 "node " + std::to_string(nodeId) + " sent \"alive\" information");
             return;
         case ZwaveNotificationCode::NodeAwake:
+            markSuccessfulZwaveInput();
             publishNodeState(
                 nodeId,
                 "power_state",
@@ -361,6 +372,7 @@ void ZwaveController::onNotification(const std::uint16_t nodeId, const ZwaveNoti
             return;
         case ZwaveNotificationCode::Timeout:
             {
+                trackTimeoutDropAndTriggerIfNeeded();
                 const std::string reason =
                     "node " + std::to_string(nodeId) + " sent \"timeout\" information; " + describeTimeoutSource(nodeId);
             updateNodeCommState(
@@ -403,6 +415,75 @@ void ZwaveController::onNodeAdded(const std::uint16_t nodeId) {
     }
 }
 
+void ZwaveController::onNodeRemoved(const std::uint16_t nodeId) {
+    nodes_.erase(nodeId);
+
+    {
+        std::scoped_lock lock{nodeErrorStatesMutex_};
+        nodeErrorStates_.erase(nodeId);
+    }
+    {
+        std::scoped_lock lock{nodeCommStatesMutex_};
+        nodeCommStates_.erase(nodeId);
+    }
+    {
+        std::scoped_lock lock{nodeHealthStatesMutex_};
+        nodeHealthStates_.erase(nodeId);
+    }
+    {
+        std::scoped_lock lock{nodeIncludeStatesMutex_};
+        nodeIncludeStates_.erase(nodeId);
+    }
+    {
+        std::scoped_lock lock{includeFlowCandidateNodeIdsMutex_};
+        includeFlowCandidateNodeIds_.erase(nodeId);
+    }
+
+    {
+        std::scoped_lock lock{pendingCommandsMutex_};
+        const auto remainingRange = std::ranges::remove_if(
+            pendingCommands_,
+            [nodeId](const PendingCommand& pendingCommand) {
+                return pendingCommand.target.nodeId == nodeId;
+            });
+        pendingCommands_.erase(remainingRange.begin(), remainingRange.end());
+    }
+
+    {
+        const std::string keyPrefix = std::to_string(nodeId) + ":";
+        std::scoped_lock lock{publishedConfigCapabilityKeysMutex_};
+        auto iterator = publishedConfigCapabilityKeys_.begin();
+        while (iterator != publishedConfigCapabilityKeys_.end()) {
+            if (iterator->starts_with(keyPrefix)) {
+                iterator = publishedConfigCapabilityKeys_.erase(iterator);
+                continue;
+            }
+            ++iterator;
+        }
+    }
+
+    std::vector<ZwaveDeviceConfig> deviceSnapshot{};
+    {
+        std::scoped_lock lock{devicesMutex_};
+        deviceSnapshot = devices_;
+    }
+
+    std::vector<std::string> topicsToErase{};
+    topicsToErase.reserve(deviceSnapshot.size());
+    for (const auto& device : deviceSnapshot) {
+        if (device.nodeId == nodeId && !device.topic.empty()) {
+            topicsToErase.push_back(device.topic);
+        }
+    }
+
+    if (!topicsToErase.empty()) {
+        std::scoped_lock lock{cachedTopicStatesMutex_};
+        for (const auto& topic : topicsToErase) {
+            cachedTopicStates_.erase(topic);
+        }
+    }
+}
+
 void ZwaveController::onNodeReady(
     const std::uint16_t nodeId,
     const ZwaveNodeInfo& nodeInfo,
@@ -437,6 +518,7 @@ void ZwaveController::onNodeReady(
 }
 
 void ZwaveController::onValueAdded(const ZwaveControllerValueEvent& event) {
+    markSuccessfulZwaveInput();
     storeNodeValue(event);
     cacheLastKnownTopicState(event);
     publishConfigParameterCapabilities(event);
@@ -453,7 +535,7 @@ void ZwaveController::onValueAdded(const ZwaveControllerValueEvent& event) {
 }
 
 void ZwaveController::onValueRemoved(const std::uint16_t nodeId, const std::uint16_t classId, const std::uint8_t index) {
-    const auto nodeIterator = nodes_.find(nodeId);
+    auto nodeIterator = nodes_.find(nodeId);
     if (nodeIterator == nodes_.end()) {
         return;
     }
@@ -464,9 +546,13 @@ void ZwaveController::onValueRemoved(const std::uint16_t nodeId, const std::uint
     }
 
     classIterator->second.erase(index);
+    if (classIterator->second.empty()) {
+        nodeIterator->second.classes.erase(classIterator);
+    }
 }
 
 void ZwaveController::onValueChanged(const ZwaveControllerValueEvent& event) {
+    markSuccessfulZwaveInput();
     storeNodeValue(event);
     cacheLastKnownTopicState(event);
     publishConfigParameterCapabilities(event);
@@ -497,6 +583,7 @@ void ZwaveController::onValueRefreshed(
     const ZwaveControllerValueEvent& event) {
     (void)nodeId;
     (void)classId;
+    markSuccessfulZwaveInput();
     storeNodeValue(event);
     cacheLastKnownTopicState(event);
 
@@ -934,6 +1021,36 @@ void ZwaveController::runPendingCommandPollLoop() {
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds{kPendingCommandLoopSleepMs});
+    }
+}
+
+void ZwaveController::markSuccessfulZwaveInput() {
+    std::scoped_lock lock{unresponsiveNetworkMutex_};
+    lastSuccessfulZwaveInputAt_ = std::chrono::steady_clock::now();
+    timeoutErrorsSinceLastSuccess_ = 0U;
+    unresponsiveNetworkCallbackTriggered_ = false;
+}
+
+void ZwaveController::trackTimeoutDropAndTriggerIfNeeded() {
+    std::function<void()> callback{};
+
+    {
+        std::scoped_lock lock{unresponsiveNetworkMutex_};
+        timeoutErrorsSinceLastSuccess_ += 1U;
+        const auto nowValue = std::chrono::steady_clock::now();
+        const bool noSuccessfulInputForTooLong = nowValue - lastSuccessfulZwaveInputAt_ >= unresponsiveInputTimeout_;
+        const bool timeoutThresholdReached = timeoutErrorsSinceLastSuccess_ >= unresponsiveTimeoutErrorThreshold_;
+
+        if (unresponsiveNetworkCallbackTriggered_ || !noSuccessfulInputForTooLong || !timeoutThresholdReached) {
+            return;
+        }
+
+        unresponsiveNetworkCallbackTriggered_ = true;
+        callback = unresponsiveNetworkCallback_;
+    }
+
+    if (callback) {
+        callback();
     }
 }
 

@@ -37,6 +37,7 @@ and phase-4 standalone composition entrypoint wiring.
   - when `filestore.use=true`, perform FileStore startup sync with retry policy from `[filestore]`
   - apply merged device config to service and run component
   - publish retained `running` status on `$MONITOR/zwave/status`
+  - terminate process with non-zero exit for systemd restart when watchdog detects unresponsive ZWave input (`>=100` timeout-drop notifications and `>=3 minutes` without successful inbound ZWave input)
   - on signal/self-stop publish retained `stopped`, then close component and mqtt client
 
 MQTT Last Will behavior:
@@ -51,6 +52,7 @@ OpenZWave runtime driver behavior:
   - forwards `Type_ControllerCommand` with both node id and controller state text to preserve node-scoped include progress
   - forwards `Type_EssentialNodeQueriesComplete` as query stage `essential_queries_complete`
   - forwards `Type_NodeQueriesComplete` as query stage `queries_complete`
+  - forwards `Type_NodeRemoved` and clears runtime node caches (`knownNodes`, `valueIdCache`) for the removed node
 - contains all watcher callback exceptions at the callback boundary; runtime logs deterministic
   `zwave_client[error] op=watcher_notification type=<type> node=<node> detail="..."`
   lines instead of letting callback exceptions terminate the process
@@ -75,6 +77,7 @@ OpenZWave runtime driver behavior:
   - `zwave.commandReactionPollIntervalMs` (default `500ms`)
   - `zwave.commandReactionTimeoutMs` (default `30000ms`)
 - tracks cached value ids by node/class/instance/index from OpenZWave notifications
+- on value-removal notifications, prunes empty nested cache containers (index -> instance -> class -> node) to avoid retaining empty runtime cache branches
 - on shutdown removes driver + watcher and destroys owned OpenZWave manager/options
 - resolves OpenZWave config path in this order:
   - env `YAHA_OPENZWAVE_CONFIG_PATH`
