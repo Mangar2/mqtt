@@ -69,7 +69,8 @@ OpenZWave runtime driver behavior:
 - requests node state for known nodes on scan trigger
 - requests all config params per configured node
 - enables polling for cached value ids by node/class
-- configures OpenZWave runtime `PollInterval` from `zwave.pollIntervalMs` (default `500ms`) for legacy polling cadence parity
+- configures OpenZWave runtime `PollInterval` from `zwave.pollIntervalMs` (default `500ms`) for backend refresh cadence
+- passes `zwave.pollIntervalMs` to `ZwaveController` as full-device MQTT refresh interval for all configured node ids
 - passes command feedback timing settings to `ZwaveController`:
   - `zwave.commandReactionPollIntervalMs` (default `500ms`)
   - `zwave.commandReactionTimeoutMs` (default `30000ms`)

@@ -209,12 +209,14 @@ public:
      * @brief Constructs controller adapter.
      * @param usbConfig Controller USB configuration.
      * @param driverPort Low-level driver port.
+      * @param fullDevicePollIntervalMs Poll interval for full configured-node refresh.
      * @param commandReactionPollIntervalMs Poll interval for tracked command confirmation.
      * @param commandReactionTimeoutMs Timeout for tracked command confirmation.
      */
     ZwaveController(
         ZwaveUsbConfig usbConfig,
         IZwaveDriverPort& driverPort,
+          std::uint32_t fullDevicePollIntervalMs,
         std::uint32_t commandReactionPollIntervalMs,
         std::uint32_t commandReactionTimeoutMs);
 
@@ -427,6 +429,7 @@ private:
     [[nodiscard]] std::optional<CachedTopicState> findCachedTopicState(const std::string& topic) const;
     void publishTimeoutForPendingCommand(const PendingCommand& pendingCommand);
     void pollPendingCommands();
+    void pollConfiguredNodes();
     void runPendingCommandPollLoop();
 
     void publish(const std::string& topic, const Value& value, const std::string& reason);
@@ -462,6 +465,7 @@ private:
     IZwaveDriverPort& driverPort_;
 
     std::vector<ZwaveDeviceConfig> devices_{};
+    mutable std::mutex devicesMutex_{};
     ZwaveDevicesMapper devicesMapper_{std::vector<ZwaveDeviceConfig>{}};
     std::unordered_map<std::uint16_t, NodeRuntimeState> nodes_{};
     std::unordered_map<std::string, CachedTopicState> cachedTopicStates_{};
@@ -480,8 +484,10 @@ private:
     std::mutex pendingCommandsMutex_{};
     std::thread pendingCommandPollThread_{};
     std::atomic_bool pendingCommandPollStop_{false};
+    std::chrono::milliseconds fullDevicePollInterval_{kZwaveDefaultPollIntervalMs};
     std::chrono::milliseconds commandReactionPollInterval_{kZwaveDefaultCommandReactionPollIntervalMs};
     std::chrono::milliseconds commandReactionTimeout_{kZwaveDefaultCommandReactionTimeoutMs};
+    std::chrono::steady_clock::time_point lastFullDevicePollAt_{};
     PublishCallback publishCallback_{};
     std::function<void()> driverFailedCallback_{};
 };

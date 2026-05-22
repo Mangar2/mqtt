@@ -165,13 +165,16 @@ void addSpecCompliantReason(Message& message, const ReasonEntry& reasonEntry) {
 ZwaveController::ZwaveController(
     ZwaveUsbConfig usbConfig,
     IZwaveDriverPort& driverPort,
+    const std::uint32_t fullDevicePollIntervalMs,
     const std::uint32_t commandReactionPollIntervalMs,
     const std::uint32_t commandReactionTimeoutMs)
     : usb_(std::move(usbConfig))
     , driverPort_(driverPort)
     , devicesMapper_(std::vector<ZwaveDeviceConfig>{})
+    , fullDevicePollInterval_(fullDevicePollIntervalMs)
     , commandReactionPollInterval_(commandReactionPollIntervalMs)
     , commandReactionTimeout_(commandReactionTimeoutMs) {
+    lastFullDevicePollAt_ = std::chrono::steady_clock::now();
     pendingCommandPollThread_ = std::thread([this] {
         runPendingCommandPollLoop();
     });
@@ -189,6 +192,7 @@ void ZwaveController::setPublishCallback(PublishCallback callback) {
 }
 
 void ZwaveController::setDeviceConfiguration(const std::vector<ZwaveDeviceConfig>& devices) {
+    std::scoped_lock lock{devicesMutex_};
     devices_ = devices;
     devicesMapper_ = ZwaveDevicesMapper{devices_};
 }
@@ -245,19 +249,31 @@ void ZwaveController::startScan() {
 }
 
 void ZwaveController::requestConfigParametersForAllNodes() {
-    for (const auto& device : devices_) {
+    std::vector<ZwaveDeviceConfig> deviceSnapshot{};
+    {
+        std::scoped_lock lock{devicesMutex_};
+        deviceSnapshot = devices_;
+    }
+
+    for (const auto& device : deviceSnapshot) {
         driverPort_.requestAllConfigParams(device.nodeId);
     }
 }
 
 std::vector<std::uint16_t> ZwaveController::knownNodeIds() const {
+    std::vector<ZwaveDeviceConfig> deviceSnapshot{};
+    {
+        std::scoped_lock lock{devicesMutex_};
+        deviceSnapshot = devices_;
+    }
+
     std::vector<std::uint16_t> nodeIds{};
-    nodeIds.reserve(nodes_.size() + devices_.size());
+    nodeIds.reserve(nodes_.size() + deviceSnapshot.size());
 
     for (const auto nodeId : nodes_ | std::views::keys) {
         nodeIds.push_back(nodeId);
     }
-    for (const auto& device : devices_) {
+    for (const auto& device : deviceSnapshot) {
         nodeIds.push_back(device.nodeId);
     }
     std::ranges::sort(nodeIds);
@@ -484,28 +500,7 @@ void ZwaveController::onValueRefreshed(
         buildValueEventCommunicationReason(event, "openzwave_value_refreshed"));
     clearNodeErrorState(event.nodeId, "node " + std::to_string(event.nodeId) + " communication recovered");
 
-    try {
-        if (event.nodeId == kUsbControllerNodeId) {
-            return;
-        }
-
-        const std::optional<ZwaveTopicMapping> mapping = devicesMapper_.valueToTopicAndType(buildDescriptor(event));
-        if (!mapping.has_value() || mapping->topic.empty()) {
-            return;
-        }
-
-        const Value outboundValue = applySwitchOutboundConversion(event.value, mapping->type);
-        PendingCommandMatch pendingMatch = takeMatchingPendingReasons(mapping->topic, event, outboundValue);
-        if (!pendingMatch.matched) {
-            return;
-        }
-
-        publish(mapping->topic,
-            outboundValue,
-            buildZwaveNetworkReason(event.nodeId, event.valueId),
-            pendingMatch.reasons);
-    } catch (...) {
-    }
+    publishValue(event.nodeId, event, buildZwaveNetworkReason(event.nodeId, event.valueId));
 }
 
 std::optional<std::uint16_t> ZwaveController::parseNodeIdFromValue(const Value& value) {
@@ -891,10 +886,34 @@ void ZwaveController::pollPendingCommands() {
     }
 }
 
+void ZwaveController::pollConfiguredNodes() {
+    const auto nowValue = std::chrono::steady_clock::now();
+    if (nowValue - lastFullDevicePollAt_ < fullDevicePollInterval_) {
+        return;
+    }
+    lastFullDevicePollAt_ = nowValue;
+
+    std::vector<ZwaveDeviceConfig> deviceSnapshot{};
+    {
+        std::scoped_lock lock{devicesMutex_};
+        deviceSnapshot = devices_;
+    }
+
+    std::unordered_set<std::uint16_t> nodeIds{};
+    for (const auto& device : deviceSnapshot) {
+        nodeIds.insert(device.nodeId);
+    }
+
+    for (const auto nodeId : nodeIds) {
+        driverPort_.requestNodeState(nodeId);
+    }
+}
+
 void ZwaveController::runPendingCommandPollLoop() {
     while (!pendingCommandPollStop_.load()) {
         try {
             pollPendingCommands();
+            pollConfiguredNodes();
         } catch (...) {
         }
 

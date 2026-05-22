@@ -47,6 +47,9 @@ constexpr std::uint32_t kCommandReactionDefaultTimeoutMs = 30000U;
 constexpr std::uint32_t kPendingTimeoutWaitMs = 150U;
 constexpr std::uint32_t kPendingTimeoutPublishWaitMs = 180U;
 constexpr std::uint32_t kPendingPollWaitMs = 180U;
+constexpr std::uint32_t kFullDevicePollFastMs = 20U;
+constexpr std::uint32_t kFullDevicePollWaitMs = 120U;
+constexpr std::uint32_t kFullDevicePollDisabledForTestsMs = 600000U;
 
 struct FakeDriverPort final : yaha::IZwaveDriverPort {
     std::size_t setValueCalls{0U};
@@ -124,11 +127,17 @@ struct FakeDriverPort final : yaha::IZwaveDriverPort {
 yaha::ZwaveController makeController(
     FakeDriverPort& driver,
     const std::uint32_t commandReactionPollIntervalMs = 500U,
-    const std::uint32_t commandReactionTimeoutMs = 30000U) {
+    const std::uint32_t commandReactionTimeoutMs = 30000U,
+    const std::uint32_t fullDevicePollIntervalMs = kFullDevicePollDisabledForTestsMs) {
     yaha::ZwaveUsbConfig usb{};
     usb.device = "/dev/ttyUSB0";
     usb.topic = "controller/topic";
-    return yaha::ZwaveController{usb, driver, commandReactionPollIntervalMs, commandReactionTimeoutMs};
+    return yaha::ZwaveController{
+        usb,
+        driver,
+        fullDevicePollIntervalMs,
+        commandReactionPollIntervalMs,
+        commandReactionTimeoutMs};
 }
 
 yaha::ZwaveDeviceConfig makeDevice(
@@ -289,7 +298,7 @@ TEST_CASE("on_value_changed_publishes_mapped_switch_as_on_off", "[zwave_controll
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("on_value_refreshed_updates_cache_and_sets_initial_health", "[zwave_controller]") {
+TEST_CASE("on_value_refreshed_publishes_value_and_sets_initial_health", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
 
@@ -322,10 +331,13 @@ TEST_CASE("on_value_refreshed_updates_cache_and_sets_initial_health", "[zwave_co
             .type = "switch",
             .readOnly = false});
 
-    REQUIRE(published.size() == 1U);
+    REQUIRE(published.size() == 2U);
     CHECK(published[0].topic() == "$MONITOR/ground/livingroom/lamp/health");
     REQUIRE(std::holds_alternative<std::string>(published[0].value()));
     CHECK(std::get<std::string>(published[0].value()) == "alive");
+    CHECK(published[1].topic() == "ground/livingroom/lamp");
+    REQUIRE(std::holds_alternative<std::string>(published[1].value()));
+    CHECK(std::get<std::string>(published[1].value()) == "on");
 
     controller.onValueChanged(yaha::ZwaveControllerValueEvent{
         .nodeId = kNodeIdFourteen,
@@ -338,7 +350,7 @@ TEST_CASE("on_value_refreshed_updates_cache_and_sets_initial_health", "[zwave_co
         .type = "switch",
         .readOnly = false});
 
-    REQUIRE(published.size() == 2U);
+    REQUIRE(published.size() == 3U);
     CHECK(published.back().topic() == "ground/livingroom/lamp");
     REQUIRE(std::holds_alternative<std::string>(published.back().value()));
     CHECK(std::get<std::string>(published.back().value()) == "on");
@@ -1136,6 +1148,45 @@ TEST_CASE("pending_command_polling_targets_only_affected_node", "[zwave_controll
 
     CHECK(driver.requestNodeStateCalls >= 1U);
     CHECK(driver.lastRequestedNodeState == kNodeIdEleven);
+}
+
+TEST_CASE("full_device_polling_requests_all_configured_nodes", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(
+        driver,
+        kCommandReactionFastPollMs,
+        kCommandReactionDefaultTimeoutMs,
+        kFullDevicePollFastMs);
+
+    controller.setDeviceConfiguration({
+        makeDevice(
+            "ground/livingroom/lamp",
+            kNodeIdEleven,
+            kSwitchBinaryClass,
+            kInstanceOne,
+            kIndexZero,
+            std::string{"switch"},
+            std::nullopt),
+        makeDevice(
+            "ground/livingroom/energy",
+            kNodeIdTwelve,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt,
+            std::string{"number"},
+            std::nullopt),
+        makeDevice(
+            "ground/livingroom/lamp/switch",
+            kNodeIdEleven,
+            kSwitchMultilevelClass,
+            kInstanceOne,
+            kIndexOne,
+            std::string{"switch"},
+            std::nullopt)});
+
+    std::this_thread::sleep_for(std::chrono::milliseconds{kFullDevicePollWaitMs});
+
+    CHECK(driver.requestNodeStateCalls >= 2U);
 }
 
 TEST_CASE("matching_value_refreshed_publishes_pending_feedback", "[zwave_controller]") {

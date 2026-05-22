@@ -34,7 +34,7 @@ that orchestrates MQTT routing and controller lifecycle.
 | `qos` | `Qos` | Default `AtLeastOnce` |
 | `retain` | `bool` | Default `false` |
 | `logLevel` | `std::uint8_t` | OpenZWave/service event logging level (`0..4`), default `2` |
-| `pollIntervalMs` | `std::uint32_t` | OpenZWave poll interval in milliseconds, default `500` |
+| `pollIntervalMs` | `std::uint32_t` | Full-device poll interval in milliseconds (OpenZWave runtime and controller all-node refresh), default `500` |
 | `commandReactionPollIntervalMs` | `std::uint32_t` | Poll interval for tracked command confirmation, default `500` |
 | `commandReactionTimeoutMs` | `std::uint32_t` | Timeout for tracked command confirmation, default `30000` |
 | `logIncomingMessages` | `bool` | Default `false`; logs inbound MQTT messages handled by ZWave service |

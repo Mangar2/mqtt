@@ -193,6 +193,7 @@ int main(int argc, char* argv[]) {
     auto controller = std::make_shared<yaha::ZwaveController>(
         runtimeConfig.zwaveConfig.usb,
         *driverPort,
+        runtimeConfig.zwaveConfig.pollIntervalMs,
         runtimeConfig.zwaveConfig.commandReactionPollIntervalMs,
         runtimeConfig.zwaveConfig.commandReactionTimeoutMs);
     controller->setDriverFailedCallback([] {

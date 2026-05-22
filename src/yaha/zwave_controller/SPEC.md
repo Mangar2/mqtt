@@ -138,9 +138,10 @@ Concrete parity adapter implementation with additional callback entry points:
   - node runtime map keyed by `nodeId` with `ready/dead` status and latest value events per class/index
   - topic state map keyed by mapped MQTT topic with latest locally observed outbound value and optional zwave network value id
 - `onValueChanged` updates cache and publishes mapped value.
-- `onValueRefreshed` updates cache and publishes outbound mapped value only when it matches a pending command.
+- `onValueRefreshed` updates cache and always publishes mapped outbound value (including non-command refreshes).
 - Pending command feedback behavior:
   - controller runs a background poll loop and requests `driver.requestNodeState(nodeId)` per pending command on `commandReactionPollIntervalMs`
+  - controller also runs a full-device poll loop and requests `driver.requestNodeState(nodeId)` for all configured node ids on `pollIntervalMs`
   - if a value-changed/value-refreshed event matches pending reply topic + target + expected value and is still within timeout, the pending command is consumed
   - expected value comparison accepts semantic bool equivalence across representations (`on/true/1`, `off/false/0`)
   - consumed pending command reasons are prepended to outbound message reasons in original order

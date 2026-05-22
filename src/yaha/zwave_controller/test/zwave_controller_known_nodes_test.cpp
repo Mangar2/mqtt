@@ -13,6 +13,7 @@ namespace {
 constexpr std::uint16_t kNodeIdSeven = 7U;
 constexpr std::uint16_t kNodeIdNine = 9U;
 constexpr std::uint16_t kNodeIdEleven = 11U;
+constexpr std::uint32_t kFullDevicePollMs = 600000U;
 constexpr std::uint32_t kCommandReactionPollMs = 20U;
 constexpr std::uint32_t kCommandReactionTimeoutMs = 30000U;
 
@@ -66,7 +67,12 @@ TEST_CASE("known_node_ids_include_configured_and_runtime_nodes_sorted_unique", "
     usb.device = "/dev/ttyUSB0";
     usb.topic = "controller/topic";
 
-    yaha::ZwaveController controller{usb, driver, kCommandReactionPollMs, kCommandReactionTimeoutMs};
+    yaha::ZwaveController controller{
+        usb,
+        driver,
+        kFullDevicePollMs,
+        kCommandReactionPollMs,
+        kCommandReactionTimeoutMs};
     controller.setDeviceConfiguration({
         makeDevice("home/node9/switch", kNodeIdNine, yaha::kZwaveSwitchBinaryClass),
         makeDevice("home/node7/sensor", kNodeIdSeven),
