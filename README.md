@@ -230,9 +230,29 @@ bash deploy.sh --zip yaha.zip --target-dir ~/mqtt
 Automation client INI sections:
 
 - `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs)
-- `[filestore]`: `use`, `host`, `port`, `path`
+- `[filestore]`: `use`, `host`, `port`, `path`, `startupRetryCount`, `startupRetryIntervalSeconds`
 - `[monitoring]`: `topicPrefix`
 - `[automation]`: `topicPrefix`, `managementTopicPrefix`, `longitude`, `latitude`, `subscribeQoS`, `logIncomingMessages`, `logOutgoingMessages`
+
+Automation startup lifecycle status:
+
+- status topic: `$MONITOR/automation/status`
+- published states: `starting`, `running`, `stopped`
+- Last Will state on ungraceful disconnect: `terminated` (retained)
+- startup order: broker connect -> `starting` -> filestore startup load with retries -> `running`
+
+ValueService client INI sections:
+
+- `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs, logReason)
+- `[filestore]`: `use`, `host`, `port`, `filename`, `topicPrefix`, `startupRetryCount`, `startupRetryIntervalSeconds`
+- `[valueservice]`: `subscribeQoS`, optional legacy `valuesFileName`
+
+ValueService startup lifecycle status:
+
+- status topic: `$MONITOR/valueservice/status`
+- published states: `starting`, `running`, `stopped`
+- Last Will state on ungraceful disconnect: `terminated` (retained)
+- startup order: broker connect -> `starting` -> filestore startup load with retries -> `running`
 
 BrokerConnector INI sections:
 
@@ -281,11 +301,18 @@ ZWave client INI sections:
 
 - `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs, logReason)
 - `[zwave]`: `subscribeQoS`, `qos`, `retain`, `logLevel`, `logIncomingMessages`, `logOutgoingMessages`, `pollIntervalMs`, `usbDevice`, `usbTopic`, repeated `device`
-- `[filestore]`: `use`, `host`, `port`, `filename` (optional JSON settings sync)
+- `[filestore]`: `use`, `host`, `port`, `filename`, `startupRetryCount`, `startupRetryIntervalSeconds` (optional JSON settings sync)
     - `logLevel=1` logs OpenZWave errors plus important ZWave service events/errors.
     - `logIncomingMessages` and `logOutgoingMessages` are independent MQTT trace flags and are not overridden by `logLevel`.
     - if `filestore.use=true`, the ZWave client loads device rows from FileStore JSON and applies node-priority override: any FileStore row for node `N` replaces all INI device rows for node `N`.
     - after merge, the client writes the full effective ZWave settings snapshot back to FileStore JSON.
+
+ZWave startup lifecycle status:
+
+- status topic: `$MONITOR/zwave/status`
+- published states: `starting`, `running`, `stopped`
+- Last Will state on ungraceful disconnect: `terminated` (retained)
+- startup order (when `filestore.use=true`): broker connect -> `starting` -> filestore startup sync with retries -> `running`
 
 RS485 Interface client INI sections:
 

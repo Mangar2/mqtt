@@ -252,14 +252,16 @@ void ZwaveController::requestConfigParametersForAllNodes() {
 
 std::vector<std::uint16_t> ZwaveController::knownNodeIds() const {
     std::vector<std::uint16_t> nodeIds{};
-    nodeIds.reserve(nodes_.size());
+    nodeIds.reserve(nodes_.size() + devices_.size());
 
-    for (const auto& [nodeId, state] : nodes_) {
-        (void)state;
+    for (const auto nodeId : nodes_ | std::views::keys) {
         nodeIds.push_back(nodeId);
     }
-
+    for (const auto& device : devices_) {
+        nodeIds.push_back(device.nodeId);
+    }
     std::ranges::sort(nodeIds);
+    nodeIds.erase(std::ranges::unique(nodeIds).begin(), nodeIds.end());
     return nodeIds;
 }
 

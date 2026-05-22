@@ -37,6 +37,24 @@ bool tryLoadValueServiceConfigFromIni(
         output.fileStoreEnabled = *useResult.first;
     }
 
+    const auto retryCountResult = document.readUnsigned("filestore", "startupRetryCount", 0U, 1000U);
+    if (!retryCountResult.second.empty()) {
+        errorMessage = retryCountResult.second;
+        return false;
+    }
+    if (retryCountResult.first.has_value()) {
+        output.fileStoreStartupRetryCount = static_cast<std::uint32_t>(*retryCountResult.first);
+    }
+
+    const auto retryIntervalResult = document.readUnsigned("filestore", "startupRetryIntervalSeconds", 1U, 3600U);
+    if (!retryIntervalResult.second.empty()) {
+        errorMessage = retryIntervalResult.second;
+        return false;
+    }
+    if (retryIntervalResult.first.has_value()) {
+        output.fileStoreStartupRetryIntervalSeconds = static_cast<std::uint32_t>(*retryIntervalResult.first);
+    }
+
     if (const auto monitorPrefix = document.lastValue("filestore", "topicPrefix");
         monitorPrefix.has_value()) {
         output.monitorTopicPrefix = *monitorPrefix;

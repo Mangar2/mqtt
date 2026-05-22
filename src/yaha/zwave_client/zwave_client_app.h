@@ -53,6 +53,16 @@ struct ZwaveClientRuntimeConfig {
 [[nodiscard]] std::string serializeZwaveSettingsToJson(const ZwaveConfig& config);
 
 /**
+ * @brief Loads device overrides from FileStore and persists the merged snapshot.
+ * @param config ZWave configuration to update in-place.
+ * @param errorMessage Human-readable error text on failure.
+ * @return True when load/merge/persist succeeded.
+ */
+[[nodiscard]] bool trySyncZwaveDeviceSettingsFromFileStore(
+    ZwaveConfig& config,
+    std::string& errorMessage);
+
+/**
  * @brief Maps runtime configuration from parsed INI document.
  * @param document Parsed INI document.
  * @param output Loaded runtime configuration on success.

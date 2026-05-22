@@ -109,7 +109,7 @@ that orchestrates MQTT routing and controller lifecycle.
 	- `system/zwave/removefailednode` value `0`
 	- `system/zwave/addnode` value `off`
 	- `system/zwave/scan` value `off`
-	- `$MONITOR/zwave/nodes/known` value JSON string `{"nodes":[<nodeId>,...]}` from controller runtime snapshot
+	- `$MONITOR/zwave/nodes/known` value JSON string `{"nodes":[<nodeId>,...]}` from controller known-node snapshot (configured + runtime-discovered)
 	- reason `zwave restarted`
 - `run()` then calls `controller.requestConfigParametersForAllNodes()`.
 - request-config exceptions are contained and emitted as deterministic

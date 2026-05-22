@@ -1,18 +1,70 @@
 #include "yaha/mqtt_client/broker_transport.h"
-#include "yaha/mqtt_client/mqtt_client_runtime.h"
 #include "yaha/zwave/zwave_service_component.h"
 #include "yaha/zwave_client/openzwave_runtime_driver_port.h"
 #include "yaha/zwave_client/zwave_client_app.h"
 
+#include <atomic>
+#include <chrono>
+#include <csignal>
+#include <cstdint>
 #include <exception>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 
 namespace {
+
+std::atomic<bool> g_shutdownRequested{false};
+
+constexpr std::string_view k_status_topic{"$MONITOR/zwave/status"};
+constexpr auto k_runtime_poll_interval = std::chrono::milliseconds{100};
+
+void handleSignal(const int signalNumber) {
+    (void)signalNumber;
+    g_shutdownRequested.store(true);
+}
+
+bool waitForBrokerConnection(yaha::YahaMqttClient& mqttClient) {
+    while (!g_shutdownRequested.load() && mqttClient.isRunning() && !mqttClient.isConnected()) {
+        std::this_thread::sleep_for(k_runtime_poll_interval);
+    }
+
+    return mqttClient.isConnected();
+}
+
+void publishStatus(yaha::YahaMqttClient& mqttClient, const std::string& statusText) {
+    mqttClient.publish(yaha::Message{
+        std::string{k_status_topic},
+        statusText,
+        yaha::Qos::AtLeastOnce,
+        true});
+}
+
+bool waitForFileStoreStartupSync(yaha::ZwaveConfig& config) {
+    if (!config.fileStoreEnabled) {
+        return true;
+    }
+
+    const std::uint32_t maxAttempts = config.fileStoreStartupRetryCount + 1U;
+    for (std::uint32_t attemptIndex = 0U; attemptIndex < maxAttempts; ++attemptIndex) {
+        std::string syncErrorMessage{};
+        if (yaha::trySyncZwaveDeviceSettingsFromFileStore(config, syncErrorMessage)) {
+            return true;
+        }
+
+        if (attemptIndex + 1U >= maxAttempts || g_shutdownRequested.load()) {
+            return false;
+        }
+
+        std::this_thread::sleep_for(std::chrono::seconds{config.fileStoreStartupRetryIntervalSeconds});
+    }
+
+    return false;
+}
 
 struct CliOptions {
     std::filesystem::path configPath{"broker.ini"};
@@ -122,8 +174,17 @@ int main(int argc, char* argv[]) {
     }
 
     runtimeConfig.mqttConfig.enableMessageTrace = cliOptions.enableMessageTrace;
+    runtimeConfig.mqttConfig.willEnabled = true;
+    runtimeConfig.mqttConfig.willTopic = std::string{k_status_topic};
+    runtimeConfig.mqttConfig.willValue = std::string{"terminated"};
+    runtimeConfig.mqttConfig.willQos = yaha::Qos::AtLeastOnce;
+    runtimeConfig.mqttConfig.willRetain = true;
 
     printStartupConfiguration(cliOptions.configPath, runtimeConfig);
+
+    std::signal(SIGINT, handleSignal);
+    std::signal(SIGTERM, handleSignal);
+    g_shutdownRequested.store(false);
 
     auto driverPort = std::make_shared<yaha::OpenZwaveRuntimeDriverPort>(
         runtimeConfig.zwaveConfig.usb.device,
@@ -149,8 +210,57 @@ int main(int argc, char* argv[]) {
         component,
         yaha::makeBrokerTransport()};
 
-    yaha::YahaMqttClientRuntime runtime{mqttClient, component};
-    runtime.runUntilSignal();
+    mqttClient.run();
+    if (!waitForBrokerConnection(mqttClient)) {
+        mqttClient.close();
+        component.close();
+        return 2;
+    }
+
+    try {
+        publishStatus(mqttClient, "starting");
+
+        if (!waitForFileStoreStartupSync(runtimeConfig.zwaveConfig)) {
+            publishStatus(mqttClient, "stopped");
+            mqttClient.close();
+            component.close();
+            return 2;
+        }
+
+        component.setDeviceConfiguration(runtimeConfig.zwaveConfig.devices);
+        component.run();
+        publishStatus(mqttClient, "running");
+    } catch (const std::exception& exceptionValue) {
+        std::cerr << "zwave_client[error] startup failed: " << exceptionValue.what() << '\n';
+        try {
+            publishStatus(mqttClient, "stopped");
+        } catch (...) {
+        }
+        mqttClient.close();
+        component.close();
+        return 2;
+    } catch (...) {
+        std::cerr << "zwave_client[error] startup failed: unknown" << '\n';
+        try {
+            publishStatus(mqttClient, "stopped");
+        } catch (...) {
+        }
+        mqttClient.close();
+        component.close();
+        return 2;
+    }
+
+    while (!g_shutdownRequested.load()) {
+        std::this_thread::sleep_for(k_runtime_poll_interval);
+    }
+
+    try {
+        publishStatus(mqttClient, "stopped");
+    } catch (...) {
+    }
+
+    component.close();
+    mqttClient.close();
 
     return 0;
 }

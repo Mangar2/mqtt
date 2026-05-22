@@ -23,6 +23,8 @@
 namespace yaha {
 
 constexpr std::uint16_t k_default_file_store_port{8210U};
+constexpr std::uint32_t k_default_file_store_startup_retry_count{10U};
+constexpr std::uint32_t k_default_file_store_startup_retry_interval_seconds{60U};
 
 /**
  * @brief Runtime config for Automation client component.
@@ -32,6 +34,8 @@ struct AutomationClientConfig {
     std::string fileStoreHost{"127.0.0.1"};                           ///< FileStore HTTP host.
     std::uint16_t fileStorePort{k_default_file_store_port};            ///< FileStore HTTP port.
     bool fileStoreEnabled{true};                                        ///< Enables startup read and write-back.
+    std::uint32_t fileStoreStartupRetryCount{k_default_file_store_startup_retry_count}; ///< Additional startup retries after first failed load.
+    std::uint32_t fileStoreStartupRetryIntervalSeconds{k_default_file_store_startup_retry_interval_seconds}; ///< Wait interval between startup retries.
     std::string monitorTopicPrefix{"$MONITOR/FileStore"};             ///< Prefix for FileStore monitoring topics.
     std::string managementTopicPrefix{"$MONITOR/automation/rules"}; ///< Prefix for runtime rule update topics.
     std::string presenceTopic{"$MONITOR/presence"};                ///< Presence variable topic.

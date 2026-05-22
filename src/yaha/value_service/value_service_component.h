@@ -19,6 +19,8 @@
 namespace yaha {
 
 inline constexpr std::uint16_t kDefaultValueServiceFileStorePort = 8210U;
+inline constexpr std::uint32_t kDefaultValueServiceFileStoreStartupRetryCount = 10U;
+inline constexpr std::uint32_t kDefaultValueServiceFileStoreStartupRetryIntervalSeconds = 60U;
 
 /**
  * @brief Runtime configuration for ValueService component.
@@ -29,6 +31,8 @@ struct ValueServiceConfig {
     std::string fileStoreHost{"127.0.0.1"};               ///< FileStore HTTP host.
     std::uint16_t fileStorePort{kDefaultValueServiceFileStorePort}; ///< FileStore HTTP port.
     bool fileStoreEnabled{true};                            ///< Enables FileStore load/save behavior.
+    std::uint32_t fileStoreStartupRetryCount{kDefaultValueServiceFileStoreStartupRetryCount}; ///< Additional startup retries after first failed load.
+    std::uint32_t fileStoreStartupRetryIntervalSeconds{kDefaultValueServiceFileStoreStartupRetryIntervalSeconds}; ///< Wait interval between startup retries.
     Qos subscribeQos{Qos::AtLeastOnce};                     ///< QoS for subscriptions and outbound state publishes.
     std::string legacyValuesFileName{};                     ///< Legacy migration key only, runtime-local file IO is disabled.
 };

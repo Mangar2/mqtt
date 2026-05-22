@@ -42,6 +42,11 @@ public:
         bool enableLifecycleTrace{true};
         bool enableMessageTrace{false};
         bool logReason{true};
+        bool willEnabled{false};
+        std::string willTopic{};
+        Value willValue{std::string{}};
+        Qos willQos{Qos::AtLeastOnce};
+        bool willRetain{true};
     };
 
     /**

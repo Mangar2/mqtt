@@ -100,7 +100,16 @@ public:
             : static_cast<std::uint16_t>(
                 std::min<std::int64_t>(keepAliveSeconds, std::numeric_limits<std::uint16_t>::max()));
 
-        const mqtt::ConnectPacket connectPacket = mqtt::build_connect_packet(clientConfig);
+        mqtt::ConnectPacket connectPacket = mqtt::build_connect_packet(clientConfig);
+        if (config.willEnabled && !config.willTopic.empty()) {
+            mqtt::WillData will{};
+            will.topic = mqtt::Utf8String{config.willTopic};
+            will.payload = mqtt::BinaryData::from_string(buildEnvelopePayload(
+                Message{config.willTopic, config.willValue, config.willQos, config.willRetain, false}));
+            will.qos = toMqttQos(config.willQos);
+            will.retain = config.willRetain;
+            connectPacket.will = std::move(will);
+        }
 
         connection_ = std::make_unique<mqtt::TcpConnection>(
             mqtt::ConnectionNegotiator::dial_tcp(config.brokerHost, config.brokerPort));

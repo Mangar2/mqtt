@@ -314,6 +314,24 @@ constexpr int kHttpOkStatus = 200;
         parsed.settingsKeyPath = *settingsKeyPath;
     }
 
+    const auto retryCountResult = document.readUnsigned("filestore", "startupRetryCount", 0U, 1000U);
+    if (!retryCountResult.second.empty()) {
+        errorMessage = retryCountResult.second;
+        return false;
+    }
+    if (retryCountResult.first.has_value()) {
+        parsed.fileStoreStartupRetryCount = static_cast<std::uint32_t>(*retryCountResult.first);
+    }
+
+    const auto retryIntervalResult = document.readUnsigned("filestore", "startupRetryIntervalSeconds", 1U, 3600U);
+    if (!retryIntervalResult.second.empty()) {
+        errorMessage = retryIntervalResult.second;
+        return false;
+    }
+    if (retryIntervalResult.first.has_value()) {
+        parsed.fileStoreStartupRetryIntervalSeconds = static_cast<std::uint32_t>(*retryIntervalResult.first);
+    }
+
     return true;
 }
 
@@ -940,6 +958,22 @@ bool tryApplyZwaveDeviceSettingsFromJson(
     return true;
 }
 
+bool trySyncZwaveDeviceSettingsFromFileStore(
+    ZwaveConfig& config,
+    std::string& errorMessage) {
+    if (!config.fileStoreEnabled) {
+        return true;
+    }
+
+    if (!tryLoadDeviceOverridesFromFileStore(config)) {
+        errorMessage = "failed to load/merge zwave settings from filestore";
+        return false;
+    }
+
+    persistSettingsToFileStore(config);
+    return true;
+}
+
 std::string serializeZwaveSettingsToJson(const ZwaveConfig& config) {
     std::string json{"{\"devices\":["};
 
@@ -965,16 +999,6 @@ bool tryLoadZwaveClientRuntimeConfigFromIni(
 
     if (!tryLoadMqttClientConfigFromIni(document, parsed.mqttConfig, errorMessage)) {
         return false;
-    }
-
-    if (parsed.zwaveConfig.fileStoreEnabled) {
-        if (!tryLoadDeviceOverridesFromFileStore(parsed.zwaveConfig)) {
-            std::cout << "zwave_client[error] op=filestore_get_settings"
-                      << " path=" << parsed.zwaveConfig.settingsKeyPath
-                      << " reason=load_or_merge_failed"
-                      << '\n' << std::flush;
-        }
-        persistSettingsToFileStore(parsed.zwaveConfig);
     }
 
     output = std::move(parsed);
