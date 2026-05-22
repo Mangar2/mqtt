@@ -357,7 +357,7 @@ TEST_CASE("on_value_refreshed_publishes_value_and_sets_initial_health", "[zwave_
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("on_controller_command_publishes_monitoring_notification", "[zwave_controller]") {
+TEST_CASE("on_controller_command_publishes_global_monitoring_notification_only", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
 
@@ -368,13 +368,10 @@ TEST_CASE("on_controller_command_publishes_monitoring_notification", "[zwave_con
 
     controller.onControllerCommand(kNodeIdTwentyTwo, kControllerResultCode, "in-progress");
 
-    REQUIRE(published.size() == 2U);
+    REQUIRE(published.size() == 1U);
     CHECK(published[0].topic() == "$MONITOR/zwave/controller/command/last_status");
     REQUIRE(std::holds_alternative<std::string>(published[0].value()));
     CHECK(std::get<std::string>(published[0].value()) == "in-progress");
-    CHECK(published[1].topic() == "$MONITOR/zwave/node/22/include");
-    REQUIRE(std::holds_alternative<std::string>(published[1].value()));
-    CHECK(std::get<std::string>(published[1].value()) == "in-progress");
 }
 
 TEST_CASE("set_value_rejects_topic_without_trailing_set", "[zwave_controller]") {
@@ -674,8 +671,31 @@ TEST_CASE("node_ready_enables_switch_class_polling", "[zwave_controller]") {
     controller.onValueRemoved(kUnknownNodeId, kSensorMultilevelClass, kIndexOne);
 }
 
+TEST_CASE("value_discovery_after_node_ready_enables_class_polling", "[zwave_controller]") {
+    FakeDriverPort driver{};
+    auto controller = makeController(driver);
+
+    controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{}, "queries_complete");
+    CHECK(driver.enablePollCalls == 2U);
+
+    controller.onValueAdded(yaha::ZwaveControllerValueEvent{
+        .nodeId = kNodeIdTwentyOne,
+        .classId = kSensorMultilevelClass,
+        .instance = kInstanceOne,
+        .index = kIndexOne,
+        .label = std::optional<std::string>{"temperature"},
+        .valueId = std::nullopt,
+        .value = yaha::Value{kTemperatureValue},
+        .type = "number",
+        .readOnly = false});
+
+    CHECK(driver.enablePollCalls == 3U);
+    CHECK(driver.lastEnablePollNode == kNodeIdTwentyOne);
+    CHECK(driver.lastEnablePollClass == kSensorMultilevelClass);
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("node_ready_publishes_include_progress_without_health", "[zwave_controller]") {
+TEST_CASE("node_ready_publishes_include_completion_only_for_add_flow_without_health", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
 
@@ -697,13 +717,14 @@ TEST_CASE("node_ready_publishes_include_progress_without_health", "[zwave_contro
     controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{}, "essential_queries_complete");
     controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{}, "queries_complete");
 
-    REQUIRE(published.size() == 3U);
+    REQUIRE(published.empty());
+
+    controller.onNodeAdded(kNodeIdTwentyOne);
+    controller.onNodeReady(kNodeIdTwentyOne, yaha::ZwaveNodeInfo{}, "queries_complete");
+
+    REQUIRE(published.size() == 1U);
     CHECK(published[0].topic() == "$MONITOR/zwave/node/21/include");
-    CHECK(std::get<std::string>(published[0].value()) == "essential_queries_complete");
-    CHECK(published[1].topic() == "$MONITOR/zwave/node/21/include");
-    CHECK(std::get<std::string>(published[1].value()) == "queries_complete");
-    CHECK(published[2].topic() == "$MONITOR/zwave/node/21/include");
-    CHECK(std::get<std::string>(published[2].value()) == "included");
+    CHECK(std::get<std::string>(published[0].value()) == "included");
 }
 
 TEST_CASE("on_value_changed_for_usb_controller_publishes_to_usb_topic", "[zwave_controller]") {

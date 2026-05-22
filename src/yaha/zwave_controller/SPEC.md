@@ -128,11 +128,11 @@ Concrete parity adapter implementation with additional callback entry points:
   - lower severity never overwrites higher severity
   - successful communication clears to `no_error`
 - Controller command callback publishes to `$MONITOR/zwave/controller/command/last_status`.
-- Node include process monitoring publishes to `$MONITOR/zwave/node/<nodeId>/include`:
-  - `onNodeAdded` publishes `node_added`
-  - `onControllerCommand` publishes per-node controller state text (for example `in-progress`, `completed`, `failed`)
-  - `onNodeReady(..., "essential_queries_complete")` publishes `essential_queries_complete`
-  - `onNodeReady(..., "queries_complete")` enables legacy-equivalent value polling for switch classes `0x25` and `0x26`, then publishes `queries_complete` followed by `included`
+- Node include process monitoring publishes to `$MONITOR/zwave/node/<nodeId>/include` only for include-flow completion:
+  - `onNodeAdded` marks the node as include-flow candidate without publishing include state
+  - `onNodeReady(..., "queries_complete")` always enables legacy-equivalent value polling for switch classes `0x25` and `0x26`
+  - when values are discovered after interview completion (`onValueAdded`/`onValueChanged` on ready node), controller enables polling for the discovered class id to avoid missed polling activation when value-id cache was not ready at node-ready time
+  - `onNodeReady(..., "queries_complete")` publishes `included` only when the node was previously marked by `onNodeAdded`
 - Node/value callbacks maintain in-memory node/class cache.
 - Controller keeps local runtime state in unordered maps:
   - node runtime map keyed by `nodeId` with `ready/dead` status and latest value events per class/index

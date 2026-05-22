@@ -393,16 +393,14 @@ void ZwaveController::onControllerCommand(
     if (nodeId == 0U) {
         return;
     }
-
-    publishNodeIncludeState(
-        nodeId,
-        statusText,
-        "include progress from controller command state: " + statusText);
 }
 
 void ZwaveController::onNodeAdded(const std::uint16_t nodeId) {
     nodes_[nodeId] = NodeRuntimeState{};
-    publishNodeIncludeState(nodeId, "node_added", "node announced by openzwave include flow", true);
+    {
+        std::scoped_lock lock{includeFlowCandidateNodeIdsMutex_};
+        includeFlowCandidateNodeIds_.insert(nodeId);
+    }
 }
 
 void ZwaveController::onNodeReady(
@@ -418,14 +416,23 @@ void ZwaveController::onNodeReady(
     nodeIterator->second.ready = true;
     nodeIterator->second.dead = false;
 
-    if (!queryStage.empty()) {
-        publishNodeIncludeState(nodeId, queryStage, "openzwave query stage reached: " + queryStage, true);
-    }
-
     if (queryStage == "queries_complete") {
         driverPort_.enablePoll(nodeId, kZwaveSwitchBinaryClass);
         driverPort_.enablePoll(nodeId, kZwaveSwitchMultilevelClass);
-        publishNodeIncludeState(nodeId, "included", "include interview complete", true);
+
+        bool includeFlowCandidateReachedCompletion = false;
+        {
+            std::scoped_lock lock{includeFlowCandidateNodeIdsMutex_};
+            const auto candidateIterator = includeFlowCandidateNodeIds_.find(nodeId);
+            if (candidateIterator != includeFlowCandidateNodeIds_.end()) {
+                includeFlowCandidateReachedCompletion = true;
+                includeFlowCandidateNodeIds_.erase(candidateIterator);
+            }
+        }
+
+        if (includeFlowCandidateReachedCompletion) {
+            publishNodeIncludeState(nodeId, "included", "include flow completed", true);
+        }
     }
 }
 
@@ -433,6 +440,12 @@ void ZwaveController::onValueAdded(const ZwaveControllerValueEvent& event) {
     storeNodeValue(event);
     cacheLastKnownTopicState(event);
     publishConfigParameterCapabilities(event);
+
+    const auto nodeIterator = nodes_.find(event.nodeId);
+    if (nodeIterator != nodes_.end() && nodeIterator->second.ready) {
+        driverPort_.enablePoll(event.nodeId, event.classId);
+    }
+
     updateNodeHealthState(
         event.nodeId,
         NodeHealthState::Alive,
@@ -461,6 +474,9 @@ void ZwaveController::onValueChanged(const ZwaveControllerValueEvent& event) {
     auto nodeIterator = nodes_.find(event.nodeId);
     if (nodeIterator != nodes_.end()) {
         nodeIterator->second.dead = false;
+        if (nodeIterator->second.ready) {
+            driverPort_.enablePoll(event.nodeId, event.classId);
+        }
     }
     updateNodeHealthState(
         event.nodeId,

@@ -478,6 +478,8 @@ private:
     std::mutex nodeHealthStatesMutex_{};
     std::unordered_map<std::uint16_t, std::string> nodeIncludeStates_{};
     std::mutex nodeIncludeStatesMutex_{};
+    std::unordered_set<std::uint16_t> includeFlowCandidateNodeIds_{};
+    std::mutex includeFlowCandidateNodeIdsMutex_{};
     std::unordered_set<std::string> publishedConfigCapabilityKeys_{};
     std::mutex publishedConfigCapabilityKeysMutex_{};
     std::vector<PendingCommand> pendingCommands_{};

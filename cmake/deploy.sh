@@ -50,7 +50,7 @@ Usage:
 Description:
   Local deployment on the target host.
   - Unpacks the deployment zip.
-  - Copies files to --target-dir using checksum-based skip for identical files.
+  - Copies files to --target-dir using content comparison skip for identical files.
   - Protects existing .ini files with prompt/allow/deny policy.
   - Restarts only services for components that actually received new files.
 
@@ -71,20 +71,6 @@ require_command() {
     log_error "Missing required command: ${cmd}"
     exit 1
   fi
-}
-
-calc_sha256() {
-  local file_path="$1"
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "${file_path}" | awk '{print $1}'
-    return
-  fi
-  if command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 "${file_path}" | awk '{print $1}'
-    return
-  fi
-  log_error "Neither sha256sum nor shasum is available."
-  exit 1
 }
 
 is_component() {
@@ -416,13 +402,7 @@ while IFS= read -r src_file; do
   rel_path="${src_file#${source_root}/}"
   dst_file="${target_dir}/${rel_path}"
 
-  src_hash="$(calc_sha256 "${src_file}")"
-  dst_hash=""
-  if [[ -f "${dst_file}" ]]; then
-    dst_hash="$(calc_sha256 "${dst_file}")"
-  fi
-
-  if [[ -n "${dst_hash}" && "${src_hash}" == "${dst_hash}" ]]; then
+  if [[ -f "${dst_file}" ]] && cmp -s "${src_file}" "${dst_file}"; then
     skipped_identical=$((skipped_identical + 1))
     if [[ "${rel_path}" == third_party/openzwave/config/* ]]; then
       skipped_identical_openzwave=$((skipped_identical_openzwave + 1))
