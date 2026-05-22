@@ -22,6 +22,16 @@ shutdown.
 | `isRunning()` | `bool() const` | true while background loop active |
 | `isConnected()` | `bool() const` | true when loop currently considers transport connected |
 
+`YahaMqttClient::Config` includes optional Last Will fields for CONNECT:
+
+- `willEnabled` (bool)
+- `willTopic` (string)
+- `willValue` (Value)
+- `willQos` (Qos)
+- `willRetain` (bool)
+
+When enabled and `willTopic` is non-empty, broker transport attaches a CONNECT will message serialized with the same YAHA envelope payload format used for regular publishes.
+
 ### Shared config mapping helpers
 
 | Function | Signature | Notes |

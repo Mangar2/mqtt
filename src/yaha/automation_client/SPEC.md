@@ -15,6 +15,8 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
 | `fileStoreHost` | `std::string` | `127.0.0.1` | FileStore HTTP host |
 | `fileStorePort` | `std::uint16_t` | `8210` | FileStore HTTP port |
 | `fileStoreEnabled` | `bool` | `true` | Enables startup load and write-back |
+| `fileStoreStartupRetryCount` | `std::uint32_t` | `10` | Additional startup retries after first failed FileStore load |
+| `fileStoreStartupRetryIntervalSeconds` | `std::uint32_t` | `60` | Wait interval between startup retries |
 | `monitorTopicPrefix` | `std::string` | `$MONITOR/FileStore` | Monitoring subscription prefix |
 | `managementTopicPrefix` | `std::string` | `$MONITOR/automation/rules` | Runtime update prefix |
 | `presenceTopic` | `std::string` | `$MONITOR/presence` | Presence variable bootstrap topic |

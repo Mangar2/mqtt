@@ -40,6 +40,8 @@ TEST_CASE("load_automation_client_runtime_config_from_ini", "[automation_client]
         "port=8210\n"
         "path=/automation/rules\n"
         "topicPrefix=$MONITOR/FileStore\n"
+        "startupRetryCount=12\n"
+        "startupRetryIntervalSeconds=45\n"
         "\n"
         "[automation]\n"
         "managementTopicPrefix=$MONITOR/automation/rules\n"
@@ -65,6 +67,8 @@ TEST_CASE("load_automation_client_runtime_config_from_ini", "[automation_client]
     REQUIRE(runtimeConfig.automationConfig.fileStorePort == 8210U);
     REQUIRE(runtimeConfig.automationConfig.rulesKeyPath == "/automation/rules");
     REQUIRE(runtimeConfig.automationConfig.monitorTopicPrefix == "$MONITOR/FileStore");
+    REQUIRE(runtimeConfig.automationConfig.fileStoreStartupRetryCount == 12U);
+    REQUIRE(runtimeConfig.automationConfig.fileStoreStartupRetryIntervalSeconds == 45U);
     REQUIRE(runtimeConfig.automationConfig.managementTopicPrefix == "$MONITOR/automation/rules");
     REQUIRE(runtimeConfig.automationConfig.longitude == k_test_longitude);
     REQUIRE(runtimeConfig.automationConfig.latitude == k_test_latitude);
@@ -97,6 +101,32 @@ TEST_CASE("load_automation_client_runtime_config_reports_invalid_longitude", "[a
 
     REQUIRE_FALSE(success);
     REQUIRE(errorMessage == "invalid value for automation.longitude");
+
+    std::filesystem::remove(iniPath);
+}
+
+TEST_CASE("load_automation_client_runtime_config_reports_invalid_filestore_retry_values", "[automation_client]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "host=127.0.0.1\n"
+        "port=1883\n"
+        "clientId=automation-client\n"
+        "\n"
+        "[filestore]\n"
+        "startupRetryIntervalSeconds=0\n";
+
+    const auto iniPath = writeTempIni(iniText);
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniPath);
+
+    yaha::AutomationClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+    const bool success = yaha::tryLoadAutomationClientRuntimeConfigFromIni(
+        document,
+        runtimeConfig,
+        errorMessage);
+
+    REQUIRE_FALSE(success);
+    REQUIRE(errorMessage.find("filestore.startupRetryIntervalSeconds") != std::string::npos);
 
     std::filesystem::remove(iniPath);
 }

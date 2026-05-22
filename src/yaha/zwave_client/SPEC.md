@@ -31,7 +31,19 @@ and phase-4 standalone composition entrypoint wiring.
 - create `OpenZwaveRuntimeDriverPort`, bind it to `ZwaveController`, and start OpenZWave runtime (`Options`, `Manager`, watcher, `AddDriver`)
 - create `ZwaveServiceComponent`
 - construct `YahaMqttClient` with `makeBrokerTransport()`
-- run until shutdown via `YahaMqttClientRuntime`
+- run with explicit lifecycle orchestration:
+  - start MQTT runtime and wait for broker connection
+  - publish retained `starting` status on `$MONITOR/zwave/status`
+  - when `filestore.use=true`, perform FileStore startup sync with retry policy from `[filestore]`
+  - apply merged device config to service and run component
+  - publish retained `running` status on `$MONITOR/zwave/status`
+  - on signal/self-stop publish retained `stopped`, then close component and mqtt client
+
+MQTT Last Will behavior:
+
+- runtime sets Last Will on `$MONITOR/zwave/status`
+- Will payload is retained `terminated`
+- broker publishes `terminated` on ungraceful disconnect
 
 OpenZWave runtime driver behavior:
 
@@ -75,6 +87,8 @@ OpenZWave runtime driver behavior:
   - applies per-node override semantics to INI device rows:
     - if FileStore contains any row for node `<N>`, all INI rows for node `<N>` are replaced by FileStore rows for node `<N>`
   - persists only the merged `devices` array back to FileStore as JSON root object (`{"devices":[...]}`)
+  - startup sync is executed only after MQTT connect and `starting` status publish
+  - startup sync retries use configurable count/interval keys from `[filestore]`
 
 Runtime startup prints a deterministic summary:
 
@@ -95,7 +109,7 @@ Supported INI sections:
 - `[zwave]`
   - `subscribeQoS`, `qos`, `retain`, `logLevel`, `logIncomingMessages`, `logOutgoingMessages`, `pollIntervalMs`, `commandReactionPollIntervalMs`, `commandReactionTimeoutMs`, `usbDevice`, `usbTopic`, `device`
 - `[filestore]`
-  - `use`, `host`, `port`, `filename`
+  - `use`, `host`, `port`, `filename`, `startupRetryCount`, `startupRetryIntervalSeconds`
 
 Device row format (`zwave.device` can appear multiple times):
 
@@ -116,6 +130,8 @@ Validation rules:
 - `zwave.commandReactionTimeoutMs` must be in range `1..600000` when set.
 - `filestore.port` must be in range `1..65535` when set.
 - `filestore.use` must be valid boolean token when set.
+- `filestore.startupRetryCount` must be in range `0..1000` when set.
+- `filestore.startupRetryIntervalSeconds` must be in range `1..3600` when set.
 - `zwave.usbDevice` must be present and non-empty.
 - `zwave.usbTopic` must be present and non-empty.
 - At least one `zwave.device` entry must be present.

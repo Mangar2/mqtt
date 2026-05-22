@@ -58,6 +58,8 @@ TEST_CASE("value_service_runtime_config_parses_all_sections", "[value_service]")
         "port=8211\n"
         "filename=/values/from/filestore\n"
         "topicPrefix=$MONITOR/FS\n"
+        "startupRetryCount=7\n"
+        "startupRetryIntervalSeconds=33\n"
         "\n"
         "[valueservice]\n"
         "subscribeQoS=2\n"
@@ -78,6 +80,8 @@ TEST_CASE("value_service_runtime_config_parses_all_sections", "[value_service]")
     REQUIRE(runtimeConfig.valueServiceConfig.fileStorePort == 8211U);
     REQUIRE(runtimeConfig.valueServiceConfig.valuesKeyPath == "/values/from/filestore");
     REQUIRE(runtimeConfig.valueServiceConfig.monitorTopicPrefix == "$MONITOR/FS");
+    REQUIRE(runtimeConfig.valueServiceConfig.fileStoreStartupRetryCount == 7U);
+    REQUIRE(runtimeConfig.valueServiceConfig.fileStoreStartupRetryIntervalSeconds == 33U);
     REQUIRE(runtimeConfig.valueServiceConfig.subscribeQos == yaha::Qos::ExactlyOnce);
     REQUIRE(runtimeConfig.valueServiceConfig.legacyValuesFileName == "legacy.json");
 }
@@ -110,4 +114,19 @@ TEST_CASE("value_service_runtime_config_rejects_invalid_filestore_use", "[value_
 
     REQUIRE_FALSE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
     REQUIRE(errorMessage.find("filestore.use") != std::string::npos);
+}
+
+TEST_CASE("value_service_runtime_config_rejects_invalid_filestore_retry_interval", "[value_service]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "host=127.0.0.1\n"
+        "\n"
+        "[filestore]\n"
+        "startupRetryIntervalSeconds=0\n";
+
+    yaha::ValueServiceClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.find("filestore.startupRetryIntervalSeconds") != std::string::npos);
 }

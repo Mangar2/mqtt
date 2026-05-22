@@ -25,8 +25,23 @@ INI mapping used by standalone composition.
 
 `src/yaha_valueserviceclient_main.cpp` composes runtime directly:
 
-- start order: `ValueServiceComponent::run()` then `YahaMqttClient::run()` via `YahaMqttClientRuntime`
-- stop order: `YahaMqttClient::close()` then `ValueServiceComponent::close()` via `YahaMqttClientRuntime`
+- start order:
+  - start `YahaMqttClient::run()`
+  - wait until MQTT broker connection is established
+  - publish retained status `starting` on `$MONITOR/valueservice/status`
+  - execute FileStore startup availability gate with retry policy from `[filestore]`
+  - call `ValueServiceComponent::run()`
+  - publish retained status `running` on `$MONITOR/valueservice/status`
+- stop order:
+  - on signal or controlled self-stop, publish retained status `stopped` on `$MONITOR/valueservice/status`
+  - call `ValueServiceComponent::close()`
+  - call `YahaMqttClient::close()`
+
+MQTT Last Will behavior:
+
+- runtime sets Last Will on `$MONITOR/valueservice/status`
+- Will payload is retained `terminated`
+- broker publishes `terminated` on ungraceful disconnect
 
 Standalone main behavior:
 
@@ -36,6 +51,7 @@ Standalone main behavior:
 - construct `ValueServiceComponent`
 - construct `YahaMqttClient` with `makeBrokerTransport()`
 - run until signal using `YahaMqttClientRuntime`
+- run with explicit signal loop in main and graceful status publish sequence
 
 ## Configuration format
 
@@ -44,7 +60,7 @@ Supported INI sections:
 - `[mqtt]`
   - `host`, `port`, `clientId`, `reconnectDelayMs`, `keepAliveIntervalMs`, `loopSleepMs`
 - `[filestore]`
-  - `host`, `port`, `filename`, `use`, `topicPrefix`
+  - `host`, `port`, `filename`, `use`, `topicPrefix`, `startupRetryCount`, `startupRetryIntervalSeconds`
 - `[valueservice]`
   - `subscribeQoS`, `valuesFileName`
 
@@ -54,6 +70,8 @@ Semantics:
 
 Validation rules:
 - `filestore.port` must be `1..65535`.
+- `filestore.startupRetryCount` must be `0..1000`.
+- `filestore.startupRetryIntervalSeconds` must be `1..3600`.
 - `valueservice.subscribeQoS` must be `0..2`.
 - `filestore.use` must be valid boolean token.
 
