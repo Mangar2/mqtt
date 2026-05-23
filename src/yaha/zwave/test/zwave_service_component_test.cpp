@@ -256,6 +256,14 @@ private:
     return config;
 }
 
+[[nodiscard]] yaha::ZwaveConfig makeFileStoreEnabledConfig() {
+    yaha::ZwaveConfig config = makeConfig();
+    config.fileStoreEnabled = true;
+    config.settingsKeyPath = "/zwave/settings";
+    config.fileStoreMonitorTopicPrefix = "$MONITOR/FileStore";
+    return config;
+}
+
 [[nodiscard]] bool hasReasonMessage(const yaha::Message& message, const std::string& reasonText) {
     return std::any_of(message.reason().begin(), message.reason().end(), [&](const yaha::ReasonEntry& entry) {
         return entry.message == reasonText;
@@ -284,6 +292,16 @@ TEST_CASE("subscriptions_include_management_and_device_topics", "[zwave_service]
     CHECK(subscriptions.at("home/climate/+/set") == yaha::Qos::AtMostOnce);
 }
 
+TEST_CASE("subscriptions_include_filestore_monitor_topic_when_enabled", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    yaha::ZwaveServiceComponent service{makeFileStoreEnabledConfig(), controller};
+
+    const yaha::SubscriptionMap subscriptions = service.getSubscriptions();
+
+    REQUIRE(subscriptions.contains("$MONITOR/FileStore/#"));
+    CHECK(subscriptions.at("$MONITOR/FileStore/#") == yaha::Qos::AtMostOnce);
+}
+
     TEST_CASE("set_device_configuration_replaces_subscription_topics", "[zwave_service]") {
         auto controller = std::make_shared<FakeController>();
         yaha::ZwaveServiceComponent service{makeConfig(), controller};
@@ -303,6 +321,68 @@ TEST_CASE("subscriptions_include_management_and_device_topics", "[zwave_service]
         CHECK_FALSE(subscriptions.contains("home/lamp/set"));
         CHECK_FALSE(subscriptions.contains("home/climate/+/set"));
     }
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("filestore_monitor_reload_replaces_device_topics", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    yaha::ZwaveServiceComponent service{makeFileStoreEnabledConfig(), controller};
+
+    std::vector<yaha::Message> published{};
+    service.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message.clone());
+    });
+
+    std::size_t callbackCalls = 0U;
+    service.setFileStoreReloadCallback([&callbackCalls](std::vector<yaha::ZwaveDeviceConfig>& loadedDevices,
+                                                        std::string& errorMessage) {
+        (void)errorMessage;
+        callbackCalls += 1U;
+        loadedDevices = {
+            yaha::ZwaveDeviceConfig{
+                .topic = "home/reloaded",
+                .nodeId = kNodeIdSeven,
+                .classId = std::optional<std::uint16_t>{kSwitchClass},
+                .instance = std::optional<std::uint8_t>{1U},
+                .index = std::optional<std::uint8_t>{0U},
+                .type = std::optional<std::string>{"switch"}}};
+        return true;
+    });
+
+    service.handleMessage(yaha::Message{
+        "$MONITOR/FileStore/changed",
+        yaha::Value{std::string{R"({"keyPath":"/zwave/settings","changeType":"updated"})"}}});
+
+    CHECK(callbackCalls == 1U);
+    const yaha::SubscriptionMap subscriptions = service.getSubscriptions();
+    CHECK(subscriptions.contains("home/reloaded/set"));
+    CHECK_FALSE(subscriptions.contains("home/lamp/set"));
+    CHECK_FALSE(subscriptions.contains("home/climate/+/set"));
+
+    REQUIRE_FALSE(published.empty());
+    CHECK(published.back().topic() == "$MONITOR/zwave/info");
+    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+    CHECK(std::get<std::string>(published.back().value()) == "configuration reloaded");
+}
+
+TEST_CASE("filestore_monitor_reload_ignores_other_key_paths", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    yaha::ZwaveServiceComponent service{makeFileStoreEnabledConfig(), controller};
+
+    std::size_t callbackCalls = 0U;
+    service.setFileStoreReloadCallback([&callbackCalls](std::vector<yaha::ZwaveDeviceConfig>& loadedDevices,
+                                                        std::string& errorMessage) {
+        (void)loadedDevices;
+        (void)errorMessage;
+        callbackCalls += 1U;
+        return true;
+    });
+
+    service.handleMessage(yaha::Message{
+        "$MONITOR/FileStore/changed",
+        yaha::Value{std::string{R"({"keyPath":"/other/path","changeType":"updated"})"}}});
+
+    CHECK(callbackCalls == 0U);
+}
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("management_messages_are_forwarded_and_scan_success_is_published", "[zwave_service]") {

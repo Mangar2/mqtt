@@ -19,6 +19,7 @@ and phase-4 standalone composition entrypoint wiring.
 | Function | Signature | Notes |
 |---------|-----------|-------|
 | `tryLoadZwaveConfigFromIni` | `(const IniDocument&, ZwaveConfig&, std::string&) -> bool` | Maps `[zwave]` fields into domain config with validation |
+| `tryLoadZwaveDeviceSettingsSnapshotFromFileStore` | `(const ZwaveConfig&, std::vector<ZwaveDeviceConfig>&, std::string&) -> bool` | Loads effective `devices` snapshot from FileStore for runtime reload handling |
 | `tryLoadZwaveClientRuntimeConfigFromIni` | `(const IniDocument&, ZwaveClientRuntimeConfig&, std::string&) -> bool` | Maps full runtime config including `[mqtt]` |
 
 ## Standalone runtime composition
@@ -30,12 +31,13 @@ and phase-4 standalone composition entrypoint wiring.
 - map runtime config with `tryLoadZwaveClientRuntimeConfigFromIni`
 - create `OpenZwaveRuntimeDriverPort`, bind it to `ZwaveController`, and start OpenZWave runtime (`Options`, `Manager`, watcher, `AddDriver`)
 - create `ZwaveServiceComponent`
+- configure `ZwaveServiceComponent` FileStore reload callback so `$MONITOR/FileStore/...` changes for matching `filestore.filename` trigger live device-config reload
 - construct `YahaMqttClient` with `makeBrokerTransport()`
 - run with explicit lifecycle orchestration:
   - start MQTT runtime and wait for broker connection
   - publish retained `starting` status on `$MONITOR/zwave/status`
   - when `filestore.use=true`, perform FileStore startup sync with retry policy from `[filestore]`
-  - apply merged device config to service and run component
+  - apply effective FileStore-backed device snapshot to service and run component
   - publish retained `running` status on `$MONITOR/zwave/status`
   - terminate process with non-zero exit for systemd restart when watchdog detects unresponsive ZWave input (`>=100` timeout-drop notifications and `>=3 minutes` without successful inbound ZWave input)
   - on signal/self-stop publish retained `stopped`, then close component and mqtt client
@@ -88,11 +90,11 @@ OpenZWave runtime driver behavior:
 - resolves OpenZWave user path from `YAHA_OPENZWAVE_USER_PATH` or `<deploy-root>/tmp/openzwave`
 - optional FileStore-backed device settings sync (same filestore section style as ValueService):
   - reads settings JSON from `filestore.filename` when `filestore.use=true`
-  - applies per-node override semantics to INI device rows:
-    - if FileStore contains any row for node `<N>`, all INI rows for node `<N>` are replaced by FileStore rows for node `<N>`
-  - persists only the merged `devices` array back to FileStore as JSON root object (`{"devices":[...]}`)
+  - startup sync applies the full FileStore snapshot to runtime `devices`
+  - persists only the effective `devices` array back to FileStore as JSON root object (`{"devices":[...]}`)
   - startup sync is executed only after MQTT connect and `starting` status publish
   - startup sync retries use configurable count/interval keys from `[filestore]`
+  - runtime monitor reload path accepts FileStore `404` as deleted-key signal and maps it to an empty effective `devices` set
 
 Runtime startup prints a deterministic summary:
 
@@ -113,7 +115,7 @@ Supported INI sections:
 - `[zwave]`
   - `subscribeQoS`, `qos`, `retain`, `logLevel`, `logIncomingMessages`, `logOutgoingMessages`, `pollIntervalMs`, `commandReactionPollIntervalMs`, `commandReactionTimeoutMs`, `usbDevice`, `usbTopic`, `device`
 - `[filestore]`
-  - `use`, `host`, `port`, `filename`, `startupRetryCount`, `startupRetryIntervalSeconds`
+  - `use`, `host`, `port`, `filename`, `topicPrefix`, `startupRetryCount`, `startupRetryIntervalSeconds`
 
 Device row format (`zwave.device` can appear multiple times):
 

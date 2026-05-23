@@ -39,6 +39,9 @@ that orchestrates MQTT routing and controller lifecycle.
 | `commandReactionTimeoutMs` | `std::uint32_t` | Timeout for tracked command confirmation, default `30000` |
 | `logIncomingMessages` | `bool` | Default `false`; logs inbound MQTT messages handled by ZWave service |
 | `logOutgoingMessages` | `bool` | Default `false`; logs outbound MQTT messages emitted by ZWave service |
+| `fileStoreEnabled` | `bool` | Enables FileStore monitor-triggered runtime reload handling |
+| `settingsKeyPath` | `std::string` | FileStore key path used to filter relevant monitor events |
+| `fileStoreMonitorTopicPrefix` | `std::string` | Monitor topic prefix used to subscribe FileStore change events, default `$MONITOR/FileStore` |
 | `usb` | `ZwaveUsbConfig` | Required |
 | `devices` | `std::vector<ZwaveDeviceConfig>` | Required non-empty list |
 
@@ -53,6 +56,7 @@ that orchestrates MQTT routing and controller lifecycle.
 | `run` | `() -> void` | Publishes restart markers and requests all config params |
 | `close` | `() -> void` | Delegates close to controller |
 | `setPublishCallback` | `(PublishCallback)` | Stores outbound publish callback |
+| `setFileStoreReloadCallback` | `(FileStoreReloadCallback)` | Sets runtime callback used to load updated FileStore device snapshot |
 
 ## Behavior
 
@@ -62,6 +66,8 @@ that orchestrates MQTT routing and controller lifecycle.
 	- `system/zwave/removefailednode/set`
 	- `system/zwave/addnode/set`
 	- `system/zwave/scan/set`
+- Additional FileStore monitor topic when `fileStoreEnabled=true`:
+	- `<fileStoreMonitorTopicPrefix>/#`
 - Device topics from config:
 	- with `classId`: `<topic>/set`
 	- without `classId`: `<topic>/+/set`
@@ -88,6 +94,11 @@ that orchestrates MQTT routing and controller lifecycle.
 	- inserts reason `received by zwave service` directly after the incoming reasons
 	- never sorts reasons by timestamp
 	- routes to `controller.setValue(topic, value, reasons)`
+- FileStore monitor topics (`<fileStoreMonitorTopicPrefix>/...`):
+	- parse string payload JSON field `keyPath`
+	- if `keyPath == settingsKeyPath`, invoke `setFileStoreReloadCallback(...)` loader callback
+	- on successful callback result, call `setDeviceConfiguration(...)` with loaded rows so runtime subscriptions are replaced by the new snapshot
+	- on callback failure, keep existing runtime mapping and log `zwave_service[error] op=filestore_reload ...`
 - remove-failed/add-node/setValue exceptions are contained and emitted as deterministic
 	`$MONITOR/zwave/error` messages with operation reason metadata.
 

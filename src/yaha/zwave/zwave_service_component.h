@@ -10,8 +10,10 @@
 #include "yaha/zwave_controller/zwave_controller.h"
 
 #include <memory>
+#include <functional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace yaha {
 
@@ -20,6 +22,11 @@ namespace yaha {
  */
 class ZwaveServiceComponent final : public IMqttComponent {
 public:
+    /**
+     * @brief Runtime callback used to reload effective device rows from FileStore.
+     */
+    using FileStoreReloadCallback = std::function<bool(std::vector<ZwaveDeviceConfig>&, std::string&)>;
+
     /**
      * @brief Constructs service from domain config and controller.
      * @param config Domain configuration.
@@ -60,6 +67,12 @@ public:
      * @param callback Publish callback.
      */
     void setPublishCallback(PublishCallback callback) override;
+
+    /**
+     * @brief Sets callback used for monitor-triggered FileStore reload operations.
+     * @param callback Reload callback.
+     */
+    void setFileStoreReloadCallback(FileStoreReloadCallback callback);
 
 private:
     /**
@@ -128,10 +141,12 @@ private:
     void updateScanStatusFromControllerMessage(const Message& message);
 
     void updateAddNodeStatusFromControllerMessage(const Message& message);
+    [[nodiscard]] bool handleFileStoreMonitorReload(const Message& message);
 
     ZwaveConfig config_{};
     std::shared_ptr<IZwaveController> controller_{};
     PublishCallback publishCallback_{};
+    FileStoreReloadCallback fileStoreReloadCallback_{};
     bool addNodeActive_{false};
     bool scanActive_{false};
 };

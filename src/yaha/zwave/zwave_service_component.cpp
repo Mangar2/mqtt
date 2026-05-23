@@ -6,9 +6,11 @@
 #include <cctype>
 #include <cmath>
 #include <iostream>
+#include <optional>
 #include <ranges>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace yaha {
@@ -25,6 +27,73 @@ constexpr double kNumericCommandTolerance = 1e-9;
 
 [[nodiscard]] std::string makeTopic(const std::string_view prefix, const std::string_view suffix) {
     return std::string{prefix} + "/" + std::string{suffix};
+}
+
+[[nodiscard]] bool startsWith(const std::string_view text, const std::string_view prefix) {
+    return text.size() >= prefix.size() && text.substr(0U, prefix.size()) == prefix;
+}
+
+[[nodiscard]] std::optional<std::string> extractJsonStringField(const std::string& payloadText,
+                                                                const std::string& fieldName) {
+    const std::string keyToken = "\"" + fieldName + "\"";
+    const std::size_t keyPosition = payloadText.find(keyToken);
+    if (keyPosition == std::string::npos) {
+        return std::nullopt;
+    }
+
+    std::size_t cursor = payloadText.find(':', keyPosition + keyToken.size());
+    if (cursor == std::string::npos) {
+        return std::nullopt;
+    }
+    cursor += 1U;
+
+    while (cursor < payloadText.size()
+        && std::isspace(static_cast<unsigned char>(payloadText[cursor])) != 0) {
+        cursor += 1U;
+    }
+
+    if (cursor >= payloadText.size() || payloadText[cursor] != '"') {
+        return std::nullopt;
+    }
+    cursor += 1U;
+
+    std::string value{};
+    while (cursor < payloadText.size()) {
+        const char currentCharacter = payloadText[cursor++];
+        if (currentCharacter == '"') {
+            return value;
+        }
+        if (currentCharacter != '\\') {
+            value.push_back(currentCharacter);
+            continue;
+        }
+
+        if (cursor >= payloadText.size()) {
+            return std::nullopt;
+        }
+
+        const char escapedCharacter = payloadText[cursor++];
+        switch (escapedCharacter) {
+            case '"':
+            case '\\':
+            case '/':
+                value.push_back(escapedCharacter);
+                break;
+            case 'n':
+                value.push_back('\n');
+                break;
+            case 'r':
+                value.push_back('\r');
+                break;
+            case 't':
+                value.push_back('\t');
+                break;
+            default:
+                return std::nullopt;
+        }
+    }
+
+    return std::nullopt;
 }
 
 [[nodiscard]] Message withPublishFlags(const Message& input, const Qos qos, const bool retain) {
@@ -139,6 +208,10 @@ SubscriptionMap ZwaveServiceComponent::getSubscriptions() const {
     subscriptions.insert({makeTopic(kSystemZwavePrefix, "addnode/set"), Qos::ExactlyOnce});
     subscriptions.insert({makeTopic(kSystemZwavePrefix, "scan/set"), Qos::ExactlyOnce});
 
+    if (config_.fileStoreEnabled && !config_.fileStoreMonitorTopicPrefix.empty()) {
+        subscriptions.insert({config_.fileStoreMonitorTopicPrefix + "/#", config_.subscribeQos});
+    }
+
     for (const auto& device : config_.devices) {
         std::string topic = device.topic;
         if (device.classId.has_value()) {
@@ -154,6 +227,10 @@ SubscriptionMap ZwaveServiceComponent::getSubscriptions() const {
 
 void ZwaveServiceComponent::handleMessage(const Message& message) {
     logIncomingMessageIfEnabled(message);
+
+    if (handleFileStoreMonitorReload(message)) {
+        return;
+    }
 
     if (isRemoveFailedTopic(message.topic())) {
         logImportantEvent("removefailednode", "request received");
@@ -329,6 +406,10 @@ void ZwaveServiceComponent::close() {
 
 void ZwaveServiceComponent::setPublishCallback(PublishCallback callback) {
     publishCallback_ = std::move(callback);
+}
+
+void ZwaveServiceComponent::setFileStoreReloadCallback(FileStoreReloadCallback callback) {
+    fileStoreReloadCallback_ = std::move(callback);
 }
 
 void ZwaveServiceComponent::handleControllerPublish(const Message& message) {
@@ -531,6 +612,44 @@ bool ZwaveServiceComponent::isAddNodeTopic(const std::string& topic) {
 
 bool ZwaveServiceComponent::isScanTopic(const std::string& topic) {
     return topic == makeTopic(kSystemZwavePrefix, "scan/set");
+}
+
+bool ZwaveServiceComponent::handleFileStoreMonitorReload(const Message& message) {
+    if (!config_.fileStoreEnabled || config_.fileStoreMonitorTopicPrefix.empty()) {
+        return false;
+    }
+
+    const std::string monitorTopicPrefix = config_.fileStoreMonitorTopicPrefix + "/";
+    if (!startsWith(message.topic(), monitorTopicPrefix)) {
+        return false;
+    }
+
+    const auto* payloadText = std::get_if<std::string>(&message.value());
+    if (payloadText == nullptr) {
+        return true;
+    }
+
+    const std::optional<std::string> keyPath = extractJsonStringField(*payloadText, "keyPath");
+    if (!keyPath.has_value() || *keyPath != config_.settingsKeyPath) {
+        return true;
+    }
+
+    if (!fileStoreReloadCallback_) {
+        logImportantError("filestore_reload", "missing reload callback");
+        return true;
+    }
+
+    std::vector<ZwaveDeviceConfig> loadedDevices{};
+    std::string errorMessage{};
+    if (!fileStoreReloadCallback_(loadedDevices, errorMessage)) {
+        const std::string detail = errorMessage.empty() ? "reload callback failed" : errorMessage;
+        logImportantError("filestore_reload", detail);
+        return true;
+    }
+
+    setDeviceConfiguration(loadedDevices);
+    logImportantEvent("filestore_reload", "applied device configuration update");
+    return true;
 }
 
 } // namespace yaha

@@ -9,6 +9,7 @@
 #include <fstream>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -18,6 +19,7 @@ constexpr std::uint16_t kOverrideNodeIdNine = 9U;
 constexpr std::uint16_t kOverrideClassSwitchBinary = 37U;
 constexpr std::uint16_t kOverrideClassSensorMultilevel = 49U;
 constexpr int kHttpStatusOk = 200;
+constexpr int kHttpStatusNotFound = 404;
 constexpr int kHttpStatusInternalServerError = 500;
 constexpr auto kServerStartWait = std::chrono::milliseconds{20};
 
@@ -532,6 +534,7 @@ TEST_CASE("load_zwave_config_parses_filestore_settings", "[zwave_client]") {
         "host=filestore.local\n"
         "port=9000\n"
         "filename=/zwave/config/settings\n"
+        "topicPrefix=$MONITOR/FileStore\n"
         "startupRetryCount=9\n"
         "startupRetryIntervalSeconds=50\n"
         "\n"
@@ -551,8 +554,29 @@ TEST_CASE("load_zwave_config_parses_filestore_settings", "[zwave_client]") {
     CHECK(config.fileStoreHost == "filestore.local");
     CHECK(config.fileStorePort == 9000U);
     CHECK(config.settingsKeyPath == "/zwave/config/settings");
+    CHECK(config.fileStoreMonitorTopicPrefix == "$MONITOR/FileStore");
     CHECK(config.fileStoreStartupRetryCount == 9U);
     CHECK(config.fileStoreStartupRetryIntervalSeconds == 50U);
+}
+
+TEST_CASE("load_zwave_config_parses_filestore_monitor_topic_prefix", "[zwave_client]") {
+    const yaha::IniDocument document = loadIni(
+        "[filestore]\n"
+        "topicPrefix=$MONITOR/custom/filestore\n"
+        "\n"
+        "[zwave]\n"
+        "usbDevice=/dev/ttyUSB9\n"
+        "usbTopic=home/zwave/controller\n"
+        "device=home/lamp|9\n");
+
+    yaha::ZwaveConfig config{};
+    std::string errorMessage{};
+
+    const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
+
+    REQUIRE(loaded);
+    CHECK(errorMessage.empty());
+    CHECK(config.fileStoreMonitorTopicPrefix == "$MONITOR/custom/filestore");
 }
 
 TEST_CASE("load_zwave_config_rejects_invalid_filestore_retry_interval", "[zwave_client]") {
@@ -739,7 +763,7 @@ TEST_CASE("load_zwave_config_allows_missing_device_setting", "[zwave_client]") {
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("sync_zwave_settings_from_filestore_merges_and_persists", "[zwave_client]") {
+TEST_CASE("sync_zwave_settings_from_filestore_replaces_snapshot_and_persists", "[zwave_client]") {
     constexpr std::uint16_t mockPort = 18490U;
     FileStoreSettingsMockServer fileStore{mockPort};
     fileStore.setGetPayload(
@@ -759,10 +783,9 @@ TEST_CASE("sync_zwave_settings_from_filestore_merges_and_persists", "[zwave_clie
 
     REQUIRE(synced);
     CHECK(errorMessage.empty());
-    REQUIRE(config.devices.size() == 2U);
-    CHECK(config.devices[0].nodeId == kOverrideNodeIdEight);
-    CHECK(config.devices[1].nodeId == kOverrideNodeIdSeven);
-    CHECK(config.devices[1].topic == "store/node7/replacement");
+    REQUIRE(config.devices.size() == 1U);
+    CHECK(config.devices[0].nodeId == kOverrideNodeIdSeven);
+    CHECK(config.devices[0].topic == "store/node7/replacement");
     CHECK(fileStore.postCount() >= 1U);
     CHECK(fileStore.lastPostBody().find("\"devices\"") != std::string::npos);
 }
@@ -798,4 +821,26 @@ TEST_CASE("sync_zwave_settings_from_filestore_reports_load_failure", "[zwave_cli
 
     CHECK_FALSE(synced);
     CHECK(errorMessage.find("filestore") != std::string::npos);
+}
+
+TEST_CASE("load_zwave_device_settings_snapshot_from_filestore_handles_deleted_key", "[zwave_client]") {
+    constexpr std::uint16_t mockPort = 18492U;
+    FileStoreSettingsMockServer fileStore{mockPort};
+    fileStore.setGetStatus(kHttpStatusNotFound);
+
+    yaha::ZwaveConfig config{};
+    config.fileStoreEnabled = true;
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = mockPort;
+    config.settingsKeyPath = "/zwave/settings";
+    config.devices = {
+        yaha::ZwaveDeviceConfig{.topic = "ini/node8/switch", .nodeId = kOverrideNodeIdEight}};
+
+    std::vector<yaha::ZwaveDeviceConfig> loadedDevices{};
+    std::string errorMessage{};
+    const bool loaded = yaha::tryLoadZwaveDeviceSettingsSnapshotFromFileStore(config, loadedDevices, errorMessage);
+
+    REQUIRE(loaded);
+    CHECK(errorMessage.empty());
+    CHECK(loadedDevices.empty());
 }

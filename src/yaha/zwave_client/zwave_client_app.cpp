@@ -60,6 +60,7 @@ constexpr int kFileStoreConnectTimeoutSeconds = 1;
 constexpr int kFileStoreReadTimeoutSeconds = 1;
 constexpr int kFileStoreWriteTimeoutSeconds = 1;
 constexpr int kHttpOkStatus = 200;
+constexpr int kHttpNotFoundStatus = 404;
 
 [[nodiscard]] std::vector<std::string> splitDeviceLine(const std::string& line) {
     std::vector<std::string> fields{};
@@ -312,6 +313,11 @@ constexpr int kHttpOkStatus = 200;
 
     if (const auto settingsKeyPath = document.lastValue("filestore", "filename"); settingsKeyPath.has_value()) {
         parsed.settingsKeyPath = *settingsKeyPath;
+    }
+
+    if (const auto monitorTopicPrefix = document.lastValue("filestore", "topicPrefix");
+        monitorTopicPrefix.has_value()) {
+        parsed.fileStoreMonitorTopicPrefix = *monitorTopicPrefix;
     }
 
     const auto retryCountResult = document.readUnsigned("filestore", "startupRetryCount", 0U, 1000U);
@@ -735,19 +741,31 @@ void applyNodeOverrideDevices(
     output.devices = std::move(mergedDevices);
 }
 
-[[nodiscard]] bool tryLoadDeviceOverridesFromFileStore(ZwaveConfig& output) {
-    httplib::Client client{output.fileStoreHost, static_cast<int>(output.fileStorePort)};
+[[nodiscard]] bool tryLoadDeviceSnapshotFromFileStore(const ZwaveConfig& config,
+                                                      std::vector<ZwaveDeviceConfig>& outputDevices,
+                                                      std::string& errorMessage) {
+    httplib::Client client{config.fileStoreHost, static_cast<int>(config.fileStorePort)};
     configureFileStoreClientTimeouts(&client);
-    const auto response = client.Get(output.settingsKeyPath);
-    if (!response || response->status != kHttpOkStatus) {
+    const auto response = client.Get(config.settingsKeyPath);
+    if (!response) {
+        errorMessage = "failed to load zwave settings from filestore: no_response";
         return false;
     }
 
-    std::string errorMessage{};
+    if (response->status == kHttpNotFoundStatus) {
+        outputDevices.clear();
+        return true;
+    }
+
+    if (response->status != kHttpOkStatus) {
+        errorMessage = "failed to load zwave settings from filestore: status=" + std::to_string(response->status);
+        return false;
+    }
+
     std::vector<ZwaveDeviceConfig> fileStoreDevices{};
     if (!parseJsonRootDevices(response->body, fileStoreDevices, errorMessage)) {
         std::cout << "zwave_client[error] op=filestore_get_settings"
-                  << " path=" << output.settingsKeyPath
+                  << " path=" << config.settingsKeyPath
                   << " status=" << response->status
                   << " reason=invalid_json"
                   << " detail=\"" << errorMessage << "\""
@@ -755,7 +773,7 @@ void applyNodeOverrideDevices(
         return false;
     }
 
-    applyNodeOverrideDevices(fileStoreDevices, output);
+    outputDevices = std::move(fileStoreDevices);
     return true;
 }
 
@@ -965,13 +983,27 @@ bool trySyncZwaveDeviceSettingsFromFileStore(
         return true;
     }
 
-    if (!tryLoadDeviceOverridesFromFileStore(config)) {
-        errorMessage = "failed to load/merge zwave settings from filestore";
+    std::vector<ZwaveDeviceConfig> loadedDevices{};
+    if (!tryLoadDeviceSnapshotFromFileStore(config, loadedDevices, errorMessage)) {
         return false;
     }
 
+    config.devices = std::move(loadedDevices);
+
     persistSettingsToFileStore(config);
     return true;
+}
+
+bool tryLoadZwaveDeviceSettingsSnapshotFromFileStore(
+    const ZwaveConfig& config,
+    std::vector<ZwaveDeviceConfig>& outputDevices,
+    std::string& errorMessage) {
+    if (!config.fileStoreEnabled) {
+        outputDevices = config.devices;
+        return true;
+    }
+
+    return tryLoadDeviceSnapshotFromFileStore(config, outputDevices, errorMessage);
 }
 
 std::string serializeZwaveSettingsToJson(const ZwaveConfig& config) {

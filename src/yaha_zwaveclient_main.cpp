@@ -15,6 +15,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -212,6 +213,18 @@ int main(int argc, char* argv[]) {
     driverPort->start();
 
     yaha::ZwaveServiceComponent component{runtimeConfig.zwaveConfig, controller};
+    component.setFileStoreReloadCallback([&runtimeConfig](std::vector<yaha::ZwaveDeviceConfig>& loadedDevices,
+                                                          std::string& errorMessage) {
+        if (!yaha::tryLoadZwaveDeviceSettingsSnapshotFromFileStore(
+                runtimeConfig.zwaveConfig,
+                loadedDevices,
+                errorMessage)) {
+            return false;
+        }
+
+        runtimeConfig.zwaveConfig.devices = loadedDevices;
+        return true;
+    });
 
     yaha::YahaMqttClient mqttClient{
         std::move(runtimeConfig.mqttConfig),

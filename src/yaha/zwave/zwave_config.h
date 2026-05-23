@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace yaha {
@@ -20,6 +21,7 @@ inline constexpr std::uint32_t kZwaveDefaultCommandReactionTimeoutMs = 30000U;
 inline constexpr std::uint16_t kZwaveDefaultFileStorePort = 8210U;
 inline constexpr std::uint32_t kZwaveDefaultFileStoreStartupRetryCount = 10U;
 inline constexpr std::uint32_t kZwaveDefaultFileStoreStartupRetryIntervalSeconds = 60U;
+inline constexpr std::string_view kZwaveDefaultFileStoreMonitorTopicPrefix = "$MONITOR/FileStore";
 
 /**
  * @brief USB controller endpoint configuration for ZWave runtime.
@@ -59,6 +61,7 @@ struct ZwaveConfig {
     std::string fileStoreHost{"127.0.0.1"}; ///< FileStore HTTP host.
     std::uint16_t fileStorePort{kZwaveDefaultFileStorePort}; ///< FileStore HTTP port.
     std::string settingsKeyPath{"/zwave/settings"}; ///< FileStore key path for ZWave settings JSON.
+    std::string fileStoreMonitorTopicPrefix{std::string{kZwaveDefaultFileStoreMonitorTopicPrefix}}; ///< FileStore monitor topic prefix used for runtime reload trigger messages.
     std::uint32_t fileStoreStartupRetryCount{kZwaveDefaultFileStoreStartupRetryCount}; ///< Additional startup retries after first failed load.
     std::uint32_t fileStoreStartupRetryIntervalSeconds{kZwaveDefaultFileStoreStartupRetryIntervalSeconds}; ///< Wait interval between startup retries.
     ZwaveUsbConfig usb{};                     ///< USB/controller endpoint configuration.

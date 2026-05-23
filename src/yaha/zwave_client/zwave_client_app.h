@@ -10,6 +10,7 @@
 #include "yaha/zwave/zwave_config.h"
 
 #include <string>
+#include <vector>
 
 namespace yaha {
 
@@ -38,7 +39,7 @@ struct ZwaveClientRuntimeConfig {
  * @param jsonText JSON payload loaded from FileStore.
  * @param output ZWave config to update.
  * @param errorMessage Human-readable error text on parse/validation failure.
- * @return True when JSON parsing and device merge succeeded.
+ * @return True when JSON parsing and override application succeeded.
  */
 [[nodiscard]] bool tryApplyZwaveDeviceSettingsFromJson(
     const std::string& jsonText,
@@ -53,13 +54,25 @@ struct ZwaveClientRuntimeConfig {
 [[nodiscard]] std::string serializeZwaveSettingsToJson(const ZwaveConfig& config);
 
 /**
- * @brief Loads device overrides from FileStore and persists the merged snapshot.
- * @param config ZWave configuration to update in-place.
+ * @brief Loads full device snapshot from FileStore and persists normalized payload.
+ * @param config ZWave configuration to update in-place with loaded snapshot.
  * @param errorMessage Human-readable error text on failure.
- * @return True when load/merge/persist succeeded.
+ * @return True when load/persist succeeded.
  */
 [[nodiscard]] bool trySyncZwaveDeviceSettingsFromFileStore(
     ZwaveConfig& config,
+    std::string& errorMessage);
+
+/**
+ * @brief Loads full effective device settings snapshot from FileStore.
+ * @param config ZWave configuration containing FileStore endpoint and key path.
+ * @param outputDevices Parsed devices loaded from FileStore.
+ * @param errorMessage Human-readable error text on failure.
+ * @return True when read and parse succeeded.
+ */
+[[nodiscard]] bool tryLoadZwaveDeviceSettingsSnapshotFromFileStore(
+    const ZwaveConfig& config,
+    std::vector<ZwaveDeviceConfig>& outputDevices,
     std::string& errorMessage);
 
 /**
