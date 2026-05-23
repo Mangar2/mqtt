@@ -271,59 +271,26 @@ def _resolve_llvm_tool(tool_name: str) -> list[str]:
 
 
 def _discover_tests(binary: Path) -> list[tuple[str, str]]:
-    output = _run_or_die("discover tests", [str(binary), "--list-tests", "-v", "high"])
+    output = _run_or_die("discover tests", [str(binary), "--list-tests", "--reporter", "json"])
     tests: list[tuple[str, str]] = []
-    current_name: str | None = None
-    lines = output.splitlines()
-    idx = 0
-    while idx < len(lines):
-        raw_line = lines[idx]
-        
-        # Test name line: exactly 2 leading spaces, not empty after strip
-        if raw_line.startswith("  ") and not raw_line.startswith("    "):
-            stripped = raw_line.strip()
-            # Skip "All available test cases:" header
-            if not stripped or stripped == "All available test cases:":
-                idx += 1
+    try:
+        payload = json.loads(output)
+        listing_tests = payload.get("listings", {}).get("tests", [])
+        for item in listing_tests:
+            name = item.get("name")
+            filename = item.get("source-location", {}).get("filename")
+            if not name or not filename:
                 continue
-            
-            # Start a new test name (may be multi-line with - continuation)
-            current_name = stripped
-            
-            # Handle line continuation with trailing dash
-            while current_name.endswith("-") and idx + 1 < len(lines):
-                next_line = lines[idx + 1]
-                # If next line is 2-space indented (continuation), append it
-                if next_line.startswith("  ") and not next_line.startswith("    "):
-                    current_name = current_name[:-1] + next_line.strip()
-                    idx += 1
-                else:
-                    break
-            idx += 1
-            continue
-
-        # Location line: must have current_name and match file:line pattern
-        if current_name is None:
-            idx += 1
-            continue
-
-        location_match = re.match(r"\s+(.+\.(?:cpp|cc|cxx)):\d+\s*$", raw_line)
-        if location_match:
-            abs_location = Path(location_match.group(1)).resolve()
+            abs_location = Path(filename).resolve()
             try:
                 rel = abs_location.relative_to(PROJECT_ROOT).as_posix()
             except ValueError:
                 rel = abs_location.as_posix()
-            # Only append if both name and location are valid
-            if current_name and not current_name.startswith('_'):
-                tests.append((current_name, rel))
-            current_name = None
-        # Reset current_name if we hit a line that doesn't match location pattern
-        # but also doesn't match test name pattern (indicates parse error)
-        elif raw_line and not raw_line.startswith("  "):
-            current_name = None
-        
-        idx += 1
+            tests.append((name, rel))
+    except json.JSONDecodeError:
+        print("\n[FAILED] could not parse Catch2 JSON test listing", file=sys.stderr)
+        _close_log()
+        sys.exit(1)
 
     if not tests:
         print("\n[FAILED] could not discover Catch2 tests", file=sys.stderr)

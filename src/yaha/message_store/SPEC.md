@@ -99,6 +99,9 @@ struct MessageTreeNode;
   - `upperBoundAddInMilliseconds`
   - `lowerBoundFactor`
   - `lowerBoundSubInMilliseconds`
+- Promotion of identical `timeValue` suffixes to `time`/`interval` requires strictly more
+  entries than the effective interval threshold, so exactly-threshold sequences remain
+  as explicit history entries.
 - Legacy compatibility for `lengthForFurtherCompression` is preserved:
   - configured values `1` and `2` are coerced to `3`,
   - configured value `0` remains `0`.
