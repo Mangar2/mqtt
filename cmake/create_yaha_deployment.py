@@ -100,15 +100,15 @@ SERVICE_COMPONENTS = (
         ),
     },
     {
-        "name": "rs485interface",
+        "name": "rs485",
         "binary": "yahars485interfaceclient",
-        "ini": "rs485interface.ini",
-        "service": "rs485if.service",
-        "log_namespace": "rs485if",
+        "ini": "rs485.ini",
+        "service": "rs485.service",
+        "log_namespace": "rs485",
         "description": "Yaha RS485 Interface Client",
         "exec": (
-            "__INSTALL_ROOT__/rs485interface/yahars485interfaceclient "
-            "__INSTALL_ROOT__/rs485interface/rs485interface.ini"
+            "__INSTALL_ROOT__/rs485/yahars485interfaceclient "
+            "__INSTALL_ROOT__/rs485/rs485.ini"
         ),
     },
     {
@@ -161,7 +161,12 @@ SERVICE_COMPONENTS = (
     },
 )
 
-ROOT_TOOLS = ()
+ROOT_TOOLS = (
+    {
+        "source": PROJECT_ROOT / "src" / "svc" / "svc",
+        "target_name": "svc",
+    },
+)
 
 JOURNALD_NAMESPACE_DROPIN_NAME = "20-yaha-retention.conf"
 
@@ -380,7 +385,7 @@ def render_root_install_script(*, journal_namespaces: list[str]) -> str:
         "msgstore",
         "automation",
         "valueservice",
-        "rs485interface",
+        "rs485",
         "zwave",
         "brokerconnector",
         "httpmqttinterface",
@@ -499,6 +504,19 @@ def render_root_install_script(*, journal_namespaces: list[str]) -> str:
             "  fi",
             "}",
             "",
+            "install_root_tools() {",
+            "  local tool_src=\"${SCRIPT_DIR}/svc\"",
+            "  local tool_dst=\"/usr/local/bin/svc\"",
+            "",
+            "  if [[ ! -f \"${tool_src}\" ]]; then",
+            "    echo \"Missing root tool: ${tool_src}\" >&2",
+            "    return 1",
+            "  fi",
+            "",
+            "  ${SUDO} install -m 755 \"${tool_src}\" \"${tool_dst}\"",
+            "  echo \"Installed root tool: ${tool_dst}\"",
+            "}",
+            "",
             "for component in " + " ".join(install_order) + "; do",
             "  installer=\"${SCRIPT_DIR}/${component}/install.sh\"",
             "  if [[ ! -x \"${installer}\" ]]; then",
@@ -508,6 +526,8 @@ def render_root_install_script(*, journal_namespaces: list[str]) -> str:
             "  echo \"Installing ${component}...\"",
             "  bash \"${installer}\"",
             "done",
+            "",
+            "install_root_tools",
             "",
             "apply_journald_namespace_configs",
             "",

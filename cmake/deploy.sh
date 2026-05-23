@@ -75,7 +75,7 @@ require_command() {
 
 is_component() {
   case "$1" in
-    broker|filestore|msgstore|automation|valueservice|rs485interface|zwave|brokerconnector|httpmqttinterface|remoteservice)
+    broker|filestore|msgstore|automation|valueservice|rs485|zwave|brokerconnector|httpmqttinterface|remoteservice)
       return 0
       ;;
     *)
@@ -91,7 +91,7 @@ service_unit_for_component() {
     msgstore) printf '%s' "msgstore.service" ;;
     automation) printf '%s' "autom.service" ;;
     valueservice) printf '%s' "valuesvc.service" ;;
-    rs485interface) printf '%s' "rs485if.service" ;;
+    rs485) printf '%s' "rs485.service" ;;
     zwave) printf '%s' "zwave.service" ;;
     brokerconnector) printf '%s' "brkconn.service" ;;
     httpmqttinterface) printf '%s' "httpmqtt.service" ;;
@@ -139,6 +139,29 @@ prompt_overwrite() {
   done
 }
 
+migrate_legacy_rs485_ini_if_needed() {
+  local target_root="$1"
+
+  if [[ "${overwrite_mode}" != "none" ]]; then
+    return
+  fi
+
+  local legacy_ini="${target_root}/rs485interface/rs485interface.ini"
+  local current_ini="${target_root}/rs485/rs485.ini"
+
+  if [[ -f "${current_ini}" ]]; then
+    return
+  fi
+
+  if [[ ! -f "${legacy_ini}" ]]; then
+    return
+  fi
+
+  mkdir -p "$(dirname "${current_ini}")"
+  cp "${legacy_ini}" "${current_ini}"
+  log_info "MIGRATE protected-config rs485interface/rs485interface.ini -> rs485/rs485.ini"
+}
+
 install_journald_namespace_config() {
   local script_dir="$1"
   local namespace="$2"
@@ -172,7 +195,7 @@ apply_journald_namespace_configs() {
   local rc=0
   local namespace
 
-  for namespace in broker filestore msgstore autom valuesvc rs485if zwave brkconn httpmqtt remotesvc; do
+  for namespace in broker filestore msgstore autom valuesvc rs485 zwave brkconn httpmqtt remotesvc; do
     if install_journald_namespace_config "${script_dir}" "${namespace}" "${sudo_cmd}"; then
       rc=0
     else
@@ -188,7 +211,7 @@ apply_journald_namespace_configs() {
   if [[ ${changed_any} -eq 1 ]]; then
     log_info "Reloading systemd daemon after journald namespace changes"
     ${sudo_cmd} systemctl daemon-reload
-    for namespace in broker filestore msgstore autom valuesvc rs485if zwave brkconn httpmqtt remotesvc; do
+    for namespace in broker filestore msgstore autom valuesvc rs485 zwave brkconn httpmqtt remotesvc; do
       log_info "Restarting systemd-journald namespace: ${namespace}"
       ${sudo_cmd} systemctl restart "systemd-journald@${namespace}.service" || true
     done
@@ -252,6 +275,21 @@ install_nginx_config() {
   else
     log_info "nginx controlapp.conf unchanged; no reload needed."
   fi
+}
+
+install_root_tools() {
+  local script_dir="$1"
+  local sudo_cmd="$2"
+  local tool_src="${script_dir}/svc"
+  local tool_dst="/usr/local/bin/svc"
+
+  if [[ ! -f "${tool_src}" ]]; then
+    log_warn "Root tool not present in deployment payload: ${tool_src}"
+    return 0
+  fi
+
+  log_info "Installing root tool: ${tool_dst}"
+  ${sudo_cmd} install -m 755 "${tool_src}" "${tool_dst}"
 }
 
 zip_file=""
@@ -373,6 +411,8 @@ log_info "Using source root: ${source_root}"
 mkdir -p "${target_dir}"
 log_info "Ensuring target directory tree"
 
+migrate_legacy_rs485_ini_if_needed "${target_dir}"
+
 dir_list_file="${tmp_dir}/.dir_list"
 find "${source_root}" -type d | sort > "${dir_list_file}"
 
@@ -488,7 +528,7 @@ else
   log_info "Nginx config unchanged; no nginx reload needed."
 fi
 
-for component in broker filestore msgstore automation valueservice rs485interface zwave brokerconnector httpmqttinterface remoteservice; do
+for component in broker filestore msgstore automation valueservice rs485 zwave brokerconnector httpmqttinterface remoteservice; do
   if component_install_needed "${component}" "${sudo_cmd}"; then
     installer="${target_dir}/${component}/install.sh"
     if [[ ! -x "${installer}" ]]; then
@@ -501,5 +541,7 @@ for component in broker filestore msgstore automation valueservice rs485interfac
     log_info "Component unchanged: ${component}"
   fi
 done
+
+install_root_tools "${target_dir}" "${sudo_cmd}"
 
 log_info "Local deployment apply completed."

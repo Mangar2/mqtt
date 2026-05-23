@@ -32,7 +32,7 @@ KNOWN_INSTALL_COMPONENTS = (
     "msgstore",
     "automation",
     "valueservice",
-    "rs485interface",
+    "rs485",
     "brokerconnector",
     "httpmqttinterface",
     "remoteservice",
