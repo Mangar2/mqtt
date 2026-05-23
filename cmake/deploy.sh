@@ -102,7 +102,6 @@ service_unit_for_component() {
 
 component_install_needed() {
   local component="$1"
-  local sudo_cmd="$2"
 
   if [[ -n "${changed_components[${component}]:-}" ]]; then
     return 0
@@ -114,12 +113,22 @@ component_install_needed() {
     return 1
   fi
 
-  if ! ${sudo_cmd} systemctl list-unit-files --type=service --no-legend --no-pager | awk '{print $1}' | grep -Fxq "${unit_name}"; then
+  if [[ -z "${installed_service_units[${unit_name}]:-}" ]]; then
     log_info "Component ${component} scheduled for install: missing unit ${unit_name}"
     return 0
   fi
 
   return 1
+}
+
+load_installed_service_units() {
+  local sudo_cmd="$1"
+  local unit_line=""
+
+  while IFS= read -r unit_line; do
+    [[ -z "${unit_line}" ]] && continue
+    installed_service_units["${unit_line%% *}"]=1
+  done < <(${sudo_cmd} systemctl list-unit-files --type=service --no-legend --no-pager)
 }
 
 prompt_overwrite() {
@@ -413,16 +422,13 @@ log_info "Ensuring target directory tree"
 
 migrate_legacy_rs485_ini_if_needed "${target_dir}"
 
-dir_list_file="${tmp_dir}/.dir_list"
-find "${source_root}" -type d | sort > "${dir_list_file}"
-
 while IFS= read -r dir_path; do
   rel_dir="${dir_path#${source_root}/}"
   if [[ "${dir_path}" == "${source_root}" ]]; then
     continue
   fi
   mkdir -p "${target_dir}/${rel_dir}"
-done < "${dir_list_file}"
+done < <(find "${source_root}" -type d | sort)
 
 copied=0
 skipped_identical=0
@@ -432,11 +438,9 @@ journald_changed=0
 nginx_changed=0
 
 declare -A changed_components=()
+declare -A installed_service_units=()
 
 log_info "Starting file copy phase"
-
-file_list_file="${tmp_dir}/.file_list"
-find "${source_root}" -type f | sort > "${file_list_file}"
 
 while IFS= read -r src_file; do
   rel_path="${src_file#${source_root}/}"
@@ -496,7 +500,7 @@ while IFS= read -r src_file; do
     nginx_changed=1
   fi
 
-done < "${file_list_file}"
+done < <(find "${source_root}" -type f | sort)
 
 log_info "DEPLOY done copied=${copied} skipped_identical=${skipped_identical} skipped_prompt=${skipped_prompt}"
 if [[ ${skipped_identical_openzwave} -gt 0 && ${verbose_identical} -eq 0 ]]; then
@@ -514,6 +518,8 @@ if [[ ${EUID} -ne 0 ]]; then
 fi
 log_info "Install phase starts (sudo command: ${sudo_cmd:-none})"
 
+load_installed_service_units "${sudo_cmd}"
+
 if [[ ${journald_changed} -eq 1 ]]; then
   log_info "Applying journald namespace config updates"
   apply_journald_namespace_configs "${target_dir}" "${sudo_cmd}"
@@ -529,7 +535,7 @@ else
 fi
 
 for component in broker filestore msgstore automation valueservice rs485 zwave brokerconnector httpmqttinterface remoteservice; do
-  if component_install_needed "${component}" "${sudo_cmd}"; then
+  if component_install_needed "${component}"; then
     installer="${target_dir}/${component}/install.sh"
     if [[ ! -x "${installer}" ]]; then
       log_error "Missing installer for changed component: ${installer}"
