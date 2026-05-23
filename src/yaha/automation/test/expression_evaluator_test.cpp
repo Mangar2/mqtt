@@ -23,6 +23,7 @@ constexpr double k_numeric_twenty_five_point_one{25.1};
 constexpr double k_numeric_twenty_five{25.0};
 constexpr double k_numeric_twenty_six{26.0};
 constexpr std::size_t k_time_text_buffer_size{9U};
+constexpr std::size_t k_iso_utc_text_buffer_size{25U};
 
 [[nodiscard]] yaha::FieldScriptAst parseScript(const std::string& script) {
     const yaha::ExpressionParseResult parsed = yaha::ExpressionParser::parse(script);
@@ -45,6 +46,23 @@ constexpr std::size_t k_time_text_buffer_size{9U};
     const auto charsWritten = std::strftime(outputBuffer.data(), outputBuffer.size(), "%H:%M:%S", &localCalendarTime);
     REQUIRE(charsWritten > 0U);
     return std::string{outputBuffer.data()};
+}
+
+[[nodiscard]] std::string isoUtcText(const std::chrono::system_clock::time_point& timePoint) {
+    const std::time_t epochSeconds = std::chrono::system_clock::to_time_t(timePoint);
+    std::tm utcCalendarTime{};
+#if defined(_WIN32)
+    const auto conversionResult = gmtime_s(&utcCalendarTime, &epochSeconds);
+    REQUIRE(conversionResult == 0);
+#else
+    const auto* conversionResult = gmtime_r(&epochSeconds, &utcCalendarTime);
+    REQUIRE(conversionResult != nullptr);
+#endif
+
+    std::array<char, k_iso_utc_text_buffer_size> outputBuffer{};
+    const auto charsWritten = std::strftime(outputBuffer.data(), outputBuffer.size(), "%Y-%m-%dT%H:%M:%S", &utcCalendarTime);
+    REQUIRE(charsWritten > 0U);
+    return std::string{outputBuffer.data()} + ".000Z";
 }
 
 [[nodiscard]] std::chrono::system_clock::time_point localTodayTimePoint(
@@ -375,6 +393,23 @@ TEST_CASE("expression_evaluator_coerces_numeric_string_in_relational_comparison"
 
     yaha::ExpressionEvaluator::VariableMap vars;
     vars.insert({"outdoor/garden/weather2/sensor/temperature", std::string{"32.22"}});
+
+    const yaha::ExpressionEvaluationResult result = yaha::ExpressionEvaluator::evaluate(ast, vars);
+
+    REQUIRE(result.success);
+    REQUIRE(std::holds_alternative<bool>(result.value));
+    REQUIRE(std::get<bool>(result.value));
+}
+
+TEST_CASE("expression_evaluator_compares_iso_datetime_string_as_local_time", "[yaha][automation]") {
+    const auto ast = parseScript("status/motion/ground/latest < \"/time\" + 30");
+
+    const auto currentLocalTime = localTodayTimePoint(17, 21, 7);
+    const auto motionLocalTime = currentLocalTime - std::chrono::minutes{10};
+
+    yaha::ExpressionEvaluator::VariableMap vars;
+    vars.insert({"status/motion/ground/latest", isoUtcText(motionLocalTime)});
+    vars.insert({"/time", currentLocalTime});
 
     const yaha::ExpressionEvaluationResult result = yaha::ExpressionEvaluator::evaluate(ast, vars);
 
