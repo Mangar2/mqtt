@@ -521,6 +521,19 @@ void collectExternalVariablesFromExpr(const ExprPtr& expression, std::set<std::s
         return;
     }
 
+    if (std::holds_alternative<LiteralNode>(expression->node)) {
+        const auto& literalNode = std::get<LiteralNode>(expression->node);
+        if (std::holds_alternative<std::string>(literalNode.value)) {
+            const auto& literalText = std::get<std::string>(literalNode.value);
+            if (!literalText.empty()
+                && literalText.find('/') != std::string::npos
+                && literalText.front() != '/') {
+                externalVariables->insert(literalText);
+            }
+        }
+        return;
+    }
+
     if (std::holds_alternative<VariableRefNode>(expression->node)) {
         const auto& variable = std::get<VariableRefNode>(expression->node).name;
         if (!variable.empty() && variable.front() != '/') {

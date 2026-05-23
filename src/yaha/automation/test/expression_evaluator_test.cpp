@@ -19,6 +19,9 @@ constexpr int k_minutes_fifty_five{55};
 constexpr int k_minutes_thirty{30};
 constexpr double k_numeric_one{1.0};
 constexpr double k_numeric_three{3.0};
+constexpr double k_numeric_twenty_five_point_one{25.1};
+constexpr double k_numeric_twenty_five{25.0};
+constexpr double k_numeric_twenty_six{26.0};
 constexpr std::size_t k_time_text_buffer_size{9U};
 
 [[nodiscard]] yaha::FieldScriptAst parseScript(const std::string& script) {
@@ -331,6 +334,83 @@ TEST_CASE("expression_evaluator_reports_invalid_relational_operands", "[yaha][au
 
     REQUIRE_FALSE(result.success);
     REQUIRE_FALSE(result.errors.empty());
+    REQUIRE(result.errors.front().find("relational comparison failed: on > off cannot be evaluated") != std::string::npos);
+    REQUIRE(result.errors.front().find("because operands are neither both numeric nor both time") != std::string::npos);
+    REQUIRE(result.errors.front().find("operand1(type=string, value=on, source=on)") != std::string::npos);
+    REQUIRE(result.errors.front().find("operand2(type=string, value=off, source=off)") != std::string::npos);
+}
+
+TEST_CASE("expression_evaluator_reports_undefined_external_variable_in_relational_comparison", "[yaha][automation]") {
+    const auto ast = parseScript("outdoor/garden/weather2/sensor/temperature > 25");
+
+    const yaha::ExpressionEvaluationResult result = yaha::ExpressionEvaluator::evaluate(
+        ast,
+        yaha::ExpressionEvaluator::VariableMap{});
+
+    REQUIRE_FALSE(result.success);
+    REQUIRE_FALSE(result.errors.empty());
+    REQUIRE(result.errors.front().find("relational comparison failed") != std::string::npos);
+    REQUIRE(result.errors.front().find("because undefined external variable(s)") != std::string::npos);
+    REQUIRE(result.errors.front().find("outdoor/garden/weather2/sensor/temperature") != std::string::npos);
+}
+
+TEST_CASE("expression_evaluator_supports_unquoted_topic_with_and_in_name_when_numeric", "[yaha][automation]") {
+    const auto ast = parseScript(
+        "outdoor/garden/weather2/sensor/temperature > 25 and "
+        "ground/hallway/center/temperature and humidity sensor/temperature in celsius > 24.5");
+
+    yaha::ExpressionEvaluator::VariableMap vars;
+    vars.insert({"outdoor/garden/weather2/sensor/temperature", k_numeric_twenty_six});
+    vars.insert({"ground/hallway/center/temperature and humidity sensor/temperature in celsius", k_numeric_twenty_five});
+
+    const yaha::ExpressionEvaluationResult result = yaha::ExpressionEvaluator::evaluate(ast, vars);
+
+    REQUIRE(result.success);
+    REQUIRE(std::holds_alternative<bool>(result.value));
+    REQUIRE(std::get<bool>(result.value));
+}
+
+TEST_CASE("expression_evaluator_coerces_numeric_string_in_relational_comparison", "[yaha][automation]") {
+    const auto ast = parseScript("outdoor/garden/weather2/sensor/temperature > 25");
+
+    yaha::ExpressionEvaluator::VariableMap vars;
+    vars.insert({"outdoor/garden/weather2/sensor/temperature", std::string{"32.22"}});
+
+    const yaha::ExpressionEvaluationResult result = yaha::ExpressionEvaluator::evaluate(ast, vars);
+
+    REQUIRE(result.success);
+    REQUIRE(std::holds_alternative<bool>(result.value));
+    REQUIRE(std::get<bool>(result.value));
+}
+
+TEST_CASE("expression_evaluator_resolves_quoted_topic_path_as_variable", "[yaha][automation]") {
+    const auto ast = parseScript(
+        "outdoor/garden/weather2/sensor/temperature > 25 and "
+        "\"ground/hallway/center/temperature and humidity sensor/temperature in celsius\" > 24.5");
+
+    yaha::ExpressionEvaluator::VariableMap vars;
+    vars.insert({"outdoor/garden/weather2/sensor/temperature", std::string{"32.22"}});
+    vars.insert({"ground/hallway/center/temperature and humidity sensor/temperature in celsius", k_numeric_twenty_five_point_one});
+
+    const yaha::ExpressionEvaluationResult result = yaha::ExpressionEvaluator::evaluate(ast, vars);
+
+    REQUIRE(result.success);
+    REQUIRE(std::holds_alternative<bool>(result.value));
+    REQUIRE(std::get<bool>(result.value));
+}
+
+TEST_CASE("expression_evaluator_reports_undefined_for_quoted_topic_variable", "[yaha][automation]") {
+    const auto ast = parseScript("\"ground/hallway/center/temperature and humidity sensor/temperature in celsius\" > 24.5");
+
+    const yaha::ExpressionEvaluationResult result = yaha::ExpressionEvaluator::evaluate(
+        ast,
+        yaha::ExpressionEvaluator::VariableMap{});
+
+    REQUIRE_FALSE(result.success);
+    REQUIRE_FALSE(result.errors.empty());
+    REQUIRE(result.errors.front().find("because undefined external variable(s)") != std::string::npos);
+    REQUIRE(result.errors.front().find("ground/hallway/center/temperature and humidity sensor/temperature in celsius")
+        != std::string::npos);
 }
 
 TEST_CASE("expression_evaluator_supports_time_arithmetic_for_string_time", "[yaha][automation]") {

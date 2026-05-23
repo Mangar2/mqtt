@@ -51,6 +51,42 @@ struct EvaluatedNode {
     return parsedLength == tokenText.size();
 }
 
+[[nodiscard]] std::string trimWhitespace(const std::string& textValue) {
+    std::size_t beginIndex = 0U;
+    while (beginIndex < textValue.size()
+        && std::isspace(static_cast<unsigned char>(textValue[beginIndex])) != 0) {
+        beginIndex += 1U;
+    }
+
+    std::size_t endIndex = textValue.size();
+    while (endIndex > beginIndex
+        && std::isspace(static_cast<unsigned char>(textValue[endIndex - 1U])) != 0) {
+        endIndex -= 1U;
+    }
+
+    return textValue.substr(beginIndex, endIndex - beginIndex);
+}
+
+[[nodiscard]] std::optional<double> tryNumericLikeJs(const RuntimeValue& runtimeValue) {
+    if (std::holds_alternative<double>(runtimeValue)) {
+        return std::get<double>(runtimeValue);
+    }
+    if (!std::holds_alternative<std::string>(runtimeValue)) {
+        return std::nullopt;
+    }
+
+    const std::string trimmedText = trimWhitespace(std::get<std::string>(runtimeValue));
+    if (trimmedText.empty()) {
+        return std::nullopt;
+    }
+
+    double parsedValue = 0.0;
+    if (!parseDouble(trimmedText, &parsedValue)) {
+        return std::nullopt;
+    }
+    return parsedValue;
+}
+
 [[nodiscard]] bool tryParseTimeText(const std::string& timeText, std::chrono::seconds* parsedSeconds) {
     int hourValue = -1;
     int minuteValue = -1;
@@ -172,6 +208,88 @@ struct EvaluatedNode {
         return secondsValue.has_value() ? formatTimeText(*secondsValue) : "time";
     }
     return "map";
+}
+
+[[nodiscard]] std::string valueTypeToString(const RuntimeValue& runtimeValue) {
+    if (std::holds_alternative<std::string>(runtimeValue)) {
+        return "string";
+    }
+    if (std::holds_alternative<double>(runtimeValue)) {
+        return "number";
+    }
+    if (std::holds_alternative<bool>(runtimeValue)) {
+        return "bool";
+    }
+    if (std::holds_alternative<std::chrono::system_clock::time_point>(runtimeValue)) {
+        return "time";
+    }
+    return "map";
+}
+
+[[nodiscard]] bool isUndefinedReason(const std::string& reasonText) {
+    constexpr std::string_view undefinedSuffix{" (undefined)"};
+    return reasonText.ends_with(undefinedSuffix);
+}
+
+[[nodiscard]] std::string extractUndefinedVariableName(const std::string& reasonText) {
+    constexpr std::string_view undefinedSuffix{" (undefined)"};
+    if (!isUndefinedReason(reasonText)) {
+        return {};
+    }
+    return reasonText.substr(0U, reasonText.size() - undefinedSuffix.size());
+}
+
+[[nodiscard]] std::string relationOperatorSymbol(const std::string& relationOperator) {
+    if (relationOperator == "gt") {
+        return ">";
+    }
+    if (relationOperator == "lt") {
+        return "<";
+    }
+    if (relationOperator == "ge") {
+        return ">=";
+    }
+    if (relationOperator == "le") {
+        return "<=";
+    }
+    return "?";
+}
+
+template <typename ComparableType>
+[[nodiscard]] bool evaluateRelation(
+    const ComparableType& leftValue,
+    const ComparableType& rightValue,
+    const std::string& relationOperator) {
+    if (relationOperator == "gt") {
+        return leftValue > rightValue;
+    }
+    if (relationOperator == "lt") {
+        return leftValue < rightValue;
+    }
+    if (relationOperator == "ge") {
+        return leftValue >= rightValue;
+    }
+    return leftValue <= rightValue;
+}
+
+void appendUndefinedCause(
+    std::ostringstream* errorText,
+    const std::string& leftUndefinedVariable,
+    const std::string& rightUndefinedVariable) {
+    if (leftUndefinedVariable.empty() && rightUndefinedVariable.empty()) {
+        *errorText << "; because operands are neither both numeric nor both time";
+        return;
+    }
+
+    *errorText << "; because undefined external variable(s): ";
+    std::string separator;
+    if (!leftUndefinedVariable.empty()) {
+        *errorText << leftUndefinedVariable;
+        separator = ", ";
+    }
+    if (!rightUndefinedVariable.empty()) {
+        *errorText << separator << rightUndefinedVariable;
+    }
 }
 
 [[nodiscard]] bool toBool(const RuntimeValue& runtimeValue) {
@@ -304,9 +422,9 @@ private:
         if (std::holds_alternative<std::string>(literalValue)) {
             const std::string textValue = std::get<std::string>(literalValue);
             if (textValue.find('/') != std::string::npos) {
+                usedVariables_.insert(textValue);
                 const auto variableIterator = variables_.find(textValue);
                 if (variableIterator != variables_.end()) {
-                    usedVariables_.insert(textValue);
                     if (std::holds_alternative<std::string>(variableIterator->second)) {
                         const RuntimeValue variableValue{std::get<std::string>(variableIterator->second)};
                         return EvaluatedNode{.value = variableValue, .reason = textValue + " (" + valueToString(variableValue) + ")"};
@@ -323,6 +441,9 @@ private:
                         std::get<std::chrono::system_clock::time_point>(variableIterator->second)};
                     return EvaluatedNode{.value = variableValue, .reason = textValue + " (" + valueToString(variableValue) + ")"};
                 }
+
+                missingVariables_.insert(textValue);
+                return EvaluatedNode{.value = RuntimeValue{false}, .reason = textValue + " (undefined)"};
             }
             return EvaluatedNode{.value = RuntimeValue{textValue}, .reason = textValue};
         }
@@ -564,37 +685,40 @@ private:
 
         const RuntimeValue& leftValue = leftNode.value;
         const RuntimeValue& rightValue = rightNode.value;
-        if (std::holds_alternative<double>(leftValue) && std::holds_alternative<double>(rightValue)) {
-            const double leftNumber = std::get<double>(leftValue);
-            const double rightNumber = std::get<double>(rightValue);
-            if (relationOperator == "gt") {
-                return makeCompareNode(leftNumber > rightNumber, ">");
-            }
-            if (relationOperator == "lt") {
-                return makeCompareNode(leftNumber < rightNumber, "<");
-            }
-            if (relationOperator == "ge") {
-                return makeCompareNode(leftNumber >= rightNumber, ">=");
-            }
-            return makeCompareNode(leftNumber <= rightNumber, "<=");
+        const auto leftNumber = tryNumericLikeJs(leftValue);
+        const auto rightNumber = tryNumericLikeJs(rightValue);
+        if (leftNumber.has_value() && rightNumber.has_value()) {
+            return makeCompareNode(
+            evaluateRelation(*leftNumber, *rightNumber, relationOperator),
+                relationOperatorSymbol(relationOperator));
         }
 
         const auto leftTime = tryTimeOfDay(leftValue);
         const auto rightTime = tryTimeOfDay(rightValue);
         if (leftTime.has_value() && rightTime.has_value()) {
-            if (relationOperator == "gt") {
-                return makeCompareNode(*leftTime > *rightTime, ">");
-            }
-            if (relationOperator == "lt") {
-                return makeCompareNode(*leftTime < *rightTime, "<");
-            }
-            if (relationOperator == "ge") {
-                return makeCompareNode(*leftTime >= *rightTime, ">=");
-            }
-            return makeCompareNode(*leftTime <= *rightTime, "<=");
+            return makeCompareNode(
+                evaluateRelation(*leftTime, *rightTime, relationOperator),
+                relationOperatorSymbol(relationOperator));
         }
 
-        errors_.emplace_back("invalid operands for relational comparison");
+        const std::string leftUndefinedVariable = extractUndefinedVariableName(leftNode.reason);
+        const std::string rightUndefinedVariable = extractUndefinedVariableName(rightNode.reason);
+
+        std::ostringstream errorText;
+        const std::string operatorText = relationOperatorSymbol(relationOperator);
+
+        errorText << "relational comparison failed: "
+                  << leftNode.reason << " " << operatorText << " " << rightNode.reason
+                  << " cannot be evaluated";
+        appendUndefinedCause(&errorText, leftUndefinedVariable, rightUndefinedVariable);
+
+        errorText << "; operands: operand1(type=" << valueTypeToString(leftValue)
+                  << ", value=" << valueToString(leftValue)
+                  << ", source=" << leftNode.reason << "), "
+                  << "operand2(type=" << valueTypeToString(rightValue)
+                  << ", value=" << valueToString(rightValue)
+                  << ", source=" << rightNode.reason << ")";
+        errors_.emplace_back(errorText.str());
         return std::nullopt;
     }
 

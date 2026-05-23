@@ -3,7 +3,10 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <ctime>
 #include <ranges>
+#include <set>
+#include <sstream>
 #include <string>
 #include <utility>
 
@@ -40,6 +43,58 @@ void appendTrace(std::vector<std::string>* traceEntries, const std::string& trac
         return "string:" + std::get<std::string>(value);
     }
     return "time";
+}
+
+[[nodiscard]] std::string evaluationValueTypeToTraceText(const ExpressionEvaluationResult::Value& value) {
+    if (std::holds_alternative<bool>(value)) {
+        return "bool";
+    }
+    if (std::holds_alternative<double>(value)) {
+        return "number";
+    }
+    if (std::holds_alternative<std::string>(value)) {
+        return "string";
+    }
+    return "time";
+}
+
+[[nodiscard]] std::string evaluationValueToDetailText(const ExpressionEvaluationResult::Value& value) {
+    if (std::holds_alternative<bool>(value)) {
+        return std::get<bool>(value) ? "true" : "false";
+    }
+    if (std::holds_alternative<double>(value)) {
+        std::ostringstream textStream;
+        textStream << std::get<double>(value);
+        return textStream.str();
+    }
+    if (std::holds_alternative<std::string>(value)) {
+        return std::string{"\""} + std::get<std::string>(value) + "\"";
+    }
+
+    const auto timeValue = std::get<std::chrono::system_clock::time_point>(value);
+    const std::time_t epochSeconds = std::chrono::system_clock::to_time_t(timeValue);
+    std::ostringstream textStream;
+    textStream << "epoch:" << epochSeconds;
+    return textStream.str();
+}
+
+void appendCheckVariableSnapshot(
+    std::vector<std::string>* traceEntries,
+    const std::set<std::string>& externalVariables,
+    const ExpressionEvaluator::VariableMap& variables) {
+    for (const auto& variableName : externalVariables) {
+        const auto variableIterator = variables.find(variableName);
+        if (variableIterator == variables.end()) {
+            appendTrace(traceEntries, "rule-evaluation:check input=" + variableName + " undefined");
+            continue;
+        }
+
+        appendTrace(
+            traceEntries,
+            "rule-evaluation:check input=" + variableName
+                + " type=" + evaluationValueTypeToTraceText(variableIterator->second)
+                + " value=" + evaluationValueToDetailText(variableIterator->second));
+    }
 }
 
 [[nodiscard]] std::string qosToTraceText(const Qos qosValue) {
@@ -129,8 +184,12 @@ void appendTrace(std::vector<std::string>* traceEntries, const std::string& trac
     const std::string& script,
     const ExpressionEvaluator::VariableMap& variables,
     ExpressionEvaluationResult* outResult,
-    std::vector<std::string>* errors) {
+    std::vector<std::string>* errors,
+    std::set<std::string>* externalVariables = nullptr) {
     const ExpressionParseResult parseResult = ExpressionParser::parse(script);
+    if (externalVariables != nullptr) {
+        *externalVariables = parseResult.externalVariables;
+    }
     if (!appendExpressionErrors(parseResult, errors, fieldName)) {
         return false;
     }
@@ -462,12 +521,21 @@ SingleRuleProcessingResult SingleRuleProcessor::processWithTrace(
         appendTrace(traceEntries, "rule-evaluation:check expr=" + checkNode.asString());
 
         ExpressionEvaluationResult checkResult;
-        if (!evaluateScript("check", checkNode.asString(), variables, &checkResult, &result.errors)) {
+        std::set<std::string> checkExternalVariables;
+        if (!evaluateScript(
+                "check",
+                checkNode.asString(),
+                variables,
+                &checkResult,
+                &result.errors,
+                &checkExternalVariables)) {
+            appendCheckVariableSnapshot(traceEntries, checkExternalVariables, variables);
             appendTrace(traceEntries, "rule-evaluation:error check evaluation failed");
             return result;
         }
 
         result.usedVariables.insert(checkResult.usedVariables.begin(), checkResult.usedVariables.end());
+        appendCheckVariableSnapshot(traceEntries, checkExternalVariables, variables);
         isTriggered = asBooleanValue(checkResult.value);
         appendTrace(traceEntries,
                     "rule-evaluation:check result=" + evaluationValueToTraceText(checkResult.value));

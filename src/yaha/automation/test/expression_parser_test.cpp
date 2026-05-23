@@ -90,11 +90,20 @@ TEST_CASE("expression_parser_accepts_quoted_time_variables_in_conditions", "[yah
 }
 
 TEST_CASE("expression_parser_accepts_if_condition_with_spaced_topic_names", "[yaha][automation]") {
-    const std::string script = "if(\"/time\" > \"/sunset\" + outdoor/garden/light stairs/sunset delay and \"/time\" < outdoor/garden/light stairs/off evening, on, off)";
+    const std::string script = R"(if("/time" > "/sunset" + outdoor/garden/light stairs/sunset delay and "/time" < outdoor/garden/light stairs/off evening, on, off))";
 
     const yaha::ExpressionParseResult result = yaha::ExpressionParser::parse(script);
 
     REQUIRE(result.success);
+}
+
+TEST_CASE("expression_parser_collects_external_topics_from_quoted_paths", "[yaha][automation]") {
+    const std::string script = "\"ground/hallway/center/temperature and humidity sensor/temperature in celsius\" > 24.5";
+
+    const yaha::ExpressionParseResult result = yaha::ExpressionParser::parse(script);
+
+    REQUIRE(result.success);
+    REQUIRE(result.externalVariables.contains("ground/hallway/center/temperature and humidity sensor/temperature in celsius"));
 }
 
 TEST_CASE("expression_parser_reports_empty_script", "[yaha][automation]") {
