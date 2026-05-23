@@ -270,6 +270,54 @@ TEST_CASE("expression_evaluator_supports_logical_or_and_unary_not", "[yaha][auto
     REQUIRE(std::get<bool>(unaryResult.value));
 }
 
+TEST_CASE("expression_evaluator_evaluates_right_or_operand_even_if_left_is_true", "[yaha][automation]") {
+    const auto ast = parseScript("topic/a = on or topic/b = on");
+
+    yaha::ExpressionEvaluator::VariableMap vars;
+    vars.insert({"topic/a", std::string{"on"}});
+    vars.insert({"topic/b", std::string{"off"}});
+
+    const yaha::ExpressionEvaluationResult result = yaha::ExpressionEvaluator::evaluate(ast, vars);
+
+    REQUIRE(result.success);
+    REQUIRE(std::holds_alternative<bool>(result.value));
+    REQUIRE(std::get<bool>(result.value));
+    REQUIRE(result.usedVariables.contains("topic/a"));
+    REQUIRE(result.usedVariables.contains("topic/b"));
+}
+
+TEST_CASE("expression_evaluator_evaluates_right_and_operand_even_if_left_is_false", "[yaha][automation]") {
+    const auto ast = parseScript("topic/a = off and topic/b = on");
+
+    yaha::ExpressionEvaluator::VariableMap vars;
+    vars.insert({"topic/a", std::string{"on"}});
+    vars.insert({"topic/b", std::string{"on"}});
+
+    const yaha::ExpressionEvaluationResult result = yaha::ExpressionEvaluator::evaluate(ast, vars);
+
+    REQUIRE(result.success);
+    REQUIRE(std::holds_alternative<bool>(result.value));
+    REQUIRE_FALSE(std::get<bool>(result.value));
+    REQUIRE(result.usedVariables.contains("topic/a"));
+    REQUIRE(result.usedVariables.contains("topic/b"));
+}
+
+TEST_CASE("expression_evaluator_keeps_or_invalid_when_one_operand_has_relational_error", "[yaha][automation]") {
+    const auto leftInvalidAst = parseScript("on > off or true");
+    const yaha::ExpressionEvaluationResult leftInvalidResult = yaha::ExpressionEvaluator::evaluate(
+        leftInvalidAst,
+        yaha::ExpressionEvaluator::VariableMap{});
+    REQUIRE_FALSE(leftInvalidResult.success);
+    REQUIRE_FALSE(leftInvalidResult.errors.empty());
+
+    const auto rightInvalidAst = parseScript("true or on > off");
+    const yaha::ExpressionEvaluationResult rightInvalidResult = yaha::ExpressionEvaluator::evaluate(
+        rightInvalidAst,
+        yaha::ExpressionEvaluator::VariableMap{});
+    REQUIRE_FALSE(rightInvalidResult.success);
+    REQUIRE_FALSE(rightInvalidResult.errors.empty());
+}
+
 TEST_CASE("expression_evaluator_supports_neq_and_le_operators", "[yaha][automation]") {
     const auto neqAst = parseScript("awake != sleeping");
     const yaha::ExpressionEvaluationResult neqResult = yaha::ExpressionEvaluator::evaluate(
