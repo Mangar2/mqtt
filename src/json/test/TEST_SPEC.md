@@ -53,3 +53,58 @@
 - Scenario: Parse string with UTF-16 surrogate pair escape.
 - Input: `"\uD83D\uDE03"`
 - Expected: parse succeeds and resulting UTF-8 string is non-empty.
+
+11. parse_scalar_literals_and_exponent_number
+- Scenario: Parse JSON literals and exponent number.
+- Input: `null`, `true`, `false`, `-12.5e2`
+- Expected: parsed values have expected type/value.
+
+12. parse_rejects_leading_zero_number
+- Scenario: Parser rejects invalid number with leading zero.
+- Input: `01`
+- Expected: `parse` throws `JsonException` with `JsonError::InvalidNumber`.
+
+13. parse_rejects_invalid_string_escape
+- Scenario: Parser rejects invalid escape in string.
+- Input: `"\x"`
+- Expected: `parse` throws `JsonException` with `JsonError::InvalidStringEscape`.
+
+14. parse_rejects_invalid_unicode_surrogate_sequence
+- Scenario: Parser rejects standalone low surrogate.
+- Input: `"\uDE03"`
+- Expected: `parse` throws `JsonException` with `JsonError::InvalidUnicodeEscape`.
+
+15. stringify_non_finite_number_throws
+- Scenario: Serializer rejects non-finite number.
+- Input: `JsonValue{infinity}`
+- Expected: `stringify` throws `JsonException` with `JsonError::InvalidNumber`.
+
+16. operators_on_incompatible_types_throw
+- Scenario: JS-like mutable operators used on incompatible scalar value.
+- Input: `JsonValue{true}["key"]`, `JsonValue{"x"}[0]`, `JsonValue{1.0}.push_back(...)`
+- Expected: each operation throws `JsonException` with `JsonError::InvalidType`.
+
+17. parse_and_stringify_escape_matrix
+- Scenario: Parser and serializer handle all standard JSON escapes.
+- Input: string containing `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`
+- Expected: parse succeeds and stringify emits escaped forms.
+
+18. parse_empty_object_and_array_and_trailing_token_error
+- Scenario: Cover empty container parsing and trailing-token rejection.
+- Input: `{}`, `[]`, and `{}x`
+- Expected: empty containers parse successfully; trailing token throws `JsonError::UnexpectedToken`.
+
+19. parse_unicode_paths_cover_utf8_widths
+- Scenario: Parse Unicode escapes mapping to 1/2/3/4-byte UTF-8 outputs.
+- Input: `\u0041`, `\u00A9`, `\u20AC`, `\uD83D\uDE03`
+- Expected: parse succeeds for all inputs.
+
+20. accessors_and_size_cover_const_and_mutable_paths
+- Scenario: Exercise `as_object/as_array` mutable overloads, `contains`, const `at` invalid-type throws, and size on object/null.
+- Input: object/array/null values with lookups and invalid lookups.
+- Expected: success and throw paths match expected `JsonError` values.
+
+21. accessor_invalid_type_paths_throw
+- Scenario: Exercise invalid-type throw paths for const `at(index)`, const `at(key)`, `as_boolean`, and `as_number`.
+- Input: object/array plus mismatched accessor calls.
+- Expected: each call throws `JsonException` with `JsonError::InvalidType`.

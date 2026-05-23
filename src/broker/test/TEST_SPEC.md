@@ -49,7 +49,7 @@ All tests are tagged `[broker]`.
 
 ---
 
-## broker_test.cpp — Broker (15.2 + 15.3)
+## broker_test.cpp + broker_connect_publish_test.cpp + broker_monitoring_tick_test.cpp — Broker (15.2 + 15.3)
 
 | Test case | Section | Scenario | Input | Expected |
 |-----------|---------|----------|-------|----------|
@@ -122,3 +122,12 @@ All tests are tagged `[broker]`.
 | `enhanced_auth_registry_upsert_pending_then_erase_pending` | pending map | pending context lifecycle | insert pending for client, erase pending | pending entry removed, active entry untouched |
 | `enhanced_auth_registry_upsert_active_then_erase_active` | active map | active context lifecycle | insert active for client, erase active | active entry removed, pending entry untouched |
 | `enhanced_auth_registry_erase_client_clears_pending_and_active` | clear both | full client cleanup | insert pending + active then erase_client | both maps no longer contain client |
+
+---
+
+## subscribe_facade_test.cpp — SubscribeFacade tracing and aggregation
+
+| Test case | Section | Scenario | Input | Expected |
+|-----------|---------|----------|-------|----------|
+| `subscribe_facade_trace_limits_topic_filter_list` | subscribe tracing | More than ten subscribe filters | 11 valid filters with tracing level info | trace record emitted with `subscribe_handled`, includes `topic_filters`, and appends `,...` truncation marker |
+| `subscribe_facade_unsubscribe_trace_reports_failed_filters` | unsubscribe tracing | Unsubscribe list with one invalid filter and more than ten filters | 10 valid filters + `trace/#/invalid` | UNSUBACK contains `TopicFilterInvalid` for invalid filter and trace record reports `failed_filters=1` with truncated topic list |
