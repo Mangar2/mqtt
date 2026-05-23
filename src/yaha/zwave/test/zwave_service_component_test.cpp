@@ -359,7 +359,7 @@ TEST_CASE("filestore_monitor_reload_replaces_device_topics", "[zwave_service]") 
     CHECK_FALSE(subscriptions.contains("home/climate/+/set"));
 
     REQUIRE_FALSE(published.empty());
-    CHECK(published.back().topic() == "$MONITOR/zwave/info");
+    CHECK(published.back().topic() == "system/zwave/info");
     REQUIRE(std::holds_alternative<std::string>(published.back().value()));
     CHECK(std::get<std::string>(published.back().value()) == "configuration reloaded");
 }
