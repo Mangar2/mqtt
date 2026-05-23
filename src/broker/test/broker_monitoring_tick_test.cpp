@@ -2,12 +2,7 @@
 
 #include <atomic>
 #include <chrono>
-#include <csignal>
-#include <filesystem>
 #include <optional>
-#include <sstream>
-#include <thread>
-#include <vector>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -21,23 +16,14 @@
 
 #include "broker/broker.h"
 #include "broker/broker_config.h"
-#include "broker/broker_error.h"
 #include "connection/topic_alias_table.h"
 #include "data_model/message/message.h"
 #include "data_model/packet/connect_packet.h"
 #include "data_model/property/property_id.h"
 #include "data_model/reason_code/reason_code.h"
-#include "data_model/session/inflight_entry.h"
-#include "data_model/session/inflight_state.h"
-#include "data_model/session/session_state.h"
 #include "data_model/types/qos.h"
 #include "data_model/types/utf8_string.h"
-#include "network/tcp_connection.h"
 #include "outbound_queue/outbound_queue.h"
-#include "persistence/inflight_persistence.h"
-#include "persistence/offline_queue_persistence.h"
-#include "persistence/retained_message_persistence.h"
-#include "persistence/session_persistence.h"
 
 using namespace mqtt;
 using namespace std::chrono_literals;
@@ -46,6 +32,11 @@ using namespace std::chrono_literals;
 // Helpers
 
 namespace {
+
+constexpr uint16_t k_test_port_base = 18883U;
+constexpr uint32_t k_port_scan_attempts = 3000U;
+constexpr uint32_t k_port_max_exclusive = 60999U;
+constexpr uint32_t k_port_wrap_window = 1000U;
 
 SocketHandle create_tcp_socket() {
   return static_cast<SocketHandle>(::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
@@ -98,14 +89,15 @@ bool can_bind_loopback_port(uint16_t port_value) {
 }
 
 uint16_t next_test_port() {
-  static std::atomic<uint32_t> next_port_candidate{18883U};
-  constexpr uint32_t port_max_exclusive = 60999U;
+  static std::atomic<uint32_t> next_port_candidate{k_test_port_base};
 
-  for (uint32_t attempt_index = 0; attempt_index < 3000U; ++attempt_index) {
+  for (uint32_t attempt_index = 0; attempt_index < k_port_scan_attempts;
+       ++attempt_index) {
     uint32_t candidate_port =
         next_port_candidate.fetch_add(1U, std::memory_order_relaxed);
-    if (candidate_port >= port_max_exclusive) {
-      const uint32_t wrapped_port = 18883U + (candidate_port % 1000U);
+    if (candidate_port >= k_port_max_exclusive) {
+      const uint32_t wrapped_port =
+          k_test_port_base + (candidate_port % k_port_wrap_window);
       candidate_port = wrapped_port;
     }
 
@@ -114,7 +106,7 @@ uint16_t next_test_port() {
     }
   }
 
-  return 18883U;
+  return k_test_port_base;
 }
 
 /// Build a BrokerConfig that binds a single MQTT TCP listener on a
@@ -128,94 +120,12 @@ BrokerConfig make_test_config() {
   return cfg;
 }
 
-std::filesystem::path make_temp_dir() {
-  static std::atomic<uint64_t> temp_dir_counter{0U};
-  const uint64_t counter_value = temp_dir_counter.fetch_add(1U);
-  const auto now_ticks = std::chrono::steady_clock::now().time_since_epoch().count();
-  const auto thread_hash =
-      std::hash<std::thread::id>{}(std::this_thread::get_id());
-  auto dir = std::filesystem::temp_directory_path() /
-             ("broker_test_data_" + std::to_string(now_ticks) + "_" +
-              std::to_string(counter_value) + "_" +
-              std::to_string(thread_hash));
-  std::filesystem::create_directories(dir);
-  return dir;
-}
-
-void remove_temp_dir(const std::filesystem::path &dir) {
-  std::filesystem::remove_all(dir);
-}
-
-void connect_loopback(uint16_t port_value) {
-  mqtt::SocketHandle socket_handle = create_tcp_socket();
-  REQUIRE(socket_handle != mqtt::k_invalid_socket);
-
-  sockaddr_in server_addr{};
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_port = htons(port_value);
-  server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-
-  const int connect_result =
-      ::connect(socket_handle, reinterpret_cast<const sockaddr *>(&server_addr),
-                sizeof(server_addr));
-  CHECK(connect_result == 0);
-  close_socket_handle(socket_handle);
-}
-
-std::optional<TwoByteInteger>
-find_two_byte_property(const std::vector<Property> &properties,
-                       PropertyId property_id) {
-  for (const auto &property : properties) {
-    if (property.id == property_id) {
-      return std::get<TwoByteInteger>(property.value);
-    }
-  }
-  return std::nullopt;
-}
-
-std::optional<uint8_t> find_byte_property(const std::vector<Property> &properties,
-                                          PropertyId property_id) {
-  for (const auto &property : properties) {
-    if (property.id == property_id) {
-      return std::get<uint8_t>(property.value);
-    }
-  }
-  return std::nullopt;
-}
-
-std::optional<FourByteInteger>
-find_four_byte_property(const std::vector<Property> &properties,
-                        PropertyId property_id) {
-  for (const auto &property : properties) {
-    if (property.id == property_id) {
-      return std::get<FourByteInteger>(property.value);
-    }
-  }
-  return std::nullopt;
-}
-
-BinaryData binary_from_text(std::string_view text) {
-  BinaryData binary;
-  binary.data.reserve(text.size());
-  for (char chr : text) {
-    binary.data.push_back(static_cast<uint8_t>(chr));
-  }
-  return binary;
-}
-
-Property make_auth_method_property(std::string_view method_name) {
-  return {PropertyId::AuthenticationMethod,
-          Utf8String{std::string(method_name)}};
-}
-
-Property make_auth_data_property(std::string_view payload_text) {
-  return {PropertyId::AuthenticationData, binary_from_text(payload_text)};
-}
-
 } // namespace
 
 //
 // Monitoring — Module 16 integration
+
+// NOLINTBEGIN(readability-magic-numbers)
 
 TEST_CASE("broker_statistics_collector_accessor", "[broker]") {
   BrokerConfig cfg = make_test_config();
@@ -365,8 +275,9 @@ TEST_CASE("broker_handle_publish_rejects_zero_topic_alias", "[broker]") {
   message.topic = Utf8String{"sensors/alias"};
   message.qos = QoS::AtMostOnce;
   message.properties.push_back(
-      Property{PropertyId::PayloadFormatIndicator, uint8_t{1U}});
-  message.properties.push_back(Property{PropertyId::TopicAlias, uint16_t{0U}});
+      Property{.id = PropertyId::PayloadFormatIndicator, .value = uint8_t{1U}});
+    message.properties.push_back(
+      Property{.id = PropertyId::TopicAlias, .value = uint16_t{0U}});
   TopicAliasTable alias_table(10U);
 
   const ReasonCode reason_code =
@@ -404,7 +315,8 @@ TEST_CASE("broker_handle_publish_maps_invalid_topic_alias_to_protocol_error",
   Message message;
   message.topic = Utf8String{""};
   message.qos = QoS::AtMostOnce;
-  message.properties.push_back(Property{PropertyId::TopicAlias, uint16_t{1U}});
+  message.properties.push_back(
+      Property{.id = PropertyId::TopicAlias, .value = uint16_t{1U}});
   TopicAliasTable alias_table(10U);
 
   const ReasonCode reason_code =
@@ -596,6 +508,7 @@ TEST_CASE("broker_handle_subscribe_denied_returns_not_authorized", "[broker]") {
   broker.shutdown();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("broker_handle_unsubscribe_removes_subscription", "[broker]") {
   BrokerConfig cfg = make_test_config();
   Broker broker(cfg);
@@ -692,6 +605,7 @@ TEST_CASE("broker_tick_publishes_sys_topics_when_enabled", "[broker]") {
   broker.shutdown();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("broker_tick_handles_session_expiry_and_will_publish", "[broker]") {
   BrokerConfig cfg = make_test_config();
   cfg.sys_topic_interval = 0U;
@@ -717,7 +631,8 @@ TEST_CASE("broker_tick_handles_session_expiry_and_will_publish", "[broker]") {
   ConnectPacket connect_packet;
   connect_packet.client_id = Utf8String{"expiring_client"};
   connect_packet.properties.push_back(
-      Property{PropertyId::SessionExpiryInterval, FourByteInteger{1U}});
+      Property{.id = PropertyId::SessionExpiryInterval,
+           .value = FourByteInteger{1U}});
 
   WillData will_data;
   will_data.topic = Utf8String{"will/topic"};
@@ -725,7 +640,8 @@ TEST_CASE("broker_tick_handles_session_expiry_and_will_publish", "[broker]") {
   will_data.qos = QoS::AtMostOnce;
   will_data.retain = false;
   will_data.properties.push_back(
-      Property{PropertyId::WillDelayInterval, FourByteInteger{30U}});
+      Property{.id = PropertyId::WillDelayInterval,
+           .value = FourByteInteger{30U}});
   connect_packet.will = will_data;
 
   const ConnectResult connect_result =
@@ -755,3 +671,5 @@ TEST_CASE("broker_tick_with_no_housekeeping_work_is_safe", "[broker]") {
 
   broker.shutdown();
 }
+
+// NOLINTEND(readability-magic-numbers)

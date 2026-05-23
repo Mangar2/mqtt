@@ -2,11 +2,8 @@
 
 #include <atomic>
 #include <chrono>
-#include <csignal>
-#include <filesystem>
 #include <optional>
 #include <sstream>
-#include <thread>
 #include <vector>
 
 #ifdef _WIN32
@@ -21,23 +18,14 @@
 
 #include "broker/broker.h"
 #include "broker/broker_config.h"
-#include "broker/broker_error.h"
-#include "connection/topic_alias_table.h"
 #include "data_model/message/message.h"
 #include "data_model/packet/connect_packet.h"
 #include "data_model/property/property_id.h"
 #include "data_model/reason_code/reason_code.h"
-#include "data_model/session/inflight_entry.h"
-#include "data_model/session/inflight_state.h"
-#include "data_model/session/session_state.h"
 #include "data_model/types/qos.h"
 #include "data_model/types/utf8_string.h"
 #include "network/tcp_connection.h"
 #include "outbound_queue/outbound_queue.h"
-#include "persistence/inflight_persistence.h"
-#include "persistence/offline_queue_persistence.h"
-#include "persistence/retained_message_persistence.h"
-#include "persistence/session_persistence.h"
 
 using namespace mqtt;
 using namespace std::chrono_literals;
@@ -46,6 +34,18 @@ using namespace std::chrono_literals;
 // Helpers
 
 namespace {
+
+constexpr uint16_t k_test_port_base = 18883U;
+constexpr uint32_t k_port_scan_attempts = 3000U;
+constexpr uint32_t k_port_max_exclusive = 60999U;
+constexpr uint32_t k_port_wrap_window = 1000U;
+constexpr TwoByteInteger k_connack_receive_maximum = 123U;
+constexpr TwoByteInteger k_connack_server_keep_alive = 9U;
+constexpr TwoByteInteger k_connack_topic_alias_maximum = 77U;
+constexpr uint8_t k_property_enabled = 1U;
+constexpr uint8_t k_payload_byte_a = 0x41U;
+constexpr uint8_t k_payload_byte_b = 0x42U;
+constexpr FourByteInteger k_will_delay_interval = 15U;
 
 SocketHandle create_tcp_socket() {
   return static_cast<SocketHandle>(::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
@@ -98,14 +98,15 @@ bool can_bind_loopback_port(uint16_t port_value) {
 }
 
 uint16_t next_test_port() {
-  static std::atomic<uint32_t> next_port_candidate{18883U};
-  constexpr uint32_t port_max_exclusive = 60999U;
+  static std::atomic<uint32_t> next_port_candidate{k_test_port_base};
 
-  for (uint32_t attempt_index = 0; attempt_index < 3000U; ++attempt_index) {
+  for (uint32_t attempt_index = 0; attempt_index < k_port_scan_attempts;
+       ++attempt_index) {
     uint32_t candidate_port =
         next_port_candidate.fetch_add(1U, std::memory_order_relaxed);
-    if (candidate_port >= port_max_exclusive) {
-      const uint32_t wrapped_port = 18883U + (candidate_port % 1000U);
+    if (candidate_port >= k_port_max_exclusive) {
+      const uint32_t wrapped_port =
+          k_test_port_base + (candidate_port % k_port_wrap_window);
       candidate_port = wrapped_port;
     }
 
@@ -114,7 +115,7 @@ uint16_t next_test_port() {
     }
   }
 
-  return 18883U;
+  return k_test_port_base;
 }
 
 /// Build a BrokerConfig that binds a single MQTT TCP listener on a
@@ -126,40 +127,6 @@ BrokerConfig make_test_config() {
   cfg.allow_anonymous = true;
   cfg.persistence_mode = PersistenceMode::Off;
   return cfg;
-}
-
-std::filesystem::path make_temp_dir() {
-  static std::atomic<uint64_t> temp_dir_counter{0U};
-  const uint64_t counter_value = temp_dir_counter.fetch_add(1U);
-  const auto now_ticks = std::chrono::steady_clock::now().time_since_epoch().count();
-  const auto thread_hash =
-      std::hash<std::thread::id>{}(std::this_thread::get_id());
-  auto dir = std::filesystem::temp_directory_path() /
-             ("broker_test_data_" + std::to_string(now_ticks) + "_" +
-              std::to_string(counter_value) + "_" +
-              std::to_string(thread_hash));
-  std::filesystem::create_directories(dir);
-  return dir;
-}
-
-void remove_temp_dir(const std::filesystem::path &dir) {
-  std::filesystem::remove_all(dir);
-}
-
-void connect_loopback(uint16_t port_value) {
-  mqtt::SocketHandle socket_handle = create_tcp_socket();
-  REQUIRE(socket_handle != mqtt::k_invalid_socket);
-
-  sockaddr_in server_addr{};
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_port = htons(port_value);
-  server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-
-  const int connect_result =
-      ::connect(socket_handle, reinterpret_cast<const sockaddr *>(&server_addr),
-                sizeof(server_addr));
-  CHECK(connect_result == 0);
-  close_socket_handle(socket_handle);
 }
 
 std::optional<TwoByteInteger>
@@ -204,12 +171,13 @@ BinaryData binary_from_text(std::string_view text) {
 }
 
 Property make_auth_method_property(std::string_view method_name) {
-  return {PropertyId::AuthenticationMethod,
-          Utf8String{std::string(method_name)}};
+  return Property{.id = PropertyId::AuthenticationMethod,
+                  .value = Utf8String{std::string(method_name)}};
 }
 
 Property make_auth_data_property(std::string_view payload_text) {
-  return {PropertyId::AuthenticationData, binary_from_text(payload_text)};
+  return Property{.id = PropertyId::AuthenticationData,
+                  .value = binary_from_text(payload_text)};
 }
 
 } // namespace
@@ -598,11 +566,12 @@ TEST_CASE("broker_handle_reauthenticate_bad_credentials_returns_failure",
   broker.shutdown();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("broker_handle_connect_builds_connack_properties", "[broker]") {
   BrokerConfig cfg = make_test_config();
-  cfg.receive_maximum = 123U;
-  cfg.server_keep_alive = 9U;
-  cfg.topic_alias_maximum = 77U;
+  cfg.receive_maximum = k_connack_receive_maximum;
+  cfg.server_keep_alive = k_connack_server_keep_alive;
+  cfg.topic_alias_maximum = k_connack_topic_alias_maximum;
   Broker broker(cfg);
   broker.startup();
 
@@ -615,17 +584,17 @@ TEST_CASE("broker_handle_connect_builds_connack_properties", "[broker]") {
   const auto receive_maximum = find_two_byte_property(
       result.connack_properties, PropertyId::ReceiveMaximum);
   REQUIRE(receive_maximum.has_value());
-  CHECK(*receive_maximum == 123U);
+  CHECK(*receive_maximum == k_connack_receive_maximum);
 
   const auto topic_alias_maximum = find_two_byte_property(
       result.connack_properties, PropertyId::TopicAliasMaximum);
   REQUIRE(topic_alias_maximum.has_value());
-  CHECK(*topic_alias_maximum == 77U);
+  CHECK(*topic_alias_maximum == k_connack_topic_alias_maximum);
 
     const auto server_keep_alive = find_two_byte_property(
       result.connack_properties, PropertyId::ServerKeepAlive);
     REQUIRE(server_keep_alive.has_value());
-    CHECK(*server_keep_alive == 9U);
+    CHECK(*server_keep_alive == k_connack_server_keep_alive);
 
     const auto maximum_qos =
       find_byte_property(result.connack_properties, PropertyId::MaximumQoS);
@@ -634,7 +603,7 @@ TEST_CASE("broker_handle_connect_builds_connack_properties", "[broker]") {
     const auto retain_available =
       find_byte_property(result.connack_properties, PropertyId::RetainAvailable);
     REQUIRE(retain_available.has_value());
-    CHECK(*retain_available == 1U);
+    CHECK(*retain_available == k_property_enabled);
 
     const auto maximum_packet_size = find_four_byte_property(
       result.connack_properties, PropertyId::MaximumPacketSize);
@@ -644,17 +613,17 @@ TEST_CASE("broker_handle_connect_builds_connack_properties", "[broker]") {
     const auto wildcard_subscription_available = find_byte_property(
       result.connack_properties, PropertyId::WildcardSubscriptionAvailable);
     REQUIRE(wildcard_subscription_available.has_value());
-    CHECK(*wildcard_subscription_available == 1U);
+    CHECK(*wildcard_subscription_available == k_property_enabled);
 
     const auto subscription_identifier_available = find_byte_property(
       result.connack_properties, PropertyId::SubscriptionIdentifierAvailable);
     REQUIRE(subscription_identifier_available.has_value());
-    CHECK(*subscription_identifier_available == 1U);
+    CHECK(*subscription_identifier_available == k_property_enabled);
 
     const auto shared_subscription_available = find_byte_property(
       result.connack_properties, PropertyId::SharedSubscriptionAvailable);
     REQUIRE(shared_subscription_available.has_value());
-    CHECK(*shared_subscription_available == 1U);
+    CHECK(*shared_subscription_available == k_property_enabled);
 
   broker.shutdown();
 }
@@ -826,6 +795,7 @@ TEST_CASE("broker_runtime_trace_system_message_updates_module_override",
     broker.shutdown();
   }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("broker_handle_connect_empty_client_id_assigns_identifier",
     "[broker]") {
   BrokerConfig cfg = make_test_config();
@@ -866,7 +836,8 @@ TEST_CASE("broker_handle_connect_request_response_information_adds_property",
   ConnectPacket connect;
   connect.client_id = Utf8String{"response-info-client"};
   connect.properties.push_back(
-      Property{PropertyId::RequestResponseInformation, uint8_t{1U}});
+      Property{.id = PropertyId::RequestResponseInformation,
+           .value = uint8_t{k_property_enabled}});
 
   const ConnectResult result = broker.handle_connect(connect, []() {});
 
@@ -885,6 +856,7 @@ TEST_CASE("broker_handle_connect_request_response_information_adds_property",
   broker.shutdown();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("broker_handle_connect_empty_client_id_enhanced_auth_success",
           "[broker]") {
   BrokerConfig cfg = make_test_config();
@@ -930,13 +902,14 @@ TEST_CASE("broker_handle_connect_with_will_properties_succeeds", "[broker]") {
 
   WillData will;
   will.topic = Utf8String{"device/will"};
-  will.payload = BinaryData{{0x41U, 0x42U}};
+    will.payload = BinaryData{{k_payload_byte_a, k_payload_byte_b}};
   will.qos = QoS::AtLeastOnce;
   will.retain = true;
+    will.properties.push_back(Property{.id = PropertyId::WillDelayInterval,
+                     .value = k_will_delay_interval});
   will.properties.push_back(
-      {PropertyId::WillDelayInterval, FourByteInteger{15U}});
-  will.properties.push_back(
-      {PropertyId::ContentType, Utf8String{"application/octet-stream"}});
+      Property{.id = PropertyId::ContentType,
+           .value = Utf8String{"application/octet-stream"}});
   connect.will = will;
 
   const ConnectResult result = broker.handle_connect(connect, []() {});
