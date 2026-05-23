@@ -7,6 +7,7 @@
 
 #include <string>
 #include <optional>
+#include <vector>
 
 namespace yaha::automation_control_topics {
 
@@ -18,6 +19,9 @@ namespace yaha::automation_control_topics {
 [[nodiscard]] bool isManagementTopic(const std::string& topicName, const std::string& managementTopicPrefix);
 [[nodiscard]] bool isDebugTopic(const std::string& topicName, const std::string& debugTopicPrefix);
 [[nodiscard]] std::optional<std::string> extractRuleNameFromManagementTopic(
+	const std::string& topicName,
+	const std::string& managementTopicPrefix);
+[[nodiscard]] std::optional<std::vector<std::string>> extractRulePathSegmentsFromManagementTopic(
 	const std::string& topicName,
 	const std::string& managementTopicPrefix);
 [[nodiscard]] std::optional<std::string> extractRuleLinkFromDebugTopic(

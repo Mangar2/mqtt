@@ -267,7 +267,11 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
     const std::optional<std::string> ruleName = automation_control_topics::extractRuleNameFromManagementTopic(
         message.topic(),
         config_.managementTopicPrefix);
-    if (!ruleName.has_value()) {
+    const std::optional<std::vector<std::string>> rulePathSegments =
+        automation_control_topics::extractRulePathSegmentsFromManagementTopic(
+        message.topic(),
+        config_.managementTopicPrefix);
+    if (!ruleName.has_value() || !rulePathSegments.has_value()) {
         return;
     }
 
@@ -282,8 +286,7 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
         {
             std::lock_guard<std::mutex> lock{stateMutex_};
             stagedRulesRoot = rulesRoot_;
-            RuleTreeNode::Object* rulesObject = automation_rule_tree_access::ensureRulesObject(&stagedRulesRoot);
-            rulesObject->erase(*ruleName);
+            (void)automation_rule_tree_access::eraseRuleByPath(&stagedRulesRoot, *rulePathSegments);
         }
 
         if (!persistRulesPayloadToFileStore(automation_rule_json::toJsonText(stagedRulesRoot))) {
@@ -330,16 +333,15 @@ void AutomationClientComponent::handleManagementMessage(const Message& message) 
     }
 
     {
-        RuleTreeNode::Object* rulesObject = automation_rule_tree_access::ensureRulesObject(&stagedRulesRoot);
-        (*rulesObject)[*ruleName] = std::move(ruleNode);
+        automation_rule_tree_access::upsertRuleByPath(&stagedRulesRoot, *rulePathSegments, std::move(ruleNode));
     }
 
-    RuleTreeNode::Object* stagedRulesObject = automation_rule_tree_access::ensureRulesObject(&stagedRulesRoot);
-    if (!stagedRulesObject->contains(*ruleName)) {
+    const RuleTreeNode* stagedRuleNode = automation_rule_tree_access::findRuleByPath(stagedRulesRoot, *rulePathSegments);
+    if (stagedRuleNode == nullptr) {
         publishManagementAck(*ruleName, "persist_failed");
         return;
     }
-    const std::string rulePayload = automation_rule_json::toJsonText(stagedRulesObject->at(*ruleName));
+    const std::string rulePayload = automation_rule_json::toJsonText(*stagedRuleNode);
 
     if (!persistRulesPayloadToFileStore(automation_rule_json::toJsonText(stagedRulesRoot))) {
         publishManagementAck(*ruleName, "persist_failed");

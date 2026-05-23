@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <vector>
 
 namespace yaha::automation_control_topics {
 namespace {
@@ -63,6 +64,36 @@ std::optional<std::string> extractRuleNameFromManagementTopic(
     }
 
     return topicName.substr(startIndex, endIndex - startIndex);
+}
+
+std::optional<std::vector<std::string>> extractRulePathSegmentsFromManagementTopic(
+    const std::string& topicName,
+    const std::string& managementTopicPrefix) {
+    const std::optional<std::string> ruleName = extractRuleNameFromManagementTopic(topicName, managementTopicPrefix);
+    if (!ruleName.has_value()) {
+        return std::nullopt;
+    }
+
+    std::vector<std::string> segments{};
+    std::string currentSegment{};
+    for (const char currentChar : *ruleName) {
+        if (currentChar == '/') {
+            if (currentSegment.empty()) {
+                return std::nullopt;
+            }
+            segments.push_back(currentSegment);
+            currentSegment.clear();
+            continue;
+        }
+        currentSegment.push_back(currentChar);
+    }
+
+    if (currentSegment.empty()) {
+        return std::nullopt;
+    }
+    segments.push_back(currentSegment);
+
+    return segments;
 }
 
 std::optional<std::string> extractRuleLinkFromDebugTopic(
