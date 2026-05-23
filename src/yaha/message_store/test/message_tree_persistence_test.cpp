@@ -25,6 +25,8 @@ constexpr int k_normal_wait_ms{45};
 constexpr int k_interval_series_count{100};
 constexpr int k_time_value_series_count{120};
 constexpr double k_interval_series_value{34.0};
+constexpr double k_legacy_numeric_current_value{12.5};
+constexpr double k_legacy_numeric_history_value{11.5};
 
 struct FakeClock {
     std::int64_t nowMs{k_initial_now_ms};
@@ -480,6 +482,48 @@ TEST_CASE("restore_latest_reads_legacy_mtree1_snapshot", "[message_store]") {
     REQUIRE(std::get<std::string>(nodes.front().value) == "new");
     REQUIRE(nodes.front().history.size() == 1U);
     REQUIRE(std::get<std::string>(nodes.front().history.front().value) == "old");
+
+    removeDirectoryQuiet(tempDir);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("restore_latest_reads_legacy_mtree1_numeric_values", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    const auto legacyPath = tempDir / "state_2.mtree";
+    std::ofstream file{legacyPath, std::ios::out | std::ios::trunc};
+    REQUIRE(file.is_open());
+
+    file << "MTREE1\n";
+    file << "1\n";
+    file << std::quoted(std::string{"legacy/number"}) << "\n";
+    file << "3000\n";
+    file << "N " << k_legacy_numeric_current_value << "\n";
+    file << "1\n";
+    file << std::quoted(std::string{"numeric reason"}) << ' '
+         << std::quoted(std::string{"2026-01-01T00:00:03Z"}) << "\n";
+    file << "1\n";
+    file << "2000\n";
+    file << "N " << k_legacy_numeric_history_value << "\n";
+    file << "1\n";
+    file << std::quoted(std::string{"numeric old reason"}) << ' '
+         << std::quoted(std::string{"2026-01-01T00:00:02Z"}) << "\n";
+    file.close();
+
+    yaha::MessageTreePersistence::Config persistenceConfig{};
+    persistenceConfig.directory = tempDir;
+    persistenceConfig.filename = "state";
+    yaha::MessageTreePersistence persistence{persistenceConfig};
+
+    FakeClock restoreClock{};
+    yaha::MessageTree restored = makeTree(restoreClock);
+    REQUIRE(persistence.restoreLatest(restored));
+
+    const auto nodes = restored.getSection("legacy/number", 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().topic == "legacy/number");
+    REQUIRE(std::get<double>(nodes.front().value) == k_legacy_numeric_current_value);
+    REQUIRE(nodes.front().history.size() == 1U);
+    REQUIRE(std::get<double>(nodes.front().history.front().value) == k_legacy_numeric_history_value);
 
     removeDirectoryQuiet(tempDir);
 }

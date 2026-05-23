@@ -9,6 +9,11 @@ Unit tests for MessageTree behavior required by step 4.
 | Name | Scenario | Input | Expected |
 |------|----------|-------|----------|
 | `add_data_creates_node_and_get_section_returns_it` | First insert creates node | one message, query root depth 3 | one node with topic/value |
+| `message_tree_constructor_rejects_zero_max_history_length` | Constructor guard for invalid max history length | config with `maxHistoryLength=0` | throws `invalid_argument` |
+| `message_tree_constructor_rejects_hysterese_larger_than_max` | Constructor guard for invalid hysteresis relation | config with `maxHistoryLength=3` and `historyHysterese=4` | throws `invalid_argument` |
+| `message_tree_get_nodes_clears_reason_when_include_reason_false` | Diff mode must clear reasons when includeReason is disabled | one stored node with reason and snapshot forcing diff, `includeReason=false` | returned diff node has empty reason list |
+| `message_tree_read_compressed_rejects_unknown_value_token` | Compressed reader rejects unsupported value token kind | handcrafted compressed stream with value token kind `X` | `readCompressed` returns false |
+| `message_tree_read_compressed_rejects_unknown_history_entry_type` | Compressed reader rejects unsupported history entry types | handcrafted compressed stream with history type `mystery` | `readCompressed` returns false |
 | `add_data_updates_move_previous_value_into_history` | Updating topic records previous state | two messages same topic | current value is second, history has first |
 | `add_data_prefers_first_reason_timestamp_when_valid_iso` | Node timestamp should use first reason timestamp when parseable | message with reason[0].timestamp ISO string and divergent clock | node timeMs equals parsed reason timestamp |
 | `add_data_falls_back_to_clock_when_first_reason_timestamp_invalid` | Invalid first reason timestamp must not override clock | message with invalid reason[0].timestamp and valid older reason entry | node timeMs equals injected clock time |
@@ -62,6 +67,7 @@ Unit tests for MessageTree behavior required by step 4.
 | `default_constructor_can_persist_and_restore_reason_history` | Default-config constructor and reason/history serialization | value + reason + history | roundtrip keeps reason and history entries |
 | `persist_now_writes_mtree2_and_restore_keeps_compression_stats` | Compressed persistence format and roundtrip invariants | mixed interval/timeValue source tree persisted and restored | snapshot magic is `MTREE2` and compression counters match before/after restore |
 | `restore_latest_reads_legacy_mtree1_snapshot` | Backward-compatible restore for old snapshot format | handcrafted valid `MTREE1` file | restore succeeds and node/history content is preserved |
+| `restore_latest_reads_legacy_mtree1_numeric_values` | Legacy parser supports numeric (`N`) node/history payload values | handcrafted valid `MTREE1` file with numeric current and history values | restore succeeds and numeric values are preserved as doubles |
 | `get_subscriptions_returns_configured_map` | MessageStore forwards configured subscriptions | config map with multiple entries | returned map equals config map |
 | `handle_message_adds_regular_topic_to_tree` | Non-cleanup message must be stored | regular topic/value message | querySection contains node |
 | `store_message_direct_treats_cleanup_topic_as_regular_data` | Direct storage path must bypass cleanup special handling | cleanup topic message with string payload | querySection returns cleanup topic node as regular data |
