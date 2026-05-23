@@ -34,6 +34,11 @@ CMake discovers all `src/*_test.cpp` files automatically — no manual registrat
 All commands are run from the **project root**: `c:\Development\mqtt`.
 **Never call cmake, ctest, llvm-profdata or llvm-cov directly.** Use only the script.
 
+Hard rule for this repository:
+- Never run `ctest -R ...` for targeted checks.
+- Never run `build/.../yahabroker-tests` directly.
+- For targeted checks always use Python script options (`--scope` or `--show`).
+
 ### Mandatory execution rule
 
 For any code change in broker scope, always run `python3 test/run_coverage_broker.py` before completion.
@@ -74,10 +79,13 @@ python test/run_coverage_clients.py --scope src/<module>/
 
 > After adding or changing tests, always run the full script first to regenerate profdata.
 
-### Run a specific module's tests only (by Catch2 tag)
+### Targeted module verification
+
+Use scoped Python script runs instead of direct Catch2 invocations:
 
 ```sh
-.\build\debug\yahabroker-tests.exe [subscription_trie]
+python test/run_coverage_broker.py --scope src/<module>/
+python test/run_coverage_clients.py --scope src/<module>/
 ```
 
 ## Writing tests

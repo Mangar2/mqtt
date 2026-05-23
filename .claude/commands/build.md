@@ -23,3 +23,15 @@ python test/run_coverage_clients.py
 Run both commands only when both scopes were touched or the scope is unclear.
 Stops on first failure. Logs: test/run_broker.log and test/run_clients.log
 Never call cmake/ctest/llvm directly.
+
+## Hard enforcement for focused verification
+
+- `ctest` is forbidden for local verification, focused checks, and quick reruns.
+- If only a module needs validation, use the Python script with `--scope` instead of `ctest -R`.
+
+Examples:
+
+```sh
+python test/run_coverage_broker.py --scope src/<module>/
+python test/run_coverage_clients.py --scope src/<module>/
+```

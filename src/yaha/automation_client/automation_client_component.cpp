@@ -220,6 +220,15 @@ bool AutomationClientComponent::persistRulesPayloadToFileStore(const std::string
         return true;
     }
 
+    if (!automation_rule_json::parseJsonNode(payloadText).has_value()) {
+        std::cerr << "automation_client[error] op=filestore_post path=" << config_.rulesKeyPath
+                  << " status=invalid_json"
+                  << " reason=serialize_rules_failed"
+                  << '\n'
+                  << std::flush;
+        return false;
+    }
+
     httplib::Client client{config_.fileStoreHost, static_cast<int>(config_.fileStorePort)};
     const auto response = client.Post(config_.rulesKeyPath, payloadText, "application/json");
     if (!response || response->status != k_http_ok_status) {

@@ -192,6 +192,11 @@ Do not treat "it only triggers `-Werror` so it would already fail the build" as 
 
 See `/build` skill for all commands. Use Python script only — never cmake/ctest/llvm directly.
 
+Enforcement note:
+- do not run `ctest` for quick checks
+- do not run test executables directly
+- use only `test/run_coverage_broker.py` and `test/run_coverage_clients.py` (with `--scope` when needed)
+
 Before marking any code change complete, run the scope-matching coverage script from the project root:
 
 - broker scope: `python3 test/run_coverage_broker.py`

@@ -29,6 +29,15 @@ namespace {
 // NOLINTBEGIN(readability-function-cognitive-complexity)
 TEST_CASE("rules_tree_parser_parses_rules_json_without_errors", "[yaha][automation]") {
     const yaha::RuleTreeJsonReadResult readResult = yaha::RulesTreeJsonReader::parseJsonFile(resolveRulesJsonPath());
+    const std::string firstErrorMessage =
+        readResult.errors.empty() ? std::string{} : readResult.errors.front().message;
+    const std::size_t firstErrorLine =
+        readResult.errors.empty() ? 0U : readResult.errors.front().line;
+    const std::size_t firstErrorColumn =
+        readResult.errors.empty() ? 0U : readResult.errors.front().column;
+    CAPTURE(firstErrorMessage);
+    CAPTURE(firstErrorLine);
+    CAPTURE(firstErrorColumn);
 
     REQUIRE(readResult.success);
     REQUIRE(readResult.errors.empty());

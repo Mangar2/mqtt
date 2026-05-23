@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "yaha/automation_client/automation_client_component.h"
+#include "yaha/automation_client/automation_rule_json.h"
 
 namespace {
 
@@ -151,6 +152,40 @@ TEST_CASE("automation_management_topic_with_empty_segment_is_ignored", "[automat
     std::lock_guard<std::mutex> lock{publishMutex};
     REQUIRE(published.empty());
     REQUIRE_FALSE(component.hasRule("first//awake"));
+
+    component.close();
+}
+
+TEST_CASE("automation_management_update_persists_escaped_newline_json", "[automation_client]") {
+    yaha::AutomationClientConfig config{};
+    config.fileStoreEnabled = false;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{
+        "$MONITOR/automation/rules/first/dressingroom/awake/set",
+        std::string{R"json({"topic":"first/dressingroom/zwave/switch/dressing room/set","value":"line1\nline2"})json"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    const yaha::Message* ackMessage =
+        findLastMessageForTopic(published, "$MONITOR/automation/rules/first/dressingroom/awake");
+    REQUIRE(ackMessage != nullptr);
+    REQUIRE(std::holds_alternative<std::string>(ackMessage->value()));
+
+    const auto& payloadText = std::get<std::string>(ackMessage->value());
+    REQUIRE(payloadText.find("line1\\nline2") != std::string::npos);
+    REQUIRE(payloadText.find("line1\nline2") == std::string::npos);
+    REQUIRE(yaha::automation_rule_json::parseJsonNode(payloadText).has_value());
 
     component.close();
 }

@@ -8,6 +8,49 @@
 namespace yaha {
 namespace {
 
+constexpr int k_hex_alpha_offset{10};
+constexpr unsigned int k_one_byte_max_code_point{0x7FU};
+constexpr unsigned int k_two_byte_max_code_point{0x7FFU};
+constexpr unsigned int k_utf8_two_byte_prefix{0xC0U};
+constexpr unsigned int k_utf8_three_byte_prefix{0xE0U};
+constexpr unsigned int k_utf8_continuation_prefix{0x80U};
+constexpr unsigned int k_utf8_five_bit_mask{0x1FU};
+constexpr unsigned int k_utf8_six_bit_mask{0x3FU};
+constexpr unsigned int k_utf8_four_bit_mask{0x0FU};
+constexpr unsigned int k_utf8_shift_6{6U};
+constexpr unsigned int k_utf8_shift_12{12U};
+
+int hexNibbleValue(const char character) {
+    if (character >= '0' && character <= '9') {
+        return static_cast<int>(character - '0');
+    }
+    if (character >= 'a' && character <= 'f') {
+        return static_cast<int>(character - 'a') + k_hex_alpha_offset;
+    }
+    if (character >= 'A' && character <= 'F') {
+        return static_cast<int>(character - 'A') + k_hex_alpha_offset;
+    }
+    return -1;
+}
+
+void appendUtf8CodePoint(std::string* output, const unsigned int codePoint) {
+    if (codePoint <= k_one_byte_max_code_point) {
+        output->push_back(static_cast<char>(codePoint));
+        return;
+    }
+    if (codePoint <= k_two_byte_max_code_point) {
+        output->push_back(static_cast<char>(
+            k_utf8_two_byte_prefix | ((codePoint >> k_utf8_shift_6) & k_utf8_five_bit_mask)));
+        output->push_back(static_cast<char>(k_utf8_continuation_prefix | (codePoint & k_utf8_six_bit_mask)));
+        return;
+    }
+    output->push_back(static_cast<char>(
+        k_utf8_three_byte_prefix | ((codePoint >> k_utf8_shift_12) & k_utf8_four_bit_mask)));
+    output->push_back(static_cast<char>(
+        k_utf8_continuation_prefix | ((codePoint >> k_utf8_shift_6) & k_utf8_six_bit_mask)));
+    output->push_back(static_cast<char>(k_utf8_continuation_prefix | (codePoint & k_utf8_six_bit_mask)));
+}
+
 class JsonParser {
 public:
     explicit JsonParser(std::string input)
@@ -207,7 +250,8 @@ private:
                     text.push_back('\t');
                     break;
                 case 'u':
-                    throw makeError("unicode escapes are not supported in this reader");
+                    text.append(parseUnicodeEscape());
+                    break;
                 default:
                     throw makeError("invalid escape sequence");
                 }
@@ -218,6 +262,26 @@ private:
         }
 
         throw makeError("unterminated string");
+    }
+
+    [[nodiscard]] std::string parseUnicodeEscape() {
+        if (index_ + 4U > input_.size()) {
+            throw makeError("invalid unicode escape");
+        }
+
+        unsigned int codePoint = 0U;
+        for (std::size_t digitIndex = 0U; digitIndex < 4U; ++digitIndex) {
+            const char digit = consume();
+            const int nibble = hexNibbleValue(digit);
+            if (nibble < 0) {
+                throw makeError("invalid unicode escape");
+            }
+            codePoint = (codePoint << 4U) | static_cast<unsigned int>(nibble);
+        }
+
+        std::string utf8;
+        appendUtf8CodePoint(&utf8, codePoint);
+        return utf8;
     }
 
     [[nodiscard]] double parseNumber() {

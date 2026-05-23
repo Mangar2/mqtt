@@ -5,9 +5,22 @@
 
 #include "yaha/automation/rules_tree_json_reader.h"
 
+namespace {
+
+void assertUnicodeEscapeParsedAsA(const yaha::RuleTreeJsonReadResult& unicodeEscape) {
+    REQUIRE(unicodeEscape.success);
+    REQUIRE(unicodeEscape.errors.empty());
+    REQUIRE(unicodeEscape.root.isObject());
+    REQUIRE(unicodeEscape.root.asObject().contains("x"));
+    REQUIRE(unicodeEscape.root.asObject().at("x").isString());
+    REQUIRE(unicodeEscape.root.asObject().at("x").asString() == "A");
+}
+
+} // namespace
+
 TEST_CASE("rules_tree_json_reader_parses_valid_object_and_array", "[yaha][automation]") {
     const std::string jsonText =
-        "{\"rules\":{\"demo\":{\"topic\":\"house/light/set\",\"value\":\"on\"}},\"flags\":[true,false,null],\"num\":12.5}";
+        R"json({"rules":{"demo":{"topic":"house/light/set","value":"on"}},"flags":[true,false,null],"num":12.5})json";
 
     const yaha::RuleTreeJsonReadResult result = yaha::RulesTreeJsonReader::parseJsonText(jsonText);
 
@@ -25,16 +38,15 @@ TEST_CASE("rules_tree_json_reader_reports_trailing_character_error", "[yaha][aut
     REQUIRE_FALSE(result.errors.empty());
 }
 
-TEST_CASE("rules_tree_json_reader_reports_invalid_escape_and_unicode_escape", "[yaha][automation]") {
+TEST_CASE("rules_tree_json_reader_reports_invalid_escape_and_parses_unicode_escape", "[yaha][automation]") {
     const yaha::RuleTreeJsonReadResult invalidEscape =
-        yaha::RulesTreeJsonReader::parseJsonText("{\"x\":\"a\\q\"}");
+        yaha::RulesTreeJsonReader::parseJsonText(R"json({"x":"a\q"})json");
     REQUIRE_FALSE(invalidEscape.success);
     REQUIRE_FALSE(invalidEscape.errors.empty());
 
     const yaha::RuleTreeJsonReadResult unicodeEscape =
-        yaha::RulesTreeJsonReader::parseJsonText("{\"x\":\"\\u0041\"}");
-    REQUIRE_FALSE(unicodeEscape.success);
-    REQUIRE_FALSE(unicodeEscape.errors.empty());
+        yaha::RulesTreeJsonReader::parseJsonText(R"json({"x":"\u0041"})json");
+    assertUnicodeEscapeParsedAsA(unicodeEscape);
 }
 
 TEST_CASE("rules_tree_json_reader_parse_file_reports_open_error", "[yaha][automation]") {
@@ -72,7 +84,8 @@ TEST_CASE("rules_tree_json_reader_reports_invalid_keyword_and_unterminated_strin
     REQUIRE_FALSE(invalidKeyword.success);
     REQUIRE_FALSE(invalidKeyword.errors.empty());
 
-    const yaha::RuleTreeJsonReadResult unterminatedString = yaha::RulesTreeJsonReader::parseJsonText("{\"x\":\"abc}");
+    const yaha::RuleTreeJsonReadResult unterminatedString =
+        yaha::RulesTreeJsonReader::parseJsonText(R"json({"x":"abc})json");
     REQUIRE_FALSE(unterminatedString.success);
     REQUIRE_FALSE(unterminatedString.errors.empty());
 }
