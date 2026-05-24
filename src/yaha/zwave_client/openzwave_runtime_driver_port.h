@@ -111,15 +111,32 @@ public:
     void disconnect(const std::string& devicePath) override;
 
 private:
+    struct DiscoveryState {
+        bool hasNode{false};
+        bool hasClass{false};
+        bool hasInstance{false};
+        bool hasIndex{false};
+        std::uint8_t genreCode{1U};
+    };
+
     using ValueIndexMap = std::unordered_map<std::uint16_t, std::uint64_t>;
     using ValueInstanceMap = std::unordered_map<std::uint8_t, ValueIndexMap>;
     using ValueClassMap = std::unordered_map<std::uint16_t, ValueInstanceMap>;
+    using ValueGenreIndexMap = std::unordered_map<std::uint16_t, std::uint8_t>;
+    using ValueGenreInstanceMap = std::unordered_map<std::uint8_t, ValueGenreIndexMap>;
+    using ValueGenreClassMap = std::unordered_map<std::uint16_t, ValueGenreInstanceMap>;
 
     static void watcherThunk(OpenZWave::Notification const* notification, void* context);
 
     void handleNotification(OpenZWave::Notification const& notification);
     void handleValueAddedOrChanged(OpenZWave::Notification const& notification, bool changed);
     void handleValueRemoved(OpenZWave::Notification const& notification);
+    [[nodiscard]] DiscoveryState snapshotDiscoveryState(const ZwaveResolvedId& target) const;
+    [[nodiscard]] std::string discoverySnapshotForLog(std::uint32_t homeId, const ZwaveResolvedId& target) const;
+    void cacheDiscoveredValue(OpenZWave::ValueID const& valueId);
+    void eraseDiscoveredValue(OpenZWave::ValueID const& valueId);
+    void eraseValueIdCacheUnlocked(OpenZWave::ValueID const& valueId);
+    void eraseValueGenreCacheUnlocked(OpenZWave::ValueID const& valueId);
 
     [[nodiscard]] static ZwaveNodeInfo buildNodeInfo(std::uint32_t homeId, std::uint16_t nodeId);
     [[nodiscard]] static ZwaveControllerValueEvent buildValueEvent(OpenZWave::ValueID const& valueId);
@@ -147,6 +164,7 @@ private:
     std::uint32_t homeId_{0U};
     std::unordered_set<std::uint16_t> knownNodes_{};
     std::unordered_map<std::uint16_t, ValueClassMap> valueIdCache_{};
+    std::unordered_map<std::uint16_t, ValueGenreClassMap> valueGenreCache_{};
 };
 
 } // namespace yaha

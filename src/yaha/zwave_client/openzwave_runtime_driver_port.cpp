@@ -18,6 +18,7 @@
 #include <stdexcept>
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace yaha {
 
@@ -38,6 +39,36 @@ constexpr int kOzwLogLevelInfo = 7;
 constexpr int kOzwLogLevelDetail = 8;
 constexpr int kOzwLogLevelDebug = 9;
 constexpr int kOzwLogLevelStreamDetail = 10;
+
+[[nodiscard]] OpenZWave::ValueID::ValueGenre decodeGenreOrDefault(const std::uint8_t cachedGenreCode) {
+    switch (cachedGenreCode) {
+    case 0U:
+        return OpenZWave::ValueID::ValueGenre_Basic;
+    case 1U:
+        return OpenZWave::ValueID::ValueGenre_User;
+    case 2U:
+        return OpenZWave::ValueID::ValueGenre_Config;
+    case 3U:
+        return OpenZWave::ValueID::ValueGenre_System;
+    default:
+        return OpenZWave::ValueID::ValueGenre_User;
+    }
+}
+
+[[nodiscard]] std::string genreNameForLog(const OpenZWave::ValueID::ValueGenre genre) {
+    switch (genre) {
+    case OpenZWave::ValueID::ValueGenre_Basic:
+        return "basic";
+    case OpenZWave::ValueID::ValueGenre_User:
+        return "user";
+    case OpenZWave::ValueID::ValueGenre_Config:
+        return "config";
+    case OpenZWave::ValueID::ValueGenre_System:
+        return "system";
+    default:
+        return "unknown";
+    }
+}
 
 [[nodiscard]] int mapSaveLogLevel(const std::uint8_t logLevel) {
     switch (logLevel) {
@@ -181,13 +212,14 @@ constexpr int kOzwLogLevelStreamDetail = 10;
 [[nodiscard]] OpenZWave::ValueID buildWriteTargetValueId(
     const std::uint32_t homeId,
     const ZwaveResolvedId& target,
+    const OpenZWave::ValueID::ValueGenre valueGenre,
     const OpenZWave::ValueID::ValueType valueType) {
     // Canonical write target: always address by node/class/instance/index.
-    // Do not use cached raw ValueID ids for writes.
+    // Do not use cached raw ValueID ids for writes. Only genre metadata may be used.
     return OpenZWave::ValueID{
         homeId,
         requireUint8(target.nodeId, "node id"),
-        OpenZWave::ValueID::ValueGenre_User,
+        valueGenre,
         requireUint8(target.classId, "class id"),
         requireUint8(target.instance, "instance"),
         target.index,
@@ -386,32 +418,17 @@ void OpenZwaveRuntimeDriverPort::setValue(
         // Switch Multilevel writes use numeric levels in OpenZWave (e.g. 0/99), not bool.
         valueType = OpenZWave::ValueID::ValueType_Byte;
     }
-    const OpenZWave::ValueID valueId = buildWriteTargetValueId(homeId, target, valueType);
 
     OpenZWave::Manager* manager = OpenZWave::Manager::Get();
     if (manager == nullptr) {
         throw std::runtime_error("OpenZWave manager unavailable");
     }
 
-    bool cacheHasNode = false;
-    bool cacheHasClass = false;
-    bool cacheHasInstance = false;
-    bool cacheHasIndex = false;
-    {
-        std::scoped_lock lock{mutex_};
-        if (const auto nodeIterator = valueIdCache_.find(target.nodeId); nodeIterator != valueIdCache_.end()) {
-            cacheHasNode = true;
-            if (const auto classIterator = nodeIterator->second.find(target.classId);
-                classIterator != nodeIterator->second.end()) {
-                cacheHasClass = true;
-                if (const auto instanceIterator = classIterator->second.find(requireUint8(target.instance, "instance"));
-                    instanceIterator != classIterator->second.end()) {
-                    cacheHasInstance = true;
-                    cacheHasIndex = instanceIterator->second.contains(target.index);
-                }
-            }
-        }
-    }
+    const DiscoveryState discoveryState = snapshotDiscoveryState(target);
+    const OpenZWave::ValueID::ValueGenre valueGenre = decodeGenreOrDefault(discoveryState.genreCode);
+    const std::string discoverySnapshot = discoverySnapshotForLog(homeId, target);
+
+    const OpenZWave::ValueID valueId = buildWriteTargetValueId(homeId, target, valueGenre, valueType);
 
     std::ostringstream diagnostics{};
     diagnostics << "homeId=0x" << std::hex << homeId << std::dec
@@ -420,13 +437,15 @@ void OpenZwaveRuntimeDriverPort::setValue(
                 << " instance=" << target.instance
                 << " index=" << target.index
                 << " mappingType=\"" << target.type << "\""
+                << " resolvedGenre=\"" << genreNameForLog(valueGenre) << "\""
                 << " resolvedValueType=\"" << valueTypeNameForLog(valueType) << "\""
                 << " payload=\"" << valuePayloadForLog(value) << "\""
                 << " valueId=0x" << std::hex << valueId.GetId() << std::dec
-                << " cacheNode=" << (cacheHasNode ? 1 : 0)
-                << " cacheClass=" << (cacheHasClass ? 1 : 0)
-                << " cacheInstance=" << (cacheHasInstance ? 1 : 0)
-                << " cacheIndex=" << (cacheHasIndex ? 1 : 0)
+                << " cacheNode=" << (discoveryState.hasNode ? 1 : 0)
+                << " cacheClass=" << (discoveryState.hasClass ? 1 : 0)
+                << " cacheInstance=" << (discoveryState.hasInstance ? 1 : 0)
+                << " cacheIndex=" << (discoveryState.hasIndex ? 1 : 0)
+                << " discovered=" << discoverySnapshot
                 << " cwd=\"" << std::filesystem::current_path().string() << "\""
                 << " userPath=\"" << openzwaveUserPath().string() << "\""
                 << " configPath=\"" << openzwaveConfigPath().string() << "\"";
@@ -608,6 +627,7 @@ void OpenZwaveRuntimeDriverPort::disconnect(const std::string& devicePath) {
     homeId_ = 0U;
     knownNodes_.clear();
     valueIdCache_.clear();
+    valueGenreCache_.clear();
 }
 
 void OpenZwaveRuntimeDriverPort::watcherThunk(OpenZWave::Notification const* notification, void* context) {
@@ -671,6 +691,7 @@ void OpenZwaveRuntimeDriverPort::handleNotification(OpenZWave::Notification cons
             std::scoped_lock lock{mutex_};
             knownNodes_.erase(nodeId);
             valueIdCache_.erase(nodeId);
+            valueGenreCache_.erase(nodeId);
         }
         controller->onNodeRemoved(nodeId);
         return;
@@ -730,13 +751,7 @@ void OpenZwaveRuntimeDriverPort::handleValueAddedOrChanged(
     OpenZWave::Notification const& notification,
     const bool changed) {
     const OpenZWave::ValueID valueId = notification.GetValueID();
-
-    {
-        std::scoped_lock lock{mutex_};
-        knownNodes_.insert(valueId.GetNodeId());
-        valueIdCache_[valueId.GetNodeId()][valueId.GetCommandClassId()][valueId.GetInstance()][valueId.GetIndex()] =
-            valueId.GetId();
-    }
+    cacheDiscoveredValue(valueId);
 
     ZwaveController* controller = nullptr;
     {
@@ -757,30 +772,7 @@ void OpenZwaveRuntimeDriverPort::handleValueAddedOrChanged(
 
 void OpenZwaveRuntimeDriverPort::handleValueRemoved(OpenZWave::Notification const& notification) {
     const OpenZWave::ValueID valueId = notification.GetValueID();
-
-    {
-        std::scoped_lock lock{mutex_};
-        auto nodeIterator = valueIdCache_.find(valueId.GetNodeId());
-        if (nodeIterator != valueIdCache_.end()) {
-            auto classIterator = nodeIterator->second.find(valueId.GetCommandClassId());
-            if (classIterator != nodeIterator->second.end()) {
-                auto instanceIterator = classIterator->second.find(valueId.GetInstance());
-                if (instanceIterator != classIterator->second.end()) {
-                    instanceIterator->second.erase(valueId.GetIndex());
-                    if (instanceIterator->second.empty()) {
-                        classIterator->second.erase(instanceIterator);
-                    }
-                }
-                if (classIterator->second.empty()) {
-                    nodeIterator->second.erase(classIterator);
-                }
-            }
-            if (nodeIterator->second.empty()) {
-                valueIdCache_.erase(nodeIterator);
-                knownNodes_.erase(valueId.GetNodeId());
-            }
-        }
-    }
+    eraseDiscoveredValue(valueId);
 
     ZwaveController* controller = nullptr;
     {
@@ -795,6 +787,169 @@ void OpenZwaveRuntimeDriverPort::handleValueRemoved(OpenZWave::Notification cons
         valueId.GetNodeId(),
         valueId.GetCommandClassId(),
         clampIndexToUint8(valueId.GetIndex()));
+}
+
+OpenZwaveRuntimeDriverPort::DiscoveryState
+OpenZwaveRuntimeDriverPort::snapshotDiscoveryState(const ZwaveResolvedId& target) const {
+    DiscoveryState state{};
+    std::scoped_lock lock{mutex_};
+
+    if (const auto nodeIterator = valueIdCache_.find(target.nodeId); nodeIterator != valueIdCache_.end()) {
+        state.hasNode = true;
+        if (const auto classIterator = nodeIterator->second.find(target.classId);
+            classIterator != nodeIterator->second.end()) {
+            state.hasClass = true;
+            if (const auto instanceIterator = classIterator->second.find(requireUint8(target.instance, "instance"));
+                instanceIterator != classIterator->second.end()) {
+                state.hasInstance = true;
+                state.hasIndex = instanceIterator->second.contains(target.index);
+            }
+        }
+    }
+
+    if (const auto genreNodeIterator = valueGenreCache_.find(target.nodeId);
+        genreNodeIterator != valueGenreCache_.end()) {
+        if (const auto genreClassIterator = genreNodeIterator->second.find(target.classId);
+            genreClassIterator != genreNodeIterator->second.end()) {
+            if (const auto genreInstanceIterator = genreClassIterator->second.find(requireUint8(target.instance, "instance"));
+                genreInstanceIterator != genreClassIterator->second.end()) {
+                if (const auto genreIndexIterator = genreInstanceIterator->second.find(target.index);
+                    genreIndexIterator != genreInstanceIterator->second.end()) {
+                    state.genreCode = genreIndexIterator->second;
+                }
+            }
+        }
+    }
+
+    return state;
+}
+
+std::string OpenZwaveRuntimeDriverPort::discoverySnapshotForLog(
+    const std::uint32_t homeId,
+    const ZwaveResolvedId& target) const {
+    std::vector<std::string> entries{};
+    std::scoped_lock lock{mutex_};
+
+    const auto nodeIterator = valueIdCache_.find(target.nodeId);
+    if (nodeIterator == valueIdCache_.end()) {
+        return "none";
+    }
+
+    const auto classIterator = nodeIterator->second.find(target.classId);
+    if (classIterator == nodeIterator->second.end()) {
+        return "none";
+    }
+
+    const ValueGenreInstanceMap* genreByInstance = nullptr;
+    if (const auto genreNodeIterator = valueGenreCache_.find(target.nodeId);
+        genreNodeIterator != valueGenreCache_.end()) {
+        const auto genreClassIterator = genreNodeIterator->second.find(target.classId);
+        if (genreClassIterator != genreNodeIterator->second.end()) {
+            genreByInstance = &genreClassIterator->second;
+        }
+    }
+
+    for (const auto& [instance, valueByIndex] : classIterator->second) {
+        for (const auto& [index, rawValueId] : valueByIndex) {
+            const OpenZWave::ValueID discoveredValueId{homeId, rawValueId};
+            std::uint8_t genreCode = 1U;
+
+            if (genreByInstance != nullptr) {
+                const auto genreInstanceIterator = genreByInstance->find(instance);
+                if (genreInstanceIterator != genreByInstance->end()) {
+                    const auto genreIndexIterator = genreInstanceIterator->second.find(index);
+                    if (genreIndexIterator != genreInstanceIterator->second.end()) {
+                        genreCode = genreIndexIterator->second;
+                    }
+                }
+            }
+
+            std::ostringstream entry{};
+            entry << "instance=" << static_cast<std::uint32_t>(instance)
+                  << ",index=" << index
+                  << ",genre=" << genreNameForLog(decodeGenreOrDefault(genreCode))
+                  << ",type=" << valueTypeName(discoveredValueId)
+                  << ",rawValueId=0x" << std::hex << rawValueId << std::dec;
+            entries.push_back(entry.str());
+        }
+    }
+
+    if (entries.empty()) {
+        return "none";
+    }
+
+    std::ranges::sort(entries);
+
+    std::ostringstream joined{};
+    joined << '[';
+    for (std::size_t index = 0; index < entries.size(); ++index) {
+        if (index > 0U) {
+            joined << ';';
+        }
+        joined << entries[index];
+    }
+    joined << ']';
+    return joined.str();
+}
+
+void OpenZwaveRuntimeDriverPort::cacheDiscoveredValue(OpenZWave::ValueID const& valueId) {
+    std::scoped_lock lock{mutex_};
+    knownNodes_.insert(valueId.GetNodeId());
+    valueIdCache_[valueId.GetNodeId()][valueId.GetCommandClassId()][valueId.GetInstance()][valueId.GetIndex()] =
+        valueId.GetId();
+    valueGenreCache_[valueId.GetNodeId()][valueId.GetCommandClassId()][valueId.GetInstance()][valueId.GetIndex()] =
+        static_cast<std::uint8_t>(valueId.GetGenre());
+}
+
+void OpenZwaveRuntimeDriverPort::eraseDiscoveredValue(OpenZWave::ValueID const& valueId) {
+    std::scoped_lock lock{mutex_};
+    eraseValueIdCacheUnlocked(valueId);
+    eraseValueGenreCacheUnlocked(valueId);
+}
+
+void OpenZwaveRuntimeDriverPort::eraseValueIdCacheUnlocked(OpenZWave::ValueID const& valueId) {
+    auto nodeIterator = valueIdCache_.find(valueId.GetNodeId());
+    if (nodeIterator != valueIdCache_.end()) {
+        auto classIterator = nodeIterator->second.find(valueId.GetCommandClassId());
+        if (classIterator != nodeIterator->second.end()) {
+            auto instanceIterator = classIterator->second.find(valueId.GetInstance());
+            if (instanceIterator != classIterator->second.end()) {
+                instanceIterator->second.erase(valueId.GetIndex());
+                if (instanceIterator->second.empty()) {
+                    classIterator->second.erase(instanceIterator);
+                }
+            }
+            if (classIterator->second.empty()) {
+                nodeIterator->second.erase(classIterator);
+            }
+        }
+        if (nodeIterator->second.empty()) {
+            valueIdCache_.erase(nodeIterator);
+            knownNodes_.erase(valueId.GetNodeId());
+        }
+    }
+}
+
+void OpenZwaveRuntimeDriverPort::eraseValueGenreCacheUnlocked(OpenZWave::ValueID const& valueId) {
+    auto genreNodeIterator = valueGenreCache_.find(valueId.GetNodeId());
+    if (genreNodeIterator != valueGenreCache_.end()) {
+        auto genreClassIterator = genreNodeIterator->second.find(valueId.GetCommandClassId());
+        if (genreClassIterator != genreNodeIterator->second.end()) {
+            auto genreInstanceIterator = genreClassIterator->second.find(valueId.GetInstance());
+            if (genreInstanceIterator != genreClassIterator->second.end()) {
+                genreInstanceIterator->second.erase(valueId.GetIndex());
+                if (genreInstanceIterator->second.empty()) {
+                    genreClassIterator->second.erase(genreInstanceIterator);
+                }
+            }
+            if (genreClassIterator->second.empty()) {
+                genreNodeIterator->second.erase(genreClassIterator);
+            }
+        }
+        if (genreNodeIterator->second.empty()) {
+            valueGenreCache_.erase(genreNodeIterator);
+        }
+    }
 }
 
 ZwaveNodeInfo OpenZwaveRuntimeDriverPort::buildNodeInfo(const std::uint32_t homeId, const std::uint16_t nodeId) {
