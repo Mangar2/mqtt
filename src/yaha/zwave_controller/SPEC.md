@@ -152,6 +152,7 @@ Concrete parity adapter implementation with additional callback entry points:
   - controller runs a background poll loop and requests `driver.requestNodeState(nodeId)` per pending command on `commandReactionPollIntervalMs`
   - controller also runs a full-device poll loop and requests `driver.requestNodeState(nodeId)` for all configured node ids on `pollIntervalMs`
   - if a value-changed/value-refreshed event matches pending reply topic + target + expected value and is still within timeout, the pending command is consumed
+  - correlation key is always the resolved target address tuple (`nodeId/classId/instance/index`) plus expected value; it is never based on runtime ValueID ids
   - for multilevel class (`0x26`) feedback, pending expected bool values accept non-zero numeric state as `on` and zero as `off`
   - expected value comparison accepts semantic bool equivalence across representations (`on/true/1`, `off/false/0`)
   - consumed pending command reasons are prepended to outbound message reasons in original order

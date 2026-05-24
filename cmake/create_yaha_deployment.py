@@ -335,6 +335,13 @@ def render_journald_namespace_config() -> str:
 
 
 def render_component_install_script(*, service_name: str) -> str:
+    openzwave_cache_setup_lines: list[str] = []
+    if service_name == "zwave.service":
+        openzwave_cache_setup_lines = [
+            "mkdir -p \"${INSTALL_ROOT}/tmp/openzwave\"",
+            "",
+        ]
+
     return "\n".join(
         [
             "#!/usr/bin/env bash",
@@ -352,6 +359,7 @@ def render_component_install_script(*, service_name: str) -> str:
             "fi",
             "",
             "mkdir -p \"${SCRIPT_DIR}/data\"",
+            *openzwave_cache_setup_lines,
             "",
             "tmp_service=\"$(mktemp)\"",
             "trap 'rm -f \"${tmp_service}\"' EXIT",
@@ -362,12 +370,14 @@ def render_component_install_script(*, service_name: str) -> str:
             "if [[ ${EUID} -eq 0 ]]; then",
             "  cp \"${tmp_service}\" \"${SERVICE_TARGET}\"",
             "  chown -R \"${SERVICE_USER}:${SERVICE_USER}\" \"${SCRIPT_DIR}/data\" || true",
+            "  chown -R \"${SERVICE_USER}:${SERVICE_USER}\" \"${INSTALL_ROOT}/tmp/openzwave\" || true",
             "  systemctl daemon-reload",
             f"  systemctl enable {service_name}",
             f"  systemctl restart {service_name}",
             "else",
             "  sudo cp \"${tmp_service}\" \"${SERVICE_TARGET}\"",
             "  sudo chown -R \"${SERVICE_USER}:${SERVICE_USER}\" \"${SCRIPT_DIR}/data\" || true",
+            "  sudo chown -R \"${SERVICE_USER}:${SERVICE_USER}\" \"${INSTALL_ROOT}/tmp/openzwave\" || true",
             "  sudo systemctl daemon-reload",
             f"  sudo systemctl enable {service_name}",
             f"  sudo systemctl restart {service_name}",

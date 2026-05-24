@@ -56,6 +56,8 @@ public:
      * @brief Writes one regular value.
      * @param target Resolved ZWave id.
      * @param value Converted payload.
+        * @note Canonical single write entry: target resolution is based on
+        *       node/class/instance/index metadata from mapping, not cached raw ValueID ids.
      */
     void setValue(const ZwaveResolvedId& target, const std::variant<bool, double, std::string>& value) override;
 

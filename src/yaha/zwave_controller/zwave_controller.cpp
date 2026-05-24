@@ -898,6 +898,8 @@ void ZwaveController::rememberPendingCommand(
     const std::string& replyTopic,
     const ZwaveWriteRequest& writeRequest,
     const std::vector<ReasonEntry>& reasons) {
+    // Correlation invariant: pending commands are keyed by resolved address
+    // (node/class/instance/index) and expected outbound value, never by ValueID.
     PendingCommand pendingCommand{
         .replyTopic = replyTopic,
         .target = writeRequest.target,
@@ -940,6 +942,8 @@ ZwaveController::PendingCommandMatch ZwaveController::takeMatchingPendingReasons
         }
 
         const bool sameReplyTopic = iterator->replyTopic == replyTopic;
+        // Correlate network feedback to the original command using address tuple.
+        // Do not couple feedback matching to runtime ValueID ids.
         const bool sameTarget = iterator->target.nodeId == event.nodeId
             && iterator->target.classId == event.classId
             && iterator->target.instance == event.instance

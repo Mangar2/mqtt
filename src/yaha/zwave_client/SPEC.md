@@ -60,10 +60,9 @@ OpenZWave runtime driver behavior:
   lines instead of letting callback exceptions terminate the process
 - maps value callbacks to normalized `ZwaveControllerValueEvent` payloads
 - maps `/set` write requests to typed OpenZWave `SetValue` overloads
-  - write path first uses runtime-cached ValueID from observed callbacks (node/class/instance/index)
-  - if no cached ValueID exists yet, it falls back to constructed ValueID from resolved mapping fields
-    - special case: class `0x26` (switch multilevel) falls back to `Byte` write type even when mapping type is `bool`
-  - typed write dispatch uses the resolved OpenZWave `ValueID` type as authoritative target type
+  - write path always constructs the target from resolved mapping fields (`nodeId/classId/instance/index`)
+  - write path never uses cached raw ValueID ids from runtime callbacks
+  - special case: class `0x26` (switch multilevel) forces `Byte` write type when mapping type is `bool`
   - bool payloads (`on`/`off` mapped to `true`/`false`) are coerced by target ValueID type to avoid bool-write type mismatch:
     - bool ValueID: writes bool
     - numeric ValueID (byte/short/int/decimal): writes `1`/`0`

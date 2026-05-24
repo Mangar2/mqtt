@@ -177,32 +177,12 @@ constexpr int kOzwLogLevelStreamDetail = 10;
     return OpenZWave::ValueID::ValueType_String;
 }
 
-[[nodiscard]] OpenZWave::ValueID resolveCachedValueId(
-    const std::uint32_t homeId,
-    const ZwaveResolvedId& target,
-    const RuntimeValueClassMap& classMap) {
-    const auto classIterator = classMap.find(target.classId);
-    if (classIterator == classMap.end()) {
-        return OpenZWave::ValueID{};
-    }
-
-    const auto instanceIterator = classIterator->second.find(target.instance);
-    if (instanceIterator == classIterator->second.end()) {
-        return OpenZWave::ValueID{};
-    }
-
-    const auto indexIterator = instanceIterator->second.find(target.index);
-    if (indexIterator == instanceIterator->second.end()) {
-        return OpenZWave::ValueID{};
-    }
-
-    return {homeId, indexIterator->second};
-}
-
-[[nodiscard]] OpenZWave::ValueID buildFallbackValueId(
+[[nodiscard]] OpenZWave::ValueID buildWriteTargetValueId(
     const std::uint32_t homeId,
     const ZwaveResolvedId& target,
     const OpenZWave::ValueID::ValueType valueType) {
+    // Canonical write target: always address by node/class/instance/index.
+    // Do not use cached raw ValueID ids for writes.
     return OpenZWave::ValueID{
         homeId,
         requireUint8(target.nodeId, "node id"),
@@ -357,33 +337,19 @@ void OpenZwaveRuntimeDriverPort::setValue(
 
     const std::uint32_t homeId = requireHomeId();
     const std::string typeName = toLower(target.type);
-    const auto valueType = toValueType(typeName);
-    auto fallbackValueType = valueType;
+    auto valueType = toValueType(typeName);
     if (valueType == OpenZWave::ValueID::ValueType_Bool && target.classId == kRuntimeSwitchMultilevelClass) {
         // Switch Multilevel writes use numeric levels in OpenZWave (e.g. 0/99), not bool.
-        fallbackValueType = OpenZWave::ValueID::ValueType_Byte;
+        valueType = OpenZWave::ValueID::ValueType_Byte;
     }
-
-    OpenZWave::ValueID valueId{};
-    {
-        std::scoped_lock lock{mutex_};
-        const auto nodeIterator = valueIdCache_.find(target.nodeId);
-        if (nodeIterator != valueIdCache_.end()) {
-            valueId = resolveCachedValueId(homeId, target, nodeIterator->second);
-        }
-    }
-
-    if (valueId.GetId() == 0U) {
-        valueId = buildFallbackValueId(homeId, target, fallbackValueType);
-    }
+    const OpenZWave::ValueID valueId = buildWriteTargetValueId(homeId, target, valueType);
 
     OpenZWave::Manager* manager = OpenZWave::Manager::Get();
     if (manager == nullptr) {
         throw std::runtime_error("OpenZWave manager unavailable");
     }
 
-    const auto resolvedValueType = valueId.GetType();
-    const bool writeAccepted = applyTypedValueWrite(*manager, valueId, resolvedValueType, value);
+    const bool writeAccepted = applyTypedValueWrite(*manager, valueId, valueType, value);
     if (!writeAccepted) {
         ZwaveController* controller = nullptr;
         {
