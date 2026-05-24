@@ -71,7 +71,10 @@ OpenZWave runtime driver behavior:
 - handles add/remove-failed node controller commands
 - requests node state for known nodes on scan trigger
 - requests all config params per configured node
-- enables polling for cached value ids by node/class
+- enables polling only for allowlisted switch classes:
+  - `0x25` (`COMMAND_CLASS_SWITCH_BINARY`)
+  - `0x26` (`COMMAND_CLASS_SWITCH_MULTILEVEL`)
+- suppresses duplicate `EnablePoll` registrations per raw ValueID to avoid repeated poll-list growth from repeated callback-triggered activation attempts
 - configures OpenZWave runtime `PollInterval` from `zwave.pollIntervalMs` (default `600000ms`) for backend refresh cadence
 - passes `zwave.pollIntervalMs` to `ZwaveController` as full-device MQTT refresh interval for all configured node ids
 - passes command feedback timing settings to `ZwaveController`:

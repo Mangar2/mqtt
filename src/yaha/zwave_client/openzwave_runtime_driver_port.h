@@ -165,6 +165,7 @@ private:
     std::uint32_t homeId_{0U};
     std::unordered_set<std::uint16_t> knownNodes_{};
     std::unordered_set<std::uint16_t> readyNodes_{};
+    std::unordered_set<std::uint64_t> enabledPollValueIds_{};
     std::unordered_map<std::uint16_t, ValueClassMap> valueIdCache_{};
     std::unordered_map<std::uint16_t, ValueGenreClassMap> valueGenreCache_{};
 };

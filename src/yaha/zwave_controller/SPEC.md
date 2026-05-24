@@ -137,8 +137,8 @@ Concrete parity adapter implementation with additional callback entry points:
 - Controller command callback publishes to `$MONITOR/zwave/controller/command/last_status`.
 - Node include process monitoring publishes to `$MONITOR/zwave/node/<nodeId>/include` only for include-flow completion:
   - `onNodeAdded` marks the node as include-flow candidate without publishing include state
-  - `onNodeReady(..., "queries_complete")` always enables legacy-equivalent value polling for switch classes `0x25` and `0x26`
-  - when values are discovered after interview completion (`onValueAdded`/`onValueChanged` on ready node), controller enables polling for the discovered class id to avoid missed polling activation when value-id cache was not ready at node-ready time
+  - `onNodeReady(..., "queries_complete")` enables value polling only for allowlisted switch classes `0x25` and `0x26`
+  - when values are discovered after interview completion (`onValueAdded`/`onValueChanged` on ready node), controller re-triggers polling only if the discovered class id is in the same allowlist (`0x25`, `0x26`)
   - `onNodeReady(..., "queries_complete")` publishes `included` only when the node was previously marked by `onNodeAdded`
 - Node/value callbacks maintain in-memory node/class cache.
 - `onNodeRemoved` clears runtime state for that node from node/value cache, node-monitor state caches, pending-command tracking, include-flow tracking, and discovered config-capability keys.

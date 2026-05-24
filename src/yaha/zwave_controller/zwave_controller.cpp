@@ -1,5 +1,6 @@
 #include "yaha/zwave_controller/zwave_controller.h"
 
+#include <array>
 #include <cstddef>
 #include <cmath>
 #include <cstdint>
@@ -29,6 +30,14 @@ constexpr std::uint32_t kPendingCommandLoopSleepMs = 20U;
 constexpr unsigned char kJsonControlThreshold = 0x20U;
 constexpr std::string_view kMonitorZwavePrefix = "$MONITOR/zwave";
 constexpr std::string_view kSystemZwavePrefix = "system/zwave";
+constexpr std::array<std::uint16_t, 2> kEnablePollAllowedClasses{
+    kZwaveSwitchBinaryClass, // COMMAND_CLASS_SWITCH_BINARY (0x25)
+    kZwaveSwitchMultilevelClass // COMMAND_CLASS_SWITCH_MULTILEVEL (0x26)
+};
+
+[[nodiscard]] bool isEnablePollAllowedClass(const std::uint16_t classId) {
+    return std::ranges::find(kEnablePollAllowedClasses, classId) != kEnablePollAllowedClasses.end();
+}
 
 const std::regex& iso8601TimestampRegex() {
     static const std::regex regex{
@@ -498,8 +507,9 @@ void ZwaveController::onNodeReady(
     nodeIterator->second.dead = false;
 
     if (queryStage == "queries_complete") {
-        driverPort_.enablePoll(nodeId, kZwaveSwitchBinaryClass);
-        driverPort_.enablePoll(nodeId, kZwaveSwitchMultilevelClass);
+        for (const std::uint16_t classId : kEnablePollAllowedClasses) {
+            driverPort_.enablePoll(nodeId, classId);
+        }
 
         bool includeFlowCandidateReachedCompletion = false;
         {
@@ -525,7 +535,9 @@ void ZwaveController::onValueAdded(const ZwaveControllerValueEvent& event) {
 
     const auto nodeIterator = nodes_.find(event.nodeId);
     if (nodeIterator != nodes_.end() && nodeIterator->second.ready) {
-        driverPort_.enablePoll(event.nodeId, event.classId);
+        if (isEnablePollAllowedClass(event.classId)) {
+            driverPort_.enablePoll(event.nodeId, event.classId);
+        }
     }
 
     updateNodeHealthState(
@@ -561,7 +573,9 @@ void ZwaveController::onValueChanged(const ZwaveControllerValueEvent& event) {
     if (nodeIterator != nodes_.end()) {
         nodeIterator->second.dead = false;
         if (nodeIterator->second.ready) {
-            driverPort_.enablePoll(event.nodeId, event.classId);
+            if (isEnablePollAllowedClass(event.classId)) {
+                driverPort_.enablePoll(event.nodeId, event.classId);
+            }
         }
     }
     updateNodeHealthState(

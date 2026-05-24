@@ -29,6 +29,7 @@ using RuntimeValueInstanceMap = std::unordered_map<std::uint8_t, RuntimeValueInd
 using RuntimeValueClassMap = std::unordered_map<std::uint16_t, RuntimeValueInstanceMap>;
 
 constexpr std::uint16_t kMaxNodeId = 255U;
+constexpr std::uint16_t kRuntimeSwitchBinaryClass = 0x25U;
 constexpr std::uint16_t kRuntimeSwitchMultilevelClass = 0x26U;
 constexpr std::uint16_t kConfigParamValueSize = 2U;
 constexpr float kNumericTolerance = 1e-6F;
@@ -39,6 +40,10 @@ constexpr int kOzwLogLevelInfo = 7;
 constexpr int kOzwLogLevelDetail = 8;
 constexpr int kOzwLogLevelDebug = 9;
 constexpr int kOzwLogLevelStreamDetail = 10;
+
+[[nodiscard]] bool isEnablePollAllowedClass(const std::uint16_t classId) {
+    return classId == kRuntimeSwitchBinaryClass || classId == kRuntimeSwitchMultilevelClass;
+}
 
 [[nodiscard]] OpenZWave::ValueID::ValueGenre decodeGenreOrDefault(const std::uint8_t cachedGenreCode) {
     switch (cachedGenreCode) {
@@ -602,6 +607,10 @@ void OpenZwaveRuntimeDriverPort::requestAllConfigParams(const std::uint16_t node
 void OpenZwaveRuntimeDriverPort::enablePoll(const std::uint16_t nodeId, const std::uint16_t classId) {
     ensureStarted();
 
+    if (!isEnablePollAllowedClass(classId)) {
+        return;
+    }
+
     if (!isNodeReady(nodeId)) {
         logZwaveRequest(
             "enablePoll_skipped_not_ready",
@@ -635,6 +644,10 @@ void OpenZwaveRuntimeDriverPort::enablePoll(const std::uint16_t nodeId, const st
     for (const auto& [instance, valuesByIndex] : classIterator->second) {
         (void)instance;
         for (const auto& [index, valueId] : valuesByIndex) {
+            if (!enabledPollValueIds_.insert(valueId).second) {
+                continue;
+            }
+
             logZwaveRequest(
                 "enablePoll",
                 nodeId,
@@ -710,6 +723,7 @@ void OpenZwaveRuntimeDriverPort::disconnect(const std::string& devicePath) {
     readyNodes_.clear();
     valueIdCache_.clear();
     valueGenreCache_.clear();
+    enabledPollValueIds_.clear();
 }
 
 void OpenZwaveRuntimeDriverPort::watcherThunk(OpenZWave::Notification const* notification, void* context) {
@@ -771,6 +785,19 @@ void OpenZwaveRuntimeDriverPort::handleNotification(OpenZWave::Notification cons
     case OpenZWave::Notification::Type_NodeRemoved:
         {
             std::scoped_lock lock{mutex_};
+            const auto nodeIterator = valueIdCache_.find(nodeId);
+            if (nodeIterator != valueIdCache_.end()) {
+                for (const auto& [classId, valuesByInstance] : nodeIterator->second) {
+                    (void)classId;
+                    for (const auto& [instance, valuesByIndex] : valuesByInstance) {
+                        (void)instance;
+                        for (const auto& [index, rawValueId] : valuesByIndex) {
+                            (void)index;
+                            enabledPollValueIds_.erase(rawValueId);
+                        }
+                    }
+                }
+            }
             knownNodes_.erase(nodeId);
             readyNodes_.erase(nodeId);
             valueIdCache_.erase(nodeId);
@@ -1005,7 +1032,11 @@ void OpenZwaveRuntimeDriverPort::eraseValueIdCacheUnlocked(OpenZWave::ValueID co
         if (classIterator != nodeIterator->second.end()) {
             auto instanceIterator = classIterator->second.find(valueId.GetInstance());
             if (instanceIterator != classIterator->second.end()) {
-                instanceIterator->second.erase(valueId.GetIndex());
+                const auto valueIterator = instanceIterator->second.find(valueId.GetIndex());
+                if (valueIterator != instanceIterator->second.end()) {
+                    enabledPollValueIds_.erase(valueIterator->second);
+                    instanceIterator->second.erase(valueIterator);
+                }
                 if (instanceIterator->second.empty()) {
                     classIterator->second.erase(instanceIterator);
                 }
