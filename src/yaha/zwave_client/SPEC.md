@@ -73,7 +73,7 @@ OpenZWave runtime driver behavior:
 - requests node state for known nodes on scan trigger
 - requests all config params per configured node
 - enables polling for cached value ids by node/class
-- configures OpenZWave runtime `PollInterval` from `zwave.pollIntervalMs` (default `500ms`) for backend refresh cadence
+- configures OpenZWave runtime `PollInterval` from `zwave.pollIntervalMs` (default `600000ms`) for backend refresh cadence
 - passes `zwave.pollIntervalMs` to `ZwaveController` as full-device MQTT refresh interval for all configured node ids
 - passes command feedback timing settings to `ZwaveController`:
   - `zwave.commandReactionPollIntervalMs` (default `500ms`)
@@ -131,9 +131,9 @@ Validation rules:
 - `zwave.logLevel` must be in range `0..4` when set.
 - `zwave.logIncomingMessages` must be valid boolean token when set.
 - `zwave.logOutgoingMessages` must be valid boolean token when set.
-- `zwave.pollIntervalMs` must be in range `1..60000` when set.
-- `zwave.commandReactionPollIntervalMs` must be in range `1..60000` when set.
-- `zwave.commandReactionTimeoutMs` must be in range `1..600000` when set.
+- `zwave.pollIntervalMs` must be in range `1..9223372036854775807` when set.
+- `zwave.commandReactionPollIntervalMs` must be in range `1..9223372036854775807` when set.
+- `zwave.commandReactionTimeoutMs` must be in range `1..9223372036854775807` when set.
 - `filestore.port` must be in range `1..65535` when set.
 - `filestore.use` must be valid boolean token when set.
 - `filestore.startupRetryCount` must be in range `0..1000` when set.

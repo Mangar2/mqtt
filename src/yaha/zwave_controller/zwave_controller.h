@@ -223,9 +223,9 @@ public:
    * @param commandReactionTimeoutMs Timeout for tracked command confirmation.
    */
   ZwaveController(ZwaveUsbConfig usbConfig, IZwaveDriverPort &driverPort,
-                  std::uint32_t fullDevicePollIntervalMs,
-                  std::uint32_t commandReactionPollIntervalMs,
-                  std::uint32_t commandReactionTimeoutMs,
+            std::int64_t fullDevicePollIntervalMs,
+            std::int64_t commandReactionPollIntervalMs,
+            std::int64_t commandReactionTimeoutMs,
                   std::uint32_t unresponsiveInputTimeoutMs =
                       kZwaveUnresponsiveInputTimeoutMs,
                   std::size_t unresponsiveTimeoutErrorThreshold =

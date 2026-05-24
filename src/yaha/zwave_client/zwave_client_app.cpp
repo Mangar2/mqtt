@@ -51,11 +51,14 @@ constexpr std::uint64_t kIndexMax = 255U;
 constexpr std::uint64_t kLogLevelMin = 0U;
 constexpr std::uint64_t kLogLevelMax = 4U;
 constexpr std::uint64_t kPollIntervalMsMin = 1U;
-constexpr std::uint64_t kPollIntervalMsMax = 60000U;
+constexpr std::uint64_t kPollIntervalMsMax =
+    static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
 constexpr std::uint64_t kCommandReactionPollIntervalMsMin = 1U;
-constexpr std::uint64_t kCommandReactionPollIntervalMsMax = 60000U;
+constexpr std::uint64_t kCommandReactionPollIntervalMsMax =
+    static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
 constexpr std::uint64_t kCommandReactionTimeoutMsMin = 1U;
-constexpr std::uint64_t kCommandReactionTimeoutMsMax = 600000U;
+constexpr std::uint64_t kCommandReactionTimeoutMsMax =
+    static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
 constexpr int kFileStoreConnectTimeoutSeconds = 1;
 constexpr int kFileStoreReadTimeoutSeconds = 1;
 constexpr int kFileStoreWriteTimeoutSeconds = 1;
@@ -253,7 +256,7 @@ constexpr int kHttpNotFoundStatus = 404;
         return false;
     }
     if (pollIntervalResult.first.has_value()) {
-        parsed.pollIntervalMs = static_cast<std::uint32_t>(*pollIntervalResult.first);
+        parsed.pollIntervalMs = static_cast<std::int64_t>(*pollIntervalResult.first);
     }
 
     const auto commandReactionPollIntervalResult = document.readUnsigned(
@@ -266,7 +269,7 @@ constexpr int kHttpNotFoundStatus = 404;
         return false;
     }
     if (commandReactionPollIntervalResult.first.has_value()) {
-        parsed.commandReactionPollIntervalMs = static_cast<std::uint32_t>(*commandReactionPollIntervalResult.first);
+        parsed.commandReactionPollIntervalMs = static_cast<std::int64_t>(*commandReactionPollIntervalResult.first);
     }
 
     const auto commandReactionTimeoutResult = document.readUnsigned(
@@ -279,7 +282,7 @@ constexpr int kHttpNotFoundStatus = 404;
         return false;
     }
     if (commandReactionTimeoutResult.first.has_value()) {
-        parsed.commandReactionTimeoutMs = static_cast<std::uint32_t>(*commandReactionTimeoutResult.first);
+        parsed.commandReactionTimeoutMs = static_cast<std::int64_t>(*commandReactionTimeoutResult.first);
     }
 
     return true;

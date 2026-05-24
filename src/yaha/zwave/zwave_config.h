@@ -15,9 +15,9 @@
 
 namespace yaha {
 
-inline constexpr std::uint32_t kZwaveDefaultPollIntervalMs = 500U;
-inline constexpr std::uint32_t kZwaveDefaultCommandReactionPollIntervalMs = 500U;
-inline constexpr std::uint32_t kZwaveDefaultCommandReactionTimeoutMs = 30000U;
+inline constexpr std::int64_t kZwaveDefaultPollIntervalMs = 600000;
+inline constexpr std::int64_t kZwaveDefaultCommandReactionPollIntervalMs = 500;
+inline constexpr std::int64_t kZwaveDefaultCommandReactionTimeoutMs = 30000;
 inline constexpr std::uint16_t kZwaveDefaultFileStorePort = 8210U;
 inline constexpr std::uint32_t kZwaveDefaultFileStoreStartupRetryCount = 10U;
 inline constexpr std::uint32_t kZwaveDefaultFileStoreStartupRetryIntervalSeconds = 60U;
@@ -54,9 +54,9 @@ struct ZwaveConfig {
     std::uint8_t logLevel{2U};                ///< OpenZWave/service event logging level (0..4).
     bool logIncomingMessages{false};          ///< Logs incoming MQTT messages handled by ZWave service.
     bool logOutgoingMessages{false};          ///< Logs outgoing MQTT messages published by ZWave service.
-    std::uint32_t pollIntervalMs{kZwaveDefaultPollIntervalMs}; ///< OpenZWave poll interval in milliseconds.
-    std::uint32_t commandReactionPollIntervalMs{kZwaveDefaultCommandReactionPollIntervalMs}; ///< Poll interval in milliseconds for tracked command confirmation.
-    std::uint32_t commandReactionTimeoutMs{kZwaveDefaultCommandReactionTimeoutMs}; ///< Timeout in milliseconds for tracked command confirmation.
+    std::int64_t pollIntervalMs{kZwaveDefaultPollIntervalMs}; ///< OpenZWave poll interval in milliseconds.
+    std::int64_t commandReactionPollIntervalMs{kZwaveDefaultCommandReactionPollIntervalMs}; ///< Poll interval in milliseconds for tracked command confirmation.
+    std::int64_t commandReactionTimeoutMs{kZwaveDefaultCommandReactionTimeoutMs}; ///< Timeout in milliseconds for tracked command confirmation.
     bool fileStoreEnabled{false};             ///< Enables startup device-settings sync with FileStore.
     std::string fileStoreHost{"127.0.0.1"}; ///< FileStore HTTP host.
     std::uint16_t fileStorePort{kZwaveDefaultFileStorePort}; ///< FileStore HTTP port.

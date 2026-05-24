@@ -34,7 +34,7 @@ public:
      explicit OpenZwaveRuntimeDriverPort(
           std::string controllerPath,
           std::uint8_t logLevel,
-          std::uint32_t pollIntervalMs);
+        std::int64_t pollIntervalMs);
 
     /**
      * @brief Cleans up OpenZWave watcher, driver and manager ownership.
@@ -131,7 +131,7 @@ private:
 
     std::string controllerPath_{};
     std::uint8_t logLevel_{2U};
-    std::uint32_t pollIntervalMs_{kZwaveDefaultPollIntervalMs};
+    std::int64_t pollIntervalMs_{kZwaveDefaultPollIntervalMs};
 
     mutable std::mutex mutex_{};
     ZwaveController* controller_{nullptr};

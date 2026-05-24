@@ -134,7 +134,7 @@ TEST_CASE("load_zwave_config_applies_defaults_and_parses_device", "[zwave_client
     CHECK(config.subscribeQos == yaha::Qos::AtLeastOnce);
     CHECK(config.qos == yaha::Qos::AtLeastOnce);
     CHECK_FALSE(config.retain);
-    CHECK(config.pollIntervalMs == 500U);
+    CHECK(config.pollIntervalMs == 600000);
     CHECK(config.usb.device == "/dev/ttyUSB0");
     CHECK(config.usb.topic == "home/zwave/controller");
     REQUIRE(config.devices.size() == 1U);
@@ -374,7 +374,7 @@ TEST_CASE("load_zwave_config_rejects_invalid_log_outgoing_messages_value", "[zwa
     CHECK(errorMessage.find("zwave.logOutgoingMessages") != std::string::npos);
 }
 
-TEST_CASE("load_zwave_config_parses_poll_interval_ms_and_rejects_out_of_range", "[zwave_client]") {
+TEST_CASE("load_zwave_config_parses_poll_interval_ms_and_rejects_zero", "[zwave_client]") {
     {
         const yaha::IniDocument document = loadIni(
             "[zwave]\n"
@@ -411,7 +411,7 @@ TEST_CASE("load_zwave_config_parses_poll_interval_ms_and_rejects_out_of_range", 
     }
 }
 
-TEST_CASE("load_zwave_config_parses_command_reaction_timing_and_rejects_out_of_range", "[zwave_client]") {
+TEST_CASE("load_zwave_config_parses_command_reaction_timing_and_rejects_zero", "[zwave_client]") {
     {
         const yaha::IniDocument document = loadIni(
             "[zwave]\n"

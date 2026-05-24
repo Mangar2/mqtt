@@ -165,9 +165,9 @@ void addSpecCompliantReason(Message& message, const ReasonEntry& reasonEntry) {
 ZwaveController::ZwaveController(
     ZwaveUsbConfig usbConfig,
     IZwaveDriverPort& driverPort,
-    const std::uint32_t fullDevicePollIntervalMs,
-    const std::uint32_t commandReactionPollIntervalMs,
-    const std::uint32_t commandReactionTimeoutMs,
+    const std::int64_t fullDevicePollIntervalMs,
+    const std::int64_t commandReactionPollIntervalMs,
+    const std::int64_t commandReactionTimeoutMs,
     const std::uint32_t unresponsiveInputTimeoutMs,
     const std::size_t unresponsiveTimeoutErrorThreshold)
     : usb_(std::move(usbConfig))

@@ -310,12 +310,25 @@ bool applyTypedValueWrite(
     return writeTextValue(manager, valueId, valueType, std::get<std::string>(value));
 }
 
+[[nodiscard]] int toOpenZwavePollIntervalOption(const std::int64_t pollIntervalMs) {
+    if (pollIntervalMs <= 0) {
+        return 1;
+    }
+
+    const auto maxOptionValue = static_cast<std::int64_t>(std::numeric_limits<int>::max());
+    if (pollIntervalMs > maxOptionValue) {
+        return std::numeric_limits<int>::max();
+    }
+
+    return static_cast<int>(pollIntervalMs);
+}
+
 } // namespace
 
 OpenZwaveRuntimeDriverPort::OpenZwaveRuntimeDriverPort(
     std::string controllerPath,
     const std::uint8_t logLevel,
-    const std::uint32_t pollIntervalMs)
+    const std::int64_t pollIntervalMs)
     : controllerPath_(std::move(controllerPath))
     , logLevel_(logLevel) {
     pollIntervalMs_ = pollIntervalMs;
@@ -935,7 +948,7 @@ void OpenZwaveRuntimeDriverPort::ensureStarted() {
         const bool enableProtocolLogging = logLevel_ > 0U;
         (void)options->AddOptionBool("Logging", enableProtocolLogging);
         (void)options->AddOptionBool("ConsoleOutput", enableProtocolLogging);
-        (void)options->AddOptionInt("PollInterval", static_cast<int>(pollIntervalMs_));
+        (void)options->AddOptionInt("PollInterval", toOpenZwavePollIntervalOption(pollIntervalMs_));
         (void)options->AddOptionInt("SaveLogLevel", mapSaveLogLevel(logLevel_));
         (void)options->AddOptionInt("QueueLogLevel", mapQueueLogLevel(logLevel_));
         (void)options->AddOptionInt("DumpTriggerLevel", kOzwLogLevelNone);
