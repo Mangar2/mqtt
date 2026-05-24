@@ -911,6 +911,41 @@ TEST_CASE("http_get_store_json_output_escapes_special_characters", "[message_sto
     REQUIRE(response->body.find("line1\\nline2\\r\\t\\\"q\\\"\\\\x") != std::string::npos);
 }
 
+TEST_CASE("http_get_store_json_output_escapes_ascii_control_characters", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+
+    std::string valueWithControl{"before"};
+    valueWithControl.push_back(static_cast<char>(0x03));
+    valueWithControl += "after";
+
+    yaha::Message message{"home/escaped-control", valueWithControl};
+    std::string reasonWithControl{"reason"};
+    reasonWithControl.push_back(static_cast<char>(0x02));
+    message.addReason(reasonWithControl, "2026-05-24T15:14:16Z");
+    store.handleMessage(message);
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    const auto response = client.Get("/store/home/escaped-control");
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 200);
+    REQUIRE(response->body.find("before\\u0003after") != std::string::npos);
+    REQUIRE(response->body.find("reason\\u0002") != std::string::npos);
+    REQUIRE(response->body.find(static_cast<char>(0x03)) == std::string::npos);
+    REQUIRE(response->body.find(static_cast<char>(0x02)) == std::string::npos);
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("http_get_store_outputs_iso_time_and_reason_timestamps", "[message_store]") {
     const auto tempDir = makeTempDirectory();

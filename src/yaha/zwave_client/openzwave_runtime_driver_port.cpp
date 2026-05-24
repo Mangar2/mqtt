@@ -379,6 +379,26 @@ bool applyTypedValueWrite(
     return std::get<std::string>(value);
 }
 
+void logZwaveRequest(
+    const std::string& action,
+    const std::uint16_t nodeId,
+    const std::uint16_t classId,
+    const std::uint8_t instance,
+    const std::uint16_t index,
+    const std::string& detail = std::string{}) {
+    std::ostringstream stream{};
+    stream << "zwave_client[event] op=zwave_request"
+           << " action=\"" << action << "\""
+           << " nodeId=" << nodeId
+           << " classId=0x" << std::hex << classId << std::dec
+           << " instance=" << static_cast<std::uint32_t>(instance)
+           << " index=" << index;
+    if (!detail.empty()) {
+        stream << " detail=\"" << detail << "\"";
+    }
+    std::cout << stream.str() << '\n' << std::flush;
+}
+
 } // namespace
 
 OpenZwaveRuntimeDriverPort::OpenZwaveRuntimeDriverPort(
@@ -411,6 +431,10 @@ void OpenZwaveRuntimeDriverPort::setValue(
     const std::variant<bool, double, std::string>& value) {
     ensureStarted();
 
+    if (!isNodeReady(target.nodeId)) {
+        throw std::runtime_error("OpenZWave node not ready yet for setValue");
+    }
+
     const std::uint32_t homeId = requireHomeId();
     const std::string typeName = toLower(target.type);
     auto valueType = toValueType(typeName);
@@ -434,8 +458,8 @@ void OpenZwaveRuntimeDriverPort::setValue(
     diagnostics << "homeId=0x" << std::hex << homeId << std::dec
                 << " nodeId=" << target.nodeId
                 << " classId=0x" << std::hex << target.classId << std::dec
-                << " instance=" << target.instance
-                << " index=" << target.index
+                << " instance=" << static_cast<std::uint32_t>(target.instance)
+                << " index=" << static_cast<std::uint32_t>(target.index)
                 << " mappingType=\"" << target.type << "\""
                 << " resolvedGenre=\"" << genreNameForLog(valueGenre) << "\""
                 << " resolvedValueType=\"" << valueTypeNameForLog(valueType) << "\""
@@ -486,6 +510,10 @@ void OpenZwaveRuntimeDriverPort::setConfigParam(
     const double value) {
     ensureStarted();
 
+    if (!isNodeReady(nodeId)) {
+        throw std::runtime_error("OpenZWave node not ready yet for setConfigParam");
+    }
+
     const std::uint32_t homeId = requireHomeId();
     OpenZWave::Manager* manager = OpenZWave::Manager::Get();
     if (manager == nullptr) {
@@ -514,6 +542,10 @@ void OpenZwaveRuntimeDriverPort::addNode() {
 void OpenZwaveRuntimeDriverPort::removeFailedNode(const std::uint16_t nodeId) {
     ensureStarted();
 
+    if (!isNodeReady(nodeId)) {
+        throw std::runtime_error("OpenZWave node not ready yet for removeFailedNode");
+    }
+
     OpenZWave::Manager* manager = OpenZWave::Manager::Get();
     if (manager == nullptr) {
         throw std::runtime_error("OpenZWave manager unavailable");
@@ -537,12 +569,27 @@ void OpenZwaveRuntimeDriverPort::startScan() {
         if (nodeId == 0U || nodeId > kMaxNodeId) {
             continue;
         }
+        if (!readyNodes_.contains(nodeId)) {
+            logZwaveRequest(
+                "startScan_requestNodeState_skipped_not_ready",
+                nodeId,
+                0U,
+                0U,
+                0U,
+                "node not ready");
+            continue;
+        }
+        logZwaveRequest("startScan_requestNodeState", nodeId, 0U, 0U, 0U);
         (void)manager->RequestNodeState(homeId, static_cast<std::uint8_t>(nodeId));
     }
 }
 
 void OpenZwaveRuntimeDriverPort::requestAllConfigParams(const std::uint16_t nodeId) {
     ensureStarted();
+
+    if (!isNodeReady(nodeId)) {
+        return;
+    }
 
     OpenZWave::Manager* manager = OpenZWave::Manager::Get();
     if (manager == nullptr) {
@@ -554,6 +601,17 @@ void OpenZwaveRuntimeDriverPort::requestAllConfigParams(const std::uint16_t node
 
 void OpenZwaveRuntimeDriverPort::enablePoll(const std::uint16_t nodeId, const std::uint16_t classId) {
     ensureStarted();
+
+    if (!isNodeReady(nodeId)) {
+        logZwaveRequest(
+            "enablePoll_skipped_not_ready",
+            nodeId,
+            classId,
+            0U,
+            0U,
+            "node not ready");
+        return;
+    }
 
     OpenZWave::Manager* manager = OpenZWave::Manager::Get();
     if (manager == nullptr) {
@@ -577,7 +635,17 @@ void OpenZwaveRuntimeDriverPort::enablePoll(const std::uint16_t nodeId, const st
     for (const auto& [instance, valuesByIndex] : classIterator->second) {
         (void)instance;
         for (const auto& [index, valueId] : valuesByIndex) {
-            (void)index;
+            logZwaveRequest(
+                "enablePoll",
+                nodeId,
+                classId,
+                instance,
+                index,
+                "valueId=0x" + [&] {
+                    std::ostringstream idStream{};
+                    idStream << std::hex << valueId;
+                    return idStream.str();
+                }());
             (void)manager->EnablePoll(OpenZWave::ValueID(homeId, valueId), kPollIntensity);
         }
     }
@@ -585,6 +653,19 @@ void OpenZwaveRuntimeDriverPort::enablePoll(const std::uint16_t nodeId, const st
 
 void OpenZwaveRuntimeDriverPort::requestNodeState(const std::uint16_t nodeId) {
     ensureStarted();
+
+    if (!isNodeReady(nodeId)) {
+        logZwaveRequest(
+            "requestNodeState_skipped_not_ready",
+            nodeId,
+            0U,
+            0U,
+            0U,
+            "node not ready");
+        return;
+    }
+
+    logZwaveRequest("requestNodeState", nodeId, 0U, 0U, 0U);
 
     OpenZWave::Manager* manager = OpenZWave::Manager::Get();
     if (manager == nullptr) {
@@ -626,6 +707,7 @@ void OpenZwaveRuntimeDriverPort::disconnect(const std::string& devicePath) {
     started_ = false;
     homeId_ = 0U;
     knownNodes_.clear();
+    readyNodes_.clear();
     valueIdCache_.clear();
     valueGenreCache_.clear();
 }
@@ -690,15 +772,24 @@ void OpenZwaveRuntimeDriverPort::handleNotification(OpenZWave::Notification cons
         {
             std::scoped_lock lock{mutex_};
             knownNodes_.erase(nodeId);
+            readyNodes_.erase(nodeId);
             valueIdCache_.erase(nodeId);
             valueGenreCache_.erase(nodeId);
         }
         controller->onNodeRemoved(nodeId);
         return;
     case OpenZWave::Notification::Type_NodeQueriesComplete:
+        {
+            std::scoped_lock lock{mutex_};
+            readyNodes_.insert(nodeId);
+        }
         controller->onNodeReady(nodeId, buildNodeInfo(notification.GetHomeId(), nodeId), "queries_complete");
         return;
     case OpenZWave::Notification::Type_EssentialNodeQueriesComplete:
+        {
+            std::scoped_lock lock{mutex_};
+            readyNodes_.insert(nodeId);
+        }
         controller->onNodeReady(nodeId, buildNodeInfo(notification.GetHomeId(), nodeId), "essential_queries_complete");
         return;
     case OpenZWave::Notification::Type_ValueAdded:
@@ -1127,6 +1218,11 @@ std::string OpenZwaveRuntimeDriverPort::controllerStateText(const std::uint8_t s
     default:
         return "unknown";
     }
+}
+
+bool OpenZwaveRuntimeDriverPort::isNodeReady(const std::uint16_t nodeId) const {
+    std::scoped_lock lock{mutex_};
+    return readyNodes_.contains(nodeId);
 }
 
 std::uint32_t OpenZwaveRuntimeDriverPort::requireHomeId() const {

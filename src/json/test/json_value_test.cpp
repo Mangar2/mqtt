@@ -20,6 +20,8 @@ constexpr double k_expected_exponent_number{-1250.0};
 constexpr double k_push_back_element_number{2.0};
 constexpr double k_expected_positive_exponent_number{100.0};
 constexpr double k_object_item_number{7.0};
+constexpr unsigned char k_control_char_etx{0x03U};
+constexpr unsigned char k_control_char_us{0x1FU};
 
 void expect_json_error(const std::function<void()>& operation,
                        JsonError expectedError) {
@@ -231,6 +233,20 @@ TEST_CASE("parse_and_stringify_escape_matrix", "[json][broker]") {
     CHECK(serializedText.find("\\n") != std::string::npos);
     CHECK(serializedText.find("\\r") != std::string::npos);
     CHECK(serializedText.find("\\t") != std::string::npos);
+}
+
+TEST_CASE("stringify_escapes_ascii_control_characters_as_unicode", "[json][broker]") {
+    std::string textWithControl{"A"};
+    textWithControl.push_back(static_cast<char>(k_control_char_etx));
+    textWithControl.push_back(static_cast<char>(k_control_char_us));
+    textWithControl += "Z";
+
+    const JsonValue value{textWithControl};
+    const std::string serializedText = value.stringify();
+    CHECK(serializedText == "\"A\\u0003\\u001fZ\"");
+
+    const JsonValue reparsedValue = JsonValue::parse(serializedText);
+    CHECK(reparsedValue.as_string() == textWithControl);
 }
 
 TEST_CASE("parse_empty_object_and_array_and_trailing_token_error", "[json][broker]") {

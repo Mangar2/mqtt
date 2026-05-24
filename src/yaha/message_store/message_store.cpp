@@ -2,6 +2,7 @@
 #include "yaha/message_store/message_store_json_parser.h"
 
 #include "httplib.h"
+#include "json/json_value.h"
 #include "yaha/error_handling/yaha_error.h"
 
 #include <algorithm>
@@ -313,37 +314,13 @@ std::string toIsoTimestamp(std::int64_t millisecondsSinceEpoch) {
     return stream.str();
 }
 
-std::string jsonEscape(const std::string& text) {
-    std::string result;
-    result.reserve(text.size());
-    for (char currentChar : text) {
-        switch (currentChar) {
-            case '\\':
-                result += "\\\\";
-                break;
-            case '"':
-                result += "\\\"";
-                break;
-            case '\n':
-                result += "\\n";
-                break;
-            case '\r':
-                result += "\\r";
-                break;
-            case '\t':
-                result += "\\t";
-                break;
-            default:
-                result.push_back(currentChar);
-                break;
-        }
-    }
-    return result;
+std::string jsonStringLiteral(std::string_view text) {
+    return mqtt::json::JsonValue{std::string{text}}.stringify();
 }
 
 std::string valueToJson(const Value& value) {
     if (std::holds_alternative<std::string>(value)) {
-        return "\"" + jsonEscape(std::get<std::string>(value)) + "\"";
+        return jsonStringLiteral(std::get<std::string>(value));
     }
 
     std::ostringstream stream;
@@ -357,8 +334,8 @@ std::string reasonsToJson(const std::vector<ReasonEntry>& reasons) {
         if (i > 0U) {
             result += ',';
         }
-        result += std::string{R"({"message":")"} + jsonEscape(reasons[i].message)
-            + std::string{R"(","timestamp":")"} + jsonEscape(reasons[i].timestamp) + "\"}";
+        result += std::string{"{\"message\":"} + jsonStringLiteral(reasons[i].message)
+            + std::string{",\"timestamp\":"} + jsonStringLiteral(reasons[i].timestamp) + '}';
     }
     result += "]";
     return result;
@@ -375,7 +352,7 @@ std::string historyToJson(const std::vector<MessageTreeHistoryEntry>& history,
         const MessageTreeHistoryEntry& item = history[i];
         result += "{\"value\":" + valueToJson(item.value);
         if (includeTime) {
-            result += std::string{R"(,"time":")"} + jsonEscape(toIsoTimestamp(item.timeMs)) + '"';
+            result += std::string{",\"time\":"} + jsonStringLiteral(toIsoTimestamp(item.timeMs));
         }
         if (includeReason) {
             result += ",\"reason\":" + reasonsToJson(item.reason);
@@ -391,10 +368,10 @@ std::string nodeToJson(const MessageTreeNode& node,
                        const bool includeReason,
                        const bool includeTime) {
     std::string result{"{"};
-    result += std::string{R"("topic":")"} + jsonEscape(node.topic) + '"';
+    result += std::string{"\"topic\":"} + jsonStringLiteral(node.topic);
     result += ",\"value\":" + valueToJson(node.value);
     if (includeTime) {
-        result += std::string{R"(,"time":")"} + jsonEscape(toIsoTimestamp(node.timeMs)) + '"';
+        result += std::string{",\"time\":"} + jsonStringLiteral(toIsoTimestamp(node.timeMs));
     }
     if (includeReason) {
         result += ",\"reason\":" + reasonsToJson(node.reason);

@@ -183,6 +183,7 @@ struct MessageTreeNode;
 - Unknown path -> status 404 with `YahaError` payload code `YAHA_MESSAGE_STORE_HTTP_NOT_FOUND`.
 - Invalid percent-encoding in topic prefix -> status 400 with `YahaError` payload code `YAHA_MESSAGE_STORE_HTTP_INVALID_PERCENT_ENCODING`.
 - Response is JSON array with `application/json`.
+- All HTTP JSON string fields (`topic`, string `value`, `time`, reason `message`, reason `timestamp`) use strict JSON escaping; ASCII control bytes below `0x20` are emitted as `\u00XX` escapes.
 - HTTP JSON node shape uses projection flags:
   - node field `time` (string, ISO-8601 UTC) is included only when `time=true`,
   - `history[]` is included only when `history=true`,

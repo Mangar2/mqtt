@@ -144,6 +144,7 @@ private:
     [[nodiscard]] static std::string toLower(std::string value);
     [[nodiscard]] static std::string valueTypeName(OpenZWave::ValueID const& valueId);
     [[nodiscard]] static std::string controllerStateText(std::uint8_t stateCode);
+    [[nodiscard]] bool isNodeReady(std::uint16_t nodeId) const;
 
     [[nodiscard]] std::uint32_t requireHomeId() const;
     void ensureStarted();
@@ -163,6 +164,7 @@ private:
 
     std::uint32_t homeId_{0U};
     std::unordered_set<std::uint16_t> knownNodes_{};
+    std::unordered_set<std::uint16_t> readyNodes_{};
     std::unordered_map<std::uint16_t, ValueClassMap> valueIdCache_{};
     std::unordered_map<std::uint16_t, ValueGenreClassMap> valueGenreCache_{};
 };

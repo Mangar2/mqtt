@@ -108,3 +108,8 @@
 - Scenario: Exercise invalid-type throw paths for const `at(index)`, const `at(key)`, `as_boolean`, and `as_number`.
 - Input: object/array plus mismatched accessor calls.
 - Expected: each call throws `JsonException` with `JsonError::InvalidType`.
+
+22. stringify_escapes_ascii_control_characters_as_unicode
+- Scenario: Serializer must escape raw ASCII control bytes below `0x20` using Unicode escape form.
+- Input: string value containing bytes `0x03` and `0x1F`.
+- Expected: `stringify()` returns escaped JSON string with `\u0003` and `\u001f`, and parsing the result restores the original bytes.
