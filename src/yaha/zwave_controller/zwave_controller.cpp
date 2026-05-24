@@ -41,7 +41,7 @@ const std::regex& iso8601TimestampRegex() {
     if (const auto* text = std::get_if<std::string>(&value); text != nullptr) {
         return *text == "on" || *text == "1" || *text == "true";
     }
-    return std::fabs(std::get<double>(value) - 1.0) < kIntegerTolerance;
+    return std::fabs(std::get<double>(value)) >= kIntegerTolerance;
 }
 
 [[nodiscard]] Value applySwitchOutboundConversion(const Value& value, const std::string& typeName) {
@@ -54,11 +54,11 @@ const std::regex& iso8601TimestampRegex() {
 
 [[nodiscard]] std::optional<bool> valueAsSemanticBool(const Value& value) {
     if (const auto* numericValue = std::get_if<double>(&value); numericValue != nullptr) {
-        if (std::fabs(*numericValue - 1.0) < kIntegerTolerance) {
-            return true;
-        }
         if (std::fabs(*numericValue) < kIntegerTolerance) {
             return false;
+        }
+        if (std::isfinite(*numericValue)) {
+            return true;
         }
         return std::nullopt;
     }
@@ -944,7 +944,13 @@ ZwaveController::PendingCommandMatch ZwaveController::takeMatchingPendingReasons
             && iterator->target.classId == event.classId
             && iterator->target.instance == event.instance
             && iterator->target.index == event.index;
-        const bool sameExpectedValue = valuesEquivalent(iterator->expectedValue, outboundValue);
+        const auto expectedSemanticBool = valueAsSemanticBool(iterator->expectedValue);
+        const auto outboundSemanticBool = valueAsSemanticBool(outboundValue);
+        const bool sameExpectedValue = valuesEquivalent(iterator->expectedValue, outboundValue)
+            || (event.classId == kZwaveSwitchMultilevelClass
+                && expectedSemanticBool.has_value()
+                && outboundSemanticBool.has_value()
+                && *expectedSemanticBool == *outboundSemanticBool);
         if (sameReplyTopic && sameTarget && sameExpectedValue) {
             std::vector<ReasonEntry> reasons = iterator->reasons;
             pendingCommands_.erase(iterator);
