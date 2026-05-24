@@ -56,18 +56,18 @@ Protocol and domain logic remain in `broker_connector/`. Runtime orchestration i
 - `host` string
 - `port` uint16 in range `1..65535`
 - `clientId` string
-- `reconnectDelayMs` uint32 in range `1..600000`
-- `keepAliveSeconds` uint32 in range `1..86400` (mapped to milliseconds)
-- `loopSleepMs` uint32 in range `1..1000`
+- `reconnectDelayMs` uint32 in range `1..uint32_max`
+- `keepAliveSeconds` uint32 in range `1..uint32_max` (mapped to milliseconds)
+- `loopSleepMs` uint32 in range `1..uint32_max`
 - `enableLifecycleTrace` bool
 
 ### Section `[automation]`
 
-- `reconnectDelayMs` uint32 in range `1..600000` (source lifecycle)
-- `sourceLoopSleepMs` uint32 in range `1..1000`
-- `sourceKeepAliveIntervalMs` uint32 in range `1..600000`
-- `maxPublishRetries` uint32 in range `0..1000`
-- `publishRetryBackoffMs` uint32 in range `0..600000`
+- `reconnectDelayMs` uint32 in range `1..uint32_max` (source lifecycle)
+- `sourceLoopSleepMs` uint32 in range `1..uint32_max`
+- `sourceKeepAliveIntervalMs` uint32 in range `1..uint32_max`
+- `maxPublishRetries` uint32 in range `0..uint32_max`
+- `publishRetryBackoffMs` uint32 in range `0..uint32_max`
 - `normalizeQosToAtLeastOnce` bool
 - `retainPassthrough` bool
 
@@ -86,7 +86,12 @@ Only present keys override defaults.
 
 ## Error handling
 
-- Parsing functions return typed result structs with either `config` value or `errorMessage` on first invalid field.
+- Parsing keeps defaults for invalid recoverable values, emits deterministic
+	warning logs to `std::cerr`, and continues.
+- Invalid `[subscription]` entries fall back to default subscription `#` with warning.
+- Monitoring message-log parse failures keep defaults with warning.
+- Typed result structs still expose `config`/`errorMessage`; recoverable invalid
+	values do not produce hard failure.
 - Runtime start/stop and signal handling are delegated to generic `YahaMqttClientRuntime`.
 
 ## Files

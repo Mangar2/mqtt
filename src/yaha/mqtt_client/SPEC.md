@@ -36,8 +36,15 @@ When enabled and `willTopic` is non-empty, broker transport attaches a CONNECT w
 
 | Function | Signature | Notes |
 |----------|-----------|-------|
-| `tryLoadMqttClientConfigFromIni` | `bool(const IniDocument&, YahaMqttClient::Config&, string&)` | maps optional `[mqtt]` INI values into MQTT runtime config |
+| `tryLoadMqttClientConfigFromIni` | `bool(const IniDocument&, YahaMqttClient::Config&, string&)` | maps optional `[mqtt]` INI values into MQTT runtime config with fallback-on-invalid behavior |
 | `tryLoadSubscriptionsFromIni` | `bool(const IniDocument&, string_view, SubscriptionMap&, string&)` | parses topic/qos entries from one section |
+
+INI mapping contract for `tryLoadMqttClientConfigFromIni`:
+- missing keys keep caller defaults unchanged
+- invalid recoverable values do not abort mapping
+- invalid recoverable values emit deterministic warning logs to `std::cerr`
+- timing keys (`reconnectDelayMs`, `keepAliveIntervalMs`, `loopSleepMs`) use
+	technical range `1..uint32_max` (arbitrary upper caps removed)
 
 ### Generic runtime orchestration
 

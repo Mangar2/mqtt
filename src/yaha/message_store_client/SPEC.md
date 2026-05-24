@@ -40,7 +40,7 @@ Parsing is composed from reusable shared modules:
   - `logReason` (optional, default `true`)
 - `[tree]`
   - `maxHistoryLength`, `historyHysterese`, `maxValuesPerHistoryEntry`
-  - `lengthForFurtherCompression` (range `0..100000`; `0` keeps legacy non-converting behavior)
+  - `lengthForFurtherCompression` (range `0..uint32_max`; `0` keeps legacy non-converting behavior)
   - `upperBoundFactor`, `upperBoundAddInMilliseconds`
   - `lowerBoundFactor`, `lowerBoundSubInMilliseconds`
 - `[subscription]` (repeatable)
@@ -48,7 +48,18 @@ Parsing is composed from reusable shared modules:
   - `qos` (`0`, `1`, `2`)
 
 When `[subscription]` is missing or empty, default subscription is `#` with QoS 1.
-Legacy `[subscriptions]` format is rejected.
+Invalid `[subscription]` content and legacy `[subscriptions]` format fall back to
+default subscription `#` with deterministic warning output.
+
+INI error handling:
+- Invalid recoverable values do not abort config loading.
+- For invalid recoverable values, loader writes deterministic warning logs to
+  `std::cerr` and keeps the current default value.
+- `persist.intervalMs` and `persist.keepFiles` use `0..uint32_max`.
+- `tree` numeric ranges use technical `uint32`/`double` limits instead of
+  arbitrary caps.
+- Runtime config load does not fail when MQTT/message-log sub-loaders reject one
+  value; defaults are kept with warning context.
 
 ## Runtime composition behavior
 

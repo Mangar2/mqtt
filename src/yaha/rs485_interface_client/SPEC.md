@@ -4,7 +4,7 @@ Phase 1/4/6 scope in this module:
 - define the RS485 client runtime configuration contract
 - parse and validate RS485-related INI sections
 - map parsed values into typed runtime structs
-- return deterministic error messages for invalid or incomplete inputs
+- return deterministic warning/error messages for invalid or incomplete inputs
 - compose standalone runtime objects (RS485 component, serial adapter, MQTT client runtime)
 - provide POSIX serial adapter for frame send/receive callback binding
 
@@ -25,10 +25,10 @@ Fields:
 - logOutgoingMessages (default false)
 - blinkDelaySeconds (default 3)
 - temporaryOnSeconds (default 1200)
-- interfaces (required map)
-- settings (required map)
-- status (required map)
-- addresses (required map)
+- interfaces (defaults to empty map when invalid/missing)
+- settings (defaults to empty map when invalid/missing)
+- status (defaults to empty map when invalid/missing)
+- addresses (defaults to empty map when invalid/missing)
 - topics (optional map)
 
 ### Struct Rs485InterfaceRuntimeConfig
@@ -105,14 +105,16 @@ Keys:
 
 ## Error contract
 
-All parse failures throw `YahaError` with deterministic `buildMessage()` output.
-Error text identifies section/key and reason in deterministic form.
+- Non-recoverable required parse failures still throw `YahaError` (for example missing `serialPortName`).
+- Recoverable invalid values do not abort config loading.
+- Recoverable invalid values emit deterministic warning logs to `std::cerr` and keep defaults.
+- Invalid/missing complex mapping sections (`interfaces`, `settings`, `status`, `addresses`, `topics`) fall back to empty maps with warning.
 
 Runtime composition helper:
 - `loadRs485InterfaceConfigFromIni(...)` returns parsed RS485 config or throws `YahaError`.
 - `loadRs485InterfaceClientRuntimeConfigFromIni(...)` returns parsed runtime config or throws `YahaError`.
 - rs485interface `logIncomingMessages` or `logOutgoingMessages` enables `mqttConfig.enableMessageTrace` from INI.
-- rs485interface logging booleans are parsed through shared message-log INI helper (`tryLoadMessageLogConfigFromIni`) with unchanged key names and error behavior.
+- rs485interface logging booleans are parsed through shared message-log INI helper (`tryLoadMessageLogConfigFromIni`) with unchanged key names and fallback behavior.
 - `buildRs485InterfaceClientRuntime(...)` opens the configured serial adapter during runtime object composition and returns runtime objects by value.
 - runtime-build failures throw `YahaError` formatted through `YahaError::buildMessage()`.
 - serial-open failure in runtime-build path returns code `RS485_RUNTIME_SERIAL_OPEN_FAILED`.

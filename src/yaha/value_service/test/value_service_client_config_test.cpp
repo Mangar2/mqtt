@@ -86,7 +86,7 @@ TEST_CASE("value_service_runtime_config_parses_all_sections", "[value_service]")
     REQUIRE(runtimeConfig.valueServiceConfig.legacyValuesFileName == "legacy.json");
 }
 
-TEST_CASE("value_service_runtime_config_rejects_invalid_subscribe_qos", "[value_service]") {
+TEST_CASE("value_service_runtime_config_falls_back_on_invalid_subscribe_qos", "[value_service]") {
     const std::string iniText =
         "[mqtt]\n"
         "host=127.0.0.1\n"
@@ -97,11 +97,12 @@ TEST_CASE("value_service_runtime_config_rejects_invalid_subscribe_qos", "[value_
     yaha::ValueServiceClientRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-    REQUIRE(errorMessage.find("valueservice.subscribeQoS") != std::string::npos);
+    REQUIRE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.valueServiceConfig.subscribeQos == yaha::Qos::AtLeastOnce);
 }
 
-TEST_CASE("value_service_runtime_config_rejects_invalid_filestore_use", "[value_service]") {
+TEST_CASE("value_service_runtime_config_falls_back_on_invalid_filestore_use", "[value_service]") {
     const std::string iniText =
         "[mqtt]\n"
         "host=127.0.0.1\n"
@@ -112,11 +113,12 @@ TEST_CASE("value_service_runtime_config_rejects_invalid_filestore_use", "[value_
     yaha::ValueServiceClientRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-    REQUIRE(errorMessage.find("filestore.use") != std::string::npos);
+    REQUIRE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.valueServiceConfig.fileStoreEnabled);
 }
 
-TEST_CASE("value_service_runtime_config_rejects_invalid_filestore_retry_interval", "[value_service]") {
+TEST_CASE("value_service_runtime_config_falls_back_on_invalid_filestore_retry_interval", "[value_service]") {
     const std::string iniText =
         "[mqtt]\n"
         "host=127.0.0.1\n"
@@ -127,6 +129,20 @@ TEST_CASE("value_service_runtime_config_rejects_invalid_filestore_retry_interval
     yaha::ValueServiceClientRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-    REQUIRE(errorMessage.find("filestore.startupRetryIntervalSeconds") != std::string::npos);
+    REQUIRE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.valueServiceConfig.fileStoreStartupRetryIntervalSeconds == 60U);
+}
+
+TEST_CASE("value_service_runtime_config_falls_back_on_invalid_mqtt_value", "[value_service]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "loopSleepMs=0\n";
+
+    yaha::ValueServiceClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.mqttConfig.loopSleep == std::chrono::milliseconds{20});
 }

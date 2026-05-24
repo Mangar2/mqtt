@@ -12,6 +12,8 @@ namespace {
 
 constexpr double k_upper_bound_factor{1.7};
 constexpr double k_lower_bound_factor{0.6};
+constexpr double k_default_upper_bound_factor{1.2};
+constexpr double k_large_upper_bound_factor{1001.0};
 
 std::filesystem::path makeTempDirectory() {
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
@@ -120,7 +122,7 @@ TEST_CASE("load_config_uses_default_subscription_when_missing", "[message_store_
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("load_config_rejects_invalid_subscription_qos", "[message_store_client]") {
+TEST_CASE("load_config_falls_back_on_invalid_subscription_qos", "[message_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
         "[subscription]\n"
@@ -130,13 +132,15 @@ TEST_CASE("load_config_rejects_invalid_subscription_qos", "[message_store_client
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
-    REQUIRE_FALSE(errorMessage.empty());
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.storeConfig.subscriptions.size() == 1U);
+    REQUIRE(config.storeConfig.subscriptions.count("#") == 1U);
 
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("load_config_rejects_legacy_subscriptions_section", "[message_store_client]") {
+TEST_CASE("load_config_falls_back_on_legacy_subscriptions_section", "[message_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
         "[subscriptions]\n"
@@ -145,13 +149,15 @@ TEST_CASE("load_config_rejects_legacy_subscriptions_section", "[message_store_cl
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
-    REQUIRE(errorMessage.find("legacy section 'subscriptions'") != std::string::npos);
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.storeConfig.subscriptions.size() == 1U);
+    REQUIRE(config.storeConfig.subscriptions.count("#") == 1U);
 
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("load_config_rejects_invalid_numeric_fields", "[message_store_client]") {
+TEST_CASE("load_config_falls_back_on_invalid_numeric_fields", "[message_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
         "[mqtt]\n"
@@ -160,8 +166,9 @@ TEST_CASE("load_config_rejects_invalid_numeric_fields", "[message_store_client]"
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
-    REQUIRE(errorMessage.find("mqtt.port") != std::string::npos);
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.mqttConfig.brokerPort == 1883U);
 
     removeDirectoryQuiet(tempDir);
 }
@@ -217,7 +224,7 @@ TEST_CASE("load_config_accepts_zero_length_for_further_compression", "[message_s
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("load_config_rejects_invalid_tree_factor_values", "[message_store_client]") {
+TEST_CASE("load_config_falls_back_on_invalid_tree_factor_values", "[message_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
         "[mqtt]\n"
@@ -229,13 +236,14 @@ TEST_CASE("load_config_rejects_invalid_tree_factor_values", "[message_store_clie
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
-    REQUIRE(errorMessage.find("tree.upperBoundFactor") != std::string::npos);
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.storeConfig.treeConfig.upperBoundFactor == k_default_upper_bound_factor);
 
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("load_config_rejects_out_of_range_tree_factor_values", "[message_store_client]") {
+TEST_CASE("load_config_accepts_large_tree_factor_values", "[message_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
         "[mqtt]\n"
@@ -247,13 +255,14 @@ TEST_CASE("load_config_rejects_out_of_range_tree_factor_values", "[message_store
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
-    REQUIRE(errorMessage.find("tree.upperBoundFactor") != std::string::npos);
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.storeConfig.treeConfig.upperBoundFactor == k_large_upper_bound_factor);
 
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("load_config_rejects_subscription_unknown_key", "[message_store_client]") {
+TEST_CASE("load_config_falls_back_on_subscription_unknown_key", "[message_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
         "[mqtt]\n"
@@ -266,13 +275,14 @@ TEST_CASE("load_config_rejects_subscription_unknown_key", "[message_store_client
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
-    REQUIRE(errorMessage.find("unknown key") != std::string::npos);
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.storeConfig.subscriptions.count("#") == 1U);
 
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("load_config_rejects_subscription_qos_without_topic", "[message_store_client]") {
+TEST_CASE("load_config_falls_back_on_subscription_qos_without_topic", "[message_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
         "[mqtt]\n"
@@ -284,13 +294,14 @@ TEST_CASE("load_config_rejects_subscription_qos_without_topic", "[message_store_
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
-    REQUIRE(errorMessage.find("preceding subscription.topic") != std::string::npos);
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.storeConfig.subscriptions.count("#") == 1U);
 
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("load_config_rejects_subscription_topic_without_qos", "[message_store_client]") {
+TEST_CASE("load_config_falls_back_on_subscription_topic_without_qos", "[message_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
         "[mqtt]\n"
@@ -302,13 +313,14 @@ TEST_CASE("load_config_rejects_subscription_topic_without_qos", "[message_store_
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
-    REQUIRE(errorMessage.find("missing subscription.qos") != std::string::npos);
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.storeConfig.subscriptions.count("#") == 1U);
 
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("load_config_rejects_empty_subscription_topic", "[message_store_client]") {
+TEST_CASE("load_config_falls_back_on_empty_subscription_topic", "[message_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
         "[mqtt]\n"
@@ -321,8 +333,9 @@ TEST_CASE("load_config_rejects_empty_subscription_topic", "[message_store_client
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
-    REQUIRE(errorMessage.find("must not be empty") != std::string::npos);
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.storeConfig.subscriptions.count("#") == 1U);
 
     removeDirectoryQuiet(tempDir);
 }
@@ -398,7 +411,7 @@ TEST_CASE("load_config_parses_log_reason_when_disabled", "[message_store_client]
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("load_config_rejects_invalid_log_incoming_messages_value", "[message_store_client]") {
+TEST_CASE("load_config_falls_back_on_invalid_log_incoming_messages_value", "[message_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
         "[mqtt]\n"
@@ -410,13 +423,14 @@ TEST_CASE("load_config_rejects_invalid_log_incoming_messages_value", "[message_s
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
-    REQUIRE(errorMessage.find("messagestore.logIncomingMessages") != std::string::npos);
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE_FALSE(config.logIncomingMessages);
 
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("load_config_rejects_invalid_log_reason_value", "[message_store_client]") {
+TEST_CASE("load_config_falls_back_on_invalid_log_reason_value", "[message_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
         "[mqtt]\n"
@@ -428,8 +442,9 @@ TEST_CASE("load_config_rejects_invalid_log_reason_value", "[message_store_client
     yaha::MessageStoreClientRuntimeConfig config{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
-    REQUIRE(errorMessage.find("messagestore.logReason") != std::string::npos);
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.logReason);
 
     removeDirectoryQuiet(tempDir);
 }

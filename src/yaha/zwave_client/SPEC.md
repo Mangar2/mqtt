@@ -125,19 +125,19 @@ Device row format (`zwave.device` can appear multiple times):
 
 Validation rules:
 
-- `zwave.subscribeQoS` must be in range `0..2` when set.
-- `zwave.qos` must be in range `0..2` when set.
-- `zwave.retain` must be valid boolean token when set.
-- `zwave.logLevel` must be in range `0..4` when set.
-- `zwave.logIncomingMessages` must be valid boolean token when set.
-- `zwave.logOutgoingMessages` must be valid boolean token when set.
-- `zwave.pollIntervalMs` must be in range `1..9223372036854775807` when set.
-- `zwave.commandReactionPollIntervalMs` must be in range `1..9223372036854775807` when set.
-- `zwave.commandReactionTimeoutMs` must be in range `1..9223372036854775807` when set.
-- `filestore.port` must be in range `1..65535` when set.
-- `filestore.use` must be valid boolean token when set.
-- `filestore.startupRetryCount` must be in range `0..1000` when set.
-- `filestore.startupRetryIntervalSeconds` must be in range `1..3600` when set.
+- `zwave.subscribeQoS` must be in range `0..2` when set; invalid values fall back to defaults.
+- `zwave.qos` must be in range `0..2` when set; invalid values fall back to defaults.
+- `zwave.retain` must be valid boolean token when set; invalid values fall back to defaults.
+- `zwave.logLevel` must be in range `0..4` when set; invalid values fall back to defaults.
+- `zwave.logIncomingMessages` must be valid boolean token when set; invalid values fall back to defaults.
+- `zwave.logOutgoingMessages` must be valid boolean token when set; invalid values fall back to defaults.
+- `zwave.pollIntervalMs` must be in range `1..9223372036854775807` when set; invalid values fall back to defaults.
+- `zwave.commandReactionPollIntervalMs` must be in range `1..9223372036854775807` when set; invalid values fall back to defaults.
+- `zwave.commandReactionTimeoutMs` must be in range `1..9223372036854775807` when set; invalid values fall back to defaults.
+- `filestore.port` must be in range `1..65535` when set; invalid values fall back to defaults.
+- `filestore.use` must be valid boolean token when set; invalid values fall back to defaults.
+- `filestore.startupRetryCount` must be in range `0..4294967295` when set; invalid values fall back to defaults.
+- `filestore.startupRetryIntervalSeconds` must be in range `1..4294967295` when set; invalid values fall back to defaults.
 - `zwave.usbDevice` must be present and non-empty.
 - `zwave.usbTopic` must be present and non-empty.
 - `zwave.device` entries are optional; when absent, startup config keeps an empty device list.
@@ -145,6 +145,13 @@ Validation rules:
 - Optional `classId` must be in range `0..65535` when set.
 - Optional `instance` must be in range `0..255` when set.
 - Optional `index` must be in range `0..255` when set.
+
+INI fallback contract:
+
+- Recoverable invalid values emit deterministic `std::cerr` warning lines using
+  `zwave_client[warn] config_fallback ...` and keep the current defaults.
+- Non-recoverable required keys (`zwave.usbDevice`, `zwave.usbTopic`) still fail deterministically.
+- Runtime mapping keeps default MQTT values when `[mqtt]` contains invalid recoverable values.
 
 Logging semantics:
 

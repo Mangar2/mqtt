@@ -145,7 +145,7 @@ TEST_CASE("load_runtime_config_uses_defaults_when_optional_keys_missing", "[brok
     REQUIRE(config.relayPolicyConfig.normalizeQosToAtLeastOnce);
 }
 
-TEST_CASE("load_runtime_config_rejects_invalid_bool_field", "[broker_connector_client]") {
+TEST_CASE("load_runtime_config_falls_back_on_invalid_bool_field", "[broker_connector_client]") {
     const std::string iniText =
         "[sourceHttpBroker]\n"
         "host=127.0.0.1\n"
@@ -163,11 +163,12 @@ TEST_CASE("load_runtime_config_rejects_invalid_bool_field", "[broker_connector_c
     REQUIRE(loadDocumentFromText(iniText, document, errorMessage));
 
     const auto runtimeConfigResult = yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document);
-    REQUIRE_FALSE(runtimeConfigResult.config.has_value());
-    REQUIRE(runtimeConfigResult.errorMessage.find("automation.retainPassthrough") != std::string::npos);
+    REQUIRE(runtimeConfigResult.config.has_value());
+    REQUIRE(runtimeConfigResult.errorMessage.empty());
+    REQUIRE(runtimeConfigResult.config->relayPolicyConfig.retainPassthrough);
 }
 
-TEST_CASE("load_runtime_config_rejects_incomplete_subscription_entry", "[broker_connector_client]") {
+TEST_CASE("load_runtime_config_falls_back_on_incomplete_subscription_entry", "[broker_connector_client]") {
     const std::string iniText =
         "[sourceHttpBroker]\n"
         "host=127.0.0.1\n"
@@ -185,8 +186,9 @@ TEST_CASE("load_runtime_config_rejects_incomplete_subscription_entry", "[broker_
     REQUIRE(loadDocumentFromText(iniText, document, errorMessage));
 
     const auto runtimeConfigResult = yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document);
-    REQUIRE_FALSE(runtimeConfigResult.config.has_value());
-    REQUIRE(runtimeConfigResult.errorMessage.find("incomplete [subscription] entry") != std::string::npos);
+    REQUIRE(runtimeConfigResult.config.has_value());
+    REQUIRE(runtimeConfigResult.errorMessage.empty());
+    REQUIRE(runtimeConfigResult.config->sourceConfig.subscribeTopics.count("#") == 1U);
 }
 
 TEST_CASE("load_runtime_config_ignores_legacy_source_subscriptions_section", "[broker_connector_client]") {
@@ -213,7 +215,7 @@ TEST_CASE("load_runtime_config_ignores_legacy_source_subscriptions_section", "[b
     REQUIRE(config.sourceConfig.subscribeTopics.count("#") == 1U);
 }
 
-TEST_CASE("load_runtime_config_rejects_invalid_monitoring_log_incoming", "[broker_connector_client]") {
+TEST_CASE("load_runtime_config_falls_back_on_invalid_monitoring_log_incoming", "[broker_connector_client]") {
     const std::string iniText =
         "[sourceHttpBroker]\n"
         "host=127.0.0.1\n"
@@ -231,6 +233,7 @@ TEST_CASE("load_runtime_config_rejects_invalid_monitoring_log_incoming", "[broke
     REQUIRE(loadDocumentFromText(iniText, document, errorMessage));
 
     const auto runtimeConfigResult = yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document);
-    REQUIRE_FALSE(runtimeConfigResult.config.has_value());
-    REQUIRE(runtimeConfigResult.errorMessage.find("monitoring.logIncomingMessage") != std::string::npos);
+    REQUIRE(runtimeConfigResult.config.has_value());
+    REQUIRE(runtimeConfigResult.errorMessage.empty());
+    REQUIRE(runtimeConfigResult.config->sourceConfig.logIncomingMessages);
 }

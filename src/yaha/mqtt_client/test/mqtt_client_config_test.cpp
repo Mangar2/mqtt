@@ -75,7 +75,7 @@ TEST_CASE("mqtt_client_config_maps_optional_mqtt_fields", "[mqtt_client]") {
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("mqtt_client_config_rejects_invalid_numeric_values", "[mqtt_client]") {
+TEST_CASE("mqtt_client_config_falls_back_on_invalid_numeric_values", "[mqtt_client]") {
     const auto tempDir = makeTempDirectory();
     const auto iniPath = writeIniFile(tempDir,
         "[mqtt]\n"
@@ -86,13 +86,14 @@ TEST_CASE("mqtt_client_config_rejects_invalid_numeric_values", "[mqtt_client]") 
     REQUIRE(loadDocument(iniPath, document, errorMessage));
 
     yaha::YahaMqttClient::Config config{};
-    REQUIRE_FALSE(yaha::tryLoadMqttClientConfigFromIni(document, config, errorMessage));
-    REQUIRE(errorMessage == "invalid unsigned value for 'mqtt.port' (expected 1..65535, got 'abc')");
+    REQUIRE(yaha::tryLoadMqttClientConfigFromIni(document, config, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.brokerPort == 1883U);
 
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("mqtt_client_config_rejects_invalid_log_reason_value", "[mqtt_client]") {
+TEST_CASE("mqtt_client_config_falls_back_on_invalid_log_reason_value", "[mqtt_client]") {
     const auto tempDir = makeTempDirectory();
     const auto iniPath = writeIniFile(tempDir,
         "[mqtt]\n"
@@ -104,8 +105,9 @@ TEST_CASE("mqtt_client_config_rejects_invalid_log_reason_value", "[mqtt_client]"
     REQUIRE(loadDocument(iniPath, document, errorMessage));
 
     yaha::YahaMqttClient::Config config{};
-    REQUIRE_FALSE(yaha::tryLoadMqttClientConfigFromIni(document, config, errorMessage));
-    REQUIRE(errorMessage.find("mqtt.logReason") != std::string::npos);
+    REQUIRE(yaha::tryLoadMqttClientConfigFromIni(document, config, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.logReason);
 
     removeDirectoryQuiet(tempDir);
 }

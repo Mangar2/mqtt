@@ -70,10 +70,17 @@ Semantics:
 
 Validation rules:
 - `filestore.port` must be `1..65535`.
-- `filestore.startupRetryCount` must be `0..1000`.
-- `filestore.startupRetryIntervalSeconds` must be `1..3600`.
+- `filestore.startupRetryCount` must be `0..uint32_max`.
+- `filestore.startupRetryIntervalSeconds` must be `1..uint32_max`.
 - `valueservice.subscribeQoS` must be `0..2`.
 - `filestore.use` must be valid boolean token.
+
+INI error handling:
+- Invalid recoverable values do not abort config loading.
+- For invalid recoverable values, loader writes deterministic warning logs to
+  `std::cerr` and keeps the current default value.
+- Runtime config load does not fail when MQTT sub-loader rejects one value;
+  ValueService keeps MQTT defaults and logs warning context.
 
 ## Files
 

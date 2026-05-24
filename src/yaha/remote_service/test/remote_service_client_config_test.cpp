@@ -111,7 +111,7 @@ TEST_CASE("remote_service_runtime_config_rejects_missing_filestore_host", "[remo
     REQUIRE(errorMessage.find("filestore.host") != std::string::npos);
 }
 
-TEST_CASE("remote_service_runtime_config_rejects_invalid_subscribe_qos", "[remote_service]") {
+TEST_CASE("remote_service_runtime_config_falls_back_on_invalid_subscribe_qos", "[remote_service]") {
     const std::string iniText =
         "[mqtt]\n"
         "host=127.0.0.1\n"
@@ -127,11 +127,12 @@ TEST_CASE("remote_service_runtime_config_rejects_invalid_subscribe_qos", "[remot
     yaha::RemoteServiceClientRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-    REQUIRE(errorMessage.find("remoteservice.subscribeQoS") != std::string::npos);
+    REQUIRE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.remoteServiceConfig.subscribeQos == yaha::Qos::AtLeastOnce);
 }
 
-TEST_CASE("remote_service_runtime_config_rejects_invalid_filestore_port", "[remote_service]") {
+TEST_CASE("remote_service_runtime_config_falls_back_on_invalid_filestore_port", "[remote_service]") {
     const std::string iniText =
         "[mqtt]\n"
         "host=127.0.0.1\n"
@@ -144,6 +145,42 @@ TEST_CASE("remote_service_runtime_config_rejects_invalid_filestore_port", "[remo
     yaha::RemoteServiceClientRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-    REQUIRE(errorMessage.find("filestore.port") != std::string::npos);
+    REQUIRE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.remoteServiceConfig.fileStorePort == 8210U);
+}
+
+TEST_CASE("remote_service_runtime_config_falls_back_on_missing_filestore_port", "[remote_service]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "host=127.0.0.1\n"
+        "\n"
+        "[filestore]\n"
+        "host=127.0.0.2\n"
+        "filename=/remoteservice/mapping\n";
+
+    yaha::RemoteServiceClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.remoteServiceConfig.fileStorePort == 8210U);
+}
+
+TEST_CASE("remote_service_runtime_config_falls_back_on_invalid_mqtt_value", "[remote_service]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "loopSleepMs=0\n"
+        "\n"
+        "[filestore]\n"
+        "host=127.0.0.2\n"
+        "port=8220\n"
+        "filename=/remoteservice/mapping\n";
+
+    yaha::RemoteServiceClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.mqttConfig.loopSleep == std::chrono::milliseconds{20});
 }

@@ -38,9 +38,9 @@ loadRuntimeConfigFromFile(const std::filesystem::path& configPath) {
         document = yaha::IniDocument::loadFromFile(configPath);
     } catch (const std::exception& exceptionValue) {
         return yaha::FileStoreClientRuntimeConfigLoadResult{
-            false,
-            {},
-            exceptionValue.what()};
+            .success = false,
+            .config = {},
+            .errorMessage = exceptionValue.what()};
     }
 
     return yaha::loadFileStoreClientRuntimeConfigFromIni(document);
@@ -48,6 +48,7 @@ loadRuntimeConfigFromFile(const std::filesystem::path& configPath) {
 
 } // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("load_config_parses_mqtt_filestore_and_monitoring_sections", "[file_store_client]") {
     const auto tempDir = makeTempDirectory();
 
@@ -118,59 +119,64 @@ TEST_CASE("load_config_uses_defaults_when_sections_missing", "[file_store_client
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("load_config_rejects_invalid_monitoring_qos", "[file_store_client]") {
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("load_config_falls_back_on_invalid_monitoring_qos", "[file_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
         "[monitoring]\n"
         "qos = 9\n");
 
     const auto loadResult = loadRuntimeConfigFromFile(configPath);
-    REQUIRE_FALSE(loadResult.success);
-    REQUIRE_FALSE(loadResult.errorMessage.empty());
+    REQUIRE(loadResult.success);
+    REQUIRE(loadResult.errorMessage.empty());
+    REQUIRE(loadResult.config.storeConfig.monitoring.qos == yaha::Qos::AtLeastOnce);
 
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("load_config_rejects_invalid_bool_field", "[file_store_client]") {
+TEST_CASE("load_config_falls_back_on_invalid_bool_field", "[file_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
         "[monitoring]\n"
         "retain = maybe\n");
 
     const auto loadResult = loadRuntimeConfigFromFile(configPath);
-    REQUIRE_FALSE(loadResult.success);
-    REQUIRE_FALSE(loadResult.errorMessage.empty());
+    REQUIRE(loadResult.success);
+    REQUIRE(loadResult.errorMessage.empty());
+    REQUIRE_FALSE(loadResult.config.storeConfig.monitoring.retain);
 
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("load_config_rejects_invalid_server_port", "[file_store_client]") {
+TEST_CASE("load_config_falls_back_on_invalid_server_port", "[file_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
         "[server]\n"
         "port = invalid\n");
 
     const auto loadResult = loadRuntimeConfigFromFile(configPath);
-    REQUIRE_FALSE(loadResult.success);
-    REQUIRE_FALSE(loadResult.errorMessage.empty());
+    REQUIRE(loadResult.success);
+    REQUIRE(loadResult.errorMessage.empty());
+    REQUIRE(loadResult.config.storeConfig.serverPort == 8210U);
 
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("load_config_rejects_invalid_watch_interval", "[file_store_client]") {
+TEST_CASE("load_config_accepts_large_watch_interval", "[file_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
         "[monitoring]\n"
         "watchIntervalMs = 9999999\n");
 
     const auto loadResult = loadRuntimeConfigFromFile(configPath);
-    REQUIRE_FALSE(loadResult.success);
-    REQUIRE_FALSE(loadResult.errorMessage.empty());
+    REQUIRE(loadResult.success);
+    REQUIRE(loadResult.errorMessage.empty());
+    REQUIRE(loadResult.config.storeConfig.monitoring.watchIntervalMs == 9999999U);
 
     removeDirectoryQuiet(tempDir);
 }
 
-TEST_CASE("load_runtime_config_rejects_invalid_mqtt_port", "[file_store_client]") {
+TEST_CASE("load_runtime_config_falls_back_on_invalid_mqtt_port", "[file_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
         "[mqtt]\n"
@@ -181,8 +187,9 @@ TEST_CASE("load_runtime_config_rejects_invalid_mqtt_port", "[file_store_client]"
         "directory = data-store\n");
 
     const auto loadResult = loadRuntimeConfigFromFile(configPath);
-    REQUIRE_FALSE(loadResult.success);
-    REQUIRE_FALSE(loadResult.errorMessage.empty());
+    REQUIRE(loadResult.success);
+    REQUIRE(loadResult.errorMessage.empty());
+    REQUIRE(loadResult.config.mqttConfig.brokerPort == 1883U);
 
     removeDirectoryQuiet(tempDir);
 }

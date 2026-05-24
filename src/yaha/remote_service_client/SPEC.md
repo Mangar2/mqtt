@@ -35,10 +35,20 @@ Supported INI sections:
 Validation rules:
 
 - `filestore.host` must be present and non-empty.
-- `filestore.port` must be present and in range `1..65535`.
+- `filestore.port` must be in range `1..65535` when set.
 - `filestore.filename` must be present and non-empty.
 - `remoteservice.listenPort` must be in range `1..65535` when set.
 - `remoteservice.subscribeQoS` must be in range `0..2` when set.
+
+INI error handling:
+- Invalid recoverable values do not abort config loading.
+- For invalid recoverable values, loader writes deterministic warning logs to
+  `std::cerr` and keeps the current default value.
+- Missing `filestore.port` falls back to `RemoteServiceConfig` default port with warning.
+- Missing `filestore.host` and missing `filestore.filename` remain non-recoverable
+  and fail config loading deterministically.
+- Runtime config load does not fail when MQTT sub-loader rejects one value;
+  RemoteService keeps MQTT defaults and logs warning context.
 
 Mapping rules:
 

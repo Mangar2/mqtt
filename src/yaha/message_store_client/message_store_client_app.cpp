@@ -7,17 +7,37 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
+#include <iostream>
+#include <limits>
 #include <optional>
+#include <string_view>
 #include <utility>
 
 namespace yaha {
 
 namespace {
 
-constexpr std::uint64_t k_tree_uint_max{100000U};
-constexpr std::uint64_t k_tree_interval_adjustment_max{100000000U};
+constexpr std::uint64_t k_tree_uint_max{static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max())};
+constexpr std::uint64_t k_tree_interval_adjustment_max{
+    static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max())};
 constexpr double k_tree_factor_min{0.0};
-constexpr double k_tree_factor_max{1000.0};
+constexpr double k_tree_factor_max{std::numeric_limits<double>::max()};
+
+void logConfigFallbackWarning(
+    const std::string_view serviceName,
+    const std::string_view sectionName,
+    const std::string_view keyName,
+    const std::string& rawValue,
+    const std::string& defaultValue,
+    const std::string& reasonText) {
+    std::cerr << serviceName << "[warn] config_fallback"
+              << " section=" << sectionName
+              << " key=" << keyName
+              << " value='" << rawValue << "'"
+              << " default='" << defaultValue << "'"
+              << " reason='" << reasonText << "'"
+              << '\n' << std::flush;
+}
 
 bool tryLoadMessageStoreSubscriptionsFromIni(
     const IniDocument& document,
@@ -83,8 +103,16 @@ bool tryReadTreeUnsigned(const IniDocument& document,
                          std::string& errorMessage) {
     const auto readResult = document.readUnsigned("tree", key, minValue, maxValue);
     if (!readResult.second.empty()) {
-        errorMessage = readResult.second;
-        return false;
+        const std::string rawValue = document.lastValue("tree", key).value_or("<missing>");
+        logConfigFallbackWarning(
+            "message_store_client",
+            "tree",
+            key,
+            rawValue,
+            std::to_string(output),
+            readResult.second);
+        errorMessage.clear();
+        return true;
     }
     if (readResult.first.has_value()) {
         output = static_cast<std::uint32_t>(*readResult.first);
@@ -107,13 +135,26 @@ bool tryReadTreeDouble(const IniDocument& document,
     char* endPtr = nullptr;
     const double parsedValue = std::strtod(configuredValue->c_str(), &endPtr);
     if (endPtr == configuredValue->c_str() || (endPtr != nullptr && *endPtr != '\0')) {
-        errorMessage = "tree." + key + " must be a floating-point number";
-        return false;
+        logConfigFallbackWarning(
+            "message_store_client",
+            "tree",
+            key,
+            *configuredValue,
+            std::to_string(output),
+            "must be a floating-point number");
+        errorMessage.clear();
+        return true;
     }
     if (errno == ERANGE || parsedValue < minValue || parsedValue > maxValue) {
-        errorMessage = "tree." + key + " must be in range ["
-            + std::to_string(minValue) + ", " + std::to_string(maxValue) + "]";
-        return false;
+        logConfigFallbackWarning(
+            "message_store_client",
+            "tree",
+            key,
+            *configuredValue,
+            std::to_string(output),
+            "must be in supported range");
+        errorMessage.clear();
+        return true;
     }
 
     output = parsedValue;
@@ -126,6 +167,8 @@ bool tryLoadMessageStoreConfigFromIni(
     const IniDocument& document,
     MessageStoreConfig& output,
     std::string& errorMessage) {
+    errorMessage.clear();
+
     if (const auto cleanupTopic = document.lastValue("messagestore", "cleanupTopic");
         cleanupTopic.has_value()) {
         output.cleanupTopic = *cleanupTopic;
@@ -160,19 +203,39 @@ bool tryLoadMessageStoreConfigFromIni(
         output.persistenceConfig.filename = *persistFilename;
     }
 
-    const auto intervalResult = document.readUnsigned("persist", "intervalMs", 0U, 86400000U);
+    const auto intervalResult = document.readUnsigned(
+        "persist",
+        "intervalMs",
+        0U,
+        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()));
     if (!intervalResult.second.empty()) {
-        errorMessage = intervalResult.second;
-        return false;
+        const std::string rawValue = document.lastValue("persist", "intervalMs").value_or("<missing>");
+        logConfigFallbackWarning(
+            "message_store_client",
+            "persist",
+            "intervalMs",
+            rawValue,
+            std::to_string(output.persistenceConfig.intervalMs),
+            intervalResult.second);
     }
     if (intervalResult.first.has_value()) {
         output.persistenceConfig.intervalMs = static_cast<std::uint32_t>(*intervalResult.first);
     }
 
-    const auto keepFilesResult = document.readUnsigned("persist", "keepFiles", 0U, 1024U);
+    const auto keepFilesResult = document.readUnsigned(
+        "persist",
+        "keepFiles",
+        0U,
+        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()));
     if (!keepFilesResult.second.empty()) {
-        errorMessage = keepFilesResult.second;
-        return false;
+        const std::string rawValue = document.lastValue("persist", "keepFiles").value_or("<missing>");
+        logConfigFallbackWarning(
+            "message_store_client",
+            "persist",
+            "keepFiles",
+            rawValue,
+            std::to_string(output.persistenceConfig.keepFiles),
+            keepFilesResult.second);
     }
     if (keepFilesResult.first.has_value()) {
         output.persistenceConfig.keepFiles = static_cast<std::uint32_t>(*keepFilesResult.first);
@@ -245,7 +308,15 @@ bool tryLoadMessageStoreConfigFromIni(
 
     SubscriptionMap parsedSubscriptions{};
     if (!tryLoadMessageStoreSubscriptionsFromIni(document, parsedSubscriptions, errorMessage)) {
-        return false;
+        logConfigFallbackWarning(
+            "message_store_client",
+            "subscription",
+            "*",
+            "<composite>",
+            "#=1",
+            errorMessage);
+        parsedSubscriptions.clear();
+        errorMessage.clear();
     }
 
     if (parsedSubscriptions.empty()) {
@@ -261,12 +332,22 @@ bool tryLoadMessageStoreClientRuntimeConfigFromIni(
     const IniDocument& document,
     MessageStoreClientRuntimeConfig& output,
     std::string& errorMessage) {
+    errorMessage.clear();
+
     MessageStoreClientRuntimeConfig parsed{};
     if (!tryLoadMessageStoreConfigFromIni(document, parsed.storeConfig, errorMessage)) {
         return false;
     }
-    if (!tryLoadMqttClientConfigFromIni(document, parsed.mqttConfig, errorMessage)) {
-        return false;
+
+    std::string mqttErrorMessage{};
+    if (!tryLoadMqttClientConfigFromIni(document, parsed.mqttConfig, mqttErrorMessage)) {
+        logConfigFallbackWarning(
+            "message_store_client",
+            "mqtt",
+            "*",
+            "<composite>",
+            "defaults",
+            mqttErrorMessage);
     }
 
     MessageLogConfig messageLogConfig{
@@ -283,7 +364,14 @@ bool tryLoadMessageStoreClientRuntimeConfigFromIni(
             },
             messageLogConfig,
             errorMessage)) {
-        return false;
+        logConfigFallbackWarning(
+            "message_store_client",
+            "messagestore",
+            "log*",
+            "<composite>",
+            "defaults",
+            errorMessage);
+        errorMessage.clear();
     }
 
     parsed.logIncomingMessages = messageLogConfig.enableIncoming;
@@ -291,6 +379,7 @@ bool tryLoadMessageStoreClientRuntimeConfigFromIni(
     parsed.mqttConfig.logReason = messageLogConfig.includeReasonChain;
 
     output = std::move(parsed);
+    errorMessage.clear();
     return true;
 }
 

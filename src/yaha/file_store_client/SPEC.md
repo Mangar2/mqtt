@@ -33,6 +33,14 @@ Supported INI sections:
 - `[monitoring]`
   - `enabled`, `topicPrefix`, `qos`, `retain`, `watchIntervalMs`
 
+Validation and fallback behavior:
+- Invalid recoverable values do not abort config loading.
+- For invalid recoverable values, loader writes deterministic warning logs to
+  `std::cerr` and keeps the current default value.
+- `monitoring.watchIntervalMs` uses `1..uint32_max` (removed arbitrary upper cap).
+- Runtime config load does not fail when MQTT sub-loader rejects one value;
+  FileStore keeps MQTT defaults and logs warning context.
+
 ## Files
 
 | File | Role |

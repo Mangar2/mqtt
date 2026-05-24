@@ -165,6 +165,22 @@ std::string resolveCompatibilityToken(const httplib::Request& request, const Htt
     return "";
 }
 
+void logConfigFallbackWarning(
+    const std::string_view serviceName,
+    const std::string_view sectionName,
+    const std::string_view keyName,
+    const std::string& rawValue,
+    const std::string& defaultValue,
+    const std::string& reasonText) {
+    std::cerr << serviceName << "[warn] config_fallback"
+              << " section=" << sectionName
+              << " key=" << keyName
+              << " value='" << rawValue << "'"
+              << " default='" << defaultValue << "'"
+              << " reason='" << reasonText << "'"
+              << '\n' << std::flush;
+}
+
 } // namespace
 
 struct HttpMqttInterfaceClientComponent::Impl {
@@ -429,8 +445,14 @@ bool tryLoadHttpMqttInterfaceClientConfigFromIni(
         1U,
         65535U);
     if (!portError.empty()) {
-        errorOutput = portError;
-        return false;
+        const std::string rawValue = iniDocument.lastValue(k_httpSection, k_listenerPortKey).value_or("<missing>");
+        logConfigFallbackWarning(
+            "http_mqtt_interface_client",
+            k_httpSection,
+            k_listenerPortKey,
+            rawValue,
+            std::to_string(configOutput.listenerPort),
+            portError);
     }
     if (maybePort.has_value()) {
         configOutput.listenerPort = static_cast<std::uint16_t>(*maybePort);
@@ -440,8 +462,15 @@ bool tryLoadHttpMqttInterfaceClientConfigFromIni(
         k_httpSection,
         k_enablePublishPhpAliasKey);
     if (!publishPhpAliasError.empty()) {
-        errorOutput = publishPhpAliasError;
-        return false;
+        const std::string rawValue =
+            iniDocument.lastValue(k_httpSection, k_enablePublishPhpAliasKey).value_or("<missing>");
+        logConfigFallbackWarning(
+            "http_mqtt_interface_client",
+            k_httpSection,
+            k_enablePublishPhpAliasKey,
+            rawValue,
+            configOutput.enablePublishPhpAlias ? "true" : "false",
+            publishPhpAliasError);
     }
     if (maybePublishPhpAlias.has_value()) {
         configOutput.enablePublishPhpAlias = *maybePublishPhpAlias;
@@ -451,17 +480,32 @@ bool tryLoadHttpMqttInterfaceClientConfigFromIni(
         k_httpSection,
         k_useLegacyPhpResponseKey);
     if (!legacyResponseError.empty()) {
-        errorOutput = legacyResponseError;
-        return false;
+        const std::string rawValue =
+            iniDocument.lastValue(k_httpSection, k_useLegacyPhpResponseKey).value_or("<missing>");
+        logConfigFallbackWarning(
+            "http_mqtt_interface_client",
+            k_httpSection,
+            k_useLegacyPhpResponseKey,
+            rawValue,
+            configOutput.useLegacyPhpResponse ? "true" : "false",
+            legacyResponseError);
     }
     if (maybeLegacyResponse.has_value()) {
         configOutput.useLegacyPhpResponse = *maybeLegacyResponse;
     }
 
-    if (!tryLoadMqttClientConfigFromIni(iniDocument, configOutput.mqttConfig, errorOutput)) {
-        return false;
+    std::string mqttErrorMessage{};
+    if (!tryLoadMqttClientConfigFromIni(iniDocument, configOutput.mqttConfig, mqttErrorMessage)) {
+        logConfigFallbackWarning(
+            "http_mqtt_interface_client",
+            "mqtt",
+            "*",
+            "<composite>",
+            "defaults",
+            mqttErrorMessage);
     }
 
+    errorOutput.clear();
     return true;
 }
 

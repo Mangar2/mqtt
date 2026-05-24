@@ -210,7 +210,7 @@ TEST_CASE("Message log service ini loader parses singular legacy monitoring keys
     REQUIRE(config.includeReasonChain);
 }
 
-TEST_CASE("Message log service ini loader reports invalid bool key", "[message][message_log_service]") {
+TEST_CASE("Message log service ini loader falls back on invalid bool key", "[message][message_log_service]") {
     const yaha::IniDocument document = loadIniDocument(
         "[automation]\n"
         "logIncomingMessages=maybe\n");
@@ -228,6 +228,7 @@ TEST_CASE("Message log service ini loader reports invalid bool key", "[message][
         config,
         errorMessage);
 
-    REQUIRE_FALSE(loaded);
-    REQUIRE(errorMessage.find("automation.logIncomingMessages") != std::string::npos);
+    REQUIRE(loaded);
+    REQUIRE(errorMessage.empty());
+    REQUIRE_FALSE(config.enableIncoming);
 }

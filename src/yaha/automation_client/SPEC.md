@@ -54,6 +54,15 @@ Automation rule synchronization with FileStore and MQTT rule-management topics.
 | `tryLoadAutomationClientConfigFromIni` | `(const IniDocument&, AutomationClientConfig&, std::string&) -> bool` | Maps automation + filestore fields; supports legacy `monitoring.topicPrefix` fallback and uses shared message-log INI helper for `automation.logIncomingMessages` / `automation.logOutgoingMessages` |
 | `tryLoadAutomationClientRuntimeConfigFromIni` | `(const IniDocument&, AutomationClientRuntimeConfig&, std::string&) -> bool` | Maps full runtime config |
 
+INI error handling:
+- Invalid recoverable values do not abort config loading.
+- For invalid recoverable values, loader writes deterministic warning logs to
+  `std::cerr` and keeps the current default value.
+- `filestore.startupRetryCount` uses `0..uint32_max`.
+- `filestore.startupRetryIntervalSeconds` uses `1..uint32_max`.
+- Runtime config load does not fail when MQTT/message-log sub-loaders reject one
+  value; defaults are kept with warning context.
+
 ## Behavior
 
 - Startup (`run`) performs FileStore GET on `rulesKeyPath` when enabled.

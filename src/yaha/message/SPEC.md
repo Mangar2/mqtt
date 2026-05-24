@@ -103,7 +103,7 @@ Deterministic formatting contract:
 INI compatibility mapping contract:
 - shared helper `tryLoadMessageLogConfigFromIni(...)` maps per-client boolean INI keys into `MessageLogConfig`.
 - missing keys keep caller defaults unchanged.
-- invalid bool values return `false` and preserve field-specific parser errors from `IniDocument::readBool`.
+- invalid bool values keep defaults, emit deterministic warning logs to `std::cerr`, and do not abort loader success.
 - callers can map both plural keys (`logIncomingMessages` / `logOutgoingMessages`) and legacy singular monitoring keys (`logIncomingMessage` / `logOutgoingMessage`).
 
 ### Class `Message`

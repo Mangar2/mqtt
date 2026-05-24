@@ -79,7 +79,7 @@ TEST_CASE("load_automation_client_runtime_config_from_ini", "[automation_client]
 }
 // NOLINTEND(readability-function-cognitive-complexity)
 
-TEST_CASE("load_automation_client_runtime_config_reports_invalid_longitude", "[automation_client]") {
+TEST_CASE("load_automation_client_runtime_config_falls_back_on_invalid_longitude", "[automation_client]") {
     const std::string iniText =
         "[mqtt]\n"
         "host=127.0.0.1\n"
@@ -99,13 +99,14 @@ TEST_CASE("load_automation_client_runtime_config_reports_invalid_longitude", "[a
         runtimeConfig,
         errorMessage);
 
-    REQUIRE_FALSE(success);
-    REQUIRE(errorMessage == "invalid value for automation.longitude");
+    REQUIRE(success);
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.automationConfig.longitude == 0.0);
 
     std::filesystem::remove(iniPath);
 }
 
-TEST_CASE("load_automation_client_runtime_config_reports_invalid_filestore_retry_values", "[automation_client]") {
+TEST_CASE("load_automation_client_runtime_config_falls_back_on_invalid_filestore_retry_values", "[automation_client]") {
     const std::string iniText =
         "[mqtt]\n"
         "host=127.0.0.1\n"
@@ -125,13 +126,14 @@ TEST_CASE("load_automation_client_runtime_config_reports_invalid_filestore_retry
         runtimeConfig,
         errorMessage);
 
-    REQUIRE_FALSE(success);
-    REQUIRE(errorMessage.find("filestore.startupRetryIntervalSeconds") != std::string::npos);
+    REQUIRE(success);
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.automationConfig.fileStoreStartupRetryIntervalSeconds == 60U);
 
     std::filesystem::remove(iniPath);
 }
 
-TEST_CASE("load_automation_client_runtime_config_reports_invalid_latitude", "[automation_client]") {
+TEST_CASE("load_automation_client_runtime_config_falls_back_on_invalid_latitude", "[automation_client]") {
     const std::string iniText =
         "[mqtt]\n"
         "host=127.0.0.1\n"
@@ -151,8 +153,9 @@ TEST_CASE("load_automation_client_runtime_config_reports_invalid_latitude", "[au
         runtimeConfig,
         errorMessage);
 
-    REQUIRE_FALSE(success);
-    REQUIRE(errorMessage == "invalid value for automation.latitude");
+    REQUIRE(success);
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.automationConfig.latitude == 0.0);
 
     std::filesystem::remove(iniPath);
 }
@@ -182,7 +185,7 @@ TEST_CASE("load_automation_client_runtime_config_defaults_logging_flags_to_false
     std::filesystem::remove(iniPath);
 }
 
-TEST_CASE("load_automation_client_runtime_config_reports_invalid_log_incoming_messages", "[automation_client]") {
+TEST_CASE("load_automation_client_runtime_config_falls_back_on_invalid_log_incoming_messages", "[automation_client]") {
     const std::string iniText =
         "[mqtt]\n"
         "host=127.0.0.1\n"
@@ -202,13 +205,14 @@ TEST_CASE("load_automation_client_runtime_config_reports_invalid_log_incoming_me
         runtimeConfig,
         errorMessage);
 
-    REQUIRE_FALSE(success);
-    REQUIRE(errorMessage.find("automation.logIncomingMessages") != std::string::npos);
+    REQUIRE(success);
+    REQUIRE(errorMessage.empty());
+    REQUIRE_FALSE(runtimeConfig.automationConfig.logIncomingMessages);
 
     std::filesystem::remove(iniPath);
 }
 
-TEST_CASE("load_automation_client_runtime_config_reports_invalid_log_outgoing_messages", "[automation_client]") {
+TEST_CASE("load_automation_client_runtime_config_falls_back_on_invalid_log_outgoing_messages", "[automation_client]") {
     const std::string iniText =
         "[mqtt]\n"
         "host=127.0.0.1\n"
@@ -228,8 +232,31 @@ TEST_CASE("load_automation_client_runtime_config_reports_invalid_log_outgoing_me
         runtimeConfig,
         errorMessage);
 
-    REQUIRE_FALSE(success);
-    REQUIRE(errorMessage.find("automation.logOutgoingMessages") != std::string::npos);
+    REQUIRE(success);
+    REQUIRE(errorMessage.empty());
+    REQUIRE_FALSE(runtimeConfig.automationConfig.logOutgoingMessages);
+
+    std::filesystem::remove(iniPath);
+}
+
+TEST_CASE("load_automation_client_runtime_config_falls_back_on_invalid_mqtt_values", "[automation_client]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "loopSleepMs=0\n";
+
+    const auto iniPath = writeTempIni(iniText);
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniPath);
+
+    yaha::AutomationClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+    const bool success = yaha::tryLoadAutomationClientRuntimeConfigFromIni(
+        document,
+        runtimeConfig,
+        errorMessage);
+
+    REQUIRE(success);
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.mqttConfig.loopSleep == std::chrono::milliseconds{20});
 
     std::filesystem::remove(iniPath);
 }

@@ -65,6 +65,23 @@ constexpr int kFileStoreWriteTimeoutSeconds = 1;
 constexpr int kHttpOkStatus = 200;
 constexpr int kHttpNotFoundStatus = 404;
 
+void logConfigFallbackWarning(
+    std::string_view serviceName,
+    std::string_view sectionName,
+    std::string_view keyName,
+    const std::string& rawValue,
+    const std::string& defaultValue,
+    const std::string& reasonText) {
+    std::cerr << serviceName
+              << "[warn] config_fallback section=" << sectionName
+              << " key=" << keyName
+              << " value='" << rawValue
+              << "' default='" << defaultValue
+              << "' reason='" << reasonText
+              << "'\n"
+              << std::flush;
+}
+
 [[nodiscard]] std::vector<std::string> splitDeviceLine(const std::string& line) {
     std::vector<std::string> fields{};
     std::size_t fieldStart = 0U;
@@ -227,7 +244,14 @@ constexpr int kHttpNotFoundStatus = 404;
             },
             messageLogConfig,
             errorMessage)) {
-        return false;
+        logConfigFallbackWarning(
+            "zwave_client",
+            "zwave",
+            "log*",
+            "<composite>",
+            "defaults",
+            errorMessage);
+        errorMessage.clear();
     }
 
     parsed.logIncomingMessages = messageLogConfig.enableIncoming;
@@ -235,8 +259,15 @@ constexpr int kHttpNotFoundStatus = 404;
 
     const auto logLevelResult = document.readUnsigned("zwave", "logLevel", kLogLevelMin, kLogLevelMax);
     if (!logLevelResult.second.empty()) {
-        errorMessage = logLevelResult.second;
-        return false;
+        const std::string rawValue = document.lastValue("zwave", "logLevel").value_or("<missing>");
+        logConfigFallbackWarning(
+            "zwave_client",
+            "zwave",
+            "logLevel",
+            rawValue,
+            std::to_string(parsed.logLevel),
+            logLevelResult.second);
+        errorMessage.clear();
     }
     if (logLevelResult.first.has_value()) {
         parsed.logLevel = static_cast<std::uint8_t>(*logLevelResult.first);
@@ -252,8 +283,15 @@ constexpr int kHttpNotFoundStatus = 404;
     const auto pollIntervalResult =
         document.readUnsigned("zwave", "pollIntervalMs", kPollIntervalMsMin, kPollIntervalMsMax);
     if (!pollIntervalResult.second.empty()) {
-        errorMessage = pollIntervalResult.second;
-        return false;
+        const std::string rawValue = document.lastValue("zwave", "pollIntervalMs").value_or("<missing>");
+        logConfigFallbackWarning(
+            "zwave_client",
+            "zwave",
+            "pollIntervalMs",
+            rawValue,
+            std::to_string(parsed.pollIntervalMs),
+            pollIntervalResult.second);
+        errorMessage.clear();
     }
     if (pollIntervalResult.first.has_value()) {
         parsed.pollIntervalMs = static_cast<std::int64_t>(*pollIntervalResult.first);
@@ -265,8 +303,16 @@ constexpr int kHttpNotFoundStatus = 404;
         kCommandReactionPollIntervalMsMin,
         kCommandReactionPollIntervalMsMax);
     if (!commandReactionPollIntervalResult.second.empty()) {
-        errorMessage = commandReactionPollIntervalResult.second;
-        return false;
+        const std::string rawValue =
+            document.lastValue("zwave", "commandReactionPollIntervalMs").value_or("<missing>");
+        logConfigFallbackWarning(
+            "zwave_client",
+            "zwave",
+            "commandReactionPollIntervalMs",
+            rawValue,
+            std::to_string(parsed.commandReactionPollIntervalMs),
+            commandReactionPollIntervalResult.second);
+        errorMessage.clear();
     }
     if (commandReactionPollIntervalResult.first.has_value()) {
         parsed.commandReactionPollIntervalMs = static_cast<std::int64_t>(*commandReactionPollIntervalResult.first);
@@ -278,8 +324,15 @@ constexpr int kHttpNotFoundStatus = 404;
         kCommandReactionTimeoutMsMin,
         kCommandReactionTimeoutMsMax);
     if (!commandReactionTimeoutResult.second.empty()) {
-        errorMessage = commandReactionTimeoutResult.second;
-        return false;
+        const std::string rawValue = document.lastValue("zwave", "commandReactionTimeoutMs").value_or("<missing>");
+        logConfigFallbackWarning(
+            "zwave_client",
+            "zwave",
+            "commandReactionTimeoutMs",
+            rawValue,
+            std::to_string(parsed.commandReactionTimeoutMs),
+            commandReactionTimeoutResult.second);
+        errorMessage.clear();
     }
     if (commandReactionTimeoutResult.first.has_value()) {
         parsed.commandReactionTimeoutMs = static_cast<std::int64_t>(*commandReactionTimeoutResult.first);
@@ -298,8 +351,15 @@ constexpr int kHttpNotFoundStatus = 404;
 
     const auto fileStorePortResult = document.readUnsigned("filestore", "port", 1U, 65535U);
     if (!fileStorePortResult.second.empty()) {
-        errorMessage = fileStorePortResult.second;
-        return false;
+        const std::string rawValue = document.lastValue("filestore", "port").value_or("<missing>");
+        logConfigFallbackWarning(
+            "zwave_client",
+            "filestore",
+            "port",
+            rawValue,
+            std::to_string(parsed.fileStorePort),
+            fileStorePortResult.second);
+        errorMessage.clear();
     }
     if (fileStorePortResult.first.has_value()) {
         parsed.fileStorePort = static_cast<std::uint16_t>(*fileStorePortResult.first);
@@ -307,8 +367,15 @@ constexpr int kHttpNotFoundStatus = 404;
 
     const auto fileStoreUseResult = document.readBool("filestore", "use");
     if (!fileStoreUseResult.second.empty()) {
-        errorMessage = fileStoreUseResult.second;
-        return false;
+        const std::string rawValue = document.lastValue("filestore", "use").value_or("<missing>");
+        logConfigFallbackWarning(
+            "zwave_client",
+            "filestore",
+            "use",
+            rawValue,
+            parsed.fileStoreEnabled ? "true" : "false",
+            fileStoreUseResult.second);
+        errorMessage.clear();
     }
     if (fileStoreUseResult.first.has_value()) {
         parsed.fileStoreEnabled = *fileStoreUseResult.first;
@@ -323,19 +390,42 @@ constexpr int kHttpNotFoundStatus = 404;
         parsed.fileStoreMonitorTopicPrefix = *monitorTopicPrefix;
     }
 
-    const auto retryCountResult = document.readUnsigned("filestore", "startupRetryCount", 0U, 1000U);
+    const auto retryCountResult = document.readUnsigned(
+        "filestore",
+        "startupRetryCount",
+        0U,
+        std::numeric_limits<std::uint32_t>::max());
     if (!retryCountResult.second.empty()) {
-        errorMessage = retryCountResult.second;
-        return false;
+        const std::string rawValue = document.lastValue("filestore", "startupRetryCount").value_or("<missing>");
+        logConfigFallbackWarning(
+            "zwave_client",
+            "filestore",
+            "startupRetryCount",
+            rawValue,
+            std::to_string(parsed.fileStoreStartupRetryCount),
+            retryCountResult.second);
+        errorMessage.clear();
     }
     if (retryCountResult.first.has_value()) {
         parsed.fileStoreStartupRetryCount = static_cast<std::uint32_t>(*retryCountResult.first);
     }
 
-    const auto retryIntervalResult = document.readUnsigned("filestore", "startupRetryIntervalSeconds", 1U, 3600U);
+    const auto retryIntervalResult = document.readUnsigned(
+        "filestore",
+        "startupRetryIntervalSeconds",
+        1U,
+        std::numeric_limits<std::uint32_t>::max());
     if (!retryIntervalResult.second.empty()) {
-        errorMessage = retryIntervalResult.second;
-        return false;
+        const std::string rawValue =
+            document.lastValue("filestore", "startupRetryIntervalSeconds").value_or("<missing>");
+        logConfigFallbackWarning(
+            "zwave_client",
+            "filestore",
+            "startupRetryIntervalSeconds",
+            rawValue,
+            std::to_string(parsed.fileStoreStartupRetryIntervalSeconds),
+            retryIntervalResult.second);
+        errorMessage.clear();
     }
     if (retryIntervalResult.first.has_value()) {
         parsed.fileStoreStartupRetryIntervalSeconds = static_cast<std::uint32_t>(*retryIntervalResult.first);
@@ -890,12 +980,21 @@ bool tryLoadZwaveConfigFromIni(
     const IniDocument& document,
     ZwaveConfig& output,
     std::string& errorMessage) {
+    errorMessage.clear();
+
     ZwaveConfig parsed{};
 
     const auto subscribeQosResult = document.readUnsigned("zwave", "subscribeQoS", 0U, 2U);
     if (!subscribeQosResult.second.empty()) {
-        errorMessage = subscribeQosResult.second;
-        return false;
+        const std::string rawValue = document.lastValue("zwave", "subscribeQoS").value_or("<missing>");
+        logConfigFallbackWarning(
+            "zwave_client",
+            "zwave",
+            "subscribeQoS",
+            rawValue,
+            std::to_string(static_cast<int>(parsed.subscribeQos)),
+            subscribeQosResult.second);
+        errorMessage.clear();
     }
     if (subscribeQosResult.first.has_value()) {
         parsed.subscribeQos = static_cast<Qos>(*subscribeQosResult.first);
@@ -903,8 +1002,15 @@ bool tryLoadZwaveConfigFromIni(
 
     const auto publishQosResult = document.readUnsigned("zwave", "qos", 0U, 2U);
     if (!publishQosResult.second.empty()) {
-        errorMessage = publishQosResult.second;
-        return false;
+        const std::string rawValue = document.lastValue("zwave", "qos").value_or("<missing>");
+        logConfigFallbackWarning(
+            "zwave_client",
+            "zwave",
+            "qos",
+            rawValue,
+            std::to_string(static_cast<int>(parsed.qos)),
+            publishQosResult.second);
+        errorMessage.clear();
     }
     if (publishQosResult.first.has_value()) {
         parsed.qos = static_cast<Qos>(*publishQosResult.first);
@@ -912,8 +1018,15 @@ bool tryLoadZwaveConfigFromIni(
 
     const auto retainResult = document.readBool("zwave", "retain");
     if (!retainResult.second.empty()) {
-        errorMessage = retainResult.second;
-        return false;
+        const std::string rawValue = document.lastValue("zwave", "retain").value_or("<missing>");
+        logConfigFallbackWarning(
+            "zwave_client",
+            "zwave",
+            "retain",
+            rawValue,
+            parsed.retain ? "true" : "false",
+            retainResult.second);
+        errorMessage.clear();
     }
     if (retainResult.first.has_value()) {
         parsed.retain = *retainResult.first;
@@ -1027,16 +1140,26 @@ bool tryLoadZwaveClientRuntimeConfigFromIni(
     const IniDocument& document,
     ZwaveClientRuntimeConfig& output,
     std::string& errorMessage) {
+    errorMessage.clear();
+
     ZwaveClientRuntimeConfig parsed{};
     if (!tryLoadZwaveConfigFromIni(document, parsed.zwaveConfig, errorMessage)) {
         return false;
     }
 
-    if (!tryLoadMqttClientConfigFromIni(document, parsed.mqttConfig, errorMessage)) {
-        return false;
+    std::string mqttErrorMessage{};
+    if (!tryLoadMqttClientConfigFromIni(document, parsed.mqttConfig, mqttErrorMessage)) {
+        logConfigFallbackWarning(
+            "zwave_client",
+            "mqtt",
+            "*",
+            "<composite>",
+            "defaults",
+            mqttErrorMessage);
     }
 
     output = std::move(parsed);
+    errorMessage.clear();
     return true;
 }
 

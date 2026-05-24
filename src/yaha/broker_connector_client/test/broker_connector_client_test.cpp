@@ -175,7 +175,7 @@ TEST_CASE("broker_connector_client_config_applies_keepalive_fallback_and_monitor
     remove_directory_quiet(temp_directory);
 }
 
-TEST_CASE("broker_connector_client_config_rejects_invalid_boolean",
+TEST_CASE("broker_connector_client_config_falls_back_on_invalid_boolean",
           "[broker_connector_client]") {
     const auto temp_directory = make_temp_directory();
     const auto config_path = write_config_file(temp_directory,
@@ -183,13 +183,14 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_boolean",
         "logOutgoingMessage = maybe\n");
 
     const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
-    REQUIRE_FALSE(runtime_config_result.config.has_value());
-    REQUIRE(runtime_config_result.errorMessage.find("monitoring.logOutgoingMessage") != std::string::npos);
+    REQUIRE(runtime_config_result.config.has_value());
+    REQUIRE(runtime_config_result.errorMessage.empty());
+    REQUIRE(runtime_config_result.config->receiverConfig.enableMessageTrace);
 
     remove_directory_quiet(temp_directory);
 }
 
-TEST_CASE("broker_connector_client_config_rejects_invalid_source_port",
+TEST_CASE("broker_connector_client_config_falls_back_on_invalid_source_port",
           "[broker_connector_client]") {
     const auto temp_directory = make_temp_directory();
     const auto config_path = write_config_file(temp_directory,
@@ -201,13 +202,14 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_source_port",
         "host = receiver.local\n");
 
     const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
-    REQUIRE_FALSE(runtime_config_result.config.has_value());
-    REQUIRE(runtime_config_result.errorMessage.find("sourceHttpBroker.port") != std::string::npos);
+    REQUIRE(runtime_config_result.config.has_value());
+    REQUIRE(runtime_config_result.errorMessage.empty());
+    REQUIRE(runtime_config_result.config->sourceConfig.brokerPort == 1883U);
 
     remove_directory_quiet(temp_directory);
 }
 
-TEST_CASE("broker_connector_client_config_rejects_invalid_monitoring_trace_boolean",
+TEST_CASE("broker_connector_client_config_falls_back_on_invalid_monitoring_trace_boolean",
           "[broker_connector_client]") {
     const auto temp_directory = make_temp_directory();
     const auto config_path = write_config_file(temp_directory,
@@ -221,13 +223,14 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_monitoring_trace_boole
         "sourceLifecycleTrace = maybe\n");
 
     const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
-    REQUIRE_FALSE(runtime_config_result.config.has_value());
-    REQUIRE(runtime_config_result.errorMessage.find("monitoring.sourceLifecycleTrace") != std::string::npos);
+    REQUIRE(runtime_config_result.config.has_value());
+    REQUIRE(runtime_config_result.errorMessage.empty());
+    REQUIRE(runtime_config_result.config->sourceLifecycleConfig.enableTrace);
 
     remove_directory_quiet(temp_directory);
 }
 
-TEST_CASE("broker_connector_client_config_rejects_invalid_source_optional_fields",
+TEST_CASE("broker_connector_client_config_falls_back_on_invalid_source_optional_fields",
           "[broker_connector_client]") {
     const auto temp_directory = make_temp_directory();
 
@@ -240,8 +243,9 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_source_optional_fields
             "[receiverMqttBroker]\n"
             "host = receiver.local\n");
         const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
-        REQUIRE_FALSE(runtime_config_result.config.has_value());
-        REQUIRE(runtime_config_result.errorMessage.find("sourceHttpBroker.listenerPort") != std::string::npos);
+        REQUIRE(runtime_config_result.config.has_value());
+        REQUIRE(runtime_config_result.errorMessage.empty());
+        REQUIRE(runtime_config_result.config->sourceConfig.listenerPort == 0U);
     }
 
     {
@@ -253,8 +257,9 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_source_optional_fields
             "[receiverMqttBroker]\n"
             "host = receiver.local\n");
         const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
-        REQUIRE_FALSE(runtime_config_result.config.has_value());
-        REQUIRE(runtime_config_result.errorMessage.find("sourceHttpBroker.keepAliveSeconds") != std::string::npos);
+        REQUIRE(runtime_config_result.config.has_value());
+        REQUIRE(runtime_config_result.errorMessage.empty());
+        REQUIRE(runtime_config_result.config->sourceConfig.keepAliveSeconds == 30U);
     }
 
     {
@@ -266,14 +271,15 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_source_optional_fields
             "[receiverMqttBroker]\n"
             "host = receiver.local\n");
         const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
-        REQUIRE_FALSE(runtime_config_result.config.has_value());
-        REQUIRE(runtime_config_result.errorMessage.find("sourceHttpBroker.clean") != std::string::npos);
+        REQUIRE(runtime_config_result.config.has_value());
+        REQUIRE(runtime_config_result.errorMessage.empty());
+        REQUIRE(runtime_config_result.config->sourceConfig.clean);
     }
 
     remove_directory_quiet(temp_directory);
 }
 
-TEST_CASE("broker_connector_client_config_rejects_invalid_receiver_and_automation_fields",
+TEST_CASE("broker_connector_client_config_falls_back_on_invalid_receiver_and_automation_fields",
           "[broker_connector_client]") {
     const auto temp_directory = make_temp_directory();
 
@@ -286,8 +292,9 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_receiver_and_automatio
             "host = receiver.local\n"
             "port = 70000\n");
         const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
-        REQUIRE_FALSE(runtime_config_result.config.has_value());
-        REQUIRE(runtime_config_result.errorMessage.find("receiverMqttBroker.port") != std::string::npos);
+        REQUIRE(runtime_config_result.config.has_value());
+        REQUIRE(runtime_config_result.errorMessage.empty());
+        REQUIRE(runtime_config_result.config->receiverConfig.brokerPort == 1883U);
     }
 
     {
@@ -301,8 +308,9 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_receiver_and_automatio
             "[automation]\n"
             "reconnectDelayMs = 0\n");
         const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
-        REQUIRE_FALSE(runtime_config_result.config.has_value());
-        REQUIRE(runtime_config_result.errorMessage.find("automation.reconnectDelayMs") != std::string::npos);
+        REQUIRE(runtime_config_result.config.has_value());
+        REQUIRE(runtime_config_result.errorMessage.empty());
+        REQUIRE(runtime_config_result.config->sourceLifecycleConfig.reconnectDelay.count() == 1000);
     }
 
     {
@@ -316,8 +324,9 @@ TEST_CASE("broker_connector_client_config_rejects_invalid_receiver_and_automatio
             "[automation]\n"
             "normalizeQosToAtLeastOnce = maybe\n");
         const auto runtime_config_result = try_load_runtime_config_from_file(config_path);
-        REQUIRE_FALSE(runtime_config_result.config.has_value());
-        REQUIRE(runtime_config_result.errorMessage.find("automation.normalizeQosToAtLeastOnce") != std::string::npos);
+        REQUIRE(runtime_config_result.config.has_value());
+        REQUIRE(runtime_config_result.errorMessage.empty());
+        REQUIRE(runtime_config_result.config->relayPolicyConfig.normalizeQosToAtLeastOnce);
     }
 
     remove_directory_quiet(temp_directory);

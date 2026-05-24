@@ -174,7 +174,7 @@ TEST_CASE("rs485_runtime_config_rejects_missing_serial_port", "[rs485_interface]
     REQUIRE(errorMessage.find("rs485interface.serialPortName") != std::string::npos);
 }
 
-TEST_CASE("rs485_runtime_config_rejects_invalid_trace_value", "[rs485_interface]") {
+TEST_CASE("rs485_runtime_config_falls_back_on_invalid_trace_value", "[rs485_interface]") {
     const std::string iniText =
         "[mqtt]\n"
         "host=127.0.0.1\n"
@@ -198,11 +198,12 @@ TEST_CASE("rs485_runtime_config_rejects_invalid_trace_value", "[rs485_interface]
     yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-    REQUIRE(errorMessage.find("rs485interface.trace") != std::string::npos);
+    REQUIRE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.rs485Config.traceLevel == "messages");
 }
 
-TEST_CASE("rs485_runtime_config_rejects_missing_required_interfaces_section", "[rs485_interface]") {
+TEST_CASE("rs485_runtime_config_falls_back_on_missing_required_interfaces_section", "[rs485_interface]") {
     const std::string iniText =
         "[mqtt]\n"
         "host=127.0.0.1\n"
@@ -222,11 +223,12 @@ TEST_CASE("rs485_runtime_config_rejects_missing_required_interfaces_section", "[
     yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-    REQUIRE(errorMessage.find("[rs485interface.interfaces]") != std::string::npos);
+    REQUIRE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.rs485Config.interfaces.empty());
 }
 
-TEST_CASE("rs485_runtime_config_rejects_invalid_topic_mapping_format", "[rs485_interface]") {
+TEST_CASE("rs485_runtime_config_falls_back_on_invalid_topic_mapping_format", "[rs485_interface]") {
     const std::string iniText =
         "[mqtt]\n"
         "host=127.0.0.1\n"
@@ -252,11 +254,12 @@ TEST_CASE("rs485_runtime_config_rejects_invalid_topic_mapping_format", "[rs485_i
     yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-    REQUIRE(errorMessage.find("[rs485interface.topics]") != std::string::npos);
+    REQUIRE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.rs485Config.topics.empty());
 }
 
-TEST_CASE("rs485_runtime_config_rejects_invalid_interface_map_value", "[rs485_interface]") {
+TEST_CASE("rs485_runtime_config_falls_back_on_invalid_interface_map_value", "[rs485_interface]") {
     const std::string iniText =
         "[mqtt]\n"
         "host=127.0.0.1\n"
@@ -279,12 +282,13 @@ TEST_CASE("rs485_runtime_config_rejects_invalid_interface_map_value", "[rs485_in
     yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
     std::string errorMessage{};
 
-    REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-    REQUIRE(errorMessage.find("[rs485interface.interfaces]") != std::string::npos);
+    REQUIRE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.rs485Config.interfaces.empty());
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("rs485_runtime_config_rejects_invalid_command_keys_and_topics_values", "[rs485_interface]") {
+TEST_CASE("rs485_runtime_config_falls_back_on_invalid_command_keys_and_topics_values", "[rs485_interface]") {
     {
         const std::string iniText =
             "[mqtt]\n"
@@ -307,8 +311,9 @@ TEST_CASE("rs485_runtime_config_rejects_invalid_command_keys_and_topics_values",
 
         yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
         std::string errorMessage{};
-        REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-        REQUIRE(errorMessage.find("single-character command") != std::string::npos);
+        REQUIRE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+        REQUIRE(errorMessage.empty());
+        REQUIRE(runtimeConfig.rs485Config.settings.empty());
     }
 
     {
@@ -336,8 +341,9 @@ TEST_CASE("rs485_runtime_config_rejects_invalid_command_keys_and_topics_values",
 
         yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
         std::string errorMessage{};
-        REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-        REQUIRE(errorMessage.find("single-character command") != std::string::npos);
+        REQUIRE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+        REQUIRE(errorMessage.empty());
+        REQUIRE(runtimeConfig.rs485Config.topics.empty());
     }
 
     {
@@ -365,8 +371,9 @@ TEST_CASE("rs485_runtime_config_rejects_invalid_command_keys_and_topics_values",
 
         yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
         std::string errorMessage{};
-        REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-        REQUIRE(errorMessage.find("expected unsigned 0..65535") != std::string::npos);
+        REQUIRE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+        REQUIRE(errorMessage.empty());
+        REQUIRE(runtimeConfig.rs485Config.topics.empty());
     }
 
     {
@@ -394,12 +401,13 @@ TEST_CASE("rs485_runtime_config_rejects_invalid_command_keys_and_topics_values",
 
         yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
         std::string errorMessage{};
-        REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-        REQUIRE(errorMessage.find("expected unsigned 1..127") != std::string::npos);
+        REQUIRE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+        REQUIRE(errorMessage.empty());
+        REQUIRE(runtimeConfig.rs485Config.topics.empty());
     }
 }
 
-TEST_CASE("rs485_runtime_config_rejects_invalid_interface_segment_shapes", "[rs485_interface]") {
+    TEST_CASE("rs485_runtime_config_falls_back_on_invalid_interface_segment_shapes", "[rs485_interface]") {
     {
         const std::string iniText =
             "[mqtt]\n"
@@ -422,8 +430,9 @@ TEST_CASE("rs485_runtime_config_rejects_invalid_interface_segment_shapes", "[rs4
 
         yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
         std::string errorMessage{};
-        REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-        REQUIRE(errorMessage.find("missing usedby") != std::string::npos);
+        REQUIRE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+        REQUIRE(errorMessage.empty());
+        REQUIRE(runtimeConfig.rs485Config.interfaces.empty());
     }
 
     {
@@ -448,8 +457,9 @@ TEST_CASE("rs485_runtime_config_rejects_invalid_interface_segment_shapes", "[rs4
 
         yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
         std::string errorMessage{};
-        REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-        REQUIRE(errorMessage.find("usedby token") != std::string::npos);
+        REQUIRE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+        REQUIRE(errorMessage.empty());
+        REQUIRE(runtimeConfig.rs485Config.interfaces.empty());
     }
 
     {
@@ -474,7 +484,8 @@ TEST_CASE("rs485_runtime_config_rejects_invalid_interface_segment_shapes", "[rs4
 
         yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
         std::string errorMessage{};
-        REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-        REQUIRE(errorMessage.find("expected key:value") != std::string::npos);
+        REQUIRE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+        REQUIRE(errorMessage.empty());
+        REQUIRE(runtimeConfig.rs485Config.interfaces.empty());
     }
 }

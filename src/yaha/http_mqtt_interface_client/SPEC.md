@@ -49,7 +49,10 @@ Also delegates MQTT client config parsing to shared MQTT config loader:
 Behavior:
 
 - missing keys keep defaults
-- invalid numeric or boolean values return `false` with field-specific error text
+- invalid recoverable numeric/boolean values keep defaults, emit deterministic
+	warning log to `std::cerr`, and still return success
+- invalid MQTT sub-loader values keep MQTT defaults, emit warning, and do not
+	abort config loading
 
 ## HTTP Endpoint Behavior
 

@@ -232,7 +232,7 @@ TEST_CASE("load_zwave_config_rejects_invalid_optional_numeric_fields", "[zwave_c
     }
 }
 
-TEST_CASE("load_zwave_config_rejects_invalid_qos_and_retain_values", "[zwave_client]") {
+TEST_CASE("load_zwave_config_falls_back_on_invalid_qos_and_retain_values", "[zwave_client]") {
     {
         const yaha::IniDocument document = loadIni(
             "[zwave]\n"
@@ -243,8 +243,9 @@ TEST_CASE("load_zwave_config_rejects_invalid_qos_and_retain_values", "[zwave_cli
 
         yaha::ZwaveConfig config{};
         std::string errorMessage{};
-        CHECK_FALSE(yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage));
-        CHECK(errorMessage.find("zwave.subscribeQoS") != std::string::npos);
+        CHECK(yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage));
+        CHECK(errorMessage.empty());
+        CHECK(config.subscribeQos == yaha::Qos::AtLeastOnce);
     }
 
     {
@@ -257,8 +258,9 @@ TEST_CASE("load_zwave_config_rejects_invalid_qos_and_retain_values", "[zwave_cli
 
         yaha::ZwaveConfig config{};
         std::string errorMessage{};
-        CHECK_FALSE(yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage));
-        CHECK(errorMessage.find("zwave.qos") != std::string::npos);
+        CHECK(yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage));
+        CHECK(errorMessage.empty());
+        CHECK(config.qos == yaha::Qos::AtLeastOnce);
     }
 
     {
@@ -271,8 +273,9 @@ TEST_CASE("load_zwave_config_rejects_invalid_qos_and_retain_values", "[zwave_cli
 
         yaha::ZwaveConfig config{};
         std::string errorMessage{};
-        CHECK_FALSE(yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage));
-        CHECK(errorMessage.find("zwave.retain") != std::string::npos);
+        CHECK(yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage));
+        CHECK(errorMessage.empty());
+        CHECK_FALSE(config.retain);
     }
 }
 
@@ -340,7 +343,7 @@ TEST_CASE("load_zwave_config_keeps_message_flags_for_log_level_zero", "[zwave_cl
     CHECK(config.logOutgoingMessages);
 }
 
-TEST_CASE("load_zwave_config_rejects_invalid_log_level", "[zwave_client]") {
+TEST_CASE("load_zwave_config_falls_back_on_invalid_log_level", "[zwave_client]") {
     const yaha::IniDocument document = loadIni(
         "[zwave]\n"
         "logLevel=7\n"
@@ -353,11 +356,12 @@ TEST_CASE("load_zwave_config_rejects_invalid_log_level", "[zwave_client]") {
 
     const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
 
-    CHECK_FALSE(loaded);
-    CHECK(errorMessage.find("zwave.logLevel") != std::string::npos);
+    CHECK(loaded);
+    CHECK(errorMessage.empty());
+    CHECK(config.logLevel == 2U);
 }
 
-TEST_CASE("load_zwave_config_rejects_invalid_log_outgoing_messages_value", "[zwave_client]") {
+TEST_CASE("load_zwave_config_falls_back_on_invalid_log_outgoing_messages_value", "[zwave_client]") {
     const yaha::IniDocument document = loadIni(
         "[zwave]\n"
         "logOutgoingMessages=maybe\n"
@@ -370,11 +374,12 @@ TEST_CASE("load_zwave_config_rejects_invalid_log_outgoing_messages_value", "[zwa
 
     const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
 
-    CHECK_FALSE(loaded);
-    CHECK(errorMessage.find("zwave.logOutgoingMessages") != std::string::npos);
+    CHECK(loaded);
+    CHECK(errorMessage.empty());
+    CHECK_FALSE(config.logOutgoingMessages);
 }
 
-TEST_CASE("load_zwave_config_parses_poll_interval_ms_and_rejects_zero", "[zwave_client]") {
+TEST_CASE("load_zwave_config_parses_poll_interval_ms_and_falls_back_on_zero", "[zwave_client]") {
     {
         const yaha::IniDocument document = loadIni(
             "[zwave]\n"
@@ -406,12 +411,13 @@ TEST_CASE("load_zwave_config_parses_poll_interval_ms_and_rejects_zero", "[zwave_
 
         const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
 
-        CHECK_FALSE(loaded);
-        CHECK(errorMessage.find("zwave.pollIntervalMs") != std::string::npos);
+        CHECK(loaded);
+        CHECK(errorMessage.empty());
+        CHECK(config.pollIntervalMs == yaha::kZwaveDefaultPollIntervalMs);
     }
 }
 
-TEST_CASE("load_zwave_config_parses_command_reaction_timing_and_rejects_zero", "[zwave_client]") {
+    TEST_CASE("load_zwave_config_parses_command_reaction_timing_and_falls_back_on_zero", "[zwave_client]") {
     {
         const yaha::IniDocument document = loadIni(
             "[zwave]\n"
@@ -445,8 +451,9 @@ TEST_CASE("load_zwave_config_parses_command_reaction_timing_and_rejects_zero", "
 
         const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
 
-        CHECK_FALSE(loaded);
-        CHECK(errorMessage.find("zwave.commandReactionTimeoutMs") != std::string::npos);
+        CHECK(loaded);
+        CHECK(errorMessage.empty());
+        CHECK(config.commandReactionTimeoutMs == yaha::kZwaveDefaultCommandReactionTimeoutMs);
     }
 }
 
@@ -579,7 +586,7 @@ TEST_CASE("load_zwave_config_parses_filestore_monitor_topic_prefix", "[zwave_cli
     CHECK(config.fileStoreMonitorTopicPrefix == "$MONITOR/custom/filestore");
 }
 
-TEST_CASE("load_zwave_config_rejects_invalid_filestore_retry_interval", "[zwave_client]") {
+TEST_CASE("load_zwave_config_falls_back_on_invalid_filestore_retry_interval", "[zwave_client]") {
     const yaha::IniDocument document = loadIni(
         "[filestore]\n"
         "startupRetryIntervalSeconds=0\n"
@@ -594,8 +601,9 @@ TEST_CASE("load_zwave_config_rejects_invalid_filestore_retry_interval", "[zwave_
 
     const bool loaded = yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
 
-    CHECK_FALSE(loaded);
-    CHECK(errorMessage.find("filestore.startupRetryIntervalSeconds") != std::string::npos);
+    CHECK(loaded);
+    CHECK(errorMessage.empty());
+    CHECK(config.fileStoreStartupRetryIntervalSeconds == yaha::kZwaveDefaultFileStoreStartupRetryIntervalSeconds);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -727,7 +735,7 @@ TEST_CASE("load_zwave_config_parses_legacy_json_equivalent_device_rows", "[zwave
     CHECK(config.devices[2].instance.value() == 2U);
 }
 
-TEST_CASE("load_zwave_runtime_config_reports_mqtt_validation_error", "[zwave_client]") {
+TEST_CASE("load_zwave_runtime_config_falls_back_on_invalid_mqtt_values", "[zwave_client]") {
     const yaha::IniDocument document = loadIni(
         "[mqtt]\n"
         "port=70000\n"
@@ -742,8 +750,9 @@ TEST_CASE("load_zwave_runtime_config_reports_mqtt_validation_error", "[zwave_cli
 
     const bool loaded = yaha::tryLoadZwaveClientRuntimeConfigFromIni(document, runtimeConfig, errorMessage);
 
-    CHECK_FALSE(loaded);
-    CHECK(errorMessage.find("mqtt.port") != std::string::npos);
+    CHECK(loaded);
+    CHECK(errorMessage.empty());
+    CHECK(runtimeConfig.mqttConfig.brokerPort == yaha::YahaMqttClient::k_default_broker_port);
 }
 
 TEST_CASE("load_zwave_config_allows_missing_device_setting", "[zwave_client]") {

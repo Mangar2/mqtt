@@ -202,7 +202,7 @@ TEST_CASE("load_http_mqtt_interface_client_config_from_ini", "[http_mqtt_interfa
     std::filesystem::remove(iniPath);
 }
 
-TEST_CASE("load_http_mqtt_interface_client_config_reports_invalid_port", "[http_mqtt_interface_client]") {
+TEST_CASE("load_http_mqtt_interface_client_config_falls_back_on_invalid_port", "[http_mqtt_interface_client]") {
     const std::string iniText =
         "[httpMqttInterface]\n"
         "listenerPort=70000\n";
@@ -217,13 +217,14 @@ TEST_CASE("load_http_mqtt_interface_client_config_reports_invalid_port", "[http_
         config,
         errorMessage);
 
-    REQUIRE_FALSE(success);
-    REQUIRE(errorMessage.find("httpMqttInterface.listenerPort") != std::string::npos);
+    REQUIRE(success);
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.listenerPort == 8092U);
 
     std::filesystem::remove(iniPath);
 }
 
-TEST_CASE("load_http_mqtt_interface_client_config_reports_invalid_alias_flag", "[http_mqtt_interface_client]") {
+TEST_CASE("load_http_mqtt_interface_client_config_falls_back_on_invalid_alias_flag", "[http_mqtt_interface_client]") {
     const std::string iniText =
         "[httpMqttInterface]\n"
         "enablePublishPhpAlias=maybe\n";
@@ -238,13 +239,14 @@ TEST_CASE("load_http_mqtt_interface_client_config_reports_invalid_alias_flag", "
         config,
         errorMessage);
 
-    REQUIRE_FALSE(success);
-    REQUIRE(errorMessage.find("httpMqttInterface.enablePublishPhpAlias") != std::string::npos);
+    REQUIRE(success);
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.enablePublishPhpAlias);
 
     std::filesystem::remove(iniPath);
 }
 
-TEST_CASE("load_http_mqtt_interface_client_config_reports_invalid_legacy_flag", "[http_mqtt_interface_client]") {
+TEST_CASE("load_http_mqtt_interface_client_config_falls_back_on_invalid_legacy_flag", "[http_mqtt_interface_client]") {
     const std::string iniText =
         "[httpMqttInterface]\n"
         "useLegacyPhpResponse=invalid\n";
@@ -259,8 +261,31 @@ TEST_CASE("load_http_mqtt_interface_client_config_reports_invalid_legacy_flag", 
         config,
         errorMessage);
 
-    REQUIRE_FALSE(success);
-    REQUIRE(errorMessage.find("httpMqttInterface.useLegacyPhpResponse") != std::string::npos);
+    REQUIRE(success);
+    REQUIRE(errorMessage.empty());
+    REQUIRE_FALSE(config.useLegacyPhpResponse);
+
+    std::filesystem::remove(iniPath);
+}
+
+TEST_CASE("load_http_mqtt_interface_client_config_falls_back_on_invalid_mqtt_value", "[http_mqtt_interface_client]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "loopSleepMs=0\n";
+
+    const auto iniPath = writeTempIni(iniText);
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniPath);
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    std::string errorMessage{};
+    const bool success = yaha::tryLoadHttpMqttInterfaceClientConfigFromIni(
+        document,
+        config,
+        errorMessage);
+
+    REQUIRE(success);
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.mqttConfig.loopSleep == std::chrono::milliseconds{20});
 
     std::filesystem::remove(iniPath);
 }

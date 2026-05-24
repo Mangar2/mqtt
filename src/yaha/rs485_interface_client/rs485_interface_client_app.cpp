@@ -379,6 +379,21 @@ struct ParsedInterfaceSegments {
     return true;
 }
 
+void logConfigFallbackWarning(
+    const std::string_view sectionName,
+    const std::string_view keyName,
+    const std::string& rawValue,
+    const std::string& defaultValue,
+    const std::string& reasonText) {
+    std::cerr << "rs485_interface_client[warn] config_fallback"
+              << " section=" << sectionName
+              << " key=" << keyName
+              << " value='" << rawValue << "'"
+              << " default='" << defaultValue << "'"
+              << " reason='" << reasonText << "'"
+              << '\n' << std::flush;
+}
+
 void parseRs485LoggingFlags(
     const IniDocument& document,
     Rs485InterfaceConfig& output) {
@@ -398,11 +413,13 @@ void parseRs485LoggingFlags(
             },
             messageLogConfig,
             errorMessage)) {
-        throw YahaError{
-            "RS485_CONFIG_PARSE_FAILED",
-            "failed to parse rs485 config",
-            "Invalid RS485 client configuration.",
-            errorMessage};
+        logConfigFallbackWarning(
+            "rs485interface",
+            "log*",
+            "<composite>",
+            "defaults",
+            errorMessage);
+        return;
     }
 
     output.logIncomingMessages = messageLogConfig.enableIncoming;
@@ -421,7 +438,8 @@ Rs485InterfaceConfig loadRs485InterfaceConfigFromIni(const IniDocument& document
 
     const auto baudrateResult = document.readUnsigned("rs485interface", "baudrate", 1U, 4000000U);
     if (!baudrateResult.second.empty()) {
-        throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 config", "Invalid RS485 client configuration.", baudrateResult.second};
+        const std::string rawValue = document.lastValue("rs485interface", "baudrate").value_or("<missing>");
+        logConfigFallbackWarning("rs485interface", "baudrate", rawValue, std::to_string(parsed.baudrate), baudrateResult.second);
     }
     if (baudrateResult.first.has_value()) {
         parsed.baudrate = static_cast<std::uint32_t>(*baudrateResult.first);
@@ -429,7 +447,8 @@ Rs485InterfaceConfig loadRs485InterfaceConfigFromIni(const IniDocument& document
 
     const auto myAddressResult = document.readUnsigned("rs485interface", "myAddress", 1U, 127U);
     if (!myAddressResult.second.empty()) {
-        throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 config", "Invalid RS485 client configuration.", myAddressResult.second};
+        const std::string rawValue = document.lastValue("rs485interface", "myAddress").value_or("<missing>");
+        logConfigFallbackWarning("rs485interface", "myAddress", rawValue, std::to_string(parsed.myAddress), myAddressResult.second);
     }
     if (myAddressResult.first.has_value()) {
         parsed.myAddress = static_cast<std::uint8_t>(*myAddressResult.first);
@@ -437,7 +456,8 @@ Rs485InterfaceConfig loadRs485InterfaceConfigFromIni(const IniDocument& document
 
     const auto maxVersionResult = document.readUnsigned("rs485interface", "maxVersion", 0U, 2U);
     if (!maxVersionResult.second.empty()) {
-        throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 config", "Invalid RS485 client configuration.", maxVersionResult.second};
+        const std::string rawValue = document.lastValue("rs485interface", "maxVersion").value_or("<missing>");
+        logConfigFallbackWarning("rs485interface", "maxVersion", rawValue, std::to_string(parsed.maxVersion), maxVersionResult.second);
     }
     if (maxVersionResult.first.has_value()) {
         parsed.maxVersion = static_cast<std::uint8_t>(*maxVersionResult.first);
@@ -445,7 +465,8 @@ Rs485InterfaceConfig loadRs485InterfaceConfigFromIni(const IniDocument& document
 
     const auto tickDelayResult = document.readUnsigned("rs485interface", "tickDelay", 1U, 600000U);
     if (!tickDelayResult.second.empty()) {
-        throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 config", "Invalid RS485 client configuration.", tickDelayResult.second};
+        const std::string rawValue = document.lastValue("rs485interface", "tickDelay").value_or("<missing>");
+        logConfigFallbackWarning("rs485interface", "tickDelay", rawValue, std::to_string(parsed.tickDelayMs), tickDelayResult.second);
     }
     if (tickDelayResult.first.has_value()) {
         parsed.tickDelayMs = static_cast<std::uint32_t>(*tickDelayResult.first);
@@ -454,7 +475,13 @@ Rs485InterfaceConfig loadRs485InterfaceConfigFromIni(const IniDocument& document
     const auto timeOfDayResult =
         document.readUnsigned("rs485interface", "timeOfDayDelayInSeconds", 1U, 86400U);
     if (!timeOfDayResult.second.empty()) {
-        throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 config", "Invalid RS485 client configuration.", timeOfDayResult.second};
+        const std::string rawValue = document.lastValue("rs485interface", "timeOfDayDelayInSeconds").value_or("<missing>");
+        logConfigFallbackWarning(
+            "rs485interface",
+            "timeOfDayDelayInSeconds",
+            rawValue,
+            std::to_string(parsed.timeOfDayDelaySeconds),
+            timeOfDayResult.second);
     }
     if (timeOfDayResult.first.has_value()) {
         parsed.timeOfDayDelaySeconds = static_cast<std::uint32_t>(*timeOfDayResult.first);
@@ -462,7 +489,8 @@ Rs485InterfaceConfig loadRs485InterfaceConfigFromIni(const IniDocument& document
 
     const auto qosResult = document.readUnsigned("rs485interface", "qos", 0U, 2U);
     if (!qosResult.second.empty()) {
-        throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 config", "Invalid RS485 client configuration.", qosResult.second};
+        const std::string rawValue = document.lastValue("rs485interface", "qos").value_or("<missing>");
+        logConfigFallbackWarning("rs485interface", "qos", rawValue, std::to_string(static_cast<unsigned int>(parsed.subscribeQos)), qosResult.second);
     }
     if (qosResult.first.has_value()) {
         parsed.subscribeQos = static_cast<Qos>(*qosResult.first);
@@ -470,7 +498,7 @@ Rs485InterfaceConfig loadRs485InterfaceConfigFromIni(const IniDocument& document
 
     if (const auto trace = document.lastValue("rs485interface", "trace"); trace.has_value()) {
         if (!parseTraceLevel(trimCopy(*trace), parsed.traceLevel, errorMessage)) {
-            throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 config", "Invalid RS485 client configuration.", errorMessage};
+            logConfigFallbackWarning("rs485interface", "trace", *trace, parsed.traceLevel, errorMessage);
         }
     }
 
@@ -479,7 +507,13 @@ Rs485InterfaceConfig loadRs485InterfaceConfigFromIni(const IniDocument& document
     const auto blinkDelayResult =
         document.readUnsigned("rs485interface", "blinkDelayInSeconds", 1U, 86400U);
     if (!blinkDelayResult.second.empty()) {
-        throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 config", "Invalid RS485 client configuration.", blinkDelayResult.second};
+        const std::string rawValue = document.lastValue("rs485interface", "blinkDelayInSeconds").value_or("<missing>");
+        logConfigFallbackWarning(
+            "rs485interface",
+            "blinkDelayInSeconds",
+            rawValue,
+            std::to_string(parsed.blinkDelaySeconds),
+            blinkDelayResult.second);
     }
     if (blinkDelayResult.first.has_value()) {
         parsed.blinkDelaySeconds = static_cast<std::uint32_t>(*blinkDelayResult.first);
@@ -488,26 +522,37 @@ Rs485InterfaceConfig loadRs485InterfaceConfigFromIni(const IniDocument& document
     const auto temporaryDelayResult =
         document.readUnsigned("rs485interface", "temporaryOnInSeconds", 1U, 86400U);
     if (!temporaryDelayResult.second.empty()) {
-        throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 config", "Invalid RS485 client configuration.", temporaryDelayResult.second};
+        const std::string rawValue = document.lastValue("rs485interface", "temporaryOnInSeconds").value_or("<missing>");
+        logConfigFallbackWarning(
+            "rs485interface",
+            "temporaryOnInSeconds",
+            rawValue,
+            std::to_string(parsed.temporaryOnSeconds),
+            temporaryDelayResult.second);
     }
     if (temporaryDelayResult.first.has_value()) {
         parsed.temporaryOnSeconds = static_cast<std::uint32_t>(*temporaryDelayResult.first);
     }
 
     if (!parseInterfacesSection(document, parsed.interfaces, errorMessage)) {
-        throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 config", "Invalid RS485 client configuration.", errorMessage};
+        logConfigFallbackWarning("rs485interface.interfaces", "*", "<composite>", "empty", errorMessage);
+        parsed.interfaces.clear();
     }
     if (!parseCommandMapSection(document, "rs485interface.settings", parsed.settings, errorMessage)) {
-        throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 config", "Invalid RS485 client configuration.", errorMessage};
+        logConfigFallbackWarning("rs485interface.settings", "*", "<composite>", "empty", errorMessage);
+        parsed.settings.clear();
     }
     if (!parseCommandMapSection(document, "rs485interface.status", parsed.status, errorMessage)) {
-        throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 config", "Invalid RS485 client configuration.", errorMessage};
+        logConfigFallbackWarning("rs485interface.status", "*", "<composite>", "empty", errorMessage);
+        parsed.status.clear();
     }
     if (!parseAddressesSection(document, parsed.addresses, errorMessage)) {
-        throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 config", "Invalid RS485 client configuration.", errorMessage};
+        logConfigFallbackWarning("rs485interface.addresses", "*", "<composite>", "empty", errorMessage);
+        parsed.addresses.clear();
     }
     if (!parseTopicsSection(document, parsed.topics, errorMessage)) {
-        throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 config", "Invalid RS485 client configuration.", errorMessage};
+        logConfigFallbackWarning("rs485interface.topics", "*", "<composite>", "empty", errorMessage);
+        parsed.topics.clear();
     }
 
     return parsed;
@@ -519,7 +564,7 @@ Rs485InterfaceRuntimeConfig loadRs485InterfaceClientRuntimeConfigFromIni(const I
 
     std::string errorMessage{};
     if (!tryLoadMqttClientConfigFromIni(document, parsed.mqttConfig, errorMessage)) {
-        throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 runtime config", "Invalid RS485 client configuration.", errorMessage};
+        logConfigFallbackWarning("mqtt", "*", "<composite>", "defaults", errorMessage);
     }
 
     if (parsed.rs485Config.logIncomingMessages || parsed.rs485Config.logOutgoingMessages) {

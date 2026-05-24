@@ -23,6 +23,51 @@ Standalone service entrypoints:
 - src/yaha_valueserviceclient_main.cpp
 - src/yaha_zwaveclient_main.cpp
 
+## Service Progress
+
+- [x] Shared loaders
+  - `src/yaha/mqtt_client/mqtt_client_config.cpp`
+  - `src/yaha/message/message_log_service.cpp`
+  - both now fallback on invalid recoverable values with `std::cerr` warning and keep defaults
+  - arbitrary upper caps removed from shared MQTT timing keys
+
+- [x] ValueService (`src/yaha/value_service_client/value_service_client_app.cpp`)
+  - recoverable parse errors now fallback to defaults with `std::cerr` warning
+  - arbitrary caps removed for `filestore.startupRetryCount` and `filestore.startupRetryIntervalSeconds`
+  - runtime loader no longer aborts on invalid MQTT sub-config; defaults are kept with warning
+- [x] RemoteService (`src/yaha/remote_service_client/remote_service_client_app.cpp`)
+  - recoverable parse errors now fallback to defaults with `std::cerr` warning
+  - missing `filestore.port` now falls back to default port with warning
+  - runtime loader no longer aborts on invalid MQTT sub-config; defaults are kept with warning
+- [x] FileStore (`src/yaha/file_store_client/file_store_client_app.cpp`)
+  - recoverable parse errors now fallback to defaults with `std::cerr` warning
+  - arbitrary upper cap removed for `monitoring.watchIntervalMs`
+  - runtime loader no longer aborts on invalid MQTT sub-config; defaults are kept with warning
+- [x] HttpMqttInterface (`src/yaha/http_mqtt_interface_client/http_mqtt_interface_client_app.cpp`)
+  - recoverable parse errors now fallback to defaults with `std::cerr` warning
+  - runtime loader no longer aborts on invalid MQTT sub-config; defaults are kept with warning
+- [x] MessageStore (`src/yaha/message_store_client/message_store_client_app.cpp`)
+  - recoverable parse errors now fallback to defaults with `std::cerr` warning
+  - arbitrary upper caps removed for multiple `persist` and `tree` numeric keys
+  - invalid/legacy subscription sections now fall back to default `#` subscription with warning
+  - runtime loader no longer aborts on invalid MQTT/message-log sub-config; defaults are kept with warning
+- [x] Rs485Interface (`src/yaha/rs485_interface_client/rs485_interface_client_app.cpp`)
+  - recoverable parse errors now fallback to defaults with `std::cerr` warning
+  - invalid/missing complex section maps now fall back to empty maps with warning
+  - runtime loader no longer aborts on invalid MQTT/message-log sub-config; defaults are kept with warning
+- [x] Zwave (`src/yaha/zwave_client/zwave_client_app.cpp`)
+  - recoverable parse errors now fallback to defaults with `std::cerr` warning
+  - arbitrary upper caps removed for `filestore.startupRetryCount` and `filestore.startupRetryIntervalSeconds`
+  - runtime loader no longer aborts on invalid MQTT sub-config; defaults are kept with warning
+- [x] Automation (`src/yaha/automation_client/automation_client_app.cpp`)
+  - recoverable parse errors now fallback to defaults with `std::cerr` warning
+  - arbitrary upper caps removed for FileStore startup retry settings
+  - runtime loader no longer aborts on invalid MQTT/message-log sub-config; defaults are kept with warning
+- [x] BrokerConnector (`src/yaha/broker_connector_client/broker_connector_client_app.cpp`)
+  - recoverable parse errors now fallback to defaults with `std::cerr` warning
+  - arbitrary upper caps removed for receiver/automation timing and retry settings
+  - invalid subscription sections now fall back to default `#` subscription with warning
+
 Shared/config loader modules:
 - src/yaha/mqtt_client/mqtt_client_config.cpp
 - src/yaha/message/message_log_service.cpp
