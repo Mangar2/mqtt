@@ -207,6 +207,7 @@ SubscriptionMap ZwaveServiceComponent::getSubscriptions() const {
     subscriptions.insert({makeTopic(kSystemZwavePrefix, "removefailednode/set"), Qos::ExactlyOnce});
     subscriptions.insert({makeTopic(kSystemZwavePrefix, "addnode/set"), Qos::ExactlyOnce});
     subscriptions.insert({makeTopic(kSystemZwavePrefix, "scan/set"), Qos::ExactlyOnce});
+    subscriptions.insert({makeTopic(kSystemZwavePrefix, "requestnodeinfo/set"), Qos::ExactlyOnce});
 
     if (config_.fileStoreEnabled && !config_.fileStoreMonitorTopicPrefix.empty()) {
         subscriptions.insert({config_.fileStoreMonitorTopicPrefix + "/#", config_.subscribeQos});
@@ -326,6 +327,10 @@ void ZwaveServiceComponent::handleMessage(const Message& message) {
         return;
     }
 
+    if (handleRequestNodeInfoCommand(message)) {
+        return;
+    }
+
     Message routedMessage{message.topic(), message.value(), message.qos(), message.retain(), message.dup()};
     routedMessage.addReason("received by zwave service");
     for (const auto& entry : message.reason() | std::views::reverse) {
@@ -356,6 +361,7 @@ void ZwaveServiceComponent::run() {
     publishManagementStatus("removefailednode", Value{0.0}, "zwave service restarted");
     publishManagementStatus("addnode", Value{std::string{"off"}}, "zwave service restarted");
     publishManagementStatus("scan", Value{std::string{"off"}}, "zwave service restarted");
+    publishManagementStatus("requestnodeinfo", Value{std::string{"off"}}, "zwave service restarted");
 
     try {
         const std::vector<std::uint16_t> nodeIds = controller_->knownNodeIds();
@@ -485,6 +491,30 @@ void ZwaveServiceComponent::updateAddNodeStatusFromControllerMessage(const Messa
     publishManagementStatus("addnode", Value{std::string{"off"}}, "addnode mode ended (controller feedback)");
 }
 
+bool ZwaveServiceComponent::handleRequestNodeInfoCommand(const Message& message) {
+    if (!isRequestNodeInfoTopic(message.topic())) {
+        return false;
+    }
+
+    logImportantEvent("requestnodeinfo", "request received");
+    try {
+        controller_->requestNodeInfo(message.value());
+        logImportantEvent("requestnodeinfo", "request forwarded");
+    } catch (const std::exception& exceptionValue) {
+        logImportantError("requestnodeinfo", exceptionValue.what());
+        publish(withPublishFlags(makeOperationErrorMessage("requestnodeinfo", exceptionValue.what()),
+                                 config_.qos,
+                                 config_.retain));
+    } catch (...) {
+        logImportantError("requestnodeinfo", "unknown");
+        publish(withPublishFlags(makeOperationErrorMessage("requestnodeinfo", "unknown"),
+                                 config_.qos,
+                                 config_.retain));
+    }
+
+    return true;
+}
+
 void ZwaveServiceComponent::logIncomingMessageIfEnabled(const Message& message) const {
     if (!config_.logIncomingMessages) {
         return;
@@ -612,6 +642,10 @@ bool ZwaveServiceComponent::isAddNodeTopic(const std::string& topic) {
 
 bool ZwaveServiceComponent::isScanTopic(const std::string& topic) {
     return topic == makeTopic(kSystemZwavePrefix, "scan/set");
+}
+
+bool ZwaveServiceComponent::isRequestNodeInfoTopic(const std::string& topic) {
+    return topic == makeTopic(kSystemZwavePrefix, "requestnodeinfo/set");
 }
 
 bool ZwaveServiceComponent::handleFileStoreMonitorReload(const Message& message) {

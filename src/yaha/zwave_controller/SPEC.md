@@ -35,6 +35,7 @@ Driver boundary used by the adapter:
 - `startScan()`
 - `requestAllConfigParams(...)`
 - `enablePoll(...)`
+- `requestNodeInfo(...)`
 - `disconnect(...)`
 
 ### interface IZwaveController
@@ -47,6 +48,7 @@ Service-facing controller boundary:
 - `removeFailedNode(value)`
 - `startScan()`
 - `requestConfigParametersForAllNodes()`
+- `requestNodeInfo(value)`
 - `close()`
 
 ### class ZwaveController
@@ -91,6 +93,7 @@ Concrete parity adapter implementation with additional callback entry points:
 - `removeFailedNode(value)` parses numeric node id and routes to `driver.removeFailedNode(...)`
 - `startScan()` routes to `driver.startScan()` and publishes deterministic success message
 - `requestConfigParametersForAllNodes()` iterates configured node ids and requests config params
+- `requestNodeInfo(value)` parses numeric node id and routes to `driver.requestNodeInfo(...)`
 - `close()` disconnects via configured USB device path
 
 ## Event and publish contract

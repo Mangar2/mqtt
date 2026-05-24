@@ -121,6 +121,10 @@ struct FakeDriverPort final : yaha::IZwaveDriverPort {
         lastRequestedNodeState = nodeId;
     }
 
+    void requestNodeInfo(const std::uint16_t nodeId) override {
+        (void)nodeId;
+    }
+
     void disconnect(const std::string& devicePath) override {
         disconnectCalls += 1U;
         lastDisconnectPath = devicePath;

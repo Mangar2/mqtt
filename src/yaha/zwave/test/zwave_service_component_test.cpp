@@ -17,6 +17,7 @@ constexpr std::uint16_t kNodeIdSeven = 7U;
 constexpr std::uint16_t kNodeIdNine = 9U;
 constexpr std::uint16_t kSwitchClass = 0x25U;
 constexpr double kRemoveFailedPayload = 7.0;
+constexpr double kRequestNodeInfoPayload = 42.0;
 constexpr int kUnknownThrowSetValue = 1;
 constexpr int kUnknownThrowAddNode = 2;
 constexpr int kUnknownThrowRemoveFailed = 3;
@@ -86,6 +87,11 @@ public:
             throw std::runtime_error{"requestconfig failed in fake controller"};
         }
         requestConfigCalls_ += 1U;
+    }
+
+    void requestNodeInfo(const yaha::Value& value) override {
+        requestNodeInfoCalls_ += 1U;
+        lastRequestNodeInfoValue_ = value;
     }
 
     [[nodiscard]] std::vector<std::uint16_t> knownNodeIds() const override {
@@ -196,6 +202,14 @@ public:
         return requestConfigCalls_;
     }
 
+    [[nodiscard]] std::size_t requestNodeInfoCalls() const {
+        return requestNodeInfoCalls_;
+    }
+
+    [[nodiscard]] const yaha::Value& lastRequestNodeInfoValue() const {
+        return lastRequestNodeInfoValue_;
+    }
+
     [[nodiscard]] std::size_t closeCalls() const {
         return closeCalls_;
     }
@@ -211,8 +225,10 @@ private:
     std::size_t addDeviceCalls_{0U};
     std::size_t removeFailedCalls_{0U};
     yaha::Value lastRemoveFailedValue_{0.0};
+    yaha::Value lastRequestNodeInfoValue_{0.0};
     std::size_t startScanCalls_{0U};
     std::size_t requestConfigCalls_{0U};
+    std::size_t requestNodeInfoCalls_{0U};
     std::size_t closeCalls_{0U};
 
     std::vector<yaha::ZwaveDeviceConfig> configuredDevices_{};
@@ -282,9 +298,11 @@ TEST_CASE("subscriptions_include_management_and_device_topics", "[zwave_service]
     REQUIRE(subscriptions.contains("system/zwave/removefailednode/set"));
     REQUIRE(subscriptions.contains("system/zwave/addnode/set"));
     REQUIRE(subscriptions.contains("system/zwave/scan/set"));
+    REQUIRE(subscriptions.contains("system/zwave/requestnodeinfo/set"));
     CHECK(subscriptions.at("system/zwave/removefailednode/set") == yaha::Qos::ExactlyOnce);
     CHECK(subscriptions.at("system/zwave/addnode/set") == yaha::Qos::ExactlyOnce);
     CHECK(subscriptions.at("system/zwave/scan/set") == yaha::Qos::ExactlyOnce);
+    CHECK(subscriptions.at("system/zwave/requestnodeinfo/set") == yaha::Qos::ExactlyOnce);
 
     REQUIRE(subscriptions.contains("home/lamp/set"));
     REQUIRE(subscriptions.contains("home/climate/+/set"));
@@ -425,6 +443,17 @@ TEST_CASE("management_messages_are_forwarded_and_scan_success_is_published", "[z
     CHECK(hasReasonMessage(published[1], "removefailednode deleted"));
     CHECK(hasReasonMessage(published[2], "addnode inclusion mode requested"));
     CHECK(hasReasonMessage(published[3], "scan mode requested"));
+}
+
+TEST_CASE("requestnodeinfo_message_routes_node_id_to_controller", "[zwave_service]") {
+    auto controller = std::make_shared<FakeController>();
+    yaha::ZwaveServiceComponent service{makeConfig(), controller};
+
+    service.handleMessage(yaha::Message{"system/zwave/requestnodeinfo/set", yaha::Value{kRequestNodeInfoPayload}});
+
+    CHECK(controller->requestNodeInfoCalls() == 1U);
+    REQUIRE(std::holds_alternative<double>(controller->lastRequestNodeInfoValue()));
+    CHECK(std::get<double>(controller->lastRequestNodeInfoValue()) == kRequestNodeInfoPayload);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -927,24 +956,28 @@ TEST_CASE("run_publishes_startup_markers_and_requests_controller_sync", "[zwave_
     service.run();
 
     CHECK(controller->requestConfigCalls() == 1U);
-    REQUIRE(published.size() == 4U);
+    REQUIRE(published.size() == 5U);
     CHECK(published[0].topic() == "system/zwave/removefailednode");
     CHECK(published[1].topic() == "system/zwave/addnode");
     CHECK(published[2].topic() == "system/zwave/scan");
-    CHECK(published[3].topic() == "$MONITOR/zwave/nodes/known");
+    CHECK(published[3].topic() == "system/zwave/requestnodeinfo");
+    CHECK(published[4].topic() == "$MONITOR/zwave/nodes/known");
 
     REQUIRE(std::holds_alternative<double>(published[0].value()));
     REQUIRE(std::holds_alternative<double>(published[0].value()));
     REQUIRE(std::holds_alternative<std::string>(published[2].value()));
+    REQUIRE(std::holds_alternative<std::string>(published[3].value()));
+    REQUIRE(std::holds_alternative<std::string>(published[4].value()));
     CHECK(std::get<double>(published[0].value()) == 0.0);
     CHECK(std::get<double>(published[0].value()) == 0.0);
     CHECK(std::get<std::string>(published[2].value()) == "off");
-    REQUIRE(std::holds_alternative<std::string>(published[3].value()));
-    CHECK(std::get<std::string>(published[3].value()) == "{\"nodes\":[9,7]}");
+    CHECK(std::get<std::string>(published[3].value()) == "off");
+    CHECK(std::get<std::string>(published[4].value()) == "{\"nodes\":[9,7]}");
     CHECK(hasReasonMessage(published[0], "zwave service restarted"));
     CHECK(hasReasonMessage(published[1], "zwave service restarted"));
     CHECK(hasReasonMessage(published[2], "zwave service restarted"));
-    CHECK(hasReasonMessage(published[3], "zwave known nodes snapshot on service startup"));
+    CHECK(hasReasonMessage(published[3], "zwave service restarted"));
+    CHECK(hasReasonMessage(published[4], "zwave known nodes snapshot on service startup"));
 }
 
 TEST_CASE("run_request_config_exception_publishes_error_message", "[zwave_service]") {

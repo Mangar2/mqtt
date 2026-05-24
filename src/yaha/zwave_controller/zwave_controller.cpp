@@ -273,6 +273,14 @@ void ZwaveController::requestConfigParametersForAllNodes() {
     }
 }
 
+void ZwaveController::requestNodeInfo(const Value& value) {
+    const std::optional<std::uint16_t> nodeId = parseNodeIdFromValue(value);
+    if (!nodeId.has_value()) {
+        throw std::runtime_error("requestnodeinfo requires numeric node id");
+    }
+    driverPort_.requestNodeInfo(*nodeId);
+}
+
 std::vector<std::uint16_t> ZwaveController::knownNodeIds() const {
     std::vector<ZwaveDeviceConfig> deviceSnapshot{};
     {

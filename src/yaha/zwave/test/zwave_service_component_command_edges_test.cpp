@@ -53,6 +53,10 @@ public:
         requestConfigCalls_ += 1U;
     }
 
+    void requestNodeInfo(const yaha::Value& value) override {
+        (void)value;
+    }
+
     [[nodiscard]] std::vector<std::uint16_t> knownNodeIds() const override {
         if (throwOnKnownNodes_) {
             throw std::runtime_error{"known nodes failed"};

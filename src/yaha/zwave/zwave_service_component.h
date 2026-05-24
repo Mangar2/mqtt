@@ -134,6 +134,13 @@ private:
      */
     [[nodiscard]] static bool isScanTopic(const std::string& topic);
 
+    /**
+     * @brief Returns true when topic equals request-node-info command topic.
+     * @param topic Topic text.
+     * @return True on request-node-info topic.
+     */
+    [[nodiscard]] static bool isRequestNodeInfoTopic(const std::string& topic);
+
     void publishManagementStatus(const std::string& topicSuffix,
                                  const Value& value,
                                  const std::string& reason) const;
@@ -141,6 +148,7 @@ private:
     void updateScanStatusFromControllerMessage(const Message& message);
 
     void updateAddNodeStatusFromControllerMessage(const Message& message);
+    [[nodiscard]] bool handleRequestNodeInfoCommand(const Message& message);
     [[nodiscard]] bool handleFileStoreMonitorReload(const Message& message);
 
     ZwaveConfig config_{};

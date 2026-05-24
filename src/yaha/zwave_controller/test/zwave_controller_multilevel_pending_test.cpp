@@ -44,6 +44,9 @@ struct FakeDriverPort final : yaha::IZwaveDriverPort {
     void requestNodeState(std::uint16_t nodeId) override {
         (void)nodeId;
     }
+    void requestNodeInfo(std::uint16_t nodeId) override {
+        (void)nodeId;
+    }
     void disconnect(const std::string& devicePath) override {
         (void)devicePath;
     }

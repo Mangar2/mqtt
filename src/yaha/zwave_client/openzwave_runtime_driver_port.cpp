@@ -688,6 +688,19 @@ void OpenZwaveRuntimeDriverPort::requestNodeState(const std::uint16_t nodeId) {
     (void)manager->RequestNodeState(requireHomeId(), requireUint8(nodeId, "node id"));
 }
 
+void OpenZwaveRuntimeDriverPort::requestNodeInfo(const std::uint16_t nodeId) {
+    ensureStarted();
+
+    logZwaveRequest("requestNodeInfo", nodeId, 0U, 0U, 0U);
+
+    OpenZWave::Manager* manager = OpenZWave::Manager::Get();
+    if (manager == nullptr) {
+        throw std::runtime_error("OpenZWave manager unavailable");
+    }
+
+    (void)manager->RefreshNodeInfo(requireHomeId(), requireUint8(nodeId, "node id"));
+}
+
 void OpenZwaveRuntimeDriverPort::disconnect(const std::string& devicePath) {
     std::scoped_lock lock{mutex_};
 

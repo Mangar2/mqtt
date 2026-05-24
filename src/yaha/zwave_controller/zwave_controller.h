@@ -136,6 +136,12 @@ public:
   virtual void requestNodeState(std::uint16_t nodeId) = 0;
 
   /**
+   * @brief Requests node information interview for one node.
+   * @param nodeId Node id.
+   */
+  virtual void requestNodeInfo(std::uint16_t nodeId) = 0;
+
+  /**
    * @brief Disconnects from configured USB device.
    * @param devicePath USB device path.
    */
@@ -194,6 +200,12 @@ public:
    * @brief Requests config parameters for all configured nodes.
    */
   virtual void requestConfigParametersForAllNodes() = 0;
+
+  /**
+   * @brief Requests OpenZWave node info interview for one node id payload.
+   * @param value Incoming payload containing numeric node id.
+   */
+  virtual void requestNodeInfo(const Value &value) = 0;
 
   /**
    * @brief Returns node ids currently known by the controller runtime.
@@ -278,6 +290,12 @@ public:
    * @brief Requests config parameters for all configured nodes.
    */
   void requestConfigParametersForAllNodes() override;
+
+  /**
+   * @brief Requests OpenZWave node info interview for one node id payload.
+   * @param value Incoming payload containing numeric node id.
+   */
+  void requestNodeInfo(const Value &value) override;
 
   /**
    * @brief Returns node ids currently known by the controller runtime.

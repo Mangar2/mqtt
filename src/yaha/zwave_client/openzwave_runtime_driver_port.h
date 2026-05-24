@@ -105,6 +105,12 @@ public:
     void requestNodeState(std::uint16_t nodeId) override;
 
     /**
+     * @brief Requests OpenZWave node information interview for one node.
+     * @param nodeId Node id.
+     */
+    void requestNodeInfo(std::uint16_t nodeId) override;
+
+    /**
      * @brief Disconnects driver and releases owned OpenZWave runtime resources.
      * @param devicePath Controller device path used for removal.
      */

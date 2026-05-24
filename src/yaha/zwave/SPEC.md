@@ -66,6 +66,7 @@ that orchestrates MQTT routing and controller lifecycle.
 	- `system/zwave/removefailednode/set`
 	- `system/zwave/addnode/set`
 	- `system/zwave/scan/set`
+	- `system/zwave/requestnodeinfo/set`
 - Additional FileStore monitor topic when `fileStoreEnabled=true`:
 	- `<fileStoreMonitorTopicPrefix>/#`
 - Device topics from config:
@@ -89,6 +90,9 @@ that orchestrates MQTT routing and controller lifecycle.
 	- success: `system/zwave/scan` value `on`
 	- failure: `system/zwave/scan` value `off`
 	- unknown scan exceptions are contained and reported with reason `unknown`
+- request-node-info topic -> `controller.requestNodeInfo(value)`
+	- payload is interpreted as numeric node id
+	- controller parsing/validation errors are contained and published as deterministic operation errors
 - other topics:
 	- preserves incoming reason list order exactly as received
 	- inserts reason `received by zwave service` directly after the incoming reasons
@@ -121,6 +125,7 @@ that orchestrates MQTT routing and controller lifecycle.
 	- `system/zwave/removefailednode` value `0`
 	- `system/zwave/addnode` value `off`
 	- `system/zwave/scan` value `off`
+	- `system/zwave/requestnodeinfo` value `off`
 	- `$MONITOR/zwave/nodes/known` value JSON string `{"nodes":[<nodeId>,...]}` from controller known-node snapshot (configured + runtime-discovered)
 	- reason `zwave restarted`
 - `run()` then calls `controller.requestConfigParametersForAllNodes()`.

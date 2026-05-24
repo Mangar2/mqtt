@@ -71,6 +71,7 @@ OpenZWave runtime driver behavior:
 - handles add/remove-failed node controller commands
 - requests node state for known nodes on scan trigger
 - requests all config params per configured node
+- requests node-info interview for a dedicated node via `RequestNodeInfo`
 - enables polling only for allowlisted switch classes:
   - `0x25` (`COMMAND_CLASS_SWITCH_BINARY`)
   - `0x26` (`COMMAND_CLASS_SWITCH_MULTILEVEL`)
