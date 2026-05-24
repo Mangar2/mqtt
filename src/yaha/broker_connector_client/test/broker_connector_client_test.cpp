@@ -230,6 +230,7 @@ TEST_CASE("broker_connector_client_config_falls_back_on_invalid_monitoring_trace
     remove_directory_quiet(temp_directory);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("broker_connector_client_config_falls_back_on_invalid_source_optional_fields",
           "[broker_connector_client]") {
     const auto temp_directory = make_temp_directory();
@@ -279,6 +280,7 @@ TEST_CASE("broker_connector_client_config_falls_back_on_invalid_source_optional_
     remove_directory_quiet(temp_directory);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("broker_connector_client_config_falls_back_on_invalid_receiver_and_automation_fields",
           "[broker_connector_client]") {
     const auto temp_directory = make_temp_directory();
