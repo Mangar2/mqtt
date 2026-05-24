@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <variant>
@@ -303,6 +304,49 @@ bool applyTypedValueWrite(
     return static_cast<int>(pollIntervalMs);
 }
 
+[[nodiscard]] std::string valueTypeNameForLog(const OpenZWave::ValueID::ValueType valueType) {
+    switch (valueType) {
+    case OpenZWave::ValueID::ValueType_Bool:
+        return "bool";
+    case OpenZWave::ValueID::ValueType_Byte:
+        return "byte";
+    case OpenZWave::ValueID::ValueType_Decimal:
+        return "decimal";
+    case OpenZWave::ValueID::ValueType_Int:
+        return "int";
+    case OpenZWave::ValueID::ValueType_List:
+        return "list";
+    case OpenZWave::ValueID::ValueType_Schedule:
+        return "schedule";
+    case OpenZWave::ValueID::ValueType_Short:
+        return "short";
+    case OpenZWave::ValueID::ValueType_String:
+        return "string";
+    case OpenZWave::ValueID::ValueType_Button:
+        return "button";
+    case OpenZWave::ValueID::ValueType_Raw:
+        return "raw";
+    case OpenZWave::ValueID::ValueType_BitSet:
+        return "bitset";
+    default:
+        return "unknown";
+    }
+}
+
+[[nodiscard]] std::string valuePayloadForLog(const std::variant<bool, double, std::string>& value) {
+    if (const auto* booleanValue = std::get_if<bool>(&value); booleanValue != nullptr) {
+        return *booleanValue ? "true" : "false";
+    }
+
+    if (const auto* numericValue = std::get_if<double>(&value); numericValue != nullptr) {
+        std::ostringstream stream{};
+        stream << *numericValue;
+        return stream.str();
+    }
+
+    return std::get<std::string>(value);
+}
+
 } // namespace
 
 OpenZwaveRuntimeDriverPort::OpenZwaveRuntimeDriverPort(
@@ -349,8 +393,62 @@ void OpenZwaveRuntimeDriverPort::setValue(
         throw std::runtime_error("OpenZWave manager unavailable");
     }
 
-    const bool writeAccepted = applyTypedValueWrite(*manager, valueId, valueType, value);
+    bool cacheHasNode = false;
+    bool cacheHasClass = false;
+    bool cacheHasInstance = false;
+    bool cacheHasIndex = false;
+    {
+        std::scoped_lock lock{mutex_};
+        if (const auto nodeIterator = valueIdCache_.find(target.nodeId); nodeIterator != valueIdCache_.end()) {
+            cacheHasNode = true;
+            if (const auto classIterator = nodeIterator->second.find(target.classId);
+                classIterator != nodeIterator->second.end()) {
+                cacheHasClass = true;
+                if (const auto instanceIterator = classIterator->second.find(requireUint8(target.instance, "instance"));
+                    instanceIterator != classIterator->second.end()) {
+                    cacheHasInstance = true;
+                    cacheHasIndex = instanceIterator->second.contains(target.index);
+                }
+            }
+        }
+    }
+
+    std::ostringstream diagnostics{};
+    diagnostics << "homeId=0x" << std::hex << homeId << std::dec
+                << " nodeId=" << target.nodeId
+                << " classId=0x" << std::hex << target.classId << std::dec
+                << " instance=" << target.instance
+                << " index=" << target.index
+                << " mappingType=\"" << target.type << "\""
+                << " resolvedValueType=\"" << valueTypeNameForLog(valueType) << "\""
+                << " payload=\"" << valuePayloadForLog(value) << "\""
+                << " valueId=0x" << std::hex << valueId.GetId() << std::dec
+                << " cacheNode=" << (cacheHasNode ? 1 : 0)
+                << " cacheClass=" << (cacheHasClass ? 1 : 0)
+                << " cacheInstance=" << (cacheHasInstance ? 1 : 0)
+                << " cacheIndex=" << (cacheHasIndex ? 1 : 0)
+                << " cwd=\"" << std::filesystem::current_path().string() << "\""
+                << " userPath=\"" << openzwaveUserPath().string() << "\""
+                << " configPath=\"" << openzwaveConfigPath().string() << "\"";
+
+    const std::string diagnosticsText = diagnostics.str();
+
+    bool writeAccepted = false;
+    try {
+        writeAccepted = applyTypedValueWrite(*manager, valueId, valueType, value);
+    } catch (const std::exception& exceptionValue) {
+        std::cout << "zwave_client[error] op=setvalue_diagnostics detail=\""
+                  << exceptionValue.what() << "\" " << diagnosticsText << '\n' << std::flush;
+        throw std::runtime_error(std::string{exceptionValue.what()} + " | " + diagnosticsText);
+    } catch (...) {
+        std::cout << "zwave_client[error] op=setvalue_diagnostics detail=\"unknown\" "
+                  << diagnosticsText << '\n' << std::flush;
+        throw std::runtime_error("openzwave setValue failed with unknown exception | " + diagnosticsText);
+    }
+
     if (!writeAccepted) {
+        std::cout << "zwave_client[error] op=setvalue_diagnostics detail=\"setValue returned false\" "
+                  << diagnosticsText << '\n' << std::flush;
         ZwaveController* controller = nullptr;
         {
             std::scoped_lock lock{mutex_};
@@ -359,8 +457,7 @@ void OpenZwaveRuntimeDriverPort::setValue(
         if (controller != nullptr) {
             controller->onNotification(target.nodeId, ZwaveNotificationCode::NodeDead);
         }
-        throw std::runtime_error(
-            "OpenZWave rejected setValue for node " + std::to_string(target.nodeId) + " (presumed dead)");
+        throw std::runtime_error("OpenZWave rejected setValue (presumed dead) | " + diagnosticsText);
     }
 }
 
