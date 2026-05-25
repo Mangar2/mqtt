@@ -219,7 +219,7 @@ void Rs485InterfaceComponent::run() {
         runTimeOfDayLoop();
     });
 
-    std::cout << "rs485 service is running" << '\n';
+    std::cout << "rs485 service is running" << '\n' << std::flush;
 }
 
 void Rs485InterfaceComponent::close() {
@@ -244,7 +244,7 @@ void Rs485InterfaceComponent::close() {
         }
     }
 
-    std::cout << "rs485 service closed" << '\n';
+    std::cout << "rs485 service closed" << '\n' << std::flush;
 }
 
 void Rs485InterfaceComponent::setPublishCallback(PublishCallback callback) {
@@ -262,7 +262,7 @@ void Rs485InterfaceComponent::feedSerialBytes(const std::vector<std::uint8_t>& b
     for (const auto& readResult : readResults) {
         if (!readResult.message.has_value()) {
             if (shouldTraceError(config_.traceLevel) && !readResult.error.empty()) {
-                std::cout << readResult.error << '\n';
+                std::cout << readResult.error << '\n' << std::flush;
             }
             continue;
         }
@@ -270,10 +270,10 @@ void Rs485InterfaceComponent::feedSerialBytes(const std::vector<std::uint8_t>& b
         const Rs485SerialMessage& serialMessage = *readResult.message;
         if (shouldTraceMessage(config_.traceLevel, serialMessage.isInternal())) {
             try {
-                std::cout << buildLegacyLoggingInfo(serialMessage) << '\n';
+                std::cout << buildLegacyLoggingInfo(serialMessage) << '\n' << std::flush;
             } catch (const std::exception& exceptionValue) {
                 if (shouldTraceError(config_.traceLevel)) {
-                    std::cout << exceptionValue.what() << '\n';
+                    std::cout << exceptionValue.what() << '\n' << std::flush;
                 }
             }
         }
@@ -292,7 +292,7 @@ void Rs485InterfaceComponent::feedSerialBytes(const std::vector<std::uint8_t>& b
             publishMappedMessages(mappedMessages);
         } catch (const std::exception& exceptionValue) {
             if (shouldTraceError(config_.traceLevel)) {
-                std::cout << exceptionValue.what() << '\n';
+                std::cout << exceptionValue.what() << '\n' << std::flush;
             }
         }
     }
@@ -458,9 +458,9 @@ void Rs485InterfaceComponent::launchActionThread(std::function<void()> job) {
         try {
             job();
         } catch (const std::exception& exceptionValue) {
-            std::cout << "rs485_interface[action_error] worker exception " << exceptionValue.what() << '\n';
+            std::cout << "rs485_interface[action_error] worker exception " << exceptionValue.what() << '\n' << std::flush;
         } catch (...) {
-            std::cout << "rs485_interface[action_error] worker exception unknown" << '\n';
+            std::cout << "rs485_interface[action_error] worker exception unknown" << '\n' << std::flush;
         }
     }};
 
@@ -502,17 +502,17 @@ void Rs485InterfaceComponent::onSchedulerSend(const Rs485SerialMessage& message)
         bytes = encodeRs485SerialMessage(message);
     } catch (const std::exception& exceptionValue) {
         if (shouldTraceError(config_.traceLevel)) {
-            std::cout << exceptionValue.what() << '\n';
+            std::cout << exceptionValue.what() << '\n' << std::flush;
         }
         return;
     }
 
     if (shouldTraceMessage(config_.traceLevel, message.isInternal())) {
         try {
-            std::cout << buildLegacyLoggingInfo(message) << '\n';
+            std::cout << buildLegacyLoggingInfo(message) << '\n' << std::flush;
         } catch (const std::exception& exceptionValue) {
             if (shouldTraceError(config_.traceLevel)) {
-                std::cout << exceptionValue.what() << '\n';
+                std::cout << exceptionValue.what() << '\n' << std::flush;
             }
         }
     }
