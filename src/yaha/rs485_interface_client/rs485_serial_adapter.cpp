@@ -14,6 +14,9 @@
 #include <unistd.h>
 #endif
 
+#include <chrono>
+#include <thread>
+
 namespace yaha {
 namespace {
 
@@ -75,7 +78,7 @@ void Rs485SerialAdapter::open(const std::string& portName, const std::uint32_t b
         "RS485 serial adapter is not implemented on Windows in this build",
         "Failed to open RS485 serial adapter."};
 #else
-    const int descriptor = ::open(portName.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+    const int descriptor = ::open(portName.c_str(), O_RDWR | O_NOCTTY);
     if (descriptor < 0) {
         throw YahaError{
             "RS485_SERIAL_OPEN_FAILED",
@@ -110,8 +113,9 @@ void Rs485SerialAdapter::open(const std::string& portName, const std::uint32_t b
     ttySettings.c_cflag &= static_cast<tcflag_t>(~CSTOPB);
     ttySettings.c_cflag &= static_cast<tcflag_t>(~CSIZE);
     ttySettings.c_cflag |= CS8;
-    ttySettings.c_cc[VMIN] = 0;
-    ttySettings.c_cc[VTIME] = 1;
+    // Block until at least one byte is available.
+    ttySettings.c_cc[VMIN] = 1;
+    ttySettings.c_cc[VTIME] = 0;
 
     if (::tcsetattr(descriptor, TCSANOW, &ttySettings) != 0) {
         throw YahaError{
@@ -137,11 +141,6 @@ void Rs485SerialAdapter::open(const std::string& portName, const std::uint32_t b
 void Rs485SerialAdapter::close() {
     running_.store(false);
 
-    if (readThread_.joinable()) {
-        readThread_.join();
-    }
-
-#if !defined(_WIN32)
     int descriptor = -1;
     {
         std::lock_guard<std::mutex> lock{ioMutex_};
@@ -149,10 +148,16 @@ void Rs485SerialAdapter::close() {
         fileDescriptor_ = -1;
     }
 
+#if !defined(_WIN32)
+    // Closing the descriptor first unblocks a potentially blocking read().
     if (descriptor >= 0) {
         ::close(descriptor);
     }
 #endif
+
+    if (readThread_.joinable()) {
+        readThread_.join();
+    }
 }
 
 void Rs485SerialAdapter::send(const std::vector<std::uint8_t>& payload) {
@@ -185,6 +190,7 @@ void Rs485SerialAdapter::send(const std::vector<std::uint8_t>& payload) {
 
         if (written < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                std::this_thread::sleep_for(std::chrono::milliseconds{1});
                 continue;
             }
             throw YahaError{
@@ -233,6 +239,9 @@ void Rs485SerialAdapter::readLoop() {
 
         const ssize_t readCount = ::read(descriptor, buffer.data(), buffer.size());
         if (readCount <= 0) {
+            if (readCount < 0 && errno == EINTR) {
+                continue;
+            }
             continue;
         }
 
