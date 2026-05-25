@@ -1,11 +1,13 @@
 #include "yaha/rs485_interface/rs485_interface_component.h"
-#include "yaha/message/message_log_service.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <ctime>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <thread>
 #include <utility>
 
@@ -16,8 +18,96 @@ constexpr std::uint32_t k_default_blink_cycles{1U};
 constexpr std::uint32_t k_blink_toggle_multiplier{2U};
 constexpr double k_integer_epsilon{1e-9};
 constexpr std::uint32_t k_interruptible_sleep_quantum_ms{50U};
+constexpr std::size_t k_legacy_log_prefix_min_length{42U};
 constexpr const char* k_trace_topic_set{"$SYS/rs485Interface/trace/set"};
 constexpr const char* k_monitor_trace_topic_set{"$MONITOR/rs485Interface/trace/set"};
+
+[[nodiscard]] bool shouldTraceError(const std::string& traceLevel) {
+    // Preserve legacy singular/plural mismatch quirk ("error" vs configured "errors").
+    return traceLevel == "error" || traceLevel == "messages" || traceLevel == "internal";
+}
+
+[[nodiscard]] bool shouldTraceMessage(const std::string& traceLevel, const bool isInternalMessage) {
+    return (traceLevel == "messages" && !isInternalMessage) || traceLevel == "internal";
+}
+
+[[nodiscard]] std::string toLowerHexString(const std::uint8_t value) {
+    std::ostringstream stream{};
+    stream << std::hex << std::nouppercase << std::setw(2) << std::setfill('0')
+           << static_cast<unsigned int>(value);
+    return stream.str();
+}
+
+[[nodiscard]] std::string formatHexForLegacyLog(
+    const std::vector<std::uint8_t>& byteArray,
+    const std::size_t startIndex,
+    const std::size_t messageSize) {
+    if (startIndex >= byteArray.size() || messageSize == 0U) {
+        return {};
+    }
+
+    const std::size_t available = byteArray.size() - startIndex;
+    const std::size_t amount = std::min(available, messageSize);
+
+    std::ostringstream stream{};
+    stream << "([" << byteArray.size() << "] ";
+    for (std::size_t index = 0U; index < amount; ++index) {
+        stream << ' ' << toLowerHexString(byteArray[startIndex + index]);
+    }
+    stream << ')';
+    return stream.str();
+}
+
+[[nodiscard]] std::string currentLocalTimeForLegacyLog() {
+    const std::time_t now = std::time(nullptr);
+    const std::tm* localTime = std::localtime(&now);
+    if (localTime == nullptr) {
+        return "00:00:00";
+    }
+
+    std::ostringstream stream{};
+    stream << std::put_time(localTime, "%X");
+    return stream.str();
+}
+
+[[nodiscard]] std::string valueToLegacyLogText(const Rs485SerialMessage& message) {
+    if (message.command == k_rs485_token_command) {
+        const auto stateValue = static_cast<std::uint8_t>(message.value);
+        if (stateValue == static_cast<std::uint8_t>(Rs485StateResult::EnableSend)) {
+            return "enable send";
+        }
+        if (stateValue == static_cast<std::uint8_t>(Rs485StateResult::RegistrationInfo)) {
+            return "reg. info";
+        }
+        if (stateValue == static_cast<std::uint8_t>(Rs485StateResult::RegistrationRequest)) {
+            return "reg. request";
+        }
+    }
+
+    std::ostringstream stream{};
+    stream << message.value;
+    return stream.str();
+}
+
+[[nodiscard]] std::string buildLegacyLoggingInfo(const Rs485SerialMessage& message) {
+    const int replyBit = message.reply ? 1 : 0;
+    std::ostringstream stream{};
+    stream << currentLocalTimeForLegacyLog()
+           << ' ' << static_cast<int>(message.sender)
+           << " => " << static_cast<int>(message.receiver)
+           << " (r:" << replyBit << "): "
+           << message.command
+           << " = " << valueToLegacyLogText(message);
+
+    std::string output = stream.str();
+    while (output.size() < k_legacy_log_prefix_min_length) {
+        output.push_back(' ');
+    }
+
+    const std::vector<std::uint8_t> encoded = encodeRs485SerialMessage(message);
+    output += formatHexForLegacyLog(encoded, 0U, message.length);
+    return output;
+}
 
 [[nodiscard]] std::string joinTopicPath(const std::string& base, const std::string& suffix) {
     if (base.empty()) {
@@ -105,23 +195,6 @@ SubscriptionMap Rs485InterfaceComponent::getSubscriptions() const {
 }
 
 void Rs485InterfaceComponent::handleMessage(const Message& message) {
-    if (config_.logIncomingMessages) {
-        const MessageLogConfig logConfig{
-            .enableIncoming = true,
-            .enableOutgoing = false,
-            .includeReasonChain = true,
-            .incomingTopicFilter = std::nullopt,
-            .outgoingTopicFilter = std::nullopt};
-        const std::optional<std::string> logLine = buildMessageLogLine(
-            "rs485_interface",
-            MessageLogDirection::Incoming,
-            message,
-            logConfig);
-        if (logLine.has_value()) {
-            std::cout << *logLine << '\n';
-        }
-    }
-
     const std::string topicLower = toLowerCopy(message.topic());
     if (topicLower == toLowerCopy(k_trace_topic_set) || topicLower == toLowerCopy(k_monitor_trace_topic_set)) {
         if (std::holds_alternative<std::string>(message.value())) {
@@ -145,6 +218,8 @@ void Rs485InterfaceComponent::run() {
     timeOfDayThread_ = std::thread([this]() {
         runTimeOfDayLoop();
     });
+
+    std::cout << "rs485 service is running" << '\n';
 }
 
 void Rs485InterfaceComponent::close() {
@@ -168,6 +243,8 @@ void Rs485InterfaceComponent::close() {
             thread.join();
         }
     }
+
+    std::cout << "rs485 service closed" << '\n';
 }
 
 void Rs485InterfaceComponent::setPublishCallback(PublishCallback callback) {
@@ -184,20 +261,21 @@ void Rs485InterfaceComponent::feedSerialBytes(const std::vector<std::uint8_t>& b
     const auto readResults = Rs485StreamReader::read(byteChunk);
     for (const auto& readResult : readResults) {
         if (!readResult.message.has_value()) {
-            if (config_.traceLevel == "error" || config_.traceLevel == "messages" ||
-                config_.traceLevel == "internal") {
-                std::cout << "rs485_interface[decode_error] " << readResult.error << '\n';
+            if (shouldTraceError(config_.traceLevel) && !readResult.error.empty()) {
+                std::cout << readResult.error << '\n';
             }
             continue;
         }
 
         const Rs485SerialMessage& serialMessage = *readResult.message;
-        if (config_.logIncomingMessages) {
-            std::cout << "rs485_interface[incoming_serial] sender=" << static_cast<int>(serialMessage.sender)
-                      << " receiver=" << static_cast<int>(serialMessage.receiver)
-                      << " command=" << serialMessage.command
-                      << " value=" << serialMessage.value
-                      << " version=" << static_cast<int>(serialMessage.version) << '\n';
+        if (shouldTraceMessage(config_.traceLevel, serialMessage.isInternal())) {
+            try {
+                std::cout << buildLegacyLoggingInfo(serialMessage) << '\n';
+            } catch (const std::exception& exceptionValue) {
+                if (shouldTraceError(config_.traceLevel)) {
+                    std::cout << exceptionValue.what() << '\n';
+                }
+            }
         }
 
         const bool sendToBroker = scheduler_.processReceivedMessage(serialMessage);
@@ -213,9 +291,8 @@ void Rs485InterfaceComponent::feedSerialBytes(const std::vector<std::uint8_t>& b
             }
             publishMappedMessages(mappedMessages);
         } catch (const std::exception& exceptionValue) {
-            if (config_.traceLevel == "error" || config_.traceLevel == "messages" ||
-                config_.traceLevel == "internal") {
-                std::cout << "rs485_interface[map_error] " << exceptionValue.what() << '\n';
+            if (shouldTraceError(config_.traceLevel)) {
+                std::cout << exceptionValue.what() << '\n';
             }
         }
     }
@@ -319,10 +396,7 @@ void Rs485InterfaceComponent::processActionMessage(const Message& message) {
         return;
     }
 
-    if (config_.traceLevel == "error" || config_.traceLevel == "messages" || config_.traceLevel == "internal") {
-        std::cout << "rs485_interface[action_error] topic with unknown string end (/set, /temporary or /blink expected) "
-                  << topicLower << '\n';
-    }
+    (void)topicLower;
 }
 
 void Rs485InterfaceComponent::enqueueSet(const std::string& topic, const Value& value) {
@@ -423,23 +497,24 @@ void Rs485InterfaceComponent::runTimeOfDayLoop() {
 }
 
 void Rs485InterfaceComponent::onSchedulerSend(const Rs485SerialMessage& message) {
-    if (config_.logOutgoingMessages) {
-        std::cout << "rs485_interface[outgoing_serial] sender=" << static_cast<int>(message.sender)
-                  << " receiver=" << static_cast<int>(message.receiver)
-                  << " command=" << message.command
-                  << " value=" << message.value
-                  << " version=" << static_cast<int>(message.version) << '\n';
-    }
-
     std::vector<std::uint8_t> bytes{};
     try {
         bytes = encodeRs485SerialMessage(message);
     } catch (const std::exception& exceptionValue) {
-        if (config_.traceLevel == "error" || config_.traceLevel == "messages" ||
-            config_.traceLevel == "internal") {
-            std::cout << "rs485_interface[encode_error] " << exceptionValue.what() << '\n';
+        if (shouldTraceError(config_.traceLevel)) {
+            std::cout << exceptionValue.what() << '\n';
         }
         return;
+    }
+
+    if (shouldTraceMessage(config_.traceLevel, message.isInternal())) {
+        try {
+            std::cout << buildLegacyLoggingInfo(message) << '\n';
+        } catch (const std::exception& exceptionValue) {
+            if (shouldTraceError(config_.traceLevel)) {
+                std::cout << exceptionValue.what() << '\n';
+            }
+        }
     }
 
     std::lock_guard<std::mutex> lock{serialSendMutex_};
@@ -458,23 +533,6 @@ void Rs485InterfaceComponent::publishMappedMessages(const std::vector<Message>& 
         Message publishMessage{message.topic(), message.value(), config_.subscribeQos, false, false};
         for (const auto& reasonEntry : message.reason()) {
             publishMessage.addReason(reasonEntry.message, reasonEntry.timestamp);
-        }
-
-        if (config_.logOutgoingMessages) {
-            const MessageLogConfig logConfig{
-                .enableIncoming = false,
-                .enableOutgoing = true,
-                .includeReasonChain = true,
-                .incomingTopicFilter = std::nullopt,
-                .outgoingTopicFilter = std::nullopt};
-            const std::optional<std::string> logLine = buildMessageLogLine(
-                "rs485_interface",
-                MessageLogDirection::Outgoing,
-                publishMessage,
-                logConfig);
-            if (logLine.has_value()) {
-                std::cout << *logLine << '\n';
-            }
         }
 
         (void)publishCallback_(publishMessage);

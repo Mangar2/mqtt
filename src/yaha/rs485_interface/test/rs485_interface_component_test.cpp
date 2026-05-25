@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <iostream>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -230,20 +232,15 @@ TEST_CASE("rs485_interface_component_decode_and_map_errors_are_handled", "[rs485
     REQUIRE_NOTHROW(component.feedSerialBytes(yaha::encodeRs485SerialMessage(unknownMapping)));
 }
 
-TEST_CASE("rs485_interface_component_log_flags_cover_incoming_and_outgoing_paths", "[rs485_interface]") {
+TEST_CASE("rs485_interface_component_trace_messages_logs_non_internal_with_legacy_format", "[rs485_interface]") {
     yaha::Rs485InterfaceConfig config = makeComponentConfig();
-    config.logIncomingMessages = true;
-    config.logOutgoingMessages = true;
+    config.traceLevel = "messages";
 
     yaha::Rs485InterfaceComponent component{config};
-    component.setPublishCallback([](const yaha::Message&) {
-        return yaha::PublishResult::ok();
-    });
-    component.setSerialSendCallback([](const std::vector<std::uint8_t>&) {
-    });
 
-    component.run();
-    REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"house/room/device/power/set", 1.0}));
+    std::ostringstream captured{};
+    std::streambuf* oldBuffer = std::cout.rdbuf(captured.rdbuf());
+
     REQUIRE_NOTHROW(component.feedSerialBytes(encodeEnableSendForMe()));
 
     yaha::Rs485SerialMessage serial{};
@@ -254,7 +251,41 @@ TEST_CASE("rs485_interface_component_log_flags_cover_incoming_and_outgoing_paths
     serial.version = 1U;
     serial.reply = false;
     REQUIRE_NOTHROW(component.feedSerialBytes(yaha::encodeRs485SerialMessage(serial)));
-    REQUIRE_NOTHROW(component.close());
+
+    std::cout.rdbuf(oldBuffer);
+
+    const std::string output = captured.str();
+    REQUIRE(output.find("! = enable send") == std::string::npos);
+    REQUIRE(output.find("5 => 10 (r:0): P = 1") != std::string::npos);
+    REQUIRE(output.find("([9]  05 0a 02 09 50 00 01") != std::string::npos);
+}
+
+TEST_CASE("rs485_interface_component_trace_internal_logs_token_and_non_token", "[rs485_interface]") {
+    yaha::Rs485InterfaceConfig config = makeComponentConfig();
+    config.traceLevel = "internal";
+
+    yaha::Rs485InterfaceComponent component{config};
+
+    std::ostringstream captured{};
+    std::streambuf* oldBuffer = std::cout.rdbuf(captured.rdbuf());
+
+    REQUIRE_NOTHROW(component.feedSerialBytes(encodeEnableSendForMe()));
+
+    yaha::Rs485SerialMessage serial{};
+    serial.sender = k_device_address;
+    serial.receiver = k_my_address;
+    serial.command = 'P';
+    serial.value = 1.0;
+    serial.version = 1U;
+    serial.reply = false;
+    REQUIRE_NOTHROW(component.feedSerialBytes(yaha::encodeRs485SerialMessage(serial)));
+
+    std::cout.rdbuf(oldBuffer);
+
+    const std::string output = captured.str();
+    REQUIRE(output.find("11 => 10 (r:0): ! = enable send") != std::string::npos);
+    REQUIRE(output.find("([9]  0b 0a 02 09 21 00 01") != std::string::npos);
+    REQUIRE(output.find("5 => 10 (r:0): P = 1") != std::string::npos);
 }
 
 TEST_CASE("rs485_interface_component_get_subscriptions_covers_join_topic_variants", "[rs485_interface]") {

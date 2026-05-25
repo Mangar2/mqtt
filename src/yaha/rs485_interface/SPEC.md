@@ -70,6 +70,10 @@ Serial -> MQTT:
 - Time-of-day loop periodically sends broadcast command `'C'` with local minutes-of-day payload.
 - Serial receive pipeline uses `Rs485StreamReader`, scheduler token processing, and publishes only messages accepted by scheduler state.
 - scheduler, time-of-day, temporary, and blink waits are interruptible by `close()` so shutdown does not block for full configured delay windows.
-- temporary/blink action worker threads catch and log runtime exceptions with `rs485_interface[action_error]` to prevent process aborts from background action failures.
-- MQTT message-flow logs (`logIncomingMessages`, `logOutgoingMessages`) are emitted via shared message logging service (`yaha/message/message_log_service.*`) with deterministic field order and full structured reason output.
+- temporary/blink action worker threads catch and log runtime exceptions to prevent process aborts from background action failures.
+- Trace output follows legacy JS behavior exactly:
+  - error lines are printed unprefixed and only when `trace` is `error`, `messages`, or `internal` (including legacy singular/plural mismatch quirk)
+  - serial frame lines use legacy `getLoggingInfo()` formatting (`<time> sender => receiver (r:x): cmd = value`), padded to length 42, plus hex payload as `([len]  xx yy ..)` with lowercase hex bytes
+  - `trace=messages` prints only non-internal frames; `trace=internal` prints all frames including token traffic
+- `run()` logs `rs485 service is running`; `close()` logs `rs485 service closed`.
 - phase-6 tests verify subscription contract, action-to-serial emission, serial-to-publish mapping, and trace-topic handling.

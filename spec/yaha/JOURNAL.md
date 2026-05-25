@@ -250,3 +250,11 @@ Updated affected tests/specs in `src/yaha/automation_client/test/automation_clie
 
 ### [MILESTONE] Logging unification Phase 6 completed
 Phase 6 of `spec/yaha/IMPL-message-logging-unification.md` is complete: remaining bypass-style message-flow logs were migrated to shared service output and guardrail regression expectations were aligned to the unified contract.
+
+## 2026-05-25
+
+### [CORRECTION] RS485 trace output restored to legacy JS parity
+Updated `src/yaha/rs485_interface/rs485_interface_component.cpp` and `src/yaha/rs485_protocol/rs485_serial_protocol.cpp` so RS485 trace logs now match legacy behavior: same trace-level filter effects, same `getLoggingInfo` line format, lowercase hex payload rendering, and unprefixed error lines. Removed RS485-specific shared message-log output from this trace path to preserve original service logging behavior exactly.
+
+### [ARTIFACT] RS485 trace parity tests and specs updated
+Updated `src/yaha/rs485_interface/test/rs485_interface_component_test.cpp` and `src/yaha/rs485_interface/test/TEST_SPEC.md` with assertions for legacy trace formatting and token/non-token visibility by trace level. Updated `src/yaha/rs485_interface/SPEC.md` to document the restored parity contract.

@@ -2,9 +2,10 @@
 #include "yaha/error_handling/yaha_error.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <format>
+#include <iomanip>
+#include <sstream>
 #include <string>
 
 namespace yaha {
@@ -14,7 +15,6 @@ constexpr std::uint16_t k_crc_start_value{0xFFFFU};
 constexpr std::uint16_t k_crc_polynom{0x1021U};
 constexpr std::uint16_t k_crc_msb_mask{0x8000U};
 constexpr std::uint16_t k_crc_mask{0xFFFFU};
-constexpr std::uint8_t k_nibble_mask{0x0FU};
 constexpr std::uint8_t k_max_address{127U};
 constexpr std::size_t k_bits_in_byte{8U};
 constexpr std::uint8_t k_u8_low_mask{0xFFU};
@@ -38,27 +38,19 @@ constexpr std::size_t k_field_v1_crc_high{8U};
     const std::vector<std::uint8_t>& byteArray,
     const std::size_t startIndex,
     const std::size_t length) {
-    static constexpr std::array<char, 16U> hexDigits{
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
+    const std::size_t available = startIndex < byteArray.size() ? (byteArray.size() - startIndex) : 0U;
+    const std::size_t amount = std::min(available, length);
 
-    if (startIndex >= byteArray.size() || length == 0U) {
-        return {};
+    std::ostringstream output{};
+    output << "([" << byteArray.size() << "] ";
+
+    for (std::size_t index = 0U; index < amount; ++index) {
+        output << ' ' << std::hex << std::nouppercase << std::setw(2) << std::setfill('0')
+               << static_cast<unsigned int>(byteArray[startIndex + index]);
     }
 
-    const std::size_t cappedLength = std::min(length, byteArray.size() - startIndex);
-    std::string output{};
-    output.reserve(cappedLength * 3U);
-
-    for (std::size_t index = 0U; index < cappedLength; ++index) {
-        const std::uint8_t value = byteArray[startIndex + index];
-        output.push_back(hexDigits[value >> 4U]);
-        output.push_back(hexDigits[value & k_nibble_mask]);
-        if (index + 1U < cappedLength) {
-            output.push_back(' ');
-        }
-    }
-
-    return output;
+    output << ')';
+    return output.str();
 }
 
 [[nodiscard]] std::uint16_t valueToRawWord(const double value) {
@@ -319,7 +311,7 @@ std::optional<Rs485ReadResult> Rs485StreamReader::readMessage(
             .startIndex = startIndex + message.length,
             .message = std::nullopt,
             .hex = hex,
-            .error = exception.buildMessage()};
+            .error = exception.message()};
     }
 }
 
