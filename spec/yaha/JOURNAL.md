@@ -258,3 +258,6 @@ Updated `src/yaha/rs485_interface/rs485_interface_component.cpp` and `src/yaha/r
 
 ### [ARTIFACT] RS485 trace parity tests and specs updated
 Updated `src/yaha/rs485_interface/test/rs485_interface_component_test.cpp` and `src/yaha/rs485_interface/test/TEST_SPEC.md` with assertions for legacy trace formatting and token/non-token visibility by trace level. Updated `src/yaha/rs485_interface/SPEC.md` to document the restored parity contract.
+
+### [CORRECTION] Z-Wave unit-test expectations aligned with current startup and poll allowlist behavior
+Updated `src/yaha/zwave/test/zwave_service_component_test.cpp` to expect the startup known-nodes snapshot plus request-config error publish in run exception paths. Updated `src/yaha/zwave_controller/test/zwave_controller_test.cpp` and `src/yaha/zwave_controller/test/TEST_SPEC.md` to keep post-ready polling restricted to allowlisted switch classes (no additional poll enable for sensor class `0x31`).

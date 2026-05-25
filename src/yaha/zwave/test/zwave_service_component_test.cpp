@@ -992,7 +992,7 @@ TEST_CASE("run_request_config_exception_publishes_error_message", "[zwave_servic
 
     service.run();
 
-    REQUIRE(published.size() == 5U);
+    REQUIRE(published.size() == 6U);
     CHECK(published.back().topic() == "system/zwave/error");
     CHECK(hasReasonMessage(published.back(), "operation=requestconfig"));
 }
@@ -1009,7 +1009,7 @@ TEST_CASE("run_request_config_unknown_exception_publishes_error_message", "[zwav
 
     service.run();
 
-    REQUIRE(published.size() == 5U);
+    REQUIRE(published.size() == 6U);
     CHECK(published.back().topic() == "system/zwave/error");
     CHECK(hasReasonMessage(published.back(), "operation=requestconfig"));
     CHECK(hasReasonMessage(published.back(), "unknown"));

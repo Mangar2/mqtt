@@ -726,7 +726,7 @@ TEST_CASE("node_ready_enables_switch_class_polling", "[zwave_controller]") {
     controller.onValueRemoved(kUnknownNodeId, kSensorMultilevelClass, kIndexOne);
 }
 
-TEST_CASE("value_discovery_after_node_ready_enables_class_polling", "[zwave_controller]") {
+TEST_CASE("value_discovery_after_node_ready_ignores_non_allowlisted_poll_class", "[zwave_controller]") {
     FakeDriverPort driver{};
     auto controller = makeController(driver);
 
@@ -744,9 +744,9 @@ TEST_CASE("value_discovery_after_node_ready_enables_class_polling", "[zwave_cont
         .type = "number",
         .readOnly = false});
 
-    CHECK(driver.enablePollCalls == 3U);
+    CHECK(driver.enablePollCalls == 2U);
     CHECK(driver.lastEnablePollNode == kNodeIdTwentyOne);
-    CHECK(driver.lastEnablePollClass == kSensorMultilevelClass);
+    CHECK(driver.lastEnablePollClass == kSwitchMultilevelClass);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
