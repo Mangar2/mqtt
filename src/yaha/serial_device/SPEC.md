@@ -1,12 +1,14 @@
 # serial_device
 
-Phase 2 scope in this module:
+Phase 3 scope in this module:
 - define SerialDevice domain configuration contract
 - derive MQTT subscriptions from configured interface maps
 - preserve legacy subscription behavior quirks from `@mangar2/serialdevice`
 - provide internal serial message model with legacy-compatible scalar types
 - parse chunked serial stream input to normalized serial messages
 - serialize internal serial messages to exact wire payload strings
+- map MQTT topic/value input to serial messages with topicMap and suffix routes
+- map serial messages to MQTT publish messages including switch expansion and value-map reverse conversion
 
 ## Public types
 
@@ -118,6 +120,40 @@ Behavior:
 - `fs20` -> `G<commandPartAfterSlash><value>`
 - unsupported/invalid payload returns empty string.
 
+### mapMqttToSerialMessage
+
+Signature:
+- `SerialDeviceMessage mapMqttToSerialMessage(const SerialDeviceConfig&, const std::string&, const std::string&)`
+
+Behavior:
+- direct topicMap route (exact topic match) has priority.
+- fallback command suffix route uses case-insensitive topic-end matching against commandMap.
+- receiver resolution uses case-insensitive topic-prefix matching against receiverMap; no match returns empty string endpoint.
+- value conversion supports numeric text, valueMap conversion, and on/off-style fallback mapping.
+- error paths include:
+  - `undefined device setting <topic>` for unknown mapping
+  - `The provided value is not an integer: <value>` for invalid value normalization
+
+Legacy compatibility notes:
+- direct topicMap route remains case-sensitive.
+- topic suffix and receiver prefix route remain case-insensitive.
+- switch ON/OFF bit augmentation uses `SWITCH_ON=0x4000`, `SWITCH_OFF=0x2000`.
+
+### mapSerialMessageToMqttMessages
+
+Signature:
+- `std::vector<Message> mapSerialMessageToMqttMessages(const SerialDeviceConfig&, const SerialDeviceMessage&)`
+
+Behavior:
+- non-switch interfaces map to exactly one MQTT message:
+  - topic = `<topicPrefix><topicSuffix><action>`
+  - value uses reverse valueMap lookup where configured
+  - reason text = `received from arduino`
+  - qos = 0
+- switch interface can map to zero, one, or multiple messages based on switch flag and bit-state rules.
+- topic suffix lookup uses commandMap and sendMap fallback.
+- unknown serial sender address and unknown serial command throw runtime errors.
+
 ## Files
 
 - serial_device_contract.h
@@ -128,9 +164,15 @@ Behavior:
 - serial_device_parser.cpp
 - serial_device_wire_serializer.h
 - serial_device_wire_serializer.cpp
+- serial_device_mqtt_to_serial_mapper.h
+- serial_device_mqtt_to_serial_mapper.cpp
+- serial_device_serial_to_mqtt_mapper.h
+- serial_device_serial_to_mqtt_mapper.cpp
 - test/TEST_SPEC.md
 - test/serial_device_contract_test.cpp
 - test/serial_device_oracle_parity_test.cpp
 - test/serial_device_parser_oracle_test.cpp
 - test/serial_device_phase2_unit_test.cpp
+- test/serial_device_phase3_unit_test.cpp
 - test/serial_device_wire_oracle_test.cpp
+- test/serial_device_mapping_oracle_test.cpp

@@ -68,3 +68,39 @@ Unit tests for phase-1 and phase-2 serial_device parity contracts:
 15. serial_device_wire_serializer_handles_unknown_interface_and_non_numeric_switch_payload
 - Scenario: serialize unsupported interface, non-numeric switch payload, and fs20 command without slash.
 - Expected: unsupported/non-numeric paths return empty string and fs20 no-slash path follows current implementation output.
+
+16. serial_device_mqtt_to_serial_matches_oracle_b_fixtures
+- Scenario: run mapper against Oracle B core and errors suites.
+- Expected: mapped serial messages match oracle field-by-field and error cases throw expected legacy error text exactly.
+
+17. serial_device_serial_to_mqtt_matches_oracle_c_fixtures
+- Scenario: run mapper against Oracle C core and switch suites.
+- Expected: produced MQTT messages match oracle topic/value/reason/qos and message order exactly.
+
+18. serial_to_mqtt_maps_numeric_value_via_reverse_value_map
+- Scenario: serial interface message with numeric value matching configured reverse valueMap entry.
+- Expected: mqtt value is converted to mapped interface text (for example `off`) on output.
+
+19. serial_to_mqtt_throws_on_unknown_interface
+- Scenario: serial message references an interface not configured in SerialDeviceConfig.
+- Expected: mapper throws runtime error.
+
+20. serial_to_mqtt_throws_on_unknown_sender_address
+- Scenario: serial message sender does not match configured receiverMap entries.
+- Expected: mapper throws runtime error for unknown serial address.
+
+21. serial_to_mqtt_throws_on_unknown_command
+- Scenario: serial interface command misses commandMap and sendMap entries.
+- Expected: mapper throws runtime error for unknown serial command.
+
+22. serial_to_mqtt_switch_branch_handles_non_matching_topic_entries
+- Scenario: switch frame is processed while topicMap contains both matching and non-matching command entries.
+- Expected: mapper skips non-matching entries and publishes only matching switch topics.
+
+23. serial_to_mqtt_switch_with_monostate_sender_returns_no_matches
+- Scenario: switch frame has monostate sender value.
+- Expected: strict sender/address comparison causes no topic matches and returns an empty publish list.
+
+24. serial_to_mqtt_sender_numeric_with_non_numeric_address_triggers_no_match
+- Scenario: sender is numeric but receiverMap contains a non-numeric address token.
+- Expected: numeric fallback comparison fails and mapper throws unknown-address runtime error.
