@@ -19,7 +19,7 @@ namespace {
 
 constexpr std::uint32_t k_poll_max_tries{100U};
 constexpr std::chrono::milliseconds k_short_wait{10};
-constexpr std::uint32_t k_open_fail_retry_count{10U};
+constexpr std::uint32_t k_open_fail_retry_count{1U};
 constexpr double k_non_integer_value{1.5};
 
 class FakeSerialTransport final : public yaha::ISerialDeviceTransport {

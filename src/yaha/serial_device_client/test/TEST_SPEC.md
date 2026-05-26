@@ -2,7 +2,7 @@
 
 ## Scope
 
-Unit tests for phase-1 INI mapping and runtime config loading in serial_device_client.
+Unit tests for phase-1 INI mapping/runtime config loading and phase-5 runtime composition in serial_device_client.
 
 ## Planned and implemented test cases
 
@@ -29,3 +29,15 @@ Unit tests for phase-1 INI mapping and runtime config loading in serial_device_c
 6. serial_device_runtime_config_keeps_mqtt_defaults_on_invalid_mqtt_values
 - Scenario: [mqtt] section has invalid optional value.
 - Expected: runtime config loader succeeds and mqtt defaults remain for invalid field.
+
+7. serial_device_client_runtime_build_creates_runtime_objects
+- Scenario: valid runtime config is passed to runtime builder.
+- Expected: component, serial transport, mqtt client, and runtime wrapper are all created.
+
+8. serial_device_client_runtime_component_derives_system_subscription
+- Scenario: built runtime component derives subscriptions from configured interfaces.
+- Expected: subscribe map contains `$SYS/serialdevice/#`.
+
+9. serial_device_client_runtime_transport_methods_are_callable
+- Scenario: runtime builder creates default serial transport implementation.
+- Expected: callback registration, list/isOpen/close are callable and open/send propagate failures for invalid/unopened transport.

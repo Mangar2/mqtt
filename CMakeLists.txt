@@ -81,6 +81,7 @@ list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_valueserviceclient_main\\.cpp$
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_rs485interfaceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_remoteserviceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_zwaveclient_main\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_serialdeviceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/automation/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/automation_client/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/broker_connector/.+\\.cpp$")
@@ -398,6 +399,24 @@ if(WIN32)
     target_link_libraries(yahazwaveclient PRIVATE ws2_32)
 endif()
 
+#  YAHA SerialDevice standalone executable
+add_executable(yahaserialdeviceclient
+    src/yaha_serialdeviceclient_main.cpp
+    src/yaha/rs485_interface_client/rs485_serial_adapter.cpp
+    ${YAHA_SERIALDEVICE_SOURCES}
+    ${MQTT_LIBRARY_SOURCES}
+)
+
+target_compile_options(yahaserialdeviceclient PRIVATE ${MQTT_COMPILE_OPTIONS})
+target_link_options(yahaserialdeviceclient    PRIVATE ${MQTT_LINK_OPTIONS})
+target_include_directories(yahaserialdeviceclient PRIVATE src)
+target_include_directories(yahaserialdeviceclient PRIVATE ${httplib_SOURCE_DIR})
+target_compile_definitions(yahaserialdeviceclient PRIVATE
+    $<$<BOOL:${MQTT_TRACING_DISABLED}>:MQTT_TRACING_DISABLED>)
+if(WIN32)
+    target_link_libraries(yahaserialdeviceclient PRIVATE ws2_32)
+endif()
+
 #  Unit tests 
 include(CTest)
 
@@ -480,5 +499,6 @@ install(TARGETS yahabroker
     yahars485interfaceclient
     yaharemoteserviceclient
     yahazwaveclient
+    yahaserialdeviceclient
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
