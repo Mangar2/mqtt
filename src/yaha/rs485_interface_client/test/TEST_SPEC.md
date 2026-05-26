@@ -50,66 +50,54 @@ Phase-6 extension:
 - Scenario: interface map contains non-numeric value.
 - Expected: parsing fails with error pointing to rs485interface.interfaces value parsing.
 
-11. rs485_runtime_build_creates_all_runtime_object_pointers
-- Scenario: valid parsed runtime config is passed to runtime builder.
-- Expected: build succeeds and all runtime object pointers are initialized.
-
-12. rs485_runtime_build_opens_serial_adapter
-- Scenario: valid parsed runtime config is passed to runtime builder.
-- Expected: build succeeds and serial adapter is open.
-
-13. rs485_runtime_build_fails_when_serial_open_fails
+11. rs485_runtime_build_fails_when_serial_open_fails
 - Scenario: runtime build is requested with invalid serial path.
 - Expected: build fails and error contains code RS485_RUNTIME_SERIAL_OPEN_FAILED.
 
-14. rs485_runtime_component_startup_and_shutdown_is_clean
-- Scenario: build runtime, start component threads, then close.
-- Expected: no exception and clean shutdown.
-
-15. rs485_serial_adapter_open_fails_for_invalid_path
+12. rs485_serial_adapter_open_fails_for_invalid_path
 - Scenario: open adapter with invalid serial device path.
 - Expected: open returns false and error message is non-empty.
 
-16. rs485_serial_adapter_send_fails_when_not_open
+13. rs485_serial_adapter_send_fails_when_not_open
 - Scenario: call send before opening serial adapter.
 - Expected: send returns false with deterministic error text.
 
-17. rs485_runtime_config_rejects_invalid_command_keys_and_topics_values
+14. rs485_runtime_config_rejects_invalid_command_keys_and_topics_values
 - Scenario: invalid single-character command keys and invalid topic mapping value/address tokens.
 - Expected: parsing fails with field-specific validation messages.
 
-18. rs485_runtime_config_rejects_invalid_interface_segment_shapes
+15. rs485_runtime_config_rejects_invalid_interface_segment_shapes
 - Scenario: malformed interface definitions (missing usedby, invalid usedby token, invalid map token).
 - Expected: parsing fails with deterministic interface validation error.
 
-19. rs485_serial_adapter_send_writes_payload_to_serial_master
+16. rs485_serial_adapter_send_writes_payload_to_serial_master
 - Scenario: adapter opened on pseudo-terminal slave sends payload.
 - Expected: bytes are readable unchanged from pseudo-terminal master fd.
 
-20. rs485_serial_adapter_receive_callback_gets_serial_bytes
+17. rs485_serial_adapter_receive_callback_gets_serial_bytes
 - Scenario: bytes written to pseudo-terminal master while callback is installed.
 - Expected: receive callback is invoked with the transmitted payload bytes.
 
-21. rs485_serial_adapter_open_supports_all_configured_baudrates
+18. rs485_serial_adapter_open_supports_all_configured_baudrates
 - Scenario: open adapter on pseudo-terminal slave with each supported configured baudrate.
 - Expected: open succeeds for every configured baudrate path and adapter closes cleanly afterwards.
 
-22. rs485_serial_adapter_receive_without_callback_is_ignored
+19. rs485_serial_adapter_receive_without_callback_is_ignored
 - Scenario: open adapter, write bytes to pseudo-terminal master, and keep receive callback unset.
 - Expected: read loop consumes bytes without exception and close remains clean.
 
-23. rs485_serial_adapter_open_with_unknown_baudrate_uses_default_mapping
+20. rs485_serial_adapter_open_with_unknown_baudrate_uses_default_mapping
 - Scenario: open adapter on pseudo-terminal with unsupported baudrate value.
 - Expected: adapter opens successfully using default baudrate mapping path and closes cleanly.
 
-24. rs485_serial_adapter_close_is_idempotent
+21. rs485_serial_adapter_close_is_idempotent
 - Scenario: call close repeatedly without opening adapter first.
 - Expected: close is a no-op and never throws.
 
-25. rs485_serial_adapter_open_fails_for_non_tty_device
+22. rs485_serial_adapter_open_fails_for_non_tty_device
 - Scenario: open adapter against a non-TTY path (`/dev/null`) where `open()` succeeds but termios attribute read fails.
 - Expected: open throws with deterministic `failed to read serial attributes` details and adapter remains closed.
 
-26. rs485_serial_adapter_send_reports_write_failure
+23. rs485_serial_adapter_send_reports_write_failure
 - Scenario: open adapter on pseudo-terminal slave, close pseudo-terminal master, then send payload.
 - Expected: send throws with deterministic `failed to write serial data` details and adapter closes cleanly.

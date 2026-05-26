@@ -98,6 +98,8 @@ list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/rs485_interface/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/rs485_interface_client/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/rs485_protocol/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/rs485_state/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/serial_device/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/serial_device_client/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/value_service/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/value_service_client/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/zwave/.+\\.cpp$")
@@ -150,6 +152,12 @@ file(GLOB_RECURSE YAHA_RS485INTERFACE_SOURCES CONFIGURE_DEPENDS
     "src/yaha/rs485_state/*.cpp"
 )
 list(FILTER YAHA_RS485INTERFACE_SOURCES EXCLUDE REGEX "/test/")
+
+file(GLOB_RECURSE YAHA_SERIALDEVICE_SOURCES CONFIGURE_DEPENDS
+    "src/yaha/serial_device/*.cpp"
+    "src/yaha/serial_device_client/*.cpp"
+)
+list(FILTER YAHA_SERIALDEVICE_SOURCES EXCLUDE REGEX "/test/")
 
 file(GLOB_RECURSE YAHA_VALUESERVICE_SOURCES CONFIGURE_DEPENDS
     "src/yaha/value_service/*.cpp"
@@ -417,6 +425,7 @@ if(BUILD_TESTING)
         ${YAHA_MSGSTORE_SOURCES}
         ${YAHA_REMOTESERVICE_SOURCES}
         ${YAHA_RS485INTERFACE_SOURCES}
+        ${YAHA_SERIALDEVICE_SOURCES}
         ${YAHA_VALUESERVICE_SOURCES}
         ${YAHA_ZWAVE_SOURCES})
     list(FILTER MQTT_LIB_SOURCES EXCLUDE REGEX "/main\\.cpp$")

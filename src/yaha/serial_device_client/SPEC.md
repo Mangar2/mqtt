@@ -13,12 +13,6 @@ Fields:
 - serialDeviceConfig (`SerialDeviceConfig`)
 - mqttConfig (`YahaMqttClient::Config`)
 
-### Struct SerialDeviceClientRuntimeConfigLoadResult
-
-Fields:
-- config (`SerialDeviceClientRuntimeConfig`)
-- hasWarnings (`bool`)
-
 ### Function tryLoadSerialDeviceConfigFromIni
 
 Signature:
@@ -56,3 +50,5 @@ Behavior:
 
 - serial_device_client_config.h
 - serial_device_client_config.cpp
+- test/TEST_SPEC.md
+- test/serial_device_client_config_test.cpp

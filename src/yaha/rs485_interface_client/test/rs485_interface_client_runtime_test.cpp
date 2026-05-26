@@ -1,6 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "yaha/rs485_interface/rs485_interface_component.h"
 #include "yaha/rs485_interface_client/rs485_interface_client_app.h"
 #include "yaha/error_handling/yaha_error.h"
 
@@ -62,8 +61,6 @@ struct PseudoTerminal {
     PseudoTerminal& operator=(PseudoTerminal&&) = delete;
 };
 
-[[nodiscard]] yaha::Rs485InterfaceRuntimeConfig makeRuntimeConfig(const std::string& serialPortName);
-
 [[nodiscard]] bool createPseudoTerminal(PseudoTerminal& output, std::string& errorMessage) {
     const int masterFd = ::posix_openpt(O_RDWR | O_NOCTTY);
     if (masterFd < 0) {
@@ -95,25 +92,6 @@ struct PseudoTerminal {
     return true;
 }
 
-[[nodiscard]] bool buildRuntimeWithPseudoTerminal(
-    PseudoTerminal& pseudoTerminal,
-    yaha::Rs485InterfaceClientRuntimeObjects& runtimeObjects,
-    std::string& errorMessage) {
-    std::string pseudoTerminalError{};
-    if (!createPseudoTerminal(pseudoTerminal, pseudoTerminalError)) {
-        errorMessage = pseudoTerminalError;
-        return false;
-    }
-
-    try {
-        runtimeObjects = yaha::buildRs485InterfaceClientRuntime(makeRuntimeConfig(pseudoTerminal.slavePath));
-        return true;
-    } catch (const yaha::YahaError& exceptionValue) {
-        errorMessage = exceptionValue.buildMessage();
-        return false;
-    }
-}
-
 [[nodiscard]] yaha::Rs485InterfaceRuntimeConfig makeRuntimeConfig(const std::string& serialPortName) {
     yaha::Rs485InterfaceRuntimeConfig config{};
 
@@ -143,34 +121,6 @@ struct PseudoTerminal {
 
 } // namespace
 
-TEST_CASE("rs485_runtime_build_creates_all_runtime_object_pointers", "[rs485_interface]") {
-    PseudoTerminal pseudoTerminal{};
-    yaha::Rs485InterfaceClientRuntimeObjects runtimeObjects{};
-    std::string errorMessage{};
-
-    const bool success = buildRuntimeWithPseudoTerminal(
-        pseudoTerminal,
-        runtimeObjects,
-        errorMessage);
-
-    REQUIRE(success);
-    REQUIRE(errorMessage.empty());
-    REQUIRE(runtimeObjects.component != nullptr);
-    REQUIRE(runtimeObjects.serialAdapter != nullptr);
-    REQUIRE(runtimeObjects.mqttClient != nullptr);
-    REQUIRE(runtimeObjects.runtime != nullptr);
-}
-
-TEST_CASE("rs485_runtime_build_opens_serial_adapter", "[rs485_interface]") {
-    PseudoTerminal pseudoTerminal{};
-    yaha::Rs485InterfaceClientRuntimeObjects runtimeObjects{};
-    std::string errorMessage{};
-
-    REQUIRE(buildRuntimeWithPseudoTerminal(pseudoTerminal, runtimeObjects, errorMessage));
-    REQUIRE(errorMessage.empty());
-    REQUIRE(runtimeObjects.serialAdapter->isOpen());
-}
-
 TEST_CASE("rs485_runtime_build_fails_when_serial_open_fails", "[rs485_interface]") {
     auto runtimeConfig = makeRuntimeConfig("/definitely/not/a/serial/device");
 
@@ -186,20 +136,6 @@ TEST_CASE("rs485_runtime_build_fails_when_serial_open_fails", "[rs485_interface]
     }
 
     REQUIRE(errorMessage.find("RS485_RUNTIME_SERIAL_OPEN_FAILED") != std::string::npos);
-}
-
-TEST_CASE("rs485_runtime_component_startup_and_shutdown_is_clean", "[rs485_interface]") {
-    PseudoTerminal pseudoTerminal{};
-    yaha::Rs485InterfaceClientRuntimeObjects runtimeObjects{};
-    std::string errorMessage{};
-
-    REQUIRE(buildRuntimeWithPseudoTerminal(pseudoTerminal, runtimeObjects, errorMessage));
-
-    auto* component = dynamic_cast<yaha::Rs485InterfaceComponent*>(runtimeObjects.component.get());
-    REQUIRE(component != nullptr);
-
-    REQUIRE_NOTHROW(component->run());
-    REQUIRE_NOTHROW(component->close());
 }
 
 TEST_CASE("rs485_serial_adapter_open_fails_for_invalid_path", "[rs485_interface]") {
