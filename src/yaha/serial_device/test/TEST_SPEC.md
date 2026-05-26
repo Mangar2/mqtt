@@ -2,10 +2,12 @@
 
 ## Scope
 
-Unit tests for phase-1 and phase-2 serial_device parity contracts:
+Unit tests for phase-1 to phase-4 serial_device parity contracts:
 - subscription derivation
 - serial stream parser
 - wire serialization
+- mqtt<->serial mapping
+- runtime lifecycle and keep-alive/retry behavior
 
 ## Planned and implemented test cases
 
@@ -104,3 +106,15 @@ Unit tests for phase-1 and phase-2 serial_device parity contracts:
 24. serial_to_mqtt_sender_numeric_with_non_numeric_address_triggers_no_match
 - Scenario: sender is numeric but receiverMap contains a non-numeric address token.
 - Expected: numeric fallback comparison fails and mapper throws unknown-address runtime error.
+
+25. serial_device_runtime_keepalive_matches_oracle_f_fixture
+- Scenario: run component keep-alive loop with Oracle F keepalive case.
+- Expected: keep-alive sends payload `at` and delay hook is exercised.
+
+26. serial_device_runtime_publish_set_suffix_roundtrip_matches_oracle_f_fixture
+- Scenario: feed one serial message that maps to mqtt topic with `/set` action and no matched reply.
+- Expected: publish path keeps `/set` suffix, preserves reason, and publishes with configured qos.
+
+27. serial_device_runtime_retry_and_trace_control_match_oracle_f_fixture
+- Scenario: send serial command through runtime with forced send failures and then apply trace control message.
+- Expected: send retry/open behavior matches Oracle F counters and trace topic updates runtime trace level.

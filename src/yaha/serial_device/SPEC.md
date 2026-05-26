@@ -1,6 +1,6 @@
 # serial_device
 
-Phase 3 scope in this module:
+Phase 4 scope in this module:
 - define SerialDevice domain configuration contract
 - derive MQTT subscriptions from configured interface maps
 - preserve legacy subscription behavior quirks from `@mangar2/serialdevice`
@@ -9,6 +9,10 @@ Phase 3 scope in this module:
 - serialize internal serial messages to exact wire payload strings
 - map MQTT topic/value input to serial messages with topicMap and suffix routes
 - map serial messages to MQTT publish messages including switch expansion and value-map reverse conversion
+- implement IMqttComponent runtime lifecycle with serial open/close and receive processing
+- implement keep-alive loop payload `at` with configurable delay
+- implement send queue pacing (100ms) and retry+reopen behavior for serial sends
+- implement trace-topic runtime control `$SYS/serialdevice/trace/set`
 
 ## Public types
 
@@ -154,6 +158,39 @@ Behavior:
 - topic suffix lookup uses commandMap and sendMap fallback.
 - unknown serial sender address and unknown serial command throw runtime errors.
 
+### Interface ISerialDeviceTransport
+
+Purpose:
+- abstract runtime serial port boundary for open/close/send/list and receive callback wiring.
+
+Operations:
+- `open(portName, baudrate)`
+- `close()`
+- `sendData(payloadText)`
+- `listAvailablePorts()`
+- `setReceiveCallback(callback)`
+- `isOpen()`
+
+### Class SerialDeviceComponent
+
+Type:
+- `IMqttComponent` implementation for phase-4 runtime behavior.
+
+Behavior:
+- `run()` wires receive callback, opens serial interface, and starts:
+  - send-queue worker (100ms spacing)
+  - keep-alive worker (`at` payload)
+- `close()` stops workers and closes serial transport.
+- `handleMessage()`
+  - special control topic `$SYS/serialdevice/trace/set` updates runtime trace level
+  - normal messages are normalized (`/set` stripped), mapped, serialized, and queued for sending
+- receive path parses serial frames, maps to MQTT messages, and publishes via callback with configured QoS.
+
+Legacy compatibility notes:
+- send retry loop keeps the legacy unreachable `retry==0` throw branch shape.
+- serial open retry uses fixed retry count and delay values consistent with reconstruction spec.
+- publish path preserves legacy `/set` re-add behavior for non-matching replies.
+
 ## Files
 
 - serial_device_contract.h
@@ -168,6 +205,8 @@ Behavior:
 - serial_device_mqtt_to_serial_mapper.cpp
 - serial_device_serial_to_mqtt_mapper.h
 - serial_device_serial_to_mqtt_mapper.cpp
+- serial_device_component.h
+- serial_device_component.cpp
 - test/TEST_SPEC.md
 - test/serial_device_contract_test.cpp
 - test/serial_device_oracle_parity_test.cpp
@@ -176,3 +215,4 @@ Behavior:
 - test/serial_device_phase3_unit_test.cpp
 - test/serial_device_wire_oracle_test.cpp
 - test/serial_device_mapping_oracle_test.cpp
+- test/serial_device_runtime_oracle_test.cpp
