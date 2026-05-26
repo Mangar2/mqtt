@@ -65,3 +65,4 @@ Behavior:
 - serial_device_contract.cpp
 - test/TEST_SPEC.md
 - test/serial_device_contract_test.cpp
+- test/serial_device_oracle_parity_test.cpp

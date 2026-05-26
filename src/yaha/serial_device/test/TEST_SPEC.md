@@ -25,3 +25,7 @@ Unit tests for phase-1 subscription derivation contract in serial_device.
 5. derive_subscriptions_with_empty_receiver_map_and_provided_flag_adds_no_command_topics
 - Scenario: receiverMapProvided is true and receiverMap is empty.
 - Expected: output has no commandMap-derived topics and still includes system topic.
+
+6. serial_device_subscriptions_match_oracle_e_fixture
+- Scenario: load Oracle E subscription suite generated from legacy serialdevice and map each case input into C++ SerialDeviceConfig.
+- Expected: derived subscription map matches oracle expected topics and QoS exactly for every case.
