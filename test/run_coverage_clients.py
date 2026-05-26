@@ -27,6 +27,7 @@ import json
 import os
 import re
 import selectors
+import signal
 import shutil
 import subprocess
 import sys
@@ -61,7 +62,8 @@ CLIENT_SCOPE_PREFIXES = (
 CTEST_TOTAL_TIMEOUT_SECONDS = int(os.environ.get("MQTT_CTEST_TOTAL_TIMEOUT", "1800"))
 CTEST_NO_OUTPUT_TIMEOUT_SECONDS = int(os.environ.get("MQTT_CTEST_NO_OUTPUT_TIMEOUT", "300"))
 COVERAGE_TEST_TIMEOUT_SECONDS = int(os.environ.get("MQTT_COVERAGE_TEST_TIMEOUT", "600"))
-PER_TEST_TIMEOUT_SECONDS = int(os.environ.get("MQTT_PER_TEST_TIMEOUT", "60"))
+# Hard safety cap: one single test must never run longer than one minute.
+PER_TEST_TIMEOUT_SECONDS = max(1, min(int(os.environ.get("MQTT_PER_TEST_TIMEOUT", "60")), 60))
 SLOW_TEST_WARNING_SECONDS = float(os.environ.get("MQTT_SLOW_TEST_WARNING", "2"))
 
 _log_fh = None
@@ -124,6 +126,74 @@ def _run_captured(
         _log(captured)
         _log(f"[TIMEOUT] command exceeded {timeout_seconds}s: {' '.join(str(c) for c in cmd)}")
         return 124, captured
+
+
+def _terminate_process_group(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+
+    try:
+        if os.name == "nt":
+            process.terminate()
+        else:
+            os.killpg(process.pid, signal.SIGTERM)
+    except Exception:
+        pass
+
+    try:
+        process.wait(timeout=2)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+
+    try:
+        if os.name == "nt":
+            process.kill()
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
+    except Exception:
+        pass
+
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _run_single_test_case_with_timeout(
+    cmd: list[str],
+    env: dict | None,
+    timeout_seconds: int,
+) -> tuple[int, str]:
+    _log(f">>> {' '.join(str(c) for c in cmd)}")
+
+    popen_kwargs: dict = {
+        "cwd": PROJECT_ROOT,
+        "env": env,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.STDOUT,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+    }
+    if os.name != "nt":
+        popen_kwargs["start_new_session"] = True
+
+    process = subprocess.Popen(cmd, **popen_kwargs)
+    try:
+        output, _ = process.communicate(timeout=timeout_seconds)
+        _log(output)
+        return process.returncode, output
+    except subprocess.TimeoutExpired as exc:
+        partial_output = exc.stdout or ""
+        _log(partial_output)
+        timeout_note = (
+            "[TIMEOUT] test process exceeded "
+            f"{timeout_seconds}s and was terminated"
+        )
+        _log(timeout_note)
+        _terminate_process_group(process)
+        return 124, partial_output + "\n" + timeout_note + "\n"
 
 
 def _run_or_die(
@@ -347,7 +417,7 @@ def _run_selected_tests(label: str, binary: Path, test_names: list[str], env: di
             "none",
         ]
         started = time.monotonic()
-        rc, output = _run_captured(
+        rc, output = _run_single_test_case_with_timeout(
             command,
             env=env,
             timeout_seconds=PER_TEST_TIMEOUT_SECONDS,
@@ -364,7 +434,7 @@ def _run_selected_tests(label: str, binary: Path, test_names: list[str], env: di
             print(f"\n[FAILED] {label}")
             print(f"  timeout             : {PER_TEST_TIMEOUT_SECONDS}s")
             print(f"  long running test   : {test_name}")
-            print("  action              : please identify and fix this long-running unit test")
+            print("  action              : timed out and forcibly terminated (possible hang)")
             tail = "\n".join(output.splitlines()[-20:])
             if tail:
                 print("\n  --- last output ---")
