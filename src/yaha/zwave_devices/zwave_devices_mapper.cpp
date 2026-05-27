@@ -206,7 +206,11 @@ ZwaveResolvedId ZwaveDevicesMapper::topicToZwaveId(
             });
 
         if (objectIterator == objects.end()) {
-            throw std::runtime_error("zwave object label not found for topic " + topic);
+            throw std::runtime_error(
+                "set mapping unresolved after device-topic match for '" + topic
+                + "': classId is not configured for nodeId " + std::to_string(resolved.nodeId)
+                + " instance " + std::to_string(resolved.instance)
+                + "; configure classId and type for direct '<topic>/set' writes");
         }
 
         resolved.classId = objectIterator->classId;

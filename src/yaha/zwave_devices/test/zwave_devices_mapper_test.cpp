@@ -159,7 +159,7 @@ TEST_CASE("topic_to_id_label_lookup_reports_missing_node_and_label", "[zwave_dev
 
     REQUIRE_THROWS_WITH(
         mapper.topicToZwaveId(nodesWithDifferentLabel, "home/lamp", std::optional<std::string>{"power"}),
-        Catch::Matchers::ContainsSubstring("label not found"));
+        Catch::Matchers::ContainsSubstring("configure classId/type for direct '<topic>/set' writes"));
 }
 
 TEST_CASE("topic_to_id_defaults_multilevel_class_to_bool_when_type_missing", "[zwave_devices]") {

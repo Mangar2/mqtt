@@ -99,6 +99,7 @@ for bridging between MQTT topic space and ZWave value identifiers.
   - requires label,
   - resolves by searching node objects with matching label and instance,
   - copies `classId`, `index`, and `type` from matched object.
+  - when no matching node object label exists, throws a descriptive set-mapping error with guidance to configure `classId`/`type` for direct `<topic>/set` writes or use `<topic>/<value_label>/set`.
 
 ### buildWriteRequest
 
