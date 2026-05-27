@@ -33,6 +33,7 @@ KNOWN_INSTALL_COMPONENTS = (
     "automation",
     "valueservice",
     "rs485",
+    "serialdevice",
     "brokerconnector",
     "httpmqttinterface",
     "remoteservice",

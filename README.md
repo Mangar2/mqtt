@@ -117,7 +117,7 @@ Any unknown CLI flag causes startup failure.
 
 YAHA deployment service units are configured with dedicated systemd journal namespaces.
 Each managed unit (`broker`, `filestore`, `msgstore`, `autom`, `valuesvc`,
-`rs485if`, `zwave`, `brkconn`, `httpmqtt`, `remotesvc`) writes to its own namespace to prevent
+`rs485`, `serialdev`, `zwave`, `brkconn`, `httpmqtt`, `remotesvc`) writes to its own namespace to prevent
 cross-service log eviction.
 
 Deployment installer behavior:
@@ -163,6 +163,10 @@ bash deploy.sh --zip yaha.zip --target-dir ~/mqtt
 - supports `--no-overwrite-ini`
 - supports `--verbose-identical` to also print per-file logs for `third_party/openzwave/config/*`
 - restarts only changed services (component install runs only when files changed)
+
+`cmake/deploy_yaha_scp.py` supports selective remote installer calls with `--install-component`.
+Known component names include: `broker`, `filestore`, `msgstore`, `automation`, `valueservice`,
+`rs485`, `serialdevice`, `brokerconnector`, `httpmqttinterface`, `remoteservice`.
 
 `yahamsgstoreclient` accepts one optional positional config path and optional flags:
 

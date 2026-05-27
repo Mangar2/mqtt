@@ -112,6 +112,18 @@ SERVICE_COMPONENTS = (
         ),
     },
     {
+        "name": "serialdevice",
+        "binary": "yahaserialdeviceclient",
+        "ini": "serialdevice.ini",
+        "service": "serialdev.service",
+        "log_namespace": "serialdev",
+        "description": "Yaha SerialDevice Client",
+        "exec": (
+            "__INSTALL_ROOT__/serialdevice/yahaserialdeviceclient "
+            "__INSTALL_ROOT__/serialdevice/serialdevice.ini"
+        ),
+    },
+    {
         "name": "zwave",
         "binary": "yahazwaveclient",
         "ini": "zwave.ini",
@@ -396,6 +408,7 @@ def render_root_install_script(*, journal_namespaces: list[str]) -> str:
         "automation",
         "valueservice",
         "rs485",
+        "serialdevice",
         "zwave",
         "brokerconnector",
         "httpmqttinterface",
