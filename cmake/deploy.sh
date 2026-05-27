@@ -45,7 +45,7 @@ cleanup_tmp_dir() {
 usage() {
   cat <<'EOF'
 Usage:
-  deploy.sh --zip <deployment-zip> [--target-dir <dir>] [--no-overwrite-ini] [--skip-install] [--verbose-identical]
+  deploy.sh --zip <deployment-zip> [--target-dir <dir>] [--no-overwrite-ini] [--skip-install] [--verbose-identical] [--force-nginx-install]
 
 Description:
   Local deployment on the target host.
@@ -60,6 +60,7 @@ Options:
   --no-overwrite-ini        Never overwrite changed .ini files
   --skip-install            Copy only, do not apply install/restart actions
   --verbose-identical       Also print per-file logs for identical OpenZWave third-party files
+  --force-nginx-install     Force nginx config/link apply even if nginx payload file was unchanged
   -h, --help                Show this help
 EOF
 }
@@ -307,6 +308,7 @@ target_dir="~/mqtt"
 overwrite_mode="ask"
 skip_install=0
 verbose_identical=0
+force_nginx_install=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -338,6 +340,10 @@ while [[ $# -gt 0 ]]; do
       verbose_identical=1
       shift
       ;;
+    --force-nginx-install)
+      force_nginx_install=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -367,6 +373,7 @@ log_info "Target dir (raw): ${target_dir}"
 log_info "Overwrite mode: ${overwrite_mode}"
 log_info "Skip install: ${skip_install}"
 log_info "Verbose identical logs: ${verbose_identical}"
+log_info "Force nginx install: ${force_nginx_install}"
 
 if [[ "${target_dir}" == ~* ]]; then
   if [[ ${EUID} -eq 0 && -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
@@ -528,7 +535,10 @@ else
   log_info "Journald files unchanged; no journald restart needed."
 fi
 
-if [[ ${nginx_changed} -eq 1 ]]; then
+if [[ ${nginx_changed} -eq 1 || ${force_nginx_install} -eq 1 ]]; then
+  if [[ ${nginx_changed} -eq 0 && ${force_nginx_install} -eq 1 ]]; then
+    log_info "Forcing nginx config apply by request (--force-nginx-install)"
+  fi
   log_info "Applying nginx config updates"
   install_nginx_config "${target_dir}" "${sudo_cmd}"
 else
