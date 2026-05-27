@@ -291,6 +291,39 @@ install_nginx_config() {
   else
     log_info "nginx controlapp.conf unchanged; no reload needed."
   fi
+
+  if check_nginx_listening_port80 "${sudo_cmd}"; then
+    log_info "nginx is listening on port 80."
+    return 0
+  fi
+
+  log_warn "nginx is not listening on port 80; attempting restart"
+  ${sudo_cmd} systemctl restart nginx
+
+  if check_nginx_listening_port80 "${sudo_cmd}"; then
+    log_info "nginx restart recovered port 80 listener."
+    return 0
+  fi
+
+  log_error "nginx is still not listening on port 80 after restart."
+  ${sudo_cmd} systemctl status nginx --no-pager -l || true
+  ${sudo_cmd} ss -ltn || true
+  return 1
+}
+
+check_nginx_listening_port80() {
+  local sudo_cmd="$1"
+
+  if ! command -v ss >/dev/null 2>&1; then
+    log_warn "Cannot verify nginx listener (missing ss command)."
+    return 0
+  fi
+
+  if ${sudo_cmd} ss -ltn | grep -Eq 'LISTEN[[:space:]].*(:|\[::\]:)80[[:space:]]'; then
+    return 0
+  fi
+
+  return 1
 }
 
 install_root_tools() {
@@ -533,6 +566,12 @@ log_info "Install phase starts (sudo command: ${sudo_cmd:-none})"
 
 load_installed_service_units "${sudo_cmd}"
 
+nginx_missing_listener=0
+if ! check_nginx_listening_port80 "${sudo_cmd}"; then
+  nginx_missing_listener=1
+  log_warn "Detected missing nginx listener on port 80; forcing nginx setup."
+fi
+
 if [[ ${journald_changed} -eq 1 ]]; then
   log_info "Applying journald namespace config updates"
   apply_journald_namespace_configs "${target_dir}" "${sudo_cmd}"
@@ -540,12 +579,20 @@ else
   log_info "Journald files unchanged; no journald restart needed."
 fi
 
-if [[ ${nginx_changed} -eq 1 || ${force_nginx_install} -eq 1 ]]; then
+if [[ ${nginx_changed} -eq 1 || ${force_nginx_install} -eq 1 || ${nginx_missing_listener} -eq 1 ]]; then
+  nginx_force_reload="${force_nginx_install}"
+  if [[ ${nginx_missing_listener} -eq 1 ]]; then
+    nginx_force_reload=1
+  fi
+
   if [[ ${nginx_changed} -eq 0 && ${force_nginx_install} -eq 1 ]]; then
     log_info "Forcing nginx config apply by request (--force-nginx-install)"
   fi
+  if [[ ${nginx_missing_listener} -eq 1 ]]; then
+    log_info "Forcing nginx config apply due to missing port 80 listener"
+  fi
   log_info "Applying nginx config updates"
-  install_nginx_config "${target_dir}" "${sudo_cmd}" "${force_nginx_install}"
+  install_nginx_config "${target_dir}" "${sudo_cmd}" "${nginx_force_reload}"
 else
   log_info "Nginx config unchanged; no nginx reload needed."
 fi
