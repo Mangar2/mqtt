@@ -235,6 +235,7 @@ apply_journald_namespace_configs() {
 install_nginx_config() {
   local script_dir="$1"
   local sudo_cmd="$2"
+  local force_reload="$3"
   local src_conf="${script_dir}/nginx/controlapp.conf"
   local target_conf="/etc/nginx/sites-available/controlapp"
   local enabled_link="/etc/nginx/sites-enabled/controlapp"
@@ -279,10 +280,14 @@ install_nginx_config() {
     return 1
   fi
 
-  if [[ ${changed} -eq 1 ]]; then
+  if [[ ${changed} -eq 1 || ${force_reload} -eq 1 ]]; then
     log_info "Reloading nginx"
     ${sudo_cmd} systemctl reload nginx
-    log_info "Installed nginx controlapp.conf and reloaded nginx."
+    if [[ ${changed} -eq 1 ]]; then
+      log_info "Installed nginx controlapp.conf and reloaded nginx."
+    else
+      log_info "Forced nginx reload completed (--force-nginx-install)."
+    fi
   else
     log_info "nginx controlapp.conf unchanged; no reload needed."
   fi
@@ -540,7 +545,7 @@ if [[ ${nginx_changed} -eq 1 || ${force_nginx_install} -eq 1 ]]; then
     log_info "Forcing nginx config apply by request (--force-nginx-install)"
   fi
   log_info "Applying nginx config updates"
-  install_nginx_config "${target_dir}" "${sudo_cmd}"
+  install_nginx_config "${target_dir}" "${sudo_cmd}" "${force_nginx_install}"
 else
   log_info "Nginx config unchanged; no nginx reload needed."
 fi
