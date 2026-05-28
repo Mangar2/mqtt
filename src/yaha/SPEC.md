@@ -29,6 +29,8 @@ directly here — each sub-topic has its own subdirectory.
 | `value_service_client/` | valueservice phase 3 | Standalone ValueService runtime config mapping and process composition via `yaha_valueserviceclient_main.cpp`. |
 | `opensensemap/` | opensensemap phase 1 | OpenSenseMap IMqttComponent that maps configured sensor topics to OpenSenseMap HTTP posts and publishes `$SYS/opensensemap/*` status messages. |
 | `opensensemap_client/` | opensensemap phase 2 | Standalone OpenSenseMap runtime config mapping, repeated `[sensor]` section parser, and HTTP/HTTPS sender factory for composition via `yaha_opensensemapclient_main.cpp`. |
+| `pushover/` | pushover phase 1 | Pushover IMqttComponent that forwards incident messages to configured devices and publishes `$SYS/pushover/*` status messages. |
+| `pushover_client/` | pushover phase 2 | Standalone Pushover runtime config mapping, repeated `[device]`/`[subscription]` parser, and HTTPS sender factory for composition via `yaha_pushoverclient_main.cpp`. |
 | `message_store/` | 4-7 | Internal MessageTree plus persistence and MessageStore IMqttComponent logic for state/history queries, cleanup, disk restore/save, and HTTP query interface with ISO-8601 UTC `time` output fields. |
 | `message_store_client/` | 8 | Standalone MessageStore process composition, runtime config loader, and lifecycle orchestration for executable wiring. |
 | `automation/` | automation step 1 | Expression DSL tokenizer for YAHA automation rules engine. |

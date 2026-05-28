@@ -112,6 +112,18 @@ SERVICE_COMPONENTS = (
         ),
     },
     {
+        "name": "pushover",
+        "binary": "yahapushoverclient",
+        "ini": "pushover.ini",
+        "service": "pushover.service",
+        "log_namespace": "pushover",
+        "description": "Yaha Pushover Client",
+        "exec": (
+            "__INSTALL_ROOT__/pushover/yahapushoverclient "
+            "__INSTALL_ROOT__/pushover/pushover.ini"
+        ),
+    },
+    {
         "name": "rs485",
         "binary": "yahars485interfaceclient",
         "ini": "rs485.ini",
@@ -420,6 +432,7 @@ def render_root_install_script(*, journal_namespaces: list[str]) -> str:
         "automation",
         "valueservice",
         "opensensemap",
+        "pushover",
         "rs485",
         "serialdevice",
         "zwave",

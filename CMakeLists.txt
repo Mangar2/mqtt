@@ -79,6 +79,7 @@ list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_automationclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_httpmqttinterfaceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_valueserviceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_opensensemapclient_main\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_pushoverclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_rs485interfaceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_remoteserviceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_zwaveclient_main\\.cpp$")
@@ -106,6 +107,8 @@ list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/value_service/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/value_service_client/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/opensensemap/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/opensensemap_client/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/pushover/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/pushover_client/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/zwave/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/zwave_client/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/zwave_controller/.+\\.cpp$")
@@ -174,6 +177,12 @@ file(GLOB_RECURSE YAHA_OPENSENSEMAP_SOURCES CONFIGURE_DEPENDS
     "src/yaha/opensensemap_client/*.cpp"
 )
 list(FILTER YAHA_OPENSENSEMAP_SOURCES EXCLUDE REGEX "/test/")
+
+file(GLOB_RECURSE YAHA_PUSHOVER_SOURCES CONFIGURE_DEPENDS
+    "src/yaha/pushover/*.cpp"
+    "src/yaha/pushover_client/*.cpp"
+)
+list(FILTER YAHA_PUSHOVER_SOURCES EXCLUDE REGEX "/test/")
 
 file(GLOB_RECURSE YAHA_ZWAVE_SOURCES CONFIGURE_DEPENDS
     "src/yaha/zwave/*.cpp"
@@ -373,6 +382,23 @@ if(WIN32)
     target_link_libraries(yahaopensensemapclient PRIVATE ws2_32)
 endif()
 
+#  YAHA Pushover standalone executable
+add_executable(yahapushoverclient
+    src/yaha_pushoverclient_main.cpp
+    ${YAHA_PUSHOVER_SOURCES}
+    ${MQTT_LIBRARY_SOURCES}
+)
+
+target_compile_options(yahapushoverclient PRIVATE ${MQTT_COMPILE_OPTIONS})
+target_link_options(yahapushoverclient    PRIVATE ${MQTT_LINK_OPTIONS})
+target_include_directories(yahapushoverclient PRIVATE src)
+target_include_directories(yahapushoverclient PRIVATE ${httplib_SOURCE_DIR})
+target_compile_definitions(yahapushoverclient PRIVATE
+    $<$<BOOL:${MQTT_TRACING_DISABLED}>:MQTT_TRACING_DISABLED>)
+if(WIN32)
+    target_link_libraries(yahapushoverclient PRIVATE ws2_32)
+endif()
+
 #  YAHA RS485Interface standalone executable
 add_executable(yahars485interfaceclient
     src/yaha_rs485interfaceclient_main.cpp
@@ -469,6 +495,7 @@ if(BUILD_TESTING)
         ${YAHA_HTTPMQTT_SOURCES}
         ${YAHA_MSGSTORE_SOURCES}
         ${YAHA_OPENSENSEMAP_SOURCES}
+        ${YAHA_PUSHOVER_SOURCES}
         ${YAHA_REMOTESERVICE_SOURCES}
         ${YAHA_RS485INTERFACE_SOURCES}
         ${YAHA_SERIALDEVICE_SOURCES}
@@ -483,6 +510,7 @@ if(BUILD_TESTING)
         src/yaha/http_mqtt_interface_client/http_mqtt_interface_client_app.cpp
         src/yaha/message_store_client/message_store_client_app.cpp
         src/yaha/opensensemap_client/opensensemap_client_app.cpp
+        src/yaha/pushover_client/pushover_client_app.cpp
         src/yaha/remote_service_client/remote_service_client_app.cpp
         src/yaha/rs485_interface_client/rs485_interface_client_app.cpp
         src/yaha/value_service_client/value_service_client_app.cpp
@@ -525,6 +553,7 @@ install(TARGETS yahabroker
     yahahttpmqttinterfaceclient
     yahavalueserviceclient
     yahaopensensemapclient
+    yahapushoverclient
     yahars485interfaceclient
     yaharemoteserviceclient
     yahazwaveclient

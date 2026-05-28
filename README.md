@@ -57,6 +57,12 @@ A fully specification-compliant MQTT 5.0 broker written in C++20.
 # Run YAHA OpenSenseMap client with explicit config path
 ./build/release/yahaopensensemapclient path/to/broker.ini
 
+# Run YAHA Pushover client with default config path (broker.ini)
+./build/release/yahapushoverclient
+
+# Run YAHA Pushover client with explicit config path
+./build/release/yahapushoverclient path/to/broker.ini
+
 # Run YAHA MessageStore client with explicit config path
 ./build/release/yahamsgstoreclient path/to/broker.ini
 
@@ -123,7 +129,7 @@ Any unknown CLI flag causes startup failure.
 
 YAHA deployment service units are configured with dedicated systemd journal namespaces.
 Each managed unit (`broker`, `filestore`, `msgstore`, `autom`, `valuesvc`,
-`opensensemap`, `rs485`, `serialdev`, `zwave`, `brkconn`, `httpmqtt`, `remotesvc`) writes to its own namespace to prevent
+`opensensemap`, `pushover`, `rs485`, `serialdev`, `zwave`, `brkconn`, `httpmqtt`, `remotesvc`) writes to its own namespace to prevent
 cross-service log eviction.
 
 Deployment installer behavior:
@@ -172,7 +178,7 @@ bash deploy.sh --zip yaha.zip --target-dir ~/mqtt
 
 `cmake/deploy_yaha_scp.py` supports selective remote installer calls with `--install-component`.
 Known component names include: `broker`, `filestore`, `msgstore`, `automation`, `valueservice`,
-`opensensemap`, `rs485`, `serialdevice`, `brokerconnector`, `httpmqttinterface`, `remoteservice`.
+`opensensemap`, `pushover`, `rs485`, `serialdevice`, `brokerconnector`, `httpmqttinterface`, `remoteservice`.
 
 `yahamsgstoreclient` accepts one optional positional config path and optional flags:
 
@@ -243,6 +249,21 @@ OpenSenseMap client INI sections:
 - `[opensensemap]`: `station`, `id`, `host`, `port`, `qos`, `useTls`
 - repeated `[sensor]`: one section per configured sensor with mandatory keys `name`, `unit`, `topic`, `id`
     - key `uint` is not supported (legacy typo); use `unit`
+
+`yahapushoverclient` accepts one optional positional config path and one optional flag:
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `<config-path>` | positional path | `broker.ini` | Optional path to Pushover client INI config. |
+| `--trace-messages` | flag | off | Forces MQTT transport sent/received trace lines in runtime client. |
+| `-h`, `--help` | flag | off | Prints CLI usage and exits successfully. |
+
+Pushover client INI sections:
+
+- `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs, logReason)
+- `[pushover]`: `host`, `path`, `port`, `token`, `user`
+- repeated `[device]`: one section per target device with key `name`
+- repeated `[subscription]`: one section per topic filter with keys `topic`, `qos`
 
 `yahars485interfaceclient` accepts one optional positional config path and one optional flag:
 
