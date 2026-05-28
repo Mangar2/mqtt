@@ -51,6 +51,12 @@ A fully specification-compliant MQTT 5.0 broker written in C++20.
 # Run YAHA ZWave client with explicit config path
 ./build/release/yahazwaveclient path/to/broker.ini
 
+# Run YAHA OpenSenseMap client with default config path (broker.ini)
+./build/release/yahaopensensemapclient
+
+# Run YAHA OpenSenseMap client with explicit config path
+./build/release/yahaopensensemapclient path/to/broker.ini
+
 # Run YAHA MessageStore client with explicit config path
 ./build/release/yahamsgstoreclient path/to/broker.ini
 
@@ -117,7 +123,7 @@ Any unknown CLI flag causes startup failure.
 
 YAHA deployment service units are configured with dedicated systemd journal namespaces.
 Each managed unit (`broker`, `filestore`, `msgstore`, `autom`, `valuesvc`,
-`rs485`, `serialdev`, `zwave`, `brkconn`, `httpmqtt`, `remotesvc`) writes to its own namespace to prevent
+`opensensemap`, `rs485`, `serialdev`, `zwave`, `brkconn`, `httpmqtt`, `remotesvc`) writes to its own namespace to prevent
 cross-service log eviction.
 
 Deployment installer behavior:
@@ -166,7 +172,7 @@ bash deploy.sh --zip yaha.zip --target-dir ~/mqtt
 
 `cmake/deploy_yaha_scp.py` supports selective remote installer calls with `--install-component`.
 Known component names include: `broker`, `filestore`, `msgstore`, `automation`, `valueservice`,
-`rs485`, `serialdevice`, `brokerconnector`, `httpmqttinterface`, `remoteservice`.
+`opensensemap`, `rs485`, `serialdevice`, `brokerconnector`, `httpmqttinterface`, `remoteservice`.
 
 `yahamsgstoreclient` accepts one optional positional config path and optional flags:
 
@@ -222,6 +228,21 @@ Known component names include: `broker`, `filestore`, `msgstore`, `automation`, 
 | `<config-path>` | positional path | `broker.ini` | Optional path to ZWave INI config. |
 | `--trace-messages` | flag | off | Forces MQTT transport sent/received trace lines in runtime client (does not disable INI-enabled tracing when omitted). |
 | `-h`, `--help` | flag | off | Prints CLI usage and exits successfully. |
+
+`yahaopensensemapclient` accepts one optional positional config path and one optional flag:
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `<config-path>` | positional path | `broker.ini` | Optional path to OpenSenseMap client INI config. |
+| `--trace-messages` | flag | off | Forces MQTT transport sent/received trace lines in runtime client. |
+| `-h`, `--help` | flag | off | Prints CLI usage and exits successfully. |
+
+OpenSenseMap client INI sections:
+
+- `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs, logReason)
+- `[opensensemap]`: `station`, `id`, `host`, `port`, `qos`, `useTls`
+- repeated `[sensor]`: one section per configured sensor with mandatory keys `name`, `unit`, `topic`, `id`
+    - key `uint` is not supported (legacy typo); use `unit`
 
 `yahars485interfaceclient` accepts one optional positional config path and one optional flag:
 

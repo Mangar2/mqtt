@@ -100,6 +100,18 @@ SERVICE_COMPONENTS = (
         ),
     },
     {
+        "name": "opensensemap",
+        "binary": "yahaopensensemapclient",
+        "ini": "opensensemap.ini",
+        "service": "opensensemap.service",
+        "log_namespace": "opensensemap",
+        "description": "Yaha OpenSenseMap Client",
+        "exec": (
+            "__INSTALL_ROOT__/opensensemap/yahaopensensemapclient "
+            "__INSTALL_ROOT__/opensensemap/opensensemap.ini"
+        ),
+    },
+    {
         "name": "rs485",
         "binary": "yahars485interfaceclient",
         "ini": "rs485.ini",
@@ -407,6 +419,7 @@ def render_root_install_script(*, journal_namespaces: list[str]) -> str:
         "msgstore",
         "automation",
         "valueservice",
+        "opensensemap",
         "rs485",
         "serialdevice",
         "zwave",

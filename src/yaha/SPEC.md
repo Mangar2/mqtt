@@ -27,6 +27,8 @@ directly here — each sub-topic has its own subdirectory.
 | `zwave_client/` | zwave phase 6 | Standalone ZWave runtime mapping and executable composition via `yaha_zwaveclient_main.cpp` with real OpenZWave runtime driver binding, watcher-to-controller event translation, generic MQTT runtime orchestration, and phase-6 runtime config validation tests. |
 | `value_service/` | valueservice phase 2 | ValueService IMqttComponent with startup FileStore load, `/set` handling, retained replay publish, and monitor-triggered reload. |
 | `value_service_client/` | valueservice phase 3 | Standalone ValueService runtime config mapping and process composition via `yaha_valueserviceclient_main.cpp`. |
+| `opensensemap/` | opensensemap phase 1 | OpenSenseMap IMqttComponent that maps configured sensor topics to OpenSenseMap HTTP posts and publishes `$SYS/opensensemap/*` status messages. |
+| `opensensemap_client/` | opensensemap phase 2 | Standalone OpenSenseMap runtime config mapping, repeated `[sensor]` section parser, and HTTP/HTTPS sender factory for composition via `yaha_opensensemapclient_main.cpp`. |
 | `message_store/` | 4-7 | Internal MessageTree plus persistence and MessageStore IMqttComponent logic for state/history queries, cleanup, disk restore/save, and HTTP query interface with ISO-8601 UTC `time` output fields. |
 | `message_store_client/` | 8 | Standalone MessageStore process composition, runtime config loader, and lifecycle orchestration for executable wiring. |
 | `automation/` | automation step 1 | Expression DSL tokenizer for YAHA automation rules engine. |

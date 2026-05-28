@@ -1,0 +1,380 @@
+#include "yaha/opensensemap_client/opensensemap_client_app.h"
+
+#include "yaha/mqtt_client/mqtt_client_config.h"
+
+#include <cstdint>
+#include <cstdio>
+#include <array>
+#include <iostream>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+namespace yaha {
+
+namespace {
+
+constexpr std::string_view k_open_sense_map_section{"opensensemap"};
+constexpr std::string_view k_sensor_section{"sensor"};
+constexpr std::size_t kCommandReadBufferSize{256U};
+
+void logConfigFallbackWarning(
+    const std::string_view serviceName,
+    const std::string_view sectionName,
+    const std::string_view keyName,
+    const std::string& rawValue,
+    const std::string& defaultValue,
+    const std::string& reasonText) {
+    std::cerr << serviceName << "[warn] config_fallback"
+              << " section=" << sectionName
+              << " key=" << keyName
+              << " value='" << rawValue << "'"
+              << " default='" << defaultValue << "'"
+              << " reason='" << reasonText << "'"
+              << '\n' << std::flush;
+}
+
+struct SensorAssembly {
+    std::optional<std::string> sensorName{};
+    std::optional<std::string> sensorUnit{};
+    std::optional<std::string> topicFilter{};
+    std::optional<std::string> sensorIdentifier{};
+
+    [[nodiscard]] bool empty() const {
+        return !sensorName.has_value() && !sensorUnit.has_value()
+            && !topicFilter.has_value() && !sensorIdentifier.has_value();
+    }
+
+    [[nodiscard]] bool complete() const {
+        return sensorName.has_value() && sensorUnit.has_value()
+            && topicFilter.has_value() && sensorIdentifier.has_value();
+    }
+};
+
+[[nodiscard]] bool flushPendingSensor(
+    SensorAssembly& pending,
+    std::vector<OpenSenseMapSensorConfig>& sensors,
+    std::string& errorMessage) {
+    if (pending.empty()) {
+        return true;
+    }
+
+    if (!pending.complete()) {
+        errorMessage = "incomplete [sensor] entry (required keys: name, unit, topic, id)";
+        return false;
+    }
+
+    sensors.push_back(OpenSenseMapSensorConfig{
+        .sensorName = *pending.sensorName,
+        .sensorUnit = *pending.sensorUnit,
+        .topicFilter = *pending.topicFilter,
+        .sensorIdentifier = *pending.sensorIdentifier,
+    });
+    pending = SensorAssembly{};
+    return true;
+}
+
+[[nodiscard]] bool tryApplySensorEntry(
+    const IniDocument::Entry& entry,
+    SensorAssembly& pending,
+    std::vector<OpenSenseMapSensorConfig>& sensors,
+    std::string& errorMessage) {
+    if (entry.key == "name") {
+        if (!flushPendingSensor(pending, sensors, errorMessage)) {
+            return false;
+        }
+        if (entry.value.empty()) {
+            errorMessage = "sensor.name must not be empty";
+            return false;
+        }
+        pending.sensorName = entry.value;
+        return true;
+    }
+
+    if (!pending.sensorName.has_value()) {
+        errorMessage = "sensor fields require preceding sensor.name";
+        return false;
+    }
+
+    if (entry.key == "unit") {
+        if (entry.value.empty()) {
+            errorMessage = "sensor.unit must not be empty";
+            return false;
+        }
+        if (pending.sensorUnit.has_value()) {
+            errorMessage = "duplicate sensor.unit in one [sensor] entry";
+            return false;
+        }
+        pending.sensorUnit = entry.value;
+        return true;
+    }
+
+    if (entry.key == "topic") {
+        if (entry.value.empty()) {
+            errorMessage = "sensor.topic must not be empty";
+            return false;
+        }
+        if (pending.topicFilter.has_value()) {
+            errorMessage = "duplicate sensor.topic in one [sensor] entry";
+            return false;
+        }
+        pending.topicFilter = entry.value;
+        return true;
+    }
+
+    if (entry.key == "id") {
+        if (entry.value.empty()) {
+            errorMessage = "sensor.id must not be empty";
+            return false;
+        }
+        if (pending.sensorIdentifier.has_value()) {
+            errorMessage = "duplicate sensor.id in one [sensor] entry";
+            return false;
+        }
+        pending.sensorIdentifier = entry.value;
+        return true;
+    }
+
+    if (entry.key == "uint") {
+        errorMessage = "invalid key in [sensor]: 'uint' (use 'unit')";
+        return false;
+    }
+
+    errorMessage = "invalid key in [sensor] (expected name, unit, topic, id; got '" + entry.key + "')";
+    return false;
+}
+
+[[nodiscard]] std::string shellQuote(const std::string& rawText) {
+    std::string quotedText{"'"};
+    for (const char currentChar : rawText) {
+        if (currentChar == '\'') {
+            quotedText += "'\\''";
+        } else {
+            quotedText.push_back(currentChar);
+        }
+    }
+    quotedText.push_back('\'');
+    return quotedText;
+}
+
+[[nodiscard]] std::pair<int, std::string> executeCommand(const std::string& commandText) {
+    FILE* processHandle = popen(commandText.c_str(), "r");
+    if (processHandle == nullptr) {
+        throw std::runtime_error("failed to start curl process");
+    }
+
+    std::string outputText{};
+    std::array<char, kCommandReadBufferSize> readBuffer{};
+    while (fgets(readBuffer.data(), static_cast<int>(readBuffer.size()), processHandle) != nullptr) {
+        outputText += readBuffer.data();
+    }
+
+    const int exitStatus = pclose(processHandle);
+    return {exitStatus, std::move(outputText)};
+}
+
+[[nodiscard]] OpenSenseMapHttpResult parseCurlOutput(const std::string& outputText) {
+    const std::string statusMarker{"\n__YAHA_STATUS__:"};
+    const std::string contentTypeMarker{"\n__YAHA_CTYPE__:"};
+
+    const std::size_t statusPosition = outputText.rfind(statusMarker);
+    const std::size_t contentTypePosition = outputText.rfind(contentTypeMarker);
+    if (statusPosition == std::string::npos || contentTypePosition == std::string::npos
+        || contentTypePosition <= statusPosition) {
+        throw std::runtime_error("failed to parse curl response metadata");
+    }
+
+    const std::string bodyText = outputText.substr(0U, statusPosition);
+    const std::size_t statusValueStart = statusPosition + statusMarker.size();
+    const std::size_t statusValueEnd = contentTypePosition;
+    const std::string statusText = outputText.substr(statusValueStart, statusValueEnd - statusValueStart);
+
+    int statusCode = 0;
+    try {
+        statusCode = std::stoi(statusText);
+    } catch (...) {
+        throw std::runtime_error("failed to parse HTTP status code from curl output");
+    }
+
+    std::string contentType = outputText.substr(contentTypePosition + contentTypeMarker.size());
+    while (!contentType.empty() && (contentType.back() == '\n' || contentType.back() == '\r')) {
+        contentType.pop_back();
+    }
+
+    return OpenSenseMapHttpResult{
+        .statusCode = statusCode,
+        .payload = bodyText,
+        .contentType = contentType,
+    };
+}
+
+[[nodiscard]] bool tryLoadSensorMappingsFromIni(
+    const IniDocument& document,
+    std::vector<OpenSenseMapSensorConfig>& output,
+    std::string& errorMessage) {
+    const IniDocument::Section* section = document.findSection(k_sensor_section);
+    if (section == nullptr || section->entries().empty()) {
+        errorMessage = "missing [sensor] entries";
+        return false;
+    }
+
+    std::vector<OpenSenseMapSensorConfig> parsedSensors{};
+    SensorAssembly pending{};
+
+    for (const auto& entry : section->entries()) {
+        if (!tryApplySensorEntry(entry, pending, parsedSensors, errorMessage)) {
+            return false;
+        }
+    }
+
+    if (!flushPendingSensor(pending, parsedSensors, errorMessage)) {
+        return false;
+    }
+
+    if (parsedSensors.empty()) {
+        errorMessage = "missing [sensor] entries";
+        return false;
+    }
+
+    output = std::move(parsedSensors);
+    return true;
+}
+
+} // namespace
+
+bool tryLoadOpenSenseMapConfigFromIni(
+    const IniDocument& document,
+    OpenSenseMapConfig& output,
+    std::string& errorMessage) {
+    errorMessage.clear();
+
+    if (const auto stationName = document.lastValue(k_open_sense_map_section, "station");
+        stationName.has_value()) {
+        output.stationName = *stationName;
+    }
+
+    if (const auto boxIdentifier = document.lastValue(k_open_sense_map_section, "id");
+        boxIdentifier.has_value()) {
+        output.boxIdentifier = *boxIdentifier;
+    }
+
+    if (const auto host = document.lastValue(k_open_sense_map_section, "host"); host.has_value()) {
+        output.host = *host;
+    }
+
+    const auto portResult = document.readUnsigned(k_open_sense_map_section, "port", 1U, 65535U);
+    if (!portResult.second.empty()) {
+        const std::string rawValue = document.lastValue(k_open_sense_map_section, "port").value_or("<missing>");
+        logConfigFallbackWarning(
+            "opensensemap_client",
+            k_open_sense_map_section,
+            "port",
+            rawValue,
+            std::to_string(output.port),
+            portResult.second);
+    }
+    if (portResult.first.has_value()) {
+        output.port = static_cast<std::uint16_t>(*portResult.first);
+    }
+
+    const auto qosResult = document.readUnsigned(k_open_sense_map_section, "qos", 0U, 2U);
+    if (!qosResult.second.empty()) {
+        const std::string rawValue = document.lastValue(k_open_sense_map_section, "qos").value_or("<missing>");
+        logConfigFallbackWarning(
+            "opensensemap_client",
+            k_open_sense_map_section,
+            "qos",
+            rawValue,
+            std::to_string(static_cast<unsigned int>(output.subscribeQos)),
+            qosResult.second);
+    }
+    if (qosResult.first.has_value()) {
+        output.subscribeQos = static_cast<Qos>(*qosResult.first);
+    }
+
+    const auto useTlsResult = document.readBool(k_open_sense_map_section, "useTls");
+    if (!useTlsResult.second.empty()) {
+        const std::string rawValue = document.lastValue(k_open_sense_map_section, "useTls").value_or("<missing>");
+        logConfigFallbackWarning(
+            "opensensemap_client",
+            k_open_sense_map_section,
+            "useTls",
+            rawValue,
+            output.useTls ? "true" : "false",
+            useTlsResult.second);
+    }
+    if (useTlsResult.first.has_value()) {
+        output.useTls = *useTlsResult.first;
+    }
+
+    if (output.boxIdentifier.empty()) {
+        errorMessage = "opensensemap.id must not be empty";
+        return false;
+    }
+
+    std::vector<OpenSenseMapSensorConfig> sensorMappings{};
+    if (!tryLoadSensorMappingsFromIni(document, sensorMappings, errorMessage)) {
+        return false;
+    }
+
+    output.sensors = std::move(sensorMappings);
+    return true;
+}
+
+bool tryLoadOpenSenseMapClientRuntimeConfigFromIni(
+    const IniDocument& document,
+    OpenSenseMapClientRuntimeConfig& output,
+    std::string& errorMessage) {
+    errorMessage.clear();
+
+    OpenSenseMapClientRuntimeConfig parsed{};
+    if (!tryLoadOpenSenseMapConfigFromIni(document, parsed.openSenseMapConfig, errorMessage)) {
+        return false;
+    }
+
+    std::string mqttErrorMessage{};
+    if (!tryLoadMqttClientConfigFromIni(document, parsed.mqttConfig, mqttErrorMessage)) {
+        logConfigFallbackWarning(
+            "opensensemap_client",
+            "mqtt",
+            "*",
+            "<composite>",
+            "defaults",
+            mqttErrorMessage);
+    }
+
+    output = std::move(parsed);
+    return true;
+}
+
+OpenSenseMapRequestSender makeOpenSenseMapRequestSender(const OpenSenseMapConfig& config) {
+    return [host = config.host,
+            port = config.port,
+            useTls = config.useTls](
+               const std::string& requestPath,
+               const std::string& requestPayload) {
+        const std::string scheme = useTls ? "https" : "http";
+        const std::string targetUrl =
+            scheme + "://" + host + ":" + std::to_string(port) + requestPath;
+
+        const std::string commandText =
+            "curl --silent --show-error --max-time 5 --request POST"
+            " --header " + shellQuote("content-type: application/json; charset=UTF-8") +
+            " --data " + shellQuote(requestPayload) +
+            " --write-out " +
+            shellQuote("\n__YAHA_STATUS__:%{http_code}\n__YAHA_CTYPE__:%{content_type}") +
+            " " + shellQuote(targetUrl);
+
+        const auto [exitStatus, outputText] = executeCommand(commandText);
+        if (exitStatus != 0) {
+            throw std::runtime_error("curl request execution failed");
+        }
+
+        return parseCurlOutput(outputText);
+    };
+}
+
+} // namespace yaha
