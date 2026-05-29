@@ -142,9 +142,12 @@ struct MessageTreeNode;
 - `persistSnapshotNow()` writes one snapshot file immediately and returns the written path on success.
 - Non-numeric cleanup payload emits one structured error log line (`message_store[error] op=cleanup ...`).
 - `run()` restores latest persisted snapshot before serving.
+- `run()` emits one structured compression-stats log line after restore attempt (`message_store[stats] phase=start_after_restore ...`).
+- `run()` starts an internal periodic compression-stats logger that emits every 60 seconds (`phase=periodic_60s`).
 - `run()` emits structured restore error log when no valid snapshot is available.
 - `run()` catches restore exceptions and emits structured error logs instead of terminating.
 - `close()` always performs one final `persistNow` after periodic loop is stopped.
+- `close()` stops periodic compression-stats logging and emits one structured stats line before final persist (`phase=stop_after_signal`).
 - `close()` emits structured error log when final persist fails.
 - `close()` catches final persist exceptions and emits structured error logs instead of terminating.
 

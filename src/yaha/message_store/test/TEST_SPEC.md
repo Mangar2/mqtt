@@ -76,6 +76,7 @@ Unit tests for MessageTree behavior required by step 4.
 | `handle_message_cleanup_topic_ignores_invalid_payload` | Invalid cleanup payload must be ignored | existing node + cleanup payload text | existing node remains |
 | `handle_message_cleanup_topic_logs_invalid_payload` | Invalid cleanup payload should be observable | cleanup payload text | structured cleanup error log is emitted |
 | `run_restore_starts_callbacks_and_periodic_persist` | Lifecycle run path | pre-existing snapshot + callbacks + interval>0 | restored data present, start/stop callbacks invoked, periodic file created |
+| `run_and_close_log_compression_stats_for_start_and_stop` | Lifecycle stats observability for startup/shutdown | run then close with stdout capture | output contains `message_store[stats]` lines with `phase=start_after_restore` and `phase=stop_after_signal` |
 | `run_logs_restore_failure_for_unusable_persist_directory` | Restore failure branch observability | `persist.directory` points to regular file | `run()` emits structured restore error log |
 | `close_performs_final_persist_when_periodic_disabled` | Final persist on shutdown | interval=0 run/close | at least one snapshot file exists |
 | `close_logs_final_persist_failure_for_unusable_persist_directory` | Final persist failure branch observability | `persist.directory` points to regular file | `close()` emits structured final-persist error log |

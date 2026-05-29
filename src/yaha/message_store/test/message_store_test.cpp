@@ -322,6 +322,28 @@ TEST_CASE("run_restore_starts_callbacks_and_periodic_persist", "[message_store]"
     removeDirectoryQuiet(tempDir);
 }
 
+TEST_CASE("run_and_close_log_compression_stats_for_start_and_stop", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = 0U;
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+    config.persistenceConfig.intervalMs = 0U;
+
+    yaha::MessageStore store{config};
+    std::ostringstream captured{};
+    auto* originalBuffer = std::cout.rdbuf(captured.rdbuf());
+    store.run();
+    store.close();
+    std::cout.rdbuf(originalBuffer);
+
+    REQUIRE(captured.str().find("message_store[stats] phase=start_after_restore") != std::string::npos);
+    REQUIRE(captured.str().find("message_store[stats] phase=stop_after_signal") != std::string::npos);
+
+    removeDirectoryQuiet(tempDir);
+}
+
 TEST_CASE("close_performs_final_persist_when_periodic_disabled", "[message_store]") {
     const auto tempDir = makeTempDirectory();
 

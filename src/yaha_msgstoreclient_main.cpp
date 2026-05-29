@@ -11,7 +11,6 @@
 #include <fstream>
 #include <iostream>
 #include <algorithm>
-#include <atomic>
 #include <optional>
 #include <limits>
 #include <span>
@@ -28,7 +27,6 @@ namespace {
 #endif
 
 constexpr const char* k_msgstore_client_name{"yahamsgstoreclient"};
-constexpr std::chrono::seconds k_runtime_stats_interval{60};
 
 struct CliOptions {
     std::filesystem::path configPath{"broker.ini"};
@@ -473,25 +471,6 @@ void printStartupConfiguration(const std::filesystem::path& configPath,
     }
 }
 
-void printCompressionStatsLine(const yaha::MessageStore& store,
-                               const std::string_view phaseText) {
-    const yaha::MessageTree::CompressionStats compressionStats = store.queryCompressionStats();
-    std::cout << "message_store[stats]"
-              << " phase=" << phaseText
-              << " currentNodes=" << compressionStats.currentNodeCount
-              << " totalStoredMessages=" << compressionStats.totalStoredMessageCount
-              << " historyBuckets=" << compressionStats.historyBucketCount
-              << " buckets.single=" << compressionStats.singleBucketCount
-              << " buckets.timeValue=" << compressionStats.timeValueBucketCount
-              << " buckets.time=" << compressionStats.timeBucketCount
-              << " buckets.interval=" << compressionStats.intervalBucketCount
-              << " represented.single=" << compressionStats.representedSingleCount
-              << " represented.timeValue=" << compressionStats.representedTimeValueCount
-              << " represented.time=" << compressionStats.representedTimeCount
-              << " represented.interval=" << compressionStats.representedIntervalCount
-              << '\n' << std::flush;
-}
-
 int runConfiguredRuntime(const CliOptions& cliOptions) {
     const std::filesystem::path configPath = cliOptions.configPath;
 
@@ -523,22 +502,9 @@ int runConfiguredRuntime(const CliOptions& cliOptions) {
     const std::string configuredHttpPath = runtimeConfig.storeConfig.serverPath;
     const std::uint16_t configuredHttpPort = runtimeConfig.storeConfig.serverPort;
 
-    auto originalHttpStartCallback = runtimeConfig.storeConfig.httpStartCallback;
-    yaha::MessageStore* storeAddressForStartStats{nullptr};
-    runtimeConfig.storeConfig.httpStartCallback =
-        [&originalHttpStartCallback, &storeAddressForStartStats]() {
-            if (originalHttpStartCallback) {
-                originalHttpStartCallback();
-            }
-            if (storeAddressForStartStats != nullptr) {
-                printCompressionStatsLine(*storeAddressForStartStats, "start_after_restore");
-            }
-        };
-
     printStartupConfiguration(configPath, runtimeConfig, useIncomingLogAdapter);
 
     yaha::MessageStore store{std::move(runtimeConfig.storeConfig)};
-    storeAddressForStartStats = &store;
     std::optional<IncomingMessageLoggingComponent> incomingLogComponent{};
     yaha::IMqttComponent* mqttComponent = &store;
     if (useIncomingLogAdapter) {
@@ -563,34 +529,8 @@ int runConfiguredRuntime(const CliOptions& cliOptions) {
     std::cout << "  signal: waiting for SIGINT/SIGTERM\n";
     std::cout << std::flush;
 
-    std::atomic<bool> periodicStatsStopRequested{false};
-    std::thread periodicStatsThread{[&store, &periodicStatsStopRequested]() {
-        while (!periodicStatsStopRequested.load()) {
-            for (std::uint32_t secondIndex = 0U;
-                 secondIndex < static_cast<std::uint32_t>(k_runtime_stats_interval.count());
-                 ++secondIndex) {
-                if (periodicStatsStopRequested.load()) {
-                    return;
-                }
-                std::this_thread::sleep_for(std::chrono::seconds{1});
-            }
-
-            if (periodicStatsStopRequested.load()) {
-                return;
-            }
-            printCompressionStatsLine(store, "periodic_60s");
-        }
-    }};
-
     yaha::YahaMqttClientRuntime runtime{mqttClient, store};
     runtime.runUntilSignal();
-
-    periodicStatsStopRequested.store(true);
-    if (periodicStatsThread.joinable()) {
-        periodicStatsThread.join();
-    }
-
-    printCompressionStatsLine(store, "stop_after_signal");
 
     std::cout << "  signal: received, disconnecting\n";
     std::cout << "  runtime: shutting down\n";

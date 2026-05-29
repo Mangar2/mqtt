@@ -11,10 +11,12 @@
 
 #include <functional>
 #include <filesystem>
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 
 namespace httplib {
@@ -134,6 +136,10 @@ public:
     [[nodiscard]] std::optional<std::filesystem::path> persistSnapshotNow();
 
 private:
+    void startCompressionStatsLogging();
+    void stopCompressionStatsLogging();
+    void logCompressionStatsLineLocked(std::string_view phaseText) const;
+
     void startHttpServer();
     void stopHttpServer();
 
@@ -154,6 +160,8 @@ private:
     MessageTreePersistence persistence_;
     std::unique_ptr<httplib::Server> httpServer_;
     std::thread httpThread_;
+    std::atomic<bool> compressionStatsStopRequested_{false};
+    std::thread compressionStatsThread_;
 
     mutable std::mutex lifecycleStateMutex_;
     mutable std::mutex treeStateMutex_;

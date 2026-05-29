@@ -34,6 +34,26 @@ constexpr int k_tm_year_offset{1900};
 constexpr std::string_view k_store_cors_methods{"GET, POST, OPTIONS"};
 constexpr std::string_view k_store_cors_headers{
     "Content-Type, Authorization, X-Requested-With, history, levelamount, reason, time"};
+constexpr std::chrono::seconds k_compression_stats_interval{60};
+constexpr std::chrono::milliseconds k_compression_stats_poll_interval{100};
+
+void printCompressionStatsLine(const MessageTree::CompressionStats& compressionStats,
+                               std::string_view phaseText) {
+    std::cout << "message_store[stats]"
+              << " phase=" << phaseText
+              << " currentNodes=" << compressionStats.currentNodeCount
+              << " totalStoredMessages=" << compressionStats.totalStoredMessageCount
+              << " historyBuckets=" << compressionStats.historyBucketCount
+              << " buckets.single=" << compressionStats.singleBucketCount
+              << " buckets.timeValue=" << compressionStats.timeValueBucketCount
+              << " buckets.time=" << compressionStats.timeBucketCount
+              << " buckets.interval=" << compressionStats.intervalBucketCount
+              << " represented.single=" << compressionStats.representedSingleCount
+              << " represented.timeValue=" << compressionStats.representedTimeValueCount
+              << " represented.time=" << compressionStats.representedTimeCount
+              << " represented.interval=" << compressionStats.representedIntervalCount
+              << '\n' << std::flush;
+}
 
 void applyStoreCorsHeaders(httplib::Response& response, const bool includeMaxAge) {
     response.set_header("Access-Control-Allow-Origin", "*");
@@ -473,7 +493,11 @@ void MessageStore::run() {
             std::cout << "message_store[error] op=restore_latest reason=exception details=\"unknown\""
                       << '\n' << std::flush;
         }
+
+        logCompressionStatsLineLocked("start_after_restore");
     }
+
+    startCompressionStatsLogging();
 
     startHttpServer();
 
@@ -496,6 +520,8 @@ void MessageStore::close() {
         running_ = false;
     }
 
+    stopCompressionStatsLogging();
+
     if (config_.httpStopCallback) {
         config_.httpStopCallback();
     }
@@ -505,6 +531,7 @@ void MessageStore::close() {
     persistence_.stopPeriodic();
 
     std::lock_guard<std::mutex> lock{treeStateMutex_};
+    logCompressionStatsLineLocked("stop_after_signal");
     try {
         if (!persistence_.persistNow(tree_)) {
             std::cout << "message_store[error] op=persist_final reason=persist_failed"
@@ -518,6 +545,42 @@ void MessageStore::close() {
         std::cout << "message_store[error] op=persist_final reason=exception details=\"unknown\""
                   << '\n' << std::flush;
     }
+}
+
+void MessageStore::startCompressionStatsLogging() {
+    stopCompressionStatsLogging();
+
+    compressionStatsStopRequested_.store(false);
+    compressionStatsThread_ = std::thread([this]() {
+        std::chrono::milliseconds elapsed{0};
+        while (!compressionStatsStopRequested_.load()) {
+            std::this_thread::sleep_for(k_compression_stats_poll_interval);
+            if (compressionStatsStopRequested_.load()) {
+                return;
+            }
+
+            elapsed += k_compression_stats_poll_interval;
+            if (elapsed < std::chrono::duration_cast<std::chrono::milliseconds>(k_compression_stats_interval)) {
+                continue;
+            }
+
+            elapsed = std::chrono::milliseconds{0};
+            std::lock_guard<std::mutex> lock{treeStateMutex_};
+            logCompressionStatsLineLocked("periodic_60s");
+        }
+    });
+}
+
+void MessageStore::stopCompressionStatsLogging() {
+    compressionStatsStopRequested_.store(true);
+    if (compressionStatsThread_.joinable()) {
+        compressionStatsThread_.join();
+    }
+}
+
+void MessageStore::logCompressionStatsLineLocked(std::string_view phaseText) const {
+    const MessageTree::CompressionStats compressionStats = tree_.compressionStats();
+    printCompressionStatsLine(compressionStats, phaseText);
 }
 
 bool MessageStore::isRunning() const {
