@@ -133,6 +133,7 @@ private:
         }
 
         while (true) {
+            skip_whitespace();
             if (peek_char() != '"') {
                 throw_json_error(JsonError::UnexpectedToken, offsetValue_, "expected object key string");
             }

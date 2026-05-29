@@ -118,3 +118,8 @@
 - Scenario: New pre-sized stringify must stay output-compatible with the previous implementation.
 - Input: nested object with arrays, numbers, escapes, and control characters.
 - Expected: `stringify()` output is identical to `stringify_legacy()` output.
+
+24. parse_object_members_with_whitespace_after_comma
+- Scenario: Object parser accepts valid whitespace/newline formatting before subsequent key names.
+- Input: multi-line object with spaces/newlines after member separators.
+- Expected: parse succeeds and all object fields are readable.

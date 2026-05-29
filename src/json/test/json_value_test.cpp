@@ -48,6 +48,22 @@ TEST_CASE("parse_object_fields_are_accessible", "[json][broker]") {
     CHECK(parsedValue.at("text").as_string() == "line\nnext");
 }
 
+TEST_CASE("parse_object_members_with_whitespace_after_comma", "[json][broker]") {
+    const std::string inputText{
+        "{\n"
+        "  \"first\": 1,\n"
+        "  \"second\": true,\n"
+        "  \"third\": \"ok\"\n"
+        "}"};
+
+    const JsonValue parsedValue = JsonValue::parse(inputText);
+
+    REQUIRE(parsedValue.is_object());
+    CHECK(parsedValue.at("first").as_number() == 1.0);
+    CHECK(parsedValue.at("second").as_boolean());
+    CHECK(parsedValue.at("third").as_string() == "ok");
+}
+
 TEST_CASE("stringify_and_parse_roundtrip_keeps_values", "[json][broker]") {
     const JsonValue parsedValue = JsonValue::parse(
         R"({"name":"yaha","active":true,"list":[1,2,3],"text":"line\nnext"})");
