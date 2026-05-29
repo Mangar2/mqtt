@@ -216,7 +216,7 @@ void PushoverComponent::setPublishCallback(PublishCallback callback) {
     publishCallback_ = std::move(callback);
 }
 
-std::string PushoverComponent::formatReasonText(const std::vector<ReasonEntry>& reasons) {
+std::string PushoverComponent::formatReasonText(const ReasonList& reasons) {
     if (reasons.empty()) {
         return "no information";
     }
@@ -295,7 +295,7 @@ std::string PushoverComponent::buildResultReason(
 
 Message PushoverComponent::buildStatusMessage(
     const int statusCode,
-    const std::vector<ReasonEntry>& sourceReasons,
+    const ReasonList& sourceReasons,
     const std::string& resultReason) {
     const std::string topicName = (statusCode < kHttpSuccessThreshold)
         ? "$SYS/pushover/success"

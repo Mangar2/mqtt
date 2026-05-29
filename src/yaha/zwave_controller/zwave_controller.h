@@ -178,7 +178,7 @@ public:
    * @param reasons Incoming reason chain from the command message.
    */
   virtual void setValue(const std::string &topic, const Value &value,
-                        const std::vector<ReasonEntry> &reasons = {}) = 0;
+                        const ReasonList &reasons = {}) = 0;
 
   /**
    * @brief Starts add-node operation.
@@ -268,7 +268,7 @@ public:
    * @param reasons Incoming reason chain from the command message.
    */
   void setValue(const std::string &topic, const Value &value,
-                const std::vector<ReasonEntry> &reasons = {}) override;
+                const ReasonList &reasons = {}) override;
 
   /**
    * @brief Starts add-node operation.
@@ -426,14 +426,14 @@ private:
     std::string replyTopic{};
     ZwaveResolvedId target{};
     Value expectedValue{std::string{}};
-    std::vector<ReasonEntry> reasons{};
+    ReasonList reasons{};
     std::chrono::steady_clock::time_point sentAt{};
     std::chrono::steady_clock::time_point lastPollAt{};
   };
 
   struct PendingCommandMatch {
     bool matched{false};
-    std::vector<ReasonEntry> reasons{};
+    ReasonList reasons{};
   };
 
   enum class ErrorStateSeverity : std::uint8_t {
@@ -476,7 +476,7 @@ private:
 
   void rememberPendingCommand(const std::string &replyTopic,
                               const ZwaveWriteRequest &writeRequest,
-                              const std::vector<ReasonEntry> &reasons);
+                              const ReasonList &reasons);
   [[nodiscard]] PendingCommandMatch
   takeMatchingPendingReasons(const std::string &replyTopic,
                              const ZwaveControllerValueEvent &event,
@@ -495,7 +495,7 @@ private:
                const std::string &reason);
   void publish(const std::string &topic, const Value &value,
                const std::string &reason,
-               const std::vector<ReasonEntry> &prependedReasons);
+               const ReasonList &prependedReasons);
   void publishValue(std::uint16_t nodeId,
                     const ZwaveControllerValueEvent &event,
                     const std::string &reason);

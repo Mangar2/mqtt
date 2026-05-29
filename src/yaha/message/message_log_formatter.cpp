@@ -28,7 +28,7 @@ namespace {
     return std::to_string(std::get<double>(valueVariant));
 }
 
-[[nodiscard]] std::string reasonChainToLogToken(const std::vector<ReasonEntry>& reasonEntries,
+[[nodiscard]] std::string reasonChainToLogToken(const ReasonList& reasonEntries,
                                                 const bool includeReasonChain) {
     if (!includeReasonChain) {
         return "[]";

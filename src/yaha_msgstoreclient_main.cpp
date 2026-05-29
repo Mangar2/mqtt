@@ -11,11 +11,14 @@
 #include <fstream>
 #include <iostream>
 #include <algorithm>
+#include <atomic>
 #include <optional>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
 #include <cctype>
+#include <thread>
 #include <utility>
 
 namespace {
@@ -25,12 +28,14 @@ namespace {
 #endif
 
 constexpr const char* k_msgstore_client_name{"yahamsgstoreclient"};
+constexpr std::chrono::seconds k_runtime_stats_interval{60};
 
 struct CliOptions {
     std::filesystem::path configPath{"broker.ini"};
     std::optional<std::filesystem::path> testInputPath{};
     bool configPathProvided{false};
     bool enableMessageTrace{false};
+    bool testHandshake{false};
     bool showHelp{false};
     bool showVersion{false};
 };
@@ -40,13 +45,123 @@ void printVersion() {
 }
 
 void printUsage() {
-    std::cout << "Usage: yahamsgstoreclient [config-path] [--trace-messages] [--test <input-file>] [--version] [--help]\n"
+    std::cout << "Usage: yahamsgstoreclient [config-path] [--trace-messages] [--test <input-file>] [--test-handshake] [--version] [--help]\n"
               << "  config-path         optional INI config file (default: broker.ini)\n"
               << "  --trace-messages    print sent/received MQTT messages\n"
               << "  --test <input-file> process JSONL-envelope input synchronously and exit\n"
+              << "  --test-handshake    keep test mode alive and wait for commands on stdin\n"
+              << "                      protocol: load, sleep <ms>, exit\n"
               << "  --version           print version and exit\n"
               << "  --help              print this help and exit\n"
               << std::flush;
+}
+
+enum class TestHandshakeCommandKind : std::uint8_t {
+    Load,
+    Sleep,
+    Exit,
+    Invalid,
+    EndOfInput,
+};
+
+struct TestHandshakeCommand {
+    TestHandshakeCommandKind kind{TestHandshakeCommandKind::Invalid};
+    std::uint32_t sleepMs{0U};
+    std::string errorText{};
+};
+
+TestHandshakeCommand parseTestHandshakeCommand(const std::string& rawLine) {
+    const auto firstNonWhitespace = std::ranges::find_if_not(
+        rawLine.begin(),
+        rawLine.end(),
+        [](const unsigned char inputChar) { return std::isspace(inputChar) != 0; });
+    if (firstNonWhitespace == rawLine.end()) {
+        return TestHandshakeCommand{.kind = TestHandshakeCommandKind::Invalid,
+                                    .errorText = "empty handshake command"};
+    }
+
+    std::string command{firstNonWhitespace, rawLine.end()};
+    while (!command.empty() && std::isspace(static_cast<unsigned char>(command.back())) != 0) {
+        command.pop_back();
+    }
+
+    if (command == "load") {
+        return TestHandshakeCommand{.kind = TestHandshakeCommandKind::Load};
+    }
+    if (command == "exit") {
+        return TestHandshakeCommand{.kind = TestHandshakeCommandKind::Exit};
+    }
+
+    constexpr std::string_view sleepPrefix{"sleep "};
+    if (command.starts_with(sleepPrefix)) {
+        const std::string sleepText = command.substr(sleepPrefix.size());
+        std::uint64_t parsedSleepMs = 0U;
+        const auto [endPtr, errorCode] = std::from_chars(
+            sleepText.data(),
+            sleepText.data() + sleepText.size(),
+            parsedSleepMs,
+            10);
+        if (errorCode != std::errc{} || endPtr != sleepText.data() + sleepText.size()) {
+            return TestHandshakeCommand{.kind = TestHandshakeCommandKind::Invalid,
+                                        .errorText = "sleep expects an unsigned integer milliseconds value"};
+        }
+        if (parsedSleepMs > static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max())) {
+            return TestHandshakeCommand{.kind = TestHandshakeCommandKind::Invalid,
+                                        .errorText = "sleep milliseconds value too large"};
+        }
+
+        return TestHandshakeCommand{.kind = TestHandshakeCommandKind::Sleep,
+                                    .sleepMs = static_cast<std::uint32_t>(parsedSleepMs)};
+    }
+
+    return TestHandshakeCommand{.kind = TestHandshakeCommandKind::Invalid,
+                                .errorText = "unknown handshake command: " + command};
+}
+
+TestHandshakeCommand readNextTestHandshakeCommand() {
+    std::string rawLine{};
+    while (std::getline(std::cin, rawLine)) {
+        if (rawLine.empty() || rawLine.front() == '#') {
+            continue;
+        }
+        return parseTestHandshakeCommand(rawLine);
+    }
+    return TestHandshakeCommand{.kind = TestHandshakeCommandKind::EndOfInput,
+                                .errorText = "stdin closed while waiting for handshake command"};
+}
+
+bool awaitHandshakeLoadCommand() {
+    std::cout << "test.handshake phase=ready_for_start\n" << std::flush;
+    const TestHandshakeCommand command = readNextTestHandshakeCommand();
+    if (command.kind == TestHandshakeCommandKind::Load) {
+        return true;
+    }
+
+    std::cerr << "test.handshake error="
+              << (command.errorText.empty() ? "expected load command" : command.errorText)
+              << '\n';
+    return false;
+}
+
+bool awaitHandshakeExitOrSleep() {
+    std::cout << "test.handshake phase=ready_for_end\n" << std::flush;
+    while (true) {
+        const TestHandshakeCommand command = readNextTestHandshakeCommand();
+        if (command.kind == TestHandshakeCommandKind::Exit) {
+            return true;
+        }
+
+        if (command.kind == TestHandshakeCommandKind::Sleep) {
+            std::this_thread::sleep_for(std::chrono::milliseconds{command.sleepMs});
+            std::cout << "test.handshake phase=slept ms=" << command.sleepMs << '\n' << std::flush;
+            continue;
+        }
+
+        std::cerr << "test.handshake error="
+                  << (command.errorText.empty() ? "expected sleep <ms> or exit" : command.errorText)
+                  << '\n';
+        return false;
+    }
 }
 
 bool tryParseTestInputLine(const std::string& lineText,
@@ -100,7 +215,8 @@ bool tryParseTestInputLine(const std::string& lineText,
     return false;
 }
 
-int runSynchronousTestMode(const std::filesystem::path& inputPath) {
+int runSynchronousTestMode(const std::filesystem::path& inputPath,
+                           const bool handshakeEnabled) {
     std::ifstream inputStream{inputPath};
     if (!inputStream.is_open()) {
         std::cerr << "Failed to open test input file '" << inputPath.string() << "'\n";
@@ -111,10 +227,13 @@ int runSynchronousTestMode(const std::filesystem::path& inputPath) {
     storeConfig.serverPort = 0U;
     yaha::MessageStore store{std::move(storeConfig)};
 
+    if (handshakeEnabled && !awaitHandshakeLoadCommand()) {
+        return 1;
+    }
+
     std::uint64_t processedMessages = 0U;
     std::string lineText{};
     std::uint64_t lineNumber = 0U;
-
     const auto buildStartTime = std::chrono::steady_clock::now();
     while (std::getline(inputStream, lineText)) {
         lineNumber += 1U;
@@ -134,6 +253,10 @@ int runSynchronousTestMode(const std::filesystem::path& inputPath) {
         processedMessages += 1U;
     }
     const auto buildEndTime = std::chrono::steady_clock::now();
+
+    if (handshakeEnabled && !awaitHandshakeExitOrSleep()) {
+        return 1;
+    }
 
     const auto saveStartTime = std::chrono::steady_clock::now();
     const std::optional<std::filesystem::path> snapshotPath = store.persistSnapshotNow();
@@ -169,39 +292,71 @@ int runSynchronousTestMode(const std::filesystem::path& inputPath) {
     return 0;
 }
 
+bool parseTestArgument(const std::span<char*> arguments,
+                       std::size_t& argIndex,
+                       CliOptions& options,
+                       std::string& errorText) {
+    if (argIndex + 1U >= arguments.size()) {
+        errorText = "--test requires an input filename";
+        return false;
+    }
+
+    if (options.testInputPath.has_value()) {
+        errorText = "--test was provided multiple times";
+        return false;
+    }
+
+    options.testInputPath = std::filesystem::path{arguments[argIndex + 1U]};
+    argIndex += 1U;
+    return true;
+}
+
+bool tryHandleSwitchArgument(const std::string& argument,
+                             const std::span<char*> arguments,
+                             std::size_t& argIndex,
+                             CliOptions& options,
+                             std::string& errorText,
+                             bool& handled) {
+    handled = true;
+    if (argument == "--help" || argument == "-h") {
+        options.showHelp = true;
+        return true;
+    }
+    if (argument == "--version" || argument == "-V") {
+        options.showVersion = true;
+        return true;
+    }
+    if (argument == "--trace-messages") {
+        options.enableMessageTrace = true;
+        return true;
+    }
+    if (argument == "--test-handshake") {
+        options.testHandshake = true;
+        return true;
+    }
+    if (argument == "--test") {
+        return parseTestArgument(arguments, argIndex, options, errorText);
+    }
+
+    handled = false;
+    return true;
+}
+
 bool tryParseCli(const std::span<char*> arguments,
                  CliOptions& options,
                  std::string& errorText) {
     for (std::size_t argIndex = 1U; argIndex < arguments.size(); ++argIndex) {
         const std::string argument{arguments[argIndex]};
-        if (argument == "--help" || argument == "-h") {
-            options.showHelp = true;
-            continue;
+        bool handledSwitch = false;
+        if (!tryHandleSwitchArgument(argument,
+                                     arguments,
+                                     argIndex,
+                                     options,
+                                     errorText,
+                                     handledSwitch)) {
+            return false;
         }
-
-        if (argument == "--version" || argument == "-V") {
-            options.showVersion = true;
-            continue;
-        }
-
-        if (argument == "--trace-messages") {
-            options.enableMessageTrace = true;
-            continue;
-        }
-
-        if (argument == "--test") {
-            if (argIndex + 1U >= arguments.size()) {
-                errorText = "--test requires an input filename";
-                return false;
-            }
-
-            if (options.testInputPath.has_value()) {
-                errorText = "--test was provided multiple times";
-                return false;
-            }
-
-            options.testInputPath = std::filesystem::path{arguments[argIndex + 1U]};
-            argIndex += 1U;
+        if (handledSwitch) {
             continue;
         }
 
@@ -217,6 +372,11 @@ bool tryParseCli(const std::span<char*> arguments,
 
         options.configPath = std::filesystem::path{argument};
         options.configPathProvided = true;
+    }
+
+    if (options.testHandshake && !options.testInputPath.has_value()) {
+        errorText = "--test-handshake requires --test <input-file>";
+        return false;
     }
 
     return true;
@@ -313,31 +473,26 @@ void printStartupConfiguration(const std::filesystem::path& configPath,
     }
 }
 
-} // namespace
+void printCompressionStatsLine(const yaha::MessageStore& store,
+                               const std::string_view phaseText) {
+    const yaha::MessageTree::CompressionStats compressionStats = store.queryCompressionStats();
+    std::cout << "message_store[stats]"
+              << " phase=" << phaseText
+              << " currentNodes=" << compressionStats.currentNodeCount
+              << " totalStoredMessages=" << compressionStats.totalStoredMessageCount
+              << " historyBuckets=" << compressionStats.historyBucketCount
+              << " buckets.single=" << compressionStats.singleBucketCount
+              << " buckets.timeValue=" << compressionStats.timeValueBucketCount
+              << " buckets.time=" << compressionStats.timeBucketCount
+              << " buckets.interval=" << compressionStats.intervalBucketCount
+              << " represented.single=" << compressionStats.representedSingleCount
+              << " represented.timeValue=" << compressionStats.representedTimeValueCount
+              << " represented.time=" << compressionStats.representedTimeCount
+              << " represented.interval=" << compressionStats.representedIntervalCount
+              << '\n' << std::flush;
+}
 
-int main(int argc, char* argv[]) {
-    CliOptions cliOptions{};
-    std::string cliError{};
-    if (!tryParseCli(std::span<char*>{argv, static_cast<std::size_t>(argc)}, cliOptions, cliError)) {
-        std::cerr << "Failed to parse arguments: " << cliError << '\n';
-        printUsage();
-        return 1;
-    }
-
-    if (cliOptions.showHelp) {
-        printUsage();
-        return 0;
-    }
-
-    if (cliOptions.showVersion) {
-        printVersion();
-        return 0;
-    }
-
-    if (cliOptions.testInputPath.has_value()) {
-        return runSynchronousTestMode(*cliOptions.testInputPath);
-    }
-
+int runConfiguredRuntime(const CliOptions& cliOptions) {
     const std::filesystem::path configPath = cliOptions.configPath;
 
     yaha::IniDocument configDocument{};
@@ -368,9 +523,22 @@ int main(int argc, char* argv[]) {
     const std::string configuredHttpPath = runtimeConfig.storeConfig.serverPath;
     const std::uint16_t configuredHttpPort = runtimeConfig.storeConfig.serverPort;
 
+    auto originalHttpStartCallback = runtimeConfig.storeConfig.httpStartCallback;
+    yaha::MessageStore* storeAddressForStartStats{nullptr};
+    runtimeConfig.storeConfig.httpStartCallback =
+        [&originalHttpStartCallback, &storeAddressForStartStats]() {
+            if (originalHttpStartCallback) {
+                originalHttpStartCallback();
+            }
+            if (storeAddressForStartStats != nullptr) {
+                printCompressionStatsLine(*storeAddressForStartStats, "start_after_restore");
+            }
+        };
+
     printStartupConfiguration(configPath, runtimeConfig, useIncomingLogAdapter);
 
     yaha::MessageStore store{std::move(runtimeConfig.storeConfig)};
+    storeAddressForStartStats = &store;
     std::optional<IncomingMessageLoggingComponent> incomingLogComponent{};
     yaha::IMqttComponent* mqttComponent = &store;
     if (useIncomingLogAdapter) {
@@ -395,12 +563,66 @@ int main(int argc, char* argv[]) {
     std::cout << "  signal: waiting for SIGINT/SIGTERM\n";
     std::cout << std::flush;
 
+    std::atomic<bool> periodicStatsStopRequested{false};
+    std::thread periodicStatsThread{[&store, &periodicStatsStopRequested]() {
+        while (!periodicStatsStopRequested.load()) {
+            for (std::uint32_t secondIndex = 0U;
+                 secondIndex < static_cast<std::uint32_t>(k_runtime_stats_interval.count());
+                 ++secondIndex) {
+                if (periodicStatsStopRequested.load()) {
+                    return;
+                }
+                std::this_thread::sleep_for(std::chrono::seconds{1});
+            }
+
+            if (periodicStatsStopRequested.load()) {
+                return;
+            }
+            printCompressionStatsLine(store, "periodic_60s");
+        }
+    }};
+
     yaha::YahaMqttClientRuntime runtime{mqttClient, store};
     runtime.runUntilSignal();
+
+    periodicStatsStopRequested.store(true);
+    if (periodicStatsThread.joinable()) {
+        periodicStatsThread.join();
+    }
+
+    printCompressionStatsLine(store, "stop_after_signal");
 
     std::cout << "  signal: received, disconnecting\n";
     std::cout << "  runtime: shutting down\n";
     std::cout << "  runtime: stopped\n";
     std::cout << std::flush;
     return 0;
+}
+
+} // namespace
+
+int main(int argc, char* argv[]) {
+    CliOptions cliOptions{};
+    std::string cliError{};
+    if (!tryParseCli(std::span<char*>{argv, static_cast<std::size_t>(argc)}, cliOptions, cliError)) {
+        std::cerr << "Failed to parse arguments: " << cliError << '\n';
+        printUsage();
+        return 1;
+    }
+
+    if (cliOptions.showHelp) {
+        printUsage();
+        return 0;
+    }
+
+    if (cliOptions.showVersion) {
+        printVersion();
+        return 0;
+    }
+
+    if (cliOptions.testInputPath.has_value()) {
+        return runSynchronousTestMode(*cliOptions.testInputPath, cliOptions.testHandshake);
+    }
+
+    return runConfiguredRuntime(cliOptions);
 }

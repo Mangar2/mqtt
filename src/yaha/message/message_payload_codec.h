@@ -27,7 +27,7 @@ namespace yaha {
  * @return JSON array text that can be embedded in an envelope payload.
  */
 [[nodiscard]] std::string serializeReasonArrayOldestFirst(
-    const std::vector<ReasonEntry>& reasonEntries);
+    const ReasonList& reasonEntries);
 
 /**
  * @brief Builds canonical YAHA envelope JSON payload from a Message.
@@ -48,7 +48,7 @@ namespace yaha {
  * @param reasonArrayToken Raw reason array text.
  * @return Parsed reason entries in wire order or empty optional on parse failure.
  */
-[[nodiscard]] std::optional<std::vector<ReasonEntry>> parseReasonArray(
+[[nodiscard]] std::optional<ReasonList> parseReasonArray(
     std::string_view reasonArrayToken);
 
 /**

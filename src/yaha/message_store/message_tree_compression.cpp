@@ -30,14 +30,15 @@ void MessageTree::appendHistory(NodeData& data) const {
     MessageTreeHistoryEntry entry{};
     entry.timeMs = data.timeMs;
     entry.value = data.value;
-    entry.reason = data.reason;
+    ReasonList detachedReasonForEntry = buildDetachedReasonList(data.reason);
+    entry.reason = std::move(detachedReasonForEntry);
     addHistoryEntry(data.compressedHistory, entry);
 }
 
-void MessageTree::addHistoryEntry(std::deque<CompressedHistoryEntry>& history,
+void MessageTree::addHistoryEntry(std::vector<CompressedHistoryEntry>& history,
                                   const MessageTreeHistoryEntry& entryToAdd) const {
     const auto insertSingleAsNewest = [&history, &entryToAdd]() {
-        history.emplace_front(CompressedHistoryEntry{SingleHistoryEntry{entryToAdd}});
+        history.insert(history.begin(), CompressedHistoryEntry{SingleHistoryEntry{entryToAdd}});
     };
 
     if (history.empty()) {
@@ -55,7 +56,9 @@ void MessageTree::addHistoryEntry(std::deque<CompressedHistoryEntry>& history,
         TimeValueHistoryEntry timeValueEntry{};
         timeValueEntry.values.emplace_back(singleEntry->entry.timeMs, singleEntry->entry.value);
         timeValueEntry.values.emplace_back(entryToAdd.timeMs, entryToAdd.value);
-        timeValueEntry.reason = singleEntry->entry.reason;
+        ReasonList detachedReasonForTimeValue =
+            buildDetachedReasonList(singleEntry->entry.reason);
+        timeValueEntry.reason = std::move(detachedReasonForTimeValue);
         newest.data = std::move(timeValueEntry);
         return;
     }
@@ -74,7 +77,7 @@ void MessageTree::addHistoryEntry(std::deque<CompressedHistoryEntry>& history,
 }
 
 void MessageTree::addOrConvertTimeValueEntry(CompressedHistoryEntry& newest,
-                                             std::deque<CompressedHistoryEntry>& history,
+                                             std::vector<CompressedHistoryEntry>& history,
                                              const MessageTreeHistoryEntry& entryToAdd) const {
     auto* timeValueEntry = std::get_if<TimeValueHistoryEntry>(&newest.data);
     if (timeValueEntry == nullptr) {
@@ -89,7 +92,9 @@ void MessageTree::addOrConvertTimeValueEntry(CompressedHistoryEntry& newest,
             TimeHistoryEntry timeEntry{};
             timeEntry.value = timeValueEntry->values.back().second;
             timeEntry.timestamps = timestamps;
-            timeEntry.reason = timeValueEntry->reason;
+            ReasonList detachedReasonForTimeEntry =
+                buildDetachedReasonList(timeValueEntry->reason);
+            timeEntry.reason = std::move(detachedReasonForTimeEntry);
 
             if (auto intervalEntry = tryConvertTimeToInterval(timeEntry); intervalEntry.has_value()) {
                 newest.data = std::move(*intervalEntry);
@@ -118,18 +123,20 @@ void MessageTree::addOrConvertTimeValueEntry(CompressedHistoryEntry& newest,
     TimeHistoryEntry newTimeEntry{};
     newTimeEntry.value = newestValue;
     newTimeEntry.timestamps = timestamps;
-    newTimeEntry.reason = currentTimeValueEntry->reason;
+    ReasonList detachedReasonForNewTimeEntry =
+        buildDetachedReasonList(currentTimeValueEntry->reason);
+    newTimeEntry.reason = std::move(detachedReasonForNewTimeEntry);
 
     if (auto intervalEntry = tryConvertTimeToInterval(newTimeEntry); intervalEntry.has_value()) {
-        history.emplace_front(CompressedHistoryEntry{std::move(*intervalEntry)});
+        history.insert(history.begin(), CompressedHistoryEntry{std::move(*intervalEntry)});
         return;
     }
 
-    history.emplace_front(CompressedHistoryEntry{std::move(newTimeEntry)});
+    history.insert(history.begin(), CompressedHistoryEntry{std::move(newTimeEntry)});
 }
 
 void MessageTree::addOrConvertTimeEntry(CompressedHistoryEntry& newest,
-                                        std::deque<CompressedHistoryEntry>& history,
+                                        std::vector<CompressedHistoryEntry>& history,
                                         const MessageTreeHistoryEntry& entryToAdd) const {
     auto* timeEntry = std::get_if<TimeHistoryEntry>(&newest.data);
     if (timeEntry == nullptr) {
@@ -137,7 +144,7 @@ void MessageTree::addOrConvertTimeEntry(CompressedHistoryEntry& newest,
     }
 
     if (timeEntry->value != entryToAdd.value) {
-        history.emplace_front(CompressedHistoryEntry{SingleHistoryEntry{entryToAdd}});
+        history.insert(history.begin(), CompressedHistoryEntry{SingleHistoryEntry{entryToAdd}});
         return;
     }
 
@@ -149,15 +156,15 @@ void MessageTree::addOrConvertTimeEntry(CompressedHistoryEntry& newest,
     }
 
     timeEntry->timestamps.resize(timeEntry->timestamps.size() - intervalEntry.amount);
-    history.emplace_front(CompressedHistoryEntry{intervalEntry});
+    history.insert(history.begin(), CompressedHistoryEntry{intervalEntry});
 }
 
 void MessageTree::addOrConvertIntervalEntry(CompressedHistoryEntry& newest,
-                                            std::deque<CompressedHistoryEntry>& history,
+                                            std::vector<CompressedHistoryEntry>& history,
                                             const MessageTreeHistoryEntry& entryToAdd) const {
     auto* intervalEntry = std::get_if<IntervalHistoryEntry>(&newest.data);
     if (intervalEntry == nullptr || intervalEntry->amount <= 1U) {
-        history.emplace_front(CompressedHistoryEntry{SingleHistoryEntry{entryToAdd}});
+        history.insert(history.begin(), CompressedHistoryEntry{SingleHistoryEntry{entryToAdd}});
         return;
     }
 
@@ -168,7 +175,7 @@ void MessageTree::addOrConvertIntervalEntry(CompressedHistoryEntry& newest,
 
     if (intervalEntry->value != entryToAdd.value ||
         !isMatchingInterval(newIntervalMs, referenceIntervalMs)) {
-        history.emplace_front(CompressedHistoryEntry{SingleHistoryEntry{entryToAdd}});
+        history.insert(history.begin(), CompressedHistoryEntry{SingleHistoryEntry{entryToAdd}});
         return;
     }
 
@@ -176,8 +183,8 @@ void MessageTree::addOrConvertIntervalEntry(CompressedHistoryEntry& newest,
     intervalEntry->amount += 1U;
 }
 
-bool MessageTree::areReasonMessagesEqual(const std::vector<ReasonEntry>& left,
-                                         const std::vector<ReasonEntry>& right) {
+bool MessageTree::areReasonMessagesEqual(const ReasonList& left,
+                                         const ReasonList& right) {
     if (left.size() != right.size()) {
         return false;
     }
@@ -191,7 +198,7 @@ bool MessageTree::areReasonMessagesEqual(const std::vector<ReasonEntry>& left,
     return true;
 }
 
-const std::vector<ReasonEntry>& MessageTree::reasonOf(const CompressedHistoryEntry& entry) {
+const ReasonList& MessageTree::reasonOf(const CompressedHistoryEntry& entry) {
     if (const auto* singleEntry = std::get_if<SingleHistoryEntry>(&entry.data)) {
         return singleEntry->entry.reason;
     }
@@ -337,11 +344,12 @@ void MessageTree::trimHistory(NodeData& data) const {
 
     if (data.compressedHistory.size() > newLength) {
         data.compressedHistory.resize(newLength);
+        data.compressedHistory.shrink_to_fit();
     }
 }
 
 std::vector<MessageTreeHistoryEntry>
-MessageTree::decompressHistory(const std::deque<CompressedHistoryEntry>& compressed,
+MessageTree::decompressHistory(const std::vector<CompressedHistoryEntry>& compressed,
                                bool includeReason) {
     std::vector<MessageTreeHistoryEntry> history{};
     std::size_t expectedEntries = 0U;
@@ -406,7 +414,8 @@ void MessageTree::appendTimeValueHistoryEntries(std::vector<MessageTreeHistoryEn
     }
 
     if (includeReason && !entry.values.empty()) {
-        history.back().reason = entry.reason;
+        ReasonList detachedReasonForHistoryBack = buildDetachedReasonList(entry.reason);
+        history.back().reason = std::move(detachedReasonForHistoryBack);
     }
 }
 
@@ -422,7 +431,8 @@ void MessageTree::appendTimeHistoryEntries(std::vector<MessageTreeHistoryEntry>&
     }
 
     if (includeReason && !entry.timestamps.empty()) {
-        history.back().reason = entry.reason;
+        ReasonList detachedReasonForHistoryBack = buildDetachedReasonList(entry.reason);
+        history.back().reason = std::move(detachedReasonForHistoryBack);
     }
 }
 
@@ -445,9 +455,9 @@ void MessageTree::appendIntervalHistoryEntry(std::vector<MessageTreeHistoryEntry
     history.push_back(std::move(decompressedEntry));
 }
 
-std::deque<MessageTree::CompressedHistoryEntry>
+std::vector<MessageTree::CompressedHistoryEntry>
 MessageTree::compressHistory(const std::vector<MessageTreeHistoryEntry>& history) const {
-    std::deque<CompressedHistoryEntry> compressed{};
+    std::vector<CompressedHistoryEntry> compressed{};
     for (const auto& historyEntry : std::views::reverse(history)) {
         addHistoryEntry(compressed, historyEntry);
     }

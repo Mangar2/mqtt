@@ -83,6 +83,9 @@ all YAHA apps can share the same non-domain runtime behavior.
 - incoming logs use deterministic structured fields (`component`, `direction`, `topic`, `value`, `qos`, `retain`, `dup`, `reason`) and include full reason chain when `messagestore.logReason=true`
 - `messagestore.logIncomingMessages` and `messagestore.logReason` are mapped through shared message-log INI helper (`tryLoadMessageLogConfigFromIni`) with unchanged key names and defaults
 - signal handling and shutdown progress lines (`received`, `disconnecting`, `shutting down`, `stopped`)
+- compression stats log line after startup restore (`message_store[stats] phase=start_after_restore ...`)
+- compression stats log line every 60 seconds while runtime is active (`phase=periodic_60s`)
+- compression stats log line after signal-driven shutdown (`phase=stop_after_signal`)
 
 ## CLI behavior
 

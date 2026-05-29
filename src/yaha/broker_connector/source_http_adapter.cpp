@@ -382,12 +382,12 @@ std::optional<ReasonEntry> tryParseReasonEntryObject(const std::string& objectTe
     return ReasonEntry{.message = std::move(messageText), .timestamp = std::move(timestampText)};
 }
 
-std::optional<std::vector<ReasonEntry>> tryParseReasonArray(const std::string& arrayText) {
+std::optional<ReasonList> tryParseReasonArray(const std::string& arrayText) {
     if (arrayText.size() < 2U || arrayText.front() != '[' || arrayText.back() != ']') {
         return std::nullopt;
     }
 
-    std::vector<ReasonEntry> reasonEntries{};
+    ReasonList reasonEntries{};
     std::size_t cursorPos = 1U;
     while (cursorPos + 1U < arrayText.size()) {
         cursorPos = skipReasonSeparators(arrayText, cursorPos);
@@ -414,7 +414,7 @@ std::optional<std::vector<ReasonEntry>> tryParseReasonArray(const std::string& a
     return reasonEntries;
 }
 
-void appendReasonsPreservingOrder(const std::vector<ReasonEntry>& reasonEntries,
+void appendReasonsPreservingOrder(const ReasonList& reasonEntries,
                                   Message& messageOut) {
     for (std::size_t reverseIndex = reasonEntries.size(); reverseIndex > 0U; --reverseIndex) {
         const ReasonEntry& entry = reasonEntries[reverseIndex - 1U];
@@ -460,7 +460,7 @@ bool parseIncomingMessageBody(const std::string& payload,
     if (tryFindArrayRange(body, "reason", reasonArrayStart, reasonArrayEnd)) {
         const std::string reasonArray = body.substr(reasonArrayStart,
                                                     reasonArrayEnd - reasonArrayStart + 1U);
-        const std::optional<std::vector<ReasonEntry>> reasonEntries =
+        const std::optional<ReasonList> reasonEntries =
             tryParseReasonArray(reasonArray);
         if (!reasonEntries.has_value()) {
             return false;

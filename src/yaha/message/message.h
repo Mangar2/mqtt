@@ -19,6 +19,8 @@ struct ReasonEntry {
     std::string timestamp;
 };
 
+using ReasonList = std::vector<ReasonEntry>;
+
 using Value = std::variant<std::string, double>;
 
 class Message {
@@ -31,7 +33,7 @@ public:
     [[nodiscard]] Qos                             qos()    const noexcept;
     [[nodiscard]] bool                            retain() const noexcept;
     [[nodiscard]] bool                            dup()    const noexcept;
-    [[nodiscard]] const std::vector<ReasonEntry>& reason() const noexcept;
+    [[nodiscard]] const ReasonList& reason() const noexcept;
     [[nodiscard]] const std::optional<std::string>& rawPayload() const noexcept;
 
     [[nodiscard]] bool isOn() const noexcept;
@@ -52,7 +54,7 @@ private:
     Qos                      qos_;
     bool                     retain_;
     bool                     dup_;
-    std::vector<ReasonEntry> reason_;
+    ReasonList reason_;
     std::optional<std::string> raw_payload_;
 };
 

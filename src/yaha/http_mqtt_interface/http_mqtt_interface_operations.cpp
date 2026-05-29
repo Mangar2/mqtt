@@ -463,13 +463,13 @@ struct JsonTokenScanState {
     return ReasonEntry{*messageText, *timestampText};
 }
 
-[[nodiscard]] std::optional<std::vector<ReasonEntry>> parseReasonArray(const std::string_view arrayText) {
+[[nodiscard]] std::optional<ReasonList> parseReasonArray(const std::string_view arrayText) {
     const std::string trimmedArray = trimCopy(arrayText);
     if (!isReasonArrayShapeValid(trimmedArray)) {
         return std::nullopt;
     }
 
-    std::vector<ReasonEntry> entriesOutput{};
+    ReasonList entriesOutput{};
     std::size_t cursorIndex = 1U;
     const std::size_t endIndex = trimmedArray.size() - 1U;
 
@@ -517,7 +517,7 @@ struct JsonTokenScanState {
 
 void appendReasonsPreservingOrder(
     Message& messageOutput,
-    const std::vector<ReasonEntry>& reasonEntries) {
+    const ReasonList& reasonEntries) {
     for (std::size_t reverseIndex = reasonEntries.size(); reverseIndex > 0U; --reverseIndex) {
         const ReasonEntry& entry = reasonEntries[reverseIndex - 1U];
         messageOutput.addReason(entry.message, entry.timestamp);
@@ -560,7 +560,7 @@ void appendReasonsPreservingOrder(
 struct CompatibilityBodyFields {
     std::optional<std::string> topic{};
     std::optional<Value> value{};
-    std::optional<std::vector<ReasonEntry>> reason{};
+    std::optional<ReasonList> reason{};
     std::optional<Qos> qos{};
     std::optional<bool> retain{};
 };
@@ -588,7 +588,7 @@ struct CompatibilityBodyFields {
 
     const std::optional<std::string> reasonToken = extractRawToken(bodyText, "reason");
     if (reasonToken.has_value()) {
-        const std::optional<std::vector<ReasonEntry>> parsedReason = parseReasonArray(*reasonToken);
+        const std::optional<ReasonList> parsedReason = parseReasonArray(*reasonToken);
         if (!parsedReason.has_value()) {
             return std::nullopt;
         }
@@ -619,7 +619,7 @@ struct CompatibilityBodyFields {
 struct CompatibilityParsedFields {
     std::string topic{};
     std::optional<Value> value{};
-    std::optional<std::vector<ReasonEntry>> reason{};
+    std::optional<ReasonList> reason{};
     std::optional<Qos> qos{};
     std::optional<bool> retain{};
 };
@@ -635,7 +635,7 @@ struct CompatibilityParsedFields {
     }
 
     if (const auto reasonField = tryReadHeaderValue(normalizedFields, "reason"); reasonField.has_value()) {
-        const std::optional<std::vector<ReasonEntry>> parsedReason = parseReasonArray(*reasonField);
+        const std::optional<ReasonList> parsedReason = parseReasonArray(*reasonField);
         if (!parsedReason.has_value()) {
             return std::nullopt;
         }

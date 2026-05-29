@@ -210,7 +210,7 @@ void ZwaveController::setDeviceConfiguration(const std::vector<ZwaveDeviceConfig
     devicesMapper_ = ZwaveDevicesMapper{devices_};
 }
 
-void ZwaveController::setValue(const std::string& topic, const Value& value, const std::vector<ReasonEntry>& reasons) {
+void ZwaveController::setValue(const std::string& topic, const Value& value, const ReasonList& reasons) {
     const std::vector<std::string> topicParts = splitTopic(topic);
     if (topicParts.size() < kSetTopicMinimumParts) {
         throw std::runtime_error("set expected as last element in topic " + topic);
@@ -736,14 +736,14 @@ std::string ZwaveController::notificationText(const ZwaveNotificationCode notifi
 }
 
 void ZwaveController::publish(const std::string& topic, const Value& value, const std::string& reason) {
-    publish(topic, value, reason, std::vector<ReasonEntry>{});
+    publish(topic, value, reason, ReasonList{});
 }
 
 void ZwaveController::publish(
     const std::string& topic,
     const Value& value,
     const std::string& reason,
-    const std::vector<ReasonEntry>& prependedReasons) {
+    const ReasonList& prependedReasons) {
     if (!publishCallback_) {
         return;
     }
@@ -763,7 +763,7 @@ void ZwaveController::publishValue(
     try {
         std::string topic{};
         Value outputValue = event.value;
-        std::vector<ReasonEntry> prependedReasons{};
+        ReasonList prependedReasons{};
         if (nodeId == kUsbControllerNodeId) {
             topic = usb_.topic;
         } else {
@@ -919,7 +919,7 @@ void ZwaveController::publishTimeoutForPendingCommand(const PendingCommand& pend
 void ZwaveController::rememberPendingCommand(
     const std::string& replyTopic,
     const ZwaveWriteRequest& writeRequest,
-    const std::vector<ReasonEntry>& reasons) {
+    const ReasonList& reasons) {
     // Correlation invariant: pending commands are keyed by resolved address
     // (node/class/instance/index) and expected outbound value, never by ValueID.
     PendingCommand pendingCommand{
@@ -978,7 +978,7 @@ ZwaveController::PendingCommandMatch ZwaveController::takeMatchingPendingReasons
                 && outboundSemanticBool.has_value()
                 && *expectedSemanticBool == *outboundSemanticBool);
         if (sameReplyTopic && sameTarget && sameExpectedValue) {
-            std::vector<ReasonEntry> reasons = iterator->reasons;
+            ReasonList reasons = iterator->reasons;
             pendingCommands_.erase(iterator);
             return PendingCommandMatch{.matched = true, .reasons = std::move(reasons)};
         }

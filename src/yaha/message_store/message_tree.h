@@ -8,12 +8,10 @@
 #include "yaha/message/message.h"
 
 #include <cstdint>
-#include <deque>
 #include <functional>
 #include <iosfwd>
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -25,8 +23,8 @@ namespace yaha {
  */
 struct MessageTreeHistoryEntry {
     std::int64_t timeMs{0};               ///< Wall-clock timestamp of this historic state.
-    Value value{std::string{}};           ///< Historic value.
-    std::vector<ReasonEntry> reason;      ///< Historic reason chain.
+    Value value{std::string{}};      ///< Historic value.
+    ReasonList reason;                    ///< Historic reason chain.
 };
 
 /**
@@ -35,8 +33,8 @@ struct MessageTreeHistoryEntry {
 struct MessageTreeNode {
     std::string topic;                             ///< Full topic path.
     std::int64_t timeMs{0};                        ///< Wall-clock timestamp of current value.
-    Value value{std::string{}};                    ///< Current value.
-    std::vector<ReasonEntry> reason;               ///< Current reason chain.
+    Value value{std::string{}};               ///< Current value.
+    ReasonList reason;                             ///< Current reason chain.
     std::vector<MessageTreeHistoryEntry> history;  ///< Decompressed history entries.
 };
 
@@ -46,7 +44,7 @@ struct MessageTreeNode {
 struct MessageTreeSnapshotNode {
     std::string topic;                          ///< Full topic path.
     Value value{std::string{}};                 ///< Snapshot value.
-    std::vector<ReasonEntry> reason;            ///< Snapshot reason chain.
+    ReasonList reason;            ///< Snapshot reason chain.
     bool hasReason{false};                      ///< True when reason field was explicitly provided.
     std::optional<std::int64_t> timeMs;         ///< Optional snapshot timestamp for time-aware diff.
 };
@@ -179,7 +177,7 @@ private:
      */
     struct TimeValueHistoryEntry {
         std::vector<std::pair<std::int64_t, Value>> values; ///< Ordered oldest-to-newest time/value pairs.
-        std::vector<ReasonEntry> reason; ///< Reason chain of the oldest element.
+        ReasonList reason; ///< Reason chain of the oldest element.
     };
 
     /**
@@ -188,7 +186,7 @@ private:
     struct TimeHistoryEntry {
         Value value{std::string{}}; ///< Shared value of all timestamps.
         std::vector<std::int64_t> timestamps; ///< Ordered oldest-to-newest timestamps.
-        std::vector<ReasonEntry> reason; ///< Reason chain of the oldest element.
+        ReasonList reason; ///< Reason chain of the oldest element.
     };
 
     /**
@@ -197,7 +195,7 @@ private:
     struct IntervalHistoryEntry {
         std::uint32_t amount{0U}; ///< Amount of compressed entries in this block.
         Value value{std::string{}}; ///< Shared value of the interval block.
-        std::vector<ReasonEntry> reason; ///< Reason chain of the oldest element.
+        ReasonList reason; ///< Reason chain of the oldest element.
         std::int64_t firstTimeMs{0}; ///< Oldest timestamp in the block.
         std::int64_t lastTimeMs{0}; ///< Newest timestamp in the block.
     };
@@ -218,8 +216,8 @@ private:
     struct NodeData {
         std::int64_t timeMs{0};                               ///< Current timestamp.
         Value value{std::string{}};                           ///< Current value.
-        std::vector<ReasonEntry> reason;                      ///< Current reason.
-        std::deque<CompressedHistoryEntry> compressedHistory; ///< Compressed historic values.
+        ReasonList reason;                      ///< Current reason.
+        std::vector<CompressedHistoryEntry> compressedHistory; ///< Compressed historic values.
     };
 
     /**
@@ -228,7 +226,6 @@ private:
     struct TreeNode {
         std::string topicPath;                                ///< Full topic path for this node.
         std::vector<std::pair<std::string, TreeNode>> children; ///< Child segments.
-        std::unordered_map<std::string, std::size_t> childLookup; ///< Child segment to vector index lookup cache.
         bool hasData{false};                                  ///< True when current data is present.
         NodeData data{};                                      ///< Current data payload.
     };
@@ -254,6 +251,15 @@ private:
     [[nodiscard]] const TreeNode* findPath(const std::string& topic) const;
 
     /**
+     * @brief Finds one child index by exact segment name.
+     * @param node Parent node.
+     * @param segment Child segment key.
+     * @return Child index or nullopt when absent.
+     */
+    [[nodiscard]] static std::optional<std::size_t>
+    findChildIndex(const TreeNode& node, const std::string& segment);
+
+    /**
      * @brief Appends current node value as compressed history entry.
      * @param data Mutable node data.
      */
@@ -264,7 +270,7 @@ private:
      * @param history Mutable compressed history list.
      * @param entryToAdd New entry to add as newest history item.
      */
-    void addHistoryEntry(std::deque<CompressedHistoryEntry>& history,
+    void addHistoryEntry(std::vector<CompressedHistoryEntry>& history,
                          const MessageTreeHistoryEntry& entryToAdd) const;
 
     /**
@@ -273,15 +279,15 @@ private:
      * @param right Right reason chain.
      * @return True when both chains have equal message texts.
      */
-    [[nodiscard]] static bool areReasonMessagesEqual(const std::vector<ReasonEntry>& left,
-                                                     const std::vector<ReasonEntry>& right);
+    [[nodiscard]] static bool areReasonMessagesEqual(const ReasonList& left,
+                                                     const ReasonList& right);
 
     /**
      * @brief Returns reason chain associated with one compressed history entry.
      * @param entry Compressed history entry.
      * @return Associated reason chain.
      */
-    [[nodiscard]] static const std::vector<ReasonEntry>& reasonOf(const CompressedHistoryEntry& entry);
+    [[nodiscard]] static const ReasonList& reasonOf(const CompressedHistoryEntry& entry);
 
     /**
      * @brief Extends or transforms a newest timeValue compressed entry with a new value.
@@ -290,7 +296,7 @@ private:
      * @param entryToAdd New history entry to integrate.
      */
     void addOrConvertTimeValueEntry(CompressedHistoryEntry& newest,
-                                    std::deque<CompressedHistoryEntry>& history,
+                                    std::vector<CompressedHistoryEntry>& history,
                                     const MessageTreeHistoryEntry& entryToAdd) const;
 
     /**
@@ -300,7 +306,7 @@ private:
      * @param entryToAdd New history entry to integrate.
      */
     void addOrConvertTimeEntry(CompressedHistoryEntry& newest,
-                               std::deque<CompressedHistoryEntry>& history,
+                               std::vector<CompressedHistoryEntry>& history,
                                const MessageTreeHistoryEntry& entryToAdd) const;
 
     /**
@@ -310,7 +316,7 @@ private:
      * @param entryToAdd New history entry to integrate.
      */
     void addOrConvertIntervalEntry(CompressedHistoryEntry& newest,
-                                   std::deque<CompressedHistoryEntry>& history,
+                                   std::vector<CompressedHistoryEntry>& history,
                                    const MessageTreeHistoryEntry& entryToAdd) const;
 
     /**
@@ -367,19 +373,13 @@ private:
     [[nodiscard]] static std::vector<std::string> splitTopic(const std::string& topic);
 
     /**
-     * @brief Rebuilds child lookup cache after child erasures.
-     * @param node Node whose child lookup cache should be rebuilt.
-     */
-    static void rebuildChildLookup(TreeNode& node);
-
-    /**
      * @brief Expands compressed history for API output.
      * @param compressed Internal compressed history.
      * @param includeReason Include reason in expanded entries.
      * @return Decompressed history list.
      */
     [[nodiscard]] static std::vector<MessageTreeHistoryEntry>
-    decompressHistory(const std::deque<CompressedHistoryEntry>& compressed,
+    decompressHistory(const std::vector<CompressedHistoryEntry>& compressed,
                       bool includeReason);
 
     /**
@@ -427,7 +427,7 @@ private:
      * @param history Decompressed history list in newest-first order.
      * @return Compressed representation.
      */
-    [[nodiscard]] std::deque<CompressedHistoryEntry>
+    [[nodiscard]] std::vector<CompressedHistoryEntry>
     compressHistory(const std::vector<MessageTreeHistoryEntry>& history) const;
 
     /**
@@ -455,12 +455,19 @@ private:
     [[nodiscard]] static bool snapshotEquals(const MessageTreeNode& current,
                                              const MessageTreeSnapshotNode& snapshot);
 
+    /**
+     * @brief Builds a detached ReasonList copy with reserved target capacity.
+     * @param source Source reason list.
+     * @return Detached copy suitable for move-assignment at target site.
+     */
+    [[nodiscard]] static ReasonList buildDetachedReasonList(const ReasonList& source);
+
     [[nodiscard]] static bool writeValueToken(std::ostream& stream, const Value& value);
     [[nodiscard]] static bool readValueToken(std::istream& stream, Value& value);
     [[nodiscard]] static bool writeReasonListToken(std::ostream& stream,
-                                                   const std::vector<ReasonEntry>& reasonList);
+                                                   const ReasonList& reasonList);
     [[nodiscard]] static bool readReasonListToken(std::istream& stream,
-                                                  std::vector<ReasonEntry>& reasonList);
+                                                  ReasonList& reasonList);
     [[nodiscard]] static bool writeCompressedHistoryEntry(std::ostream& stream,
                                                           const CompressedHistoryEntry& entry);
     [[nodiscard]] static bool readCompressedHistoryEntry(std::istream& stream,

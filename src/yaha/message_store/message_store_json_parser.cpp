@@ -171,7 +171,7 @@ private:
         }
 
         if (key == "reason") {
-            std::vector<ReasonEntry> parsedReasons{};
+            ReasonList parsedReasons{};
             if (!parseReasonArray(parsedReasons)) {
                 return false;
             }
@@ -183,7 +183,7 @@ private:
         return skipValue();
     }
 
-    bool parseReasonArray(std::vector<ReasonEntry>& output) {
+    bool parseReasonArray(ReasonList& output) {
         skipWs();
         if (!consume('[')) {
             return false;

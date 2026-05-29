@@ -19,8 +19,8 @@ namespace {
 constexpr std::int64_t k_millis_per_day{86400000};
 constexpr std::uint32_t k_legacy_length_for_further_compression_minimum{3U};
 
-[[nodiscard]] bool reasonListsEqual(const std::vector<ReasonEntry>& left,
-                                    const std::vector<ReasonEntry>& right) {
+[[nodiscard]] bool reasonListsEqual(const ReasonList& left,
+                                    const ReasonList& right) {
     if (left.size() != right.size()) {
         return false;
     }
@@ -60,7 +60,6 @@ MessageTree::MessageTree(MessageTreeConfig config)
     }
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void MessageTree::addData(const Message& message) {
     Message::validate(message);
 
@@ -100,7 +99,8 @@ void MessageTree::addData(const Message& message) {
 
     node->data.timeMs = effectiveTimeMs;
     node->data.value = message.value();
-    node->data.reason = message.reason();
+    ReasonList detachedReasonForNode = buildDetachedReasonList(message.reason());
+    node->data.reason = std::move(detachedReasonForNode);
 }
 
 std::vector<MessageTreeNode>
@@ -134,7 +134,9 @@ MessageTree::getNodes(const std::vector<MessageTreeSnapshotNode>& snapshot,
         currentNode.topic = current->topicPath;
         currentNode.timeMs = current->data.timeMs;
         currentNode.value = current->data.value;
-        currentNode.reason = current->data.reason;
+        ReasonList detachedReasonForCurrentNode =
+            buildDetachedReasonList(current->data.reason);
+        currentNode.reason = std::move(detachedReasonForCurrentNode);
         currentNode.history = includeHistory
             ? decompressHistory(current->data.compressedHistory, true)
             : std::vector<MessageTreeHistoryEntry>{};
@@ -166,10 +168,27 @@ void MessageTree::replaceAllNodes(const std::vector<MessageTreeNode>& nodes) {
         target->hasData = true;
         target->data.timeMs = node.timeMs;
         target->data.value = node.value;
-        target->data.reason = node.reason;
+        ReasonList detachedReasonForTarget = buildDetachedReasonList(node.reason);
+        target->data.reason = std::move(detachedReasonForTarget);
         target->data.compressedHistory = compressHistory(node.history);
         trimHistory(target->data);
     }
+}
+
+ReasonList MessageTree::buildDetachedReasonList(const ReasonList& source) {
+    ReasonList detachedReason{};
+    detachedReason.reserve(source.size());
+
+    for (const auto& sourceEntry : source) {
+        ReasonEntry targetEntry{};
+        targetEntry.message.reserve(sourceEntry.message.size());
+        targetEntry.message.append(sourceEntry.message);
+        targetEntry.timestamp.reserve(sourceEntry.timestamp.size());
+        targetEntry.timestamp.append(sourceEntry.timestamp);
+        detachedReason.push_back(std::move(targetEntry));
+    }
+
+    return detachedReason;
 }
 
 std::size_t MessageTree::cleanup(std::uint32_t daysWithoutUpdate) {
@@ -282,7 +301,7 @@ bool MessageTree::readValueToken(std::istream& stream, Value& value) {
 }
 
 bool MessageTree::writeReasonListToken(std::ostream& stream,
-                                       const std::vector<ReasonEntry>& reasonList) {
+                                       const ReasonList& reasonList) {
     stream << reasonList.size() << '\n';
     for (const auto& reason : reasonList) {
         stream << std::quoted(reason.message) << ' '
@@ -292,7 +311,7 @@ bool MessageTree::writeReasonListToken(std::ostream& stream,
 }
 
 bool MessageTree::readReasonListToken(std::istream& stream,
-                                      std::vector<ReasonEntry>& reasonList) {
+                                      ReasonList& reasonList) {
     std::size_t count = 0U;
     if (!(stream >> count)) {
         return false;
@@ -570,7 +589,6 @@ bool MessageTree::readCompressedTreeNode(std::istream& stream, TreeNode& node) {
         node.children.emplace_back(std::move(childSegment), std::move(childNode));
     }
 
-    rebuildChildLookup(node);
     return true;
 }
 
@@ -588,18 +606,17 @@ MessageTree::TreeNode* MessageTree::ensurePath(const std::string& topic) {
         }
         currentPath += segment;
 
-        const auto lookupIter = current->childLookup.find(segment);
-        if (lookupIter == current->childLookup.end()) {
+        const auto childIndex = findChildIndex(*current, segment);
+        if (!childIndex.has_value()) {
             TreeNode child{};
             child.topicPath = currentPath;
             current->children.emplace_back(segment, std::move(child));
             const std::size_t newIndex = current->children.size() - 1U;
-            current->childLookup.emplace(current->children.back().first, newIndex);
             current = &current->children[newIndex].second;
             continue;
         }
 
-        current = &current->children[lookupIter->second].second;
+        current = &current->children[*childIndex].second;
     }
 
     return current;
@@ -608,13 +625,23 @@ MessageTree::TreeNode* MessageTree::ensurePath(const std::string& topic) {
 const MessageTree::TreeNode* MessageTree::findPath(const std::string& topic) const {
     const TreeNode* current = &root_;
     for (const auto& segment : splitTopic(topic)) {
-        const auto lookupIter = current->childLookup.find(segment);
-        if (lookupIter == current->childLookup.end()) {
+        const auto childIndex = findChildIndex(*current, segment);
+        if (!childIndex.has_value()) {
             return nullptr;
         }
-        current = &current->children[lookupIter->second].second;
+        current = &current->children[*childIndex].second;
     }
     return current;
+}
+
+std::optional<std::size_t>
+MessageTree::findChildIndex(const TreeNode& node, const std::string& segment) {
+    for (std::size_t index = 0U; index < node.children.size(); ++index) {
+        if (node.children[index].first == segment) {
+            return index;
+        }
+    }
+    return std::nullopt;
 }
 
 std::vector<std::string> MessageTree::splitTopic(const std::string& topic) {
@@ -640,14 +667,6 @@ std::vector<std::string> MessageTree::splitTopic(const std::string& topic) {
     return parts;
 }
 
-void MessageTree::rebuildChildLookup(TreeNode& node) {
-    node.childLookup.clear();
-    node.childLookup.reserve(node.children.size());
-    for (std::size_t index = 0U; index < node.children.size(); ++index) {
-        node.childLookup.emplace(node.children[index].first, index);
-    }
-}
-
 void MessageTree::collectSection(const TreeNode& node,
                                  std::uint32_t maxDepth,
                                  std::uint32_t currentDepth,
@@ -659,7 +678,13 @@ void MessageTree::collectSection(const TreeNode& node,
         result.topic = node.topicPath;
         result.timeMs = node.data.timeMs;
         result.value = node.data.value;
-        result.reason = includeReason ? node.data.reason : std::vector<ReasonEntry>{};
+        if (includeReason) {
+            ReasonList detachedReasonForResult =
+                buildDetachedReasonList(node.data.reason);
+            result.reason = std::move(detachedReasonForResult);
+        } else {
+            result.reason = ReasonList{};
+        }
         result.history = includeHistory
             ? decompressHistory(node.data.compressedHistory, true)
             : std::vector<MessageTreeHistoryEntry>{};
@@ -699,20 +724,14 @@ bool MessageTree::snapshotEquals(const MessageTreeNode& current,
 
 std::size_t MessageTree::cleanupNode(TreeNode& node, std::int64_t cutoffMs) {
     std::size_t removed = 0U;
-    bool erasedChild = false;
 
     for (auto iter = node.children.begin(); iter != node.children.end();) {
         removed += cleanupNode(iter->second, cutoffMs);
         if (!iter->second.hasData && iter->second.children.empty()) {
             iter = node.children.erase(iter);
-            erasedChild = true;
             continue;
         }
         ++iter;
-    }
-
-    if (erasedChild) {
-        rebuildChildLookup(node);
     }
 
     if (node.hasData && node.data.timeMs < cutoffMs) {

@@ -30,10 +30,10 @@ using Value = std::variant<std::string, double>;
 
 ```cpp
 std::string escapeJsonString(std::string_view);
-std::string serializeReasonArrayOldestFirst(const std::vector<ReasonEntry>&);
+std::string serializeReasonArrayOldestFirst(const ReasonList&);
 std::string buildEnvelopePayload(const Message&);
 std::optional<Value> parseValueToken(std::string_view);
-std::optional<std::vector<ReasonEntry>> parseReasonArray(std::string_view);
+std::optional<ReasonList> parseReasonArray(std::string_view);
 std::optional<Message> parseEnvelopePayload(const std::string&, const std::string&, Qos, bool, bool);
 bool validateEnvelopeShape(std::string_view);
 ```

@@ -328,7 +328,7 @@ std::string valueToJson(const Value& value) {
     return stream.str();
 }
 
-std::string reasonsToJson(const std::vector<ReasonEntry>& reasons) {
+std::string reasonsToJson(const ReasonList& reasons) {
     std::string result{"["};
     for (std::size_t i = 0U; i < reasons.size(); ++i) {
         if (i > 0U) {

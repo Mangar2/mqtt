@@ -44,7 +44,7 @@ bool readValue(std::ifstream& stream, Value& value) {
     return false;
 }
 
-bool readReasonList(std::ifstream& stream, std::vector<ReasonEntry>& reasonList) {
+bool readReasonList(std::ifstream& stream, ReasonList& reasonList) {
     std::size_t count = 0U;
     if (!(stream >> count)) {
         return false;

@@ -98,7 +98,7 @@ public:
     void setPublishCallback(PublishCallback callback) override;
 
 private:
-    [[nodiscard]] static std::string formatReasonText(const std::vector<ReasonEntry>& reasons);
+    [[nodiscard]] static std::string formatReasonText(const ReasonList& reasons);
     [[nodiscard]] static std::string valueToText(const Value& valueVariant);
     [[nodiscard]] static int resolvePriority(const Value& valueVariant);
     [[nodiscard]] static std::string buildPayload(
@@ -114,7 +114,7 @@ private:
         const std::string& payloadText);
     [[nodiscard]] static Message buildStatusMessage(
         int statusCode,
-        const std::vector<ReasonEntry>& sourceReasons,
+        const ReasonList& sourceReasons,
         const std::string& resultReason);
     void publishStatusMessage(const Message& statusMessage) const;
 

@@ -39,7 +39,7 @@ Qos                Message::qos()    const noexcept { return qos_; }
 bool               Message::retain() const noexcept { return retain_; }
 bool               Message::dup()    const noexcept { return dup_; }
 
-const std::vector<ReasonEntry>& Message::reason() const noexcept { return reason_; }
+const ReasonList& Message::reason() const noexcept { return reason_; }
 const std::optional<std::string>& Message::rawPayload() const noexcept { return raw_payload_; }
 
 bool Message::isOn() const noexcept {

@@ -382,7 +382,7 @@ struct ParsedRange {
     return ReasonEntry{.message = *messageText, .timestamp = timestampText.value_or(std::string{})};
 }
 
-void appendReasonEntries(const std::vector<ReasonEntry>& reasonEntries,
+void appendReasonEntries(const ReasonList& reasonEntries,
                          Message& outputMessage) {
     for (const ReasonEntry& reasonEntry : reasonEntries) {
         if (reasonEntry.timestamp.empty()) {
@@ -403,7 +403,7 @@ std::string escapeJsonString(const std::string_view textValue) {
     return quoted.substr(1U, quoted.size() - 2U);
 }
 
-std::string serializeReasonArrayOldestFirst(const std::vector<ReasonEntry>& reasonEntries) {
+std::string serializeReasonArrayOldestFirst(const ReasonList& reasonEntries) {
     std::string reasonJson{"["};
     for (std::size_t reverseIndex = reasonEntries.size(); reverseIndex > 0U; --reverseIndex) {
         if (reverseIndex != reasonEntries.size()) {
@@ -463,7 +463,7 @@ std::optional<Value> parseValueToken(const std::string_view valueToken) {
     return Value{parsedNumber};
 }
 
-std::optional<std::vector<ReasonEntry>> parseReasonArray(const std::string_view reasonArrayToken) {
+std::optional<ReasonList> parseReasonArray(const std::string_view reasonArrayToken) {
     const std::string reasonArrayText = trimCopy(std::string{reasonArrayToken});
     if (reasonArrayText.size() < 2U
         || reasonArrayText.front() != '['
@@ -471,7 +471,7 @@ std::optional<std::vector<ReasonEntry>> parseReasonArray(const std::string_view 
         return std::nullopt;
     }
 
-    std::vector<ReasonEntry> reasonEntries{};
+    ReasonList reasonEntries{};
     std::size_t cursorPosition = 1U;
     while (cursorPosition + 1U < reasonArrayText.size()) {
         while (cursorPosition + 1U < reasonArrayText.size()
@@ -548,7 +548,7 @@ std::optional<Message> parseEnvelopePayload(const std::string& payloadText,
         const std::string_view reasonArrayView = std::string_view{bodyText}.substr(
             reasonArrayRange->start,
             reasonArrayRange->end - reasonArrayRange->start + 1U);
-        const std::optional<std::vector<ReasonEntry>> reasonEntries = parseReasonArray(reasonArrayView);
+        const std::optional<ReasonList> reasonEntries = parseReasonArray(reasonArrayView);
         if (!reasonEntries.has_value()) {
             return std::nullopt;
         }
