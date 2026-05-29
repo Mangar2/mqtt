@@ -36,7 +36,8 @@ Construction:
 Parsing and serialization:
 - `static JsonValue parse(std::string_view jsonText)` throws `JsonException` on malformed input.
 - `static std::optional<JsonValue> try_parse(std::string_view jsonText) noexcept` returns `std::nullopt` on parse failure.
-- `std::string stringify() const` serializes to compact JSON.
+- `std::string stringify() const` serializes to compact JSON using a two-phase path: first computes exact output size for the whole tree, then writes left-to-right into one pre-sized string buffer.
+- `std::string stringify_legacy() const` keeps the previous append-based serializer for regression comparison tests.
 
 Type inspection and access:
 - `is_null`, `is_boolean`, `is_number`, `is_string`, `is_object`, `is_array`.
@@ -67,3 +68,12 @@ Strict lookup API:
 - UTF-16 surrogate pair handling for `\uD800..\uDBFF` + `\uDC00..\uDFFF`.
 
 On parse failure, errors include source offset in `JsonException::offset()`.
+
+## Stringify details
+
+`stringify()` avoids slow streaming APIs and unnecessary dynamic growth during serialization:
+- no `std::ostringstream` in the fast path.
+- exact size pre-calculation for full JSON output before allocation.
+- single target allocation and sequential write cursor fill.
+
+`stringify_legacy()` preserves previous behavior and formatting to support output parity checks in tests.

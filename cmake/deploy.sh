@@ -76,7 +76,7 @@ require_command() {
 
 is_component() {
   case "$1" in
-    broker|filestore|msgstore|automation|valueservice|rs485|serialdevice|zwave|brokerconnector|httpmqttinterface|remoteservice)
+    broker|filestore|msgstore|automation|valueservice|opensensemap|pushover|rs485|serialdevice|zwave|brokerconnector|httpmqttinterface|remoteservice)
       return 0
       ;;
     *)
@@ -92,6 +92,8 @@ service_unit_for_component() {
     msgstore) printf '%s' "msgstore.service" ;;
     automation) printf '%s' "autom.service" ;;
     valueservice) printf '%s' "valuesvc.service" ;;
+    opensensemap) printf '%s' "opensensemap.service" ;;
+    pushover) printf '%s' "pushover.service" ;;
     rs485) printf '%s' "rs485.service" ;;
     serialdevice) printf '%s' "serialdev.service" ;;
     zwave) printf '%s' "zwave.service" ;;
@@ -206,7 +208,7 @@ apply_journald_namespace_configs() {
   local rc=0
   local namespace
 
-  for namespace in broker filestore msgstore autom valuesvc rs485 serialdev zwave brkconn httpmqtt remotesvc; do
+  for namespace in broker filestore msgstore autom valuesvc opensensemap pushover rs485 serialdev zwave brkconn httpmqtt remotesvc; do
     if install_journald_namespace_config "${script_dir}" "${namespace}" "${sudo_cmd}"; then
       rc=0
     else
@@ -222,7 +224,7 @@ apply_journald_namespace_configs() {
   if [[ ${changed_any} -eq 1 ]]; then
     log_info "Reloading systemd daemon after journald namespace changes"
     ${sudo_cmd} systemctl daemon-reload
-    for namespace in broker filestore msgstore autom valuesvc rs485 serialdev zwave brkconn httpmqtt remotesvc; do
+    for namespace in broker filestore msgstore autom valuesvc opensensemap pushover rs485 serialdev zwave brkconn httpmqtt remotesvc; do
       log_info "Restarting systemd-journald namespace: ${namespace}"
       ${sudo_cmd} systemctl restart "systemd-journald@${namespace}.service" || true
     done
@@ -597,7 +599,7 @@ else
   log_info "Nginx config unchanged; no nginx reload needed."
 fi
 
-for component in broker filestore msgstore automation valueservice rs485 serialdevice zwave brokerconnector httpmqttinterface remoteservice; do
+for component in broker filestore msgstore automation valueservice opensensemap pushover rs485 serialdevice zwave brokerconnector httpmqttinterface remoteservice; do
   if component_install_needed "${component}"; then
     installer="${target_dir}/${component}/install.sh"
     if [[ ! -x "${installer}" ]]; then

@@ -113,3 +113,8 @@
 - Scenario: Serializer must escape raw ASCII control bytes below `0x20` using Unicode escape form.
 - Input: string value containing bytes `0x03` and `0x1F`.
 - Expected: `stringify()` returns escaped JSON string with `\u0003` and `\u001f`, and parsing the result restores the original bytes.
+
+23. stringify_new_matches_legacy_output
+- Scenario: New pre-sized stringify must stay output-compatible with the previous implementation.
+- Input: nested object with arrays, numbers, escapes, and control characters.
+- Expected: `stringify()` output is identical to `stringify_legacy()` output.

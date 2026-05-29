@@ -20,6 +20,7 @@ constexpr double k_expected_exponent_number{-1250.0};
 constexpr double k_push_back_element_number{2.0};
 constexpr double k_expected_positive_exponent_number{100.0};
 constexpr double k_object_item_number{7.0};
+constexpr double k_regression_number_value{-1250.25};
 constexpr unsigned char k_control_char_etx{0x03U};
 constexpr unsigned char k_control_char_us{0x1FU};
 
@@ -247,6 +248,34 @@ TEST_CASE("stringify_escapes_ascii_control_characters_as_unicode", "[json][broke
 
     const JsonValue reparsedValue = JsonValue::parse(serializedText);
     CHECK(reparsedValue.as_string() == textWithControl);
+}
+
+TEST_CASE("stringify_new_matches_legacy_output", "[json][broker]") {
+    JsonValue rootValue = JsonValue::object();
+    rootValue["name"] = JsonValue{"yaha"};
+    rootValue["active"] = JsonValue{true};
+    rootValue["number"] = JsonValue{k_regression_number_value};
+
+    std::string textBuffer{"line\nnext\t\"quoted\""};
+    textBuffer.push_back(static_cast<char>(k_control_char_etx));
+    JsonValue textValue{textBuffer};
+    rootValue["text"] = textValue;
+
+    JsonValue listValue = JsonValue::array();
+    listValue.push_back(JsonValue{1.0});
+    listValue.push_back(JsonValue{false});
+    listValue.push_back(JsonValue{"x"});
+
+    JsonValue nestedValue = JsonValue::object();
+    nestedValue["emptyArray"] = JsonValue::array();
+    nestedValue["emptyObject"] = JsonValue::object();
+    nestedValue["list"] = listValue;
+    rootValue["nested"] = nestedValue;
+
+    const std::string fastSerializedText = rootValue.stringify();
+    const std::string legacySerializedText = rootValue.stringify_legacy();
+
+    CHECK(fastSerializedText == legacySerializedText);
 }
 
 TEST_CASE("parse_empty_object_and_array_and_trailing_token_error", "[json][broker]") {

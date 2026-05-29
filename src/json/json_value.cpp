@@ -3,9 +3,12 @@
 #include "json/json_error.h"
 
 #include <array>
+#include <cassert>
+#include <charconv>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <format>
 #include <sstream>
 #include <string>
@@ -55,6 +58,11 @@ constexpr std::uint32_t k_utf8_four_byte_head_mask{0x07U};
 constexpr std::uint32_t k_utf8_shift_six{6U};
 constexpr std::uint32_t k_utf8_shift_twelve{12U};
 constexpr std::uint32_t k_utf8_shift_eighteen{18U};
+constexpr std::size_t k_number_buffer_size{128U};
+constexpr std::size_t k_json_null_length{4U};
+constexpr std::size_t k_json_true_length{4U};
+constexpr std::size_t k_json_false_length{5U};
+constexpr std::size_t k_json_escaped_control_length{6U};
 
 [[noreturn]] void throw_json_error(JsonError errorCode,
                                    std::size_t offsetValue,
@@ -438,7 +446,7 @@ private:
     std::size_t offsetValue_{0U};
 };
 
-void append_escaped_json_string(std::string_view sourceText, std::string& outputText) {
+void append_escaped_json_string_legacy(std::string_view sourceText, std::string& outputText) {
     static constexpr std::array<char, 16U> k_hex_digits{
         '0', '1', '2', '3', '4', '5', '6', '7',
         '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
@@ -483,7 +491,7 @@ void append_escaped_json_string(std::string_view sourceText, std::string& output
     outputText.push_back('"');
 }
 
-void append_number(double numberValue, std::string& outputText) {
+void append_number_legacy(double numberValue, std::string& outputText) {
     if (!std::isfinite(numberValue)) {
         throw JsonException(JsonError::InvalidNumber, "cannot stringify non-finite number", 0U);
     }
@@ -494,7 +502,7 @@ void append_number(double numberValue, std::string& outputText) {
     outputText += stream.str();
 }
 
-void append_stringified(const JsonValue& inputValue, std::string& outputText) {
+void append_stringified_legacy(const JsonValue& inputValue, std::string& outputText) {
     if (inputValue.is_null()) {
         outputText += "null";
         return;
@@ -504,11 +512,11 @@ void append_stringified(const JsonValue& inputValue, std::string& outputText) {
         return;
     }
     if (inputValue.is_number()) {
-        append_number(inputValue.as_number(), outputText);
+        append_number_legacy(inputValue.as_number(), outputText);
         return;
     }
     if (inputValue.is_string()) {
-        append_escaped_json_string(inputValue.as_string(), outputText);
+        append_escaped_json_string_legacy(inputValue.as_string(), outputText);
         return;
     }
     if (inputValue.is_array()) {
@@ -518,7 +526,7 @@ void append_stringified(const JsonValue& inputValue, std::string& outputText) {
             if (indexValue > 0U) {
                 outputText.push_back(',');
             }
-            append_stringified(arrayValue[indexValue], outputText);
+            append_stringified_legacy(arrayValue[indexValue], outputText);
         }
         outputText.push_back(']');
         return;
@@ -532,11 +540,217 @@ void append_stringified(const JsonValue& inputValue, std::string& outputText) {
             outputText.push_back(',');
         }
         firstElement = false;
-        append_escaped_json_string(keyName, outputText);
+        append_escaped_json_string_legacy(keyName, outputText);
         outputText.push_back(':');
-        append_stringified(memberValue, outputText);
+        append_stringified_legacy(memberValue, outputText);
     }
     outputText.push_back('}');
+}
+
+[[nodiscard]] std::size_t number_text_length(double numberValue) {
+    if (!std::isfinite(numberValue)) {
+        throw JsonException(JsonError::InvalidNumber, "cannot stringify non-finite number", 0U);
+    }
+
+    std::array<char, k_number_buffer_size> buffer{};
+    const auto result = std::to_chars(buffer.data(),
+                                      buffer.data() + buffer.size(),
+                                      numberValue,
+                                      std::chars_format::general,
+                                      static_cast<int>(k_number_precision_digits));
+    if (result.ec != std::errc{}) {
+        throw JsonException(JsonError::InvalidNumber, "cannot stringify number", 0U);
+    }
+
+    return static_cast<std::size_t>(result.ptr - buffer.data());
+}
+
+[[nodiscard]] std::size_t escaped_json_string_size(std::string_view sourceText) {
+    std::size_t escapedSize = 2U;
+    for (const auto currentChar : sourceText) {
+        switch (currentChar) {
+            case '"':
+            case '\\':
+            case '\b':
+            case '\f':
+            case '\n':
+            case '\r':
+            case '\t':
+                escapedSize += 2U;
+                break;
+            default: {
+                const auto unsignedChar = static_cast<unsigned char>(currentChar);
+                if (unsignedChar < k_json_control_boundary) {
+                    escapedSize += k_json_escaped_control_length;
+                } else {
+                    escapedSize += 1U;
+                }
+                break;
+            }
+        }
+    }
+    return escapedSize;
+}
+
+[[nodiscard]] std::size_t compute_stringified_size(const JsonValue& inputValue) {
+    if (inputValue.is_null()) {
+        return k_json_null_length;
+    }
+    if (inputValue.is_boolean()) {
+        return inputValue.as_boolean() ? k_json_true_length : k_json_false_length;
+    }
+    if (inputValue.is_number()) {
+        return number_text_length(inputValue.as_number());
+    }
+    if (inputValue.is_string()) {
+        return escaped_json_string_size(inputValue.as_string());
+    }
+    if (inputValue.is_array()) {
+        const auto& arrayValue = inputValue.as_array();
+        std::size_t totalSize = 2U;
+        if (!arrayValue.empty()) {
+            totalSize += arrayValue.size() - 1U;
+            for (const auto& elementValue : arrayValue) {
+                totalSize += compute_stringified_size(elementValue);
+            }
+        }
+        return totalSize;
+    }
+
+    const auto& objectValue = inputValue.as_object();
+    std::size_t totalSize = 2U;
+    if (!objectValue.empty()) {
+        totalSize += objectValue.size() - 1U;
+        for (const auto& [keyName, memberValue] : objectValue) {
+            totalSize += escaped_json_string_size(keyName);
+            totalSize += 1U;
+            totalSize += compute_stringified_size(memberValue);
+        }
+    }
+    return totalSize;
+}
+
+void write_json_literal(std::string_view literalText, char*& outputCursor) {
+    std::memcpy(outputCursor, literalText.data(), literalText.size());
+    outputCursor += literalText.size();
+}
+
+void write_escaped_json_string(std::string_view sourceText, char*& outputCursor) {
+    static constexpr std::array<char, 16U> k_hex_digits{
+        '0', '1', '2', '3', '4', '5', '6', '7',
+        '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+
+    *outputCursor = '"';
+    outputCursor += 1;
+    for (const auto currentChar : sourceText) {
+        switch (currentChar) {
+            case '"':
+                write_json_literal("\\\"", outputCursor);
+                break;
+            case '\\':
+                write_json_literal("\\\\", outputCursor);
+                break;
+            case '\b':
+                write_json_literal("\\b", outputCursor);
+                break;
+            case '\f':
+                write_json_literal("\\f", outputCursor);
+                break;
+            case '\n':
+                write_json_literal("\\n", outputCursor);
+                break;
+            case '\r':
+                write_json_literal("\\r", outputCursor);
+                break;
+            case '\t':
+                write_json_literal("\\t", outputCursor);
+                break;
+            default: {
+                const auto unsignedChar = static_cast<unsigned char>(currentChar);
+                if (unsignedChar < k_json_control_boundary) {
+                    write_json_literal("\\u00", outputCursor);
+                    *outputCursor = k_hex_digits[(unsignedChar >> k_high_nibble_shift) & k_hex_nibble_mask];
+                    outputCursor += 1;
+                    *outputCursor = k_hex_digits[unsignedChar & k_hex_nibble_mask];
+                    outputCursor += 1;
+                } else {
+                    *outputCursor = currentChar;
+                    outputCursor += 1;
+                }
+                break;
+            }
+        }
+    }
+    *outputCursor = '"';
+    outputCursor += 1;
+}
+
+void write_number(double numberValue, char*& outputCursor, char* outputEnd) {
+    if (!std::isfinite(numberValue)) {
+        throw JsonException(JsonError::InvalidNumber, "cannot stringify non-finite number", 0U);
+    }
+
+    const auto conversionResult = std::to_chars(outputCursor,
+                                                outputEnd,
+                                                numberValue,
+                                                std::chars_format::general,
+                                                static_cast<int>(k_number_precision_digits));
+    if (conversionResult.ec != std::errc{}) {
+        throw JsonException(JsonError::InvalidNumber, "cannot stringify number", 0U);
+    }
+    outputCursor = conversionResult.ptr;
+}
+
+void write_stringified(const JsonValue& inputValue, char*& outputCursor, char* outputEnd) {
+    if (inputValue.is_null()) {
+        write_json_literal("null", outputCursor);
+        return;
+    }
+    if (inputValue.is_boolean()) {
+        write_json_literal(inputValue.as_boolean() ? "true" : "false", outputCursor);
+        return;
+    }
+    if (inputValue.is_number()) {
+        write_number(inputValue.as_number(), outputCursor, outputEnd);
+        return;
+    }
+    if (inputValue.is_string()) {
+        write_escaped_json_string(inputValue.as_string(), outputCursor);
+        return;
+    }
+    if (inputValue.is_array()) {
+        *outputCursor = '[';
+        outputCursor += 1;
+        const auto& arrayValue = inputValue.as_array();
+        for (std::size_t indexValue = 0U; indexValue < arrayValue.size(); ++indexValue) {
+            if (indexValue > 0U) {
+                *outputCursor = ',';
+                outputCursor += 1;
+            }
+            write_stringified(arrayValue[indexValue], outputCursor, outputEnd);
+        }
+        *outputCursor = ']';
+        outputCursor += 1;
+        return;
+    }
+
+    *outputCursor = '{';
+    outputCursor += 1;
+    const auto& objectValue = inputValue.as_object();
+    bool isFirstElement = true;
+    for (const auto& [keyName, memberValue] : objectValue) {
+        if (!isFirstElement) {
+            *outputCursor = ',';
+            outputCursor += 1;
+        }
+        isFirstElement = false;
+        write_escaped_json_string(keyName, outputCursor);
+        *outputCursor = ':';
+        outputCursor += 1;
+        write_stringified(memberValue, outputCursor, outputEnd);
+    }
+    *outputCursor = '}';
+    outputCursor += 1;
 }
 
 } // namespace
@@ -581,8 +795,18 @@ std::optional<JsonValue> JsonValue::try_parse(std::string_view jsonText) noexcep
 }
 
 std::string JsonValue::stringify() const {
+    const std::size_t targetSize = compute_stringified_size(*this);
+    std::string outputText(targetSize, '\0');
+    char* outputCursor = outputText.data();
+    char* const outputEnd = outputText.data() + outputText.size();
+    write_stringified(*this, outputCursor, outputEnd);
+    assert(outputCursor == (outputText.data() + outputText.size()));
+    return outputText;
+}
+
+std::string JsonValue::stringify_legacy() const {
     std::string outputText{};
-    append_stringified(*this, outputText);
+    append_stringified_legacy(*this, outputText);
     return outputText;
 }
 

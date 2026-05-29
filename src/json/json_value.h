@@ -106,6 +106,13 @@ public:
     [[nodiscard]] std::string stringify() const;
 
     /**
+     * @brief Serializes value using the legacy implementation.
+     * @return JSON text.
+     * @throws JsonException If value cannot be serialized.
+     */
+    [[nodiscard]] std::string stringify_legacy() const;
+
+    /**
      * @brief Reports whether value is JSON null.
      * @return True when null.
      */
