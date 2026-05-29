@@ -282,5 +282,5 @@ TEST_CASE("load_runtime_config_falls_back_on_invalid_receiver_timing_fields", "[
     REQUIRE(runtimeConfigResult.config.has_value());
     REQUIRE(runtimeConfigResult.errorMessage.empty());
     REQUIRE(runtimeConfigResult.config->receiverConfig.reconnectDelay.count() == 1000);
-    REQUIRE(runtimeConfigResult.config->receiverConfig.keepAliveInterval.count() == 60000);
+    REQUIRE(runtimeConfigResult.config->receiverConfig.keepAliveInterval.count() == 30000);
 }

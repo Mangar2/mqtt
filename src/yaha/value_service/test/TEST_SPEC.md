@@ -24,6 +24,8 @@ Unit tests for ValueService phase 2 component behavior.
 | `value_service_publish_result_failure_logs_category` | explicit callback failure result path logs structured category | callback returns `PublishResult::fail(AckTimeout)` and one `/set` message triggers publish | logs contain `category=ack_timeout` and `value_service[out-fail]` |
 | `value_service_retry_queue_flushes_after_callback_restore` | queued retained publish is flushed after callback restoration | first `/set` queues event because callback missing, callback set later, next inbound triggers retry processing | queued retained publish reaches callback successfully |
 | `value_service_retry_exhaustion_logs_retry_exhausted` | retry queue stops after budget and logs final category | callback always throws and repeated inbound messages trigger retries | logs contain `category=retry_exhausted` |
+| `value_service_client_config_falls_back_on_invalid_filestore_port_and_retry_count` | optional filestore keys keep defaults when invalid | `filestore.port=abc`, `startupRetryCount=abc` | load succeeds and defaults are retained |
+| `value_service_client_config_uses_defaults_when_mqtt_section_missing` | missing mqtt section should keep mqtt defaults | INI with valueservice + filestore only | load succeeds and mqtt defaults are retained |
 
 ## Additional assertions on existing tests
 

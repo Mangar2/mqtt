@@ -246,7 +246,7 @@ TEST_CASE(
   REQUIRE(runtimeConfig.rs485Config.interfaces.empty());
 }
 
-    TEST_CASE("rs485_runtime_config_falls_back_on_invalid_interface_keys",
+    TEST_CASE("rs485_runtime_config_rejects_invalid_interface_keys",
               "[rs485_interface]") {
       const std::string iniText = "[mqtt]\n"
                                   "host=127.0.0.1\n"
@@ -269,9 +269,8 @@ TEST_CASE(
       yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
       std::string errorMessage{};
 
-      REQUIRE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
-      REQUIRE(errorMessage.empty());
-      REQUIRE(runtimeConfig.rs485Config.interfaces.empty());
+      REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+      REQUIRE_FALSE(errorMessage.empty());
     }
 
     TEST_CASE("rs485_runtime_config_falls_back_on_invalid_command_map_and_missing_addresses",
@@ -357,6 +356,59 @@ TEST_CASE("rs485_runtime_config_falls_back_on_invalid_interface_map_value",
   REQUIRE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
   REQUIRE(errorMessage.empty());
   REQUIRE(runtimeConfig.rs485Config.interfaces.empty());
+}
+
+TEST_CASE("rs485_runtime_config_falls_back_on_missing_required_command_map_sections",
+          "[rs485_interface]") {
+  const std::string iniText = "[mqtt]\n"
+                              "host=127.0.0.1\n"
+                              "\n"
+                              "[rs485interface]\n"
+                              "serialPortName=/dev/ttyUSB0\n"
+                              "\n"
+                              "[rs485interface.interfaces]\n"
+                              "LightOnOff=usedby=V;map=on:3600|off:0\n"
+                              "\n"
+                              "[rs485interface.addresses]\n"
+                              "my/floor/device/=20\n";
+
+  yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
+  std::string errorMessage{};
+
+  REQUIRE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+  REQUIRE(errorMessage.empty());
+  REQUIRE(runtimeConfig.rs485Config.settings.empty());
+  REQUIRE(runtimeConfig.rs485Config.status.empty());
+}
+
+TEST_CASE("rs485_runtime_config_falls_back_on_empty_topic_key_and_invalid_addresses",
+          "[rs485_interface]") {
+  const std::string iniText = "[mqtt]\n"
+                              "host=127.0.0.1\n"
+                              "\n"
+                              "[rs485interface]\n"
+                              "serialPortName=/dev/ttyUSB0\n"
+                              "\n"
+                              "[rs485interface.interfaces]\n"
+                              "LightOnOff=usedby=V;map=on:3600|off:0\n"
+                              "\n"
+                              "[rs485interface.settings]\n"
+                              "V=light/light on time\n"
+                              "\n"
+                              "[rs485interface.status]\n"
+                              "v=light/light voltage\n"
+                              "\n"
+                              "[rs485interface.addresses]\n"
+                              "=20\n"
+                              "\n"
+                              "[rs485interface.topics]\n"
+                              "=X,1,20\n";
+
+  yaha::Rs485InterfaceRuntimeConfig runtimeConfig{};
+  std::string errorMessage{};
+
+  REQUIRE_FALSE(loadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+  REQUIRE_FALSE(errorMessage.empty());
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)

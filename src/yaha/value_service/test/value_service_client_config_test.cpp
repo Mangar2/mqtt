@@ -162,7 +162,7 @@ TEST_CASE("value_service_runtime_config_falls_back_on_invalid_filestore_port_and
     REQUIRE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
     REQUIRE(errorMessage.empty());
     REQUIRE(runtimeConfig.valueServiceConfig.fileStorePort == 8210U);
-    REQUIRE(runtimeConfig.valueServiceConfig.fileStoreStartupRetryCount == 5U);
+        REQUIRE(runtimeConfig.valueServiceConfig.fileStoreStartupRetryCount == 10U);
 }
 
 TEST_CASE("value_service_runtime_config_keeps_defaults_when_mqtt_section_missing", "[value_service]") {

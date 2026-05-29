@@ -56,3 +56,18 @@
 - Scenario: curl output misses metadata markers.
 - Input: stub curl returns body without status/content-type markers.
 - Expected: sender throws parse error.
+
+12. `load_config_rejects_unknown_sensor_key`
+- Scenario: strict parser rejects unsupported sensor key.
+- Input: `[sensor]` with unknown key `foo`.
+- Expected: parser fails with invalid-key message.
+
+13. `load_runtime_config_falls_back_on_invalid_opensensemap_fields`
+- Scenario: optional opensensemap and mqtt values are invalid.
+- Input: invalid opensensemap `port/qos/useTls` and invalid mqtt `port`.
+- Expected: runtime load succeeds and defaults are retained.
+
+14. `opensensemap_request_sender_throws_on_invalid_status_metadata`
+- Scenario: curl metadata has non-numeric status code.
+- Input: stub curl returns `__YAHA_STATUS__:abc`.
+- Expected: sender throws status-parse error.

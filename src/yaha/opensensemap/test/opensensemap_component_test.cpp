@@ -16,6 +16,8 @@ constexpr double kStatusNotFound = 404.0;
 constexpr double kStatusUnprocessableEntity = 422.0;
 constexpr double kStatusInternalServerError = 500.0;
 constexpr double kPayloadValueOne = 1.0;
+constexpr double kPayloadValueStatusFailure = 12.75;
+constexpr int kUnknownExceptionCode = 42;
 
 [[nodiscard]] yaha::OpenSenseMapConfig makeConfig() {
     return yaha::OpenSenseMapConfig{
@@ -194,7 +196,7 @@ TEST_CASE("handle_message_publishes_error_for_unknown_exception", "[opensensemap
     yaha::OpenSenseMapComponent component{
         makeConfig(),
         [](const std::string&, const std::string&) -> yaha::OpenSenseMapHttpResult {
-            throw 42;
+            throw kUnknownExceptionCode;
         }};
 
     component.setPublishCallback([&published](const yaha::Message& message) {
@@ -228,4 +230,33 @@ TEST_CASE("component_close_stops_followup_processing", "[opensensemap]") {
 
     component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueOne});
     REQUIRE(publishedCount == 0U);
+}
+
+TEST_CASE("handle_message_without_publish_callback_does_not_throw", "[opensensemap]") {
+    yaha::OpenSenseMapComponent component{
+        makeConfig(),
+        [](const std::string&, const std::string&) {
+            return yaha::OpenSenseMapHttpResult{.statusCode = kHttpStatusCreated};
+        }};
+
+    component.run();
+    REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueOne}));
+}
+
+TEST_CASE("handle_message_logs_status_publish_failure_path", "[opensensemap]") {
+    std::size_t publishCalls = 0U;
+    yaha::OpenSenseMapComponent component{
+        makeConfig(),
+        [](const std::string&, const std::string&) {
+            return yaha::OpenSenseMapHttpResult{.statusCode = static_cast<int>(kStatusInternalServerError), .payload = "backend error"};
+        }};
+
+    component.setPublishCallback([&publishCalls](const yaha::Message&) {
+        publishCalls += 1U;
+        return yaha::PublishResult::fail(yaha::PublishFailureCategory::WriteFailed, "forced");
+    });
+    component.run();
+
+    REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueStatusFailure}));
+    REQUIRE(publishCalls >= 1U);
 }

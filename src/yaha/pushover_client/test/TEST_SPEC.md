@@ -51,3 +51,18 @@
 - Scenario: curl output misses metadata markers.
 - Input: stub curl returns body only.
 - Expected: sender throws parse error.
+
+11. `load_config_rejects_invalid_device_shape`
+- Scenario: strict parser rejects unsupported device key.
+- Input: `[device]` with key `id` instead of `name`.
+- Expected: parser fails with invalid-key message.
+
+12. `load_runtime_config_falls_back_on_invalid_pushover_port_and_mqtt`
+- Scenario: optional pushover/mqtt numeric values are invalid.
+- Input: invalid `pushover.port` and invalid `mqtt.port`.
+- Expected: runtime load succeeds and defaults are retained.
+
+13. `pushover_request_sender_throws_on_invalid_status_metadata`
+- Scenario: curl metadata has non-numeric status code.
+- Input: stub curl returns `__YAHA_STATUS__:abc`.
+- Expected: sender throws status-parse error.

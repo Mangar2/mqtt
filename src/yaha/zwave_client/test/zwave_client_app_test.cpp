@@ -932,7 +932,7 @@ TEST_CASE("load_zwave_config_falls_back_on_invalid_logging_timing_and_filestore_
   CHECK(errorMessage.empty());
   CHECK_FALSE(config.logIncomingMessages);
   CHECK(config.commandReactionPollIntervalMs ==
-        yaha::kDefaultZwaveCommandReactionPollIntervalMs);
-  CHECK(config.fileStorePort == yaha::kDefaultZwaveFileStorePort);
-  CHECK(config.fileStoreEnabled == yaha::kDefaultZwaveFileStoreEnabled);
+      yaha::kZwaveDefaultCommandReactionPollIntervalMs);
+    CHECK(config.fileStorePort == yaha::kZwaveDefaultFileStorePort);
+    CHECK_FALSE(config.fileStoreEnabled);
 }

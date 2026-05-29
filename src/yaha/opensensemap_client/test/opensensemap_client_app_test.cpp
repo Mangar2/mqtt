@@ -55,7 +55,8 @@ private:
 };
 
 [[nodiscard]] std::filesystem::path makeFakeCurlDirectory(const std::string& scriptBody) {
-    const auto stamp = std::to_string(std::filesystem::file_time_type::clock::now().time_since_epoch().count());
+    const auto stamp = std::to_string(
+        static_cast<long long>(std::filesystem::file_time_type::clock::now().time_since_epoch().count()));
     const auto directoryPath = std::filesystem::temp_directory_path() / ("opensensemap_curl_stub_" + stamp);
     std::filesystem::create_directories(directoryPath);
 
@@ -322,6 +323,77 @@ TEST_CASE("opensensemap_request_sender_throws_on_missing_metadata", "[opensensem
     const auto sender = yaha::makeOpenSenseMapRequestSender(config);
 
     REQUIRE_THROWS(sender("/boxes/box-abc/sensor-1", "{\"value\":12}"));
+
+    removeDirectoryQuiet(fakeCurlDirectory);
+}
+
+TEST_CASE("load_config_rejects_unknown_sensor_key", "[opensensemap_client]") {
+    const std::string iniText =
+        "[opensensemap]\n"
+        "id = box-abc\n"
+        "\n"
+        "[sensor]\n"
+        "name = temperature\n"
+        "unit = C\n"
+        "topic = house/living/temperature\n"
+        "id = sensor-temp\n"
+        "foo = bar\n";
+
+    const ScopedIniFile iniFile{iniText};
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniFile.path());
+
+    yaha::OpenSenseMapConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(yaha::tryLoadOpenSenseMapConfigFromIni(document, config, errorMessage));
+    REQUIRE(errorMessage.find("invalid key in [sensor]") != std::string::npos);
+}
+
+TEST_CASE("load_runtime_config_falls_back_on_invalid_opensensemap_fields", "[opensensemap_client]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "port = invalid\n"
+        "\n"
+        "[opensensemap]\n"
+        "id = box-abc\n"
+        "station = station-1\n"
+        "port = invalid\n"
+        "qos = 9\n"
+        "useTls = maybe\n"
+        "\n"
+        "[sensor]\n"
+        "name = temperature\n"
+        "unit = C\n"
+        "topic = house/living/temperature\n"
+        "id = sensor-temp\n";
+
+    const ScopedIniFile iniFile{iniText};
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniFile.path());
+
+    yaha::OpenSenseMapClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+
+    REQUIRE(yaha::tryLoadOpenSenseMapClientRuntimeConfigFromIni(document, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.openSenseMapConfig.stationName == "station-1");
+    REQUIRE(runtimeConfig.openSenseMapConfig.port == 443U);
+}
+
+TEST_CASE("opensensemap_request_sender_throws_on_invalid_status_metadata", "[opensensemap_client]") {
+    const auto fakeCurlDirectory = makeFakeCurlDirectory(
+        "printf '{\"message\":\"created\"}\\n__YAHA_STATUS__:abc\\n__YAHA_CTYPE__:application/json\\n'\n"
+        "exit 0");
+    const ScopedPathPrefix scopedPath{fakeCurlDirectory};
+
+    const yaha::OpenSenseMapConfig config{
+        .boxIdentifier = "box-abc",
+        .host = "example.org",
+        .port = 443U,
+        .useTls = true,
+    };
+    const auto sender = yaha::makeOpenSenseMapRequestSender(config);
+
+    REQUIRE_THROWS(sender("/boxes/box-abc/sensor-1", "{'value':12}"));
 
     removeDirectoryQuiet(fakeCurlDirectory);
 }

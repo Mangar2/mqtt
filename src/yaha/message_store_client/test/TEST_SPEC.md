@@ -27,3 +27,5 @@ Unit tests for MessageStore runtime config parsing.
 | `load_config_defaults_log_reason_to_enabled` | reason logging should be enabled when not configured | minimal valid config without `messagestore.logReason` | runtime keeps reason logging enabled |
 | `load_config_parses_log_reason_when_disabled` | optional reason logging flag parsing | `[messagestore]` with `logReason = false` | runtime disables reason logging for inbound logs and mqtt message trace |
 | `load_config_rejects_invalid_log_reason_value` | strict bool validation for reason log flag | `[messagestore]` with non-bool `logReason` | parser fails with key-specific bool error |
+| `load_config_falls_back_on_invalid_server_port` | fallback to default port on parse failure | `[server]` with non-numeric `port` | parser succeeds and runtime uses default server port |
+| `load_config_falls_back_on_invalid_persist_and_tree_limits` | fallback for optional strict integers | invalid `persistMessageCount`, `maxTopics`, `maxMessagesPerTopic` | parser succeeds and runtime keeps default limits |

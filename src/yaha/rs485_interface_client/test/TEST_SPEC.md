@@ -101,3 +101,19 @@ Phase-6 extension:
 23. rs485_serial_adapter_send_reports_write_failure
 - Scenario: open adapter on pseudo-terminal slave, close pseudo-terminal master, then send payload.
 - Expected: send throws with deterministic `failed to write serial data` details and adapter closes cleanly.
+
+24. rs485_runtime_config_rejects_invalid_interface_keys
+- Scenario: interfaces section contains empty interface key.
+- Expected: parsing fails with deterministic interface key validation error.
+
+25. rs485_runtime_config_falls_back_on_invalid_command_map_and_missing_addresses
+- Scenario: settings value is invalid and addresses section is missing.
+- Expected: parsing succeeds and settings/addresses maps fall back to empty.
+
+26. rs485_runtime_config_falls_back_on_missing_required_command_map_sections
+- Scenario: required settings/status sections are missing.
+- Expected: parsing succeeds and settings/status maps fall back to empty.
+
+27. rs485_runtime_config_falls_back_on_empty_topic_key_and_invalid_addresses
+- Scenario: invalid empty topic key and empty address prefix.
+- Expected: parsing fails with deterministic topic/address validation error.

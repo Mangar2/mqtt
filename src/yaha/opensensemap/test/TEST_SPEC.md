@@ -46,3 +46,13 @@
 - Scenario: close called without prior run.
 - Input: lifecycle close call.
 - Expected: close is idempotent and does not publish/execute requests.
+
+10. `handle_message_without_publish_callback_does_not_throw`
+- Scenario: component handles message without configured publish callback.
+- Input: valid sensor message while running.
+- Expected: no exception and request path executes safely.
+
+11. `handle_message_logs_status_publish_failure_path`
+- Scenario: publish callback returns failure while status message is emitted.
+- Input: sender returns HTTP 500 and callback returns `PublishResult::fail`.
+- Expected: no exception and status-publish-failure branch is exercised.

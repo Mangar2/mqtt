@@ -26,3 +26,38 @@
 - Scenario: component has no configured devices.
 - Input: message for configured subscription.
 - Expected: status publish on `$SYS/pushover/error` with status code `422`.
+
+6. `handle_message_reports_error_when_publish_callback_missing`
+- Scenario: incoming message arrives without publish callback.
+- Input: message for configured subscription.
+- Expected: processing fails with callback-missing reason.
+
+7. `handle_message_reports_unknown_exception_from_sender`
+- Scenario: sender throws non-std exception.
+- Input: message for configured subscription.
+- Expected: unknown exception reported via error status topic.
+
+8. `handle_message_parses_error_reason_from_response_payload`
+- Scenario: sender returns non-success response with JSON reason payload.
+- Input: message for configured subscription.
+- Expected: published reason contains parsed remote error text.
+
+9. `handle_message_ignores_input_when_not_running`
+- Scenario: message handled before run-state.
+- Input: valid message.
+- Expected: no sender or publish callback activity.
+
+10. `close_without_run_is_safe`
+- Scenario: close called without prior run.
+- Input: lifecycle close call.
+- Expected: no side effects and no publish actions.
+
+11. `handle_message_without_publish_callback_does_not_throw`
+- Scenario: component handles input while publish callback is unset.
+- Input: valid subscription message while running.
+- Expected: no exception and internal callback-missing branch is exercised.
+
+12. `handle_message_logs_status_publish_failure_path`
+- Scenario: publish callback returns failure for status messages.
+- Input: sender returns HTTP error and callback returns `PublishResult::fail`.
+- Expected: no exception and status-publish-failure branch is exercised.

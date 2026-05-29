@@ -55,7 +55,8 @@ private:
 };
 
 [[nodiscard]] std::filesystem::path makeFakeCurlDirectory(const std::string& scriptBody) {
-    const auto stamp = std::to_string(std::filesystem::file_time_type::clock::now().time_since_epoch().count());
+    const auto stamp = std::to_string(
+        static_cast<long long>(std::filesystem::file_time_type::clock::now().time_since_epoch().count()));
     const auto directoryPath = std::filesystem::temp_directory_path() / ("pushover_curl_stub_" + stamp);
     std::filesystem::create_directories(directoryPath);
 
@@ -275,7 +276,7 @@ TEST_CASE("pushover_request_sender_parses_successful_curl_output", "[pushover_cl
     };
     const auto sender = yaha::makePushoverRequestSender(config);
 
-    const yaha::PushoverHttpResult result = sender("ignored", "{\"message\":\"ok\"}");
+    const yaha::PushoverHttpResult result = sender("ignored", R"({"message":"ok"})");
     REQUIRE(result.statusCode == 200);
     REQUIRE(result.payload.find("status") != std::string::npos);
     REQUIRE(result.contentType == "application/json");
@@ -311,6 +312,76 @@ TEST_CASE("pushover_request_sender_throws_on_missing_metadata", "[pushover_clien
     const auto sender = yaha::makePushoverRequestSender(config);
 
     REQUIRE_THROWS(sender("ignored", "{\"message\":\"ok\"}"));
+
+    removeDirectoryQuiet(fakeCurlDirectory);
+}
+
+TEST_CASE("load_config_rejects_invalid_device_shape", "[pushover_client]") {
+    const std::string iniText =
+        "[pushover]\n"
+        "token = token-abc\n"
+        "user = user-def\n"
+        "\n"
+        "[device]\n"
+        "id = mobile-1\n"
+        "\n"
+        "[subscription]\n"
+        "topic = home/alarm/#\n"
+        "qos = 1\n";
+
+    const ScopedIniFile iniFile{iniText};
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniFile.path());
+
+    yaha::PushoverConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(yaha::tryLoadPushoverConfigFromIni(document, config, errorMessage));
+    REQUIRE(errorMessage.find("invalid key in [device]") != std::string::npos);
+}
+
+TEST_CASE("load_runtime_config_falls_back_on_invalid_pushover_port_and_mqtt", "[pushover_client]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "port=invalid\n"
+        "\n"
+        "[pushover]\n"
+        "token = token-abc\n"
+        "user = user-def\n"
+        "port = invalid\n"
+        "\n"
+        "[device]\n"
+        "name = mobile-1\n"
+        "\n"
+        "[subscription]\n"
+        "topic = home/alarm/#\n"
+        "qos = 1\n";
+
+    const ScopedIniFile iniFile{iniText};
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniFile.path());
+
+    yaha::PushoverClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+
+    REQUIRE(yaha::tryLoadPushoverClientRuntimeConfigFromIni(document, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.pushoverConfig.port == 443U);
+    REQUIRE(runtimeConfig.mqttConfig.brokerPort == yaha::YahaMqttClient::k_default_broker_port);
+}
+
+TEST_CASE("pushover_request_sender_throws_on_invalid_status_metadata", "[pushover_client]") {
+    const auto fakeCurlDirectory = makeFakeCurlDirectory(
+        "printf '{\"status\":1}\\n__YAHA_STATUS__:abc\\n__YAHA_CTYPE__:application/json\\n'\n"
+        "exit 0");
+    const ScopedPathPrefix scopedPath{fakeCurlDirectory};
+
+    const yaha::PushoverConfig config{
+        .host = "example.org",
+        .port = 443U,
+        .path = "/1/messages.json",
+    };
+    const auto sender = yaha::makePushoverRequestSender(config);
+
+    REQUIRE_THROWS(sender("ignored", "{'message':'ok'}"));
 
     removeDirectoryQuiet(fakeCurlDirectory);
 }

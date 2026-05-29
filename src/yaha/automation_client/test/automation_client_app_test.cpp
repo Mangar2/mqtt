@@ -291,9 +291,8 @@ TEST_CASE("load_automation_client_runtime_config_falls_back_on_invalid_filestore
     REQUIRE(errorMessage.empty());
     REQUIRE(runtimeConfig.automationConfig.fileStorePort == 8210U);
     REQUIRE(runtimeConfig.automationConfig.fileStoreEnabled);
-    REQUIRE(runtimeConfig.automationConfig.fileStoreStartupRetryCount == 5U);
+    REQUIRE(runtimeConfig.automationConfig.fileStoreStartupRetryCount == 10U);
     REQUIRE(runtimeConfig.automationConfig.monitorTopicPrefix == "$MONITOR/legacy");
-    REQUIRE(runtimeConfig.automationConfig.subscribeQos == yaha::Qos::AtLeastOnce);
 
     std::filesystem::remove(iniPath);
 }

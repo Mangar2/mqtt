@@ -13,6 +13,7 @@ constexpr int kHttpStatusOk = 200;
 constexpr double kStatusOk = 200.0;
 constexpr double kStatusError = 500.0;
 constexpr double kStatusUnprocessableEntity = 422.0;
+constexpr double kPayloadValueStatusFailure = 3.14;
 
 [[nodiscard]] yaha::PushoverConfig makeConfig() {
     return yaha::PushoverConfig{
@@ -182,7 +183,7 @@ TEST_CASE("handle_message_formats_error_payload_arrays_for_http_failure", "[push
         makeConfig(),
         [](const std::string&, const std::string&) {
             return yaha::PushoverHttpResult{
-                .statusCode = 500,
+                .statusCode = static_cast<int>(kStatusError),
                 .payload = R"({"status":0,"errors":[" first ","second"]})",
                 .contentType = "application/json",
             };
@@ -237,4 +238,33 @@ TEST_CASE("component_close_stops_followup_processing", "[pushover]") {
 
     component.handleMessage(yaha::Message{"$SYS/incident/fail", std::string{"warning"}});
     REQUIRE(publishedCount == 0U);
+}
+
+TEST_CASE("handle_message_without_publish_callback_does_not_throw", "[pushover]") {
+    yaha::PushoverComponent component{
+        makeConfig(),
+        [](const std::string&, const std::string&) {
+            return yaha::PushoverHttpResult{.statusCode = kHttpStatusOk, .payload = R"({"status":1})"};
+        }};
+
+    component.run();
+    REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"$SYS/incident/fire", std::string{"alert"}}));
+}
+
+TEST_CASE("handle_message_logs_status_publish_failure_path", "[pushover]") {
+    std::size_t publishCalls = 0U;
+    yaha::PushoverComponent component{
+        makeConfig(),
+        [](const std::string&, const std::string&) {
+            return yaha::PushoverHttpResult{.statusCode = static_cast<int>(kStatusError), .payload = "{}", .contentType = "application/json"};
+        }};
+
+    component.setPublishCallback([&publishCalls](const yaha::Message&) {
+        publishCalls += 1U;
+        return yaha::PublishResult::fail(yaha::PublishFailureCategory::WriteFailed, "forced");
+    });
+    component.run();
+
+    REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"$SYS/incident/fire", kPayloadValueStatusFailure}));
+    REQUIRE(publishCalls >= 1U);
 }

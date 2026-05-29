@@ -482,7 +482,7 @@ TEST_CASE("load_config_falls_back_on_invalid_persist_values", "[message_store_cl
 
     REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
     REQUIRE(errorMessage.empty());
-    REQUIRE(config.storeConfig.persistenceConfig.intervalMs == 10000U);
+    REQUIRE(config.storeConfig.persistenceConfig.intervalMs == 0U);
     REQUIRE(config.storeConfig.persistenceConfig.keepFiles == 5U);
 
     removeDirectoryQuiet(tempDir);

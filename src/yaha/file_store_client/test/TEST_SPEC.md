@@ -15,3 +15,4 @@ Unit tests for `FileStoreClientRuntimeConfig` INI mapping behavior.
 | `load_config_rejects_invalid_server_port` | Validation of server port range parsing | server port non-numeric | parser fails with error |
 | `load_config_rejects_invalid_watch_interval` | Validation of watch interval range parsing | watchIntervalMs out of range | parser fails with error |
 | `load_runtime_config_rejects_invalid_mqtt_port` | Runtime config fails when mqtt parser fails | mqtt port non-numeric with valid filestore section | parser fails with mqtt error |
+| `load_runtime_config_falls_back_on_invalid_filestore_and_monitoring_values` | Optional filestore/monitoring keys fall back to defaults when invalid | invalid keepFiles/maxKeyLength/use/watchIntervalMs | parser succeeds and defaults are retained |
