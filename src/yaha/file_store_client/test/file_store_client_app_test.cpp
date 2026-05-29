@@ -193,3 +193,28 @@ TEST_CASE("load_runtime_config_falls_back_on_invalid_mqtt_port", "[file_store_cl
 
     removeDirectoryQuiet(tempDir);
 }
+
+TEST_CASE("load_config_falls_back_on_invalid_store_and_monitoring_values", "[file_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = broker.local\n"
+        "\n"
+        "[filestore]\n"
+        "keepFiles = invalid\n"
+        "maxKeyLength = invalid\n"
+        "\n"
+        "[monitoring]\n"
+        "enabled = maybe\n"
+        "watchIntervalMs = invalid\n");
+
+    const auto loadResult = loadRuntimeConfigFromFile(configPath);
+    REQUIRE(loadResult.success);
+    REQUIRE(loadResult.errorMessage.empty());
+    REQUIRE(loadResult.config.storeConfig.keepFiles == 2U);
+    REQUIRE(loadResult.config.storeConfig.maxKeyLength == 100U);
+    REQUIRE(loadResult.config.storeConfig.monitoring.enabled);
+    REQUIRE(loadResult.config.storeConfig.monitoring.watchIntervalMs == 1000U);
+
+    removeDirectoryQuiet(tempDir);
+}

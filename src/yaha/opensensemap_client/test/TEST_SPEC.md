@@ -21,3 +21,38 @@
 - Scenario: missing required `opensensemap.id`.
 - Input: INI missing id key.
 - Expected: parser fails with required id message.
+
+5. `load_config_rejects_sensor_fields_without_name`
+- Scenario: `[sensor]` value keys appear before `name`.
+- Input: sensor block starting with `unit/topic/id`.
+- Expected: parser fails with deterministic ordering error.
+
+6. `load_config_rejects_duplicate_sensor_topic`
+- Scenario: one sensor entry defines `topic` more than once.
+- Input: `[sensor]` with duplicate topic keys.
+- Expected: parser fails with duplicate topic error.
+
+7. `load_config_rejects_incomplete_sensor_entry`
+- Scenario: sensor entry misses required key.
+- Input: `[sensor]` without `id`.
+- Expected: parser fails with incomplete sensor error.
+
+8. `load_runtime_config_falls_back_on_invalid_mqtt_values`
+- Scenario: runtime loader keeps defaults when MQTT parser rejects one value.
+- Input: invalid `mqtt.loopSleepMs=0` with otherwise valid opensensemap config.
+- Expected: runtime load succeeds and mqtt defaults are kept.
+
+9. `opensensemap_request_sender_parses_successful_curl_output`
+- Scenario: sender factory parses curl output metadata.
+- Input: stub curl command output containing payload, status marker, content-type marker.
+- Expected: sender returns parsed status/payload/content type.
+
+10. `opensensemap_request_sender_throws_on_non_zero_curl_exit`
+- Scenario: curl command exits with non-zero code.
+- Input: stub curl exits with error.
+- Expected: sender throws runtime error.
+
+11. `opensensemap_request_sender_throws_on_missing_metadata`
+- Scenario: curl output misses metadata markers.
+- Input: stub curl returns body without status/content-type markers.
+- Expected: sender throws parse error.

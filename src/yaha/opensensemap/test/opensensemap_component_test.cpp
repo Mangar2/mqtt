@@ -153,3 +153,79 @@ TEST_CASE("handle_message_publishes_error_when_sender_throws", "[opensensemap]")
     REQUIRE(std::get<double>(published->value()) == kStatusInternalServerError);
     REQUIRE(published->reason()[0].message.find("network down") != std::string::npos);
 }
+
+TEST_CASE("handle_message_publishes_error_when_sender_callback_missing", "[opensensemap]") {
+    std::optional<yaha::Message> published{};
+    yaha::OpenSenseMapComponent component{makeConfig(), yaha::OpenSenseMapRequestSender{}};
+
+    component.setPublishCallback([&published](const yaha::Message& message) {
+        published = message;
+        return yaha::PublishResult::ok();
+    });
+    component.run();
+
+    component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueOne});
+
+    REQUIRE(published.has_value());
+    REQUIRE(published->topic() == "$SYS/opensensemap/error");
+    REQUIRE(std::get<double>(published->value()) == kStatusInternalServerError);
+    REQUIRE(published->reason().front().message.find("callback is missing") != std::string::npos);
+}
+
+TEST_CASE("handle_message_ignores_input_when_component_not_running", "[opensensemap]") {
+    bool publishCalled = false;
+    yaha::OpenSenseMapComponent component{
+        makeConfig(),
+        [](const std::string&, const std::string&) {
+            return yaha::OpenSenseMapHttpResult{.statusCode = kHttpStatusCreated};
+        }};
+
+    component.setPublishCallback([&publishCalled](const yaha::Message&) {
+        publishCalled = true;
+        return yaha::PublishResult::ok();
+    });
+
+    component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueOne});
+    REQUIRE_FALSE(publishCalled);
+}
+
+TEST_CASE("handle_message_publishes_error_for_unknown_exception", "[opensensemap]") {
+    std::optional<yaha::Message> published{};
+    yaha::OpenSenseMapComponent component{
+        makeConfig(),
+        [](const std::string&, const std::string&) -> yaha::OpenSenseMapHttpResult {
+            throw 42;
+        }};
+
+    component.setPublishCallback([&published](const yaha::Message& message) {
+        published = message;
+        return yaha::PublishResult::ok();
+    });
+    component.run();
+
+    component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueOne});
+
+    REQUIRE(published.has_value());
+    REQUIRE(published->topic() == "$SYS/opensensemap/error");
+    REQUIRE(std::get<double>(published->value()) == kStatusInternalServerError);
+    REQUIRE(published->reason().front().message.find("unknown") != std::string::npos);
+}
+
+TEST_CASE("component_close_stops_followup_processing", "[opensensemap]") {
+    std::size_t publishedCount = 0U;
+    yaha::OpenSenseMapComponent component{
+        makeConfig(),
+        [](const std::string&, const std::string&) {
+            return yaha::OpenSenseMapHttpResult{.statusCode = kHttpStatusCreated};
+        }};
+
+    component.setPublishCallback([&publishedCount](const yaha::Message&) {
+        publishedCount += 1U;
+        return yaha::PublishResult::ok();
+    });
+    component.run();
+    component.close();
+
+    component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueOne});
+    REQUIRE(publishedCount == 0U);
+}

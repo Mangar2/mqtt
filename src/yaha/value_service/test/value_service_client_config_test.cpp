@@ -146,3 +146,35 @@ TEST_CASE("value_service_runtime_config_falls_back_on_invalid_mqtt_value", "[val
     REQUIRE(errorMessage.empty());
     REQUIRE(runtimeConfig.mqttConfig.loopSleep == std::chrono::milliseconds{20});
 }
+
+TEST_CASE("value_service_runtime_config_falls_back_on_invalid_filestore_port_and_retry_count", "[value_service]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "host=127.0.0.1\n"
+        "\n"
+        "[filestore]\n"
+        "port=invalid\n"
+        "startupRetryCount=invalid\n";
+
+    yaha::ValueServiceClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.valueServiceConfig.fileStorePort == 8210U);
+    REQUIRE(runtimeConfig.valueServiceConfig.fileStoreStartupRetryCount == 5U);
+}
+
+TEST_CASE("value_service_runtime_config_keeps_defaults_when_mqtt_section_missing", "[value_service]") {
+    const std::string iniText =
+        "[filestore]\n"
+        "use=true\n";
+
+    yaha::ValueServiceClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.mqttConfig.brokerHost == "127.0.0.1");
+    REQUIRE(runtimeConfig.mqttConfig.brokerPort == 1883U);
+}

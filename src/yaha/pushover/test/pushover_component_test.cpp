@@ -156,3 +156,85 @@ TEST_CASE("handle_message_publishes_error_when_no_device_is_configured", "[pusho
     REQUIRE(published->topic() == "$SYS/pushover/error");
     REQUIRE(std::get<double>(published->value()) == kStatusUnprocessableEntity);
 }
+
+TEST_CASE("handle_message_publishes_error_when_sender_callback_missing", "[pushover]") {
+    std::optional<yaha::Message> published{};
+    yaha::PushoverComponent component{makeConfig(), yaha::PushoverRequestSender{}};
+
+    component.setPublishCallback([&published](const yaha::Message& message) {
+        published = message;
+        return yaha::PublishResult::ok();
+    });
+    component.run();
+
+    component.handleMessage(yaha::Message{"$SYS/incident/warn", std::string{"warning"}});
+
+    REQUIRE(published.has_value());
+    REQUIRE(published->topic() == "$SYS/pushover/error");
+    REQUIRE(std::get<double>(published->value()) == kStatusError);
+    REQUIRE(published->reason().front().message.find("callback is missing") != std::string::npos);
+}
+
+TEST_CASE("handle_message_formats_error_payload_arrays_for_http_failure", "[pushover]") {
+    std::optional<yaha::Message> published{};
+
+    yaha::PushoverComponent component{
+        makeConfig(),
+        [](const std::string&, const std::string&) {
+            return yaha::PushoverHttpResult{
+                .statusCode = 500,
+                .payload = R"({"status":0,"errors":[" first ","second"]})",
+                .contentType = "application/json",
+            };
+        }};
+
+    component.setPublishCallback([&published](const yaha::Message& message) {
+        if (!published.has_value()) {
+            published = message;
+        }
+        return yaha::PublishResult::ok();
+    });
+    component.run();
+
+    component.handleMessage(yaha::Message{"$SYS/incident/fail", std::string{"warning"}});
+
+    REQUIRE(published.has_value());
+    REQUIRE(published->topic() == "$SYS/pushover/error");
+    REQUIRE(published->reason().front().message.find("errors = [\" first \",\"second\"]") != std::string::npos);
+}
+
+TEST_CASE("handle_message_ignores_input_when_component_not_running", "[pushover]") {
+    bool publishCalled = false;
+    yaha::PushoverComponent component{
+        makeConfig(),
+        [](const std::string&, const std::string&) {
+            return yaha::PushoverHttpResult{.statusCode = kHttpStatusOk};
+        }};
+
+    component.setPublishCallback([&publishCalled](const yaha::Message&) {
+        publishCalled = true;
+        return yaha::PublishResult::ok();
+    });
+
+    component.handleMessage(yaha::Message{"$SYS/incident/fail", std::string{"warning"}});
+    REQUIRE_FALSE(publishCalled);
+}
+
+TEST_CASE("component_close_stops_followup_processing", "[pushover]") {
+    std::size_t publishedCount = 0U;
+    yaha::PushoverComponent component{
+        makeConfig(),
+        [](const std::string&, const std::string&) {
+            return yaha::PushoverHttpResult{.statusCode = kHttpStatusOk, .payload = R"({"status":1})"};
+        }};
+
+    component.setPublishCallback([&publishedCount](const yaha::Message&) {
+        publishedCount += 1U;
+        return yaha::PublishResult::ok();
+    });
+    component.run();
+    component.close();
+
+    component.handleMessage(yaha::Message{"$SYS/incident/fail", std::string{"warning"}});
+    REQUIRE(publishedCount == 0U);
+}

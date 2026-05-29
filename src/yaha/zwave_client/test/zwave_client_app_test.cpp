@@ -907,3 +907,32 @@ TEST_CASE(
   CHECK(errorMessage.empty());
   CHECK(loadedDevices.empty());
 }
+
+TEST_CASE("load_zwave_config_falls_back_on_invalid_logging_timing_and_filestore_values",
+          "[zwave_client]") {
+  const yaha::IniDocument document =
+      loadIni("[zwave]\n"
+              "usbDevice=/dev/ttyUSB0\n"
+              "usbTopic=home/zwave/controller\n"
+              "device=home/lamp|7\n"
+              "logIncomingMessages=maybe\n"
+              "commandReactionPollIntervalMs=0\n"
+              "\n"
+              "[filestore]\n"
+              "port=invalid\n"
+              "use=maybe\n");
+
+  yaha::ZwaveConfig config{};
+  std::string errorMessage{};
+
+  const bool loaded =
+      yaha::tryLoadZwaveConfigFromIni(document, config, errorMessage);
+
+  REQUIRE(loaded);
+  CHECK(errorMessage.empty());
+  CHECK_FALSE(config.logIncomingMessages);
+  CHECK(config.commandReactionPollIntervalMs ==
+        yaha::kDefaultZwaveCommandReactionPollIntervalMs);
+  CHECK(config.fileStorePort == yaha::kDefaultZwaveFileStorePort);
+  CHECK(config.fileStoreEnabled == yaha::kDefaultZwaveFileStoreEnabled);
+}

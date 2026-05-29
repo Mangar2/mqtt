@@ -449,3 +449,65 @@ TEST_CASE("load_config_falls_back_on_invalid_log_reason_value", "[message_store_
     removeDirectoryQuiet(tempDir);
 }
 
+TEST_CASE("load_config_rejects_invalid_server_port", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[server]\n"
+        "port = invalid\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE_FALSE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE_FALSE(errorMessage.empty());
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_config_falls_back_on_invalid_persist_values", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[persist]\n"
+        "intervalMs = invalid\n"
+        "keepFiles = invalid\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.storeConfig.persistenceConfig.intervalMs == 10000U);
+    REQUIRE(config.storeConfig.persistenceConfig.keepFiles == 5U);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("load_config_falls_back_on_invalid_tree_limits", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[tree]\n"
+        "maxHistoryLength = invalid\n"
+        "upperBoundFactor = 1e9999\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.storeConfig.treeConfig.maxHistoryLength ==
+            yaha::MessageTreeConfig::k_default_max_history_length);
+    REQUIRE(config.storeConfig.treeConfig.upperBoundFactor ==
+            yaha::MessageTreeConfig::k_default_upper_bound_factor);
+
+    removeDirectoryQuiet(tempDir);
+}
+

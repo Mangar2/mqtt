@@ -26,3 +26,23 @@
 - Scenario: sender callback throws exception.
 - Input: message for configured sensor.
 - Expected: one status publish on `$SYS/opensensemap/error` with status code `500`.
+
+6. `handle_message_reports_error_when_publish_callback_missing`
+- Scenario: incoming message arrives without configured publish callback.
+- Input: message for known sensor.
+- Expected: internal handling fails gracefully with callback-missing reason.
+
+7. `handle_message_reports_error_on_unknown_exception`
+- Scenario: sender callback throws a non-std exception type.
+- Input: message for known sensor.
+- Expected: status/error publish reports unknown exception.
+
+8. `handle_message_ignores_input_when_not_running`
+- Scenario: message handled before component run-state is active.
+- Input: message for known sensor.
+- Expected: no request sender call and no publish callback invocation.
+
+9. `close_without_run_keeps_component_inactive`
+- Scenario: close called without prior run.
+- Input: lifecycle close call.
+- Expected: close is idempotent and does not publish/execute requests.

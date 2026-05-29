@@ -237,3 +237,50 @@ TEST_CASE("load_runtime_config_falls_back_on_invalid_monitoring_log_incoming", "
     REQUIRE(runtimeConfigResult.errorMessage.empty());
     REQUIRE(runtimeConfigResult.config->sourceConfig.logIncomingMessages);
 }
+
+TEST_CASE("load_runtime_config_falls_back_on_invalid_structured_subscription_shape", "[broker_connector_client]") {
+    const std::string iniText =
+        "[sourceHttpBroker]\n"
+        "host=127.0.0.1\n"
+        "port=8080\n"
+        "\n"
+        "[subscription]\n"
+        "qos=1\n"
+        "\n"
+        "[receiverMqttBroker]\n"
+        "host=127.0.0.1\n"
+        "port=1883\n";
+
+    yaha::IniDocument document{};
+    std::string errorMessage{};
+    REQUIRE(loadDocumentFromText(iniText, document, errorMessage));
+
+    const auto runtimeConfigResult = yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document);
+    REQUIRE(runtimeConfigResult.config.has_value());
+    REQUIRE(runtimeConfigResult.errorMessage.empty());
+    REQUIRE(runtimeConfigResult.config->sourceConfig.subscribeTopics.size() == 1U);
+    REQUIRE(runtimeConfigResult.config->sourceConfig.subscribeTopics.count("#") == 1U);
+}
+
+TEST_CASE("load_runtime_config_falls_back_on_invalid_receiver_timing_fields", "[broker_connector_client]") {
+    const std::string iniText =
+        "[sourceHttpBroker]\n"
+        "host=127.0.0.1\n"
+        "port=8080\n"
+        "\n"
+        "[receiverMqttBroker]\n"
+        "host=127.0.0.1\n"
+        "port=1883\n"
+        "reconnectDelayMs=invalid\n"
+        "keepAliveSeconds=invalid\n";
+
+    yaha::IniDocument document{};
+    std::string errorMessage{};
+    REQUIRE(loadDocumentFromText(iniText, document, errorMessage));
+
+    const auto runtimeConfigResult = yaha::tryLoadBrokerConnectorClientRuntimeConfigFromIni(document);
+    REQUIRE(runtimeConfigResult.config.has_value());
+    REQUIRE(runtimeConfigResult.errorMessage.empty());
+    REQUIRE(runtimeConfigResult.config->receiverConfig.reconnectDelay.count() == 1000);
+    REQUIRE(runtimeConfigResult.config->receiverConfig.keepAliveInterval.count() == 60000);
+}

@@ -260,3 +260,40 @@ TEST_CASE("load_automation_client_runtime_config_falls_back_on_invalid_mqtt_valu
 
     std::filesystem::remove(iniPath);
 }
+
+TEST_CASE("load_automation_client_runtime_config_falls_back_on_invalid_filestore_values_and_uses_legacy_monitor_prefix", "[automation_client]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "host=127.0.0.1\n"
+        "\n"
+        "[filestore]\n"
+        "port=invalid\n"
+        "use=maybe\n"
+        "startupRetryCount=invalid\n"
+        "\n"
+        "[monitoring]\n"
+        "topicPrefix=$MONITOR/legacy\n"
+        "\n"
+        "[automation]\n"
+        "subscribeQoS=9\n";
+
+    const auto iniPath = writeTempIni(iniText);
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniPath);
+
+    yaha::AutomationClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+    const bool success = yaha::tryLoadAutomationClientRuntimeConfigFromIni(
+        document,
+        runtimeConfig,
+        errorMessage);
+
+    REQUIRE(success);
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.automationConfig.fileStorePort == 8210U);
+    REQUIRE(runtimeConfig.automationConfig.fileStoreEnabled);
+    REQUIRE(runtimeConfig.automationConfig.fileStoreStartupRetryCount == 5U);
+    REQUIRE(runtimeConfig.automationConfig.monitorTopicPrefix == "$MONITOR/legacy");
+    REQUIRE(runtimeConfig.automationConfig.subscribeQos == yaha::Qos::AtLeastOnce);
+
+    std::filesystem::remove(iniPath);
+}
