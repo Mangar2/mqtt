@@ -165,6 +165,16 @@ public:
     [[nodiscard]] bool readCompressed(std::istream& stream);
 
 private:
+    struct CompactReasonEntry {
+        std::string message;
+        std::int16_t timezoneOffsetMinutes{0};
+        std::uint8_t fractionalDigits{0};
+        bool hasTimestamp{false};
+        std::int64_t timestampMs{0};
+    };
+
+    using CompactReasonList = std::vector<CompactReasonEntry>;
+
     /**
      * @brief Compressed entry with exactly one historic value.
      */
@@ -177,7 +187,7 @@ private:
      */
     struct TimeValueHistoryEntry {
         std::vector<std::pair<std::int64_t, Value>> values; ///< Ordered oldest-to-newest time/value pairs.
-        ReasonList reason; ///< Reason chain of the oldest element.
+        CompactReasonList reason; ///< Reason chain of the oldest element.
     };
 
     /**
@@ -186,7 +196,7 @@ private:
     struct TimeHistoryEntry {
         Value value{std::string{}}; ///< Shared value of all timestamps.
         std::vector<std::int64_t> timestamps; ///< Ordered oldest-to-newest timestamps.
-        ReasonList reason; ///< Reason chain of the oldest element.
+        CompactReasonList reason; ///< Reason chain of the oldest element.
     };
 
     /**
@@ -195,7 +205,7 @@ private:
     struct IntervalHistoryEntry {
         std::uint32_t amount{0U}; ///< Amount of compressed entries in this block.
         Value value{std::string{}}; ///< Shared value of the interval block.
-        ReasonList reason; ///< Reason chain of the oldest element.
+        CompactReasonList reason; ///< Reason chain of the oldest element.
         std::int64_t firstTimeMs{0}; ///< Oldest timestamp in the block.
         std::int64_t lastTimeMs{0}; ///< Newest timestamp in the block.
     };
@@ -216,7 +226,7 @@ private:
     struct NodeData {
         std::int64_t timeMs{0};                               ///< Current timestamp.
         Value value{std::string{}};                           ///< Current value.
-        ReasonList reason;                      ///< Current reason.
+        CompactReasonList reason;                      ///< Current reason.
         std::vector<CompressedHistoryEntry> compressedHistory; ///< Compressed historic values.
     };
 
@@ -279,15 +289,15 @@ private:
      * @param right Right reason chain.
      * @return True when both chains have equal message texts.
      */
-    [[nodiscard]] static bool areReasonMessagesEqual(const ReasonList& left,
-                                                     const ReasonList& right);
+    [[nodiscard]] static bool areReasonMessagesEqual(const CompactReasonList& left,
+                                                     const CompactReasonList& right);
 
     /**
      * @brief Returns reason chain associated with one compressed history entry.
      * @param entry Compressed history entry.
      * @return Associated reason chain.
      */
-    [[nodiscard]] static const ReasonList& reasonOf(const CompressedHistoryEntry& entry);
+    [[nodiscard]] static CompactReasonList reasonOf(const CompressedHistoryEntry& entry);
 
     /**
      * @brief Extends or transforms a newest timeValue compressed entry with a new value.
@@ -460,14 +470,15 @@ private:
      * @param source Source reason list.
      * @return Detached copy suitable for move-assignment at target site.
      */
-    [[nodiscard]] static ReasonList buildDetachedReasonList(const ReasonList& source);
+    [[nodiscard]] static CompactReasonList toCompactReasonList(const ReasonList& source);
+    [[nodiscard]] static ReasonList toReasonList(const CompactReasonList& source);
 
     [[nodiscard]] static bool writeValueToken(std::ostream& stream, const Value& value);
     [[nodiscard]] static bool readValueToken(std::istream& stream, Value& value);
     [[nodiscard]] static bool writeReasonListToken(std::ostream& stream,
-                                                   const ReasonList& reasonList);
+                                                   const CompactReasonList& reasonList);
     [[nodiscard]] static bool readReasonListToken(std::istream& stream,
-                                                  ReasonList& reasonList);
+                                                  CompactReasonList& reasonList);
     [[nodiscard]] static bool writeCompressedHistoryEntry(std::ostream& stream,
                                                           const CompressedHistoryEntry& entry);
     [[nodiscard]] static bool readCompressedHistoryEntry(std::istream& stream,

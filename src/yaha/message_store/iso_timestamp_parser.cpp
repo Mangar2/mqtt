@@ -109,7 +109,7 @@ struct ParsedIsoTimestamp {
 [[nodiscard]] std::int64_t daysFromCivil(int year, const unsigned int month, const unsigned int day) {
     year -= month <= 2U ? 1 : 0;
     const int era = (year >= 0 ? year : year - (k_quad_century_divisor - 1)) / k_quad_century_divisor;
-    const unsigned int yearOfEra = static_cast<unsigned int>(year - (era * k_quad_century_divisor));
+    const auto yearOfEra = static_cast<unsigned int>(year - (era * k_quad_century_divisor));
     const int monthForFormula = static_cast<int>(month);
     const int monthAdjustment = monthForFormula > k_february_month
         ? k_month_adjust_after_february
@@ -288,15 +288,15 @@ std::string toIsoTimestampMilliseconds(std::int64_t millisecondsSinceEpoch) {
         secondsSinceEpoch -= 1;
     }
 
-    const std::time_t rawTime = static_cast<std::time_t>(secondsSinceEpoch);
+    const auto rawTime = static_cast<std::time_t>(secondsSinceEpoch);
     std::tm utc{};
 #if defined(_WIN32)
     if (gmtime_s(&utc, &rawTime) != 0) {
-        return "1970-01-01T00:00:00.000Z";
+        return "1970-01-01T00:00:00Z";
     }
 #else
     if (gmtime_r(&rawTime, &utc) == nullptr) {
-        return "1970-01-01T00:00:00.000Z";
+        return "1970-01-01T00:00:00Z";
     }
 #endif
 
@@ -307,9 +307,11 @@ std::string toIsoTimestampMilliseconds(std::int64_t millisecondsSinceEpoch) {
            << '-' << std::setw(2) << utc.tm_mday
            << 'T' << std::setw(2) << utc.tm_hour
            << ':' << std::setw(2) << utc.tm_min
-           << ':' << std::setw(2) << utc.tm_sec
-           << '.' << std::setw(3) << millisecondPart
-           << 'Z';
+           << ':' << std::setw(2) << utc.tm_sec;
+    if (millisecondPart != 0) {
+        stream << '.' << std::setw(3) << millisecondPart;
+    }
+    stream << 'Z';
     return stream.str();
 }
 
