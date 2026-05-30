@@ -72,9 +72,11 @@ struct MessageTreeNode;
   - otherwise fallback to current wall-clock from `nowMillisecondsProvider`.
 - Tree and persistence keep timestamps internally as Unix epoch milliseconds (`timeMs`).
 - MessageTree stores node/history reason timestamps internally in compact numeric form
-  (`int64` epoch milliseconds) and keeps small metadata (timezone offset + fractional
-  precision flags) to reconstruct the original ISO timestamp text at API and persistence
-  boundaries without changing the shared `yaha/message` API.
+  (`int64` epoch milliseconds).
+- `timestampMs == 0` means "no reason timestamp".
+- Reason timestamps are persisted and emitted in canonical UTC `Z` form.
+- Fractional second precision is preserved (for example `...Z` vs `...000Z` behavior)
+  without storing timezone offsets.
 - History is compressed internally with original MessageTree-compatible entry types:
   - `single`: one `{time,value,reason}` entry.
   - `timeValue`: multiple `{time,value}` entries with equal reason-message chain.

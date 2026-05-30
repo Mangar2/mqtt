@@ -167,9 +167,7 @@ public:
 private:
     struct CompactReasonEntry {
         std::string message;
-        std::int16_t timezoneOffsetMinutes{0};
         std::uint8_t fractionalDigits{0};
-        bool hasTimestamp{false};
         std::int64_t timestampMs{0};
     };
 

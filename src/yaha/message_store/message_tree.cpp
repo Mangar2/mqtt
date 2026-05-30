@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
-#include <cstdlib>
 #include <iomanip>
 #include <istream>
 #include <ostream>
@@ -18,11 +17,6 @@ namespace yaha {
 namespace {
 
 constexpr std::int64_t k_millis_per_day{86400000};
-constexpr std::int64_t k_millis_per_second{1000};
-constexpr std::int64_t k_seconds_per_minute{60};
-constexpr std::size_t k_iso_offset_suffix_length{6U};
-constexpr int k_decimal_digit_max{9};
-constexpr int k_decimal_base{10};
 constexpr std::uint32_t k_legacy_length_for_further_compression_minimum{3U};
 
 [[nodiscard]] std::int64_t parseTimestampMilliseconds(const std::string& timestampText) {
@@ -31,41 +25,6 @@ constexpr std::uint32_t k_legacy_length_for_further_compression_minimum{3U};
         return 0;
     }
     return timestampValue;
-}
-
-[[nodiscard]] std::int16_t parseTimezoneOffsetMinutes(const std::string& timestampText) {
-    if (timestampText.empty() || timestampText.back() == 'Z') {
-        return 0;
-    }
-
-    if (timestampText.size() < k_iso_offset_suffix_length) {
-        return 0;
-    }
-
-    const std::size_t offsetStart = timestampText.size() - k_iso_offset_suffix_length;
-    const char signChar = timestampText[offsetStart];
-    if (signChar != '+' && signChar != '-') {
-        return 0;
-    }
-    if (timestampText[offsetStart + 3U] != ':') {
-        return 0;
-    }
-
-    const int hourTens = timestampText[offsetStart + 1U] - '0';
-    const int hourOnes = timestampText[offsetStart + 2U] - '0';
-    const int minuteTens = timestampText[offsetStart + 4U] - '0';
-    const int minuteOnes = timestampText[offsetStart + 5U] - '0';
-    if (hourTens < 0 || hourTens > k_decimal_digit_max ||
-        hourOnes < 0 || hourOnes > k_decimal_digit_max ||
-        minuteTens < 0 || minuteTens > k_decimal_digit_max ||
-        minuteOnes < 0 || minuteOnes > k_decimal_digit_max) {
-        return 0;
-    }
-
-    const int offsetHours = (hourTens * k_decimal_base) + hourOnes;
-    const int offsetMinutes = (minuteTens * k_decimal_base) + minuteOnes;
-    const int totalMinutes = (offsetHours * static_cast<int>(k_seconds_per_minute)) + offsetMinutes;
-    return static_cast<std::int16_t>(signChar == '-' ? -totalMinutes : totalMinutes);
 }
 
 [[nodiscard]] std::uint8_t parseFractionalDigits(const std::string& timestampText) {
@@ -88,18 +47,13 @@ constexpr std::uint32_t k_legacy_length_for_further_compression_minimum{3U};
     return static_cast<std::uint8_t>(zonePos - dotPos - 1U);
 }
 
-[[nodiscard]] std::string formatTimestampWithMetadata(const bool hasTimestamp,
-                                                      const std::int64_t timestampMs,
-                                                      const std::int16_t timezoneOffsetMinutes,
+[[nodiscard]] std::string formatTimestampWithMetadata(const std::int64_t timestampMs,
                                                       const std::uint8_t fractionalDigits) {
-    if (!hasTimestamp || timestampMs <= 0) {
+    if (timestampMs == 0) {
         return std::string{};
     }
 
-    const std::int64_t offsetMs =
-        static_cast<std::int64_t>(timezoneOffsetMinutes) *
-        k_seconds_per_minute * k_millis_per_second;
-    std::string utcText = toIsoTimestampMilliseconds(timestampMs + offsetMs);
+    std::string utcText = toIsoTimestampMilliseconds(timestampMs);
 
     if (utcText.empty() || utcText.back() != 'Z') {
         return utcText;
@@ -127,25 +81,6 @@ constexpr std::uint32_t k_legacy_length_for_further_compression_minimum{3U};
         }
     }
 
-    if (timezoneOffsetMinutes == 0) {
-        return utcText;
-    }
-
-    const int totalMinutes = std::abs(static_cast<int>(timezoneOffsetMinutes));
-    const int offsetHours = totalMinutes / static_cast<int>(k_seconds_per_minute);
-    const int offsetMinutes = totalMinutes % static_cast<int>(k_seconds_per_minute);
-    char signChar = '+';
-    if (timezoneOffsetMinutes < 0) {
-        signChar = '-';
-    }
-
-    utcText.pop_back();
-    utcText.push_back(signChar);
-    utcText.push_back(static_cast<char>('0' + (offsetHours / k_decimal_base)));
-    utcText.push_back(static_cast<char>('0' + (offsetHours % k_decimal_base)));
-    utcText.push_back(':');
-    utcText.push_back(static_cast<char>('0' + (offsetMinutes / k_decimal_base)));
-    utcText.push_back(static_cast<char>('0' + (offsetMinutes % k_decimal_base)));
     return utcText;
 }
 
@@ -315,8 +250,6 @@ MessageTree::CompactReasonList MessageTree::toCompactReasonList(const ReasonList
         targetEntry.message.reserve(sourceEntry.message.size());
         targetEntry.message.append(sourceEntry.message);
         targetEntry.timestampMs = parseTimestampMilliseconds(sourceEntry.timestamp);
-        targetEntry.hasTimestamp = !sourceEntry.timestamp.empty() && targetEntry.timestampMs > 0;
-        targetEntry.timezoneOffsetMinutes = parseTimezoneOffsetMinutes(sourceEntry.timestamp);
         targetEntry.fractionalDigits = parseFractionalDigits(sourceEntry.timestamp);
         detachedReason.push_back(std::move(targetEntry));
     }
@@ -332,10 +265,8 @@ ReasonList MessageTree::toReasonList(const CompactReasonList& source) {
         ReasonEntry targetEntry{};
         targetEntry.message.reserve(sourceEntry.message.size());
         targetEntry.message.append(sourceEntry.message);
-        if (sourceEntry.hasTimestamp && sourceEntry.timestampMs > 0) {
-            targetEntry.timestamp = formatTimestampWithMetadata(sourceEntry.hasTimestamp,
-                                                                sourceEntry.timestampMs,
-                                                                sourceEntry.timezoneOffsetMinutes,
+        if (sourceEntry.timestampMs != 0) {
+            targetEntry.timestamp = formatTimestampWithMetadata(sourceEntry.timestampMs,
                                                                 sourceEntry.fractionalDigits);
         }
         detachedReason.push_back(std::move(targetEntry));
@@ -457,9 +388,7 @@ bool MessageTree::writeReasonListToken(std::ostream& stream,
                                        const CompactReasonList& reasonList) {
     stream << reasonList.size() << '\n';
     for (const auto& reason : reasonList) {
-        const std::string timestampText = formatTimestampWithMetadata(reason.hasTimestamp,
-                                                                      reason.timestampMs,
-                                                                      reason.timezoneOffsetMinutes,
+        const std::string timestampText = formatTimestampWithMetadata(reason.timestampMs,
                                                                       reason.fractionalDigits);
         stream << std::quoted(reason.message) << ' '
                << std::quoted(timestampText) << '\n';
@@ -483,8 +412,6 @@ bool MessageTree::readReasonListToken(std::istream& stream,
             return false;
         }
         reason.timestampMs = parseTimestampMilliseconds(timestampText);
-        reason.hasTimestamp = !timestampText.empty() && reason.timestampMs > 0;
-        reason.timezoneOffsetMinutes = parseTimezoneOffsetMinutes(timestampText);
         reason.fractionalDigits = parseFractionalDigits(timestampText);
         reasonList.push_back(std::move(reason));
     }
