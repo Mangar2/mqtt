@@ -282,6 +282,26 @@ TEST_CASE("history_is_trimmed_with_hysteresis", "[message_store]") {
     REQUIRE(std::get<double>(nodes.front().history()[1].value) == k_value_four);
 }
 
+TEST_CASE("history_trim_compacts_unused_reason_directory_slots", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree tree = makeTree(clock, 3U, 1U);
+
+    for (int step = 1; step <= k_history_last_step; ++step) {
+        if (step > 1) {
+            clock.nowMs += k_tick_ms;
+        }
+        const std::string reasonMessage = "dir-step-" + std::to_string(step);
+        tree.addData(makeReasonedMessage("sensor/dir_compact",
+                                         static_cast<double>(step),
+                                         reasonMessage,
+                                         "2026-01-01T00:00:00Z"));
+    }
+
+    const auto stats = tree.compressionStats();
+    REQUIRE(stats.currentNodeCount == 1U);
+    REQUIRE(stats.totalDirectoryStringCount == 3U);
+}
+
 TEST_CASE("history_compresses_repeated_equal_values", "[message_store]") {
     FakeClock clock{};
     yaha::MessageTree tree = makeTree(clock,

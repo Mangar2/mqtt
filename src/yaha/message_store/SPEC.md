@@ -80,6 +80,8 @@ class MessageTreeNode;
 - Internal `TreeNode` storage types are defined in dedicated file `tree_node.h`.
 - `TreeNode` uses per-node `StringDirectory` ownership for internal reason-message deduplication state.
 - `StringDirectory` is not exposed through `MessageTreeNode` API; query DTOs remain free of internal compression details.
+- Internal current/history reason lists store slot indices into the per-node `StringDirectory` (not duplicate message strings per reason entry).
+- After history trimming and node updates, MessageTree compacts per-node reason-directory slots and remaps retained reason entries so unused slots are released.
 - `StringDirectory` uses one `std::vector<std::string>` and linear search for duplicate detection and free-slot lookup.
 - `StringDirectory::add` returns an existing slot index for duplicates; otherwise it reuses the first empty slot or appends at the end.
 - `StringDirectory::remove` marks one slot as free by writing an empty string (`""`).
@@ -150,7 +152,7 @@ class MessageTreeNode;
 - File naming: `<filename>_<timestamp>.mtree` in configured directory.
 - `persistNow` writes full tree snapshot in compressed internal tree form (`MTREE2`) without history decompression.
 - `restoreLatest` scans candidate files newest-first and loads first valid snapshot.
-- `restoreLatest` supports `MTREE2` direct compressed format and keeps backward-compatible fallback loading for legacy `MTREE1` snapshots.
+- `restoreLatest` supports `MTREE2` direct compressed format only.
 - Missing/corrupt files are handled silently; restore returns false and tree remains usable.
 - Retention keeps newest `keepFiles` snapshots and deletes older files.
 - Periodic mode persists every `interval` milliseconds; `interval == 0` disables periodic loop.
@@ -165,6 +167,9 @@ class MessageTreeNode;
   - other topics: call `tree.addData(message)`.
 - `storeMessageDirect()` always calls `tree.addData(message)` without cleanup-topic special handling.
 - `queryCompressionStats()` exposes counts of compressed history bucket types (`single`, `timeValue`, `time`, `interval`) and represented logical history message counts.
+- `queryCompressionStats()` splits represented `timeValue` entries by payload type:
+  - `representedTimeValueStringCount`: number of string payloads inside `timeValue` buckets.
+  - `representedTimeValueDoubleCount`: number of numeric payloads inside `timeValue` buckets.
 - `queryCompressionStats()` additionally exposes reason-compression visibility metrics:
   - `totalReasonEntryCount`: all stored reason entries across current node reasons and compressed-history reason lists.
   - `totalDirectoryStringCount`: sum of unique reason-message strings per node (effective string-directory cardinality).
@@ -174,7 +179,7 @@ class MessageTreeNode;
 - `run()` restores latest persisted snapshot before serving.
 - `run()` writes replay loaded-state dump before startup stats logging and before enabling post-restore incoming replay append.
 - `run()` emits a compression-stats header after restore attempt (`message_store[stats] phase=start_after_restore`) followed by one aligned metric per line (`name : value`, name left-aligned, value right-aligned).
-- Stats output includes reason/directory metrics (`reasonEntries.total`, `directories.strings`, `ratio.reasonPerDirectoryString`).
+- Stats output includes reason/directory metrics (`reasonEntries.total`, `directories.strings`, `ratio.reasonPerDirectoryString`) and `timeValue` type split metrics (`represented.timeValue.string`, `represented.timeValue.double`).
 - `run()` starts an internal periodic compression-stats logger that emits every 60 seconds (`phase=periodic_60s`) using the same multiline aligned metric format.
 - `run()` emits structured restore error log when no valid snapshot is available.
 - `run()` catches restore exceptions and emits structured error logs instead of terminating.

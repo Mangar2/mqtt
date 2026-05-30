@@ -6,11 +6,10 @@
  */
 
 #include "yaha/message/message.h"
-#include "yaha/message_store/compact_reason_entry.h"
-#include "yaha/message_store/message_tree_node.h"
 #include "yaha/message_store/string_directory.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 #include <variant>
@@ -18,13 +17,24 @@
 
 namespace yaha {
 
-using MessageTreeCompactReasonList = std::vector<CompactReasonEntry>;
+/**
+ * @brief Compact internal reason entry using a StringDirectory slot index.
+ */
+struct TreeNodeReasonEntry {
+    slotIndex_t messageSlotIndex{0U};
+    std::int64_t timestampMs{0};
+    std::uint8_t fractionalDigits{0U};
+};
+
+using MessageTreeCompactReasonList = std::vector<TreeNodeReasonEntry>;
 
 /**
  * @brief Compressed entry with exactly one historic value.
  */
 struct MessageTreeSingleHistoryEntry {
-    MessageTreeHistoryEntry entry{}; ///< Stored history entry.
+    std::int64_t timeMs{0}; ///< Stored history timestamp.
+    Value value{std::string{}}; ///< Stored history value.
+    MessageTreeCompactReasonList reason; ///< Stored history reason chain.
 };
 
 /**
@@ -68,7 +78,7 @@ struct MessageTreeCompressedHistoryEntry {
 /**
  * @brief Internal payload state of one data node.
  */
-struct MessageTreeNodeData {
+struct NodeData {
     std::int64_t timeMs{0}; ///< Current timestamp.
     Value value{std::string{}}; ///< Current value.
     StringDirectory reasonDirectory{}; ///< Per-node reason-message directory.
@@ -82,8 +92,7 @@ struct MessageTreeNodeData {
 struct TreeNode {
     std::string topicPath; ///< Full topic path for this node.
     std::vector<std::pair<std::string, TreeNode>> children; ///< Child segments.
-    bool hasData{false}; ///< True when current data is present.
-    MessageTreeNodeData data{}; ///< Current data payload.
+    std::unique_ptr<NodeData> data{}; ///< Current data payload; nullptr means no data.
 };
 
 } // namespace yaha

@@ -25,8 +25,6 @@ constexpr int k_normal_wait_ms{45};
 constexpr int k_interval_series_count{100};
 constexpr int k_time_value_series_count{120};
 constexpr double k_interval_series_value{34.0};
-constexpr double k_legacy_numeric_current_value{12.5};
-constexpr double k_legacy_numeric_history_value{11.5};
 
 struct FakeClock {
     std::int64_t nowMs{k_initial_now_ms};
@@ -208,7 +206,7 @@ TEST_CASE("restore_latest_returns_false_when_no_files_exist", "[message_store]")
     const auto tempDir = makeTempDirectory();
 
     std::ofstream invalidName{tempDir / "state_abc.mtree", std::ios::out | std::ios::trunc};
-    invalidName << "MTREE1\n0\n";
+    invalidName << "BROKEN\n";
     invalidName.close();
 
     yaha::MessageTreePersistence::Config persistenceConfig{};
@@ -229,11 +227,8 @@ TEST_CASE("restore_latest_skips_malformed_node_payload", "[message_store]") {
 
     const auto malformed = tempDir / "state_999.mtree";
     std::ofstream file{malformed, std::ios::out | std::ios::trunc};
-    file << "MTREE1\n";
-    file << "1\n";
-    file << "\"bad/topic\"\n";
-    file << "1000\n";
-    file << "X\n";
+    file << "MTREE2\n";
+    file << "not_a_valid_compressed_tree\n";
     file.close();
 
     yaha::MessageTreePersistence::Config persistenceConfig{};
@@ -441,92 +436,11 @@ TEST_CASE("persist_now_writes_mtree2_and_restore_keeps_compression_stats", "[mes
     REQUIRE(restored.compressionStats().reasonEntriesPerDirectoryString == expectedStats.reasonEntriesPerDirectoryString);
     REQUIRE(restored.compressionStats().representedSingleCount == expectedStats.representedSingleCount);
     REQUIRE(restored.compressionStats().representedTimeValueCount == expectedStats.representedTimeValueCount);
+    REQUIRE(restored.compressionStats().representedTimeValueStringCount == expectedStats.representedTimeValueStringCount);
+    REQUIRE(restored.compressionStats().representedTimeValueDoubleCount == expectedStats.representedTimeValueDoubleCount);
     REQUIRE(restored.compressionStats().representedTimeCount == expectedStats.representedTimeCount);
     REQUIRE(restored.compressionStats().representedIntervalCount == expectedStats.representedIntervalCount);
 
     removeDirectoryQuiet(tempDir);
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("restore_latest_reads_legacy_mtree1_snapshot", "[message_store]") {
-    const auto tempDir = makeTempDirectory();
-    const auto legacyPath = tempDir / "state_1.mtree";
-    std::ofstream file{legacyPath, std::ios::out | std::ios::trunc};
-    REQUIRE(file.is_open());
-
-    file << "MTREE1\n";
-    file << "1\n";
-    file << std::quoted(std::string{"legacy/topic"}) << "\n";
-    file << "2000\n";
-    file << "S " << std::quoted(std::string{"new"}) << "\n";
-    file << "1\n";
-    file << std::quoted(std::string{"new reason"}) << ' '
-         << std::quoted(std::string{"2026-01-01T00:00:02Z"}) << "\n";
-    file << "1\n";
-    file << "1000\n";
-    file << "S " << std::quoted(std::string{"old"}) << "\n";
-    file << "1\n";
-    file << std::quoted(std::string{"old reason"}) << ' '
-         << std::quoted(std::string{"2026-01-01T00:00:01Z"}) << "\n";
-    file.close();
-
-    yaha::MessageTreePersistence::Config persistenceConfig{};
-    persistenceConfig.directory = tempDir;
-    persistenceConfig.filename = "state";
-    yaha::MessageTreePersistence persistence{persistenceConfig};
-
-    FakeClock restoreClock{};
-    yaha::MessageTree restored = makeTree(restoreClock);
-    REQUIRE(persistence.restoreLatest(restored));
-
-    const auto nodes = restored.getSection("legacy/topic", 0U, true, true);
-    REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().topic == "legacy/topic");
-    REQUIRE(std::get<std::string>(nodes.front().value) == "new");
-    REQUIRE(nodes.front().history().size() == 1U);
-    REQUIRE(std::get<std::string>(nodes.front().history().front().value) == "old");
-
-    removeDirectoryQuiet(tempDir);
-}
-
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("restore_latest_reads_legacy_mtree1_numeric_values", "[message_store]") {
-    const auto tempDir = makeTempDirectory();
-    const auto legacyPath = tempDir / "state_2.mtree";
-    std::ofstream file{legacyPath, std::ios::out | std::ios::trunc};
-    REQUIRE(file.is_open());
-
-    file << "MTREE1\n";
-    file << "1\n";
-    file << std::quoted(std::string{"legacy/number"}) << "\n";
-    file << "3000\n";
-    file << "N " << k_legacy_numeric_current_value << "\n";
-    file << "1\n";
-    file << std::quoted(std::string{"numeric reason"}) << ' '
-         << std::quoted(std::string{"2026-01-01T00:00:03Z"}) << "\n";
-    file << "1\n";
-    file << "2000\n";
-    file << "N " << k_legacy_numeric_history_value << "\n";
-    file << "1\n";
-    file << std::quoted(std::string{"numeric old reason"}) << ' '
-         << std::quoted(std::string{"2026-01-01T00:00:02Z"}) << "\n";
-    file.close();
-
-    yaha::MessageTreePersistence::Config persistenceConfig{};
-    persistenceConfig.directory = tempDir;
-    persistenceConfig.filename = "state";
-    yaha::MessageTreePersistence persistence{persistenceConfig};
-
-    FakeClock restoreClock{};
-    yaha::MessageTree restored = makeTree(restoreClock);
-    REQUIRE(persistence.restoreLatest(restored));
-
-    const auto nodes = restored.getSection("legacy/number", 0U, true, true);
-    REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().topic == "legacy/number");
-    REQUIRE(std::get<double>(nodes.front().value) == k_legacy_numeric_current_value);
-    REQUIRE(nodes.front().history().size() == 1U);
-    REQUIRE(std::get<double>(nodes.front().history().front().value) == k_legacy_numeric_history_value);
-
-    removeDirectoryQuiet(tempDir);
-}

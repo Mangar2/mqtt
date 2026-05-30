@@ -74,6 +74,8 @@ public:
         std::uint64_t intervalBucketCount{0U};         ///< Bucket count of IntervalHistoryEntry.
         std::uint64_t representedSingleCount{0U};      ///< Logical history messages represented by Single buckets.
         std::uint64_t representedTimeValueCount{0U};   ///< Logical history messages represented by TimeValue buckets.
+        std::uint64_t representedTimeValueStringCount{0U}; ///< String values represented by TimeValue buckets.
+        std::uint64_t representedTimeValueDoubleCount{0U}; ///< Numeric values represented by TimeValue buckets.
         std::uint64_t representedTimeCount{0U};        ///< Logical history messages represented by Time buckets.
         std::uint64_t representedIntervalCount{0U};    ///< Logical history messages represented by Interval buckets.
     };
@@ -154,7 +156,6 @@ private:
     using TimeHistoryEntry = MessageTreeTimeHistoryEntry;
     using IntervalHistoryEntry = MessageTreeIntervalHistoryEntry;
     using CompressedHistoryEntry = MessageTreeCompressedHistoryEntry;
-    using NodeData = MessageTreeNodeData;
 
     /**
      * @brief Returns current wall-clock milliseconds.
@@ -197,7 +198,8 @@ private:
      * @param entryToAdd New entry to add as newest history item.
      */
     void addHistoryEntry(std::vector<CompressedHistoryEntry>& history,
-                         const MessageTreeHistoryEntry& entryToAdd) const;
+                         const MessageTreeHistoryEntry& entryToAdd,
+                         StringDirectory& reasonDirectory) const;
 
     /**
      * @brief Returns whether two reason chains are compression-compatible.
@@ -233,7 +235,8 @@ private:
      */
     void addOrConvertTimeEntry(CompressedHistoryEntry& newest,
                                std::vector<CompressedHistoryEntry>& history,
-                               const MessageTreeHistoryEntry& entryToAdd) const;
+                               const MessageTreeHistoryEntry& entryToAdd,
+                               StringDirectory& reasonDirectory) const;
 
     /**
      * @brief Extends or replaces a newest interval compressed entry with a new value.
@@ -243,7 +246,8 @@ private:
      */
     void addOrConvertIntervalEntry(CompressedHistoryEntry& newest,
                                    std::vector<CompressedHistoryEntry>& history,
-                                   const MessageTreeHistoryEntry& entryToAdd) const;
+                                   const MessageTreeHistoryEntry& entryToAdd,
+                                   StringDirectory& reasonDirectory) const;
 
     /**
      * @brief Returns whether one compressed entry can accept one more value.
@@ -306,6 +310,7 @@ private:
      */
     [[nodiscard]] static std::vector<MessageTreeHistoryEntry>
     decompressHistory(const std::vector<CompressedHistoryEntry>& compressed,
+                      const StringDirectory& reasonDirectory,
                       bool includeReason);
 
     /**
@@ -316,6 +321,7 @@ private:
      */
     static void appendSingleHistoryEntry(std::vector<MessageTreeHistoryEntry>& history,
                                          const SingleHistoryEntry& entry,
+                                         const StringDirectory& reasonDirectory,
                                          bool includeReason);
 
     /**
@@ -326,6 +332,7 @@ private:
      */
     static void appendTimeValueHistoryEntries(std::vector<MessageTreeHistoryEntry>& history,
                                               const TimeValueHistoryEntry& entry,
+                                              const StringDirectory& reasonDirectory,
                                               bool includeReason);
 
     /**
@@ -336,6 +343,7 @@ private:
      */
     static void appendTimeHistoryEntries(std::vector<MessageTreeHistoryEntry>& history,
                                          const TimeHistoryEntry& entry,
+                                         const StringDirectory& reasonDirectory,
                                          bool includeReason);
 
     /**
@@ -346,6 +354,7 @@ private:
      */
     static void appendIntervalHistoryEntry(std::vector<MessageTreeHistoryEntry>& history,
                                            const IntervalHistoryEntry& entry,
+                                           const StringDirectory& reasonDirectory,
                                            bool includeReason);
 
     /**
@@ -354,7 +363,10 @@ private:
      * @return Compressed representation.
      */
     [[nodiscard]] std::vector<CompressedHistoryEntry>
-    compressHistory(const std::vector<MessageTreeHistoryEntry>& history) const;
+    compressHistory(const std::vector<MessageTreeHistoryEntry>& history,
+                    StringDirectory& reasonDirectory) const;
+
+    static void compactReasonDirectory(NodeData& data);
 
     /**
      * @brief Traverses subtree and appends section query nodes.
@@ -386,27 +398,37 @@ private:
      * @param source Source reason list.
      * @return Detached copy suitable for move-assignment at target site.
      */
-    [[nodiscard]] static CompactReasonList toCompactReasonList(const ReasonList& source);
-    [[nodiscard]] static ReasonList toReasonList(const CompactReasonList& source);
+    [[nodiscard]] static CompactReasonList toCompactReasonList(const ReasonList& source,
+                                                               StringDirectory& reasonDirectory);
+    [[nodiscard]] static ReasonList toReasonList(const CompactReasonList& source,
+                                                 const StringDirectory& reasonDirectory);
 
     [[nodiscard]] static bool writeValueToken(std::ostream& stream, const Value& value);
     [[nodiscard]] static bool readValueToken(std::istream& stream, Value& value);
     [[nodiscard]] static bool writeReasonListToken(std::ostream& stream,
-                                                   const CompactReasonList& reasonList);
+                                                   const CompactReasonList& reasonList,
+                                                   const StringDirectory& reasonDirectory);
     [[nodiscard]] static bool readReasonListToken(std::istream& stream,
-                                                  CompactReasonList& reasonList);
+                                                  CompactReasonList& reasonList,
+                                                  StringDirectory& reasonDirectory);
     [[nodiscard]] static bool writeCompressedHistoryEntry(std::ostream& stream,
-                                                          const CompressedHistoryEntry& entry);
+                                                          const CompressedHistoryEntry& entry,
+                                                          const StringDirectory& reasonDirectory);
     [[nodiscard]] static bool readCompressedHistoryEntry(std::istream& stream,
-                                                         CompressedHistoryEntry& entry);
+                                                         CompressedHistoryEntry& entry,
+                                                         StringDirectory& reasonDirectory);
     [[nodiscard]] static bool readSingleHistoryEntry(std::istream& stream,
-                                                     CompressedHistoryEntry& entry);
+                                                     CompressedHistoryEntry& entry,
+                                                     StringDirectory& reasonDirectory);
     [[nodiscard]] static bool readTimeValueHistoryEntry(std::istream& stream,
-                                                        CompressedHistoryEntry& entry);
+                                                        CompressedHistoryEntry& entry,
+                                                        StringDirectory& reasonDirectory);
     [[nodiscard]] static bool readTimeHistoryEntry(std::istream& stream,
-                                                   CompressedHistoryEntry& entry);
+                                                   CompressedHistoryEntry& entry,
+                                                   StringDirectory& reasonDirectory);
     [[nodiscard]] static bool readIntervalHistoryEntry(std::istream& stream,
-                                                       CompressedHistoryEntry& entry);
+                                                       CompressedHistoryEntry& entry,
+                                                       StringDirectory& reasonDirectory);
     [[nodiscard]] bool writeCompressedTreeNode(std::ostream& stream, const TreeNode& node) const;
     [[nodiscard]] bool readCompressedTreeNode(std::istream& stream, TreeNode& node);
 

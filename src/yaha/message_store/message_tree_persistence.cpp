@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <chrono>
 #include <fstream>
-#include <iomanip>
 #include <ios>
 #include <sstream>
 #include <utility>
@@ -15,96 +14,6 @@ namespace {
 std::int64_t wallClockMilliseconds() {
     const auto now = std::chrono::system_clock::now().time_since_epoch();
     return std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-}
-
-bool readValue(std::ifstream& stream, Value& value) {
-    std::string kind{};
-    if (!(stream >> kind)) {
-        return false;
-    }
-
-    if (kind == "S") {
-        std::string text{};
-        if (!(stream >> std::quoted(text))) {
-            return false;
-        }
-        value = text;
-        return true;
-    }
-
-    if (kind == "N") {
-        double number = 0.0;
-        if (!(stream >> number)) {
-            return false;
-        }
-        value = number;
-        return true;
-    }
-
-    return false;
-}
-
-bool readReasonList(std::ifstream& stream, ReasonList& reasonList) {
-    std::size_t count = 0U;
-    if (!(stream >> count)) {
-        return false;
-    }
-
-    reasonList.clear();
-    reasonList.reserve(count);
-    for (std::size_t idx = 0U; idx < count; ++idx) {
-        ReasonEntry reason{};
-        if (!(stream >> std::quoted(reason.message) >> std::quoted(reason.timestamp))) {
-            return false;
-        }
-        reasonList.push_back(std::move(reason));
-    }
-
-    return true;
-}
-
-bool readNode(std::ifstream& stream, MessageTreeNode& node) {
-    if (!(stream >> std::quoted(node.topic))) {
-        return false;
-    }
-
-    if (!(stream >> node.timeMs)) {
-        return false;
-    }
-
-    if (!readValue(stream, node.value)) {
-        return false;
-    }
-
-    ReasonList nodeReason{};
-    if (!readReasonList(stream, nodeReason)) {
-        return false;
-    }
-    node.setReasonList(nodeReason);
-
-    std::size_t historyCount = 0U;
-    if (!(stream >> historyCount)) {
-        return false;
-    }
-
-    node.clearHistory();
-    for (std::size_t idx = 0U; idx < historyCount; ++idx) {
-        MessageTreeHistoryEntry entry{};
-        if (!(stream >> entry.timeMs)) {
-            return false;
-        }
-        if (!readValue(stream, entry.value)) {
-            return false;
-        }
-        ReasonList historyReason{};
-        if (!readReasonList(stream, historyReason)) {
-            return false;
-        }
-        entry.setReasonList(historyReason);
-        node.addHistoryEntry(entry);
-    }
-
-    return true;
 }
 
 } // namespace
@@ -163,41 +72,13 @@ bool MessageTreePersistence::restoreLatest(MessageTree& tree) {
             continue;
         }
 
-        if (magic == "MTREE2") {
-            if (tree.readCompressed(stream)) {
-                return true;
-            }
+        if (magic != "MTREE2") {
             continue;
         }
 
-        if (magic != "MTREE1") {
-            continue;
+        if (tree.readCompressed(stream)) {
+            return true;
         }
-
-        std::size_t nodeCount = 0U;
-        if (!(stream >> nodeCount)) {
-            continue;
-        }
-
-        std::vector<MessageTreeNode> nodes{};
-        nodes.reserve(nodeCount);
-
-        bool parseOk = true;
-        for (std::size_t idx = 0U; idx < nodeCount; ++idx) {
-            MessageTreeNode node{};
-            if (!readNode(stream, node)) {
-                parseOk = false;
-                break;
-            }
-            nodes.push_back(std::move(node));
-        }
-
-        if (!parseOk) {
-            continue;
-        }
-
-        tree.replaceAllNodes(nodes);
-        return true;
     }
 
     return false;

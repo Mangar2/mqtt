@@ -49,7 +49,7 @@ void printCompressionStatsLine(const MessageTree::CompressionStats& compressionS
         std::uint64_t value;
     };
 
-    const std::array<CompressionStatsRow, 12U> rows{{
+    const std::array<CompressionStatsRow, 14U> rows{{
         {.name = "currentNodes", .value = compressionStats.currentNodeCount},
         {.name = "totalStoredMessages", .value = compressionStats.totalStoredMessageCount},
         {.name = "historyBuckets", .value = compressionStats.historyBucketCount},
@@ -61,11 +61,13 @@ void printCompressionStatsLine(const MessageTree::CompressionStats& compressionS
         {.name = "buckets.interval", .value = compressionStats.intervalBucketCount},
         {.name = "represented.single", .value = compressionStats.representedSingleCount},
         {.name = "represented.timeValue", .value = compressionStats.representedTimeValueCount},
+        {.name = "represented.timeValue.string", .value = compressionStats.representedTimeValueStringCount},
+        {.name = "represented.timeValue.double", .value = compressionStats.representedTimeValueDoubleCount},
         {.name = "represented.time", .value = compressionStats.representedTimeCount},
     }};
 
     const std::uint64_t representedIntervalCount = compressionStats.representedIntervalCount;
-    std::size_t maxNameWidth = std::string_view{"ratio.reasonPerDirectoryString"}.size();
+    std::size_t maxNameWidth = std::string_view{"represented.timeValue.string"}.size();
     std::size_t maxValueWidth = std::to_string(representedIntervalCount).size();
     for (const auto& row : rows) {
         maxNameWidth = std::max(maxNameWidth, row.name.size());

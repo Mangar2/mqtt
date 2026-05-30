@@ -1,5 +1,6 @@
 #include "yaha/message_store/message_tree.h"
 
+#include "yaha/message_store/compact_reason_entry.h"
 #include "yaha/message_store/iso_timestamp_parser.h"
 
 #include <algorithm>
@@ -10,7 +11,7 @@
 #include <ostream>
 #include <stdexcept>
 #include <type_traits>
-#include <unordered_set>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -35,6 +36,30 @@ constexpr std::uint32_t k_legacy_length_for_further_compression_minimum{3U};
     }
 
     return true;
+}
+
+[[nodiscard]] std::string formatReasonTimestamp(const TreeNodeReasonEntry& compactReason) {
+    std::string timestampText = toIsoTimestampMilliseconds(compactReason.timestampMs);
+    if (compactReason.fractionalDigits > 0U && timestampText.find('.') == std::string::npos) {
+        timestampText.insert(timestampText.size() - 1U, ".000");
+    }
+
+    const std::size_t dotPos = timestampText.find('.');
+    const std::size_t zonePos = dotPos == std::string::npos
+        ? std::string::npos
+        : timestampText.find('Z', dotPos + 1U);
+
+    if (compactReason.fractionalDigits == 0U && dotPos != std::string::npos && zonePos != std::string::npos) {
+        timestampText.erase(dotPos, zonePos - dotPos);
+        return timestampText;
+    }
+
+    if (compactReason.fractionalDigits < 3U && dotPos != std::string::npos && zonePos != std::string::npos) {
+        timestampText.erase(dotPos + 1U + compactReason.fractionalDigits,
+                            zonePos - (dotPos + 1U + compactReason.fractionalDigits));
+    }
+
+    return timestampText;
 }
 
 } // namespace
@@ -70,9 +95,9 @@ void MessageTree::addData(const Message& message) {
         throw std::runtime_error{"MessageTree failed to create topic path"};
     }
 
-    if (node->hasData) {
-        appendHistory(node->data);
-        trimHistory(node->data);
+    if (node->data != nullptr) {
+        appendHistory(*node->data);
+        trimHistory(*node->data);
     }
 
     std::int64_t effectiveTimeMs = nowMilliseconds();
@@ -83,7 +108,7 @@ void MessageTree::addData(const Message& message) {
         if (reasonTimeMs > 0) {
             effectiveTimeMs = reasonTimeMs;
 
-            if (node->hasData && effectiveTimeMs <= node->data.timeMs) {
+            if (node->data != nullptr && effectiveTimeMs <= node->data->timeMs) {
                 std::int64_t newestReasonTimeMs = effectiveTimeMs;
                 for (std::size_t idx = 1U; idx < reasons.size(); ++idx) {
                     std::int64_t candidateTimeMs = 0;
@@ -93,18 +118,22 @@ void MessageTree::addData(const Message& message) {
                     }
                     newestReasonTimeMs = std::max(newestReasonTimeMs, candidateTimeMs);
                 }
-                if (newestReasonTimeMs > node->data.timeMs) {
+                if (newestReasonTimeMs > node->data->timeMs) {
                     effectiveTimeMs = newestReasonTimeMs;
                 }
             }
         }
     }
-    node->hasData = true;
+    if (node->data == nullptr) {
+        node->data = std::make_unique<NodeData>();
+    }
 
-    node->data.timeMs = effectiveTimeMs;
-    node->data.value = message.value();
-    CompactReasonList detachedReasonForNode = toCompactReasonList(message.reason());
-    node->data.reason = std::move(detachedReasonForNode);
+    node->data->timeMs = effectiveTimeMs;
+    node->data->value = message.value();
+    CompactReasonList detachedReasonForNode =
+        toCompactReasonList(message.reason(), node->data->reasonDirectory);
+    node->data->reason = std::move(detachedReasonForNode);
+    compactReasonDirectory(*node->data);
 }
 
 std::vector<MessageTreeNode>
@@ -130,17 +159,17 @@ MessageTree::getNodes(const std::vector<MessageTreeSnapshotNode>& snapshot,
     diff.reserve(snapshot.size());
     for (const auto& requiredNode : snapshot) {
         const TreeNode* current = findPath(requiredNode.topic);
-        if (current == nullptr || !current->hasData) {
+        if (current == nullptr || current->data == nullptr) {
             continue;
         }
 
         MessageTreeNode currentNode{};
         currentNode.topic = current->topicPath;
-        currentNode.timeMs = current->data.timeMs;
-        currentNode.value = current->data.value;
-        currentNode.setReasonList(toReasonList(current->data.reason));
+        currentNode.timeMs = current->data->timeMs;
+        currentNode.value = current->data->value;
+        currentNode.setReasonList(toReasonList(current->data->reason, current->data->reasonDirectory));
         currentNode.setHistoryEntries(includeHistory
-            ? decompressHistory(current->data.compressedHistory, true)
+            ? decompressHistory(current->data->compressedHistory, current->data->reasonDirectory, true)
             : std::vector<MessageTreeHistoryEntry>{});
 
         if (!snapshotEquals(currentNode, requiredNode)) {
@@ -167,37 +196,51 @@ void MessageTree::replaceAllNodes(const std::vector<MessageTreeNode>& nodes) {
             continue;
         }
 
-        target->hasData = true;
-        target->data.timeMs = node.timeMs;
-        target->data.value = node.value;
-        CompactReasonList detachedReasonForTarget = toCompactReasonList(node.reason());
-        target->data.reason = std::move(detachedReasonForTarget);
-        target->data.compressedHistory = compressHistory(node.history());
-        trimHistory(target->data);
+        target->data = std::make_unique<NodeData>();
+        target->data->timeMs = node.timeMs;
+        target->data->value = node.value;
+        CompactReasonList detachedReasonForTarget =
+            toCompactReasonList(node.reason(), target->data->reasonDirectory);
+        target->data->reason = std::move(detachedReasonForTarget);
+        target->data->compressedHistory = compressHistory(node.history(), target->data->reasonDirectory);
+        trimHistory(*target->data);
+        compactReasonDirectory(*target->data);
     }
 }
 
-MessageTree::CompactReasonList MessageTree::toCompactReasonList(const ReasonList& source) {
+MessageTree::CompactReasonList MessageTree::toCompactReasonList(const ReasonList& source,
+                                                                StringDirectory& reasonDirectory) {
     CompactReasonList detachedReason{};
     detachedReason.reserve(source.size());
 
     for (const auto& sourceEntry : source) {
-        detachedReason.push_back(
-            CompactReasonEntry::fromStrings(sourceEntry.message, sourceEntry.timestamp));
+        const CompactReasonEntry compactReason =
+            CompactReasonEntry::fromStrings(sourceEntry.message, sourceEntry.timestamp);
+        detachedReason.push_back(TreeNodeReasonEntry{
+            .messageSlotIndex = reasonDirectory.add(sourceEntry.message),
+            .timestampMs = compactReason.timestampMs(),
+            .fractionalDigits = compactReason.fractionalDigits()
+        });
     }
 
     return detachedReason;
 }
 
-ReasonList MessageTree::toReasonList(const CompactReasonList& source) {
+ReasonList MessageTree::toReasonList(const CompactReasonList& source,
+                                     const StringDirectory& reasonDirectory) {
     ReasonList detachedReason{};
     detachedReason.reserve(source.size());
 
     for (const auto& sourceEntry : source) {
+        const auto messageText = reasonDirectory.get(sourceEntry.messageSlotIndex);
+        if (!messageText.has_value()) {
+            throw std::runtime_error{"MessageTree reason slot lookup failed"};
+        }
+
         ReasonEntry targetEntry{};
-        targetEntry.message = sourceEntry.message();
-        if (sourceEntry.timestampMs() != 0) {
-            targetEntry.timestamp = sourceEntry.toTimestampString();
+        targetEntry.message = *messageText;
+        if (sourceEntry.timestampMs != 0) {
+            targetEntry.timestamp = formatReasonTimestamp(sourceEntry);
         }
         detachedReason.push_back(std::move(targetEntry));
     }
@@ -214,36 +257,37 @@ std::size_t MessageTree::cleanup(std::uint32_t daysWithoutUpdate) {
 MessageTree::CompressionStats MessageTree::compressionStats() const {
     CompressionStats stats{};
 
-    const auto accumulateReasonList = [&stats](const CompactReasonList& reasonList,
-                                               std::unordered_set<std::string>& nodeDirectoryStrings) {
+    const auto accumulateReasonList = [&stats](const CompactReasonList& reasonList) {
         stats.totalReasonEntryCount += static_cast<std::uint64_t>(reasonList.size());
-        for (const auto& reasonEntry : reasonList) {
-            nodeDirectoryStrings.insert(reasonEntry.message());
-        }
     };
 
-    const auto accumulateHistoryEntry = [&stats, &accumulateReasonList](
-                                            const CompressedHistoryEntry& historyEntry,
-                                            std::unordered_set<std::string>& nodeDirectoryStrings) {
+    const auto accumulateHistoryEntry = [&stats, &accumulateReasonList](const CompressedHistoryEntry& historyEntry) {
         stats.historyBucketCount += 1U;
         std::visit(
             [&](const auto& typedEntry) {
                 using EntryType = std::decay_t<decltype(typedEntry)>;
 
                 if constexpr (std::is_same_v<EntryType, SingleHistoryEntry>) {
-                    accumulateReasonList(toCompactReasonList(typedEntry.entry.reason()), nodeDirectoryStrings);
+                    accumulateReasonList(typedEntry.reason);
                     stats.singleBucketCount += 1U;
                     stats.representedSingleCount += 1U;
                 } else if constexpr (std::is_same_v<EntryType, TimeValueHistoryEntry>) {
-                    accumulateReasonList(typedEntry.reason, nodeDirectoryStrings);
+                    accumulateReasonList(typedEntry.reason);
                     stats.timeValueBucketCount += 1U;
                     stats.representedTimeValueCount += static_cast<std::uint64_t>(typedEntry.values.size());
+                    for (const auto& timeValue : typedEntry.values) {
+                        if (std::holds_alternative<std::string>(timeValue.second)) {
+                            stats.representedTimeValueStringCount += 1U;
+                        } else {
+                            stats.representedTimeValueDoubleCount += 1U;
+                        }
+                    }
                 } else if constexpr (std::is_same_v<EntryType, TimeHistoryEntry>) {
-                    accumulateReasonList(typedEntry.reason, nodeDirectoryStrings);
+                    accumulateReasonList(typedEntry.reason);
                     stats.timeBucketCount += 1U;
                     stats.representedTimeCount += static_cast<std::uint64_t>(typedEntry.timestamps.size());
                 } else if constexpr (std::is_same_v<EntryType, IntervalHistoryEntry>) {
-                    accumulateReasonList(typedEntry.reason, nodeDirectoryStrings);
+                    accumulateReasonList(typedEntry.reason);
                     stats.intervalBucketCount += 1U;
                     stats.representedIntervalCount += typedEntry.amount;
                 }
@@ -252,17 +296,15 @@ MessageTree::CompressionStats MessageTree::compressionStats() const {
     };
 
     const auto accumulateNode = [&](const auto& self, const TreeNode& node) -> void {
-        if (node.hasData) {
+        if (node.data != nullptr) {
             stats.currentNodeCount += 1U;
+            accumulateReasonList(node.data->reason);
 
-            std::unordered_set<std::string> nodeDirectoryStrings{};
-            accumulateReasonList(node.data.reason, nodeDirectoryStrings);
-
-            for (const auto& historyEntry : node.data.compressedHistory) {
-                accumulateHistoryEntry(historyEntry, nodeDirectoryStrings);
+            for (const auto& historyEntry : node.data->compressedHistory) {
+                accumulateHistoryEntry(historyEntry);
             }
 
-            stats.totalDirectoryStringCount += static_cast<std::uint64_t>(nodeDirectoryStrings.size());
+            stats.totalDirectoryStringCount += static_cast<std::uint64_t>(node.data->reasonDirectory.size());
         }
 
         for (const auto& child : node.children) {
@@ -337,17 +379,29 @@ bool MessageTree::readValueToken(std::istream& stream, Value& value) {
 }
 
 bool MessageTree::writeReasonListToken(std::ostream& stream,
-                                       const CompactReasonList& reasonList) {
+                                       const CompactReasonList& reasonList,
+                                       const StringDirectory& reasonDirectory) {
     stream << reasonList.size() << '\n';
     for (const auto& reason : reasonList) {
-        stream << std::quoted(reason.message()) << ' '
-               << std::quoted(reason.toTimestampString()) << '\n';
+        const auto messageText = reasonDirectory.get(reason.messageSlotIndex);
+        if (!messageText.has_value()) {
+            return false;
+        }
+
+        std::string timestampText{};
+        if (reason.timestampMs != 0) {
+            timestampText = formatReasonTimestamp(reason);
+        }
+
+        stream << std::quoted(*messageText) << ' '
+               << std::quoted(timestampText) << '\n';
     }
     return static_cast<bool>(stream);
 }
 
 bool MessageTree::readReasonListToken(std::istream& stream,
-                                      CompactReasonList& reasonList) {
+                                      CompactReasonList& reasonList,
+                                      StringDirectory& reasonDirectory) {
     std::size_t count = 0U;
     if (!(stream >> count)) {
         return false;
@@ -361,20 +415,27 @@ bool MessageTree::readReasonListToken(std::istream& stream,
         if (!(stream >> std::quoted(messageText) >> std::quoted(timestampText))) {
             return false;
         }
-        reasonList.push_back(CompactReasonEntry::fromStrings(std::move(messageText), timestampText));
+
+        const CompactReasonEntry compactReason = CompactReasonEntry::fromStrings(messageText, timestampText);
+        reasonList.push_back(TreeNodeReasonEntry{
+            .messageSlotIndex = reasonDirectory.add(messageText),
+            .timestampMs = compactReason.timestampMs(),
+            .fractionalDigits = compactReason.fractionalDigits()
+        });
     }
     return true;
 }
 
 bool MessageTree::writeCompressedHistoryEntry(std::ostream& stream,
-                                              const CompressedHistoryEntry& entry) {
+                                              const CompressedHistoryEntry& entry,
+                                              const StringDirectory& reasonDirectory) {
     if (const auto* singleEntry = std::get_if<SingleHistoryEntry>(&entry.data)) {
         stream << "single\n";
-        stream << singleEntry->entry.timeMs << '\n';
-        if (!writeValueToken(stream, singleEntry->entry.value)) {
+        stream << singleEntry->timeMs << '\n';
+        if (!writeValueToken(stream, singleEntry->value)) {
             return false;
         }
-        return writeReasonListToken(stream, toCompactReasonList(singleEntry->entry.reason()));
+        return writeReasonListToken(stream, singleEntry->reason, reasonDirectory);
     }
 
     if (const auto* timeValueEntry = std::get_if<TimeValueHistoryEntry>(&entry.data)) {
@@ -386,7 +447,7 @@ bool MessageTree::writeCompressedHistoryEntry(std::ostream& stream,
                 return false;
             }
         }
-        return writeReasonListToken(stream, timeValueEntry->reason);
+        return writeReasonListToken(stream, timeValueEntry->reason, reasonDirectory);
     }
 
     if (const auto* timeEntry = std::get_if<TimeHistoryEntry>(&entry.data)) {
@@ -398,7 +459,7 @@ bool MessageTree::writeCompressedHistoryEntry(std::ostream& stream,
         for (const std::int64_t timestamp : timeEntry->timestamps) {
             stream << timestamp << '\n';
         }
-        return writeReasonListToken(stream, timeEntry->reason);
+        return writeReasonListToken(stream, timeEntry->reason, reasonDirectory);
     }
 
     const auto* intervalEntry = std::get_if<IntervalHistoryEntry>(&entry.data);
@@ -411,7 +472,7 @@ bool MessageTree::writeCompressedHistoryEntry(std::ostream& stream,
     if (!writeValueToken(stream, intervalEntry->value)) {
         return false;
     }
-    if (!writeReasonListToken(stream, intervalEntry->reason)) {
+    if (!writeReasonListToken(stream, intervalEntry->reason, reasonDirectory)) {
         return false;
     }
     stream << intervalEntry->firstTimeMs << '\n';
@@ -420,47 +481,48 @@ bool MessageTree::writeCompressedHistoryEntry(std::ostream& stream,
 }
 
 bool MessageTree::readCompressedHistoryEntry(std::istream& stream,
-                                             CompressedHistoryEntry& entry) {
+                                             CompressedHistoryEntry& entry,
+                                             StringDirectory& reasonDirectory) {
     std::string historyType{};
     if (!(stream >> historyType)) {
         return false;
     }
 
     if (historyType == "single") {
-        return readSingleHistoryEntry(stream, entry);
+        return readSingleHistoryEntry(stream, entry, reasonDirectory);
     }
     if (historyType == "timeValue") {
-        return readTimeValueHistoryEntry(stream, entry);
+        return readTimeValueHistoryEntry(stream, entry, reasonDirectory);
     }
     if (historyType == "time") {
-        return readTimeHistoryEntry(stream, entry);
+        return readTimeHistoryEntry(stream, entry, reasonDirectory);
     }
     if (historyType == "interval") {
-        return readIntervalHistoryEntry(stream, entry);
+        return readIntervalHistoryEntry(stream, entry, reasonDirectory);
     }
     return false;
 }
 
 bool MessageTree::readSingleHistoryEntry(std::istream& stream,
-                                         CompressedHistoryEntry& entry) {
+                                         CompressedHistoryEntry& entry,
+                                         StringDirectory& reasonDirectory) {
     SingleHistoryEntry singleEntry{};
-    if (!(stream >> singleEntry.entry.timeMs)) {
+    if (!(stream >> singleEntry.timeMs)) {
         return false;
     }
-    if (!readValueToken(stream, singleEntry.entry.value)) {
+    if (!readValueToken(stream, singleEntry.value)) {
         return false;
     }
-    CompactReasonList compactReason{};
-    if (!readReasonListToken(stream, compactReason)) {
+    if (!readReasonListToken(stream, singleEntry.reason, reasonDirectory)) {
         return false;
     }
-    singleEntry.entry.setReasonList(toReasonList(compactReason));
     entry.data = std::move(singleEntry);
     return true;
 }
 
 bool MessageTree::readTimeValueHistoryEntry(std::istream& stream,
-                                            CompressedHistoryEntry& entry) {
+                                            CompressedHistoryEntry& entry,
+                                            StringDirectory& reasonDirectory) {
     TimeValueHistoryEntry timeValueEntry{};
     std::size_t valueCount = 0U;
     if (!(stream >> valueCount)) {
@@ -481,7 +543,7 @@ bool MessageTree::readTimeValueHistoryEntry(std::istream& stream,
         timeValueEntry.values.emplace_back(timeMs, std::move(value));
     }
 
-    if (!readReasonListToken(stream, timeValueEntry.reason)) {
+    if (!readReasonListToken(stream, timeValueEntry.reason, reasonDirectory)) {
         return false;
     }
     entry.data = std::move(timeValueEntry);
@@ -489,7 +551,8 @@ bool MessageTree::readTimeValueHistoryEntry(std::istream& stream,
 }
 
 bool MessageTree::readTimeHistoryEntry(std::istream& stream,
-                                       CompressedHistoryEntry& entry) {
+                                       CompressedHistoryEntry& entry,
+                                       StringDirectory& reasonDirectory) {
     TimeHistoryEntry timeEntry{};
     if (!readValueToken(stream, timeEntry.value)) {
         return false;
@@ -508,7 +571,7 @@ bool MessageTree::readTimeHistoryEntry(std::istream& stream,
         timeEntry.timestamps.push_back(timestamp);
     }
 
-    if (!readReasonListToken(stream, timeEntry.reason)) {
+    if (!readReasonListToken(stream, timeEntry.reason, reasonDirectory)) {
         return false;
     }
     entry.data = std::move(timeEntry);
@@ -516,7 +579,8 @@ bool MessageTree::readTimeHistoryEntry(std::istream& stream,
 }
 
 bool MessageTree::readIntervalHistoryEntry(std::istream& stream,
-                                           CompressedHistoryEntry& entry) {
+                                           CompressedHistoryEntry& entry,
+                                           StringDirectory& reasonDirectory) {
     IntervalHistoryEntry intervalEntry{};
     if (!(stream >> intervalEntry.amount)) {
         return false;
@@ -524,7 +588,7 @@ bool MessageTree::readIntervalHistoryEntry(std::istream& stream,
     if (!readValueToken(stream, intervalEntry.value)) {
         return false;
     }
-    if (!readReasonListToken(stream, intervalEntry.reason)) {
+    if (!readReasonListToken(stream, intervalEntry.reason, reasonDirectory)) {
         return false;
     }
     if (!(stream >> intervalEntry.firstTimeMs)) {
@@ -540,20 +604,20 @@ bool MessageTree::readIntervalHistoryEntry(std::istream& stream,
 bool MessageTree::writeCompressedTreeNode(std::ostream& stream, const TreeNode& node) const {
     stream << std::quoted(node.topicPath) << '\n';
     stream << node.children.size() << '\n';
-    stream << (node.hasData ? 1 : 0) << '\n';
+    stream << (node.data != nullptr ? 1 : 0) << '\n';
 
-    if (node.hasData) {
-        stream << node.data.timeMs << '\n';
-        if (!writeValueToken(stream, node.data.value)) {
+    if (node.data != nullptr) {
+        stream << node.data->timeMs << '\n';
+        if (!writeValueToken(stream, node.data->value)) {
             return false;
         }
-        if (!writeReasonListToken(stream, node.data.reason)) {
+        if (!writeReasonListToken(stream, node.data->reason, node.data->reasonDirectory)) {
             return false;
         }
 
-        stream << node.data.compressedHistory.size() << '\n';
-        for (const auto& historyEntry : node.data.compressedHistory) {
-            if (!writeCompressedHistoryEntry(stream, historyEntry)) {
+        stream << node.data->compressedHistory.size() << '\n';
+        for (const auto& historyEntry : node.data->compressedHistory) {
+            if (!writeCompressedHistoryEntry(stream, historyEntry, node.data->reasonDirectory)) {
                 return false;
             }
         }
@@ -584,17 +648,20 @@ bool MessageTree::readCompressedTreeNode(std::istream& stream, TreeNode& node) {
         return false;
     }
 
-    node.hasData = (hasDataValue != 0);
-    node.data = NodeData{};
+    if (hasDataValue != 0) {
+        node.data = std::make_unique<NodeData>();
+    } else {
+        node.data.reset();
+    }
 
-    if (node.hasData) {
-        if (!(stream >> node.data.timeMs)) {
+    if (node.data != nullptr) {
+        if (!(stream >> node.data->timeMs)) {
             return false;
         }
-        if (!readValueToken(stream, node.data.value)) {
+        if (!readValueToken(stream, node.data->value)) {
             return false;
         }
-        if (!readReasonListToken(stream, node.data.reason)) {
+        if (!readReasonListToken(stream, node.data->reason, node.data->reasonDirectory)) {
             return false;
         }
 
@@ -603,13 +670,13 @@ bool MessageTree::readCompressedTreeNode(std::istream& stream, TreeNode& node) {
             return false;
         }
 
-        node.data.compressedHistory.clear();
+        node.data->compressedHistory.clear();
         for (std::size_t idx = 0U; idx < historyCount; ++idx) {
             CompressedHistoryEntry entry{};
-            if (!readCompressedHistoryEntry(stream, entry)) {
+            if (!readCompressedHistoryEntry(stream, entry, node.data->reasonDirectory)) {
                 return false;
             }
-            node.data.compressedHistory.push_back(std::move(entry));
+            node.data->compressedHistory.push_back(std::move(entry));
         }
     }
 
@@ -629,6 +696,47 @@ bool MessageTree::readCompressedTreeNode(std::istream& stream, TreeNode& node) {
     }
 
     return true;
+}
+
+void MessageTree::compactReasonDirectory(NodeData& data) {
+    StringDirectory newDirectory{};
+    std::unordered_map<slotIndex_t, slotIndex_t> remap{};
+
+    const StringDirectory oldDirectory = data.reasonDirectory;
+    const auto remapReasonList = [&oldDirectory, &newDirectory, &remap](CompactReasonList& reasonList) {
+        for (auto& reasonEntry : reasonList) {
+            const auto existing = remap.find(reasonEntry.messageSlotIndex);
+            if (existing != remap.end()) {
+                reasonEntry.messageSlotIndex = existing->second;
+                continue;
+            }
+
+            const auto messageText = oldDirectory.get(reasonEntry.messageSlotIndex);
+            if (!messageText.has_value()) {
+                throw std::runtime_error{"MessageTree reason slot remap failed"};
+            }
+
+            const slotIndex_t newSlotIndex = newDirectory.add(*messageText);
+            remap.emplace(reasonEntry.messageSlotIndex, newSlotIndex);
+            reasonEntry.messageSlotIndex = newSlotIndex;
+        }
+    };
+
+    remapReasonList(data.reason);
+    for (auto& historyEntry : data.compressedHistory) {
+        std::visit(
+            [&](auto& typedEntry) {
+                using EntryType = std::decay_t<decltype(typedEntry)>;
+                if constexpr (std::is_same_v<EntryType, SingleHistoryEntry>) {
+                    remapReasonList(typedEntry.reason);
+                } else {
+                    remapReasonList(typedEntry.reason);
+                }
+            },
+            historyEntry.data);
+    }
+
+    data.reasonDirectory = std::move(newDirectory);
 }
 
 std::int64_t MessageTree::nowMilliseconds() const {
@@ -712,18 +820,18 @@ void MessageTree::collectSection(const TreeNode& node,
                                  bool includeHistory,
                                  bool includeReason,
                                  std::vector<MessageTreeNode>& output) const {
-    if (node.hasData) {
+    if (node.data != nullptr) {
         MessageTreeNode result{};
         result.topic = node.topicPath;
-        result.timeMs = node.data.timeMs;
-        result.value = node.data.value;
+        result.timeMs = node.data->timeMs;
+        result.value = node.data->value;
         if (includeReason) {
-            result.setReasonList(toReasonList(node.data.reason));
+            result.setReasonList(toReasonList(node.data->reason, node.data->reasonDirectory));
         } else {
             result.clearReason();
         }
         result.setHistoryEntries(includeHistory
-            ? decompressHistory(node.data.compressedHistory, true)
+            ? decompressHistory(node.data->compressedHistory, node.data->reasonDirectory, true)
             : std::vector<MessageTreeHistoryEntry>{});
         output.push_back(std::move(result));
     }
@@ -764,16 +872,15 @@ std::size_t MessageTree::cleanupNode(TreeNode& node, std::int64_t cutoffMs) {
 
     for (auto iter = node.children.begin(); iter != node.children.end();) {
         removed += cleanupNode(iter->second, cutoffMs);
-        if (!iter->second.hasData && iter->second.children.empty()) {
+        if (iter->second.data == nullptr && iter->second.children.empty()) {
             iter = node.children.erase(iter);
             continue;
         }
         ++iter;
     }
 
-    if (node.hasData && node.data.timeMs < cutoffMs) {
-        node.hasData = false;
-        node.data = NodeData{};
+    if (node.data != nullptr && node.data->timeMs < cutoffMs) {
+        node.data.reset();
         removed += 1U;
     }
 

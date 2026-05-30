@@ -22,6 +22,7 @@ Unit tests for MessageTree behavior required by step 4.
 | `add_data_falls_back_to_clock_for_invalid_reason_timezone_format` | Unsupported timezone format must fallback | reason[0].timestamp without colon in offset | node timeMs equals injected clock time |
 | `add_data_falls_back_to_clock_for_invalid_reason_fraction_format` | Malformed fractional part must fallback | reason[0].timestamp with empty fraction | node timeMs equals injected clock time |
 | `history_is_trimmed_with_hysteresis` | Bounded history applies batch trim | max=3 hysterese=1 with repeated updates | history size <= 3 and not empty |
+| `history_trim_compacts_unused_reason_directory_slots` | Removing old history entries should drop unused per-node reason-directory slots | max=3 hysterese=1 with six updates and six distinct reason messages | compression stats report one node with exactly three directory strings (current + retained history) |
 | `history_compresses_repeated_equal_values` | Repeated equal updates use compressed buckets | maxValuesPerHistoryEntry=2 with repeated same value | decompressed history shows merged timestamps for compressed repeats |
 | `history_single_compression_keeps_reasoned_entries_separate` | Single compression path keeps non-groupable entries separate | same topic with different values and different reason messages | history has separate entries with their own reasons |
 | `history_time_value_compression_merges_value_sequence` | TimeValue compression groups same-reason value sequence | same topic with changing values and same reason message | history shows grouped sequence with reason only on oldest entry |
@@ -58,7 +59,7 @@ Unit tests for MessageTree behavior required by step 4.
 | `persist_now_writes_snapshot_and_restore_latest_rebuilds_tree` | Round-trip persistence | tree with multiple topics/history | restored tree equals persisted state |
 | `restore_latest_skips_corrupt_newest_file_and_uses_previous_valid` | Most recent valid file must be selected | valid file + newer corrupt file | restore succeeds from older valid file |
 | `restore_latest_returns_false_when_no_files_exist` | No snapshot available | empty directory | restore returns false |
-| `restore_latest_skips_malformed_node_payload` | Valid header with malformed node data | file with MTREE1 and invalid node body | restore returns false |
+| `restore_latest_skips_malformed_node_payload` | Valid header with malformed compressed payload | file with MTREE2 and invalid compressed body | restore returns false |
 | `retention_deletes_old_files_beyond_keep_files` | Snapshot retention enforcement | keepFiles=2 with 3 persists | only newest two files remain |
 | `retention_keep_files_zero_disables_deletion` | Retention disabled branch | keepFiles=0 with multiple persists | all files remain |
 | `persist_now_returns_false_when_directory_is_regular_file` | create_directories failure path | directory path points to regular file | persistNow returns false |
@@ -66,8 +67,12 @@ Unit tests for MessageTree behavior required by step 4.
 | `start_periodic_noop_when_interval_zero_or_already_running` | startPeriodic guard branches | interval=0 and repeated start call | no periodic files for interval=0 and stable run for repeated start |
 | `default_constructor_can_persist_and_restore_reason_history` | Default-config constructor and reason/history serialization | value + reason + history | roundtrip keeps reason and history entries |
 | `persist_now_writes_mtree2_and_restore_keeps_compression_stats` | Compressed persistence format and roundtrip invariants | mixed interval/timeValue source tree persisted and restored | snapshot magic is `MTREE2` and compression counters match before/after restore |
-| `restore_latest_reads_legacy_mtree1_snapshot` | Backward-compatible restore for old snapshot format | handcrafted valid `MTREE1` file | restore succeeds and node/history content is preserved |
-| `restore_latest_reads_legacy_mtree1_numeric_values` | Legacy parser supports numeric (`N`) node/history payload values | handcrafted valid `MTREE1` file with numeric current and history values | restore succeeds and numeric values are preserved as doubles |
+| `compact_reason_entry_parses_plain_iso_timestamp` | Plain UTC timestamp parsing and reconstruction | reason + `2026-01-01T00:00:00Z` | timestamp is parsed, fractional digits are `0`, and reconstruction matches input |
+| `compact_reason_entry_keeps_fractional_precision_1_to_3_digits` | Fractional precision retention for millisecond-scale inputs | reason + timestamps with `.1`, `.12`, `.123` | fractional digit count is retained and reconstructed text preserves precision |
+| `compact_reason_entry_counts_fraction_digits_with_plus_offset` | Fractional digit detection with positive timezone offset | reason + `... .12+01:00` | timestamp parses, fractional digits are `2`, output keeps `.12` precision in UTC text |
+| `compact_reason_entry_counts_fraction_digits_with_minus_offset` | Fractional digit detection with negative timezone offset | reason + `... .12-01:00` | timestamp parses, fractional digits are `2`, output keeps `.12` precision in UTC text |
+| `compact_reason_entry_inserts_fraction_when_metadata_requests_it` | Metadata-driven fraction insertion branch | reason + `.0001Z` timestamp that rounds to zero milliseconds | output still contains `.000Z` due to stored fractional metadata |
+| `compact_reason_entry_returns_empty_timestamp_when_parse_fails` | Invalid timestamp fallback behavior | reason + invalid timestamp string | compact entry stores `timestampMs=0`, `fractionalDigits=0`, and outputs empty timestamp |
 | `get_subscriptions_returns_configured_map` | MessageStore forwards configured subscriptions | config map with multiple entries | returned map equals config map |
 | `handle_message_adds_regular_topic_to_tree` | Non-cleanup message must be stored | regular topic/value message | querySection contains node |
 | `store_message_direct_treats_cleanup_topic_as_regular_data` | Direct storage path must bypass cleanup special handling | cleanup topic message with string payload | querySection returns cleanup topic node as regular data |
