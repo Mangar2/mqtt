@@ -39,28 +39,47 @@ def _find_free_port() -> int:
 
 
 def _run_or_raise(command: list[str], label: str) -> None:
-    completed = subprocess.run(
+    print(f"[build] $ {' '.join(command)}")
+    process = subprocess.Popen(
         command,
         cwd=_PROJECT_ROOT,
-        check=False,
-        capture_output=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         text=True,
+        bufsize=1,
     )
-    if completed.returncode == 0:
+
+    output_lines: list[str] = []
+    if process.stdout is not None:
+        for output_line in process.stdout:
+            stripped = output_line.rstrip("\n")
+            output_lines.append(stripped)
+            print(f"[build] {stripped}")
+
+    return_code = process.wait()
+    if return_code == 0:
         return
-    output = "\n".join(
-        part.strip() for part in [completed.stdout, completed.stderr] if part and part.strip()
-    ).strip()
+
+    tail = "\n".join(output_lines[-30:]).strip()
     raise RuntimeError(
-        f"{label} failed with exit code {completed.returncode}"
-        + (f": {output}" if output else "")
+        f"{label} failed with exit code {return_code}"
+        + (f"\n{tail}" if tail else "")
     )
 
 
 def _ensure_msgstore_binary() -> None:
     _run_or_raise(["cmake", "--preset", "release"], "cmake configure (release)")
+    # Ensure the test always executes a freshly built binary from current sources.
     _run_or_raise(
-        ["cmake", "--build", "--preset", "release", "--target", "yahamsgstoreclient"],
+        [
+            "cmake",
+            "--build",
+            "--preset",
+            "release",
+            "--target",
+            "yahamsgstoreclient",
+        ],
         "cmake build (yahamsgstoreclient)",
     )
     if not _MSGSTORE_BINARY.exists():
@@ -95,28 +114,52 @@ def _wait_for_phase(
     Returns the matching line, or None on timeout or process exit.
     """
     expected_token = f"test.handshake phase={expected_phase}"
-    deadline = time.monotonic() + timeout_seconds
+    return _wait_for_stdout_tokens(process, [expected_token], timeout_seconds)
+
+
+def _wait_for_stdout_tokens(
+    process: subprocess.Popen[str],
+    required_tokens: list[str],
+    timeout_seconds: float,
+) -> str | None:
+    """Read process stdout until one line contains all required tokens."""
     if process.stdout is None:
         return None
+
+    deadline = time.monotonic() + timeout_seconds
+    stdout_fd = process.stdout.fileno()
+    pending_text = ""
+
     while time.monotonic() < deadline:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
-        if process.poll() is not None:
-            # Drain last line in case exit happened while writing.
-            line = process.stdout.readline()
-            if line and expected_token in line.rstrip("\n"):
-                return line.rstrip("\n")
-            return None
-        readable, _, _ = select.select([process.stdout], [], [], min(remaining, 0.5))
+
+        readable, _, _ = select.select([stdout_fd], [], [], min(remaining, 0.5))
         if not readable:
+            if process.poll() is not None:
+                break
             continue
-        line = process.stdout.readline()
-        if not line:
-            return None
-        line = line.rstrip("\n")
-        if expected_token in line:
-            return line
+
+        chunk = os.read(stdout_fd, 4096)
+        if not chunk:
+            if process.poll() is not None:
+                break
+            continue
+
+        pending_text += chunk.decode("utf-8", errors="replace")
+        line_parts = pending_text.split("\n")
+        pending_text = line_parts.pop() if line_parts else ""
+
+        for line in line_parts:
+            if line.strip():
+                print(f"[msgstore] {line}")
+            if all(token in line for token in required_tokens):
+                return line
+
+    if pending_text and all(token in pending_text for token in required_tokens):
+        return pending_text
+
     return None
 
 
@@ -146,9 +189,12 @@ def run_backup_roundtrip_memory(config) -> tuple[bool, str]:
     working_dir = Path(tempfile.mkdtemp(prefix="mqtt-yaha-msgstore-roundtrip-",
                                         dir=str(_WORKSPACE_TMP_ROOT)))
     process: subprocess.Popen[str] | None = None
+    started_at = time.monotonic()
 
     try:
+        print("[phase] build_start release yahamsgstoreclient")
         _ensure_msgstore_binary()
+        print(f"[phase] build_done elapsed={time.monotonic() - started_at:.2f}s")
 
         if not _TEST_DATA_FILE.exists():
             return False, f"test data file not found: {_TEST_DATA_FILE}"
@@ -167,6 +213,7 @@ def run_backup_roundtrip_memory(config) -> tuple[bool, str]:
         # Generous timeout: the 11 MB compressed tree takes a few seconds to load.
         op_timeout = max(60.0, config.timeout_seconds)
 
+        print(f"[phase] runtime_start elapsed={time.monotonic() - started_at:.2f}s")
         process = subprocess.Popen(
             [
                 str(_MSGSTORE_BINARY),
@@ -177,20 +224,15 @@ def run_backup_roundtrip_memory(config) -> tuple[bool, str]:
             cwd=working_dir,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
         )
 
         # By the time ready_for_start is emitted, store.run() (restore) has completed.
         start_line = _wait_for_phase(process, "ready_for_start", op_timeout)
         if start_line is None:
-            stderr_tail = ""
-            if process.stderr:
-                try:
-                    process.stderr.read()
-                except Exception:
-                    pass
             return False, f"process did not reach ready_for_start within {op_timeout:.0f}s"
+        print(f"[phase] ready_for_start elapsed={time.monotonic() - started_at:.2f}s")
 
         rss_after_restore_kib = _sample_rss_kib(process.pid)
 
@@ -203,6 +245,7 @@ def run_backup_roundtrip_memory(config) -> tuple[bool, str]:
         end_line = _wait_for_phase(process, "ready_for_end", op_timeout)
         if end_line is None:
             return False, f"process did not reach ready_for_end within {op_timeout:.0f}s"
+        print(f"[phase] ready_for_end elapsed={time.monotonic() - started_at:.2f}s")
 
         rss_after_load_kib = _sample_rss_kib(process.pid)
 
@@ -211,27 +254,9 @@ def run_backup_roundtrip_memory(config) -> tuple[bool, str]:
         process.stdin.flush()
 
         saved_relative: Path | None = None
-        deadline = time.monotonic() + op_timeout
-        if process.stdout is not None:
-            while time.monotonic() < deadline:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    break
-                if process.poll() is not None:
-                    line = process.stdout.readline()
-                    if line and "phase=saved" in line and "success=1" in line:
-                        saved_relative = _extract_save_file_path(line.rstrip("\n"))
-                    break
-                readable, _, _ = select.select([process.stdout], [], [], min(remaining, 0.5))
-                if not readable:
-                    continue
-                line = process.stdout.readline()
-                if not line:
-                    break
-                line = line.rstrip("\n")
-                if "phase=saved" in line and "success=1" in line:
-                    saved_relative = _extract_save_file_path(line)
-                    break
+        saved_line = _wait_for_stdout_tokens(process, ["phase=saved", "success=1"], op_timeout)
+        if saved_line is not None:
+            saved_relative = _extract_save_file_path(saved_line)
 
         if saved_relative is None:
             return False, "save command did not produce a valid file path in stdout"
@@ -244,10 +269,18 @@ def run_backup_roundtrip_memory(config) -> tuple[bool, str]:
         process.stdin.write("exit\n")
         process.stdin.flush()
         try:
-            process.communicate(timeout=15)
+            remaining_stdout, _ = process.communicate(timeout=15)
+            if remaining_stdout:
+                for line in remaining_stdout.splitlines():
+                    if line.strip():
+                        print(f"[msgstore] {line}")
         except subprocess.TimeoutExpired:
             process.kill()
-            process.communicate()
+            remaining_stdout, _ = process.communicate()
+            if remaining_stdout:
+                for line in remaining_stdout.splitlines():
+                    if line.strip():
+                        print(f"[msgstore] {line}")
 
         if process.returncode != 0:
             return False, f"process exited with non-zero code {process.returncode}"

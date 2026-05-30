@@ -88,8 +88,8 @@ yaha::MessageTree makeTree(
 
 bool containsTopic(const std::vector<yaha::MessageTreeNode>& nodes,
                    const std::string& topic) {
-    return std::any_of(nodes.begin(), nodes.end(),
-                       [&topic](const yaha::MessageTreeNode& node) {
+    return std::ranges::any_of(nodes,
+                               [&topic](const yaha::MessageTreeNode& node) {
         return node.topic == topic;
     });
 }
@@ -120,10 +120,10 @@ void requireTotalEntryCount(const yaha::MessageTree& tree,
     const auto representedHistoryCount = [](const yaha::MessageTreeHistoryEntry& entry) {
         static const std::string k_interval_prefix{"regular update, amount: "};
 
-        if (!entry.reason.empty() && entry.reason.front().message.rfind(k_interval_prefix, 0U) == 0U) {
-            const std::string amountText = entry.reason.front().message.substr(k_interval_prefix.size());
+        if (!entry.reason().empty() && entry.reason().front().message.starts_with(k_interval_prefix)) {
+            const std::string amountText = entry.reason().front().message.substr(k_interval_prefix.size());
             if (!amountText.empty() &&
-                std::all_of(amountText.begin(), amountText.end(), [](unsigned char character) {
+                std::ranges::all_of(amountText, [](unsigned char character) {
                     return std::isdigit(character) != 0;
                 })) {
                 return static_cast<std::size_t>(std::strtoul(amountText.c_str(), nullptr, k_decimal_base));
@@ -136,7 +136,7 @@ void requireTotalEntryCount(const yaha::MessageTree& tree,
     const auto nodes = tree.getSection(topic, 0U, true, true);
     REQUIRE(nodes.size() == 1U);
     std::size_t logicalMessageCount = 1U;
-    for (const auto& entry : nodes.front().history) {
+    for (const auto& entry : nodes.front().history()) {
         logicalMessageCount += representedHistoryCount(entry);
     }
     REQUIRE(logicalMessageCount == insertedMessages);
@@ -167,8 +167,8 @@ TEST_CASE("add_data_updates_move_previous_value_into_history", "[message_store]"
     const auto nodes = tree.getSection("home/living/temp", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
     REQUIRE(std::get<double>(nodes.front().value) == k_temperature_after);
-    REQUIRE(nodes.front().history.size() == 1U);
-    REQUIRE(std::get<double>(nodes.front().history.front().value) == k_temperature_before);
+    REQUIRE(nodes.front().history().size() == 1U);
+    REQUIRE(std::get<double>(nodes.front().history().front().value) == k_temperature_before);
 }
 
 TEST_CASE("add_data_prefers_first_reason_timestamp_when_valid_iso", "[message_store]") {
@@ -277,9 +277,9 @@ TEST_CASE("history_is_trimmed_with_hysteresis", "[message_store]") {
 
     const auto nodes = tree.getSection("sensor/value", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().history.size() == 2U);
-    REQUIRE(std::get<double>(nodes.front().history[0].value) == k_value_five);
-    REQUIRE(std::get<double>(nodes.front().history[1].value) == k_value_four);
+    REQUIRE(nodes.front().history().size() == 2U);
+    REQUIRE(std::get<double>(nodes.front().history()[0].value) == k_value_five);
+    REQUIRE(std::get<double>(nodes.front().history()[1].value) == k_value_four);
 }
 
 TEST_CASE("history_compresses_repeated_equal_values", "[message_store]") {
@@ -299,10 +299,10 @@ TEST_CASE("history_compresses_repeated_equal_values", "[message_store]") {
 
     const auto nodes = tree.getSection("sensor/equal", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().history.size() == 3U);
-    REQUIRE(std::get<std::string>(nodes.front().history[0].value) == "steady");
-    REQUIRE(std::get<std::string>(nodes.front().history[1].value) == "steady");
-    REQUIRE(nodes.front().history[2].reason.empty());
+    REQUIRE(nodes.front().history().size() == 3U);
+    REQUIRE(std::get<std::string>(nodes.front().history()[0].value) == "steady");
+    REQUIRE(std::get<std::string>(nodes.front().history()[1].value) == "steady");
+    REQUIRE(nodes.front().history()[2].reason().empty());
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -319,13 +319,13 @@ TEST_CASE("history_single_compression_keeps_reasoned_entries_separate", "[messag
 
     const auto nodes = tree.getSection("sensor/compression_single", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().history.size() == 2U);
-    REQUIRE(std::get<double>(nodes.front().history[0].value) == k_value_two);
-    REQUIRE(std::get<double>(nodes.front().history[1].value) == 1.0);
-    REQUIRE(nodes.front().history[0].reason.size() == 1U);
-    REQUIRE(nodes.front().history[1].reason.size() == 1U);
-    REQUIRE(nodes.front().history[0].reason[0].message == "r2");
-    REQUIRE(nodes.front().history[1].reason[0].message == "r1");
+    REQUIRE(nodes.front().history().size() == 2U);
+    REQUIRE(std::get<double>(nodes.front().history()[0].value) == k_value_two);
+    REQUIRE(std::get<double>(nodes.front().history()[1].value) == 1.0);
+    REQUIRE(nodes.front().history()[0].reason().size() == 1U);
+    REQUIRE(nodes.front().history()[1].reason().size() == 1U);
+    REQUIRE(nodes.front().history()[0].reason()[0].message == "r2");
+    REQUIRE(nodes.front().history()[1].reason()[0].message == "r1");
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -346,10 +346,10 @@ TEST_CASE("history_time_value_compression_merges_value_sequence", "[message_stor
 
     const auto nodes = tree.getSection("sensor/compression_time_value", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().history.size() == 2U);
-    REQUIRE(nodes.front().history[0].reason.empty());
-    REQUIRE(nodes.front().history[1].reason.size() == 1U);
-    REQUIRE(nodes.front().history[1].reason[0].message == "source");
+    REQUIRE(nodes.front().history().size() == 2U);
+    REQUIRE(nodes.front().history()[0].reason().empty());
+    REQUIRE(nodes.front().history()[1].reason().size() == 1U);
+    REQUIRE(nodes.front().history()[1].reason()[0].message == "source");
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -376,11 +376,11 @@ TEST_CASE("history_time_compression_merges_identical_values_without_interval", "
 
     const auto nodes = tree.getSection("sensor/compression_time", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().history.size() == 3U);
-    REQUIRE(nodes.front().history[0].reason.empty());
-    REQUIRE(nodes.front().history[1].reason.empty());
-    REQUIRE(nodes.front().history[2].reason.size() == 1U);
-    REQUIRE(nodes.front().history[2].reason[0].message == "source");
+    REQUIRE(nodes.front().history().size() == 3U);
+    REQUIRE(nodes.front().history()[0].reason().empty());
+    REQUIRE(nodes.front().history()[1].reason().empty());
+    REQUIRE(nodes.front().history()[2].reason().size() == 1U);
+    REQUIRE(nodes.front().history()[2].reason()[0].message == "source");
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -405,10 +405,10 @@ TEST_CASE("history_interval_compression_merges_regular_updates", "[message_store
 
     const auto nodes = tree.getSection("sensor/compression_interval", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().history.size() == 1U);
-    REQUIRE(nodes.front().history[0].reason.size() == 2U);
-    REQUIRE(nodes.front().history[0].reason[0].message == "regular update, amount: 4");
-    REQUIRE(nodes.front().history[0].reason[1].message == "source");
+    REQUIRE(nodes.front().history().size() == 1U);
+    REQUIRE(nodes.front().history()[0].reason().size() == 2U);
+    REQUIRE(nodes.front().history()[0].reason()[0].message == "regular update, amount: 4");
+    REQUIRE(nodes.front().history()[0].reason()[1].message == "source");
 }
 
 TEST_CASE("history_single_entry_preserves_reason", "[message_store]") {
@@ -421,10 +421,10 @@ TEST_CASE("history_single_entry_preserves_reason", "[message_store]") {
 
     const auto nodes = tree.getSection("sensor/single", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().history.size() == 1U);
-    REQUIRE(std::get<double>(nodes.front().history[0].value) == 1.0);
-    REQUIRE(nodes.front().history[0].reason.size() == 1U);
-    REQUIRE(nodes.front().history[0].reason[0].message == "initial");
+    REQUIRE(nodes.front().history().size() == 1U);
+    REQUIRE(std::get<double>(nodes.front().history()[0].value) == 1.0);
+    REQUIRE(nodes.front().history()[0].reason().size() == 1U);
+    REQUIRE(nodes.front().history()[0].reason()[0].message == "initial");
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -440,12 +440,12 @@ TEST_CASE("history_time_value_entry_keeps_oldest_reason_only", "[message_store]"
 
     const auto nodes = tree.getSection("sensor/time_value", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().history.size() == 2U);
-    REQUIRE(std::get<double>(nodes.front().history[0].value) == k_value_two);
-    REQUIRE(std::get<double>(nodes.front().history[1].value) == 1.0);
-    REQUIRE(nodes.front().history[0].reason.empty());
-    REQUIRE(nodes.front().history[1].reason.size() == 1U);
-    REQUIRE(nodes.front().history[1].reason[0].message == "source");
+    REQUIRE(nodes.front().history().size() == 2U);
+    REQUIRE(std::get<double>(nodes.front().history()[0].value) == k_value_two);
+    REQUIRE(std::get<double>(nodes.front().history()[1].value) == 1.0);
+    REQUIRE(nodes.front().history()[0].reason().empty());
+    REQUIRE(nodes.front().history()[1].reason().size() == 1U);
+    REQUIRE(nodes.front().history()[1].reason()[0].message == "source");
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -468,14 +468,14 @@ TEST_CASE("history_time_entry_for_identical_values_same_reason", "[message_store
 
     const auto nodes = tree.getSection("sensor/time", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().history.size() == 3U);
-    REQUIRE(std::get<std::string>(nodes.front().history[0].value) == "steady");
-    REQUIRE(std::get<std::string>(nodes.front().history[1].value) == "steady");
-    REQUIRE(std::get<std::string>(nodes.front().history[2].value) == "steady");
-    REQUIRE(nodes.front().history[0].reason.empty());
-    REQUIRE(nodes.front().history[1].reason.empty());
-    REQUIRE(nodes.front().history[2].reason.size() == 1U);
-    REQUIRE(nodes.front().history[2].reason[0].message == "origin");
+    REQUIRE(nodes.front().history().size() == 3U);
+    REQUIRE(std::get<std::string>(nodes.front().history()[0].value) == "steady");
+    REQUIRE(std::get<std::string>(nodes.front().history()[1].value) == "steady");
+    REQUIRE(std::get<std::string>(nodes.front().history()[2].value) == "steady");
+    REQUIRE(nodes.front().history()[0].reason().empty());
+    REQUIRE(nodes.front().history()[1].reason().empty());
+    REQUIRE(nodes.front().history()[2].reason().size() == 1U);
+    REQUIRE(nodes.front().history()[2].reason()[0].message == "origin");
 }
 
 TEST_CASE("history_interval_entry_for_regular_updates", "[message_store]") {
@@ -499,11 +499,11 @@ TEST_CASE("history_interval_entry_for_regular_updates", "[message_store]") {
 
     const auto nodes = tree.getSection("sensor/interval", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().history.size() == 1U);
-    REQUIRE(nodes.front().history[0].timeMs == k_time_three_seconds_ms);
-    REQUIRE(nodes.front().history[0].reason.size() == 2U);
-    REQUIRE(nodes.front().history[0].reason[0].message == "regular update, amount: 4");
-    REQUIRE(nodes.front().history[0].reason[1].message == "source");
+    REQUIRE(nodes.front().history().size() == 1U);
+    REQUIRE(nodes.front().history()[0].timeMs == k_time_three_seconds_ms);
+    REQUIRE(nodes.front().history()[0].reason().size() == 2U);
+    REQUIRE(nodes.front().history()[0].reason()[0].message == "regular update, amount: 4");
+    REQUIRE(nodes.front().history()[0].reason()[1].message == "source");
 }
 
 TEST_CASE("history_interval_entry_rejects_irregular_updates", "[message_store]") {
@@ -533,10 +533,10 @@ TEST_CASE("history_interval_entry_rejects_irregular_updates", "[message_store]")
 
     const auto nodes = tree.getSection("sensor/interval_break", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().history.size() >= 2U);
-    REQUIRE(nodes.front().history[0].timeMs == k_time_nine_seconds_ms);
-    REQUIRE(nodes.front().history[1].reason.empty() == false);
-    REQUIRE(nodes.front().history[1].reason[0].message.find("regular update, amount:") == 0U);
+    REQUIRE(nodes.front().history().size() >= 2U);
+    REQUIRE(nodes.front().history()[0].timeMs == k_time_nine_seconds_ms);
+    REQUIRE(nodes.front().history()[1].reason().empty() == false);
+    REQUIRE(nodes.front().history()[1].reason()[0].message.find("regular update, amount:") == 0U);
 }
 
 TEST_CASE("history_single_entries_do_not_duplicate_timestamps", "[message_store]") {
@@ -557,7 +557,7 @@ TEST_CASE("history_single_entries_do_not_duplicate_timestamps", "[message_store]
 
     const auto nodes = tree.getSection("sensor/no_dup_single", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(historyHasUniqueTimestamps(nodes.front().history));
+    REQUIRE(historyHasUniqueTimestamps(nodes.front().history()));
 }
 
 TEST_CASE("history_time_value_entries_do_not_duplicate_timestamps", "[message_store]") {
@@ -580,7 +580,7 @@ TEST_CASE("history_time_value_entries_do_not_duplicate_timestamps", "[message_st
 
     const auto nodes = tree.getSection("sensor/no_dup_time_value", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(historyHasUniqueTimestamps(nodes.front().history));
+    REQUIRE(historyHasUniqueTimestamps(nodes.front().history()));
 }
 
 TEST_CASE("history_time_value_reason_timestamp_override_adds_one_history_entry_per_message", "[message_store]") {
@@ -601,7 +601,7 @@ TEST_CASE("history_time_value_reason_timestamp_override_adds_one_history_entry_p
 
         const auto nodes = tree.getSection("sensor/no_dup_reason_override", 0U, true, true);
         REQUIRE(nodes.size() == 1U);
-        REQUIRE(nodes.front().history.size() == (addedMessages - 1U));
+        REQUIRE(nodes.front().history().size() == (addedMessages - 1U));
     };
 
     addOneAndAssert(1.0, k_time_zero_ms);
@@ -631,7 +631,7 @@ TEST_CASE("history_time_entries_do_not_duplicate_timestamps", "[message_store]")
 
     const auto nodes = tree.getSection("sensor/no_dup_time", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(historyHasUniqueTimestamps(nodes.front().history));
+    REQUIRE(historyHasUniqueTimestamps(nodes.front().history()));
 }
 
 TEST_CASE("history_interval_entries_do_not_duplicate_timestamps", "[message_store]") {
@@ -659,7 +659,7 @@ TEST_CASE("history_interval_entries_do_not_duplicate_timestamps", "[message_stor
 
     const auto nodes = tree.getSection("sensor/no_dup_interval", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(historyHasUniqueTimestamps(nodes.front().history));
+    REQUIRE(historyHasUniqueTimestamps(nodes.front().history()));
 }
 
 TEST_CASE("history_time_to_interval_transition_does_not_duplicate_timestamps", "[message_store]") {
@@ -683,7 +683,7 @@ TEST_CASE("history_time_to_interval_transition_does_not_duplicate_timestamps", "
 
     const auto nodes = tree.getSection("sensor/no_dup_transition", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(historyHasUniqueTimestamps(nodes.front().history));
+    REQUIRE(historyHasUniqueTimestamps(nodes.front().history()));
 }
 
 TEST_CASE("history_short_regular_tail_keeps_latest_visible_update", "[message_store]") {
@@ -707,8 +707,8 @@ TEST_CASE("history_short_regular_tail_keeps_latest_visible_update", "[message_st
     REQUIRE(nodes.size() == 1U);
 
     const bool containsLatestPrevious = std::any_of(
-        nodes.front().history.begin(),
-        nodes.front().history.end(),
+        nodes.front().history().begin(),
+        nodes.front().history().end(),
         [](const yaha::MessageTreeHistoryEntry& entry) {
             return entry.timeMs == k_time_five_seconds_ms;
         });
@@ -737,8 +737,8 @@ TEST_CASE("history_interval_entry_reports_latest_previous_timestamp", "[message_
 
     const auto nodes = tree.getSection("sensor/interval_visible_update", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().history.size() == 1U);
-    REQUIRE(nodes.front().history[0].timeMs == k_time_three_seconds_ms);
+    REQUIRE(nodes.front().history().size() == 1U);
+    REQUIRE(nodes.front().history()[0].timeMs == k_time_three_seconds_ms);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -774,7 +774,7 @@ TEST_CASE("history_no_duplicate_timestamp_pattern_search", "[message_store]") {
         const auto nodes = tree.getSection("sensor/no_dup_search", 0U, true, true);
         REQUIRE(nodes.size() == 1U);
         CAPTURE(deltasMs);
-        REQUIRE(historyHasUniqueTimestamps(nodes.front().history));
+        REQUIRE(historyHasUniqueTimestamps(nodes.front().history()));
     }
 }
 
@@ -791,8 +791,8 @@ TEST_CASE("history_is_returned_newest_first", "[message_store]") {
 
     const auto nodes = tree.getSection("sensor/order", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().history.size() == 2U);
-    REQUIRE(nodes.front().history[0].timeMs > nodes.front().history[1].timeMs);
+    REQUIRE(nodes.front().history().size() == 2U);
+    REQUIRE(nodes.front().history()[0].timeMs > nodes.front().history()[1].timeMs);
 }
 
 TEST_CASE("history_grouping_compares_reason_messages_only", "[message_store]") {
@@ -807,9 +807,9 @@ TEST_CASE("history_grouping_compares_reason_messages_only", "[message_store]") {
 
     const auto nodes = tree.getSection("sensor/reason_group", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().history.size() == 2U);
-    REQUIRE(nodes.front().history[1].reason.size() == 1U);
-    REQUIRE(nodes.front().history[1].reason[0].timestamp == "2026-01-01T00:00:00Z");
+    REQUIRE(nodes.front().history().size() == 2U);
+    REQUIRE(nodes.front().history()[1].reason().size() == 1U);
+    REQUIRE(nodes.front().history()[1].reason()[0].timestamp == "2026-01-01T00:00:00Z");
 }
 
 TEST_CASE("history_single_compression_keeps_total_entry_count", "[message_store]") {
@@ -968,12 +968,12 @@ TEST_CASE("history_multi_reason_same_device_timestamp_adds_exactly_one_logical_e
 
     const auto nodes = tree.getSection(topic, 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().history.size() >= 2U);
+    REQUIRE(nodes.front().history().size() >= 2U);
 
-    const std::int64_t repeatedTimestamp = nodes.front().history.front().timeMs;
+    const std::int64_t repeatedTimestamp = nodes.front().history().front().timeMs;
     const bool allHistoryTimestampsEqual = std::all_of(
-        nodes.front().history.begin(),
-        nodes.front().history.end(),
+        nodes.front().history().begin(),
+        nodes.front().history().end(),
         [repeatedTimestamp](const yaha::MessageTreeHistoryEntry& entry) {
             return entry.timeMs == repeatedTimestamp;
         });
@@ -1010,7 +1010,7 @@ TEST_CASE("history_stale_first_reason_timestamp_does_not_collapse_new_updates", 
 
         std::unordered_set<std::int64_t> projectedTimes{};
         projectedTimes.insert(nodes.front().timeMs);
-        for (const auto& historyEntry : nodes.front().history) {
+        for (const auto& historyEntry : nodes.front().history()) {
             projectedTimes.insert(historyEntry.timeMs);
         }
 
@@ -1047,7 +1047,7 @@ TEST_CASE("history_distinct_first_reason_timestamps_keep_distinct_projected_time
 
         std::unordered_set<std::int64_t> projectedTimes{};
         projectedTimes.insert(nodes.front().timeMs);
-        for (const auto& historyEntry : nodes.front().history) {
+        for (const auto& historyEntry : nodes.front().history()) {
             projectedTimes.insert(historyEntry.timeMs);
         }
 
@@ -1089,8 +1089,8 @@ TEST_CASE("get_section_can_exclude_reason_and_history", "[message_store]") {
 
     const auto nodes = tree.getSection("home/r1", 0U, false, false);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().reason.empty());
-    REQUIRE(nodes.front().history.empty());
+    REQUIRE(nodes.front().reason().empty());
+    REQUIRE(nodes.front().history().empty());
 }
 
 TEST_CASE("get_section_excludes_node_reason_but_keeps_history_reasons", "[message_store]") {
@@ -1108,10 +1108,10 @@ TEST_CASE("get_section_excludes_node_reason_but_keeps_history_reasons", "[messag
 
     const auto nodes = tree.getSection("home/r2", 0U, true, false);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().reason.empty());
-    REQUIRE(nodes.front().history.size() == 1U);
-    REQUIRE(nodes.front().history[0].reason.size() == 1U);
-    REQUIRE(nodes.front().history[0].reason[0].message == "origin");
+    REQUIRE(nodes.front().reason().empty());
+    REQUIRE(nodes.front().history().size() == 1U);
+    REQUIRE(nodes.front().history()[0].reason().size() == 1U);
+    REQUIRE(nodes.front().history()[0].reason()[0].message == "origin");
 }
 
 TEST_CASE("get_nodes_returns_only_changed_nodes_for_required_snapshot_topics", "[message_store]") {

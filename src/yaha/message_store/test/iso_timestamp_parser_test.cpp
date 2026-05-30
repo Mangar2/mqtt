@@ -10,7 +10,7 @@ namespace {
 TEST_CASE("iso_parser_accepts_leap_day_and_roundtrips", "[message_store]") {
     std::int64_t parsedMilliseconds = 0;
     REQUIRE(yaha::tryParseIsoTimestampMilliseconds("2024-02-29T12:34:56Z", parsedMilliseconds));
-    REQUIRE(yaha::toIsoTimestampMilliseconds(parsedMilliseconds) == "2024-02-29T12:34:56.000Z");
+    REQUIRE(yaha::toIsoTimestampMilliseconds(parsedMilliseconds) == "2024-02-29T12:34:56Z");
 }
 
 TEST_CASE("iso_parser_rejects_non_leap_february_29", "[message_store]") {

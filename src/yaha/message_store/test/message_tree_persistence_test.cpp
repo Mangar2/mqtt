@@ -101,10 +101,10 @@ TEST_CASE("persist_now_writes_snapshot_and_restore_latest_rebuilds_tree", "[mess
     REQUIRE(light != nullptr);
     REQUIRE(temp != nullptr);
     REQUIRE(std::get<std::string>(light->value) == "off");
-    REQUIRE(light->reason.size() == 1U);
-    REQUIRE(light->history.size() == 1U);
-    REQUIRE(std::get<std::string>(light->history.front().value) == "on");
-    REQUIRE(light->history.front().reason.size() == 1U);
+    REQUIRE(light->reason().size() == 1U);
+    REQUIRE(light->history().size() == 1U);
+    REQUIRE(std::get<std::string>(light->history().front().value) == "on");
+    REQUIRE(light->history().front().reason().size() == 1U);
     REQUIRE(std::get<double>(temp->value) == k_temperature_value);
 
     removeDirectoryQuiet(tempDir);
@@ -374,9 +374,9 @@ TEST_CASE("default_constructor_can_persist_and_restore_reason_history", "[messag
 
     const auto nodes = restored.getSection("home/default", 0U, true, true);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes.front().reason.size() == 1U);
-    REQUIRE(nodes.front().history.size() == 1U);
-    REQUIRE(nodes.front().history.front().reason.size() == 1U);
+    REQUIRE(nodes.front().reason().size() == 1U);
+    REQUIRE(nodes.front().history().size() == 1U);
+    REQUIRE(nodes.front().history().front().reason().size() == 1U);
 
     std::filesystem::current_path(oldCwd);
     removeDirectoryQuiet(tempDir / "data");
@@ -436,6 +436,9 @@ TEST_CASE("persist_now_writes_mtree2_and_restore_keeps_compression_stats", "[mes
     REQUIRE(restored.compressionStats().timeValueBucketCount == expectedStats.timeValueBucketCount);
     REQUIRE(restored.compressionStats().timeBucketCount == expectedStats.timeBucketCount);
     REQUIRE(restored.compressionStats().intervalBucketCount == expectedStats.intervalBucketCount);
+    REQUIRE(restored.compressionStats().totalReasonEntryCount == expectedStats.totalReasonEntryCount);
+    REQUIRE(restored.compressionStats().totalDirectoryStringCount == expectedStats.totalDirectoryStringCount);
+    REQUIRE(restored.compressionStats().reasonEntriesPerDirectoryString == expectedStats.reasonEntriesPerDirectoryString);
     REQUIRE(restored.compressionStats().representedSingleCount == expectedStats.representedSingleCount);
     REQUIRE(restored.compressionStats().representedTimeValueCount == expectedStats.representedTimeValueCount);
     REQUIRE(restored.compressionStats().representedTimeCount == expectedStats.representedTimeCount);
@@ -480,8 +483,8 @@ TEST_CASE("restore_latest_reads_legacy_mtree1_snapshot", "[message_store]") {
     REQUIRE(nodes.size() == 1U);
     REQUIRE(nodes.front().topic == "legacy/topic");
     REQUIRE(std::get<std::string>(nodes.front().value) == "new");
-    REQUIRE(nodes.front().history.size() == 1U);
-    REQUIRE(std::get<std::string>(nodes.front().history.front().value) == "old");
+    REQUIRE(nodes.front().history().size() == 1U);
+    REQUIRE(std::get<std::string>(nodes.front().history().front().value) == "old");
 
     removeDirectoryQuiet(tempDir);
 }
@@ -522,8 +525,8 @@ TEST_CASE("restore_latest_reads_legacy_mtree1_numeric_values", "[message_store]"
     REQUIRE(nodes.size() == 1U);
     REQUIRE(nodes.front().topic == "legacy/number");
     REQUIRE(std::get<double>(nodes.front().value) == k_legacy_numeric_current_value);
-    REQUIRE(nodes.front().history.size() == 1U);
-    REQUIRE(std::get<double>(nodes.front().history.front().value) == k_legacy_numeric_history_value);
+    REQUIRE(nodes.front().history().size() == 1U);
+    REQUIRE(std::get<double>(nodes.front().history().front().value) == k_legacy_numeric_history_value);
 
     removeDirectoryQuiet(tempDir);
 }

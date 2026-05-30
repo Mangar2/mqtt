@@ -107,9 +107,17 @@ Unit tests for MessageTree behavior required by step 4.
 | `http_get_store_json_output_escapes_ascii_control_characters` | JSON output must escape raw ASCII control bytes in node values and reasons | store a payload and reason containing bytes `0x03` / `0x02` | response uses `\u00XX` escapes and contains no raw control bytes |
 | `http_get_store_outputs_iso_time_and_reason_timestamps` | HTTP response should expose ISO UTC time fields, preserve reason timestamps, and keep history newest-first | two updates with explicit reason timestamps and history enabled | response uses `time` ISO strings (including history), contains reason timestamps, keeps history entries newest-first, and contains no `timeMs` field |
 | `handle_message_cleanup_topic_accepts_numeric_string_payload` | Cleanup path string-number conversion | cleanup message with payload "1" | stale nodes are removed |
-| `iso_parser_accepts_leap_day_and_roundtrips` | Leap-year parsing branch is valid | `2024-02-29T12:34:56Z` | parse succeeds and roundtrip emits canonical ISO with milliseconds |
+| `iso_parser_accepts_leap_day_and_roundtrips` | Leap-year parsing branch is valid | `2024-02-29T12:34:56Z` | parse succeeds and roundtrip emits canonical ISO UTC output |
 | `iso_parser_rejects_non_leap_february_29` | Day range validation for non-leap year | `2023-02-29T00:00:00Z` | parse returns false |
 | `iso_parser_rejects_invalid_month_and_day_combinations` | Month/day guards reject impossible dates | `2024-13-01T00:00:00Z` and `2024-04-31T00:00:00Z` | parse returns false |
 | `iso_parser_rejects_invalid_timezone_ranges` | Timezone bound validation | `+24:00` and `+01:60` offsets | parse returns false |
 | `iso_parser_rejects_trailing_characters` | Strict end-of-input validation | valid timestamp plus trailing text | parse returns false |
 | `iso_formatter_handles_negative_milliseconds` | Negative epoch formatting normalization | `-1` milliseconds | output equals `1969-12-31T23:59:59.999Z` |
+| `string_directory_add_returns_existing_index_for_duplicate` | Duplicate insert must not allocate a second slot | add `"alpha"` twice | both calls return same index, `size()==1`, `capacity()==1` |
+| `string_directory_reuses_free_slot_after_remove` | Add should reuse first free slot | add `"alpha"`, `"beta"`, remove first, then add `"gamma"` | `"gamma"` gets freed index, `size()==2`, `capacity()==2` |
+| `string_directory_get_returns_nullopt_for_empty_or_out_of_range_slots` | Empty and out-of-range slots are unreadable | add+remove one slot, then query removed and unknown index | both `get(...)` calls return `nullopt` |
+| `string_directory_remove_updates_size_and_keeps_capacity` | Delete clears slot and updates counters | add two, remove one twice | first remove true, second false, size decremented, capacity unchanged |
+| `string_directory_add_rejects_empty_string` | Empty string is reserved as free-slot marker | add empty string | throws `invalid_argument` |
+| `message_tree_node_reason_roundtrip_uses_plain_reason_list` | Node reason roundtrip should preserve DTO reason entries directly | set reason list with two entries and read back | returned reasons match input order/content |
+| `message_tree_node_history_add_remove_clear_and_roundtrip` | History mutators should preserve reason/value/time and erase semantics | add two history entries, remove valid+invalid index, then clear | sizes and returned reason/value fields match expected behavior |
+| `message_tree_node_set_history_entries_copies_foreign_entries` | Importing history entries from another node should copy entry payload unchanged | create foreign entry with reason, setHistoryEntries on target node | target history reason roundtrip matches original |

@@ -206,6 +206,9 @@ TEST_CASE("query_compression_stats_reports_single_bucket_after_one_update", "[me
     REQUIRE(stats.timeValueBucketCount == 0U);
     REQUIRE(stats.timeBucketCount == 0U);
     REQUIRE(stats.intervalBucketCount == 0U);
+    REQUIRE(stats.totalReasonEntryCount == 0U);
+    REQUIRE(stats.totalDirectoryStringCount == 0U);
+    REQUIRE(stats.reasonEntriesPerDirectoryString == 0.0);
     REQUIRE(stats.representedSingleCount == 1U);
     REQUIRE(stats.representedTimeValueCount == 0U);
     REQUIRE(stats.representedTimeCount == 0U);

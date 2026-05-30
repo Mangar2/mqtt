@@ -19,7 +19,7 @@ recent valid file on startup, and manages periodic saves.
 struct MessageTreeConfig;
 struct MessageTreeHistoryEntry;
 struct MessageTreeSnapshotNode;
-struct MessageTreeNode;
+class MessageTreeNode;
 ```
 
 ### Class `MessageTree`
@@ -44,6 +44,16 @@ struct MessageTreeNode;
 | `startPeriodic` | `void(const MessageTree&)` | starts background periodic persist loop |
 | `stopPeriodic` | `void()` | stops periodic loop |
 
+### Class `StringDirectory`
+
+| Member | Signature | Notes |
+|--------|-----------|-------|
+| `add` | `uint16_t(const string&)` | adds unique text or returns existing slot index |
+| `get` | `optional<string>(uint16_t) const` | returns non-empty slot value |
+| `remove` | `bool(uint16_t)` | clears slot by setting it to empty string |
+| `size` | `size_t() const` | counts non-empty slots |
+| `capacity` | `size_t() const` | counts all vector slots, including empty slots |
+
 ### Class `MessageStore`
 
 | Member | Signature | Notes |
@@ -66,6 +76,14 @@ struct MessageTreeNode;
 
 - Tree keys are topic path segments split by `/`.
 - No per-node child-segment lookup cache as we have usually < 10 children
+- `MessageTreeNode` and `MessageTreeHistoryEntry` are defined in dedicated files (`message_tree_node.h/.cpp`) as DTO-only types with plain `ReasonList` storage.
+- Internal `TreeNode` storage types are defined in dedicated file `tree_node.h`.
+- `TreeNode` uses per-node `StringDirectory` ownership for internal reason-message deduplication state.
+- `StringDirectory` is not exposed through `MessageTreeNode` API; query DTOs remain free of internal compression details.
+- `StringDirectory` uses one `std::vector<std::string>` and linear search for duplicate detection and free-slot lookup.
+- `StringDirectory::add` returns an existing slot index for duplicates; otherwise it reuses the first empty slot or appends at the end.
+- `StringDirectory::remove` marks one slot as free by writing an empty string (`""`).
+- `StringDirectory::size` counts only non-empty strings; `capacity` reports all slots including free ones.
 - Every update moves previous `{timeMs,value,reason}` into history.
 - Node timestamp source on `addData(message)`:
   - prefer `message.reason().front().timestamp` when it is a valid ISO-8601 timestamp with timezone,
@@ -147,11 +165,16 @@ struct MessageTreeNode;
   - other topics: call `tree.addData(message)`.
 - `storeMessageDirect()` always calls `tree.addData(message)` without cleanup-topic special handling.
 - `queryCompressionStats()` exposes counts of compressed history bucket types (`single`, `timeValue`, `time`, `interval`) and represented logical history message counts.
+- `queryCompressionStats()` additionally exposes reason-compression visibility metrics:
+  - `totalReasonEntryCount`: all stored reason entries across current node reasons and compressed-history reason lists.
+  - `totalDirectoryStringCount`: sum of unique reason-message strings per node (effective string-directory cardinality).
+  - `reasonEntriesPerDirectoryString`: compression ratio `totalReasonEntryCount / totalDirectoryStringCount` (or `0` when denominator is `0`).
 - `persistSnapshotNow()` writes one snapshot file immediately and returns the written path on success.
 - Non-numeric cleanup payload emits one structured error log line (`message_store[error] op=cleanup ...`).
 - `run()` restores latest persisted snapshot before serving.
 - `run()` writes replay loaded-state dump before startup stats logging and before enabling post-restore incoming replay append.
 - `run()` emits a compression-stats header after restore attempt (`message_store[stats] phase=start_after_restore`) followed by one aligned metric per line (`name : value`, name left-aligned, value right-aligned).
+- Stats output includes reason/directory metrics (`reasonEntries.total`, `directories.strings`, `ratio.reasonPerDirectoryString`).
 - `run()` starts an internal periodic compression-stats logger that emits every 60 seconds (`phase=periodic_60s`) using the same multiline aligned metric format.
 - `run()` emits structured restore error log when no valid snapshot is available.
 - `run()` catches restore exceptions and emits structured error logs instead of terminating.
@@ -221,7 +244,13 @@ struct MessageTreeNode;
 | `message_store.cpp` | MessageStore component implementation |
 | `message_store_json_parser.h` | JSON parser helper declarations for HTTP request payloads |
 | `message_store_json_parser.cpp` | JSON parser helper implementation for snapshot + sensor POST formats |
+| `tree_node.h` | Internal TreeNode + NodeData + compressed history type declarations |
+| `message_tree_node.h` | MessageTreeNode + MessageTreeHistoryEntry DTO declarations |
+| `message_tree_node.cpp` | MessageTreeNode + MessageTreeHistoryEntry DTO implementation |
+| `string_directory.h` | StringDirectory declarations |
+| `string_directory.cpp` | StringDirectory implementation |
 | `test/TEST_SPEC.md` | Unit test specification |
 | `test/message_tree_test.cpp` | Unit tests |
 | `test/message_tree_persistence_test.cpp` | Persistence unit tests |
 | `test/message_store_test.cpp` | MessageStore component tests |
+| `test/string_directory_test.cpp` | StringDirectory unit tests |

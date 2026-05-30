@@ -6,38 +6,17 @@
  */
 
 #include "yaha/message/message.h"
-#include "yaha/message_store/compact_reason_entry.h"
+#include "yaha/message_store/message_tree_node.h"
+#include "yaha/message_store/tree_node.h"
 
 #include <cstdint>
 #include <functional>
 #include <iosfwd>
 #include <optional>
 #include <string>
-#include <utility>
-#include <variant>
 #include <vector>
 
 namespace yaha {
-
-/**
- * @brief One historic value entry for a topic node.
- */
-struct MessageTreeHistoryEntry {
-    std::int64_t timeMs{0};               ///< Wall-clock timestamp of this historic state.
-    Value value{std::string{}};      ///< Historic value.
-    ReasonList reason;                    ///< Historic reason chain.
-};
-
-/**
- * @brief Public node representation returned by tree queries.
- */
-struct MessageTreeNode {
-    std::string topic;                             ///< Full topic path.
-    std::int64_t timeMs{0};                        ///< Wall-clock timestamp of current value.
-    Value value{std::string{}};               ///< Current value.
-    ReasonList reason;                             ///< Current reason chain.
-    std::vector<MessageTreeHistoryEntry> history;  ///< Decompressed history entries.
-};
 
 /**
  * @brief Snapshot node used by diff query mode.
@@ -86,6 +65,9 @@ public:
         std::uint64_t currentNodeCount{0U};            ///< Topic nodes that currently hold a value.
         std::uint64_t totalStoredMessageCount{0U};     ///< Current nodes + represented history messages.
         std::uint64_t historyBucketCount{0U};          ///< Number of compressed history buckets.
+        std::uint64_t totalReasonEntryCount{0U};       ///< Total number of stored reason entries.
+        std::uint64_t totalDirectoryStringCount{0U};   ///< Total number of unique reason strings across per-node directories.
+        double reasonEntriesPerDirectoryString{0.0};   ///< Ratio totalReasonEntryCount / totalDirectoryStringCount.
         std::uint64_t singleBucketCount{0U};           ///< Bucket count of SingleHistoryEntry.
         std::uint64_t timeValueBucketCount{0U};        ///< Bucket count of TimeValueHistoryEntry.
         std::uint64_t timeBucketCount{0U};             ///< Bucket count of TimeHistoryEntry.
@@ -166,72 +148,13 @@ public:
     [[nodiscard]] bool readCompressed(std::istream& stream);
 
 private:
-    using CompactReasonList = std::vector<CompactReasonEntry>;
-
-    /**
-     * @brief Compressed entry with exactly one historic value.
-     */
-    struct SingleHistoryEntry {
-        MessageTreeHistoryEntry entry{}; ///< Stored history entry.
-    };
-
-    /**
-     * @brief Compressed entry with multiple values sharing one reason chain.
-     */
-    struct TimeValueHistoryEntry {
-        std::vector<std::pair<std::int64_t, Value>> values; ///< Ordered oldest-to-newest time/value pairs.
-        CompactReasonList reason; ///< Reason chain of the oldest element.
-    };
-
-    /**
-     * @brief Compressed entry with multiple timestamps sharing one value and reason chain.
-     */
-    struct TimeHistoryEntry {
-        Value value{std::string{}}; ///< Shared value of all timestamps.
-        std::vector<std::int64_t> timestamps; ///< Ordered oldest-to-newest timestamps.
-        CompactReasonList reason; ///< Reason chain of the oldest element.
-    };
-
-    /**
-     * @brief Compressed entry representing regular updates as one interval block.
-     */
-    struct IntervalHistoryEntry {
-        std::uint32_t amount{0U}; ///< Amount of compressed entries in this block.
-        Value value{std::string{}}; ///< Shared value of the interval block.
-        CompactReasonList reason; ///< Reason chain of the oldest element.
-        std::int64_t firstTimeMs{0}; ///< Oldest timestamp in the block.
-        std::int64_t lastTimeMs{0}; ///< Newest timestamp in the block.
-    };
-
-    /**
-     * @brief Compressed internal history bucket.
-     */
-    struct CompressedHistoryEntry {
-        std::variant<SingleHistoryEntry,
-                     TimeValueHistoryEntry,
-                     TimeHistoryEntry,
-                     IntervalHistoryEntry> data{}; ///< Type-specific compressed representation.
-    };
-
-    /**
-     * @brief Internal payload state of one data node.
-     */
-    struct NodeData {
-        std::int64_t timeMs{0};                               ///< Current timestamp.
-        Value value{std::string{}};                           ///< Current value.
-        CompactReasonList reason;                      ///< Current reason.
-        std::vector<CompressedHistoryEntry> compressedHistory; ///< Compressed historic values.
-    };
-
-    /**
-     * @brief Internal topic-segment node.
-     */
-    struct TreeNode {
-        std::string topicPath;                                ///< Full topic path for this node.
-        std::vector<std::pair<std::string, TreeNode>> children; ///< Child segments.
-        bool hasData{false};                                  ///< True when current data is present.
-        NodeData data{};                                      ///< Current data payload.
-    };
+    using CompactReasonList = MessageTreeCompactReasonList;
+    using SingleHistoryEntry = MessageTreeSingleHistoryEntry;
+    using TimeValueHistoryEntry = MessageTreeTimeValueHistoryEntry;
+    using TimeHistoryEntry = MessageTreeTimeHistoryEntry;
+    using IntervalHistoryEntry = MessageTreeIntervalHistoryEntry;
+    using CompressedHistoryEntry = MessageTreeCompressedHistoryEntry;
+    using NodeData = MessageTreeNodeData;
 
     /**
      * @brief Returns current wall-clock milliseconds.

@@ -54,7 +54,7 @@ TEST_CASE("message_tree_get_nodes_clears_reason_when_include_reason_false", "[me
 
     REQUIRE(nodes.size() == 1U);
     REQUIRE(nodes.front().topic == "home/light");
-    REQUIRE(nodes.front().reason.empty());
+    REQUIRE(nodes.front().reason().empty());
 }
 
 TEST_CASE("message_tree_read_compressed_rejects_unknown_value_token", "[message_store]") {

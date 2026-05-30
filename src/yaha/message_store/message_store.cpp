@@ -49,10 +49,12 @@ void printCompressionStatsLine(const MessageTree::CompressionStats& compressionS
         std::uint64_t value;
     };
 
-    const std::array<CompressionStatsRow, 10U> rows{{
+    const std::array<CompressionStatsRow, 12U> rows{{
         {.name = "currentNodes", .value = compressionStats.currentNodeCount},
         {.name = "totalStoredMessages", .value = compressionStats.totalStoredMessageCount},
         {.name = "historyBuckets", .value = compressionStats.historyBucketCount},
+        {.name = "reasonEntries.total", .value = compressionStats.totalReasonEntryCount},
+        {.name = "directories.strings", .value = compressionStats.totalDirectoryStringCount},
         {.name = "buckets.single", .value = compressionStats.singleBucketCount},
         {.name = "buckets.timeValue", .value = compressionStats.timeValueBucketCount},
         {.name = "buckets.time", .value = compressionStats.timeBucketCount},
@@ -63,7 +65,7 @@ void printCompressionStatsLine(const MessageTree::CompressionStats& compressionS
     }};
 
     const std::uint64_t representedIntervalCount = compressionStats.representedIntervalCount;
-    std::size_t maxNameWidth = std::string_view{"represented.interval"}.size();
+    std::size_t maxNameWidth = std::string_view{"ratio.reasonPerDirectoryString"}.size();
     std::size_t maxValueWidth = std::to_string(representedIntervalCount).size();
     for (const auto& row : rows) {
         maxNameWidth = std::max(maxNameWidth, row.name.size());
@@ -86,6 +88,15 @@ void printCompressionStatsLine(const MessageTree::CompressionStats& compressionS
               << std::left << std::setw(static_cast<int>(maxNameWidth)) << "represented.interval"
               << " : "
               << std::right << std::setw(static_cast<int>(maxValueWidth)) << representedIntervalCount
+              << '\n';
+
+    std::ostringstream ratioStream{};
+    ratioStream << std::fixed << std::setprecision(3)
+                << compressionStats.reasonEntriesPerDirectoryString;
+    std::cout << "  "
+              << std::left << std::setw(static_cast<int>(maxNameWidth)) << "ratio.reasonPerDirectoryString"
+              << " : "
+              << std::right << ratioStream.str()
               << '\n' << std::flush;
 }
 
@@ -409,7 +420,7 @@ std::string historyToJson(const std::vector<MessageTreeHistoryEntry>& history,
             result += std::string{",\"time\":"} + jsonStringLiteral(toIsoTimestamp(item.timeMs));
         }
         if (includeReason) {
-            result += ",\"reason\":" + reasonsToJson(item.reason);
+            result += ",\"reason\":" + reasonsToJson(item.reason());
         }
         result += '}';
     }
@@ -428,10 +439,10 @@ std::string nodeToJson(const MessageTreeNode& node,
         result += std::string{",\"time\":"} + jsonStringLiteral(toIsoTimestamp(node.timeMs));
     }
     if (includeReason) {
-        result += ",\"reason\":" + reasonsToJson(node.reason);
+        result += ",\"reason\":" + reasonsToJson(node.reason());
     }
     if (includeHistory) {
-        result += ",\"history\":" + historyToJson(node.history, includeReason, includeTime);
+        result += ",\"history\":" + historyToJson(node.history(), includeReason, includeTime);
     }
     result += '}';
     return result;
@@ -728,20 +739,20 @@ Message MessageStore::buildReplayMessage(const std::string& topicPath,
 std::vector<MessageStore::ReplayRow>
 MessageStore::buildReplayRowsForNode(const MessageTreeNode& node) {
     std::vector<ReplayRow> replayRows{};
-    replayRows.reserve(node.history.size() + 1U);
+    replayRows.reserve(node.history().size() + 1U);
 
-    for (std::size_t reverseIndex = node.history.size(); reverseIndex > 0U; --reverseIndex) {
-        const MessageTreeHistoryEntry& historyEntry = node.history[reverseIndex - 1U];
+    for (std::size_t reverseIndex = node.history().size(); reverseIndex > 0U; --reverseIndex) {
+        const MessageTreeHistoryEntry& historyEntry = node.history()[reverseIndex - 1U];
         replayRows.push_back(ReplayRow{
             .value = historyEntry.value,
-            .reason = historyEntry.reason,
+            .reason = historyEntry.reason(),
             .timeMs = historyEntry.timeMs,
         });
     }
 
     replayRows.push_back(ReplayRow{
         .value = node.value,
-        .reason = node.reason,
+        .reason = node.reason(),
         .timeMs = node.timeMs,
     });
     return replayRows;

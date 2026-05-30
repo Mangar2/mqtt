@@ -76,17 +76,18 @@ bool readNode(std::ifstream& stream, MessageTreeNode& node) {
         return false;
     }
 
-    if (!readReasonList(stream, node.reason)) {
+    ReasonList nodeReason{};
+    if (!readReasonList(stream, nodeReason)) {
         return false;
     }
+    node.setReasonList(nodeReason);
 
     std::size_t historyCount = 0U;
     if (!(stream >> historyCount)) {
         return false;
     }
 
-    node.history.clear();
-    node.history.reserve(historyCount);
+    node.clearHistory();
     for (std::size_t idx = 0U; idx < historyCount; ++idx) {
         MessageTreeHistoryEntry entry{};
         if (!(stream >> entry.timeMs)) {
@@ -95,10 +96,12 @@ bool readNode(std::ifstream& stream, MessageTreeNode& node) {
         if (!readValue(stream, entry.value)) {
             return false;
         }
-        if (!readReasonList(stream, entry.reason)) {
+        ReasonList historyReason{};
+        if (!readReasonList(stream, historyReason)) {
             return false;
         }
-        node.history.push_back(std::move(entry));
+        entry.setReasonList(historyReason);
+        node.addHistoryEntry(entry);
     }
 
     return true;
