@@ -379,6 +379,62 @@ TEST_CASE("load_runtime_config_falls_back_on_invalid_opensensemap_fields", "[ope
     REQUIRE(runtimeConfig.openSenseMapConfig.port == 443U);
 }
 
+TEST_CASE("load_runtime_config_parses_opensensemap_message_logging_flags", "[opensensemap_client]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "logReason = false\n"
+        "\n"
+        "[opensensemap]\n"
+        "id = box-abc\n"
+        "logIncomingMessages = true\n"
+        "logReason = true\n"
+        "\n"
+        "[sensor]\n"
+        "name = temperature\n"
+        "unit = C\n"
+        "topic = house/living/temperature\n"
+        "id = sensor-temp\n";
+
+    const ScopedIniFile iniFile{iniText};
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniFile.path());
+
+    yaha::OpenSenseMapClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+
+    REQUIRE(yaha::tryLoadOpenSenseMapClientRuntimeConfigFromIni(document, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.logIncomingMessages);
+    REQUIRE(runtimeConfig.mqttConfig.logReason);
+}
+
+TEST_CASE("load_runtime_config_falls_back_on_invalid_opensensemap_logging_flags", "[opensensemap_client]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "logReason = false\n"
+        "\n"
+        "[opensensemap]\n"
+        "id = box-abc\n"
+        "logIncomingMessages = maybe\n"
+        "logReason = maybe\n"
+        "\n"
+        "[sensor]\n"
+        "name = temperature\n"
+        "unit = C\n"
+        "topic = house/living/temperature\n"
+        "id = sensor-temp\n";
+
+    const ScopedIniFile iniFile{iniText};
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniFile.path());
+
+    yaha::OpenSenseMapClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+
+    REQUIRE(yaha::tryLoadOpenSenseMapClientRuntimeConfigFromIni(document, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE_FALSE(runtimeConfig.logIncomingMessages);
+    REQUIRE_FALSE(runtimeConfig.mqttConfig.logReason);
+}
+
 TEST_CASE("opensensemap_request_sender_throws_on_invalid_status_metadata", "[opensensemap_client]") {
     const auto fakeCurlDirectory = makeFakeCurlDirectory(
         "printf '{\"message\":\"created\"}\\n__YAHA_STATUS__:abc\\n__YAHA_CTYPE__:application/json\\n'\n"

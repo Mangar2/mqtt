@@ -1,5 +1,6 @@
 #include "yaha/opensensemap_client/opensensemap_client_app.h"
 
+#include "yaha/message/message_log_service.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <cstdint>
@@ -345,6 +346,32 @@ bool tryLoadOpenSenseMapClientRuntimeConfigFromIni(
             "defaults",
             mqttErrorMessage);
     }
+
+    MessageLogConfig messageLogConfig{
+        .enableIncoming = parsed.logIncomingMessages,
+        .enableOutgoing = false,
+        .includeReasonChain = parsed.mqttConfig.logReason,
+    };
+    std::string messageLogConfigError{};
+    if (!tryLoadMessageLogConfigFromIni(
+            document,
+            MessageLogIniKeys{
+                .incomingEnabled = MessageLogIniBoolKey{.section = k_open_sense_map_section, .key = "logIncomingMessages"},
+                .includeReasonChain = MessageLogIniBoolKey{.section = k_open_sense_map_section, .key = "logReason"},
+            },
+            messageLogConfig,
+            messageLogConfigError)) {
+        logConfigFallbackWarning(
+            "opensensemap_client",
+            k_open_sense_map_section,
+            "*",
+            "<composite>",
+            "defaults",
+            messageLogConfigError);
+    }
+
+    parsed.logIncomingMessages = messageLogConfig.enableIncoming;
+    parsed.mqttConfig.logReason = messageLogConfig.includeReasonChain;
 
     output = std::move(parsed);
     return true;

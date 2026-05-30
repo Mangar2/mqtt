@@ -91,7 +91,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    runtimeConfig.mqttConfig.enableMessageTrace = cliOptions.enableMessageTrace;
+    const bool enableIncomingLogsFromConfig = runtimeConfig.logIncomingMessages;
+    runtimeConfig.mqttConfig.enableMessageTrace =
+        cliOptions.enableMessageTrace || enableIncomingLogsFromConfig;
+
+    if (runtimeConfig.mqttConfig.enableMessageTrace && enableIncomingLogsFromConfig && !cliOptions.enableMessageTrace) {
+        std::cout << "  startup: incoming message logging enabled via opensensemap.logIncomingMessages\n";
+    }
 
     yaha::OpenSenseMapComponent component{
         runtimeConfig.openSenseMapConfig,

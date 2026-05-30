@@ -19,6 +19,8 @@ namespace yaha {
 struct PushoverClientRuntimeConfig {
     PushoverConfig pushoverConfig{};       ///< Pushover domain config.
     YahaMqttClient::Config mqttConfig{};   ///< Generic MQTT runtime config.
+    bool logIncomingMessages{false};       ///< Enable inbound MQTT message logs in broker-format.
+    bool logOutgoingMessages{false};       ///< Enable outbound MQTT message logs in broker-format.
 };
 
 /**

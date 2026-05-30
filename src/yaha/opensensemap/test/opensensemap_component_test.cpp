@@ -82,7 +82,7 @@ TEST_CASE("handle_message_publishes_success_status_for_http_201", "[opensensemap
     component.handleMessage(input);
 
     REQUIRE(published.has_value());
-    REQUIRE(published->topic() == "$SYS/opensensemap/success");
+    REQUIRE(published->topic() == "$MONITOR/opensensemap/success");
     REQUIRE(std::holds_alternative<double>(published->value()));
     REQUIRE(std::get<double>(published->value()) == kStatusCreated);
     REQUIRE(published->reason().size() == 2U);
@@ -107,7 +107,7 @@ TEST_CASE("handle_message_publishes_error_when_sensor_mapping_missing", "[opense
     component.handleMessage(yaha::Message{"house/kitchen/temperature", kPayloadValueUnknown});
 
     REQUIRE(published.has_value());
-    REQUIRE(published->topic() == "$SYS/opensensemap/error");
+    REQUIRE(published->topic() == "$MONITOR/opensensemap/error");
     REQUIRE(std::get<double>(published->value()) == kStatusNotFound);
     REQUIRE(published->reason().size() == 1U);
     REQUIRE(published->reason()[0].message.find("not found") != std::string::npos);
@@ -130,7 +130,7 @@ TEST_CASE("handle_message_publishes_error_for_non_numeric_value", "[opensensemap
     component.handleMessage(yaha::Message{"house/living/temperature", std::string{"abc"}});
 
     REQUIRE(published.has_value());
-    REQUIRE(published->topic() == "$SYS/opensensemap/error");
+    REQUIRE(published->topic() == "$MONITOR/opensensemap/error");
     REQUIRE(std::get<double>(published->value()) == kStatusUnprocessableEntity);
 }
 
@@ -151,7 +151,7 @@ TEST_CASE("handle_message_publishes_error_when_sender_throws", "[opensensemap]")
     component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueOne});
 
     REQUIRE(published.has_value());
-    REQUIRE(published->topic() == "$SYS/opensensemap/error");
+    REQUIRE(published->topic() == "$MONITOR/opensensemap/error");
     REQUIRE(std::get<double>(published->value()) == kStatusInternalServerError);
     REQUIRE(published->reason()[0].message.find("network down") != std::string::npos);
 }
@@ -169,7 +169,7 @@ TEST_CASE("handle_message_publishes_error_when_sender_callback_missing", "[opens
     component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueOne});
 
     REQUIRE(published.has_value());
-    REQUIRE(published->topic() == "$SYS/opensensemap/error");
+    REQUIRE(published->topic() == "$MONITOR/opensensemap/error");
     REQUIRE(std::get<double>(published->value()) == kStatusInternalServerError);
     REQUIRE(published->reason().front().message.find("callback is missing") != std::string::npos);
 }
@@ -208,7 +208,7 @@ TEST_CASE("handle_message_publishes_error_for_unknown_exception", "[opensensemap
     component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueOne});
 
     REQUIRE(published.has_value());
-    REQUIRE(published->topic() == "$SYS/opensensemap/error");
+    REQUIRE(published->topic() == "$MONITOR/opensensemap/error");
     REQUIRE(std::get<double>(published->value()) == kStatusInternalServerError);
     REQUIRE(published->reason().front().message.find("unknown") != std::string::npos);
 }

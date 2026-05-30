@@ -53,8 +53,8 @@ Implements `IMqttComponent` behavior:
 
 ## Status publish behavior
 
-- Success (`HTTP 201`) -> topic `$SYS/opensensemap/success`
-- Any other status or local error -> topic `$SYS/opensensemap/error`
+- Success (`HTTP 201`) -> topic `$MONITOR/opensensemap/success`
+- Any other status or local error -> topic `$MONITOR/opensensemap/error`
 - Status payload value is numeric HTTP-like status code.
 - Outbound status message reason chain appends original inbound reasons and one result reason.
 

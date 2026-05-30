@@ -1,5 +1,6 @@
 #include "yaha/pushover_client/pushover_client_app.h"
 
+#include "yaha/message/message_log_service.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <array>
@@ -339,6 +340,34 @@ bool tryLoadPushoverClientRuntimeConfigFromIni(
             "defaults",
             mqttErrorMessage);
     }
+
+    MessageLogConfig messageLogConfig{
+        .enableIncoming = parsed.logIncomingMessages,
+        .enableOutgoing = parsed.logOutgoingMessages,
+        .includeReasonChain = parsed.mqttConfig.logReason,
+    };
+    std::string messageLogConfigError{};
+    if (!tryLoadMessageLogConfigFromIni(
+            document,
+            MessageLogIniKeys{
+                .incomingEnabled = MessageLogIniBoolKey{.section = kPushoverSection, .key = "logIncomingMessages"},
+                .outgoingEnabled = MessageLogIniBoolKey{.section = kPushoverSection, .key = "logOutgoingMessages"},
+                .includeReasonChain = MessageLogIniBoolKey{.section = kPushoverSection, .key = "logReason"},
+            },
+            messageLogConfig,
+            messageLogConfigError)) {
+        logConfigFallbackWarning(
+            "pushover_client",
+            kPushoverSection,
+            "*",
+            "<composite>",
+            "defaults",
+            messageLogConfigError);
+    }
+
+    parsed.logIncomingMessages = messageLogConfig.enableIncoming;
+    parsed.logOutgoingMessages = messageLogConfig.enableOutgoing;
+    parsed.mqttConfig.logReason = messageLogConfig.includeReasonChain;
 
     output = std::move(parsed);
     return true;

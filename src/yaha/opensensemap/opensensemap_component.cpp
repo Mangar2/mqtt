@@ -31,6 +31,21 @@ constexpr int kHttpStatusInternalServerError{500};
     return stream.str();
 }
 
+void logError(const std::string& reasonText, const Message& message) {
+    std::cerr << "opensensemap[error]"
+              << " topic=" << message.topic()
+              << " reason=" << reasonText
+              << '\n' << std::flush;
+}
+
+void logHttpError(const int statusCode, const std::string& reasonText, const Message& message) {
+    std::cerr << "opensensemap[error]"
+              << " topic=" << message.topic()
+              << " httpStatus=" << statusCode
+              << " reason=" << reasonText
+              << '\n' << std::flush;
+}
+
 } // namespace
 
 OpenSenseMapComponent::OpenSenseMapComponent(OpenSenseMapConfig config, OpenSenseMapRequestSender requestSender)
@@ -56,29 +71,37 @@ void OpenSenseMapComponent::handleMessage(const Message& message) {
 
     const auto sensorConfig = findSensorForTopic(message.topic());
     if (!sensorConfig.has_value()) {
+        const std::string reasonText =
+            std::format("topic {} not found in opensensemap sensor configuration", message.topic());
+        logError(reasonText, message);
         const Message statusMessage = buildStatusMessage(
             kHttpStatusNotFound,
             message,
-            std::format("topic {} not found in opensensemap sensor configuration", message.topic()));
+            reasonText);
         publishStatusMessage(statusMessage);
         return;
     }
 
     const auto maybeNumericValue = toNumericValue(message.value());
     if (!maybeNumericValue.has_value()) {
+        const std::string reasonText =
+            std::format("topic {} contains non-numeric value {}", message.topic(), valueToText(message.value()));
+        logError(reasonText, message);
         const Message statusMessage = buildStatusMessage(
             kHttpStatusUnprocessableEntity,
             message,
-            std::format("topic {} contains non-numeric value {}", message.topic(), valueToText(message.value())));
+            reasonText);
         publishStatusMessage(statusMessage);
         return;
     }
 
     if (!requestSender_) {
+        constexpr const char* kReasonText = "opensensemap request sender callback is missing";
+        logError(kReasonText, message);
         const Message statusMessage = buildStatusMessage(
             kHttpStatusInternalServerError,
             message,
-            "opensensemap request sender callback is missing");
+            kReasonText);
         publishStatusMessage(statusMessage);
         return;
     }
@@ -89,19 +112,26 @@ void OpenSenseMapComponent::handleMessage(const Message& message) {
     try {
         const OpenSenseMapHttpResult result = requestSender_(requestPath, requestPayload);
         const std::string resultReason = buildResultReason(message.topic(), *maybeNumericValue, result);
+        if (result.statusCode != kHttpStatusCreated) {
+            logHttpError(result.statusCode, resultReason, message);
+        }
         const Message statusMessage = buildStatusMessage(result.statusCode, message, resultReason);
         publishStatusMessage(statusMessage);
     } catch (const std::exception& exceptionValue) {
+        const std::string reasonText = std::format("opensensemap request failed: {}", exceptionValue.what());
+        logError(reasonText, message);
         const Message statusMessage = buildStatusMessage(
             kHttpStatusInternalServerError,
             message,
-            std::format("opensensemap request failed: {}", exceptionValue.what()));
+            reasonText);
         publishStatusMessage(statusMessage);
     } catch (...) {
+        constexpr const char* kReasonText = "opensensemap request failed: unknown";
+        logError(kReasonText, message);
         const Message statusMessage = buildStatusMessage(
             kHttpStatusInternalServerError,
             message,
-            "opensensemap request failed: unknown");
+            kReasonText);
         publishStatusMessage(statusMessage);
     }
 }
@@ -245,8 +275,8 @@ Message OpenSenseMapComponent::buildStatusMessage(
     const Message& sourceMessage,
     const std::string& resultReason) {
     const std::string targetTopic = (statusCode == kHttpStatusCreated)
-        ? "$SYS/opensensemap/success"
-        : "$SYS/opensensemap/error";
+        ? "$MONITOR/opensensemap/success"
+        : "$MONITOR/opensensemap/error";
 
     Message statusMessage{targetTopic, static_cast<double>(statusCode), Qos::AtLeastOnce, false};
     for (const auto& reasonEntry : sourceMessage.reason()) {
