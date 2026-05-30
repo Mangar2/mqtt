@@ -6,6 +6,7 @@
  */
 
 #include "yaha/message/message.h"
+#include "yaha/message_store/compact_reason_entry.h"
 
 #include <cstdint>
 #include <functional>
@@ -165,12 +166,6 @@ public:
     [[nodiscard]] bool readCompressed(std::istream& stream);
 
 private:
-    struct CompactReasonEntry {
-        std::string message;
-        std::uint8_t fractionalDigits{0};
-        std::int64_t timestampMs{0};
-    };
-
     using CompactReasonList = std::vector<CompactReasonEntry>;
 
     /**
