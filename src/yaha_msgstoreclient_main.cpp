@@ -31,6 +31,7 @@ constexpr const char* k_msgstore_client_name{"yahamsgstoreclient"};
 struct CliOptions {
     std::filesystem::path configPath{"broker.ini"};
     std::optional<std::filesystem::path> testInputPath{};
+    std::optional<std::uint16_t> testHttpPort{};
     bool configPathProvided{false};
     bool enableMessageTrace{false};
     bool testHandshake{false};
@@ -43,12 +44,13 @@ void printVersion() {
 }
 
 void printUsage() {
-    std::cout << "Usage: yahamsgstoreclient [config-path] [--trace-messages] [--test <input-file>] [--test-handshake] [--version] [--help]\n"
+    std::cout << "Usage: yahamsgstoreclient [config-path] [--trace-messages] [--test <input-file>] [--test-handshake] [--test-http-port <0..65535>] [--version] [--help]\n"
               << "  config-path         optional INI config file (default: broker.ini)\n"
               << "  --trace-messages    print sent/received MQTT messages\n"
               << "  --test <input-file> process JSONL-envelope input synchronously and exit\n"
               << "  --test-handshake    keep test mode alive and wait for commands on stdin\n"
-              << "                      protocol: load, sleep <ms>, exit\n"
+              << "  --test-http-port    enable test-mode HTTP endpoint on this port (requires --test)\n"
+              << "                      protocol: load, save, sleep <ms>, exit\n"
               << "  --version           print version and exit\n"
               << "  --help              print this help and exit\n"
               << std::flush;
@@ -56,6 +58,7 @@ void printUsage() {
 
 enum class TestHandshakeCommandKind : std::uint8_t {
     Load,
+    Save,
     Sleep,
     Exit,
     Invalid,
@@ -85,6 +88,9 @@ TestHandshakeCommand parseTestHandshakeCommand(const std::string& rawLine) {
 
     if (command == "load") {
         return TestHandshakeCommand{.kind = TestHandshakeCommandKind::Load};
+    }
+    if (command == "save") {
+        return TestHandshakeCommand{.kind = TestHandshakeCommandKind::Save};
     }
     if (command == "exit") {
         return TestHandshakeCommand{.kind = TestHandshakeCommandKind::Exit};
@@ -141,7 +147,9 @@ bool awaitHandshakeLoadCommand() {
     return false;
 }
 
-bool awaitHandshakeExitOrSleep() {
+bool awaitHandshakeCommandsAfterLoad(yaha::MessageStore& store,
+                                     std::uint32_t& explicitSaveCount) {
+    explicitSaveCount = 0U;
     std::cout << "test.handshake phase=ready_for_end\n" << std::flush;
     while (true) {
         const TestHandshakeCommand command = readNextTestHandshakeCommand();
@@ -155,8 +163,21 @@ bool awaitHandshakeExitOrSleep() {
             continue;
         }
 
+        if (command.kind == TestHandshakeCommandKind::Save) {
+            const std::optional<std::filesystem::path> snapshotPath = store.persistSnapshotNow();
+            explicitSaveCount += 1U;
+            std::cout << "test.handshake phase=saved"
+                      << " index=" << explicitSaveCount
+                      << " success=" << (snapshotPath.has_value() ? "1" : "0");
+            if (snapshotPath.has_value()) {
+                std::cout << " file=" << snapshotPath->string();
+            }
+            std::cout << '\n' << std::flush;
+            continue;
+        }
+
         std::cerr << "test.handshake error="
-                  << (command.errorText.empty() ? "expected sleep <ms> or exit" : command.errorText)
+                  << (command.errorText.empty() ? "expected save, sleep <ms> or exit" : command.errorText)
                   << '\n';
         return false;
     }
@@ -214,7 +235,8 @@ bool tryParseTestInputLine(const std::string& lineText,
 }
 
 int runSynchronousTestMode(const std::filesystem::path& inputPath,
-                           const bool handshakeEnabled) {
+                           const bool handshakeEnabled,
+                           const std::optional<std::uint16_t> testHttpPort) {
     std::ifstream inputStream{inputPath};
     if (!inputStream.is_open()) {
         std::cerr << "Failed to open test input file '" << inputPath.string() << "'\n";
@@ -222,8 +244,13 @@ int runSynchronousTestMode(const std::filesystem::path& inputPath,
     }
 
     yaha::MessageStoreConfig storeConfig{};
-    storeConfig.serverPort = 0U;
+    storeConfig.serverPort = testHttpPort.value_or(0U);
+    storeConfig.persistenceConfig.intervalMs = 0U;
     yaha::MessageStore store{std::move(storeConfig)};
+
+    if (testHttpPort.has_value()) {
+        store.run();
+    }
 
     if (handshakeEnabled && !awaitHandshakeLoadCommand()) {
         return 1;
@@ -252,13 +279,21 @@ int runSynchronousTestMode(const std::filesystem::path& inputPath,
     }
     const auto buildEndTime = std::chrono::steady_clock::now();
 
-    if (handshakeEnabled && !awaitHandshakeExitOrSleep()) {
-        return 1;
+    std::optional<std::filesystem::path> snapshotPath{};
+    auto saveStartTime = std::chrono::steady_clock::now();
+    auto saveEndTime = saveStartTime;
+    std::uint32_t explicitSaveCount = 0U;
+    if (handshakeEnabled) {
+        if (!awaitHandshakeCommandsAfterLoad(store, explicitSaveCount)) {
+            return 1;
+        }
     }
 
-    const auto saveStartTime = std::chrono::steady_clock::now();
-    const std::optional<std::filesystem::path> snapshotPath = store.persistSnapshotNow();
-    const auto saveEndTime = std::chrono::steady_clock::now();
+    if (!handshakeEnabled || explicitSaveCount == 0U) {
+        saveStartTime = std::chrono::steady_clock::now();
+        snapshotPath = store.persistSnapshotNow();
+        saveEndTime = std::chrono::steady_clock::now();
+    }
 
     const auto buildElapsedMilliseconds =
         std::chrono::duration_cast<std::chrono::milliseconds>(buildEndTime - buildStartTime).count();
@@ -267,13 +302,15 @@ int runSynchronousTestMode(const std::filesystem::path& inputPath,
     const yaha::MessageTree::CompressionStats compressionStats = store.queryCompressionStats();
     std::cout << "test.mode=sync messages=" << processedMessages
               << " buildElapsedMs=" << buildElapsedMilliseconds << '\n' << std::flush;
-    std::cout << "test.save"
-              << " success=" << (snapshotPath.has_value() ? "1" : "0")
-              << " saveElapsedMs=" << saveElapsedMilliseconds;
-    if (snapshotPath.has_value()) {
-        std::cout << " file=" << snapshotPath->string();
+    if (snapshotPath.has_value() || !handshakeEnabled || explicitSaveCount == 0U) {
+        std::cout << "test.save"
+                  << " success=" << (snapshotPath.has_value() ? "1" : "0")
+                  << " saveElapsedMs=" << saveElapsedMilliseconds;
+        if (snapshotPath.has_value()) {
+            std::cout << " file=" << snapshotPath->string();
+        }
+        std::cout << '\n' << std::flush;
     }
-    std::cout << '\n' << std::flush;
     std::cout << "test.stats"
               << " currentNodes=" << compressionStats.currentNodeCount
               << " totalStoredMessages=" << compressionStats.totalStoredMessageCount
@@ -309,6 +346,32 @@ bool parseTestArgument(const std::span<char*> arguments,
     return true;
 }
 
+bool parseTestHttpPortArgument(const std::span<char*> arguments,
+                               std::size_t& argIndex,
+                               CliOptions& options,
+                               std::string& errorText) {
+    if (argIndex + 1U >= arguments.size()) {
+        errorText = "--test-http-port requires a port value";
+        return false;
+    }
+
+    try {
+        const std::string portText{arguments[argIndex + 1U]};
+        const unsigned long parsed = std::stoul(portText);
+        if (parsed > static_cast<unsigned long>(std::numeric_limits<std::uint16_t>::max())) {
+            errorText = "--test-http-port must be in range 0..65535";
+            return false;
+        }
+        options.testHttpPort = static_cast<std::uint16_t>(parsed);
+    } catch (...) {
+        errorText = "--test-http-port expects an unsigned integer";
+        return false;
+    }
+
+    argIndex += 1U;
+    return true;
+}
+
 bool tryHandleSwitchArgument(const std::string& argument,
                              const std::span<char*> arguments,
                              std::size_t& argIndex,
@@ -334,6 +397,9 @@ bool tryHandleSwitchArgument(const std::string& argument,
     }
     if (argument == "--test") {
         return parseTestArgument(arguments, argIndex, options, errorText);
+    }
+    if (argument == "--test-http-port") {
+        return parseTestHttpPortArgument(arguments, argIndex, options, errorText);
     }
 
     handled = false;
@@ -374,6 +440,11 @@ bool tryParseCli(const std::span<char*> arguments,
 
     if (options.testHandshake && !options.testInputPath.has_value()) {
         errorText = "--test-handshake requires --test <input-file>";
+        return false;
+    }
+
+    if (options.testHttpPort.has_value() && !options.testInputPath.has_value()) {
+        errorText = "--test-http-port requires --test <input-file>";
         return false;
     }
 
@@ -561,7 +632,10 @@ int main(int argc, char* argv[]) {
     }
 
     if (cliOptions.testInputPath.has_value()) {
-        return runSynchronousTestMode(*cliOptions.testInputPath, cliOptions.testHandshake);
+        return runSynchronousTestMode(
+            *cliOptions.testInputPath,
+            cliOptions.testHandshake,
+            cliOptions.testHttpPort);
     }
 
     return runConfiguredRuntime(cliOptions);

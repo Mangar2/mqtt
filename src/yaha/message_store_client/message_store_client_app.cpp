@@ -174,6 +174,16 @@ bool tryLoadMessageStoreConfigFromIni(
         output.cleanupTopic = *cleanupTopic;
     }
 
+    if (const auto replayLoadedStateFile = document.lastValue("messagestore", "replayLoadedStateFile");
+        replayLoadedStateFile.has_value()) {
+        output.replayLoadedStateFile = *replayLoadedStateFile;
+    }
+
+    if (const auto replayIncomingMessagesFile = document.lastValue("messagestore", "replayIncomingMessagesFile");
+        replayIncomingMessagesFile.has_value()) {
+        output.replayIncomingMessagesFile = *replayIncomingMessagesFile;
+    }
+
     if (const auto serverPath = document.lastValue("server", "path");
         serverPath.has_value()) {
         output.serverPath = *serverPath;

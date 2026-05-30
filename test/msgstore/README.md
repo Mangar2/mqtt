@@ -82,3 +82,24 @@ python3 test/msgstore/measure_memory.py --input-file test/msgstore/testcase3_100
 - Sampling interval can be changed with `--sample-interval-ms`.
 - Temporary files are removed by default; use `--keep-artifacts` for debugging.
 
+## Save Stress Test
+
+Use `save_stress_test.py` to load one large dataset once and trigger repeated
+snapshot saves via test-handshake command `save`.
+
+Default profile:
+
+- `1_000_000` messages
+- `10_000` topics
+- varying numeric values
+- varying reason texts (`--reason-text-change-every 1`)
+- `1000` save operations after load
+
+Example:
+
+```bash
+python3 test/msgstore/save_stress_test.py \
+	--binary build/debug/yahamsgstoreclient \
+	--save-count 1000
+```
+

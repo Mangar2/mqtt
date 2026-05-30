@@ -15,12 +15,16 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import time
 import select
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 
@@ -118,6 +122,24 @@ def parse_args() -> argparse.Namespace:
         default=5,
         help="RSS sampling interval in milliseconds (default: 5).",
     )
+    parser.add_argument(
+        "--http-request-count",
+        type=int,
+        default=0,
+        help="Optional number of HTTP GET requests after load (default: 0).",
+    )
+    parser.add_argument(
+        "--http-topic",
+        type=str,
+        default=None,
+        help="Topic for HTTP requests. Defaults to first message topic from workload input.",
+    )
+    parser.add_argument(
+        "--http-timeout-ms",
+        type=int,
+        default=2000,
+        help="Per-request HTTP timeout in milliseconds (default: 2000).",
+    )
     return parser.parse_args()
 
 
@@ -168,16 +190,90 @@ def sample_rss_kib(pid: int) -> int | None:
     )
     if completed.returncode != 0:
         return None
-    text = completed.stdout.strip()
+
+
+def find_free_tcp_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        return int(server.getsockname()[1])
+
+
+def read_first_topic_from_jsonl(input_file: Path) -> str:
+    with input_file.open("r", encoding="utf-8") as stream:
+        for raw_line in stream:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            payload = json.loads(line)
+            message = payload.get("message")
+            if not isinstance(message, dict):
+                continue
+            topic = message.get("topic")
+            if isinstance(topic, str) and topic:
+                return topic
+    raise RuntimeError(f"could not determine first topic from input file: {input_file}")
+
+
+def run_http_query_burst(
+    port: int,
+    topic: str,
+    request_count: int,
+    timeout_ms: int,
+    process_pid: int,
+    sample_interval_ms: int,
+    current_peak_rss_kib: int | None,
+) -> tuple[int | None, int, int, int]:
+    if request_count <= 0:
+        return current_peak_rss_kib, 0, 0, 0
+
+    encoded_topic = urllib.parse.quote(topic, safe="")
+    url = f"http://127.0.0.1:{port}/store/{encoded_topic}"
+    timeout_s = max(1, timeout_ms) / 1000.0
+    request = urllib.request.Request(
+        url,
+        headers={
+            "history": "true",
+            "reason": "true",
+            "time": "true",
+        },
+        method="GET",
+    )
+
+    success_count = 0
+    fail_count = 0
+    response_bytes = 0
+    sample_every = max(1, 1000 // max(1, sample_interval_ms))
+    for index in range(request_count):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout_s) as response:
+                body = response.read()
+                response_bytes += len(body)
+                if response.status == 200:
+                    success_count += 1
+                else:
+                    fail_count += 1
+        except Exception:
+            fail_count += 1
+
+        if index % sample_every == 0:
+            rss_kib = sample_rss_kib(process_pid)
+            if rss_kib is not None and (current_peak_rss_kib is None or rss_kib > current_peak_rss_kib):
+                current_peak_rss_kib = rss_kib
+
+    rss_kib = sample_rss_kib(process_pid)
+    if rss_kib is not None and (current_peak_rss_kib is None or rss_kib > current_peak_rss_kib):
+        current_peak_rss_kib = rss_kib
+
+    return current_peak_rss_kib, success_count, fail_count, response_bytes
+    text = completed.stdout
     if not text:
         return None
-    try:
-        value = int(text)
-        if value <= 0:
-            return None
-        return value
-    except ValueError:
+    match = re.search(r"\d+", text)
+    if match is None:
         return None
+    value = int(match.group(0))
+    return value if value > 0 else None
 
 
 def extract_snapshot_size(stdout_text: str, run_dir: Path) -> int | None:
@@ -243,8 +339,14 @@ def run_measured(
     input_file: Path,
     run_dir: Path,
     sample_interval_ms: int,
-) -> tuple[int | None, int | None, int | None, int | None, str, str]:
+    http_request_count: int,
+    http_topic: str,
+    http_timeout_ms: int,
+) -> tuple[int | None, int | None, int | None, int | None, int | None, int, int, int, str, str]:
+    http_port = find_free_tcp_port() if http_request_count > 0 else None
     cmd = [str(binary), "--test", str(input_file), "--test-handshake"]
+    if http_port is not None:
+        cmd += ["--test-http-port", str(http_port)]
     process = subprocess.Popen(
         cmd,
         cwd=run_dir,
@@ -283,6 +385,29 @@ def run_measured(
     if rss_after_load_kib is not None and (peak_rss_kib is None or rss_after_load_kib > peak_rss_kib):
         peak_rss_kib = rss_after_load_kib
 
+    http_success_count = 0
+    http_fail_count = 0
+    http_response_bytes = 0
+    rss_after_http_kib = rss_after_load_kib
+    if http_port is not None and http_request_count > 0:
+        (
+            peak_rss_kib,
+            http_success_count,
+            http_fail_count,
+            http_response_bytes,
+        ) = run_http_query_burst(
+            port=http_port,
+            topic=http_topic,
+            request_count=http_request_count,
+            timeout_ms=http_timeout_ms,
+            process_pid=process.pid,
+            sample_interval_ms=sample_interval_ms,
+            current_peak_rss_kib=peak_rss_kib,
+        )
+        rss_after_http_kib = sample_rss_kib(process.pid)
+        if rss_after_http_kib is not None and (peak_rss_kib is None or rss_after_http_kib > peak_rss_kib):
+            peak_rss_kib = rss_after_http_kib
+
     process.stdin.write("exit\n")
     process.stdin.flush()
 
@@ -301,8 +426,12 @@ def run_measured(
     return (
         rss_before_load_kib,
         rss_after_load_kib,
+        rss_after_http_kib,
         peak_rss_kib,
         snapshot_size,
+        http_success_count,
+        http_fail_count,
+        http_response_bytes,
         "\n".join(captured_stdout_lines),
         stderr_text,
     )
@@ -336,14 +465,20 @@ def main() -> int:
         run_generate_messages(repo_root, workload_input_file, scenario)
         scenario_name = scenario.name
 
+    http_topic = args.http_topic if args.http_topic is not None else read_first_topic_from_jsonl(workload_input_file)
+
     run_dir = tmp_dir / "run"
     run_dir.mkdir(parents=True, exist_ok=True)
 
     (
         empty_rss_before_load,
         empty_rss_after_load,
+        empty_rss_after_http,
         empty_peak_rss,
         empty_snapshot_bytes,
+        empty_http_success,
+        empty_http_fail,
+        empty_http_response_bytes,
         _,
         _,
     ) = run_measured(
@@ -351,12 +486,19 @@ def main() -> int:
         reference_input_file,
         run_dir,
         args.sample_interval_ms,
+        args.http_request_count,
+        http_topic,
+        args.http_timeout_ms,
     )
     (
         workload_rss_before_load,
         workload_rss_after_load,
+        workload_rss_after_http,
         workload_peak_rss,
         workload_snapshot_bytes,
+        workload_http_success,
+        workload_http_fail,
+        workload_http_response_bytes,
         _,
         _,
     ) = run_measured(
@@ -364,6 +506,9 @@ def main() -> int:
         workload_input_file,
         run_dir,
         args.sample_interval_ms,
+        args.http_request_count,
+        http_topic,
+        args.http_timeout_ms,
     )
 
     delta_peak_rss_kib = (
@@ -376,18 +521,35 @@ def main() -> int:
         if workload_rss_after_load is not None and empty_rss_after_load is not None
         else None
     )
+    delta_rss_after_http_kib = (
+        workload_rss_after_http - empty_rss_after_http
+        if workload_rss_after_http is not None and empty_rss_after_http is not None
+        else None
+    )
 
     reference_snapshot_kib = bytes_to_kib(empty_snapshot_bytes)
     workload_exported_file_size_kib = bytes_to_kib(workload_snapshot_bytes)
 
     print(f"scenario={scenario_name}")
     print(f"input_file={workload_input_file}")
+    print(f"http.topic={http_topic}")
+    print(f"http.request_count={args.http_request_count}")
+    print(f"http.timeout_ms={args.http_timeout_ms}")
+    print(f"http.success_count={workload_http_success}")
+    print(f"http.fail_count={workload_http_fail}")
+    print(f"http.response_bytes={workload_http_response_bytes}")
+    print(f"reference.http.success_count={empty_http_success}")
+    print(f"reference.http.fail_count={empty_http_fail}")
+    print(f"reference.http.response_bytes={empty_http_response_bytes}")
     print(f"exported_file_size_kib={workload_exported_file_size_kib}")
     print(f"rss_before_load_kib={workload_rss_before_load}")
     print(f"rss_after_load_kib={workload_rss_after_load}")
+    print(f"rss_after_http_kib={workload_rss_after_http}")
     print(f"sampled_rss_peak_kib={workload_peak_rss}")
     print(f"reference_rss_after_load_command_kib={empty_rss_after_load}")
+    print(f"reference_rss_after_http_command_kib={empty_rss_after_http}")
     print(f"ram_growth_kib={delta_rss_after_load_kib}")
+    print(f"ram_growth_after_http_kib={delta_rss_after_http_kib}")
 
     if workload_exported_file_size_kib is not None and workload_exported_file_size_kib > 0 and delta_rss_after_load_kib is not None and delta_rss_after_load_kib > 0:
         print(

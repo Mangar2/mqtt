@@ -121,6 +121,22 @@ def _start_msgstore_process(config_path: Path, working_directory: Path) -> subpr
     )
 
 
+def _start_msgstore_process_with_log(
+    config_path: Path,
+    working_directory: Path,
+    log_path: Path,
+) -> tuple[subprocess.Popen[str], object]:
+    log_stream = log_path.open("w", encoding="utf-8")
+    process = subprocess.Popen(
+        [str(_MSGSTORE_BINARY), str(config_path)],
+        cwd=working_directory,
+        stdout=log_stream,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    return process, log_stream
+
+
 def _stop_process(process: subprocess.Popen[str] | None) -> None:
     if process is None:
         return
@@ -181,6 +197,33 @@ def _wait_for_store_topic_value(
             pass
         time.sleep(0.2)
     return False
+
+
+def _wait_for_stats_log_block(log_path: Path, header_text: str, timeout_seconds: float) -> str | None:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            content = log_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            content = ""
+        lines = content.splitlines()
+        for index, line in enumerate(lines):
+            if header_text not in line:
+                continue
+
+            block_lines = [line.strip()]
+            next_index = index + 1
+            while next_index < len(lines):
+                candidate_line = lines[next_index]
+                if not candidate_line.startswith("  "):
+                    break
+                block_lines.append(candidate_line.rstrip())
+                next_index += 1
+
+            if len(block_lines) > 1:
+                return "\n".join(block_lines)
+        time.sleep(0.2)
+    return None
 
 
 def _publish_text_message(
@@ -535,7 +578,86 @@ def run_msgstore_survives_broker_sigkill_and_reconnects(config) -> tuple[bool, s
         shutil.rmtree(working_dir, ignore_errors=True)
 
 
+def run_msgstore_logs_startup_stats(config) -> tuple[bool, str]:
+    broker_process = None
+    msgstore_process = None
+    log_stream = None
+    working_dir = Path(tempfile.mkdtemp(prefix="mqtt-yaha-msgstore-it-"))
+    mqtt_port = _find_free_port()
+    http_port = _find_free_port()
+    msgstore_config_path = working_dir / "msgstore.ini"
+    msgstore_log_path = working_dir / "msgstore.log"
+
+    try:
+        _ensure_msgstore_binary()
+
+        broker_overrides = {
+            "network.mqtt_port": mqtt_port,
+            "network.ws_port": 0,
+            "broker.allow_anonymous": True,
+        }
+        broker_process = start_broker(broker_overrides)
+        if broker_process is None:
+            return False, "test requires managed local broker process"
+
+        host = _broker_module.resolve_target_host("127.0.0.1")
+        _write_msgstore_config(
+            msgstore_config_path,
+            mqtt_host=host,
+            mqtt_port=mqtt_port,
+            http_port=http_port,
+            persistence_dir=working_dir,
+            subscribe_topic="integration/yaha/msgstore/startup_stats/#",
+        )
+
+        msgstore_process, log_stream = _start_msgstore_process_with_log(
+            msgstore_config_path,
+            working_dir,
+            msgstore_log_path,
+        )
+
+        if not _wait_for_http_ready("127.0.0.1", http_port, timeout_seconds=max(4.0, config.timeout_seconds)):
+            return False, "msgstore HTTP endpoint did not become ready"
+
+        expected_line = "message_store[stats] phase=start_after_restore"
+        matched_block = _wait_for_stats_log_block(
+            msgstore_log_path,
+            expected_line,
+            timeout_seconds=max(4.0, config.timeout_seconds),
+        )
+        if matched_block is None:
+            tail = ""
+            try:
+                tail = msgstore_log_path.read_text(encoding="utf-8")[-800:]
+            except FileNotFoundError:
+                tail = "<log file not created>"
+            return False, f"startup stats log line missing: '{expected_line}'. log tail: {tail}"
+
+        if "currentNodes" not in matched_block or " : " not in matched_block:
+            return False, f"startup stats block does not match multiline format: {matched_block}"
+
+        print("observed startup stats:")
+        print(matched_block)
+        return True, "msgstore emitted startup compression stats log block:\n" + matched_block
+    except Exception as error:
+        return False, f"msgstore_startup_stats failed: {error}"
+    finally:
+        stop_broker(broker_process)
+        _stop_process(msgstore_process)
+        if log_stream is not None:
+            try:
+                log_stream.close()
+            except Exception:
+                pass
+        shutil.rmtree(working_dir, ignore_errors=True)
+
+
 TEST_CASES = [
+    {
+        "name": "yaha/msgstore/logs_startup_stats",
+        "description": "Msgstore emits startup compression stats log after run()",
+        "run": run_msgstore_logs_startup_stats,
+    },
     {
         "name": "yaha/msgstore/persist_restore_after_restart",
         "description": "Msgstore restores persisted state after process restart",

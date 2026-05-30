@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <netinet/in.h>
 #include <sstream>
 #include <sys/socket.h>
@@ -56,6 +57,17 @@ std::size_t countSnapshotFiles(const std::filesystem::path& path) {
         }
     }
     return count;
+}
+
+std::string readFileText(const std::filesystem::path& path) {
+    std::ifstream input{path};
+    if (!input.is_open()) {
+        return {};
+    }
+
+    return std::string{
+        std::istreambuf_iterator<char>{input},
+        std::istreambuf_iterator<char>{}};
 }
 
 std::uint16_t reserveFreeLocalPort() {
@@ -340,6 +352,53 @@ TEST_CASE("run_and_close_log_compression_stats_for_start_and_stop", "[message_st
 
     REQUIRE(captured.str().find("message_store[stats] phase=start_after_restore") != std::string::npos);
     REQUIRE(captured.str().find("message_store[stats] phase=stop_after_signal") != std::string::npos);
+    REQUIRE(captured.str().find("currentNodes") != std::string::npos);
+    REQUIRE(captured.str().find("represented.interval") != std::string::npos);
+    REQUIRE(captured.str().find(" : ") != std::string::npos);
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("run_writes_loaded_state_replay_dump_and_logs_post_restore_messages", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    const auto loadedReplayPath = tempDir / "loaded_state_replay.jsonl";
+    const auto incomingReplayPath = tempDir / "incoming_replay.jsonl";
+
+    {
+        yaha::MessageTree sourceTree{};
+        yaha::Message sourceMessage{"restore/topic", std::string{"before"}};
+        sourceMessage.addReason("snapshot", "2026-05-30T00:00:00.000Z");
+        sourceTree.addData(sourceMessage);
+
+        yaha::MessageTreePersistence::Config persistConfig{};
+        persistConfig.directory = tempDir;
+        persistConfig.filename = "state";
+
+        yaha::MessageTreePersistence persistence{persistConfig};
+        REQUIRE(persistence.persistNow(sourceTree));
+    }
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = 0U;
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+    config.persistenceConfig.intervalMs = 0U;
+    config.replayLoadedStateFile = loadedReplayPath;
+    config.replayIncomingMessagesFile = incomingReplayPath;
+
+    yaha::MessageStore store{config};
+    store.run();
+    store.handleMessage(yaha::Message{"after/topic", std::string{"live"}});
+    store.close();
+
+    const std::string loadedReplay = readFileText(loadedReplayPath);
+    REQUIRE_FALSE(loadedReplay.empty());
+    REQUIRE(loadedReplay.find("\"topic\":\"restore/topic\"") != std::string::npos);
+
+    const std::string incomingReplay = readFileText(incomingReplayPath);
+    REQUIRE_FALSE(incomingReplay.empty());
+    REQUIRE(incomingReplay.find("\"topic\":\"after/topic\"") != std::string::npos);
+    REQUIRE(incomingReplay.find("\"topic\":\"restore/topic\"") == std::string::npos);
 
     removeDirectoryQuiet(tempDir);
 }
@@ -933,6 +992,7 @@ TEST_CASE("http_get_store_json_output_escapes_special_characters", "[message_sto
     REQUIRE(response->body.find("line1\\nline2\\r\\t\\\"q\\\"\\\\x") != std::string::npos);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("http_get_store_json_output_escapes_ascii_control_characters", "[message_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};

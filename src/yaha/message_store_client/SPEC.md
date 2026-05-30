@@ -38,6 +38,8 @@ Parsing is composed from reusable shared modules:
   - `cleanupTopic`
   - `logIncomingMessages`
   - `logReason` (optional, default `true`)
+  - `replayLoadedStateFile` (optional JSONL dump path written once after startup restore)
+  - `replayIncomingMessagesFile` (optional JSONL append path for all messages received after startup restore)
 - `[tree]`
   - `maxHistoryLength`, `historyHysterese`, `maxValuesPerHistoryEntry`
   - `lengthForFurtherCompression` (range `0..uint32_max`; `0` keeps legacy non-converting behavior)
@@ -82,10 +84,11 @@ all YAHA apps can share the same non-domain runtime behavior.
 - optional incoming-only logs via shared message logging service when INI key `[messagestore] logIncomingMessages=true` and CLI message tracing is off
 - incoming logs use deterministic structured fields (`component`, `direction`, `topic`, `value`, `qos`, `retain`, `dup`, `reason`) and include full reason chain when `messagestore.logReason=true`
 - `messagestore.logIncomingMessages` and `messagestore.logReason` are mapped through shared message-log INI helper (`tryLoadMessageLogConfigFromIni`) with unchanged key names and defaults
+- when configured, replay recorder writes canonical YAHA envelope JSONL startup dump (`replayLoadedStateFile`) and post-restore append stream (`replayIncomingMessagesFile`) for long-run memory reproduction workflows
 - signal handling and shutdown progress lines (`received`, `disconnecting`, `shutting down`, `stopped`)
-- compression stats log line after startup restore (`message_store[stats] phase=start_after_restore ...`)
-- compression stats log line every 60 seconds while runtime is active (`phase=periodic_60s`)
-- compression stats log line after signal-driven shutdown (`phase=stop_after_signal`)
+- compression stats header after startup restore (`message_store[stats] phase=start_after_restore`) followed by multiline aligned metric rows (`name : value`)
+- compression stats header every 60 seconds while runtime is active (`phase=periodic_60s`) followed by multiline aligned metric rows (`name : value`)
+- compression stats header after signal-driven shutdown (`phase=stop_after_signal`) followed by multiline aligned metric rows (`name : value`)
 
 ## CLI behavior
 
@@ -94,6 +97,8 @@ all YAHA apps can share the same non-domain runtime behavior.
 - optional positional `<config-path>` (default `broker.ini`)
 - `--trace-messages` for transport-level sent/recv traces
 - `--test <input-file>` for synchronous offline ingest benchmark mode (no MQTT/HTTP startup)
+- `--test-handshake` to wait for stdin test commands in test mode
+- `--test-http-port <0..65535>` to enable HTTP endpoint in synchronous `--test` mode (requires `--test`)
 - `--version` (`-V`) to print executable name and semantic version, then exit
 - `--help` (`-h`) to print usage
 
@@ -103,9 +108,23 @@ In `--test` mode, each non-empty and non-comment line (`#...`) must be one JSON 
 
 - `{"message":{"topic":"...","value":...,"reason":[{"message":"...","timestamp":"..."}]}}`
 
-The mode processes lines synchronously via direct MessageStore tree insertion,
-prints `messages=<count>` and `buildElapsedMs=<duration>`, and then persists one snapshot file.
-After persistence it prints `test.save` with save success flag, save duration, and written file path.
+The mode processes lines synchronously via direct MessageStore tree insertion
+and prints `messages=<count>` and `buildElapsedMs=<duration>`.
+
+Without `--test-handshake`, it persists one snapshot file and prints `test.save`
+with save success flag, save duration, and written file path.
+
+With `--test-handshake`, it prints `test.handshake phase=ready_for_start` before
+loading, waits for `load`, then prints `test.handshake phase=ready_for_end` after
+loading and accepts test commands:
+
+- `save` persists one snapshot and prints `test.handshake phase=saved index=<n> success=<0|1>`
+- `sleep <ms>` sleeps and prints `test.handshake phase=slept ms=<ms>`
+- `exit` terminates test mode
+
+When `--test-handshake` is used and no explicit `save` command was received,
+one final `test.save` line is still emitted for compatibility.
+
 At test end it also prints `test.stats` with internal compression counters:
 current nodes, total stored messages, bucket type counts (`single`, `timeValue`, `time`, `interval`),
 and represented logical history message counts per bucket type.

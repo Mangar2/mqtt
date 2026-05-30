@@ -376,6 +376,26 @@ TEST_CASE("load_config_parses_log_incoming_messages_when_enabled", "[message_sto
     removeDirectoryQuiet(tempDir);
 }
 
+TEST_CASE("load_config_parses_replay_dump_paths", "[message_store_client]") {
+    const auto tempDir = makeTempDirectory();
+    const auto configPath = writeConfigFile(tempDir,
+        "[mqtt]\n"
+        "host = 127.0.0.1\n"
+        "\n"
+        "[messagestore]\n"
+        "replayLoadedStateFile = data/replay_loaded.jsonl\n"
+        "replayIncomingMessagesFile = data/replay_incoming.jsonl\n");
+
+    yaha::MessageStoreClientRuntimeConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromFile(configPath, config, errorMessage));
+    REQUIRE(config.storeConfig.replayLoadedStateFile == std::filesystem::path{"data/replay_loaded.jsonl"});
+    REQUIRE(config.storeConfig.replayIncomingMessagesFile == std::filesystem::path{"data/replay_incoming.jsonl"});
+
+    removeDirectoryQuiet(tempDir);
+}
+
 TEST_CASE("load_config_defaults_log_reason_to_enabled", "[message_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,

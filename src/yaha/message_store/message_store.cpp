@@ -1,10 +1,13 @@
 #include "yaha/message_store/message_store.h"
 #include "yaha/message_store/message_store_json_parser.h"
+#include "yaha/message/message_payload_codec.h"
+#include "yaha/message_store/iso_timestamp_parser.h"
 
 #include "httplib.h"
 #include "json/json_value.h"
 #include "yaha/error_handling/yaha_error.h"
 
+#include <array>
 #include <algorithm>
 #include <charconv>
 #include <cctype>
@@ -12,8 +15,10 @@
 #include <ctime>
 #include <cstdlib>
 #include <exception>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <string_view>
@@ -39,19 +44,48 @@ constexpr std::chrono::milliseconds k_compression_stats_poll_interval{100};
 
 void printCompressionStatsLine(const MessageTree::CompressionStats& compressionStats,
                                std::string_view phaseText) {
+    struct CompressionStatsRow {
+        std::string_view name;
+        std::uint64_t value;
+    };
+
+    const std::array<CompressionStatsRow, 10U> rows{{
+        {.name = "currentNodes", .value = compressionStats.currentNodeCount},
+        {.name = "totalStoredMessages", .value = compressionStats.totalStoredMessageCount},
+        {.name = "historyBuckets", .value = compressionStats.historyBucketCount},
+        {.name = "buckets.single", .value = compressionStats.singleBucketCount},
+        {.name = "buckets.timeValue", .value = compressionStats.timeValueBucketCount},
+        {.name = "buckets.time", .value = compressionStats.timeBucketCount},
+        {.name = "buckets.interval", .value = compressionStats.intervalBucketCount},
+        {.name = "represented.single", .value = compressionStats.representedSingleCount},
+        {.name = "represented.timeValue", .value = compressionStats.representedTimeValueCount},
+        {.name = "represented.time", .value = compressionStats.representedTimeCount},
+    }};
+
+    const std::uint64_t representedIntervalCount = compressionStats.representedIntervalCount;
+    std::size_t maxNameWidth = std::string_view{"represented.interval"}.size();
+    std::size_t maxValueWidth = std::to_string(representedIntervalCount).size();
+    for (const auto& row : rows) {
+        maxNameWidth = std::max(maxNameWidth, row.name.size());
+        maxValueWidth = std::max(maxValueWidth, std::to_string(row.value).size());
+    }
+
     std::cout << "message_store[stats]"
               << " phase=" << phaseText
-              << " currentNodes=" << compressionStats.currentNodeCount
-              << " totalStoredMessages=" << compressionStats.totalStoredMessageCount
-              << " historyBuckets=" << compressionStats.historyBucketCount
-              << " buckets.single=" << compressionStats.singleBucketCount
-              << " buckets.timeValue=" << compressionStats.timeValueBucketCount
-              << " buckets.time=" << compressionStats.timeBucketCount
-              << " buckets.interval=" << compressionStats.intervalBucketCount
-              << " represented.single=" << compressionStats.representedSingleCount
-              << " represented.timeValue=" << compressionStats.representedTimeValueCount
-              << " represented.time=" << compressionStats.representedTimeCount
-              << " represented.interval=" << compressionStats.representedIntervalCount
+              << '\n';
+
+    for (const auto& row : rows) {
+        std::cout << "  "
+                  << std::left << std::setw(static_cast<int>(maxNameWidth)) << row.name
+                  << " : "
+                  << std::right << std::setw(static_cast<int>(maxValueWidth)) << row.value
+                  << '\n';
+    }
+
+    std::cout << "  "
+              << std::left << std::setw(static_cast<int>(maxNameWidth)) << "represented.interval"
+              << " : "
+              << std::right << std::setw(static_cast<int>(maxValueWidth)) << representedIntervalCount
               << '\n' << std::flush;
 }
 
@@ -445,6 +479,8 @@ SubscriptionMap MessageStore::getSubscriptions() const {
 void MessageStore::handleMessage(const Message& message) {
     Message::validate(message);
 
+    appendReplayIncomingMessage(message);
+
     if (message.topic() == config_.cleanupTopic) {
         const std::optional<std::uint32_t> days = parseCleanupDays(message.value());
         if (days.has_value()) {
@@ -494,7 +530,9 @@ void MessageStore::run() {
                       << '\n' << std::flush;
         }
 
+        writeReplayLoadedStateLocked();
         logCompressionStatsLineLocked("start_after_restore");
+        replayIncomingCaptureEnabled_.store(true);
     }
 
     startCompressionStatsLogging();
@@ -531,6 +569,7 @@ void MessageStore::close() {
     persistence_.stopPeriodic();
 
     std::lock_guard<std::mutex> lock{treeStateMutex_};
+    replayIncomingCaptureEnabled_.store(false);
     logCompressionStatsLineLocked("stop_after_signal");
     try {
         if (!persistence_.persistNow(tree_)) {
@@ -581,6 +620,131 @@ void MessageStore::stopCompressionStatsLogging() {
 void MessageStore::logCompressionStatsLineLocked(std::string_view phaseText) const {
     const MessageTree::CompressionStats compressionStats = tree_.compressionStats();
     printCompressionStatsLine(compressionStats, phaseText);
+}
+
+void MessageStore::writeReplayLoadedStateLocked() {
+    if (config_.replayLoadedStateFile.empty()) {
+        return;
+    }
+
+    const std::vector<MessageTreeNode> nodes = tree_.getSection(
+        "",
+        std::numeric_limits<std::uint32_t>::max(),
+        true,
+        true);
+
+    std::lock_guard<std::mutex> replayLock{replayFileMutex_};
+    const std::filesystem::path replayPath = config_.replayLoadedStateFile;
+    if (!replayPath.parent_path().empty()) {
+        std::error_code createError;
+        std::filesystem::create_directories(replayPath.parent_path(), createError);
+        if (createError) {
+            std::cout << "message_store[error] op=replay_dump_loaded_state reason=create_directories_failed file="
+                      << replayPath.string() << " details=\"" << createError.message() << "\""
+                      << '\n' << std::flush;
+            return;
+        }
+    }
+
+    std::ofstream output{replayPath, std::ios::trunc};
+    if (!output.is_open()) {
+        std::cout << "message_store[error] op=replay_dump_loaded_state reason=open_failed file="
+                  << replayPath.string() << '\n' << std::flush;
+        return;
+    }
+
+    std::uint64_t replayMessageCount = 0U;
+    for (const MessageTreeNode& node : nodes) {
+        const std::vector<ReplayRow> replayRows = buildReplayRowsForNode(node);
+        for (const ReplayRow& replayRow : replayRows) {
+            const Message replayMessage = buildReplayMessage(node.topic, replayRow);
+            output << buildEnvelopePayload(replayMessage) << '\n';
+            replayMessageCount += 1U;
+        }
+    }
+
+    output.flush();
+    if (!output.good()) {
+        std::cout << "message_store[error] op=replay_dump_loaded_state reason=write_failed file="
+                  << replayPath.string() << '\n' << std::flush;
+        return;
+    }
+
+    std::cout << "message_store[replay] op=dump_loaded_state file=" << replayPath.string()
+              << " messages=" << replayMessageCount << '\n' << std::flush;
+}
+
+void MessageStore::appendReplayIncomingMessage(const Message& message) {
+    if (!replayIncomingCaptureEnabled_.load() || config_.replayIncomingMessagesFile.empty()) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> replayLock{replayFileMutex_};
+    const std::filesystem::path replayPath = config_.replayIncomingMessagesFile;
+    if (!replayPath.parent_path().empty()) {
+        std::error_code createError;
+        std::filesystem::create_directories(replayPath.parent_path(), createError);
+        if (createError) {
+            std::cout << "message_store[error] op=replay_dump_incoming reason=create_directories_failed file="
+                      << replayPath.string() << " details=\"" << createError.message() << "\""
+                      << '\n' << std::flush;
+            return;
+        }
+    }
+
+    std::ofstream output{replayPath, std::ios::app};
+    if (!output.is_open()) {
+        std::cout << "message_store[error] op=replay_dump_incoming reason=open_failed file="
+                  << replayPath.string() << '\n' << std::flush;
+        return;
+    }
+
+    output << buildEnvelopePayload(message) << '\n';
+    output.flush();
+    if (!output.good()) {
+        std::cout << "message_store[error] op=replay_dump_incoming reason=write_failed file="
+                  << replayPath.string() << '\n' << std::flush;
+    }
+}
+
+Message MessageStore::buildReplayMessage(const std::string& topicPath,
+                                         const ReplayRow& replayRow) {
+    Message replayMessage{topicPath, replayRow.value};
+    if (replayRow.reason.empty()) {
+        return replayMessage;
+    }
+
+    for (auto reverseIndex = replayRow.reason.rbegin(); reverseIndex != replayRow.reason.rend(); ++reverseIndex) {
+        std::string timestamp = reverseIndex->timestamp;
+        if (timestamp.empty()) {
+            timestamp = toIsoTimestampMilliseconds(replayRow.timeMs);
+        }
+        replayMessage.addReason(reverseIndex->message, std::move(timestamp));
+    }
+
+    return replayMessage;
+}
+
+std::vector<MessageStore::ReplayRow>
+MessageStore::buildReplayRowsForNode(const MessageTreeNode& node) {
+    std::vector<ReplayRow> replayRows{};
+    replayRows.reserve(node.history.size() + 1U);
+
+    for (std::size_t reverseIndex = node.history.size(); reverseIndex > 0U; --reverseIndex) {
+        const MessageTreeHistoryEntry& historyEntry = node.history[reverseIndex - 1U];
+        replayRows.push_back(ReplayRow{
+            .value = historyEntry.value,
+            .reason = historyEntry.reason,
+            .timeMs = historyEntry.timeMs,
+        });
+    }
+
+    replayRows.push_back(ReplayRow{
+        .value = node.value,
+        .reason = node.reason,
+        .timeMs = node.timeMs,
+    });
+    return replayRows;
 }
 
 bool MessageStore::isRunning() const {

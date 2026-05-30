@@ -320,7 +320,7 @@ MessageStore client INI sections:
 - `[server]`: `host`, `port`, `path`
 - `[persist]`: `directory`, `filename`, `intervalMs`, `keepFiles`
 - repeated `[subscription]`: `topic` and `qos` (`0`, `1`, `2`), default `topic=#` with `qos=1` when missing
-- `[messagestore]`: `cleanupTopic`, `logIncomingMessages`, `logReason` (`true/false`, `1/0`, `yes/no`, `on/off`, default `true`)
+- `[messagestore]`: `cleanupTopic`, `logIncomingMessages`, `logReason` (`true/false`, `1/0`, `yes/no`, `on/off`, default `true`), `replayLoadedStateFile`, `replayIncomingMessagesFile`
 - `[tree]`: `maxHistoryLength`, `historyHysterese`, `maxValuesPerHistoryEntry`, `lengthForFurtherCompression`, `upperBoundFactor`, `upperBoundAddInMilliseconds`, `lowerBoundFactor`, `lowerBoundSubInMilliseconds`
 
 HTTP MQTT interface client INI sections:

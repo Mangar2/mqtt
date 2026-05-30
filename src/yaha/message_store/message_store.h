@@ -38,6 +38,8 @@ struct MessageStoreConfig {
     std::string serverHost{"127.0.0.1"};             ///< HTTP server bind host/IP.
     std::string serverPath{"/store"};                 ///< HTTP GET base path.
     std::uint16_t serverPort{k_default_server_port};   ///< HTTP server listen port.
+    std::filesystem::path replayLoadedStateFile{};      ///< Optional JSONL replay dump after restore.
+    std::filesystem::path replayIncomingMessagesFile{}; ///< Optional JSONL append log for messages after restore.
     MessageTreeConfig treeConfig{};                    ///< MessageTree behavior config.
     MessageTreePersistence::Config persistenceConfig{};///< Persistence behavior config.
     std::function<void()> httpStartCallback;           ///< Optional HTTP start callback.
@@ -136,9 +138,21 @@ public:
     [[nodiscard]] std::optional<std::filesystem::path> persistSnapshotNow();
 
 private:
+    struct ReplayRow {
+        Value value{};
+        ReasonList reason{};
+        std::int64_t timeMs{0};
+    };
+
     void startCompressionStatsLogging();
     void stopCompressionStatsLogging();
     void logCompressionStatsLineLocked(std::string_view phaseText) const;
+    void writeReplayLoadedStateLocked();
+    void appendReplayIncomingMessage(const Message& message);
+    [[nodiscard]] static Message buildReplayMessage(const std::string& topicPath,
+                                                    const ReplayRow& replayRow);
+    [[nodiscard]] static std::vector<ReplayRow>
+    buildReplayRowsForNode(const MessageTreeNode& node);
 
     void startHttpServer();
     void stopHttpServer();
@@ -165,7 +179,9 @@ private:
 
     mutable std::mutex lifecycleStateMutex_;
     mutable std::mutex treeStateMutex_;
+    mutable std::mutex replayFileMutex_;
     bool running_{false};
+    std::atomic<bool> replayIncomingCaptureEnabled_{false};
 };
 
 } // namespace yaha

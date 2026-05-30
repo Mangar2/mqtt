@@ -1,0 +1,29 @@
+
+// nach laden speicherbedarf 25 MB
+currentNodes          :    2339
+May 29 23:36:46 yaha2 yahamsgstoreclient[21220]:   totalStoredMessages   : 1048483
+May 29 23:36:46 yaha2 yahamsgstoreclient[21220]:   historyBuckets        :   23702
+May 29 23:36:46 yaha2 yahamsgstoreclient[21220]:   buckets.single        :    4536
+May 29 23:36:46 yaha2 yahamsgstoreclient[21220]:   buckets.timeValue     :    9500
+May 29 23:36:46 yaha2 yahamsgstoreclient[21220]:   buckets.time          :    4049
+May 29 23:36:46 yaha2 yahamsgstoreclient[21220]:   buckets.interval      :    5617
+May 29 23:36:46 yaha2 yahamsgstoreclient[21220]:   represented.single    :    4536
+May 29 23:36:46 yaha2 yahamsgstoreclient[21220]:   represented.timeValue :  228658
+May 29 23:36:46 yaha2 yahamsgstoreclient[21220]:   represented.time      :  197706
+May 29 23:36:46 yaha2 yahamsgstoreclient[21220]:   represented.interval  :  615244
+
+// 7 Stunden später speicherbedarf 75 MB
+May 30 05:59:09 yaha2 yahamsgstoreclient[21220]: message_store[stats] phase=periodic_60s
+May 30 05:59:09 yaha2 yahamsgstoreclient[21220]:   currentNodes          :    2339
+May 30 05:59:09 yaha2 yahamsgstoreclient[21220]:   totalStoredMessages   : 1080183
+May 30 05:59:09 yaha2 yahamsgstoreclient[21220]:   historyBuckets        :   23724
+May 30 05:59:09 yaha2 yahamsgstoreclient[21220]:   buckets.single        :    4468
+May 30 05:59:09 yaha2 yahamsgstoreclient[21220]:   buckets.timeValue     :    9545
+May 30 05:59:09 yaha2 yahamsgstoreclient[21220]:   buckets.time          :    4050
+May 30 05:59:09 yaha2 yahamsgstoreclient[21220]:   buckets.interval      :    5661
+May 30 05:59:09 yaha2 yahamsgstoreclient[21220]:   represented.single    :    4468
+May 30 05:59:09 yaha2 yahamsgstoreclient[21220]:   represented.timeValue :  236276
+May 30 05:59:09 yaha2 yahamsgstoreclient[21220]:   represented.time      :  197688
+May 30 05:59:09 yaha2 yahamsgstoreclient[21220]:   represented.interval  :  639412
+
+
