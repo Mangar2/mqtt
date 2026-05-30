@@ -26,6 +26,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _RELEASE_DIR = _PROJECT_ROOT / "build" / "release"
 _MSGSTORE_BINARY = _RELEASE_DIR / ("yahamsgstoreclient.exe" if os.name == "nt" else "yahamsgstoreclient")
 _TEST_DATA_FILE = _PROJECT_ROOT / "data" / "messageStoreTestData.mtree"
+_WORKSPACE_TMP_ROOT = _PROJECT_ROOT / "build" / "test-temp"
 
 # Seeded file uses a far-future timestamp so it is always picked as the newest snapshot.
 _SEED_TIMESTAMP = "9999999999999"
@@ -141,7 +142,9 @@ def _stop_process(process: subprocess.Popen[str] | None) -> None:
 
 def run_backup_roundtrip_memory(config) -> tuple[bool, str]:
     """Load messageStoreTestData.mtree, measure RSS, save and verify roundtrip."""
-    working_dir = Path(tempfile.mkdtemp(prefix="mqtt-yaha-msgstore-roundtrip-"))
+    _WORKSPACE_TMP_ROOT.mkdir(parents=True, exist_ok=True)
+    working_dir = Path(tempfile.mkdtemp(prefix="mqtt-yaha-msgstore-roundtrip-",
+                                        dir=str(_WORKSPACE_TMP_ROOT)))
     process: subprocess.Popen[str] | None = None
 
     try:
