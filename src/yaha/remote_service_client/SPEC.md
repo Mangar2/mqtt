@@ -58,6 +58,11 @@ Mapping rules:
 - `remoteservice.logOutgoingMessages -> RemoteServiceClientRuntimeConfig.logOutgoingMessages`
 - `remoteservice.logReason -> YahaMqttClient::Config.logReason`
 
+Logging precedence for this client:
+
+- `remoteservice.logReason` is authoritative for message-log reason-chain output.
+- `mqtt.logReason` is parsed by the generic MQTT loader but ignored by RemoteService runtime mapping.
+
 ## Standalone composition behavior
 
 `src/yaha_remoteserviceclient_main.cpp` composes runtime directly:

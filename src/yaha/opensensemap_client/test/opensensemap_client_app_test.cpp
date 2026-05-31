@@ -432,7 +432,34 @@ TEST_CASE("load_runtime_config_falls_back_on_invalid_opensensemap_logging_flags"
     REQUIRE(yaha::tryLoadOpenSenseMapClientRuntimeConfigFromIni(document, runtimeConfig, errorMessage));
     REQUIRE(errorMessage.empty());
     REQUIRE_FALSE(runtimeConfig.logIncomingMessages);
-    REQUIRE_FALSE(runtimeConfig.mqttConfig.logReason);
+    REQUIRE(runtimeConfig.mqttConfig.logReason);
+}
+
+TEST_CASE("load_runtime_config_ignores_mqtt_log_reason_for_opensensemap_logging", "[opensensemap_client]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "logReason = false\n"
+        "\n"
+        "[opensensemap]\n"
+        "id = box-abc\n"
+        "logIncomingMessages = true\n"
+        "\n"
+        "[sensor]\n"
+        "name = temperature\n"
+        "unit = C\n"
+        "topic = house/living/temperature\n"
+        "id = sensor-temp\n";
+
+    const ScopedIniFile iniFile{iniText};
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniFile.path());
+
+    yaha::OpenSenseMapClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+
+    REQUIRE(yaha::tryLoadOpenSenseMapClientRuntimeConfigFromIni(document, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.logIncomingMessages);
+    REQUIRE(runtimeConfig.mqttConfig.logReason);
 }
 
 TEST_CASE("opensensemap_request_sender_throws_on_invalid_status_metadata", "[opensensemap_client]") {

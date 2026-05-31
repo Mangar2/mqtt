@@ -350,7 +350,7 @@ bool tryLoadOpenSenseMapClientRuntimeConfigFromIni(
     MessageLogConfig messageLogConfig{
         .enableIncoming = parsed.logIncomingMessages,
         .enableOutgoing = false,
-        .includeReasonChain = parsed.mqttConfig.logReason,
+        .includeReasonChain = true,
     };
     std::string messageLogConfigError{};
     if (!tryLoadMessageLogConfigFromIni(

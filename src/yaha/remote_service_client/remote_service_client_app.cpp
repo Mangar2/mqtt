@@ -155,7 +155,7 @@ bool tryLoadRemoteServiceClientRuntimeConfigFromIni(
     MessageLogConfig messageLogConfig{
         .enableIncoming = parsed.logIncomingMessages,
         .enableOutgoing = parsed.logOutgoingMessages,
-        .includeReasonChain = parsed.mqttConfig.logReason,
+        .includeReasonChain = true,
     };
     if (!tryLoadMessageLogConfigFromIni(
             document,

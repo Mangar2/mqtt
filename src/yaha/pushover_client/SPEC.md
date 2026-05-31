@@ -35,7 +35,7 @@ HTTP sender factory used by `yahapushoverclient`.
 - `user` (required)
 - `logIncomingMessages` (optional, default `false`)
 - `logOutgoingMessages` (optional, default `false`)
-- `logReason` (optional, default inherited from MQTT config)
+- `logReason` (optional, default `true`)
 
 ### Repeated section `[device]`
 
