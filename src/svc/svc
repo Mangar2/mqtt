@@ -9,19 +9,25 @@ usage() {
 Usage:
     svc list [pattern]
     svc log <service> [lines]
+    svc stop <service>
+    svc restart <service>
 
 Subcommands:
     list    Show PM2-like overview for deployment services (default: managed YAHA units)
     log     Follow service logs via journalctl namespace (default lines: 100)
+    stop    Stop a service unit via systemctl
+    restart Restart a service unit via systemctl
 EOF
 }
 
-ensure_dependencies() {
+ensure_systemctl() {
     if ! command -v systemctl >/dev/null 2>&1; then
         echo "error: systemctl not found" >&2
         exit 1
     fi
+}
 
+ensure_journalctl() {
     if ! command -v journalctl >/dev/null 2>&1; then
         echo "error: journalctl not found" >&2
         exit 1
@@ -83,7 +89,7 @@ read_rss_bytes_from_pid() {
 }
 
 list_services() {
-    ensure_dependencies
+    ensure_systemctl
 
     local pattern="${1:-$DEFAULT_SERVICE_PATTERN}"
     local services
@@ -196,7 +202,8 @@ namespace_for_service_unit() {
 }
 
 follow_service_logs() {
-    ensure_dependencies
+    ensure_systemctl
+    ensure_journalctl
 
     local service_name="${1:-}"
     local lines="${2:-100}"
@@ -225,6 +232,41 @@ follow_service_logs() {
     journalctl --namespace="$namespace" -u "$unit" -n "$lines" -f --no-pager
 }
 
+run_systemctl_action() {
+    local action="$1"
+    local unit="$2"
+
+    if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+        systemctl "$action" "$unit"
+        return
+    fi
+
+    if command -v sudo >/dev/null 2>&1; then
+        sudo systemctl "$action" "$unit"
+        return
+    fi
+
+    echo "error: '${action}' requires root privileges (run as root or install sudo)" >&2
+    exit 1
+}
+
+control_service() {
+    ensure_systemctl
+
+    local action="$1"
+    local service_name="${2:-}"
+    local unit
+
+    if [[ -z "$service_name" ]]; then
+        echo "error: missing service name (example: svc ${action} brkconn)" >&2
+        exit 1
+    fi
+
+    unit="$(normalize_service_unit "$service_name")"
+    run_systemctl_action "$action" "$unit"
+    echo "Service ${unit}: ${action} executed"
+}
+
 main() {
     local cmd="${1:-}"
     local arg1="${2:-}"
@@ -236,6 +278,12 @@ main() {
             ;;
         log)
             follow_service_logs "$arg1" "$arg2"
+            ;;
+        stop)
+            control_service "stop" "$arg1"
+            ;;
+        restart)
+            control_service "restart" "$arg1"
             ;;
         -h|--help|help|"")
             usage

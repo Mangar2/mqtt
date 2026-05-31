@@ -13,6 +13,8 @@ Supported subcommands:
 
 - `list`
 - `log`
+- `stop`
+- `restart`
 
 `svc list [pattern]` prints a table with one row per matching system service
 and the following
@@ -31,18 +33,30 @@ columns:
 - `[lines]` is optional and defaults to `100`.
 - output is live (`-f`) and continues until interrupted (`Ctrl+C`).
 
+`svc stop <service>` stops a systemd unit and `svc restart <service>` restarts
+it:
+
+- `<service>` accepts both short names (`broker`, `brkconn`, `httpmqtt`) and unit names (`broker.service`).
+- the command normalizes missing `.service` suffix automatically.
+- service control is executed via `systemctl` and uses `sudo` automatically
+  when the caller is not root.
+
 ## Behavior
 
 - Discovers service units from `systemctl list-units --type=service --all`.
 - Reads per-service metadata with `systemctl show`.
 - Applies a regex filter to unit names.
-- Default filter matches the deployment-managed units `broker`, `filestore`, `msgstore`, `autom`, `valuesvc`, `brkconn`, `httpmqtt`, and `remotesvc`.
+- Default filter matches the deployment-managed units `autom`, `broker`,
+  `brkconn`, `filestore`, `httpmqtt`, `msgstore`, `opensensemap`, `pushover`,
+  `remotesvc`, `rs485`, `valuesvc`, and `zwave`.
 - Uses `MemoryCurrent` when available; otherwise falls back to process RSS
   from `/proc/<pid>/status` (`VmRSS`).
 - Sorts services by unit name.
 - Prints `-` for unavailable values.
 - For `log`, normalizes missing `.service` suffix automatically.
 - For `log`, streams logs with `journalctl -u <unit> -n <lines> -f --no-pager`.
+- For `stop`/`restart`, normalizes missing `.service` suffix and executes
+  `systemctl <action> <unit>`.
 - Returns non-zero when `systemctl` is missing or no supported subcommand is
   provided.
 
