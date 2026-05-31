@@ -291,7 +291,7 @@ ValueService client INI sections:
 
 - `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs, logReason)
 - `[filestore]`: `use`, `host`, `port`, `filename`, `topicPrefix`, `startupRetryCount`, `startupRetryIntervalSeconds`
-- `[valueservice]`: `subscribeQoS`, optional legacy `valuesFileName`
+- `[valueservice]`: `subscribeQoS`, `logIncomingMessages`, `logOutgoingMessages`, `logReason`, optional legacy `valuesFileName`
 
 ValueService startup lifecycle status:
 

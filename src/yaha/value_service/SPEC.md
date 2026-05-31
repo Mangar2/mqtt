@@ -17,6 +17,9 @@ for FileStore-backed value-map lifecycle.
 | `fileStorePort` | `std::uint16_t` | `8210` | FileStore HTTP port |
 | `fileStoreEnabled` | `bool` | `true` | Enables FileStore-based startup load and write-back |
 | `subscribeQos` | `Qos` | `Qos::AtLeastOnce` | Subscription and outbound value publish QoS |
+| `logIncomingMessages` | `bool` | `false` | Enables incoming MQTT message-flow logs |
+| `logOutgoingMessages` | `bool` | `false` | Enables outgoing MQTT message-flow logs |
+| `logReason` | `bool` | `true` | Includes reason chain in ValueService message-flow logs |
 | `legacyValuesFileName` | `std::string` | empty | Legacy migration config key; runtime local-file persistence is disabled |
 
 ### Class `ValueServiceComponent` : `IMqttComponent`
@@ -64,9 +67,11 @@ for FileStore-backed value-map lifecycle.
 	- stale subscriptions for removed keys must be removed, and missing subscriptions for new keys must be added
 	- this is mandatory in every case; no delayed or best-effort synchronization is allowed
 - Message logging:
-	- logs every inbound message to `std::cout` before handling (`value_service[in] ...`)
-	- logs every outbound published message to `std::cout` only after callback success (`value_service[out] ...`)
-	- logs outbound failures as `value_service[out-fail] ...`
+	- incoming/outgoing message logs are controlled by `logIncomingMessages` and `logOutgoingMessages`
+	- ValueService uses shared message-log service formatting (`component="value_service"`, deterministic field order)
+	- success logs are emitted only after publish callback success
+	- publish failures are logged on `std::cerr` with `event=publish_failed` and category/reason metadata
+	- reason-chain inclusion is controlled by `logReason`
 - Persistence format:
 	- full JSON object map `key -> value`
 	- values restricted to `string` or integer numbers

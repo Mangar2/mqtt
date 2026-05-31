@@ -62,7 +62,7 @@ Supported INI sections:
 - `[filestore]`
   - `host`, `port`, `filename`, `use`, `topicPrefix`, `startupRetryCount`, `startupRetryIntervalSeconds`
 - `[valueservice]`
-  - `subscribeQoS`, `valuesFileName`
+  - `subscribeQoS`, `logIncomingMessages`, `logOutgoingMessages`, `logReason`, `valuesFileName`
 
 Semantics:
 - `filestore.filename` is the single source for ValueService value-map key name.
@@ -74,6 +74,11 @@ Validation rules:
 - `filestore.startupRetryIntervalSeconds` must be `1..uint32_max`.
 - `valueservice.subscribeQoS` must be `0..2`.
 - `filestore.use` must be valid boolean token.
+
+Message-log mapping rules:
+- `[valueservice].logIncomingMessages` and `[valueservice].logOutgoingMessages` are parsed via shared message-log INI helper and map to `ValueServiceConfig` logging flags.
+- `[valueservice].logReason` controls reason-chain inclusion for ValueService message logs.
+- `[valueservice].logReason` is also propagated to `mqttConfig.logReason` so `--trace-messages` transport logs and component logs stay reason-output consistent.
 
 INI error handling:
 - Invalid recoverable values do not abort config loading.

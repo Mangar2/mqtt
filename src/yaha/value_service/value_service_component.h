@@ -34,6 +34,9 @@ struct ValueServiceConfig {
     std::uint32_t fileStoreStartupRetryCount{kDefaultValueServiceFileStoreStartupRetryCount}; ///< Additional startup retries after first failed load.
     std::uint32_t fileStoreStartupRetryIntervalSeconds{kDefaultValueServiceFileStoreStartupRetryIntervalSeconds}; ///< Wait interval between startup retries.
     Qos subscribeQos{Qos::AtLeastOnce};                     ///< QoS for subscriptions and outbound state publishes.
+    bool logIncomingMessages{false};                        ///< Enables incoming message-flow logs.
+    bool logOutgoingMessages{false};                        ///< Enables outgoing message-flow logs.
+    bool logReason{true};                                   ///< Includes reason chain in message-flow logs.
     std::string legacyValuesFileName{};                     ///< Legacy migration key only, runtime-local file IO is disabled.
 };
 
@@ -126,6 +129,9 @@ private:
     [[nodiscard]] static bool isSupportedValueType(const Value& value);
     [[nodiscard]] static std::string serializeValueMap(const ValueMap& values);
     [[nodiscard]] static bool parseValueMapJson(const std::string& jsonText, ValueMap& output);
+
+    void logIncomingMessageIfEnabled(const Message& message) const;
+    void logOutgoingMessageIfEnabled(const Message& message) const;
 
     /**
      * @brief Attempts one publish through callback.

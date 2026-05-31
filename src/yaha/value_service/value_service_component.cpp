@@ -1,4 +1,5 @@
 #include "yaha/value_service/value_service_component.h"
+#include "yaha/message/message_log_service.h"
 #include "yaha/message/message_payload_codec.h"
 
 #include "httplib.h"
@@ -11,7 +12,6 @@
 #include <iostream>
 #include <limits>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <utility>
 
@@ -43,42 +43,6 @@ constexpr int k_file_store_write_timeout_seconds{1};
     }
 
     return "unknown";
-}
-
-[[nodiscard]] std::string valueToLogText(const Value& messageValue) {
-    if (std::holds_alternative<std::string>(messageValue)) {
-        return std::get<std::string>(messageValue);
-    }
-
-    std::ostringstream textStream;
-    textStream << std::get<double>(messageValue);
-    return textStream.str();
-}
-
-[[nodiscard]] std::string qosToLogText(const Qos qosValue) {
-    switch (qosValue) {
-    case Qos::AtMostOnce:
-        return "0";
-    case Qos::AtLeastOnce:
-        return "1";
-    case Qos::ExactlyOnce:
-        return "2";
-    }
-
-    return "unknown";
-}
-
-void logMessage(const char* directionText, const Message& message) {
-    std::cout << "value_service[" << directionText << "] topic=" << message.topic()
-              << " qos=" << qosToLogText(message.qos())
-              << " retain=" << (message.retain() ? "1" : "0")
-              << " value=" << valueToLogText(message.value());
-
-    if (!message.reason().empty()) {
-        std::cout << " reason=\"" << message.reason().front().message << '\"';
-    }
-
-    std::cout << '\n' << std::flush;
 }
 
 [[nodiscard]] bool startsWithText(const std::string& textValue, const std::string& prefix) {
@@ -262,7 +226,7 @@ SubscriptionMap ValueServiceComponent::getSubscriptions() const {
 
 void ValueServiceComponent::handleMessage(const Message& message) {
     processPendingPublishQueue();
-    logMessage("in", message);
+    logIncomingMessageIfEnabled(message);
 
     if (isMonitoringTopic(message.topic())) {
         handleMonitoringMessage(message);
@@ -566,6 +530,46 @@ bool ValueServiceComponent::parseValueMapJson(const std::string& jsonText, Value
     return parseIndex == jsonText.size();
 }
 
+void ValueServiceComponent::logIncomingMessageIfEnabled(const Message& message) const {
+    const MessageLogConfig logConfig{
+        .enableIncoming = config_.logIncomingMessages,
+        .enableOutgoing = false,
+        .includeReasonChain = config_.logReason,
+        .incomingTopicFilter = std::nullopt,
+        .outgoingTopicFilter = std::nullopt};
+
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "value_service",
+        MessageLogDirection::Incoming,
+        message,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cout << *logLine << '\n' << std::flush;
+}
+
+void ValueServiceComponent::logOutgoingMessageIfEnabled(const Message& message) const {
+    const MessageLogConfig logConfig{
+        .enableIncoming = false,
+        .enableOutgoing = config_.logOutgoingMessages,
+        .includeReasonChain = config_.logReason,
+        .incomingTopicFilter = std::nullopt,
+        .outgoingTopicFilter = std::nullopt};
+
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "value_service",
+        MessageLogDirection::Outgoing,
+        message,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cout << *logLine << '\n' << std::flush;
+}
+
 void ValueServiceComponent::publishRetainedValue(
     const std::string& key,
     const Value& value,
@@ -620,7 +624,7 @@ bool ValueServiceComponent::tryPublishMessage(const Message& message,
             return false;
         }
 
-        logMessage("out", message);
+        logOutgoingMessageIfEnabled(message);
         return true;
     } catch (const std::exception& exceptionValue) {
         logOutgoingFailure(message, channelText, exceptionValue.what());
@@ -673,12 +677,26 @@ void ValueServiceComponent::processPendingPublishQueue() const {
 void ValueServiceComponent::logOutgoingFailure(const Message& message,
                                                const std::string& categoryText,
                                                const std::string& reasonText) {
-    std::cout << "value_service[out-fail] topic=" << message.topic()
-              << " qos=" << qosToLogText(message.qos())
-              << " retain=" << (message.retain() ? "1" : "0")
-              << " value=" << valueToLogText(message.value())
+    const MessageLogConfig logConfig{
+        .enableIncoming = false,
+        .enableOutgoing = true,
+        .includeReasonChain = true,
+        .incomingTopicFilter = std::nullopt,
+        .outgoingTopicFilter = std::nullopt};
+
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "value_service",
+        MessageLogDirection::Outgoing,
+        message,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cerr << *logLine
+              << " event=publish_failed"
               << " category=" << categoryText
-              << " reason=" << reasonText
+              << " reason=\"" << escapeJsonString(reasonText) << '\"'
               << '\n'
               << std::flush;
 }

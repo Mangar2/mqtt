@@ -25,8 +25,8 @@ directly here — each sub-topic has its own subdirectory.
 | `zwave_devices/` | zwave phase 2 | ZWave mapping and conversion helpers for value-to-topic resolution, topic-to-id lookup, and write payload normalization. |
 | `zwave_controller/` | zwave phase 3 | ZWave controller adapter for callback event mapping, node/value cache management, and topic-based set routing via driver port abstraction. |
 | `zwave_client/` | zwave phase 6 | Standalone ZWave runtime mapping and executable composition via `yaha_zwaveclient_main.cpp` with real OpenZWave runtime driver binding, watcher-to-controller event translation, generic MQTT runtime orchestration, and phase-6 runtime config validation tests. |
-| `value_service/` | valueservice phase 2 | ValueService IMqttComponent with startup FileStore load, `/set` handling, retained replay publish, and monitor-triggered reload. |
-| `value_service_client/` | valueservice phase 3 | Standalone ValueService runtime config mapping and process composition via `yaha_valueserviceclient_main.cpp`. |
+| `value_service/` | valueservice phase 2 | ValueService IMqttComponent with startup FileStore load, `/set` handling, retained replay publish, monitor-triggered reload, and configurable shared incoming/outgoing message-flow logging. |
+| `value_service_client/` | valueservice phase 3 | Standalone ValueService runtime config mapping and process composition via `yaha_valueserviceclient_main.cpp`, including shared message-log INI key mapping (`logIncomingMessages`, `logOutgoingMessages`, `logReason`). |
 | `opensensemap/` | opensensemap phase 1 | OpenSenseMap IMqttComponent that maps configured sensor topics to OpenSenseMap HTTP posts and publishes `$SYS/opensensemap/*` status messages. |
 | `opensensemap_client/` | opensensemap phase 2 | Standalone OpenSenseMap runtime config mapping, repeated `[sensor]` section parser, and HTTP/HTTPS sender factory for composition via `yaha_opensensemapclient_main.cpp`. |
 | `pushover/` | pushover phase 1 | Pushover IMqttComponent that forwards incident messages to configured devices and publishes `$SYS/pushover/*` status messages. |

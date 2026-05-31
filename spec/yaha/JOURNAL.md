@@ -261,3 +261,14 @@ Updated `src/yaha/rs485_interface/test/rs485_interface_component_test.cpp` and `
 
 ### [CORRECTION] Z-Wave unit-test expectations aligned with current startup and poll allowlist behavior
 Updated `src/yaha/zwave/test/zwave_service_component_test.cpp` to expect the startup known-nodes snapshot plus request-config error publish in run exception paths. Updated `src/yaha/zwave_controller/test/zwave_controller_test.cpp` and `src/yaha/zwave_controller/test/TEST_SPEC.md` to keep post-ready polling restricted to allowlisted switch classes (no additional poll enable for sensor class `0x31`).
+
+## 2026-05-31
+
+### [ARTIFACT] ValueService logging switched to shared client format
+Updated `src/yaha/value_service/value_service_component.h` and `src/yaha/value_service/value_service_component.cpp` to use shared message-log service output for incoming/outgoing messages. Added `logIncomingMessages`, `logOutgoingMessages`, and `logReason` to `ValueServiceConfig` and gated log emission through these flags.
+
+### [ARTIFACT] ValueService client INI mapping extended with log settings
+Updated `src/yaha/value_service_client/value_service_client_app.cpp` to parse `[valueservice]` logging keys via `tryLoadMessageLogConfigFromIni` and map them into `ValueServiceConfig`. `logReason` is propagated to `mqttConfig.logReason` for reason-chain consistency between component and transport trace output.
+
+### [ARTIFACT] ValueService template/tests/spec docs synchronized
+Updated `cmake/ini/valueservice.ini`, `src/yaha/value_service/test/value_service_component_test.cpp`, `src/yaha/value_service/test/value_service_client_config_test.cpp`, and `src/yaha/value_service/test/TEST_SPEC.md` for the new logging settings and shared structured log assertions. Updated `src/yaha/value_service/SPEC.md`, `src/yaha/value_service_client/SPEC.md`, `src/yaha/SPEC.md`, and `README.md` to keep config and behavior documentation aligned.

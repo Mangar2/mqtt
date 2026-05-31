@@ -63,6 +63,9 @@ TEST_CASE("value_service_runtime_config_parses_all_sections", "[value_service]")
         "\n"
         "[valueservice]\n"
         "subscribeQoS=2\n"
+        "logIncomingMessages=true\n"
+        "logOutgoingMessages=true\n"
+        "logReason=false\n"
         "valuesFileName=legacy.json\n";
 
     yaha::ValueServiceClientRuntimeConfig runtimeConfig{};
@@ -83,7 +86,11 @@ TEST_CASE("value_service_runtime_config_parses_all_sections", "[value_service]")
     REQUIRE(runtimeConfig.valueServiceConfig.fileStoreStartupRetryCount == 7U);
     REQUIRE(runtimeConfig.valueServiceConfig.fileStoreStartupRetryIntervalSeconds == 33U);
     REQUIRE(runtimeConfig.valueServiceConfig.subscribeQos == yaha::Qos::ExactlyOnce);
+    REQUIRE(runtimeConfig.valueServiceConfig.logIncomingMessages);
+    REQUIRE(runtimeConfig.valueServiceConfig.logOutgoingMessages);
+    REQUIRE_FALSE(runtimeConfig.valueServiceConfig.logReason);
     REQUIRE(runtimeConfig.valueServiceConfig.legacyValuesFileName == "legacy.json");
+    REQUIRE_FALSE(runtimeConfig.mqttConfig.logReason);
 }
 
 TEST_CASE("value_service_runtime_config_falls_back_on_invalid_subscribe_qos", "[value_service]") {
@@ -116,6 +123,27 @@ TEST_CASE("value_service_runtime_config_falls_back_on_invalid_filestore_use", "[
     REQUIRE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
     REQUIRE(errorMessage.empty());
     REQUIRE(runtimeConfig.valueServiceConfig.fileStoreEnabled);
+}
+
+TEST_CASE("value_service_runtime_config_falls_back_on_invalid_valueservice_logging_bools", "[value_service]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "host=127.0.0.1\n"
+        "\n"
+        "[valueservice]\n"
+        "logIncomingMessages=maybe\n"
+        "logOutgoingMessages=maybe\n"
+        "logReason=maybe\n";
+
+    yaha::ValueServiceClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE_FALSE(runtimeConfig.valueServiceConfig.logIncomingMessages);
+    REQUIRE_FALSE(runtimeConfig.valueServiceConfig.logOutgoingMessages);
+    REQUIRE(runtimeConfig.valueServiceConfig.logReason);
+    REQUIRE(runtimeConfig.mqttConfig.logReason);
 }
 
 TEST_CASE("value_service_runtime_config_falls_back_on_invalid_filestore_retry_interval", "[value_service]") {

@@ -1,5 +1,6 @@
 #include "yaha/value_service_client/value_service_client_app.h"
 
+#include "yaha/message/message_log_service.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <cstdint>
@@ -161,6 +162,35 @@ bool tryLoadValueServiceClientRuntimeConfigFromIni(
             "defaults",
             mqttErrorMessage);
     }
+
+    MessageLogConfig messageLogConfig{
+        .enableIncoming = parsed.valueServiceConfig.logIncomingMessages,
+        .enableOutgoing = parsed.valueServiceConfig.logOutgoingMessages,
+        .includeReasonChain = parsed.valueServiceConfig.logReason,
+    };
+    if (!tryLoadMessageLogConfigFromIni(
+            document,
+            MessageLogIniKeys{
+                .incomingEnabled = MessageLogIniBoolKey{.section = "valueservice", .key = "logIncomingMessages"},
+                .outgoingEnabled = MessageLogIniBoolKey{.section = "valueservice", .key = "logOutgoingMessages"},
+                .includeReasonChain = MessageLogIniBoolKey{.section = "valueservice", .key = "logReason"},
+            },
+            messageLogConfig,
+            errorMessage)) {
+        logConfigFallbackWarning(
+            "value_service_client",
+            "valueservice",
+            "log*",
+            "<composite>",
+            "defaults",
+            errorMessage);
+        errorMessage.clear();
+    }
+
+    parsed.valueServiceConfig.logIncomingMessages = messageLogConfig.enableIncoming;
+    parsed.valueServiceConfig.logOutgoingMessages = messageLogConfig.enableOutgoing;
+    parsed.valueServiceConfig.logReason = messageLogConfig.includeReasonChain;
+    parsed.mqttConfig.logReason = messageLogConfig.includeReasonChain;
 
     output = std::move(parsed);
     errorMessage.clear();

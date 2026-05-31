@@ -124,7 +124,7 @@ private:
 TEST_CASE("value_service_run_loads_values_and_publishes_replay", "[value_service]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
-    fileStore.setValuesJson("{\"house/light\":\"on\",\"house/temperature\":21}");
+    fileStore.setValuesJson(R"({"house/light":"on","house/temperature":21})");
 
     yaha::ValueServiceConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -202,7 +202,7 @@ TEST_CASE("value_service_set_updates_map_publishes_and_persists", "[value_servic
 TEST_CASE("value_service_monitoring_reload_replaces_values_and_replays", "[value_service]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
-    fileStore.setValuesJson("{\"house/light\":\"on\"}");
+    fileStore.setValuesJson(R"({"house/light":"on"})");
 
     yaha::ValueServiceConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -219,10 +219,10 @@ TEST_CASE("value_service_monitoring_reload_replaces_values_and_replays", "[value
 
     component.run();
 
-    fileStore.setValuesJson("{\"house/heating\":\"off\"}");
+    fileStore.setValuesJson(R"({"house/heating":"off"})");
     component.handleMessage(yaha::Message{
         "$MONITOR/FileStore/changed",
-        std::string{"{\"keyPath\":\"/valueservice/values\",\"changeType\":\"changed\"}"},
+        std::string{R"({"keyPath":"/valueservice/values","changeType":"changed"})"},
         yaha::Qos::AtLeastOnce,
         false});
 
@@ -248,6 +248,8 @@ TEST_CASE("value_service_logs_incoming_and_outgoing_messages", "[value_service]"
     yaha::ValueServiceConfig config{};
     config.fileStoreHost = "127.0.0.1";
     config.fileStorePort = port;
+    config.logIncomingMessages = true;
+    config.logOutgoingMessages = true;
 
     yaha::ValueServiceComponent component{config};
     component.setPublishCallback([](const yaha::Message&) {
@@ -266,8 +268,8 @@ TEST_CASE("value_service_logs_incoming_and_outgoing_messages", "[value_service]"
     std::cout.rdbuf(previousBuffer);
 
     const std::string logText = capturedOutput.str();
-    REQUIRE(logText.find("value_service[in] topic=house/light/set") != std::string::npos);
-    REQUIRE(logText.find("value_service[out] topic=house/light") != std::string::npos);
+    REQUIRE(logText.find("component=\"value_service\" direction=\"incoming\" topic=\"house/light/set\"") != std::string::npos);
+    REQUIRE(logText.find("component=\"value_service\" direction=\"outgoing\" topic=\"house/light\"") != std::string::npos);
 
     component.close();
 }
@@ -314,7 +316,7 @@ TEST_CASE("value_service_set_publishes_when_persist_fails", "[value_service]") {
 TEST_CASE("value_service_monitoring_non_matching_keypath_does_not_reload", "[value_service]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
-    fileStore.setValuesJson("{\"house/light\":\"on\"}");
+    fileStore.setValuesJson(R"({"house/light":"on"})");
 
     yaha::ValueServiceConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -335,10 +337,10 @@ TEST_CASE("value_service_monitoring_non_matching_keypath_does_not_reload", "[val
         return published.size();
     }();
 
-    fileStore.setValuesJson("{\"house/heating\":\"off\"}");
+    fileStore.setValuesJson(R"({"house/heating":"off"})");
     component.handleMessage(yaha::Message{
         "$MONITOR/FileStore/changed",
-        std::string{"{\"keyPath\":\"/other/path\",\"changeType\":\"changed\"}"},
+        std::string{R"({"keyPath":"/other/path","changeType":"changed"})"},
         yaha::Qos::AtLeastOnce,
         false});
 
@@ -358,7 +360,7 @@ TEST_CASE("value_service_monitoring_non_matching_keypath_does_not_reload", "[val
 TEST_CASE("value_service_monitoring_filesystem_watch_is_ignored", "[value_service]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
-    fileStore.setValuesJson("{\"house/light\":\"on\"}");
+    fileStore.setValuesJson(R"({"house/light":"on"})");
 
     yaha::ValueServiceConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -379,10 +381,10 @@ TEST_CASE("value_service_monitoring_filesystem_watch_is_ignored", "[value_servic
         return published.size();
     }();
 
-    fileStore.setValuesJson("{\"house/heating\":\"off\"}");
+    fileStore.setValuesJson(R"({"house/heating":"off"})");
     component.handleMessage(yaha::Message{
         "$MONITOR/FileStore/changed",
-        std::string{"{\"keyPath\":\"/valueservice/values\",\"changeType\":\"changed\",\"source\":\"filesystem-watch\"}"},
+        std::string{R"({"keyPath":"/valueservice/values","changeType":"changed","source":"filesystem-watch"})"},
         yaha::Qos::AtLeastOnce,
         false});
 
@@ -476,7 +478,7 @@ TEST_CASE("value_service_accepts_integral_double_and_persists_number", "[value_s
 TEST_CASE("value_service_monitoring_non_string_payload_is_ignored", "[value_service]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
-    fileStore.setValuesJson("{\"house/light\":\"on\"}");
+    fileStore.setValuesJson(R"({"house/light":"on"})");
 
     yaha::ValueServiceConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -500,7 +502,7 @@ TEST_CASE("value_service_monitoring_non_string_payload_is_ignored", "[value_serv
 TEST_CASE("value_service_handles_escaped_json_strings_and_idempotent_run", "[value_service]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
-    fileStore.setValuesJson("{\"house/text\":\"line\\n\\\"quoted\\\"\\tvalue\"}");
+    fileStore.setValuesJson(R"({"house/text":"line\n\"quoted\"\tvalue"})");
 
     yaha::ValueServiceConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -531,7 +533,7 @@ TEST_CASE("value_service_handles_escaped_json_strings_and_idempotent_run", "[val
 TEST_CASE("value_service_get_subscriptions_contains_monitor_and_set_topics", "[value_service]") {
     const std::uint16_t port = reserveFreeLocalPort();
     FileStoreMockServer fileStore{port};
-    fileStore.setValuesJson("{\"house/light\":\"on\",\"house/heating\":\"off\"}");
+    fileStore.setValuesJson(R"({"house/light":"on","house/heating":"off"})");
 
     yaha::ValueServiceConfig config{};
     config.fileStoreHost = "127.0.0.1";
@@ -562,7 +564,7 @@ TEST_CASE("value_service_publish_throw_logs_out_fail_without_false_success", "[v
     });
 
     std::ostringstream capturedOutput{};
-    std::streambuf* previousBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+    std::streambuf* previousBuffer = std::cerr.rdbuf(capturedOutput.rdbuf());
 
     component.run();
     component.handleMessage(yaha::Message{
@@ -571,11 +573,12 @@ TEST_CASE("value_service_publish_throw_logs_out_fail_without_false_success", "[v
         yaha::Qos::AtLeastOnce,
         false});
 
-    std::cout.rdbuf(previousBuffer);
+    std::cerr.rdbuf(previousBuffer);
 
     const std::string logText = capturedOutput.str();
-    REQUIRE(logText.find("value_service[out-fail] topic=house/light") != std::string::npos);
-    REQUIRE(logText.find("value_service[out] topic=house/light") == std::string::npos);
+    REQUIRE(logText.find("component=\"value_service\" direction=\"outgoing\" topic=\"house/light\"") != std::string::npos);
+    REQUIRE(logText.find("event=publish_failed") != std::string::npos);
+    REQUIRE(logText.find("category=retained_value") != std::string::npos);
 
     component.close();
 }
@@ -595,7 +598,7 @@ TEST_CASE("value_service_publish_result_failure_logs_category", "[value_service]
     });
 
     std::ostringstream capturedOutput{};
-    std::streambuf* previousBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+    std::streambuf* previousBuffer = std::cerr.rdbuf(capturedOutput.rdbuf());
 
     component.run();
     component.handleMessage(yaha::Message{
@@ -604,10 +607,11 @@ TEST_CASE("value_service_publish_result_failure_logs_category", "[value_service]
         yaha::Qos::AtLeastOnce,
         false});
 
-    std::cout.rdbuf(previousBuffer);
+    std::cerr.rdbuf(previousBuffer);
 
     const std::string logText = capturedOutput.str();
-    REQUIRE(logText.find("value_service[out-fail] topic=house/light") != std::string::npos);
+    REQUIRE(logText.find("component=\"value_service\" direction=\"outgoing\" topic=\"house/light\"") != std::string::npos);
+    REQUIRE(logText.find("event=publish_failed") != std::string::npos);
     REQUIRE(logText.find("category=ack_timeout") != std::string::npos);
 
     component.close();
@@ -667,7 +671,7 @@ TEST_CASE("value_service_retry_exhaustion_logs_retry_exhausted", "[value_service
     });
 
     std::ostringstream capturedOutput{};
-    std::streambuf* previousBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+    std::streambuf* previousBuffer = std::cerr.rdbuf(capturedOutput.rdbuf());
 
     component.run();
     component.handleMessage(yaha::Message{
@@ -684,7 +688,7 @@ TEST_CASE("value_service_retry_exhaustion_logs_retry_exhausted", "[value_service
             false});
     }
 
-    std::cout.rdbuf(previousBuffer);
+    std::cerr.rdbuf(previousBuffer);
     const std::string logText = capturedOutput.str();
     REQUIRE(logText.find("category=retry_exhausted") != std::string::npos);
 
