@@ -414,6 +414,39 @@ TEST_CASE("serial_device_runtime_logs_incoming_and_outgoing_messages_in_yaha_for
     REQUIRE(logText.find("component=\"serial_device\" direction=\"outgoing\" topic=\"demo/topic\"") != std::string::npos);
 }
 
+TEST_CASE("serial_device_runtime_logs_publish_failures_for_missing_and_failed_callbacks", "[serial_device][runtime]") {
+    yaha::SerialDeviceConfig config = makeRuntimeConfig();
+    yaha::SerialDeviceInterfaceDefinition fs20Definition{};
+    fs20Definition.commandMap["1234/1111"] = "demo/topic";
+    config.interfaces.clear();
+    config.interfaces["fs20"] = fs20Definition;
+
+    auto transport = std::make_shared<FakeSerialTransport>();
+    yaha::SerialDeviceComponent component{config, transport, [](std::chrono::milliseconds) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }};
+
+    std::ostringstream capturedError{};
+    std::streambuf* previousBuffer = std::cerr.rdbuf(capturedError.rdbuf());
+
+    component.run();
+    transport->emit(R"({"Hauscode":"1234","Adresse":"1111","Befehl":1})");
+
+    component.setPublishCallback([](const yaha::Message&) {
+        return yaha::PublishResult::fail(yaha::PublishFailureCategory::AckTimeout, "ack timeout");
+    });
+    transport->emit(R"({"Hauscode":"1234","Adresse":"1111","Befehl":1})");
+
+    std::this_thread::sleep_for(k_short_wait);
+    component.close();
+
+    std::cerr.rdbuf(previousBuffer);
+    const std::string logText = capturedError.str();
+    REQUIRE(logText.find("event=publish_failed") != std::string::npos);
+    REQUIRE(logText.find("category=callback_missing") != std::string::npos);
+    REQUIRE(logText.find("reason=\"ack timeout\"") != std::string::npos);
+}
+
 TEST_CASE("serial_device_runtime_lifecycle_and_error_paths", "[serial_device][runtime]") {
     yaha::SerialDeviceConfig config = makeRuntimeConfig();
     auto failingOpenTransport = std::make_shared<FakeSerialTransport>();

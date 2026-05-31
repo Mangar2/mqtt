@@ -126,3 +126,7 @@ Unit tests for phase-1 to phase-4 serial_device parity contracts:
 29. serial_device_runtime_logs_incoming_and_outgoing_messages_in_yaha_format
 - Scenario: enable SerialDevice message logging flags and process one `/set` request plus one serial reply.
 - Expected: stdout contains structured YAHA log lines for incoming and outgoing message flow with `component="serial_device"`.
+
+30. serial_device_runtime_logs_publish_failures_for_missing_and_failed_callbacks
+- Scenario: process one serial reply without publish callback and one with callback returning explicit failure.
+- Expected: stderr contains structured `event=publish_failed` entries with `category=callback_missing` and failed callback reason payload.
