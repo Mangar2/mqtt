@@ -51,7 +51,7 @@ namespace {
         || currentChar == '\'' || currentChar == '"'
         || currentChar == '(' || currentChar == ')' || currentChar == ',' || currentChar == ':'
         || currentChar == '=' || currentChar == '>' || currentChar == '<' || currentChar == '!'
-    || currentChar == '+' || currentChar == '-' || currentChar == '*' || currentChar == '/';
+    || currentChar == '+' || currentChar == '-' || currentChar == '*';
 }
 
 [[nodiscard]] std::size_t skipSpaces(const std::string& input, const std::size_t index) {
@@ -271,6 +271,17 @@ void appendBareToken(const std::string& input, std::size_t* index,
     const char current = input[*index];
     if (!isSingleCharToken(current)) {
         return false;
+    }
+
+    if (current == '/') {
+        const std::size_t nextIndex = *index + 1U;
+        if (nextIndex < input.size()) {
+            const char nextChar = input[nextIndex];
+            if (std::isalnum(static_cast<unsigned char>(nextChar)) != 0
+                || nextChar == '_' || nextChar == '$') {
+                return false;
+            }
+        }
     }
 
     if (consumeNegativeNumberToken(input, index, tokens)) {
