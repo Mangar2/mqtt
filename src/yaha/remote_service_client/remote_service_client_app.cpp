@@ -1,5 +1,6 @@
 #include "yaha/remote_service_client/remote_service_client_app.h"
 
+#include "yaha/message/message_log_service.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <cstdint>
@@ -10,6 +11,8 @@
 namespace yaha {
 
 namespace {
+
+constexpr std::string_view kRemoteServiceSection{"remoteservice"};
 
 void logConfigFallbackWarning(
     const std::string_view serviceName,
@@ -53,16 +56,16 @@ bool tryLoadRemoteServiceConfigFromIni(
 
     RemoteServiceConfig parsed{};
 
-    if (const auto listenerHost = document.lastValue("remoteservice", "listenHost"); listenerHost.has_value()) {
+    if (const auto listenerHost = document.lastValue(kRemoteServiceSection, "listenHost"); listenerHost.has_value()) {
         parsed.listenHost = *listenerHost;
     }
 
-    const auto listenerPortResult = document.readUnsigned("remoteservice", "listenPort", 1U, 65535U);
+    const auto listenerPortResult = document.readUnsigned(kRemoteServiceSection, "listenPort", 1U, 65535U);
     if (!listenerPortResult.second.empty()) {
-        const std::string rawValue = document.lastValue("remoteservice", "listenPort").value_or("<missing>");
+        const std::string rawValue = document.lastValue(kRemoteServiceSection, "listenPort").value_or("<missing>");
         logConfigFallbackWarning(
             "remote_service_client",
-            "remoteservice",
+            kRemoteServiceSection,
             "listenPort",
             rawValue,
             std::to_string(parsed.listenPort),
@@ -72,12 +75,12 @@ bool tryLoadRemoteServiceConfigFromIni(
         parsed.listenPort = static_cast<std::uint16_t>(*listenerPortResult.first);
     }
 
-    const auto subscribeQosResult = document.readUnsigned("remoteservice", "subscribeQoS", 0U, 2U);
+    const auto subscribeQosResult = document.readUnsigned(kRemoteServiceSection, "subscribeQoS", 0U, 2U);
     if (!subscribeQosResult.second.empty()) {
-        const std::string rawValue = document.lastValue("remoteservice", "subscribeQoS").value_or("<missing>");
+        const std::string rawValue = document.lastValue(kRemoteServiceSection, "subscribeQoS").value_or("<missing>");
         logConfigFallbackWarning(
             "remote_service_client",
-            "remoteservice",
+            kRemoteServiceSection,
             "subscribeQoS",
             rawValue,
             std::to_string(static_cast<unsigned int>(parsed.subscribeQos)),
@@ -148,6 +151,34 @@ bool tryLoadRemoteServiceClientRuntimeConfigFromIni(
             "defaults",
             mqttErrorMessage);
     }
+
+    MessageLogConfig messageLogConfig{
+        .enableIncoming = parsed.logIncomingMessages,
+        .enableOutgoing = parsed.logOutgoingMessages,
+        .includeReasonChain = parsed.mqttConfig.logReason,
+    };
+    if (!tryLoadMessageLogConfigFromIni(
+            document,
+            MessageLogIniKeys{
+                .incomingEnabled = MessageLogIniBoolKey{.section = kRemoteServiceSection, .key = "logIncomingMessages"},
+                .outgoingEnabled = MessageLogIniBoolKey{.section = kRemoteServiceSection, .key = "logOutgoingMessages"},
+                .includeReasonChain = MessageLogIniBoolKey{.section = kRemoteServiceSection, .key = "logReason"},
+            },
+            messageLogConfig,
+            errorMessage)) {
+        logConfigFallbackWarning(
+            "remote_service_client",
+            kRemoteServiceSection,
+            "log*",
+            "<composite>",
+            "defaults",
+            errorMessage);
+        errorMessage.clear();
+    }
+
+    parsed.logIncomingMessages = messageLogConfig.enableIncoming;
+    parsed.logOutgoingMessages = messageLogConfig.enableOutgoing;
+    parsed.mqttConfig.logReason = messageLogConfig.includeReasonChain;
 
     output = std::move(parsed);
     errorMessage.clear();

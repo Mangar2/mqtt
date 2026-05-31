@@ -694,7 +694,8 @@ void RemoteServiceComponent::handleMessage(const Message& message) {
     }
 
     if (!isMatchingMappingReloadEvent(message)) {
-        std::cout << "remote_service reload ignored: monitor event keyPath mismatch\n" << std::flush;
+        std::cout << "remote_service[info] op=reload_mapping reason=key_path_mismatch trigger=monitor\n"
+                  << std::flush;
         return;
     }
 
@@ -765,18 +766,22 @@ bool RemoteServiceComponent::reloadMappingFromFileStore(const std::string& trigg
     const auto response = client.Get(config_.mappingKeyPath);
     if (!response || response->status != kHttpStatusOk) {
         const int statusCode = response ? response->status : -1;
-        std::cout << "remote_service reload failed: trigger=" << triggerText
-                  << " status=" << statusCode << '\n'
-                  << std::flush;
+        std::cerr << "remote_service[error] op=reload_mapping reason=filestore_http_failed"
+                  << " trigger=" << triggerText
+                  << " status=" << statusCode
+                  << " keyPath=" << config_.mappingKeyPath
+                  << '\n' << std::flush;
         return false;
     }
 
     RemoteServiceMap parsedMap{};
     std::string errorMessage{};
     if (!tryParseRemoteServiceMappingPayload(response->body, parsedMap, errorMessage)) {
-        std::cout << "remote_service reload failed: trigger=" << triggerText
-                  << " validation=" << errorMessage << '\n'
-                  << std::flush;
+        std::cerr << "remote_service[error] op=reload_mapping reason=invalid_mapping_payload"
+                  << " trigger=" << triggerText
+                  << " keyPath=" << config_.mappingKeyPath
+                  << " detail=\"" << errorMessage << "\""
+                  << '\n' << std::flush;
         return false;
     }
 
@@ -784,9 +789,11 @@ bool RemoteServiceComponent::reloadMappingFromFileStore(const std::string& trigg
     std::lock_guard<std::mutex> lock{stateMutex_};
     servicesByPath_ = std::move(parsedMap);
 
-    std::cout << "remote_service reload success: trigger=" << triggerText
-              << " services=" << loadedServiceCount << '\n'
-              << std::flush;
+    std::cout << "remote_service[info] op=reload_mapping reason=success"
+              << " trigger=" << triggerText
+              << " services=" << loadedServiceCount
+              << " keyPath=" << config_.mappingKeyPath
+              << '\n' << std::flush;
     return true;
 }
 

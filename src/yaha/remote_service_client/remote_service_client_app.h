@@ -19,6 +19,8 @@ namespace yaha {
 struct RemoteServiceClientRuntimeConfig {
     RemoteServiceConfig remoteServiceConfig{}; ///< RemoteService domain configuration.
     YahaMqttClient::Config mqttConfig{};       ///< MQTT runtime configuration.
+    bool logIncomingMessages{false};           ///< Enable inbound MQTT message logs in broker-format.
+    bool logOutgoingMessages{false};           ///< Enable outbound MQTT message logs in broker-format.
 };
 
 /**

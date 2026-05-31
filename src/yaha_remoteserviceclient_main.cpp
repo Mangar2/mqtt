@@ -45,7 +45,7 @@ void printUsage() {
               << std::flush;
 }
 
-bool tryParseCli(const int argc, char* argv[], CliOptions& options, std::string& errorText) {
+bool tryParseCli(const int argc, char* const* argv, CliOptions& options, std::string& errorText) {
     for (int argIndex = 1; argIndex < argc; ++argIndex) {
         const std::string argument{argv[argIndex]};
         if (argument == "--help" || argument == "-h") {
@@ -151,7 +151,15 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    runtimeConfig.mqttConfig.enableMessageTrace = cliOptions.enableMessageTrace;
+    const bool enableMessageLogsFromConfig =
+        runtimeConfig.logIncomingMessages || runtimeConfig.logOutgoingMessages;
+    runtimeConfig.mqttConfig.enableMessageTrace =
+        cliOptions.enableMessageTrace || enableMessageLogsFromConfig;
+
+    if (runtimeConfig.mqttConfig.enableMessageTrace && enableMessageLogsFromConfig && !cliOptions.enableMessageTrace) {
+        std::cout << "  startup: mqtt message logging enabled via remoteservice.logIncomingMessages/logOutgoingMessages\n";
+    }
+
     printStartupSummary(cliOptions.configPath, runtimeConfig);
 
     yaha::RemoteServiceComponent component{runtimeConfig.remoteServiceConfig};

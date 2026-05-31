@@ -184,3 +184,55 @@ TEST_CASE("remote_service_runtime_config_falls_back_on_invalid_mqtt_value", "[re
     REQUIRE(errorMessage.empty());
     REQUIRE(runtimeConfig.mqttConfig.loopSleep == std::chrono::milliseconds{20});
 }
+
+TEST_CASE("remote_service_runtime_config_parses_message_logging_flags", "[remote_service]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "host=127.0.0.1\n"
+        "logReason=false\n"
+        "\n"
+        "[filestore]\n"
+        "host=127.0.0.2\n"
+        "port=8220\n"
+        "filename=/remoteservice/mapping\n"
+        "\n"
+        "[remoteservice]\n"
+        "logIncomingMessages=true\n"
+        "logOutgoingMessages=true\n"
+        "logReason=true\n";
+
+    yaha::RemoteServiceClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.logIncomingMessages);
+    REQUIRE(runtimeConfig.logOutgoingMessages);
+    REQUIRE(runtimeConfig.mqttConfig.logReason);
+}
+
+TEST_CASE("remote_service_runtime_config_falls_back_on_invalid_message_logging_flags", "[remote_service]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "host=127.0.0.1\n"
+        "logReason=false\n"
+        "\n"
+        "[filestore]\n"
+        "host=127.0.0.2\n"
+        "port=8220\n"
+        "filename=/remoteservice/mapping\n"
+        "\n"
+        "[remoteservice]\n"
+        "logIncomingMessages=maybe\n"
+        "logOutgoingMessages=maybe\n"
+        "logReason=maybe\n";
+
+    yaha::RemoteServiceClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+
+    REQUIRE(tryLoadRuntimeConfigFromIniText(iniText, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE_FALSE(runtimeConfig.logIncomingMessages);
+    REQUIRE_FALSE(runtimeConfig.logOutgoingMessages);
+    REQUIRE_FALSE(runtimeConfig.mqttConfig.logReason);
+}

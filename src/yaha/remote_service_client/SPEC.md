@@ -30,7 +30,7 @@ Supported INI sections:
 - `[filestore]`
   - `host` (required), `port` (required), `filename` (required), `topicPrefix`
 - `[remoteservice]`
-  - `listenHost`, `listenPort`, `subscribeQoS`
+  - `listenHost`, `listenPort`, `subscribeQoS`, `logIncomingMessages`, `logOutgoingMessages`, `logReason`
 
 Validation rules:
 
@@ -54,6 +54,9 @@ Mapping rules:
 
 - `filestore.filename -> RemoteServiceConfig.mappingKeyPath`
 - `filestore.topicPrefix -> RemoteServiceConfig.monitorTopicPrefix`
+- `remoteservice.logIncomingMessages -> RemoteServiceClientRuntimeConfig.logIncomingMessages`
+- `remoteservice.logOutgoingMessages -> RemoteServiceClientRuntimeConfig.logOutgoingMessages`
+- `remoteservice.logReason -> YahaMqttClient::Config.logReason`
 
 ## Standalone composition behavior
 
@@ -62,6 +65,8 @@ Mapping rules:
 - parse CLI args (`[config-path]`, `--trace-messages`, `--help`)
 - load INI config with `IniDocument`
 - map full runtime config with `tryLoadRemoteServiceClientRuntimeConfigFromIni`
+- enable MQTT message trace when `--trace-messages` or any configured
+  `remoteservice.logIncomingMessages/logOutgoingMessages` is true
 - construct `RemoteServiceComponent`
 - construct `RemoteServiceHttpAdapter`
 - construct `YahaMqttClient` with `makeBrokerTransport()`
