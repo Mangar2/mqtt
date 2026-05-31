@@ -144,6 +144,73 @@ TEST_CASE("rs485_interface_component_serial_input_publishes_mapped_mqtt_message"
     REQUIRE(published[0].qos() == yaha::Qos::AtLeastOnce);
 }
 
+TEST_CASE("rs485_interface_component_matches_set_reason_chain_on_reply", "[rs485_interface]") {
+    yaha::Rs485InterfaceComponent component{makeComponentConfig()};
+
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message);
+        return yaha::PublishResult::ok();
+    });
+
+    yaha::Message action{"house/room/device/power/set", std::string{"on"}};
+    action.addReason("request by test");
+    component.handleMessage(action);
+
+    yaha::Rs485SerialMessage serial{};
+    serial.sender = k_device_address;
+    serial.receiver = k_my_address;
+    serial.command = 'P';
+    serial.value = k_value_on;
+    serial.version = 1U;
+    serial.reply = false;
+    component.feedSerialBytes(yaha::encodeRs485SerialMessage(serial));
+
+    REQUIRE(published.size() == 1U);
+    REQUIRE(published[0].reason().size() == 3U);
+    CHECK(published[0].reason()[0].message == "received by RS485Interface service");
+    CHECK(published[0].reason()[1].message == "request by test");
+    CHECK(published[0].reason()[2].message == "received from arduino");
+}
+
+TEST_CASE("rs485_interface_component_consume_match_entry_on_topic_match_even_for_value_mismatch", "[rs485_interface]") {
+    yaha::Rs485InterfaceComponent component{makeComponentConfig()};
+
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&published](const yaha::Message& message) {
+        published.push_back(message);
+        return yaha::PublishResult::ok();
+    });
+
+    yaha::Message action{"house/room/device/power/set", std::string{"on"}};
+    action.addReason("request by test");
+    component.handleMessage(action);
+
+    yaha::Rs485SerialMessage firstReply{};
+    firstReply.sender = k_device_address;
+    firstReply.receiver = k_my_address;
+    firstReply.command = 'P';
+    firstReply.value = 0.0;
+    firstReply.version = 1U;
+    firstReply.reply = false;
+    component.feedSerialBytes(yaha::encodeRs485SerialMessage(firstReply));
+
+    yaha::Rs485SerialMessage secondReply{};
+    secondReply.sender = k_device_address;
+    secondReply.receiver = k_my_address;
+    secondReply.command = 'P';
+    secondReply.value = k_value_on;
+    secondReply.version = 1U;
+    secondReply.reply = false;
+    component.feedSerialBytes(yaha::encodeRs485SerialMessage(secondReply));
+
+    REQUIRE(published.size() == 2U);
+    REQUIRE(published[0].reason().size() == 1U);
+    REQUIRE(published[1].reason().size() == 1U);
+    CHECK(published[0].reason()[0].message == "received from arduino");
+    CHECK(published[1].reason()[0].message == "received from arduino");
+}
+
 TEST_CASE("rs485_interface_component_accepts_trace_topics_in_sys_and_monitor_namespace", "[rs485_interface]") {
     yaha::Rs485InterfaceComponent component{makeComponentConfig()};
 

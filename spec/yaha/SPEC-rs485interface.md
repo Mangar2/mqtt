@@ -483,8 +483,12 @@ handleMessage(message):
 1. if topic exactly equals $SYS/rs485Interface/trace/set:
     - update trace level only
 2. else:
-    - add reason text: received by RS485Interface service
-    - store message in matcher (reply-correlation helper)
+   - add reason text: received by RS485Interface service
+   - store message in matcher (reply-correlation helper) using exact MatchMessages rules:
+     - action suffix list is exactly: set, get, temporary, blink
+     - only if last topic segment is in that action list, store entry
+     - matcher key is topic without trailing /<action>
+     - stored value is overwritten by latest message for same matcher key
     - run action processor
     - for each produced action message:
        - map to serial frame via SerialDNS
@@ -514,9 +518,27 @@ For each parsed frame:
     - map frame to MQTT message list via SerialDNS
     - update action state cache using mapped messages
     - for each mapped MQTT message:
-       - correlate via matcher
+          - correlate via matcher using exact MatchMessages semantics:
+             - lookup by exact topic key
+             - if matcher has entry for topic, that entry is consumed (deleted) in all cases
+             - reasons are merged only when all are true:
+                - value match is true
+                   - either strict equality of raw values
+                   - or both values are numeric-convertible and Number(left) == Number(right)
+                - both messages have non-empty reason arrays
+                - timestamp delta between reply.reason[0] and stored.reason[0] is within [0ms, 30000ms]
+             - on merge, resulting reason chain is: stored.reason followed by reply.reason
        - set qos to configured qos
        - publish callback invoke
+
+### 12.2 Matcher stale and consume behavior
+
+Matcher expiry is not implemented as background cleanup.
+
+Normative behavior (legacy MatchMessages parity):
+- stale entries are rejected only at match time via 30000ms timestamp window check.
+- even when stale or value-mismatching, an existing entry for the reply topic is deleted once a reply topic match is evaluated.
+- this consume-on-topic-match rule prevents old /set entries from affecting future replies on same topic.
 
 ### 12.1 SerialMessage introspection behavior
 

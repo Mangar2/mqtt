@@ -53,17 +53,29 @@ public:
     void feedSerialBytes(const std::vector<std::uint8_t>& byteChunk);
 
 private:
+    struct MatchedRequest {
+        Value value{};
+        ReasonList reason{};
+    };
+
     [[nodiscard]] static std::string toLowerCopy(std::string text);
     [[nodiscard]] static bool endsWith(const std::string& text, const std::string& suffix);
     [[nodiscard]] static std::string removeSuffix(const std::string& text, const std::string& suffix);
+    [[nodiscard]] static bool isActionTopicSegment(const std::string& segment);
+    [[nodiscard]] static std::optional<std::string> deriveReplyTopicForMatcher(const std::string& topic);
+    [[nodiscard]] static bool valuesMatchForMatcher(const Value& left, const Value& right);
+    [[nodiscard]] static std::optional<std::int64_t> parseIsoTimestampMilliseconds(const std::string& timestamp);
+    static void addReasonsPreservingOrder(Message& target, const ReasonList& source);
 
     [[nodiscard]] static std::string deriveWildcardStartTopic(const std::string& addressTopic);
     [[nodiscard]] static std::optional<std::uint32_t> parsePositiveInteger(const Value& value);
 
     void processActionMessage(const Message& message);
-    void enqueueSet(const std::string& topic, const Value& value);
-    void enqueueTemporary(const std::string& topic, const Value& value);
-    void enqueueBlink(const std::string& topic, const Value& value);
+    void enqueueSet(const Message& actionMessage);
+    void enqueueTemporary(const Message& actionMessage);
+    void enqueueBlink(const Message& actionMessage);
+    void addReceivedMessage(const Message& message);
+    void matchAndUpdateReplyMessage(Message& message);
 
     void launchActionThread(std::function<void()> job);
     void runSchedulerLoop();
@@ -87,6 +99,9 @@ private:
 
     mutable std::mutex topicStateMutex_{};
     std::map<std::string, std::string> topicStateCache_{};
+
+    mutable std::mutex matcherMutex_{};
+    std::map<std::string, MatchedRequest> matchedRequests_{};
 
     std::atomic<bool> running_{false};
     std::thread schedulerThread_{};

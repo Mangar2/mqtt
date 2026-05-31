@@ -4,9 +4,11 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <ctime>
 #include <iomanip>
 #include <iostream>
+#include <ranges>
 #include <sstream>
 #include <thread>
 #include <utility>
@@ -203,7 +205,11 @@ void Rs485InterfaceComponent::handleMessage(const Message& message) {
         return;
     }
 
-    processActionMessage(message);
+    Message actionMessage{message.topic(), message.value(), message.qos(), message.retain(), message.dup()};
+    addReasonsPreservingOrder(actionMessage, message.reason());
+    actionMessage.addReason("received by RS485Interface service");
+    addReceivedMessage(actionMessage);
+    processActionMessage(actionMessage);
 }
 
 void Rs485InterfaceComponent::run() {
@@ -288,6 +294,7 @@ void Rs485InterfaceComponent::feedSerialBytes(const std::vector<std::uint8_t>& b
             for (auto& mappedMessage : mappedMessages) {
                 mappedMessage.addReason("received from arduino");
                 updateTopicStateCache(mappedMessage);
+                matchAndUpdateReplyMessage(mappedMessage);
             }
             publishMappedMessages(mappedMessages);
         } catch (const std::exception& exceptionValue) {
@@ -314,6 +321,91 @@ std::string Rs485InterfaceComponent::removeSuffix(const std::string& text, const
         return text;
     }
     return text.substr(0U, text.size() - suffix.size());
+}
+
+bool Rs485InterfaceComponent::isActionTopicSegment(const std::string& segment) {
+    return segment == "set" || segment == "get" || segment == "temporary" || segment == "blink";
+}
+
+std::optional<std::string> Rs485InterfaceComponent::deriveReplyTopicForMatcher(const std::string& topic) {
+    const std::string topicLower = toLowerCopy(topic);
+    const std::size_t separatorIndex = topicLower.rfind('/');
+    if (separatorIndex == std::string::npos) {
+        return std::nullopt;
+    }
+
+    const std::string lastSegment = topicLower.substr(separatorIndex + 1U);
+    if (!isActionTopicSegment(lastSegment)) {
+        return std::nullopt;
+    }
+
+    return topicLower.substr(0U, separatorIndex);
+}
+
+bool Rs485InterfaceComponent::valuesMatchForMatcher(const Value& left, const Value& right) {
+    if (left == right) {
+        return true;
+    }
+
+    const auto parseNumber = [](const Value& value) -> std::optional<double> {
+        if (const auto* numericValue = std::get_if<double>(&value); numericValue != nullptr) {
+            return *numericValue;
+        }
+
+        const auto* textValue = std::get_if<std::string>(&value);
+        if (textValue == nullptr || textValue->empty()) {
+            return std::nullopt;
+        }
+
+        std::size_t consumed = 0U;
+        double parsed = 0.0;
+        try {
+            parsed = std::stod(*textValue, &consumed);
+        } catch (...) {
+            return std::nullopt;
+        }
+        if (consumed != textValue->size()) {
+            return std::nullopt;
+        }
+
+        return parsed;
+    };
+
+    const auto leftNumber = parseNumber(left);
+    const auto rightNumber = parseNumber(right);
+    if (!leftNumber.has_value() || !rightNumber.has_value()) {
+        return false;
+    }
+
+    return *leftNumber == *rightNumber;
+}
+
+std::optional<std::int64_t> Rs485InterfaceComponent::parseIsoTimestampMilliseconds(const std::string& timestamp) {
+    constexpr std::int64_t k_milliseconds_per_second{1000LL};
+
+    std::tm utcTime{};
+    std::istringstream parser{timestamp};
+    parser >> std::get_time(&utcTime, "%Y-%m-%dT%H:%M:%SZ");
+    if (parser.fail()) {
+        return std::nullopt;
+    }
+
+#if defined(_WIN32)
+    const std::time_t epochSeconds = _mkgmtime(&utcTime);
+#else
+    const std::time_t epochSeconds = timegm(&utcTime);
+#endif
+    if (epochSeconds < 0) {
+        return std::nullopt;
+    }
+
+    return static_cast<std::int64_t>(epochSeconds) * k_milliseconds_per_second;
+}
+
+void Rs485InterfaceComponent::addReasonsPreservingOrder(Message& target, const ReasonList& source) {
+    for (const auto& reasonEntry : std::ranges::reverse_view(source)) {
+        target.addReason(reasonEntry.message, reasonEntry.timestamp);
+    }
 }
 
 std::string Rs485InterfaceComponent::deriveWildcardStartTopic(const std::string& addressTopic) {
@@ -379,30 +471,33 @@ void Rs485InterfaceComponent::processActionMessage(const Message& message) {
 
     if (endsWith(topicLower, "/set")) {
         const std::string topic = removeSuffix(topicLower, "/set");
-        enqueueSet(topic, message.value());
+        Message actionMessage{topic, message.value(), message.qos(), message.retain(), message.dup()};
+        addReasonsPreservingOrder(actionMessage, message.reason());
+        enqueueSet(actionMessage);
         return;
     }
 
     if (endsWith(topicLower, "/temporary")) {
         const std::string topic = removeSuffix(topicLower, "/temporary");
-        enqueueTemporary(topic, message.value());
+        Message actionMessage{topic, message.value(), message.qos(), message.retain(), message.dup()};
+        addReasonsPreservingOrder(actionMessage, message.reason());
+        enqueueTemporary(actionMessage);
         return;
     }
 
     // Preserve legacy quirk: check only for terminal "blink", not strictly "/blink".
     if (endsWith(topicLower, "blink")) {
         const std::string topic = removeSuffix(topicLower, "/blink");
-        enqueueBlink(topic, message.value());
+        Message actionMessage{topic, message.value(), message.qos(), message.retain(), message.dup()};
+        addReasonsPreservingOrder(actionMessage, message.reason());
+        enqueueBlink(actionMessage);
         return;
     }
 
     (void)topicLower;
 }
 
-void Rs485InterfaceComponent::enqueueSet(const std::string& topic, const Value& value) {
-    Message actionMessage{topic, value};
-    actionMessage.addReason("received by RS485Interface service");
-
+void Rs485InterfaceComponent::enqueueSet(const Message& actionMessage) {
     const Rs485MappedSerialData serialData = mapper_.toSerialData(actionMessage);
     Rs485SerialMessage serialMessage{};
     serialMessage.sender = config_.myAddress;
@@ -413,37 +508,43 @@ void Rs485InterfaceComponent::enqueueSet(const std::string& topic, const Value& 
     scheduler_.sendMessage(serialMessage);
 }
 
-void Rs485InterfaceComponent::enqueueTemporary(const std::string& topic, const Value& value) {
+void Rs485InterfaceComponent::enqueueTemporary(const Message& actionMessage) {
     std::uint32_t temporarySeconds = config_.temporaryOnSeconds;
-    const auto parsedValue = parsePositiveInteger(value);
+    const auto parsedValue = parsePositiveInteger(actionMessage.value());
     if (parsedValue.has_value() && *parsedValue > 0U) {
         temporarySeconds = *parsedValue;
     }
 
-    launchActionThread([this, topic, temporarySeconds]() {
-        enqueueSet(topic, std::string{"on"});
+    launchActionThread([this, actionMessage, temporarySeconds]() {
+        Message onMessage{actionMessage.topic(), std::string{"on"}, actionMessage.qos(), actionMessage.retain(), actionMessage.dup()};
+        addReasonsPreservingOrder(onMessage, actionMessage.reason());
+        enqueueSet(onMessage);
         sleepInterruptible(running_, std::chrono::seconds{temporarySeconds});
         if (!running_) {
             return;
         }
-        enqueueSet(topic, std::string{"off"});
+        Message offMessage{actionMessage.topic(), std::string{"off"}, actionMessage.qos(), actionMessage.retain(), actionMessage.dup()};
+        addReasonsPreservingOrder(offMessage, actionMessage.reason());
+        enqueueSet(offMessage);
     });
 }
 
-void Rs485InterfaceComponent::enqueueBlink(const std::string& topic, const Value& value) {
+void Rs485InterfaceComponent::enqueueBlink(const Message& actionMessage) {
     std::uint32_t amount = k_default_blink_cycles;
-    const auto parsedAmount = parsePositiveInteger(value);
+    const auto parsedAmount = parsePositiveInteger(actionMessage.value());
     if (parsedAmount.has_value() && *parsedAmount > 0U) {
         amount = *parsedAmount;
     }
 
     const std::uint32_t toggleCount = amount * k_blink_toggle_multiplier;
 
-    launchActionThread([this, topic, toggleCount]() {
-        std::string cachedState = readCachedTopicState(topic);
+    launchActionThread([this, actionMessage, toggleCount]() {
+        std::string cachedState = readCachedTopicState(actionMessage.topic());
         for (std::uint32_t index = 0U; index < toggleCount && running_; ++index) {
             Value toggled = toggledValueFromState(cachedState);
-            enqueueSet(topic, toggled);
+            Message toggledMessage{actionMessage.topic(), toggled, actionMessage.qos(), actionMessage.retain(), actionMessage.dup()};
+            addReasonsPreservingOrder(toggledMessage, actionMessage.reason());
+            enqueueSet(toggledMessage);
             cachedState = std::holds_alternative<std::string>(toggled)
                 ? std::get<std::string>(toggled)
                 : "off";
@@ -531,12 +632,65 @@ void Rs485InterfaceComponent::publishMappedMessages(const std::vector<Message>& 
 
     for (const auto& message : messages) {
         Message publishMessage{message.topic(), message.value(), config_.subscribeQos, false, false};
-        for (const auto& reasonEntry : message.reason()) {
-            publishMessage.addReason(reasonEntry.message, reasonEntry.timestamp);
-        }
+        addReasonsPreservingOrder(publishMessage, message.reason());
 
         (void)publishCallback_(publishMessage);
     }
+}
+
+void Rs485InterfaceComponent::addReceivedMessage(const Message& message) {
+    const auto replyTopic = deriveReplyTopicForMatcher(message.topic());
+    if (!replyTopic.has_value()) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock{matcherMutex_};
+    matchedRequests_[*replyTopic] = MatchedRequest{
+        .value = message.value(),
+        .reason = message.reason()};
+}
+
+void Rs485InterfaceComponent::matchAndUpdateReplyMessage(Message& message) {
+    constexpr std::int64_t k_max_match_timespan_ms{30000LL};
+
+    const std::string topicLower = toLowerCopy(message.topic());
+    std::optional<MatchedRequest> matchedRequest{};
+    {
+        std::lock_guard<std::mutex> lock{matcherMutex_};
+        const auto iterator = matchedRequests_.find(topicLower);
+        if (iterator == matchedRequests_.end()) {
+            return;
+        }
+
+        matchedRequest = iterator->second;
+        matchedRequests_.erase(iterator);
+    }
+
+    if (!matchedRequest.has_value()) {
+        return;
+    }
+    if (!valuesMatchForMatcher(matchedRequest->value, message.value())) {
+        return;
+    }
+    if (matchedRequest->reason.empty() || message.reason().empty()) {
+        return;
+    }
+
+    const auto receivedTimestamp = parseIsoTimestampMilliseconds(matchedRequest->reason.front().timestamp);
+    const auto replyTimestamp = parseIsoTimestampMilliseconds(message.reason().front().timestamp);
+    if (!receivedTimestamp.has_value() || !replyTimestamp.has_value()) {
+        return;
+    }
+
+    const std::int64_t delta = *replyTimestamp - *receivedTimestamp;
+    if (delta < 0LL || delta > k_max_match_timespan_ms) {
+        return;
+    }
+
+    Message mergedMessage{message.topic(), message.value(), message.qos(), message.retain(), message.dup()};
+    addReasonsPreservingOrder(mergedMessage, message.reason());
+    addReasonsPreservingOrder(mergedMessage, matchedRequest->reason);
+    message = std::move(mergedMessage);
 }
 
 std::string Rs485InterfaceComponent::readCachedTopicState(const std::string& topic) const {
