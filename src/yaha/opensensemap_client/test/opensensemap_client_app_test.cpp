@@ -125,6 +125,31 @@ TEST_CASE("load_runtime_config_parses_opensensemap_and_sensor_sections", "[opens
     REQUIRE(runtimeConfig.openSenseMapConfig.sensors[0].sensorUnit == "C");
     REQUIRE(runtimeConfig.openSenseMapConfig.sensors[0].topicFilter == "house/living/temperature");
     REQUIRE(runtimeConfig.openSenseMapConfig.sensors[0].sensorIdentifier == "sensor-temp");
+    REQUIRE(runtimeConfig.openSenseMapConfig.sensors[0].minUploadIntervalSeconds == 0U);
+}
+
+TEST_CASE("load_config_parses_optional_sensor_min_upload_interval", "[opensensemap_client]") {
+    const std::string iniText =
+        "[opensensemap]\n"
+        "id = box-abc\n"
+        "\n"
+        "[sensor]\n"
+        "name = temperature\n"
+        "unit = C\n"
+        "topic = house/living/temperature\n"
+        "id = sensor-temp\n"
+        "minUploadIntervalSeconds = 90\n";
+
+    const ScopedIniFile iniFile{iniText};
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniFile.path());
+
+    yaha::OpenSenseMapConfig config{};
+    std::string errorMessage{};
+
+    REQUIRE(yaha::tryLoadOpenSenseMapConfigFromIni(document, config, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.sensors.size() == 1U);
+    REQUIRE(config.sensors[0].minUploadIntervalSeconds == 90U);
 }
 
 TEST_CASE("load_config_rejects_legacy_uint_sensor_key", "[opensensemap_client]") {

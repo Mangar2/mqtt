@@ -51,7 +51,7 @@ INI mapping contract for `tryLoadMqttClientConfigFromIni`:
 | Type | Member | Notes |
 |------|--------|-------|
 | `YahaMqttClientRuntime` | ctor `(YahaMqttClient&, IMqttComponent&)` | runtime owns generic orchestration only and talks to component via interface |
-| `YahaMqttClientRuntime` | `runUntilSignal()` | installs SIGINT/SIGTERM handlers, calls `component.run()`, starts mqtt loop, waits, then stops mqtt and calls `component.close()` |
+| `YahaMqttClientRuntime` | `runUntilSignal()` | installs SIGINT/SIGTERM handlers, calls `component.run()`, starts mqtt loop, waits, then calls `component.close()` and stops mqtt |
 
 ## Transport callback contract
 
@@ -96,6 +96,7 @@ the callback contract into real TCP MQTT packet I/O.
 - Exceptions raised by transport callbacks during the worker loop are treated as transient disconnects; the loop keeps running and retries connect after `reconnectDelay`.
 - Worker-loop exception paths emit lifecycle traces with failure reason (`exception.what()` or `unknown`) before reconnect handling.
 - Reconnect lifecycle line emits reason tags (`connect_failed`, `connection_lost`, `loop_exception`, `loop_exception_unknown`).
+- Runtime signal shutdown stops the component before closing MQTT so no new component-side work is started while `close()` performs unsubscribe and disconnect.
 - `close()` always ends with one `disconnect()` call if currently connected.
 - `close()` ignores transport disconnect exceptions to preserve no-throw shutdown behavior.
 - Lifecycle tracing is handled in this generic layer (`connect`, `connected`, `reconnect`, `reconnected`, `subscribe`, `unsubscribe`, `disconnect`, `connection lost`, `reconnecting`).

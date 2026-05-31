@@ -46,6 +46,20 @@ void logHttpError(const int statusCode, const std::string& reasonText, const Mes
               << '\n' << std::flush;
 }
 
+void logUploadSuppressed(const std::string& topicName,
+                         const std::string& sensorIdentifier,
+                         const std::uint64_t elapsedSeconds,
+                         const std::uint32_t minUploadIntervalSeconds) {
+    std::cerr << "opensensemap[warn]"
+              << " topic=" << topicName
+              << " sensorId=" << sensorIdentifier
+              << " reason=upload interval guard active"
+              << " elapsedSeconds=" << elapsedSeconds
+              << " minUploadIntervalSeconds=" << minUploadIntervalSeconds
+              << " action=ignore"
+              << '\n' << std::flush;
+}
+
 } // namespace
 
 OpenSenseMapComponent::OpenSenseMapComponent(OpenSenseMapConfig config, OpenSenseMapRequestSender requestSender)
@@ -106,6 +120,16 @@ void OpenSenseMapComponent::handleMessage(const Message& message) {
         return;
     }
 
+    std::uint64_t elapsedSeconds = 0U;
+    if (shouldIgnoreBecauseUploadTooFrequent(*sensorConfig, elapsedSeconds)) {
+        logUploadSuppressed(
+            message.topic(),
+            sensorConfig->sensorIdentifier,
+            elapsedSeconds,
+            sensorConfig->minUploadIntervalSeconds);
+        return;
+    }
+
     const std::string requestPath = makeRequestPath(config_.boxIdentifier, sensorConfig->sensorIdentifier);
     const std::string requestPayload = makeRequestPayload(*maybeNumericValue);
 
@@ -139,6 +163,7 @@ void OpenSenseMapComponent::handleMessage(const Message& message) {
 void OpenSenseMapComponent::run() {
     std::lock_guard<std::mutex> stateLock{stateMutex_};
     running_ = true;
+    lastUploadBySensorId_.clear();
 }
 
 void OpenSenseMapComponent::close() {
@@ -284,6 +309,33 @@ Message OpenSenseMapComponent::buildStatusMessage(
     }
     statusMessage.addReason(resultReason);
     return statusMessage;
+}
+
+bool OpenSenseMapComponent::shouldIgnoreBecauseUploadTooFrequent(
+    const OpenSenseMapSensorConfig& sensorConfig,
+    std::uint64_t& elapsedSecondsOut) {
+    elapsedSecondsOut = 0U;
+    if (sensorConfig.minUploadIntervalSeconds == 0U) {
+        return false;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> stateLock{stateMutex_};
+
+    const auto iterator = lastUploadBySensorId_.find(sensorConfig.sensorIdentifier);
+    if (iterator == lastUploadBySensorId_.end()) {
+        lastUploadBySensorId_[sensorConfig.sensorIdentifier] = now;
+        return false;
+    }
+
+    const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - iterator->second);
+    elapsedSecondsOut = static_cast<std::uint64_t>(elapsed.count());
+    if (elapsedSecondsOut < sensorConfig.minUploadIntervalSeconds) {
+        return true;
+    }
+
+    iterator->second = now;
+    return false;
 }
 
 void OpenSenseMapComponent::publishStatusMessage(const Message& statusMessage) const {

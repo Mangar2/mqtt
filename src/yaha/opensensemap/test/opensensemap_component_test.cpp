@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -18,6 +19,7 @@ constexpr double kStatusInternalServerError = 500.0;
 constexpr double kPayloadValueOne = 1.0;
 constexpr double kPayloadValueStatusFailure = 12.75;
 constexpr int kUnknownExceptionCode = 42;
+constexpr std::uint32_t kMinUploadIntervalSeconds = 60U;
 
 [[nodiscard]] yaha::OpenSenseMapConfig makeConfig() {
     return yaha::OpenSenseMapConfig{
@@ -259,4 +261,30 @@ TEST_CASE("handle_message_logs_status_publish_failure_path", "[opensensemap]") {
 
     REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueStatusFailure}));
     REQUIRE(publishCalls >= 1U);
+}
+
+TEST_CASE("handle_message_ignores_too_frequent_uploads_per_sensor", "[opensensemap]") {
+    auto config = makeConfig();
+    config.sensors[0].minUploadIntervalSeconds = kMinUploadIntervalSeconds;
+
+    std::size_t requestCalls = 0U;
+    std::size_t publishCalls = 0U;
+    yaha::OpenSenseMapComponent component{
+        std::move(config),
+        [&requestCalls](const std::string&, const std::string&) {
+            requestCalls += 1U;
+            return yaha::OpenSenseMapHttpResult{.statusCode = kHttpStatusCreated};
+        }};
+
+    component.setPublishCallback([&publishCalls](const yaha::Message&) {
+        publishCalls += 1U;
+        return yaha::PublishResult::ok();
+    });
+    component.run();
+
+    component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueOne});
+    component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueOne});
+
+    REQUIRE(requestCalls == 1U);
+    REQUIRE(publishCalls == 1U);
 }

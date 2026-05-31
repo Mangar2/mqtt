@@ -579,8 +579,11 @@ TEST_CASE("mqtt_client_runtime_run_until_signal_starts_and_stops_component",
           "[mqtt_client]") {
     class RuntimeRecordingComponent final : public yaha::IMqttComponent {
     public:
+        explicit RuntimeRecordingComponent(yaha::SubscriptionMap subscriptions)
+            : subscriptions_(std::move(subscriptions)) {}
+
         [[nodiscard]] yaha::SubscriptionMap getSubscriptions() const override {
-            return {};
+            return subscriptions_;
         }
 
         void handleMessage([[maybe_unused]] const yaha::Message& message) override {
@@ -607,13 +610,14 @@ TEST_CASE("mqtt_client_runtime_run_until_signal_starts_and_stops_component",
         }
 
     private:
+        yaha::SubscriptionMap subscriptions_{};
         yaha::PublishCallback callback_{};
         std::atomic<int> run_calls_{0};
         std::atomic<int> close_calls_{0};
     };
 
     TransportState state{};
-    RuntimeRecordingComponent component{};
+    RuntimeRecordingComponent component{{{"runtime/test", yaha::Qos::AtLeastOnce}}};
 
     yaha::YahaMqttClient::Config config{};
     config.loopSleep = std::chrono::milliseconds{5};
@@ -647,12 +651,20 @@ TEST_CASE("mqtt_client_runtime_run_until_signal_starts_and_stops_component",
     }
     REQUIRE(component.runCalls() == 1);
 
+    const auto subscribeDeadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds{500};
+    while (state.subscribe_calls.load() == 0 && std::chrono::steady_clock::now() < subscribeDeadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+    REQUIRE(state.subscribe_calls.load() == 1);
+
     std::raise(SIGTERM);
     runtime_thread.join();
 
     CHECK_FALSE(client.isRunning());
     CHECK(component.runCalls() == 1);
     CHECK(component.closeCalls() == 1);
+    CHECK(state.unsubscribe_calls.load() == 1);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)

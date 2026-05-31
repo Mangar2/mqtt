@@ -19,6 +19,10 @@ constexpr int k_minutes_fifty_five{55};
 constexpr int k_minutes_thirty{30};
 constexpr double k_numeric_one{1.0};
 constexpr double k_numeric_three{3.0};
+constexpr double k_numeric_four_point_two{4.2};
+constexpr double k_numeric_forty_two{42.0};
+constexpr double k_numeric_thousand_five{1005.0};
+constexpr double k_numeric_hundred_point_five{100.5};
 constexpr double k_numeric_twenty_five_point_one{25.1};
 constexpr double k_numeric_twenty_five{25.0};
 constexpr double k_numeric_twenty_six{26.0};
@@ -250,6 +254,50 @@ TEST_CASE("expression_evaluator_supports_numeric_arithmetic_result", "[yaha][aut
     REQUIRE(result.success);
     REQUIRE(std::holds_alternative<double>(result.value));
     REQUIRE(std::get<double>(result.value) == Catch::Approx(k_numeric_three));
+}
+
+TEST_CASE("expression_evaluator_supports_numeric_multiplication_and_division", "[yaha][automation]") {
+    const auto mulAst = parseScript("6 * 7");
+    const yaha::ExpressionEvaluationResult mulResult = yaha::ExpressionEvaluator::evaluate(
+        mulAst,
+        yaha::ExpressionEvaluator::VariableMap{});
+    REQUIRE(mulResult.success);
+    REQUIRE(std::holds_alternative<double>(mulResult.value));
+    REQUIRE(std::get<double>(mulResult.value) == Catch::Approx(k_numeric_forty_two));
+
+    const auto divAst = parseScript("42 / 10");
+    const yaha::ExpressionEvaluationResult divResult = yaha::ExpressionEvaluator::evaluate(
+        divAst,
+        yaha::ExpressionEvaluator::VariableMap{});
+    REQUIRE(divResult.success);
+    REQUIRE(std::holds_alternative<double>(divResult.value));
+    REQUIRE(std::get<double>(divResult.value) == Catch::Approx(k_numeric_four_point_two));
+}
+
+TEST_CASE("expression_evaluator_supports_topic_division", "[yaha][automation]") {
+    const auto ast = parseScript("outdoor/garden/weather2/sensor/pressure / 10");
+
+    yaha::ExpressionEvaluator::VariableMap vars;
+    vars.insert({"outdoor/garden/weather2/sensor/pressure", k_numeric_thousand_five});
+
+    const yaha::ExpressionEvaluationResult result = yaha::ExpressionEvaluator::evaluate(ast, vars);
+
+    REQUIRE(result.success);
+    REQUIRE(std::holds_alternative<double>(result.value));
+    REQUIRE(std::get<double>(result.value) == Catch::Approx(k_numeric_hundred_point_five));
+    REQUIRE(result.usedVariables.contains("outdoor/garden/weather2/sensor/pressure"));
+}
+
+TEST_CASE("expression_evaluator_reports_division_by_zero", "[yaha][automation]") {
+    const auto ast = parseScript("10 / 0");
+
+    const yaha::ExpressionEvaluationResult result = yaha::ExpressionEvaluator::evaluate(
+        ast,
+        yaha::ExpressionEvaluator::VariableMap{});
+
+    REQUIRE_FALSE(result.success);
+    REQUIRE_FALSE(result.errors.empty());
+    REQUIRE(result.errors.front().find("division by zero") != std::string::npos);
 }
 
 TEST_CASE("expression_evaluator_supports_logical_or_and_unary_not", "[yaha][automation]") {

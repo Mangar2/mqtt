@@ -71,3 +71,8 @@
 - Scenario: curl metadata has non-numeric status code.
 - Input: stub curl returns `__YAHA_STATUS__:abc`.
 - Expected: sender throws status-parse error.
+
+15. `load_config_parses_optional_sensor_min_upload_interval`
+- Scenario: sensor section defines optional per-sensor upload interval guard.
+- Input: valid `[sensor]` with `minUploadIntervalSeconds`.
+- Expected: parser succeeds and stores configured interval on sensor mapping.

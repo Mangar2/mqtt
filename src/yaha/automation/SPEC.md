@@ -26,7 +26,7 @@ Tokenization behavior:
 - Whitespace ` ` and `\t` is ignored.
 - Line breaks are preserved as explicit token `"\n"`.
 - Recognized operators and separators:
-  - `(` `)` `,` `:` `+` `-`
+  - `(` `)` `,` `:` `+` `-` `*` `/`
   - `=` `!=` `<>` `>` `<` `>=` `<=`
 - Quoted strings with `'` or `"` are emitted as single tokens including quote chars.
 - Bare tokens (identifiers, variable references, numbers, keywords) are emitted as contiguous text chunks.
@@ -55,7 +55,7 @@ AST model supports:
 - declarations (`name = (key: value, default: value)`)
 - literals, identifiers, variable refs
 - unary operator: `not`
-- binary operators: `+`, `-`, `=`, `!=`, `<>`, `>`, `<`, `>=`, `<=`, `and`, `or`
+- binary operators: `+`, `-`, `*`, `/`, `=`, `!=`, `<>`, `>`, `<`, `>=`, `<=`, `and`, `or`
 - calls: `if(...)`, `mapName(selector)`
 - inline map literals
 
@@ -110,6 +110,7 @@ Behavior:
   - literals/identifiers/variable references,
   - unary `not`,
   - binary `+`, `-`, `=`, `!=`, `<>`, `>`, `<`, `>=`, `<=`, `and`, `or`,
+  - binary `*`, `/` for numeric values,
   - `if(condition, trueValue, falseValue)`,
   - map declarations and map calls.
 - Tracks used variable names for dependency/telemetry handling.
@@ -120,6 +121,8 @@ Type behavior:
 - Runtime value supports string, number, bool, and time_point values.
 - Time arithmetic follows rules semantics:
   - subtract/add numeric minutes from time values.
+- Multiplication/division are numeric-only operations.
+- Division by zero fails evaluation with a structured error.
 - Relational comparison supports number-vs-number and time-vs-time.
 
 Error behavior:

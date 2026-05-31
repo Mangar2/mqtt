@@ -42,6 +42,10 @@ Each sensor must be defined in a dedicated section and must contain exactly:
 - `topic`
 - `id`
 
+Optional key per sensor:
+
+- `minUploadIntervalSeconds` (optional, default `0`, range `0..4294967295`)
+
 Validation behavior:
 
 - key `uint` is rejected explicitly with message to use `unit`

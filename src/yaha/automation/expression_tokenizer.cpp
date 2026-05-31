@@ -22,6 +22,8 @@ namespace {
     case ':':
     case '+':
     case '-':
+    case '*':
+    case '/':
     case '=':
     case '>':
     case '<':
@@ -49,7 +51,7 @@ namespace {
         || currentChar == '\'' || currentChar == '"'
         || currentChar == '(' || currentChar == ')' || currentChar == ',' || currentChar == ':'
         || currentChar == '=' || currentChar == '>' || currentChar == '<' || currentChar == '!'
-        || currentChar == '+' || currentChar == '-';
+    || currentChar == '+' || currentChar == '-' || currentChar == '*' || currentChar == '/';
 }
 
 [[nodiscard]] std::size_t skipSpaces(const std::string& input, const std::size_t index) {
@@ -166,6 +168,9 @@ void appendBareToken(const std::string& input, std::size_t* index,
             }
 
             const std::size_t next = skipSpaces(input, *index);
+            if (next < input.size() && input[next] == '/') {
+                break;
+            }
             if (next >= input.size() || isTokenBoundaryChar(input[next]) || startsTwoCharToken(input, next)) {
                 break;
             }

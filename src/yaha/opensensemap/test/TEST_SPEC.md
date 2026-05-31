@@ -56,3 +56,8 @@
 - Scenario: publish callback returns failure while status message is emitted.
 - Input: sender returns HTTP 500 and callback returns `PublishResult::fail`.
 - Expected: no exception and status-publish-failure branch is exercised.
+
+12. `handle_message_ignores_too_frequent_uploads_per_sensor`
+- Scenario: sensor upload interval guard is configured.
+- Input: two immediate messages for same sensor with `minUploadIntervalSeconds > 0`.
+- Expected: second message is ignored, no additional request sender call, and no additional status publish.

@@ -229,19 +229,40 @@ private:
     }
 
     [[nodiscard]] ExprPtr parseAdd(std::vector<ParseError>* errors) {
-        ExprPtr left = parseUnary(errors);
+        ExprPtr left = parseMulDiv(errors);
         if (!left) {
             return nullptr;
         }
 
         while (!atEnd() && (peek() == "+" || peek() == "-")) {
             const std::string opToken = consume();
-            ExprPtr right = parseUnary(errors);
+            ExprPtr right = parseMulDiv(errors);
             if (!right) {
                 return nullptr;
             }
             left = makeExpr(ExprNode{.node = BinaryOpNode{
                 .op = (opToken == "+") ? BinaryOperator::Add : BinaryOperator::Sub,
+                .left = left,
+                .right = right}});
+        }
+
+        return left;
+    }
+
+    [[nodiscard]] ExprPtr parseMulDiv(std::vector<ParseError>* errors) {
+        ExprPtr left = parseUnary(errors);
+        if (!left) {
+            return nullptr;
+        }
+
+        while (!atEnd() && (peek() == "*" || peek() == "/")) {
+            const std::string opToken = consume();
+            ExprPtr right = parseUnary(errors);
+            if (!right) {
+                return nullptr;
+            }
+            left = makeExpr(ExprNode{.node = BinaryOpNode{
+                .op = (opToken == "*") ? BinaryOperator::Mul : BinaryOperator::Div,
                 .left = left,
                 .right = right}});
         }

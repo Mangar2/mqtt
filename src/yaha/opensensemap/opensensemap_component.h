@@ -9,10 +9,12 @@
 #include "yaha/mqtt_component/mqtt_component.h"
 
 #include <cstdint>
+#include <chrono>
 #include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace yaha {
@@ -27,6 +29,7 @@ struct OpenSenseMapSensorConfig {
     std::string sensorUnit{};        ///< Sensor unit string.
     std::string topicFilter{};       ///< MQTT topic mapped to this sensor.
     std::string sensorIdentifier{};  ///< OpenSenseMap sensor identifier.
+    std::uint32_t minUploadIntervalSeconds{0U}; ///< Minimum accepted interval between uploads for this sensor (0 disables rate limit).
 };
 
 /**
@@ -116,6 +119,8 @@ private:
         int statusCode,
         const Message& sourceMessage,
         const std::string& resultReason);
+    [[nodiscard]] bool shouldIgnoreBecauseUploadTooFrequent(const OpenSenseMapSensorConfig& sensorConfig,
+                                                            std::uint64_t& elapsedSecondsOut);
     void publishStatusMessage(const Message& statusMessage) const;
 
     OpenSenseMapConfig config_{};
@@ -123,6 +128,7 @@ private:
 
     mutable std::mutex stateMutex_{};
     bool running_{false};
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastUploadBySensorId_{};
 
     mutable std::mutex publishMutex_{};
     PublishCallback publishCallback_{};

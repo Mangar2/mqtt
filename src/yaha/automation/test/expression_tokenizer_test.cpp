@@ -30,11 +30,22 @@ TEST_CASE("expression_tokenizer_keeps_quoted_literals_as_single_token", "[yaha][
 }
 
 TEST_CASE("expression_tokenizer_recognizes_comparators", "[yaha][automation]") {
-    const std::string program = "a=b and c!=d and e<>f and g>=h and i<=j and k>l and m<n";
+    const std::string program = "a=b and c!=d and e<>f and g>=h and i<=j and k>l and m<n and o*p=q / r";
 
     const std::vector<std::string> expected = {
         "a", "=", "b", "and", "c", "!=", "d", "and", "e", "<>", "f", "and",
-        "g", ">=", "h", "and", "i", "<=", "j", "and", "k", ">", "l", "and", "m", "<", "n"
+        "g", ">=", "h", "and", "i", "<=", "j", "and", "k", ">", "l", "and", "m", "<", "n",
+        "and", "o", "*", "p", "=", "q", "/", "r"
+    };
+
+    REQUIRE(yaha::ExpressionTokenizer::tokenize(program) == expected);
+}
+
+TEST_CASE("expression_tokenizer_keeps_topic_and_splits_division_operator", "[yaha][automation]") {
+    const std::string program = "outdoor/garden/weather2/sensor/pressure / 10";
+
+    const std::vector<std::string> expected = {
+        "outdoor/garden/weather2/sensor/pressure", "/", "10"
     };
 
     REQUIRE(yaha::ExpressionTokenizer::tokenize(program) == expected);

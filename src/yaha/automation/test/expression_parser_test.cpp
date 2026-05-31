@@ -37,6 +37,31 @@ TEST_CASE("expression_parser_builds_operator_precedence_tree", "[yaha][automatio
     REQUIRE(top.op == yaha::BinaryOperator::Or);
 }
 
+TEST_CASE("expression_parser_gives_mul_div_higher_precedence_than_add_sub", "[yaha][automation]") {
+    const std::string script = "1 + 2 * 3 - 8 / 4";
+
+    const yaha::ExpressionParseResult result = yaha::ExpressionParser::parse(script);
+
+    REQUIRE(result.success);
+    REQUIRE(result.ast.resultExpression != nullptr);
+    REQUIRE(std::holds_alternative<yaha::BinaryOpNode>(result.ast.resultExpression->node));
+
+    const auto& top = std::get<yaha::BinaryOpNode>(result.ast.resultExpression->node);
+    REQUIRE(top.op == yaha::BinaryOperator::Sub);
+
+    REQUIRE(std::holds_alternative<yaha::BinaryOpNode>(top.left->node));
+    const auto& leftAdd = std::get<yaha::BinaryOpNode>(top.left->node);
+    REQUIRE(leftAdd.op == yaha::BinaryOperator::Add);
+
+    REQUIRE(std::holds_alternative<yaha::BinaryOpNode>(leftAdd.right->node));
+    const auto& mulNode = std::get<yaha::BinaryOpNode>(leftAdd.right->node);
+    REQUIRE(mulNode.op == yaha::BinaryOperator::Mul);
+
+    REQUIRE(std::holds_alternative<yaha::BinaryOpNode>(top.right->node));
+    const auto& divNode = std::get<yaha::BinaryOpNode>(top.right->node);
+    REQUIRE(divNode.op == yaha::BinaryOperator::Div);
+}
+
 TEST_CASE("rules_tree_parser_exposes_snippets_by_slash_path", "[yaha][automation]") {
     using Node = yaha::RuleTreeNode;
 

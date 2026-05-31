@@ -16,6 +16,8 @@ enum class UnaryOperator : std::uint8_t {
 enum class BinaryOperator : std::uint8_t {
     Add,
     Sub,
+    Mul,
+    Div,
     Eq,
     Neq,
     Gt,

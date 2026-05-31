@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <array>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -43,6 +44,7 @@ struct SensorAssembly {
     std::optional<std::string> sensorUnit{};
     std::optional<std::string> topicFilter{};
     std::optional<std::string> sensorIdentifier{};
+    std::optional<std::uint32_t> minUploadIntervalSeconds{};
 
     [[nodiscard]] bool empty() const {
         return !sensorName.has_value() && !sensorUnit.has_value()
@@ -73,8 +75,85 @@ struct SensorAssembly {
         .sensorUnit = *pending.sensorUnit,
         .topicFilter = *pending.topicFilter,
         .sensorIdentifier = *pending.sensorIdentifier,
+        .minUploadIntervalSeconds = pending.minUploadIntervalSeconds.value_or(0U),
     });
     pending = SensorAssembly{};
+    return true;
+}
+
+[[nodiscard]] bool tryApplySensorEntry(
+    const IniDocument::Entry& entry,
+    SensorAssembly& pending,
+    std::vector<OpenSenseMapSensorConfig>& sensors,
+    std::string& errorMessage);
+
+[[nodiscard]] bool applySensorUnitEntry(
+    const IniDocument::Entry& entry,
+    SensorAssembly& pending,
+    std::string& errorMessage) {
+    if (entry.value.empty()) {
+        errorMessage = "sensor.unit must not be empty";
+        return false;
+    }
+    if (pending.sensorUnit.has_value()) {
+        errorMessage = "duplicate sensor.unit in one [sensor] entry";
+        return false;
+    }
+    pending.sensorUnit = entry.value;
+    return true;
+}
+
+[[nodiscard]] bool applySensorTopicEntry(
+    const IniDocument::Entry& entry,
+    SensorAssembly& pending,
+    std::string& errorMessage) {
+    if (entry.value.empty()) {
+        errorMessage = "sensor.topic must not be empty";
+        return false;
+    }
+    if (pending.topicFilter.has_value()) {
+        errorMessage = "duplicate sensor.topic in one [sensor] entry";
+        return false;
+    }
+    pending.topicFilter = entry.value;
+    return true;
+}
+
+[[nodiscard]] bool applySensorIdEntry(
+    const IniDocument::Entry& entry,
+    SensorAssembly& pending,
+    std::string& errorMessage) {
+    if (entry.value.empty()) {
+        errorMessage = "sensor.id must not be empty";
+        return false;
+    }
+    if (pending.sensorIdentifier.has_value()) {
+        errorMessage = "duplicate sensor.id in one [sensor] entry";
+        return false;
+    }
+    pending.sensorIdentifier = entry.value;
+    return true;
+}
+
+[[nodiscard]] bool applySensorMinUploadIntervalEntry(
+    const IniDocument::Entry& entry,
+    SensorAssembly& pending,
+    std::string& errorMessage) {
+    if (pending.minUploadIntervalSeconds.has_value()) {
+        errorMessage = "duplicate sensor.minUploadIntervalSeconds in one [sensor] entry";
+        return false;
+    }
+
+    const auto parsedValue = IniDocument::parseUnsigned(
+        entry.value,
+        0U,
+        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()));
+    if (!parsedValue.has_value()) {
+        errorMessage = "sensor.minUploadIntervalSeconds must be in range 0..4294967295";
+        return false;
+    }
+
+    pending.minUploadIntervalSeconds = static_cast<std::uint32_t>(*parsedValue);
     return true;
 }
 
@@ -101,42 +180,19 @@ struct SensorAssembly {
     }
 
     if (entry.key == "unit") {
-        if (entry.value.empty()) {
-            errorMessage = "sensor.unit must not be empty";
-            return false;
-        }
-        if (pending.sensorUnit.has_value()) {
-            errorMessage = "duplicate sensor.unit in one [sensor] entry";
-            return false;
-        }
-        pending.sensorUnit = entry.value;
-        return true;
+        return applySensorUnitEntry(entry, pending, errorMessage);
     }
 
     if (entry.key == "topic") {
-        if (entry.value.empty()) {
-            errorMessage = "sensor.topic must not be empty";
-            return false;
-        }
-        if (pending.topicFilter.has_value()) {
-            errorMessage = "duplicate sensor.topic in one [sensor] entry";
-            return false;
-        }
-        pending.topicFilter = entry.value;
-        return true;
+        return applySensorTopicEntry(entry, pending, errorMessage);
     }
 
     if (entry.key == "id") {
-        if (entry.value.empty()) {
-            errorMessage = "sensor.id must not be empty";
-            return false;
-        }
-        if (pending.sensorIdentifier.has_value()) {
-            errorMessage = "duplicate sensor.id in one [sensor] entry";
-            return false;
-        }
-        pending.sensorIdentifier = entry.value;
-        return true;
+        return applySensorIdEntry(entry, pending, errorMessage);
+    }
+
+    if (entry.key == "minUploadIntervalSeconds") {
+        return applySensorMinUploadIntervalEntry(entry, pending, errorMessage);
     }
 
     if (entry.key == "uint") {
@@ -144,7 +200,7 @@ struct SensorAssembly {
         return false;
     }
 
-    errorMessage = "invalid key in [sensor] (expected name, unit, topic, id; got '" + entry.key + "')";
+    errorMessage = "invalid key in [sensor] (expected name, unit, topic, id, minUploadIntervalSeconds; got '" + entry.key + "')";
     return false;
 }
 

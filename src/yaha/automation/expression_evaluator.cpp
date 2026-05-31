@@ -777,6 +777,9 @@ private:
         case BinaryOperator::Add:
         case BinaryOperator::Sub:
             return evalAddSub(*leftNode, *rightNode, binaryNode.op == BinaryOperator::Add);
+        case BinaryOperator::Mul:
+        case BinaryOperator::Div:
+            return evalMulDiv(*leftNode, *rightNode, binaryNode.op == BinaryOperator::Mul);
         }
 
         errors_.emplace_back("unsupported binary operator");
@@ -974,6 +977,32 @@ private:
 
         errors_.emplace_back("invalid operands for arithmetic operation");
         return std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<EvaluatedNode> evalMulDiv(
+        const EvaluatedNode& leftNode,
+        const EvaluatedNode& rightNode,
+        const bool isMulOperation) {
+        const RuntimeValue& leftValue = leftNode.value;
+        const RuntimeValue& rightValue = rightNode.value;
+        const std::string operatorText = isMulOperation ? "*" : "/";
+
+        if (!std::holds_alternative<double>(leftValue) || !std::holds_alternative<double>(rightValue)) {
+            errors_.emplace_back("invalid operands for arithmetic operation");
+            return std::nullopt;
+        }
+
+        const double leftNumber = std::get<double>(leftValue);
+        const double rightNumber = std::get<double>(rightValue);
+        if (!isMulOperation && std::fabs(rightNumber) < k_numeric_epsilon) {
+            errors_.emplace_back("division by zero in arithmetic operation");
+            return std::nullopt;
+        }
+
+        const RuntimeValue resultValue{isMulOperation ? leftNumber * rightNumber : leftNumber / rightNumber};
+        return EvaluatedNode{
+            .value = resultValue,
+            .reason = leftNode.reason + " " + operatorText + " " + rightNode.reason + " = " + valueToString(resultValue)};
     }
 
     const FieldScriptAst& script_;

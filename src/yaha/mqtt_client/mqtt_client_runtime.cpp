@@ -42,8 +42,8 @@ void YahaMqttClientRuntime::runUntilSignal() {
         std::this_thread::sleep_for(pollInterval_);
     }
 
-    mqttClient_.close();
     component_.close();
+    mqttClient_.close();
 }
 
 } // namespace yaha

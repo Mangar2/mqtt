@@ -15,6 +15,7 @@ OpenSenseMap and publishes operation status to `$SYS/opensensemap/*` topics.
 | `sensorUnit` | `std::string` | Sensor unit text |
 | `topicFilter` | `std::string` | MQTT topic mapped to this sensor |
 | `sensorIdentifier` | `std::string` | OpenSenseMap sensor id |
+| `minUploadIntervalSeconds` | `std::uint32_t` | Minimum time between uploads for this sensor; `0` disables guard |
 
 ### Struct `OpenSenseMapHttpResult`
 
@@ -47,6 +48,11 @@ Implements `IMqttComponent` behavior:
 - `getSubscriptions()` returns all configured sensor topic mappings with configured QoS.
 - `handleMessage(...)` resolves sensor by topic, converts value to number, posts payload
   `{"value": <number>}` to OpenSenseMap, and publishes status result message.
+- If a sensor has `minUploadIntervalSeconds > 0`, uploads are rate-guarded per sensor id:
+  - the first message uploads immediately
+  - messages arriving before the configured interval elapsed are ignored
+  - ignored messages are not queued, persisted, or retried
+  - ignored messages write one warning log line and do not publish `$MONITOR/opensensemap/*` status
 - `run()` enables message processing.
 - `close()` disables message processing.
 - `setPublishCallback(...)` stores runtime MQTT publish callback.
