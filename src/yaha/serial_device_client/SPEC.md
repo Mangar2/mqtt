@@ -25,6 +25,9 @@ Behavior:
   - baudrate in [1..4000000]
   - qos in [0..2]
   - trace in {errors,messages,internal}
+  - logIncomingMessages bool
+  - logOutgoingMessages bool
+  - logReason bool
   - keepAliveDelayInSeconds in [1..86400]
 - parses legacy interface sections:
   - `[serialdevice.i2c.commandMap]`
@@ -46,6 +49,8 @@ Behavior:
 - maps domain config via `tryLoadSerialDeviceConfigFromIni`
 - maps MQTT config via `tryLoadMqttClientConfigFromIni`
 - keeps MQTT defaults on recoverable MQTT parse errors and logs warning
+- maps shared message-log booleans from `[serialdevice]` via `tryLoadMessageLogConfigFromIni`
+- propagates `[serialdevice].logReason` into `mqttConfig.logReason` for reason-chain output consistency between transport trace and component logs
 
 ### Struct SerialDeviceClientRuntimeObjects
 

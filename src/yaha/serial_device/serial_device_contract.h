@@ -55,6 +55,9 @@ struct SerialDeviceConfig {
     std::uint32_t baudrate{k_default_serialdevice_baudrate};
     Qos subscribeQos{Qos::AtLeastOnce};
     std::string traceLevel{"internal"};
+    bool logIncomingMessages{false};
+    bool logOutgoingMessages{false};
+    bool logReason{true};
     std::uint32_t keepAliveDelayInSeconds{k_default_serialdevice_keep_alive_delay_seconds};
     std::unordered_map<std::string, SerialDeviceInterfaceDefinition> interfaces{};
 };

@@ -118,3 +118,11 @@ Unit tests for phase-1 to phase-4 serial_device parity contracts:
 27. serial_device_runtime_retry_and_trace_control_match_oracle_f_fixture
 - Scenario: send serial command through runtime with forced send failures and then apply trace control message.
 - Expected: send retry/open behavior matches Oracle F counters and trace topic updates runtime trace level.
+
+28. serial_device_runtime_matching_reply_merges_request_reason_chain
+- Scenario: receive `/set` request with existing reason, then receive matching serial reply.
+- Expected: published reply on base topic merges reply reason and request reason-chain context.
+
+29. serial_device_runtime_logs_incoming_and_outgoing_messages_in_yaha_format
+- Scenario: enable SerialDevice message logging flags and process one `/set` request plus one serial reply.
+- Expected: stdout contains structured YAHA log lines for incoming and outgoing message flow with `component="serial_device"`.

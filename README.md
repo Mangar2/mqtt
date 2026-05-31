@@ -343,6 +343,19 @@ RS485 Interface client INI sections:
 - `[rs485interface.addresses]`: topic-prefix-to-address mapping
 - `[rs485interface.topics]`: explicit topic mapping override (`COMMAND,VALUE,ADDRESS`)
 
+SerialDevice client INI sections:
+
+- `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs, logReason)
+- `[serialdevice]`: `serialPortName`, `baudrate`, `qos`, `trace`, `logIncomingMessages`, `logOutgoingMessages`, `logReason`, `keepAliveDelayInSeconds`
+- `[serialdevice.i2c.commandMap]`: serial command to topic suffix mapping
+- `[serialdevice.i2c.receiverMap]`: topic-prefix to serial receiver mapping
+- `[serialdevice.fs20.commandMap]`: fs20 command to topic suffix mapping
+- `[serialdevice.fs20.sendMap]`: optional fs20 send fallback mapping
+- `[serialdevice.switch.topicMap]`: explicit switch route mapping (`command,value,address`)
+- `[serialdevice.serial.commandMap]`: serial command to topic suffix mapping
+- `[serialdevice.serial.receiverMap]`: topic-prefix to receiver mapping for serial interface
+- `[serialdevice.serial.valueMap]`: named reverse value map definitions (`description`, `usedby`, `map`)
+
 ZWave client INI sections:
 
 - `[mqtt]`: generic MQTT runtime settings (host, port, clientId, reconnectDelayMs, keepAliveIntervalMs, loopSleepMs, logReason)

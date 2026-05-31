@@ -51,6 +51,9 @@ Fields:
 - baudrate (default 38400)
 - subscribeQos in {0,1,2} (default QoS 1)
 - traceLevel in {errors,messages,internal} (default internal)
+- logIncomingMessages (default false)
+- logOutgoingMessages (default false)
+- logReason (default true)
 - keepAliveDelayInSeconds (default 30)
 - interfaces (map with legacy interface names: i2c, fs20, switch, serial)
 
@@ -185,11 +188,14 @@ Behavior:
   - special control topic `$SYS/serialdevice/trace/set` updates runtime trace level
   - normal messages are normalized (`/set` stripped), mapped, serialized, and queued for sending
 - receive path parses serial frames, maps to MQTT messages, and publishes via callback with configured QoS.
+- message-flow logging uses shared YAHA message-log service format (`component="serial_device"`) and is controlled by `logIncomingMessages` / `logOutgoingMessages` / `logReason`.
+- publish callback failures emit structured `event=publish_failed` logs with category/reason metadata.
 
 Legacy compatibility notes:
 - send retry loop keeps the legacy unreachable `retry==0` throw branch shape.
 - serial open retry uses fixed retry count and delay values consistent with reconstruction spec.
 - publish path preserves legacy `/set` re-add behavior for non-matching replies.
+- reply matching keeps legacy topic/value correlation behavior and merges request reason-chain context into matched reply publishes.
 
 ## Files
 

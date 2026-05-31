@@ -132,12 +132,15 @@ private:
     struct MatchedRequest {
         std::string topic{};
         Value value{};
+        ReasonList reason{};
     };
 
     [[nodiscard]] static bool topicsMatchIgnoringSetSuffix(
         const std::string& leftTopic,
         const std::string& rightTopic);
     [[nodiscard]] static std::string stripSetSuffix(const std::string& topicValue);
+    [[nodiscard]] static std::string stripActionSuffix(const std::string& topicValue);
+    [[nodiscard]] static bool isActionTopic(const std::string& topicValue);
     [[nodiscard]] static std::string valueToText(const Value& valueValue);
 
     void runSendKeepAliveLoop();
@@ -158,6 +161,11 @@ private:
     [[nodiscard]] bool hasMatchingMessage(const Message& messageValue) const;
     [[nodiscard]] Message matchAndUpdateReplyMessage(const Message& messageValue);
     void addReceivedMessage(const Message& messageValue);
+    void logIncomingMessageIfEnabled(const Message& messageValue) const;
+    void logOutgoingMessageIfEnabled(const Message& messageValue) const;
+    static void logOutgoingFailure(const Message& messageValue,
+                                   const std::string& categoryText,
+                                   const std::string& reasonText);
 
     SerialDeviceConfig config_{};
     std::shared_ptr<ISerialDeviceTransport> transport_{};

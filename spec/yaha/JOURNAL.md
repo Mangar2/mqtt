@@ -264,6 +264,20 @@ Updated `src/yaha/zwave/test/zwave_service_component_test.cpp` to expect the sta
 
 ## 2026-05-31
 
+### [ARTIFACT] SerialDevice message logging aligned to YAHA shared format
+Updated `src/yaha/serial_device/serial_device_component.cpp`, `src/yaha/serial_device/serial_device_component.h`, and `src/yaha/serial_device/serial_device_contract.h` to support configurable shared message-flow logging (`logIncomingMessages`, `logOutgoingMessages`, `logReason`) with structured output via message-log service.
+
+### [CORRECTION] SerialDevice reply correlation now carries request reason chain
+Updated `src/yaha/serial_device/serial_device_component.cpp` so request/reply matching keeps action-topic semantics and merges matched request reason entries into outgoing reply messages. This restores MatchMessages-style context transfer while preserving the new reason-order model used in C++.
+
+### [ARTIFACT] SerialDevice client INI mapping extended for log keys
+Updated `src/yaha/serial_device_client/serial_device_client_config.cpp` and `cmake/ini/serialdevice.ini` to parse and expose `logIncomingMessages`, `logOutgoingMessages`, and `logReason` from `[serialdevice]` via shared message-log INI helper.
+
+### [ARTIFACT] SerialDevice tests and docs synchronized
+Updated `src/yaha/serial_device/test/serial_device_runtime_oracle_test.cpp`, `src/yaha/serial_device/test/TEST_SPEC.md`, `src/yaha/serial_device_client/test/serial_device_client_config_test.cpp`, `src/yaha/serial_device_client/test/TEST_SPEC.md`, `src/yaha/serial_device/SPEC.md`, `src/yaha/serial_device_client/SPEC.md`, `src/yaha/SPEC.md`, `src/yaha_serialdeviceclient_main.cpp`, and `README.md` to document and verify message logging and reason-chain behavior.
+
+## 2026-05-31
+
 ### [ARTIFACT] ValueService logging switched to shared client format
 Updated `src/yaha/value_service/value_service_component.h` and `src/yaha/value_service/value_service_component.cpp` to use shared message-log service output for incoming/outgoing messages. Added `logIncomingMessages`, `logOutgoingMessages`, and `logReason` to `ValueServiceConfig` and gated log emission through these flags.
 

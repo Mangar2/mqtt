@@ -66,7 +66,11 @@ void printStartupSummary(
               << " qos=" << static_cast<unsigned int>(runtimeConfig.serialDeviceConfig.subscribeQos)
               << " trace=" << runtimeConfig.serialDeviceConfig.traceLevel
               << " keepAliveDelayInSeconds=" << runtimeConfig.serialDeviceConfig.keepAliveDelayInSeconds << '\n';
-    std::cout << "  logging: mqttTrace=" << (runtimeConfig.mqttConfig.enableMessageTrace ? "1" : "0") << '\n';
+    std::cout << "  logging: mqttTrace=" << (runtimeConfig.mqttConfig.enableMessageTrace ? "1" : "0")
+              << " incoming=" << (runtimeConfig.serialDeviceConfig.logIncomingMessages ? "1" : "0")
+              << " outgoing=" << (runtimeConfig.serialDeviceConfig.logOutgoingMessages ? "1" : "0")
+              << " reason=" << (runtimeConfig.serialDeviceConfig.logReason ? "1" : "0")
+              << '\n';
     std::cout << std::flush;
 }
 

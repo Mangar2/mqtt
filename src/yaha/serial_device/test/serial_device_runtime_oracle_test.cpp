@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <iostream>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -339,6 +340,78 @@ TEST_CASE("serial_device_runtime_matching_reply_uses_base_topic", "[serial_devic
         }
     }
     CHECK(foundBaseTopic);
+}
+
+TEST_CASE("serial_device_runtime_matching_reply_merges_request_reason_chain", "[serial_device][runtime]") {
+    yaha::SerialDeviceConfig config = makeRuntimeConfig();
+    yaha::SerialDeviceInterfaceDefinition fs20Definition{};
+    fs20Definition.commandMap["1234/1111"] = "demo/topic";
+    config.interfaces.clear();
+    config.interfaces["fs20"] = fs20Definition;
+
+    auto transport = std::make_shared<FakeSerialTransport>();
+    std::vector<yaha::Message> published{};
+
+    yaha::SerialDeviceComponent component{config, transport, [](std::chrono::milliseconds) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }};
+    component.setPublishCallback([&published](const yaha::Message& messageValue) {
+        published.push_back(messageValue.clone());
+        return yaha::PublishResult::ok();
+    });
+
+    yaha::Message incomingSet{"demo/topic/set", std::string{"on"}};
+    incomingSet.addReason("manual trigger", "2026-05-31T09:00:00Z");
+
+    component.run();
+    component.handleMessage(incomingSet);
+    transport->emit(R"({"Hauscode":"1234","Adresse":"1111","Befehl":1})");
+    std::this_thread::sleep_for(k_short_wait);
+    component.close();
+
+    REQUIRE_FALSE(published.empty());
+    const auto iterator = std::ranges::find_if(published, [](const yaha::Message& messageValue) {
+        return messageValue.topic() == "demo/topic";
+    });
+    REQUIRE(iterator != published.end());
+
+    const auto& reasonEntries = iterator->reason();
+    REQUIRE(reasonEntries.size() >= 3U);
+    CHECK(reasonEntries[0].message == "received from arduino");
+    CHECK(reasonEntries[1].message == "received by serialDevice interface service");
+    CHECK(reasonEntries[2].message == "manual trigger");
+}
+
+TEST_CASE("serial_device_runtime_logs_incoming_and_outgoing_messages_in_yaha_format", "[serial_device][runtime]") {
+    yaha::SerialDeviceConfig config = makeRuntimeConfig();
+    yaha::SerialDeviceInterfaceDefinition fs20Definition{};
+    fs20Definition.commandMap["1234/1111"] = "demo/topic";
+    config.interfaces.clear();
+    config.interfaces["fs20"] = fs20Definition;
+    config.logIncomingMessages = true;
+    config.logOutgoingMessages = true;
+
+    auto transport = std::make_shared<FakeSerialTransport>();
+    yaha::SerialDeviceComponent component{config, transport, [](std::chrono::milliseconds) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }};
+    component.setPublishCallback([](const yaha::Message&) {
+        return yaha::PublishResult::ok();
+    });
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    component.run();
+    component.handleMessage(yaha::Message{"demo/topic/set", std::string{"on"}});
+    transport->emit(R"({"Hauscode":"1234","Adresse":"1111","Befehl":1})");
+    std::this_thread::sleep_for(k_short_wait);
+    component.close();
+
+    std::cout.rdbuf(previousBuffer);
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find("component=\"serial_device\" direction=\"incoming\" topic=\"demo/topic/set\"") != std::string::npos);
+    REQUIRE(logText.find("component=\"serial_device\" direction=\"outgoing\" topic=\"demo/topic\"") != std::string::npos);
 }
 
 TEST_CASE("serial_device_runtime_lifecycle_and_error_paths", "[serial_device][runtime]") {

@@ -49,6 +49,9 @@ bool loadDocumentFromIniText(
            "baudrate=57600\n"
            "qos=2\n"
            "trace=messages\n"
+           "logIncomingMessages=true\n"
+           "logOutgoingMessages=true\n"
+           "logReason=false\n"
            "keepAliveDelayInSeconds=45\n"
            "\n"
            "[serialdevice.i2c.commandMap]\n"
@@ -132,6 +135,9 @@ TEST_CASE("serial_device_config_parses_interface_mappings_and_value_map", "[seri
     REQUIRE(config.baudrate == 57600U);
     REQUIRE(config.subscribeQos == yaha::Qos::ExactlyOnce);
     REQUIRE(config.traceLevel == "messages");
+    REQUIRE(config.logIncomingMessages);
+    REQUIRE(config.logOutgoingMessages);
+    REQUIRE_FALSE(config.logReason);
     REQUIRE(config.keepAliveDelayInSeconds == 45U);
 
     REQUIRE(config.interfaces.at("i2c").commandMap.at("temp") == "sensor/temp");
@@ -168,6 +174,7 @@ TEST_CASE("serial_device_config_marks_receiver_map_as_provided_for_empty_section
     REQUIRE(config.interfaces.at("serial").receiverMap.empty());
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("serial_device_runtime_config_loads_domain_and_mqtt_values", "[serial_device_client]") {
     const yaha::IniDocument document = loadDocumentOrFail(validSerialDeviceIniText());
 
@@ -181,6 +188,26 @@ TEST_CASE("serial_device_runtime_config_loads_domain_and_mqtt_values", "[serial_
     REQUIRE(runtimeConfig.mqttConfig.brokerHost == "broker.local");
     REQUIRE(runtimeConfig.mqttConfig.brokerPort == 1884U);
     REQUIRE(runtimeConfig.mqttConfig.clientId == "serial-client");
+    REQUIRE_FALSE(runtimeConfig.mqttConfig.logReason);
+}
+
+TEST_CASE("serial_device_config_falls_back_on_invalid_message_logging_bools", "[serial_device_client]") {
+    const yaha::IniDocument document = loadDocumentOrFail(
+        "[serialdevice]\n"
+        "serialPortName=/dev/ttyUSB4\n"
+        "logIncomingMessages=maybe\n"
+        "logOutgoingMessages=maybe\n"
+        "logReason=maybe\n");
+
+    yaha::SerialDeviceConfig config{};
+    std::string errorMessage{};
+    const bool loaded = yaha::tryLoadSerialDeviceConfigFromIni(document, config, errorMessage);
+
+    REQUIRE(loaded);
+    REQUIRE(errorMessage.empty());
+    REQUIRE_FALSE(config.logIncomingMessages);
+    REQUIRE_FALSE(config.logOutgoingMessages);
+    REQUIRE(config.logReason);
 }
 
 TEST_CASE("serial_device_runtime_config_keeps_mqtt_defaults_on_invalid_mqtt_values", "[serial_device_client]") {

@@ -1,13 +1,19 @@
 #include "yaha/serial_device/serial_device_component.h"
 
+#include "yaha/message/message_log_service.h"
+#include "yaha/message/message_payload_codec.h"
 #include "yaha/serial_device/serial_device_mqtt_to_serial_mapper.h"
 #include "yaha/serial_device/serial_device_serial_to_mqtt_mapper.h"
 #include "yaha/serial_device/serial_device_wire_serializer.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <iostream>
 #include <optional>
+#include <ranges>
 #include <sstream>
+#include <string_view>
 #include <utility>
 
 namespace yaha {
@@ -39,7 +45,7 @@ constexpr double k_integer_epsilon{1e-9};
         sourceMessage.retain(),
         sourceMessage.dup()};
 
-    for (const auto& reasonValue : sourceMessage.reason()) {
+    for (const auto& reasonValue : sourceMessage.reason() | std::views::reverse) {
         outputMessage.addReason(reasonValue.message, reasonValue.timestamp);
     }
 
@@ -74,6 +80,8 @@ SubscriptionMap SerialDeviceComponent::getSubscriptions() const {
 
 void SerialDeviceComponent::handleMessage(const Message& messageValue) {
     try {
+        logIncomingMessageIfEnabled(messageValue);
+
         if (messageValue.topic() == "$SYS/serialdevice/trace/set") {
             if (std::holds_alternative<std::string>(messageValue.value())) {
                 std::lock_guard<std::mutex> stateLock{stateMutex_};
@@ -83,6 +91,9 @@ void SerialDeviceComponent::handleMessage(const Message& messageValue) {
         }
 
         Message receivedMessage{messageValue.topic(), messageValue.value(), messageValue.qos(), messageValue.retain(), messageValue.dup()};
+        for (const auto& reasonValue : messageValue.reason() | std::views::reverse) {
+            receivedMessage.addReason(reasonValue.message, reasonValue.timestamp);
+        }
         receivedMessage.addReason("received by serialDevice interface service", "");
         addReceivedMessage(receivedMessage);
 
@@ -187,6 +198,26 @@ std::string SerialDeviceComponent::stripSetSuffix(const std::string& topicValue)
     return topicValue;
 }
 
+std::string SerialDeviceComponent::stripActionSuffix(const std::string& topicValue) {
+    constexpr std::array<std::string_view, 4U> actionSuffixes{
+        "/set",
+        "/get",
+        "/temporary",
+        "/blink"};
+
+    for (const auto actionSuffix : actionSuffixes) {
+        if (topicValue.size() >= actionSuffix.size() && topicValue.ends_with(actionSuffix)) {
+            return topicValue.substr(0U, topicValue.size() - actionSuffix.size());
+        }
+    }
+
+    return topicValue;
+}
+
+bool SerialDeviceComponent::isActionTopic(const std::string& topicValue) {
+    return stripActionSuffix(topicValue) != topicValue;
+}
+
 std::string SerialDeviceComponent::valueToText(const Value& valueValue) {
     if (std::holds_alternative<std::string>(valueValue)) {
         return std::get<std::string>(valueValue);
@@ -289,7 +320,30 @@ void SerialDeviceComponent::publishMessages(const std::vector<Message>& mqttMess
             publishMessage = cloneWithQos(sourceMessage, config_.subscribeQos, baseTopic + "/set");
         }
 
-        static_cast<void>(callbackCopy(publishMessage));
+        if (!callbackCopy) {
+            logOutgoingFailure(publishMessage, "callback_missing", "publish callback not set");
+            continue;
+        }
+
+        try {
+            const PublishResult publishResult = callbackCopy(publishMessage);
+            if (!publishResult.success) {
+                const std::string reasonText = publishResult.reason.empty()
+                    ? "unspecified"
+                    : publishResult.reason;
+                logOutgoingFailure(
+                    publishMessage,
+                    "publish_failed",
+                    reasonText);
+                continue;
+            }
+
+            logOutgoingMessageIfEnabled(publishMessage);
+        } catch (const std::exception& exceptionValue) {
+            logOutgoingFailure(publishMessage, "publish_failed", exceptionValue.what());
+        } catch (...) {
+            logOutgoingFailure(publishMessage, "publish_failed", "unknown");
+        }
     }
 }
 
@@ -377,38 +431,134 @@ void SerialDeviceComponent::delayFor(const std::chrono::milliseconds durationVal
 bool SerialDeviceComponent::hasMatchingMessage(const Message& messageValue) const {
     std::lock_guard<std::mutex> matcherLock{matcherMutex_};
     return std::ranges::any_of(receivedMessages_, [&messageValue](const MatchedRequest& receivedMessage) {
-        return topicsMatchIgnoringSetSuffix(receivedMessage.topic, messageValue.topic())
+        return receivedMessage.topic == messageValue.topic()
             && valueEquals(receivedMessage.value, messageValue.value());
     });
 }
 
 Message SerialDeviceComponent::matchAndUpdateReplyMessage(const Message& messageValue) {
     std::lock_guard<std::mutex> matcherLock{matcherMutex_};
+    Message updatedMessage = messageValue.clone();
+
     for (auto iterator = receivedMessages_.begin(); iterator != receivedMessages_.end(); ++iterator) {
-        if (!topicsMatchIgnoringSetSuffix(iterator->topic, messageValue.topic())) {
-            continue;
-        }
-        if (!valueEquals(iterator->value, messageValue.value())) {
+        if (iterator->topic != messageValue.topic()) {
             continue;
         }
 
+        const bool valuesMatch = valueEquals(iterator->value, messageValue.value());
+        const ReasonList matchedReason = iterator->reason;
         receivedMessages_.erase(iterator);
-        return messageValue;
+
+        if (valuesMatch) {
+            ReasonList mergedReason = updatedMessage.reason();
+            mergedReason.insert(mergedReason.end(), matchedReason.begin(), matchedReason.end());
+
+            Message mergedMessage{
+                updatedMessage.topic(),
+                updatedMessage.value(),
+                updatedMessage.qos(),
+                updatedMessage.retain(),
+                updatedMessage.dup()};
+            for (const auto& reasonValue : mergedReason | std::views::reverse) {
+                mergedMessage.addReason(reasonValue.message, reasonValue.timestamp);
+            }
+            updatedMessage = std::move(mergedMessage);
+        }
+
+        return updatedMessage;
     }
 
-    return messageValue;
+    return updatedMessage;
 }
 
 void SerialDeviceComponent::addReceivedMessage(const Message& messageValue) {
+    if (!isActionTopic(messageValue.topic())) {
+        return;
+    }
+
+    const std::string replyTopic = stripActionSuffix(messageValue.topic());
+
     std::lock_guard<std::mutex> matcherLock{matcherMutex_};
+    std::erase_if(receivedMessages_, [&replyTopic](const MatchedRequest& requestValue) {
+        return requestValue.topic == replyTopic;
+    });
+
     receivedMessages_.push_back(MatchedRequest{
-        .topic = messageValue.topic(),
-        .value = messageValue.value()});
+        .topic = replyTopic,
+        .value = messageValue.value(),
+        .reason = messageValue.reason()});
 
     constexpr std::size_t k_max_queue_size{128U};
     while (receivedMessages_.size() > k_max_queue_size) {
         receivedMessages_.pop_front();
     }
+}
+
+void SerialDeviceComponent::logIncomingMessageIfEnabled(const Message& messageValue) const {
+    const MessageLogConfig logConfig{
+        .enableIncoming = config_.logIncomingMessages,
+        .enableOutgoing = false,
+        .includeReasonChain = config_.logReason,
+        .incomingTopicFilter = std::nullopt,
+        .outgoingTopicFilter = std::nullopt};
+
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "serial_device",
+        MessageLogDirection::Incoming,
+        messageValue,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cout << *logLine << '\n' << std::flush;
+}
+
+void SerialDeviceComponent::logOutgoingMessageIfEnabled(const Message& messageValue) const {
+    const MessageLogConfig logConfig{
+        .enableIncoming = false,
+        .enableOutgoing = config_.logOutgoingMessages,
+        .includeReasonChain = config_.logReason,
+        .incomingTopicFilter = std::nullopt,
+        .outgoingTopicFilter = std::nullopt};
+
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "serial_device",
+        MessageLogDirection::Outgoing,
+        messageValue,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cout << *logLine << '\n' << std::flush;
+}
+
+void SerialDeviceComponent::logOutgoingFailure(const Message& messageValue,
+                                               const std::string& categoryText,
+                                               const std::string& reasonText) {
+    const MessageLogConfig logConfig{
+        .enableIncoming = false,
+        .enableOutgoing = true,
+        .includeReasonChain = true,
+        .incomingTopicFilter = std::nullopt,
+        .outgoingTopicFilter = std::nullopt};
+
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "serial_device",
+        MessageLogDirection::Outgoing,
+        messageValue,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cerr << *logLine
+              << " event=publish_failed"
+              << " category=" << categoryText
+              << " reason=\"" << escapeJsonString(reasonText) << '\"'
+              << '\n'
+              << std::flush;
 }
 
 } // namespace yaha

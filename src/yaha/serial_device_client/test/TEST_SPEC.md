@@ -41,3 +41,11 @@ Unit tests for phase-1 INI mapping/runtime config loading and phase-5 runtime co
 9. serial_device_client_runtime_transport_methods_are_callable
 - Scenario: runtime builder creates default serial transport implementation.
 - Expected: callback registration, list/isOpen/close are callable and open/send propagate failures for invalid/unopened transport.
+
+10. serial_device_config_parses_message_logging_flags
+- Scenario: [serialdevice] section provides logIncomingMessages/logOutgoingMessages/logReason.
+- Expected: loader maps message-log flags to typed config and propagates logReason to runtime MQTT config.
+
+11. serial_device_config_falls_back_on_invalid_message_logging_bools
+- Scenario: [serialdevice] section provides invalid bool tokens for logging keys.
+- Expected: loader keeps default logging values and reports fallback warning without failing runtime config load.

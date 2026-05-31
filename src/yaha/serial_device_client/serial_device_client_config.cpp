@@ -1,5 +1,6 @@
 #include "yaha/serial_device_client/serial_device_client_config.h"
 
+#include "yaha/message/message_log_service.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <cstdint>
@@ -331,6 +332,33 @@ bool tryLoadSerialDeviceConfigFromIni(
         }
     }
 
+    MessageLogConfig messageLogConfig{
+        .enableIncoming = parsed.logIncomingMessages,
+        .enableOutgoing = parsed.logOutgoingMessages,
+        .includeReasonChain = parsed.logReason,
+    };
+    std::string messageLogError{};
+    if (!tryLoadMessageLogConfigFromIni(
+            document,
+            MessageLogIniKeys{
+                .incomingEnabled = MessageLogIniBoolKey{.section = "serialdevice", .key = "logIncomingMessages"},
+                .outgoingEnabled = MessageLogIniBoolKey{.section = "serialdevice", .key = "logOutgoingMessages"},
+                .includeReasonChain = MessageLogIniBoolKey{.section = "serialdevice", .key = "logReason"},
+            },
+            messageLogConfig,
+            messageLogError)) {
+        logConfigFallbackWarning(
+            "serialdevice",
+            "log*",
+            "<composite>",
+            "defaults",
+            messageLogError);
+    }
+
+    parsed.logIncomingMessages = messageLogConfig.enableIncoming;
+    parsed.logOutgoingMessages = messageLogConfig.enableOutgoing;
+    parsed.logReason = messageLogConfig.includeReasonChain;
+
     std::string warningText{};
     parseCommandMapSection(
         document,
@@ -393,6 +421,8 @@ bool tryLoadSerialDeviceClientRuntimeConfigFromIni(
             "defaults",
             mqttErrorMessage);
     }
+
+            parsed.mqttConfig.logReason = parsed.serialDeviceConfig.logReason;
 
     output = std::move(parsed);
     errorMessage.clear();
