@@ -20,6 +20,21 @@ constexpr int kHttpSuccessThreshold{300};
 constexpr int kAlertPriority{1};
 constexpr int kDefaultPriority{-1};
 
+void logError(const std::string& reasonText, const std::string& topicName) {
+    std::cerr << "pushover[error]"
+              << " topic=" << topicName
+              << " reason=" << reasonText
+              << '\n' << std::flush;
+}
+
+void logHttpError(const int statusCode, const std::string& reasonText, const std::string& topicName) {
+    std::cerr << "pushover[error]"
+              << " topic=" << topicName
+              << " httpStatus=" << statusCode
+              << " reason=" << reasonText
+              << '\n' << std::flush;
+}
+
 [[nodiscard]] std::string trimCopy(const std::string_view textValue) {
     std::size_t beginIndex = 0U;
     while (beginIndex < textValue.size()
@@ -154,18 +169,22 @@ void PushoverComponent::handleMessage(const Message& message) {
     }
 
     if (!requestSender_) {
+        constexpr const char* kReasonText = "pushover request sender callback is missing";
+        logError(kReasonText, message.topic());
         publishStatusMessage(buildStatusMessage(
             kHttpStatusInternalServerError,
             message.reason(),
-            "pushover request sender callback is missing"));
+            kReasonText));
         return;
     }
 
     if (config_.devices.empty()) {
+        constexpr const char* kReasonText = "pushover devices are not configured";
+        logError(kReasonText, message.topic());
         publishStatusMessage(buildStatusMessage(
             kHttpStatusUnprocessableEntity,
             message.reason(),
-            "pushover devices are not configured"));
+            kReasonText));
         return;
     }
 
@@ -186,17 +205,26 @@ void PushoverComponent::handleMessage(const Message& message) {
         try {
             const PushoverHttpResult result = requestSender_(config_.path, payload);
             const std::string resultReason = buildResultReason(result.statusCode, device, result.payload);
+            if (result.statusCode >= kHttpSuccessThreshold) {
+                logHttpError(result.statusCode, resultReason, message.topic());
+            }
             publishStatusMessage(buildStatusMessage(result.statusCode, message.reason(), resultReason));
         } catch (const std::exception& exceptionValue) {
+            const std::string reasonText =
+                std::format("pushover request failed for device {}: {}", device, exceptionValue.what());
+            logError(reasonText, message.topic());
             publishStatusMessage(buildStatusMessage(
                 kHttpStatusInternalServerError,
                 message.reason(),
-                std::format("pushover request failed for device {}: {}", device, exceptionValue.what())));
+                reasonText));
         } catch (...) {
+            const std::string reasonText =
+                std::format("pushover request failed for device {}: unknown", device);
+            logError(reasonText, message.topic());
             publishStatusMessage(buildStatusMessage(
                 kHttpStatusInternalServerError,
                 message.reason(),
-                std::format("pushover request failed for device {}: unknown", device)));
+                reasonText));
         }
     }
 }
@@ -298,8 +326,8 @@ Message PushoverComponent::buildStatusMessage(
     const ReasonList& sourceReasons,
     const std::string& resultReason) {
     const std::string topicName = (statusCode < kHttpSuccessThreshold)
-        ? "$SYS/pushover/success"
-        : "$SYS/pushover/error";
+        ? "$MONITOR/pushover/success"
+        : "$MONITOR/pushover/error";
 
     Message statusMessage{topicName, static_cast<double>(statusCode), Qos::AtLeastOnce, false};
     for (const auto& reasonEntry : sourceReasons) {
@@ -312,7 +340,7 @@ Message PushoverComponent::buildStatusMessage(
 void PushoverComponent::publishStatusMessage(const Message& statusMessage) const {
     std::lock_guard<std::mutex> publishLock{publishMutex_};
     if (!publishCallback_) {
-        std::cout << "pushover[error] publish_callback_missing"
+        std::cerr << "pushover[error] publish_callback_missing"
                   << " topic=" << statusMessage.topic() << '\n' << std::flush;
         return;
     }
@@ -322,7 +350,7 @@ void PushoverComponent::publishStatusMessage(const Message& statusMessage) const
         return;
     }
 
-    std::cout << "pushover[error] status_publish_failed"
+    std::cerr << "pushover[error] status_publish_failed"
               << " topic=" << statusMessage.topic()
               << " reason=" << result.reason
               << '\n' << std::flush;

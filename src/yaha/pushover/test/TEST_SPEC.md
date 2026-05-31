@@ -20,12 +20,12 @@
 4. `handle_message_publishes_error_when_sender_throws`
 - Scenario: sender callback throws exception.
 - Input: message for configured subscription.
-- Expected: one status publish on `$SYS/pushover/error` with status code `500`.
+- Expected: one status publish on `$MONITOR/pushover/error` with status code `500`.
 
 5. `handle_message_publishes_error_when_no_device_is_configured`
 - Scenario: component has no configured devices.
 - Input: message for configured subscription.
-- Expected: status publish on `$SYS/pushover/error` with status code `422`.
+- Expected: status publish on `$MONITOR/pushover/error` with status code `422`.
 
 6. `handle_message_reports_error_when_publish_callback_missing`
 - Scenario: incoming message arrives without publish callback.

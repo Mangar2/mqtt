@@ -3,7 +3,7 @@
 ## Purpose
 
 Implements a YAHA `IMqttComponent` that forwards subscribed incident messages to
-Pushover devices and publishes operation status to `$SYS/pushover/*` topics.
+Pushover devices and publishes operation status to `$MONITOR/pushover/*` topics.
 
 ## Public API
 
@@ -61,8 +61,8 @@ Implements `IMqttComponent` behavior:
 
 Status publish behavior:
 
-- success (`HTTP < 300`) -> topic `$SYS/pushover/success`
-- error (`HTTP >= 300` or local failure) -> topic `$SYS/pushover/error`
+- success (`HTTP < 300`) -> topic `$MONITOR/pushover/success`
+- error (`HTTP >= 300` or local failure) -> topic `$MONITOR/pushover/error`
 - status payload value is numeric HTTP-like status code.
 - outbound status reason appends original inbound reasons plus one Pushover result reason.
 

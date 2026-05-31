@@ -13,6 +13,8 @@ HTTP sender factory used by `yahapushoverclient`.
 |------|------|---------|
 | `pushoverConfig` | `PushoverConfig` | Pushover domain config |
 | `mqttConfig` | `YahaMqttClient::Config` | Generic MQTT runtime config |
+| `logIncomingMessages` | `bool` | Enable inbound MQTT message logs in broker-format |
+| `logOutgoingMessages` | `bool` | Enable outbound MQTT message logs in broker-format |
 
 ### Functions
 
@@ -31,6 +33,9 @@ HTTP sender factory used by `yahapushoverclient`.
 - `port` (optional, default `443`, range `1..65535`)
 - `token` (required)
 - `user` (required)
+- `logIncomingMessages` (optional, default `false`)
+- `logOutgoingMessages` (optional, default `false`)
+- `logReason` (optional, default inherited from MQTT config)
 
 ### Repeated section `[device]`
 

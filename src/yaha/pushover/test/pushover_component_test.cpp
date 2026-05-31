@@ -22,7 +22,7 @@ constexpr double kPayloadValueStatusFailure = 3.14;
         .devices = {"mobile-1", "mobile-2"},
         .subscriptions = {
             yaha::PushoverSubscriptionConfig{
-                .topicFilter = "$SYS/incident/#",
+                .topicFilter = "$MONITOR/incident/#",
                 .qos = yaha::Qos::AtLeastOnce,
             },
             yaha::PushoverSubscriptionConfig{
@@ -44,9 +44,9 @@ TEST_CASE("subscriptions_include_all_configured_topic_filters", "[pushover]") {
 
     const yaha::SubscriptionMap subscriptions = component.getSubscriptions();
     REQUIRE(subscriptions.size() == 2U);
-    REQUIRE(subscriptions.contains("$SYS/incident/#"));
+    REQUIRE(subscriptions.contains("$MONITOR/incident/#"));
     REQUIRE(subscriptions.contains("home/alert/#"));
-    REQUIRE(subscriptions.at("$SYS/incident/#") == yaha::Qos::AtLeastOnce);
+    REQUIRE(subscriptions.at("$MONITOR/incident/#") == yaha::Qos::AtLeastOnce);
     REQUIRE(subscriptions.at("home/alert/#") == yaha::Qos::AtMostOnce);
 }
 
@@ -73,7 +73,7 @@ TEST_CASE("handle_message_posts_to_each_device_and_publishes_success_status", "[
     });
     component.run();
 
-    yaha::Message input{"$SYS/incident/fire", std::string{"alert"}};
+    yaha::Message input{"$MONITOR/incident/fire", std::string{"alert"}};
     input.addReason("critical fire alarm", "2026-05-28T10:00:00Z");
     component.handleMessage(input);
 
@@ -83,9 +83,9 @@ TEST_CASE("handle_message_posts_to_each_device_and_publishes_success_status", "[
     REQUIRE(payloads[1].find("\"device\":\"mobile-2\"") != std::string::npos);
 
     REQUIRE(published.size() == 2U);
-    REQUIRE(published[0].topic() == "$SYS/pushover/success");
+    REQUIRE(published[0].topic() == "$MONITOR/pushover/success");
     REQUIRE(std::get<double>(published[0].value()) == kStatusOk);
-    REQUIRE(published[1].topic() == "$SYS/pushover/success");
+    REQUIRE(published[1].topic() == "$MONITOR/pushover/success");
     REQUIRE(std::get<double>(published[1].value()) == kStatusOk);
 }
 
@@ -104,7 +104,7 @@ TEST_CASE("handle_message_uses_default_priority_for_non_alert_values", "[pushove
     });
     component.run();
 
-    component.handleMessage(yaha::Message{"$SYS/incident/info", std::string{"warning"}});
+    component.handleMessage(yaha::Message{"$MONITOR/incident/info", std::string{"warning"}});
 
     REQUIRE(payload.has_value());
     REQUIRE(payload->find("\"priority\":-1") != std::string::npos);
@@ -127,10 +127,10 @@ TEST_CASE("handle_message_publishes_error_when_sender_throws", "[pushover]") {
     });
     component.run();
 
-    component.handleMessage(yaha::Message{"$SYS/incident/fail", std::string{"alert"}});
+    component.handleMessage(yaha::Message{"$MONITOR/incident/fail", std::string{"alert"}});
 
     REQUIRE(published.has_value());
-    REQUIRE(published->topic() == "$SYS/pushover/error");
+    REQUIRE(published->topic() == "$MONITOR/pushover/error");
     REQUIRE(std::get<double>(published->value()) == kStatusError);
 }
 
@@ -151,10 +151,10 @@ TEST_CASE("handle_message_publishes_error_when_no_device_is_configured", "[pusho
     });
     component.run();
 
-    component.handleMessage(yaha::Message{"$SYS/incident/fail", std::string{"warning"}});
+    component.handleMessage(yaha::Message{"$MONITOR/incident/fail", std::string{"warning"}});
 
     REQUIRE(published.has_value());
-    REQUIRE(published->topic() == "$SYS/pushover/error");
+    REQUIRE(published->topic() == "$MONITOR/pushover/error");
     REQUIRE(std::get<double>(published->value()) == kStatusUnprocessableEntity);
 }
 
@@ -168,10 +168,10 @@ TEST_CASE("handle_message_publishes_error_when_sender_callback_missing", "[pusho
     });
     component.run();
 
-    component.handleMessage(yaha::Message{"$SYS/incident/warn", std::string{"warning"}});
+    component.handleMessage(yaha::Message{"$MONITOR/incident/warn", std::string{"warning"}});
 
     REQUIRE(published.has_value());
-    REQUIRE(published->topic() == "$SYS/pushover/error");
+    REQUIRE(published->topic() == "$MONITOR/pushover/error");
     REQUIRE(std::get<double>(published->value()) == kStatusError);
     REQUIRE(published->reason().front().message.find("callback is missing") != std::string::npos);
 }
@@ -197,10 +197,10 @@ TEST_CASE("handle_message_formats_error_payload_arrays_for_http_failure", "[push
     });
     component.run();
 
-    component.handleMessage(yaha::Message{"$SYS/incident/fail", std::string{"warning"}});
+    component.handleMessage(yaha::Message{"$MONITOR/incident/fail", std::string{"warning"}});
 
     REQUIRE(published.has_value());
-    REQUIRE(published->topic() == "$SYS/pushover/error");
+    REQUIRE(published->topic() == "$MONITOR/pushover/error");
     REQUIRE(published->reason().front().message.find("errors = [\" first \",\"second\"]") != std::string::npos);
 }
 
@@ -217,7 +217,7 @@ TEST_CASE("handle_message_ignores_input_when_component_not_running", "[pushover]
         return yaha::PublishResult::ok();
     });
 
-    component.handleMessage(yaha::Message{"$SYS/incident/fail", std::string{"warning"}});
+    component.handleMessage(yaha::Message{"$MONITOR/incident/fail", std::string{"warning"}});
     REQUIRE_FALSE(publishCalled);
 }
 
@@ -236,7 +236,7 @@ TEST_CASE("component_close_stops_followup_processing", "[pushover]") {
     component.run();
     component.close();
 
-    component.handleMessage(yaha::Message{"$SYS/incident/fail", std::string{"warning"}});
+    component.handleMessage(yaha::Message{"$MONITOR/incident/fail", std::string{"warning"}});
     REQUIRE(publishedCount == 0U);
 }
 
@@ -248,7 +248,7 @@ TEST_CASE("handle_message_without_publish_callback_does_not_throw", "[pushover]"
         }};
 
     component.run();
-    REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"$SYS/incident/fire", std::string{"alert"}}));
+    REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"$MONITOR/incident/fire", std::string{"alert"}}));
 }
 
 TEST_CASE("handle_message_logs_status_publish_failure_path", "[pushover]") {
@@ -265,6 +265,6 @@ TEST_CASE("handle_message_logs_status_publish_failure_path", "[pushover]") {
     });
     component.run();
 
-    REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"$SYS/incident/fire", kPayloadValueStatusFailure}));
+    REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"$MONITOR/incident/fire", kPayloadValueStatusFailure}));
     REQUIRE(publishCalls >= 1U);
 }

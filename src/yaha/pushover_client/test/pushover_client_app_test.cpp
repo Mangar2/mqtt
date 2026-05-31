@@ -106,7 +106,7 @@ TEST_CASE("load_runtime_config_parses_pushover_devices_and_subscriptions", "[pus
         "name = mobile-2\n"
         "\n"
         "[subscription]\n"
-        "topic = $SYS/incident/#\n"
+        "topic = $MONITOR/incident/#\n"
         "qos = 1\n"
         "\n"
         "[subscription]\n"
@@ -136,7 +136,7 @@ TEST_CASE("load_config_requires_device_entries", "[pushover_client]") {
         "user = user-def\n"
         "\n"
         "[subscription]\n"
-        "topic = $SYS/incident/#\n"
+        "topic = $MONITOR/incident/#\n"
         "qos = 1\n";
 
     const ScopedIniFile iniFile{iniText};
@@ -177,7 +177,7 @@ TEST_CASE("load_config_requires_token_and_user", "[pushover_client]") {
         "name = mobile-1\n"
         "\n"
         "[subscription]\n"
-        "topic = $SYS/incident/#\n"
+        "topic = $MONITOR/incident/#\n"
         "qos = 1\n";
 
     const ScopedIniFile iniFile{iniText};
@@ -366,6 +366,70 @@ TEST_CASE("load_runtime_config_falls_back_on_invalid_pushover_port_and_mqtt", "[
     REQUIRE(errorMessage.empty());
     REQUIRE(runtimeConfig.pushoverConfig.port == 443U);
     REQUIRE(runtimeConfig.mqttConfig.brokerPort == yaha::YahaMqttClient::k_default_broker_port);
+}
+
+TEST_CASE("load_runtime_config_parses_pushover_message_logging_flags", "[pushover_client]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "logReason = false\n"
+        "\n"
+        "[pushover]\n"
+        "token = token-abc\n"
+        "user = user-def\n"
+        "logIncomingMessages = true\n"
+        "logOutgoingMessages = true\n"
+        "logReason = true\n"
+        "\n"
+        "[device]\n"
+        "name = mobile-1\n"
+        "\n"
+        "[subscription]\n"
+        "topic = $MONITOR/incident/#\n"
+        "qos = 1\n";
+
+    const ScopedIniFile iniFile{iniText};
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniFile.path());
+
+    yaha::PushoverClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+
+    REQUIRE(yaha::tryLoadPushoverClientRuntimeConfigFromIni(document, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE(runtimeConfig.logIncomingMessages);
+    REQUIRE(runtimeConfig.logOutgoingMessages);
+    REQUIRE(runtimeConfig.mqttConfig.logReason);
+}
+
+TEST_CASE("load_runtime_config_falls_back_on_invalid_pushover_message_logging_flags", "[pushover_client]") {
+    const std::string iniText =
+        "[mqtt]\n"
+        "logReason = false\n"
+        "\n"
+        "[pushover]\n"
+        "token = token-abc\n"
+        "user = user-def\n"
+        "logIncomingMessages = maybe\n"
+        "logOutgoingMessages = maybe\n"
+        "logReason = maybe\n"
+        "\n"
+        "[device]\n"
+        "name = mobile-1\n"
+        "\n"
+        "[subscription]\n"
+        "topic = $MONITOR/incident/#\n"
+        "qos = 1\n";
+
+    const ScopedIniFile iniFile{iniText};
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniFile.path());
+
+    yaha::PushoverClientRuntimeConfig runtimeConfig{};
+    std::string errorMessage{};
+
+    REQUIRE(yaha::tryLoadPushoverClientRuntimeConfigFromIni(document, runtimeConfig, errorMessage));
+    REQUIRE(errorMessage.empty());
+    REQUIRE_FALSE(runtimeConfig.logIncomingMessages);
+    REQUIRE_FALSE(runtimeConfig.logOutgoingMessages);
+    REQUIRE_FALSE(runtimeConfig.mqttConfig.logReason);
 }
 
 TEST_CASE("pushover_request_sender_throws_on_invalid_status_metadata", "[pushover_client]") {
