@@ -180,6 +180,7 @@ class MessageTreeNode;
 - `run()` writes replay loaded-state dump before startup stats logging and before enabling post-restore incoming replay append.
 - `run()` emits a compression-stats header after restore attempt (`message_store[stats] phase=start_after_restore`) followed by one aligned metric per line (`name : value`, name left-aligned, value right-aligned).
 - Stats output includes reason/directory metrics (`reasonEntries.total`, `directories.strings`, `ratio.reasonPerDirectoryString`) and `timeValue` type split metrics (`represented.timeValue.string`, `represented.timeValue.double`).
+- Stats output additionally includes heap metrics on glibc/Linux (`heap.arenaKB`, `heap.inUseKB`, `heap.freeKB`, `heap.fragmentationPct`) and emits `heap.stats.unavailable : platform_not_glibc_linux` on unsupported platforms.
 - `run()` starts an internal periodic compression-stats logger that emits every 60 seconds (`phase=periodic_60s`) using the same multiline aligned metric format.
 - `run()` emits structured restore error log when no valid snapshot is available.
 - `run()` catches restore exceptions and emits structured error logs instead of terminating.
