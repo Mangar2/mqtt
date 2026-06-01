@@ -1,27 +1,22 @@
 #include "yaha/automation_client/automation_trace_format.h"
 #include "yaha/message/message_payload_codec.h"
 
+#include <optional>
 #include <string>
 
 namespace yaha::automation_trace_format {
 namespace {
 
-[[nodiscard]] std::string buildDebugExplainSummary(
-    const std::string& ruleIdentifier,
-    const std::string& checkReason,
-    const std::string& valueReason) {
-    if (ruleIdentifier.empty()) {
-        return {};
-    }
+[[nodiscard]] std::string toPassedFailedText(const bool passed) {
+    return passed ? "passed" : "failed";
+}
 
-    std::string summary = "Rule: " + ruleIdentifier;
-    if (!checkReason.empty()) {
-        summary += ", check: " + checkReason;
+[[nodiscard]] std::string simplifyEvaluationValueText(const std::string& valueText) {
+    const std::size_t separatorIndex = valueText.find(':');
+    if (separatorIndex == std::string::npos || separatorIndex + 1U >= valueText.size()) {
+        return valueText;
     }
-    if (!valueReason.empty()) {
-        summary += ", value: " + valueReason;
-    }
-    return summary;
+    return valueText.substr(separatorIndex + 1U);
 }
 
 } // namespace
@@ -37,28 +32,34 @@ void appendExplainTraceEntries(
     std::vector<std::string>* traceEntries,
     const std::vector<std::string>& evaluationTrace,
     const std::string& fallbackRuleIdentifier) {
-    constexpr std::string_view k_rule_prefix{"rule-evaluation:rule="};
-    constexpr std::string_view k_topic_prefix{"rule-evaluation:topic="};
+    constexpr std::string_view k_check_decision_prefix{"rule-evaluation:check decision="};
     constexpr std::string_view k_check_reason_prefix{"rule-evaluation:check reason="};
+    constexpr std::string_view k_value_result_prefix{"rule-evaluation:value result="};
     constexpr std::string_view k_value_reason_prefix{"rule-evaluation:value reason="};
     constexpr std::string_view k_error_prefix{"rule-evaluation:error "};
 
-    std::string ruleIdentifier = fallbackRuleIdentifier;
-    std::string topic;
-    std::string checkReason;
-    std::string valueReason;
+    std::optional<bool> checkPassed;
+    std::string checkReason{};
+    std::string valueReason{};
+    std::string valueResult{};
+    (void)fallbackRuleIdentifier;
 
     for (const auto& entry : evaluationTrace) {
-        if (ruleIdentifier.empty() && entry.starts_with(k_rule_prefix)) {
-            ruleIdentifier = entry.substr(k_rule_prefix.size());
-            continue;
-        }
-        if (topic.empty() && entry.starts_with(k_topic_prefix)) {
-            topic = entry.substr(k_topic_prefix.size());
+        if (!checkPassed.has_value() && entry.starts_with(k_check_decision_prefix)) {
+            const std::string decisionText = entry.substr(k_check_decision_prefix.size());
+            if (decisionText == "trigger") {
+                checkPassed = true;
+            } else if (decisionText == "skip") {
+                checkPassed = false;
+            }
             continue;
         }
         if (checkReason.empty() && entry.starts_with(k_check_reason_prefix)) {
             checkReason = entry.substr(k_check_reason_prefix.size());
+            continue;
+        }
+        if (valueResult.empty() && entry.starts_with(k_value_result_prefix)) {
+            valueResult = simplifyEvaluationValueText(entry.substr(k_value_result_prefix.size()));
             continue;
         }
         if (valueReason.empty() && entry.starts_with(k_value_reason_prefix)) {
@@ -66,25 +67,27 @@ void appendExplainTraceEntries(
             continue;
         }
         if (entry.starts_with(k_error_prefix)) {
-            appendTraceEntry(traceEntries, "debug:error " + entry.substr(k_error_prefix.size()));
+            appendTraceEntry(traceEntries, "error: " + entry.substr(k_error_prefix.size()));
         }
     }
 
-    if (ruleIdentifier.empty()) {
-        ruleIdentifier = topic;
+    if (checkPassed.has_value()) {
+        if (checkReason.empty()) {
+            appendTraceEntry(
+                traceEntries,
+                "check: " + toPassedFailedText(*checkPassed));
+        } else {
+            appendTraceEntry(
+                traceEntries,
+                "check: " + toPassedFailedText(*checkPassed)
+                    + " (" + checkReason + ")");
+        }
     }
 
-    const std::string summary = buildDebugExplainSummary(ruleIdentifier, checkReason, valueReason);
-    if (!summary.empty()) {
-        appendTraceEntry(traceEntries, "debug:explain " + summary);
-        return;
-    }
-
-    if (!checkReason.empty()) {
-        appendTraceEntry(traceEntries, "debug:explain check: " + checkReason);
-    }
     if (!valueReason.empty()) {
-        appendTraceEntry(traceEntries, "debug:explain value: " + valueReason);
+        appendTraceEntry(traceEntries, "value: " + valueReason + " (evaluation result)");
+    } else if (!valueResult.empty()) {
+        appendTraceEntry(traceEntries, "value: " + valueResult + " (evaluation result)");
     }
 }
 

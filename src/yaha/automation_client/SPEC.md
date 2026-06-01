@@ -110,15 +110,25 @@ INI error handling:
   - Subscribed via static automation monitor namespace shape
     `$MONITOR/automation/<rule-link>/debug`.
   - On request, the component resolves exactly one rule referenced by `<rule-link>`
-    (supports links with or without leading `rules/`), evaluates that single rule
-    through a trace-capable processor, and publishes a trace response message to
-    `$MONITOR/automation/<rule-link>/trace`.
+    (supports links with or without leading `rules/`) and publishes a trace
+    response message to `$MONITOR/automation/<rule-link>/trace`.
   - Trace response payload is one of `triggered`, `not_triggered`, or `error`.
-  - Trace response `reason` chain is compact and explanation-focused:
-    rule path resolution, optional error entries, human-readable check/value
-    explanation summary, and final decision about outbound message generation.
+  - Trace response `reason` chain is compact and explanation-focused using
+    informational lines in form `<name>: passed|failed (...)` where applicable.
+  - Explain entries include explicit `check: passed|failed (...)` and
+    `value: ... (evaluation result)` lines.
+  - Error entries use `error: ...` without additional debug prefixes.
+  - Final debug decision and `would send=<N>` preview are computed through the
+    same runtime engine path used by live rule evaluation, including all runtime
+    gates (`active`, `weekdays`, `time`/`duration`, `anyOf`/`allOf`/`noneOf`/
+    `allow`, inactivity) and delivery controls (`delayInSeconds`,
+    `cooldownInSeconds`, dedup state).
+  - Runtime gate decisions are appended without transport/debug prefixes
+    (for example `active: passed (active == true)`).
+  - Optional gate lines are omitted when a gate is not configured
+    (for example no `time` line when rule has no `time` field).
   - For `triggered` responses, trace reasons include both the rule-output
-    candidate count and delivery-control preview (`would send=<N>`) after
+    candidate count and runtime delivery outcome (`would send=<N>`) after
     dedup/delay/cooldown evaluation using current runtime delivery state.
   - Explain summary labels use the resolved rule identifier/path; output topic is
     only a fallback when no rule identifier is available.

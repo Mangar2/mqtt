@@ -58,33 +58,38 @@ TEST_CASE("automation_trace_format_builds_trace_entries_and_payload", "[automati
     const std::vector<std::string> evaluationTrace{
         "rule-evaluation:rule=my_rule",
         "rule-evaluation:topic=house/light",
+        "rule-evaluation:check decision=trigger",
         "rule-evaluation:check reason=match",
         "rule-evaluation:value reason=on",
         "rule-evaluation:error parse failed"};
     yaha::automation_trace_format::appendExplainTraceEntries(&traceEntries, evaluationTrace, "");
 
-    REQUIRE(traceEntries.size() == 3U);
-    CHECK(traceEntries[1] == "debug:error parse failed");
-    CHECK(traceEntries[2] == "debug:explain Rule: my_rule, check: match, value: on");
+    REQUIRE(traceEntries.size() == 4U);
+    CHECK(traceEntries[1] == "error: parse failed");
+    CHECK(traceEntries[2] == "check: passed (match)");
+    CHECK(traceEntries[3] == "value: on (evaluation result)");
 
     const std::vector<std::string> fallbackOnlyTrace{
+        "rule-evaluation:check decision=trigger",
         "rule-evaluation:check reason=matched-by-fallback"};
     yaha::automation_trace_format::appendExplainTraceEntries(&traceEntries, fallbackOnlyTrace, "fallback-rule");
-    CHECK(traceEntries.back() == "debug:explain Rule: fallback-rule, check: matched-by-fallback");
+    CHECK(traceEntries.back() == "check: passed (matched-by-fallback)");
 
     const std::vector<std::string> topicOnlyTrace{
         "rule-evaluation:topic=fallback/topic",
+        "rule-evaluation:check decision=skip",
         "rule-evaluation:check reason=check-only"};
     yaha::automation_trace_format::appendExplainTraceEntries(&traceEntries, topicOnlyTrace, "");
-    CHECK(traceEntries.back() == "debug:explain Rule: fallback/topic, check: check-only");
+    CHECK(traceEntries.back() == "check: failed (check-only)");
 
     const std::vector<std::string> reasonOnlyTrace{
+        "rule-evaluation:check decision=trigger",
         "rule-evaluation:check reason=check branch",
         "rule-evaluation:value reason=value branch"};
     yaha::automation_trace_format::appendExplainTraceEntries(&traceEntries, reasonOnlyTrace, "");
     REQUIRE(traceEntries.size() >= 7U);
-    CHECK(traceEntries[traceEntries.size() - 2U] == "debug:explain check: check branch");
-    CHECK(traceEntries.back() == "debug:explain value: value branch");
+    CHECK(traceEntries[traceEntries.size() - 2U] == "check: passed (check branch)");
+    CHECK(traceEntries.back() == "value: value branch (evaluation result)");
 
     std::string richText{"line\\value\t\"quoted\"\r"};
     richText.push_back('\b');

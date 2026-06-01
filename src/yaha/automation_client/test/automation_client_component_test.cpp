@@ -973,9 +973,105 @@ TEST_CASE("automation_component_debug_trace_request_reports_not_triggered", "[au
     const bool hasNoOutboundTrace = std::ranges::any_of(
         published.back().reason(),
         [](const yaha::ReasonEntry& reasonEntry) {
-            return reasonEntry.message.find("debug:result no outbound message") != std::string::npos;
+            return reasonEntry.message.find("decision: failed (no outbound message)") != std::string::npos;
         });
     REQUIRE(hasNoOutboundTrace);
+
+    component.close();
+}
+
+TEST_CASE("automation_component_debug_trace_request_reports_anyof_gate_block", "[automation_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setRulesJson(
+        R"({"rules":{"presenceOn":{"topic":"house/light/set","check":"1","anyOf":["house/trigger/#"],"value":"on"}}})");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{
+        "$MONITOR/automation/rules/presenceOn/debug",
+        std::string{"1"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    REQUIRE_FALSE(published.empty());
+    REQUIRE(published.back().topic() == "$MONITOR/automation/rules/presenceOn/trace");
+    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+    REQUIRE(std::get<std::string>(published.back().value()) == "not_triggered");
+    REQUIRE_FALSE(published.back().reason().empty());
+    const bool hasEventGateSkipTrace = std::ranges::any_of(
+        published.back().reason(),
+        [](const yaha::ReasonEntry& reasonEntry) {
+            return reasonEntry.message.find("events: failed (event gate conditions not met)")
+                != std::string::npos;
+        });
+    REQUIRE(hasEventGateSkipTrace);
+
+    component.close();
+}
+
+TEST_CASE("automation_component_debug_trace_request_reports_allow_gate_block", "[automation_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setRulesJson(
+        R"({"rules":{"presenceOn":{"topic":"house/light/set","check":"1","anyOf":["$MONITOR/presence/set"],"allow":["allowed/motion/#"],"value":"on"}}})");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{
+        "house/kitchen/ceiling/motion sensor/detection state",
+        std::string{"1"},
+        yaha::Qos::AtLeastOnce,
+        false});
+    component.handleMessage(yaha::Message{
+        "$MONITOR/presence/set",
+        std::string{"on"},
+        yaha::Qos::AtLeastOnce,
+        false});
+    component.handleMessage(yaha::Message{
+        "$MONITOR/automation/rules/presenceOn/debug",
+        std::string{"1"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    REQUIRE_FALSE(published.empty());
+    REQUIRE(published.back().topic() == "$MONITOR/automation/rules/presenceOn/trace");
+    REQUIRE(std::holds_alternative<std::string>(published.back().value()));
+    REQUIRE(std::get<std::string>(published.back().value()) == "not_triggered");
+    REQUIRE_FALSE(published.back().reason().empty());
+    const bool hasEventGateSkipTrace = std::ranges::any_of(
+        published.back().reason(),
+        [](const yaha::ReasonEntry& reasonEntry) {
+            return reasonEntry.message.find("allow: failed")
+                != std::string::npos;
+        });
+    REQUIRE(hasEventGateSkipTrace);
 
     component.close();
 }
@@ -1055,7 +1151,7 @@ TEST_CASE("automation_component_debug_trace_request_resolves_hierarchical_rule_l
     const bool hasRulePathTrace = std::ranges::any_of(
         published.back().reason(),
         [](const yaha::ReasonEntry& reasonEntry) {
-            return reasonEntry.message.find("debug:rule path=") != std::string::npos;
+            return reasonEntry.message.find("rule: ") != std::string::npos;
         });
     REQUIRE(hasRulePathTrace);
 
@@ -1152,17 +1248,23 @@ TEST_CASE("automation_component_debug_trace_raw_payload_escapes_multiline_reason
     const std::optional<std::string>& rawPayload = published.back().rawPayload();
     REQUIRE(rawPayload.has_value());
     REQUIRE(rawPayload->find('\n') == std::string::npos);
-    REQUIRE(rawPayload->find("debug:explain Rule:") != std::string::npos);
+    REQUIRE(rawPayload->find("check:") != std::string::npos);
     REQUIRE(rawPayload->find("presenceOn") != std::string::npos);
 
     REQUIRE_FALSE(published.back().reason().empty());
-    const bool hasExplainTrace = std::ranges::any_of(
+    const bool hasCheckTrace = std::ranges::any_of(
         published.back().reason(),
         [](const yaha::ReasonEntry& reasonEntry) {
-            return reasonEntry.message.find("debug:explain Rule:") != std::string::npos
+            return reasonEntry.message.find("check:") != std::string::npos;
+        });
+    const bool hasRuleTrace = std::ranges::any_of(
+        published.back().reason(),
+        [](const yaha::ReasonEntry& reasonEntry) {
+            return reasonEntry.message.find("rule: ") != std::string::npos
                 && reasonEntry.message.find("presenceOn") != std::string::npos;
         });
-    REQUIRE(hasExplainTrace);
+    REQUIRE(hasCheckTrace);
+    REQUIRE(hasRuleTrace);
 
     component.close();
 }

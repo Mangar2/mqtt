@@ -391,6 +391,7 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
     std::string resolvedRulePath{};
     std::optional<RuleTreeNode> ruleNode;
     ExpressionEvaluator::VariableMap variablesSnapshot;
+    RuleRuntimeEventState eventStateSnapshot;
     RuleRuntimeDeliveryState deliveryStateSnapshot;
 
     {
@@ -399,17 +400,18 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
             ruleNode = findRuleNodeByLink(*ruleLink, &resolvedRulePath);
         }
         variablesSnapshot = runtimeVariables_;
+        eventStateSnapshot = runtimeEventState_;
         deliveryStateSnapshot = runtimeDeliveryState_;
     }
 
     std::string traceValue{"error"};
 
     if (!ruleLink.has_value()) {
-        automation_trace_format::appendTraceEntry(&traceEntries, "debug:error invalid debug topic shape");
+        automation_trace_format::appendTraceEntry(&traceEntries, "error: invalid debug topic shape");
     } else if (!ruleNode.has_value()) {
-        automation_trace_format::appendTraceEntry(&traceEntries, "debug:rule lookup failed link=" + *ruleLink);
+        automation_trace_format::appendTraceEntry(&traceEntries, "error: rule lookup failed (link=" + *ruleLink + ")");
     } else {
-        automation_trace_format::appendTraceEntry(&traceEntries, "debug:rule path=" + resolvedRulePath);
+        automation_trace_format::appendTraceEntry(&traceEntries, "rule: " + resolvedRulePath);
         const auto evaluationTime = std::chrono::system_clock::now();
         try {
             const InternalVariables internalVariables{
@@ -425,55 +427,63 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
                 }
             }
         } catch (...) {
-            automation_trace_format::appendTraceEntry(&traceEntries, "debug:error internal variable calculation failed");
+            automation_trace_format::appendTraceEntry(&traceEntries, "error: internal variable calculation failed");
         }
 
         std::vector<std::string> evaluationTrace{};
-        const SingleRuleProcessingResult result = SingleRuleProcessor::processWithTrace(
+        const SingleRuleProcessingResult evaluationResult = SingleRuleProcessor::processWithTrace(
             *ruleNode,
             variablesSnapshot,
             &evaluationTrace,
             resolvedRulePath);
         automation_trace_format::appendExplainTraceEntries(&traceEntries, evaluationTrace, resolvedRulePath);
 
-        if (!result.success) {
+        const RuleRuntimeRulePreviewResult runtimePreview = RuleRuntimeEngine::previewRule(
+            resolvedRulePath,
+            *ruleNode,
+            variablesSnapshot,
+            evaluationTime,
+            eventStateSnapshot,
+            deliveryStateSnapshot);
+        for (const auto& runtimeTraceEntry : runtimePreview.traceEntries) {
+            automation_trace_format::appendTraceEntry(&traceEntries, runtimeTraceEntry);
+        }
+
+        if (!evaluationResult.success || !runtimePreview.success) {
             traceValue = "error";
-            if (!result.errors.empty()) {
-                automation_trace_format::appendTraceEntry(&traceEntries, "debug:error " + result.errors.front());
+            if (!runtimePreview.errors.empty()) {
+                automation_trace_format::appendTraceEntry(&traceEntries, "error: " + runtimePreview.errors.front());
+            } else if (!evaluationResult.errors.empty()) {
+                automation_trace_format::appendTraceEntry(&traceEntries, "error: " + evaluationResult.errors.front());
             }
-        } else if (!result.triggered || (result.messages.empty() && !result.message.has_value())) {
+        } else if (!runtimePreview.triggered || runtimePreview.candidateMessages.empty()) {
             traceValue = "not_triggered";
-            automation_trace_format::appendTraceEntry(&traceEntries, "debug:result no outbound message");
+            automation_trace_format::appendTraceEntry(&traceEntries, "decision: failed (no outbound message)");
         } else {
             traceValue = "triggered";
-            const std::vector<Message> deliveryCandidates = !result.messages.empty()
-                ? result.messages
-                : std::vector<Message>{result.message.value().clone()};
-            const std::vector<Message> deliveredMessages = RuleRuntimeEngine::previewDeliveredMessages(
-                resolvedRulePath,
-                *ruleNode,
-                deliveryCandidates,
-                evaluationTime,
-                deliveryStateSnapshot);
+            const std::vector<Message>& deliveryCandidates = runtimePreview.candidateMessages;
+            const std::vector<Message>& deliveredMessages = runtimePreview.deliveredMessages;
 
             const std::size_t candidateCount = deliveryCandidates.size();
             const std::size_t deliveredCount = deliveredMessages.size();
             if (candidateCount == 1U) {
                 automation_trace_format::appendTraceEntry(
                     &traceEntries,
-                    "debug:result outbound topic=" + deliveryCandidates.front().topic()
+                    "decision: passed (outbound topic=" + deliveryCandidates.front().topic()
                         + ", would send=" + std::to_string(deliveredCount)
                         + (deliveredCount > 0U
                                ? " (delivery controls allow)"
-                               : " (delivery controls suppress: dedup/delay/cooldown)"));
+                               : " (delivery controls suppress: dedup/delay/cooldown)" )
+                        + ")");
             } else {
                 automation_trace_format::appendTraceEntry(
                     &traceEntries,
-                    "debug:result outbound topics=" + std::to_string(candidateCount)
+                    "decision: passed (outbound topics=" + std::to_string(candidateCount)
                         + ", would send=" + std::to_string(deliveredCount)
                         + (deliveredCount > 0U
                                ? " (delivery controls allow)"
-                               : " (delivery controls suppress: dedup/delay/cooldown)"));
+                               : " (delivery controls suppress: dedup/delay/cooldown)" )
+                        + ")");
             }
         }
     }

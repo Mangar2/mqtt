@@ -67,6 +67,19 @@ struct RuleRuntimeProcessingResult {
 };
 
 /**
+ * @brief Preview result for one rule on the runtime decision path.
+ */
+struct RuleRuntimeRulePreviewResult {
+    bool success{true};                                                   ///< True when no processing errors occurred.
+    bool triggered{false};                                                ///< True when gates and check/value logic triggered.
+    std::vector<Message> candidateMessages;                               ///< Candidate messages before delivery controls.
+    std::vector<Message> deliveredMessages;                               ///< Messages after delivery controls.
+    std::set<std::string> usedVariables;                                  ///< Variables used by executed rule programs.
+    std::vector<std::string> errors;                                      ///< Rule-local errors.
+    std::vector<std::string> traceEntries;                                ///< Runtime gate and delivery trace lines.
+};
+
+/**
  * @brief Supports runtime rule validation, event ingestion, and gated processing.
  */
 class RuleRuntimeEngine {
@@ -128,6 +141,29 @@ public:
         const RuleTreeNode& ruleNode,
         const std::vector<Message>& candidateMessages,
         const std::chrono::system_clock::time_point& evaluationTime,
+        const RuleRuntimeDeliveryState& deliveryState);
+
+    /**
+     * @brief Preview one rule with the same runtime gate and delivery path.
+     *
+     * Uses the same gating and delivery-control code path as live processing,
+     * but does not mutate caller state.
+     *
+     * @param rulePath Fully resolved rule path used for delivery-state keying.
+     * @param ruleNode Rule object to evaluate.
+     * @param variables Runtime variable snapshot including internal variables.
+     * @param evaluationTime Timestamp used for gate and delivery checks.
+     * @param eventState Snapshot of current runtime event state.
+     * @param deliveryState Snapshot of current runtime delivery state.
+     * @return Rule preview including trigger state, candidates, delivered set,
+     *         and trace entries.
+     */
+    [[nodiscard]] static RuleRuntimeRulePreviewResult previewRule(
+        const std::string& rulePath,
+        const RuleTreeNode& ruleNode,
+        const ExpressionEvaluator::VariableMap& variables,
+        const std::chrono::system_clock::time_point& evaluationTime,
+        const RuleRuntimeEventState& eventState,
         const RuleRuntimeDeliveryState& deliveryState);
 
     /**

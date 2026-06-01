@@ -767,6 +767,17 @@ constexpr std::size_t k_iso_fraction_first_digit_index{20U};
     return text;
 }
 
+[[nodiscard]] std::optional<std::chrono::system_clock::time_point> findLatestMotionTimestamp(
+    const RuleRuntimeEventState& eventState) {
+    std::optional<std::chrono::system_clock::time_point> latestMotionTime;
+    for (const auto& motionEvent : eventState.motionEvents) {
+        if (!latestMotionTime.has_value() || motionEvent.timestamp > *latestMotionTime) {
+            latestMotionTime = motionEvent.timestamp;
+        }
+    }
+    return latestMotionTime;
+}
+
 [[nodiscard]] std::vector<std::string> formatMatchedTopicsWithOptionalTimestamp(
     const std::vector<std::string>& matchedTopics,
     const std::vector<MotionEventRecord>& recentMotionEvents) {
@@ -986,6 +997,54 @@ constexpr std::size_t k_iso_fraction_first_digit_index{20U};
     return readNumberField(ruleObject, "cooldownInSeconds").has_value();
 }
 
+struct RuntimeRuleEvaluationOutcome {
+    bool success{true};
+    bool triggered{false};
+    std::vector<Message> candidateMessages;
+    std::vector<Message> emittedMessages;
+    std::set<std::string> usedVariables;
+    std::vector<std::string> errors;
+    std::optional<std::string> eventTriggerReason;
+};
+
+void appendRuntimeTrace(std::vector<std::string>* traceEntries, const std::string& traceText) {
+    if (traceEntries == nullptr) {
+        return;
+    }
+    traceEntries->push_back(traceText);
+}
+
+void clearRuleDeliveryState(const std::string& rulePath, RuleRuntimeDeliveryState* deliveryState);
+
+void handleGateMiss(
+    const bool retainDeliveryStateOnGateMiss,
+    const std::string& pathText,
+    RuleRuntimeDeliveryState* deliveryState,
+    std::vector<std::string>* traceEntries,
+    const std::string& traceText) {
+    appendRuntimeTrace(traceEntries, traceText);
+    if (!retainDeliveryStateOnGateMiss) {
+        clearRuleDeliveryState(pathText, deliveryState);
+    }
+}
+
+void handleGateErrors(
+    RuntimeRuleEvaluationOutcome* outcome,
+    const bool retainDeliveryStateOnGateMiss,
+    const std::string& pathText,
+    RuleRuntimeDeliveryState* deliveryState,
+    std::vector<std::string>* traceEntries,
+    const std::vector<std::string>& errorTexts) {
+    outcome->success = false;
+    for (const auto& errorText : errorTexts) {
+        outcome->errors.push_back(errorText);
+        appendRuntimeTrace(traceEntries, "error: " + errorText);
+    }
+    if (!retainDeliveryStateOnGateMiss) {
+        clearRuleDeliveryState(pathText, deliveryState);
+    }
+}
+
 void clearRuleDeliveryState(const std::string& rulePath, RuleRuntimeDeliveryState* deliveryState) {
     std::vector<std::string> keysToErase{};
     keysToErase.reserve(deliveryState->outputStatesByKey.size());
@@ -1014,6 +1073,334 @@ void appendPathError(
     result->errors.push_back(std::move(formattedError));
 }
 
+struct EventGateTraceContext {
+    std::vector<std::string> anyOfFilters;
+    std::vector<std::string> allOfFilters;
+    std::vector<std::string> noneOfFilters;
+    std::optional<std::vector<std::string>> allowFilters;
+    std::set<std::string> recentEventTopics;
+    std::set<std::string> recentMotionTopics;
+    std::vector<MotionEventRecord> recentMotionEvents;
+};
+
+void appendInactivityTraceEntry(
+    const RuleRuntimeEventState& eventState,
+    const std::chrono::system_clock::time_point& evaluationTime,
+    const std::optional<double>& inactivityMinutes,
+    std::vector<std::string>* traceEntries) {
+    if (!inactivityMinutes.has_value()) {
+        return;
+    }
+
+    const auto latestMotionTime = findLatestMotionTimestamp(eventState);
+    if (!latestMotionTime.has_value()) {
+        appendRuntimeTrace(
+            traceEntries,
+            "durationWithoutMovementInMinutes: passed (no recent motion event present)");
+        return;
+    }
+
+    const auto elapsedMinutes = std::chrono::duration_cast<std::chrono::minutes>(
+        evaluationTime - *latestMotionTime);
+    const bool inactivityPassed = elapsedMinutes.count() >= static_cast<long long>(*inactivityMinutes);
+    appendRuntimeTrace(
+        traceEntries,
+        "durationWithoutMovementInMinutes: "
+            + std::string{inactivityPassed ? "passed" : "failed"}
+            + " (elapsed=" + std::to_string(elapsedMinutes.count())
+            + " min, required=" + std::to_string(static_cast<long long>(*inactivityMinutes)) + " min)");
+}
+
+[[nodiscard]] EventGateTraceContext buildEventGateTraceContext(
+    const RuleTreeNode::Object& ruleObject,
+    const RuleRuntimeEventState& eventState,
+    const std::chrono::system_clock::time_point& evaluationTime,
+    const bool inactivityConfigured) {
+    EventGateTraceContext context{};
+    context.anyOfFilters = readTopicFilterList(ruleObject, "anyOf");
+    context.allOfFilters = readTopicFilterList(ruleObject, "allOf");
+    context.noneOfFilters = readTopicFilterList(ruleObject, "noneOf");
+    context.allowFilters = readTopicFilterArrayOnly(ruleObject, "allow");
+    context.recentEventTopics = collectRecentEventTopics(eventState, evaluationTime, inactivityConfigured);
+    context.recentMotionTopics = collectRecentMotionTopics(eventState, evaluationTime, inactivityConfigured);
+    context.recentMotionEvents = collectRecentMotionEvents(eventState, evaluationTime, inactivityConfigured);
+    return context;
+}
+
+void appendAllOfTraceEntry(
+    const EventGateTraceContext& context,
+    const bool hasAllOfField,
+    std::vector<std::string>* traceEntries) {
+    if (!hasAllOfField) {
+        return;
+    }
+
+    const bool allOfPassed = allFiltersMatchAnyEvent(context.recentEventTopics, context.allOfFilters);
+    const std::vector<std::string> matchedTopics = collectMatchingTopics(
+        context.recentEventTopics,
+        context.allOfFilters);
+    const std::vector<std::string> formattedTopics = formatMatchedTopicsWithOptionalTimestamp(
+        matchedTopics,
+        context.recentMotionEvents);
+    if (allOfPassed) {
+        if (formattedTopics.empty()) {
+            appendRuntimeTrace(traceEntries, "allOf: passed (all configured filters matched)");
+        } else {
+            appendRuntimeTrace(
+                traceEntries,
+                "allOf: passed (events " + joinText(formattedTopics, ", ") + ")");
+        }
+        return;
+    }
+
+    appendRuntimeTrace(
+        traceEntries,
+        "allOf: failed (required events missing)");
+}
+
+void appendAnyOfTraceEntry(
+    const EventGateTraceContext& context,
+    const bool hasAnyOfField,
+    std::vector<std::string>* traceEntries) {
+    if (!hasAnyOfField) {
+        return;
+    }
+
+    const bool anyOfPassed = anyEventMatches(context.recentEventTopics, context.anyOfFilters);
+    const std::vector<std::string> matchedTopics = collectMatchingTopics(
+        context.recentEventTopics,
+        context.anyOfFilters);
+    const std::vector<std::string> formattedTopics = formatMatchedTopicsWithOptionalTimestamp(
+        matchedTopics,
+        context.recentMotionEvents);
+    if (anyOfPassed) {
+        if (formattedTopics.empty()) {
+            appendRuntimeTrace(traceEntries, "anyOf: passed (matching event found)");
+        } else {
+            appendRuntimeTrace(
+                traceEntries,
+                "anyOf: passed (event " + joinText(formattedTopics, ", ") + ")");
+        }
+        return;
+    }
+
+    appendRuntimeTrace(
+        traceEntries,
+        "anyOf: failed (no matching event)");
+}
+
+void appendNoneOfTraceEntry(
+    const EventGateTraceContext& context,
+    const bool hasNoneOfField,
+    std::vector<std::string>* traceEntries) {
+    if (!hasNoneOfField) {
+        return;
+    }
+
+    const std::vector<std::string> matchedTopics = collectMatchingTopics(
+        context.recentEventTopics,
+        context.noneOfFilters);
+    if (matchedTopics.empty()) {
+        appendRuntimeTrace(traceEntries, "noneOf: passed (no blocked event matched)");
+        return;
+    }
+
+    appendRuntimeTrace(
+        traceEntries,
+        "noneOf: failed (blocked event " + joinText(matchedTopics, ", ") + ")");
+}
+
+void appendAllowTraceEntry(
+    const EventGateTraceContext& context,
+    std::vector<std::string>* traceEntries) {
+    if (!context.allowFilters.has_value()) {
+        return;
+    }
+
+    std::vector<std::string> allowedFilters = *context.allowFilters;
+    allowedFilters.insert(allowedFilters.end(), context.allOfFilters.begin(), context.allOfFilters.end());
+    allowedFilters.insert(allowedFilters.end(), context.anyOfFilters.begin(), context.anyOfFilters.end());
+
+    std::vector<std::string> blockedMotionTopics{};
+    for (const auto& motionTopic : context.recentMotionTopics) {
+        const bool matchesAllowSet = std::ranges::any_of(
+            allowedFilters,
+            [&motionTopic](const std::string& filter) {
+                return matchesTopicFilter(filter, motionTopic);
+            });
+        if (!matchesAllowSet) {
+            blockedMotionTopics.push_back(motionTopic);
+        }
+    }
+
+    if (blockedMotionTopics.empty()) {
+        appendRuntimeTrace(traceEntries, "allow: passed (all recent motion events allowed)");
+        return;
+    }
+
+    appendRuntimeTrace(
+        traceEntries,
+        "allow: failed (motion event not allowed: " + joinText(blockedMotionTopics, ", ") + ")");
+}
+
+void appendConfiguredEventGateTraceEntries(
+    const RuleTreeNode::Object& ruleObject,
+    const RuleRuntimeEventState& eventState,
+    const std::chrono::system_clock::time_point& evaluationTime,
+    std::vector<std::string>* traceEntries) {
+    const bool hasAnyOfField = ruleObject.contains("anyOf");
+    const bool hasAllOfField = ruleObject.contains("allOf");
+    const bool hasNoneOfField = ruleObject.contains("noneOf");
+    const auto allowFiltersOpt = readTopicFilterArrayOnly(ruleObject, "allow");
+    const bool hasAllowField = allowFiltersOpt.has_value();
+    const auto inactivityMinutes = readNumberField(ruleObject, "durationWithoutMovementInMinutes");
+    const bool hasInactivityGate = inactivityMinutes.has_value();
+
+    if (!hasAnyOfField && !hasAllOfField && !hasNoneOfField && !hasAllowField && !hasInactivityGate) {
+        return;
+    }
+
+    appendInactivityTraceEntry(eventState, evaluationTime, inactivityMinutes, traceEntries);
+
+    if (!hasAnyOfField && !hasAllOfField) {
+        return;
+    }
+
+    const EventGateTraceContext context = buildEventGateTraceContext(
+        ruleObject,
+        eventState,
+        evaluationTime,
+        hasInactivityGate);
+    appendAllOfTraceEntry(context, hasAllOfField, traceEntries);
+    appendAnyOfTraceEntry(context, hasAnyOfField, traceEntries);
+    appendNoneOfTraceEntry(context, hasNoneOfField, traceEntries);
+    if (hasAllowField) {
+        appendAllowTraceEntry(context, traceEntries);
+    }
+}
+
+[[nodiscard]] RuntimeRuleEvaluationOutcome evaluateRuleNodeRuntime(
+    const RuleTreeNode& node,
+    const std::string& pathText,
+    const ExpressionEvaluator::VariableMap& variables,
+    const std::chrono::system_clock::time_point& evaluationTime,
+    RuleRuntimeEventState* eventState,
+    RuleRuntimeDeliveryState* deliveryState,
+    std::vector<std::string>* traceEntries) {
+    RuntimeRuleEvaluationOutcome outcome{};
+
+    if (!node.isObject()) {
+        outcome.success = false;
+        outcome.errors.emplace_back("rule node must be an object");
+        appendRuntimeTrace(traceEntries, "error: rule node must be an object");
+        return outcome;
+    }
+
+    const auto& ruleObject = node.asObject();
+    const bool retainDeliveryStateOnGateMiss = shouldRetainDeliveryStateOnGateMiss(ruleObject);
+    const bool hasWeekdaysField = ruleObject.contains("weekdays");
+    const bool hasTimeField = ruleObject.contains("time");
+
+    if (!readActiveFlag(ruleObject)) {
+        handleGateMiss(
+            retainDeliveryStateOnGateMiss,
+            pathText,
+            deliveryState,
+            traceEntries,
+            "active: failed (active == false)");
+        return outcome;
+    }
+    appendRuntimeTrace(traceEntries, "active: passed (active == true)");
+
+    if (!evaluateWeekdayGate(ruleObject, evaluationTime)) {
+        handleGateMiss(
+            retainDeliveryStateOnGateMiss,
+            pathText,
+            deliveryState,
+            traceEntries,
+            "weekdays: failed (evaluation weekday not in configured weekdays)");
+        return outcome;
+    }
+    if (hasWeekdaysField) {
+        appendRuntimeTrace(traceEntries, "weekdays: passed (evaluation weekday in configured weekdays)");
+    }
+
+    std::vector<std::string> gateErrors{};
+    const bool timeGatePass = evaluateTimeWindowGate(ruleObject, variables, evaluationTime, &gateErrors);
+    if (!gateErrors.empty()) {
+        handleGateErrors(
+            &outcome,
+            retainDeliveryStateOnGateMiss,
+            pathText,
+            deliveryState,
+            traceEntries,
+            gateErrors);
+        return outcome;
+    }
+    if (!timeGatePass) {
+        handleGateMiss(
+            retainDeliveryStateOnGateMiss,
+            pathText,
+            deliveryState,
+            traceEntries,
+            "time: failed (evaluation time outside configured window)");
+        return outcome;
+    }
+    if (hasTimeField) {
+        appendRuntimeTrace(traceEntries, "time: passed (evaluation time in configured window)");
+    }
+
+    appendConfiguredEventGateTraceEntries(ruleObject, *eventState, evaluationTime, traceEntries);
+
+    if (!evaluateEventGates(ruleObject, *eventState, evaluationTime)) {
+        handleGateMiss(
+            retainDeliveryStateOnGateMiss,
+            pathText,
+            deliveryState,
+            traceEntries,
+            "events: failed (event gate conditions not met)");
+        return outcome;
+    }
+
+    outcome.eventTriggerReason = buildEventTriggerReason(ruleObject, *eventState, evaluationTime);
+
+    const SingleRuleProcessingResult singleResult = SingleRuleProcessor::process(node, variables, pathText);
+    outcome.usedVariables = singleResult.usedVariables;
+
+    if (!singleResult.success) {
+        handleGateErrors(
+            &outcome,
+            retainDeliveryStateOnGateMiss,
+            pathText,
+            deliveryState,
+            traceEntries,
+            singleResult.errors);
+        return outcome;
+    }
+
+    if (!singleResult.triggered || singleResult.messages.empty()) {
+        if (!retainDeliveryStateOnGateMiss) {
+            clearRuleDeliveryState(pathText, deliveryState);
+        }
+        return outcome;
+    }
+
+    outcome.triggered = true;
+    outcome.candidateMessages = singleResult.messages;
+    outcome.emittedMessages = applyDeliveryControls(
+        pathText,
+        ruleObject,
+        outcome.candidateMessages,
+        evaluationTime,
+        deliveryState);
+    appendRuntimeTrace(
+        traceEntries,
+        "delivery: candidates="
+            + std::to_string(outcome.candidateMessages.size())
+            + " delivered=" + std::to_string(outcome.emittedMessages.size()));
+    return outcome;
+}
+
 void processRuleNode(
     const RuleTreeNode& node,
     const std::string& pathText,
@@ -1023,69 +1410,31 @@ void processRuleNode(
     RuleRuntimeDeliveryState* deliveryState,
     RuleRuntimeProcessingResult* result) {
     result->processedRules += 1U;
-    const auto& ruleObject = node.asObject();
-    const bool retainDeliveryStateOnGateMiss = shouldRetainDeliveryStateOnGateMiss(ruleObject);
-
-    if (!readActiveFlag(ruleObject) || !evaluateWeekdayGate(ruleObject, evaluationTime)) {
-        if (!retainDeliveryStateOnGateMiss) {
-            clearRuleDeliveryState(pathText, deliveryState);
-        }
-        return;
-    }
-
-    std::vector<std::string> gateErrors{};
-    const bool timeGatePass = evaluateTimeWindowGate(ruleObject, variables, evaluationTime, &gateErrors);
-    if (!gateErrors.empty()) {
-        for (const auto& errorText : gateErrors) {
-            appendPathError(result, pathText, errorText);
-        }
-        if (!retainDeliveryStateOnGateMiss) {
-            clearRuleDeliveryState(pathText, deliveryState);
-        }
-        return;
-    }
-
-    if (!timeGatePass || !evaluateEventGates(ruleObject, *eventState, evaluationTime)) {
-        if (!retainDeliveryStateOnGateMiss) {
-            clearRuleDeliveryState(pathText, deliveryState);
-        }
-        return;
-    }
-
-    const std::optional<std::string> eventTriggerReason = buildEventTriggerReason(
-        ruleObject,
-        *eventState,
-        evaluationTime);
-
-    const SingleRuleProcessingResult singleResult = SingleRuleProcessor::process(
+    const RuntimeRuleEvaluationOutcome outcome = evaluateRuleNodeRuntime(
         node,
+        pathText,
         variables,
-        pathText);
-    result->usedVariables.insert(singleResult.usedVariables.begin(), singleResult.usedVariables.end());
+        evaluationTime,
+        eventState,
+        deliveryState,
+        nullptr);
+    result->usedVariables.insert(outcome.usedVariables.begin(), outcome.usedVariables.end());
 
-    if (!singleResult.success) {
-        for (const auto& errorText : singleResult.errors) {
+    if (!outcome.success) {
+        for (const auto& errorText : outcome.errors) {
             appendPathError(result, pathText, errorText);
-        }
-        if (!retainDeliveryStateOnGateMiss) {
-            clearRuleDeliveryState(pathText, deliveryState);
         }
         return;
     }
 
-    if (!singleResult.triggered || singleResult.messages.empty()) {
-        if (!retainDeliveryStateOnGateMiss) {
-            clearRuleDeliveryState(pathText, deliveryState);
-        }
+    if (!outcome.triggered || outcome.candidateMessages.empty()) {
         return;
     }
 
     result->triggeredRules += 1U;
-    const std::vector<Message> emittedMessages = applyDeliveryControls(
-        pathText, ruleObject, singleResult.messages, evaluationTime, deliveryState);
-    for (auto emittedMessage : emittedMessages) {
-        if (eventTriggerReason.has_value()) {
-            emittedMessage.addReason(*eventTriggerReason);
+    for (auto emittedMessage : outcome.emittedMessages) {
+        if (outcome.eventTriggerReason.has_value()) {
+            emittedMessage.addReason(*outcome.eventTriggerReason);
         }
         result->messages.push_back(emittedMessage.clone());
     }
@@ -1219,6 +1568,35 @@ std::vector<Message> RuleRuntimeEngine::previewDeliveredMessages(
         candidateMessages,
         evaluationTime,
         &deliveryStateCopy);
+}
+
+RuleRuntimeRulePreviewResult RuleRuntimeEngine::previewRule(
+    const std::string& rulePath,
+    const RuleTreeNode& ruleNode,
+    const ExpressionEvaluator::VariableMap& variables,
+    const std::chrono::system_clock::time_point& evaluationTime,
+    const RuleRuntimeEventState& eventState,
+    const RuleRuntimeDeliveryState& deliveryState) {
+    RuleRuntimeRulePreviewResult preview{};
+
+    RuleRuntimeEventState eventStateCopy = eventState;
+    RuleRuntimeDeliveryState deliveryStateCopy = deliveryState;
+    RuntimeRuleEvaluationOutcome outcome = evaluateRuleNodeRuntime(
+        ruleNode,
+        rulePath,
+        variables,
+        evaluationTime,
+        &eventStateCopy,
+        &deliveryStateCopy,
+        &preview.traceEntries);
+
+    preview.success = outcome.success;
+    preview.triggered = outcome.triggered;
+    preview.candidateMessages = std::move(outcome.candidateMessages);
+    preview.deliveredMessages = std::move(outcome.emittedMessages);
+    preview.usedVariables = std::move(outcome.usedVariables);
+    preview.errors = std::move(outcome.errors);
+    return preview;
 }
 
 void RuleRuntimeEngine::clearNonMotionEvents(RuleRuntimeEventState* eventState) {
