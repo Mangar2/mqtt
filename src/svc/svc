@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-readonly DEFAULT_SERVICE_PATTERN='^(autom|broker|brkconn|filestore|httpmqtt|msgstore|opensensemap|pushover|remotesvc|rs485|valuesvc|zwave)\.service$'
+readonly DEFAULT_SERVICE_PATTERN='^(autom|broker|brkconn|filestore|httpmqtt|msgstore|opensensemap|pushover|remotesvc|rs485|serialdev|valuesvc|zwave)\.service$'
 
 usage() {
     cat <<'EOF'
@@ -196,6 +196,8 @@ namespace_for_service_unit() {
         httpmqtt.service) printf '%s' "httpmqtt" ;;
         remotesvc.service) printf '%s' "remotesvc" ;;
         rs485.service) printf '%s' "rs485" ;;
+        serialdev.service) printf '%s' "serialdev" ;;
+        serialdevice.service) printf '%s' "serialdev" ;;
         zwave.service) printf '%s' "zwave" ;;
         *) printf '%s' "${unit_name%.service}" ;;
     esac

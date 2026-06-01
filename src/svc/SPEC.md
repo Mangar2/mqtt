@@ -48,7 +48,7 @@ it:
 - Applies a regex filter to unit names.
 - Default filter matches the deployment-managed units `autom`, `broker`,
   `brkconn`, `filestore`, `httpmqtt`, `msgstore`, `opensensemap`, `pushover`,
-  `remotesvc`, `rs485`, `valuesvc`, and `zwave`.
+  `remotesvc`, `rs485`, `serialdev`, `valuesvc`, and `zwave`.
 - Uses `MemoryCurrent` when available; otherwise falls back to process RSS
   from `/proc/<pid>/status` (`VmRSS`).
 - Sorts services by unit name.
