@@ -187,6 +187,87 @@ TEST_CASE("automation_component_monitoring_event_reload_rules", "[automation_cli
     component.close();
 }
 
+TEST_CASE("automation_component_monitoring_event_reload_rules_for_nested_key_path", "[automation_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setRulesJson(R"({"rules":{"first":{"topic":"house/light","value":"on"}}})");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+    REQUIRE(component.hasRule("first"));
+
+    fileStore.setRulesJson(R"({"rules":{"second":{"topic":"house/heating","value":"off"}}})");
+
+    component.handleMessage(yaha::Message{
+        "$MONITOR/FileStore/changed",
+        std::string{R"({"keyPath":"/automation/rules/first","changeType":"changed"})"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    REQUIRE(component.ruleCount() == 1U);
+    REQUIRE_FALSE(component.hasRule("first"));
+    REQUIRE(component.hasRule("second"));
+
+    component.close();
+}
+
+TEST_CASE("automation_component_nested_reload_applies_active_false", "[automation_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{port};
+    fileStore.setRulesJson(
+        R"({"ground":{"motion":{"rules":{"latest":{"active":true,"anyOf":["house/event/trigger"],"topic":"status/motion/ground/latest","value":"/time"}}}}})");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = port;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{
+        "house/event/trigger",
+        std::string{"1"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    fileStore.setRulesJson(
+        R"({"ground":{"motion":{"rules":{"latest":{"active":false,"anyOf":["house/event/trigger"],"topic":"status/motion/ground/latest","value":"/time"}}}}})");
+
+    component.handleMessage(yaha::Message{
+        "$MONITOR/FileStore/changed",
+        std::string{R"({"keyPath":"/automation/rules/ground/motion/rules/latest","changeType":"changed"})"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    component.handleMessage(yaha::Message{
+        "house/event/trigger",
+        std::string{"1"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    const auto outputCount = static_cast<std::size_t>(std::count_if(
+        published.begin(),
+        published.end(),
+        [](const yaha::Message& message) {
+            return message.topic() == "status/motion/ground/latest";
+        }));
+    REQUIRE(outputCount == 1U);
+
+    component.close();
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("automation_component_management_update_persists_and_acks", "[automation_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
@@ -851,7 +932,7 @@ TEST_CASE("automation_component_logs_incoming_and_outgoing_messages_when_enabled
             != std::string::npos);
         REQUIRE(logOutput.find("component=\"automation_client\" direction=\"outgoing\" topic=\"house/light/set\"")
             != std::string::npos);
-    REQUIRE(logOutput.find("Rule: presenceOn") != std::string::npos);
+    REQUIRE(logOutput.find("Rule: rules/presenceOn") != std::string::npos);
 
     component.close();
 }

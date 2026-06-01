@@ -247,6 +247,41 @@ TEST_CASE("automation_component_delay_and_cooldown_control_repeated_outputs", "[
     component.close();
 }
 
+TEST_CASE("automation_component_iso_time_value_does_not_bypass_cooldown", "[automation_client]") {
+    const std::uint16_t portValue = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{portValue};
+    fileStore.setRulesJson(
+        R"({"rules":{"timeRule":{"topic":"house/time/set","check":"$MONITOR/presence/set = on","value":"/time","cooldownInSeconds":60}}})");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = portValue;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{"$MONITOR/presence/set", std::string{"on"}, yaha::Qos::AtLeastOnce, false});
+    component.handleMessage(yaha::Message{"$MONITOR/presence/set", std::string{"on"}, yaha::Qos::AtLeastOnce, false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    const auto outputCount = static_cast<std::size_t>(std::count_if(
+        published.begin(),
+        published.end(),
+        [](const yaha::Message& message) {
+            return message.topic() == "house/time/set";
+        }));
+    REQUIRE(outputCount == 1U);
+
+    component.close();
+}
+
 TEST_CASE("automation_component_event_gate_combines_all_of_or_any_of", "[automation_client]") {
     const std::uint16_t portValue = reserveFreeLocalPort();
     FileStoreMockServer fileStore{portValue};
@@ -348,6 +383,65 @@ TEST_CASE("automation_component_event_triggered_rule_without_cooldown_does_not_d
             return message.topic() == "house/light/set";
         }));
     REQUIRE(outputCount == 2U);
+
+    component.close();
+}
+
+TEST_CASE("automation_component_reason_contains_full_rule_path_and_trigger_event", "[automation_client]") {
+    const std::uint16_t portValue = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{portValue};
+    fileStore.setRulesJson(
+        R"({"ground":{"livingroom":{"motion":{"rules":{"latest":{"topic":"status/motion/livingroom/latest","anyOf":["ground/livingroom/motionv2/motion sensor/detection state"],"check":"1","value":"/time"}}}}}})");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = portValue;
+    config.motionTopics = {"ground/+/motionv2/motion sensor/detection state"};
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    component.handleMessage(yaha::Message{
+        "ground/livingroom/motionv2/motion sensor/detection state",
+        std::string{"1"},
+        yaha::Qos::AtLeastOnce,
+        false});
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    const auto outputIter = std::ranges::find_if(
+        published.begin(),
+        published.end(),
+        [](const yaha::Message& message) {
+            return message.topic() == "status/motion/livingroom/latest";
+        });
+    REQUIRE(outputIter != published.end());
+
+    const auto& reasonEntries = outputIter->reason();
+    REQUIRE_FALSE(reasonEntries.empty());
+
+    const bool hasFullRulePath = std::ranges::any_of(
+        reasonEntries,
+        [](const yaha::ReasonEntry& reasonEntry) {
+            return reasonEntry.message.find("Rule: ground/livingroom/motion/rules/latest") != std::string::npos;
+        });
+    REQUIRE(hasFullRulePath);
+
+    const bool hasEventGateDetail = std::ranges::any_of(
+        reasonEntries,
+        [](const yaha::ReasonEntry& reasonEntry) {
+            return reasonEntry.message.find("Events:") != std::string::npos
+                && reasonEntry.message.find("anyOf:") != std::string::npos
+                && reasonEntry.message.find("ground/livingroom/motionv2/motion sensor/detection state")
+                    != std::string::npos;
+        });
+    REQUIRE(hasEventGateDetail);
 
     component.close();
 }

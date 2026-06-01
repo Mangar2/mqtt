@@ -319,7 +319,7 @@ TEST_CASE("single_rule_processor_reports_value_evaluation_error", "[yaha][automa
     REQUIRE_FALSE(result.errors.empty());
 }
 
-TEST_CASE("single_rule_processor_reports_time_expression_value_as_unsupported", "[yaha][automation]") {
+TEST_CASE("single_rule_processor_maps_time_expression_value_to_iso_string", "[yaha][automation]") {
     yaha::RuleTreeNode::Object ruleObject;
     ruleObject.insert({"topic", yaha::RuleTreeNode{"home/light/set"}});
     ruleObject.insert({"value", yaha::RuleTreeNode{"\"/time\""}});
@@ -332,8 +332,11 @@ TEST_CASE("single_rule_processor_reports_time_expression_value_as_unsupported", 
         yaha::RuleTreeNode{std::move(ruleObject)},
         variables);
 
-    REQUIRE_FALSE(result.success);
-    REQUIRE_FALSE(result.errors.empty());
+    REQUIRE(result.success);
+    REQUIRE(result.errors.empty());
+    REQUIRE(result.message.has_value());
+    REQUIRE(std::holds_alternative<std::string>(result.message->value()));
+    REQUIRE(std::get<std::string>(result.message->value()) == "2026-05-04T07:00:00.000Z");
 }
 
 TEST_CASE("single_rule_processor_accepts_qos_zero_and_two", "[yaha][automation]") {
@@ -446,7 +449,7 @@ TEST_CASE("single_rule_processor_uses_explicit_rule_identifier_in_summary_reason
     REQUIRE(result.message->reason().size() == 1U);
 
     const std::string& summaryMessage = result.message->reason().front().message;
-    REQUIRE(summaryMessage.starts_with("Rule: presenceOn"));
+    REQUIRE(summaryMessage.starts_with("Rule: rules/presenceOn"));
 }
 
 TEST_CASE("single_rule_processor_keeps_reason_empty_for_literal_rule_without_program", "[yaha][automation]") {

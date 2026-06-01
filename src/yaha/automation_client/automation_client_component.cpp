@@ -34,6 +34,17 @@ struct RuleValidationResult {
     std::vector<std::string> errors;
 };
 
+[[nodiscard]] bool keyPathAffectsRulesRoot(
+    const std::string& changedKeyPath,
+    const std::string& rulesRootPath) {
+    if (changedKeyPath == rulesRootPath) {
+        return true;
+    }
+
+    const std::string rulesRootWithSeparator = rulesRootPath + "/";
+    return changedKeyPath.starts_with(rulesRootWithSeparator);
+}
+
 [[nodiscard]] RuleValidationResult validateIncomingRule(const RuleTreeNode& ruleNode) {
     RuleValidationResult result{};
     if (!ruleNode.isObject()) {
@@ -253,7 +264,7 @@ void AutomationClientComponent::handleMonitoringMessage(const Message& message) 
     const std::optional<std::string> keyPath = automation_rule_json::extractStringFieldFromObjectPayload(
         payloadText,
         "keyPath");
-    if (!keyPath.has_value() || *keyPath != config_.rulesKeyPath) {
+    if (!keyPath.has_value() || !keyPathAffectsRulesRoot(*keyPath, config_.rulesKeyPath)) {
         return;
     }
 

@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cmath>
 #include <ctime>
+#include <iomanip>
 #include <optional>
 #include <ranges>
 #include <sstream>
@@ -28,6 +29,15 @@ constexpr std::int64_t k_seconds_per_day{24 * 60 * 60};
 constexpr int k_minutes_per_hour{60};
 constexpr int k_hours_per_day{24};
 constexpr double k_zero_epsilon{1e-12};
+constexpr std::size_t k_iso_min_length{20U};
+constexpr std::size_t k_iso_year_sep_index{4U};
+constexpr std::size_t k_iso_month_sep_index{7U};
+constexpr std::size_t k_iso_date_time_sep_index{10U};
+constexpr std::size_t k_iso_hour_sep_index{13U};
+constexpr std::size_t k_iso_minute_sep_index{16U};
+constexpr std::size_t k_iso_fraction_dot_index{19U};
+constexpr std::size_t k_iso_min_fraction_length{22U};
+constexpr std::size_t k_iso_fraction_first_digit_index{20U};
 
 [[nodiscard]] std::optional<std::tm> toLocalCalendarTime(
     const std::chrono::system_clock::time_point& timePoint) {
@@ -110,6 +120,83 @@ constexpr double k_zero_epsilon{1e-12};
     std::ostringstream textStream;
     textStream << std::get<double>(messageValue);
     return "n:" + textStream.str();
+}
+
+[[nodiscard]] bool isDigitAt(const std::string& textValue, const std::size_t indexValue) {
+    if (indexValue >= textValue.size()) {
+        return false;
+    }
+    return std::isdigit(static_cast<unsigned char>(textValue[indexValue])) != 0;
+}
+
+[[nodiscard]] bool isIsoUtcTimestampString(const std::string& textValue) {
+    // Accepts canonical UTC timestamps like 2026-06-01T10:56:49Z and
+    // 2026-06-01T10:56:49.043Z.
+    if (textValue.size() < k_iso_min_length) {
+        return false;
+    }
+
+    if (textValue[k_iso_year_sep_index] != '-'
+        || textValue[k_iso_month_sep_index] != '-'
+        || textValue[k_iso_date_time_sep_index] != 'T'
+        || textValue[k_iso_hour_sep_index] != ':'
+        || textValue[k_iso_minute_sep_index] != ':'
+        || textValue.back() != 'Z') {
+        return false;
+    }
+
+    const std::array<std::size_t, 14U> digitPositions{
+        0U, 1U, 2U, 3U,
+        5U, 6U,
+        8U, 9U,
+        11U, 12U,
+        14U, 15U,
+        17U, 18U};
+    if (!std::ranges::all_of(digitPositions, [&textValue](const std::size_t indexValue) {
+            return isDigitAt(textValue, indexValue);
+        })) {
+        return false;
+    }
+
+    if (textValue.size() == k_iso_min_length) {
+        return true;
+    }
+
+    if (textValue[k_iso_fraction_dot_index] != '.') {
+        return false;
+    }
+
+    if (textValue.size() < k_iso_min_fraction_length) {
+        return false;
+    }
+
+    for (std::size_t indexValue = k_iso_fraction_first_digit_index;
+         indexValue + 1U < textValue.size();
+         ++indexValue) {
+        if (!isDigitAt(textValue, indexValue)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+[[nodiscard]] std::string deliveryComparableHash(
+    const Message& candidateMessage,
+    const bool cooldownConfigured) {
+    if (!cooldownConfigured) {
+        return candidateMessage.topic() + "|" + valueToStableText(candidateMessage.value());
+    }
+
+    if (std::holds_alternative<std::string>(candidateMessage.value())) {
+        const auto& valueText = std::get<std::string>(candidateMessage.value());
+        if (isIsoUtcTimestampString(valueText)) {
+            // Legacy parity: date/time outputs should not bypass cooldown by changing every cycle.
+            return candidateMessage.topic() + "|t:iso-utc-timestamp";
+        }
+    }
+
+    return candidateMessage.topic() + "|" + valueToStableText(candidateMessage.value());
 }
 
 [[nodiscard]] bool isZeroPayloadValue(const Value& messageValue) {
@@ -584,6 +671,173 @@ constexpr double k_zero_epsilon{1e-12};
     return motionTopics;
 }
 
+[[nodiscard]] std::vector<MotionEventRecord> collectRecentMotionEvents(
+    const RuleRuntimeEventState& eventState,
+    const std::chrono::system_clock::time_point& evaluationTime,
+    const bool inactivityGateConfigured) {
+    std::vector<MotionEventRecord> motionEvents{};
+
+    std::optional<std::chrono::system_clock::time_point> latestMotionTime;
+    for (const auto& motionEvent : eventState.motionEvents) {
+        if (!latestMotionTime.has_value() || motionEvent.timestamp > *latestMotionTime) {
+            latestMotionTime = motionEvent.timestamp;
+        }
+    }
+
+    if (!latestMotionTime.has_value()) {
+        return motionEvents;
+    }
+
+    if (!inactivityGateConfigured
+        && std::chrono::duration_cast<std::chrono::seconds>(evaluationTime - *latestMotionTime).count()
+            > k_motion_stale_threshold_seconds) {
+        return motionEvents;
+    }
+
+    for (const auto& motionEvent : eventState.motionEvents) {
+        const auto deltaSeconds = std::chrono::duration_cast<std::chrono::seconds>(
+            *latestMotionTime - motionEvent.timestamp);
+        if (deltaSeconds.count() <= k_related_motion_window_seconds) {
+            motionEvents.push_back(motionEvent);
+        }
+    }
+
+    return motionEvents;
+}
+
+[[nodiscard]] std::optional<std::chrono::system_clock::time_point> findLatestMotionTimestampForTopic(
+    const std::vector<MotionEventRecord>& recentMotionEvents,
+    const std::string& topicName) {
+    std::optional<std::chrono::system_clock::time_point> latestTimestamp;
+    for (const auto& motionEvent : recentMotionEvents) {
+        if (motionEvent.topicName != topicName) {
+            continue;
+        }
+        if (!latestTimestamp.has_value() || motionEvent.timestamp > *latestTimestamp) {
+            latestTimestamp = motionEvent.timestamp;
+        }
+    }
+    return latestTimestamp;
+}
+
+[[nodiscard]] std::string formatTimeOfDay(const std::chrono::system_clock::time_point& timePoint) {
+    const std::time_t epochSeconds = std::chrono::system_clock::to_time_t(timePoint);
+    std::tm localCalendarTime{};
+#if defined(_WIN32)
+    if (localtime_s(&localCalendarTime, &epochSeconds) != 0) {
+        return {};
+    }
+#else
+    if (localtime_r(&epochSeconds, &localCalendarTime) == nullptr) {
+        return {};
+    }
+#endif
+
+    std::ostringstream stream;
+    stream << std::setfill('0')
+           << std::setw(2) << localCalendarTime.tm_hour
+           << ':' << std::setw(2) << localCalendarTime.tm_min
+           << ':' << std::setw(2) << localCalendarTime.tm_sec;
+    return stream.str();
+}
+
+[[nodiscard]] std::vector<std::string> collectMatchingTopics(
+    const std::set<std::string>& recentEventTopics,
+    const std::vector<std::string>& topicFilters) {
+    std::vector<std::string> matchedTopics{};
+    for (const auto& eventTopic : recentEventTopics) {
+        const bool matchesFilter = std::ranges::any_of(topicFilters, [&eventTopic](const std::string& topicFilter) {
+            return matchesTopicFilter(topicFilter, eventTopic);
+        });
+        if (matchesFilter) {
+            matchedTopics.push_back(eventTopic);
+        }
+    }
+    return matchedTopics;
+}
+
+[[nodiscard]] std::string joinText(const std::vector<std::string>& parts, const std::string_view separator) {
+    std::string text{};
+    for (std::size_t index = 0U; index < parts.size(); ++index) {
+        if (index > 0U) {
+            text.append(separator);
+        }
+        text.append(parts[index]);
+    }
+    return text;
+}
+
+[[nodiscard]] std::vector<std::string> formatMatchedTopicsWithOptionalTimestamp(
+    const std::vector<std::string>& matchedTopics,
+    const std::vector<MotionEventRecord>& recentMotionEvents) {
+    std::vector<std::string> formattedTopics{};
+    formattedTopics.reserve(matchedTopics.size());
+    for (const auto& topicName : matchedTopics) {
+        std::string topicText = topicName;
+        const auto latestMotionTimestamp = findLatestMotionTimestampForTopic(recentMotionEvents, topicName);
+        if (latestMotionTimestamp.has_value()) {
+            const std::string clockText = formatTimeOfDay(*latestMotionTimestamp);
+            if (!clockText.empty()) {
+                topicText += " (" + clockText + ")";
+            }
+        }
+        formattedTopics.push_back(std::move(topicText));
+    }
+    return formattedTopics;
+}
+
+[[nodiscard]] std::optional<std::string> buildEventTriggerReason(
+    const RuleTreeNode::Object& ruleObject,
+    const RuleRuntimeEventState& eventState,
+    const std::chrono::system_clock::time_point& evaluationTime) {
+    const bool hasAnyOfField = ruleObject.contains("anyOf");
+    const bool hasAllOfField = ruleObject.contains("allOf");
+    if (!hasAnyOfField && !hasAllOfField) {
+        return std::nullopt;
+    }
+
+    const auto inactivityMinutes = readNumberField(ruleObject, "durationWithoutMovementInMinutes");
+    const bool hasInactivityGate = inactivityMinutes.has_value();
+
+    const std::set<std::string> recentEventTopics = collectRecentEventTopics(
+        eventState, evaluationTime, hasInactivityGate);
+    const std::vector<MotionEventRecord> recentMotionEvents = collectRecentMotionEvents(
+        eventState, evaluationTime, hasInactivityGate);
+
+    const std::vector<std::string> anyOfFilters = readTopicFilterList(ruleObject, "anyOf");
+    const std::vector<std::string> allOfFilters = readTopicFilterList(ruleObject, "allOf");
+
+    const bool allOfMatch = hasAllOfField && allFiltersMatchAnyEvent(recentEventTopics, allOfFilters);
+    const bool anyOfMatch = hasAnyOfField && anyEventMatches(recentEventTopics, anyOfFilters);
+
+    std::vector<std::string> gateDescriptions{};
+    if (allOfMatch) {
+        const std::vector<std::string> matchedTopics = collectMatchingTopics(recentEventTopics, allOfFilters);
+        const std::vector<std::string> formattedTopics = formatMatchedTopicsWithOptionalTimestamp(
+            matchedTopics,
+            recentMotionEvents);
+        if (!formattedTopics.empty()) {
+            gateDescriptions.push_back("allOf: " + joinText(formattedTopics, ", "));
+        }
+    }
+
+    if (anyOfMatch) {
+        const std::vector<std::string> matchedTopics = collectMatchingTopics(recentEventTopics, anyOfFilters);
+        const std::vector<std::string> formattedTopics = formatMatchedTopicsWithOptionalTimestamp(
+            matchedTopics,
+            recentMotionEvents);
+        if (!formattedTopics.empty()) {
+            gateDescriptions.push_back("anyOf: " + joinText(formattedTopics, ", "));
+        }
+    }
+
+    if (gateDescriptions.empty()) {
+        return std::nullopt;
+    }
+
+    return std::string{"Events: "} + joinText(gateDescriptions, "; ");
+}
+
 [[nodiscard]] bool evaluateEventGates(
     const RuleTreeNode::Object& ruleObject,
     const RuleRuntimeEventState& eventState,
@@ -684,7 +938,9 @@ constexpr double k_zero_epsilon{1e-12};
 
     for (const auto& candidateMessage : candidateMessages) {
         const std::string outputKey = rulePath + "|" + candidateMessage.topic();
-        const std::string candidateHash = candidateMessage.topic() + "|" + valueToStableText(candidateMessage.value());
+        const std::string candidateHash = deliveryComparableHash(
+            candidateMessage,
+            cooldownSeconds.has_value());
 
         auto& outputState = deliveryState->outputStatesByKey[outputKey];
         if (outputState.candidateHash != candidateHash) {
@@ -796,6 +1052,11 @@ void processRuleNode(
         return;
     }
 
+    const std::optional<std::string> eventTriggerReason = buildEventTriggerReason(
+        ruleObject,
+        *eventState,
+        evaluationTime);
+
     const SingleRuleProcessingResult singleResult = SingleRuleProcessor::process(
         node,
         variables,
@@ -822,7 +1083,10 @@ void processRuleNode(
     result->triggeredRules += 1U;
     const std::vector<Message> emittedMessages = applyDeliveryControls(
         pathText, ruleObject, singleResult.messages, evaluationTime, deliveryState);
-    for (const auto& emittedMessage : emittedMessages) {
+    for (auto emittedMessage : emittedMessages) {
+        if (eventTriggerReason.has_value()) {
+            emittedMessage.addReason(*eventTriggerReason);
+        }
         result->messages.push_back(emittedMessage.clone());
     }
 }

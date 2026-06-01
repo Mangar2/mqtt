@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cmath>
 #include <ctime>
+#include <iomanip>
 #include <ranges>
 #include <set>
 #include <sstream>
@@ -19,6 +21,8 @@ constexpr double k_numeric_bool_epsilon{1e-12};
 constexpr double k_qos_at_most_once{0.0};
 constexpr double k_qos_at_least_once{1.0};
 constexpr double k_qos_exactly_once{2.0};
+constexpr std::int64_t k_millis_per_second{1000};
+constexpr int k_tm_year_offset{1900};
 
 struct ResolvedRuleOutput {
     std::string topic;
@@ -76,6 +80,43 @@ void appendTrace(std::vector<std::string>* traceEntries, const std::string& trac
     std::ostringstream textStream;
     textStream << "epoch:" << epochSeconds;
     return textStream.str();
+}
+
+[[nodiscard]] std::string toIsoTimestamp(
+    const std::chrono::system_clock::time_point& timeValue) {
+    std::int64_t millisecondsSinceEpoch =
+        std::chrono::duration_cast<std::chrono::milliseconds>(timeValue.time_since_epoch()).count();
+
+    std::int64_t secondsSinceEpoch = millisecondsSinceEpoch / k_millis_per_second;
+    std::int64_t millisecondPart = millisecondsSinceEpoch % k_millis_per_second;
+    if (millisecondPart < 0) {
+        millisecondPart += k_millis_per_second;
+        secondsSinceEpoch -= 1;
+    }
+
+    const auto rawTime = static_cast<std::time_t>(secondsSinceEpoch);
+    std::tm utc{};
+#if defined(_WIN32)
+    if (gmtime_s(&utc, &rawTime) != 0) {
+        return "1970-01-01T00:00:00.000Z";
+    }
+#else
+    if (gmtime_r(&rawTime, &utc) == nullptr) {
+        return "1970-01-01T00:00:00.000Z";
+    }
+#endif
+
+    std::ostringstream stream{};
+    stream << std::setfill('0')
+           << std::setw(4) << (utc.tm_year + k_tm_year_offset)
+           << '-' << std::setw(2) << (utc.tm_mon + 1)
+           << '-' << std::setw(2) << utc.tm_mday
+           << 'T' << std::setw(2) << utc.tm_hour
+           << ':' << std::setw(2) << utc.tm_min
+           << ':' << std::setw(2) << utc.tm_sec
+           << '.' << std::setw(3) << millisecondPart
+           << 'Z';
+    return stream.str();
 }
 
 void appendCheckVariableSnapshot(
@@ -162,6 +203,11 @@ void appendCheckVariableSnapshot(
     }
     if (std::holds_alternative<bool>(value)) {
         *outValue = std::get<bool>(value) ? std::string{"true"} : std::string{"false"};
+        return true;
+    }
+
+    if (std::holds_alternative<std::chrono::system_clock::time_point>(value)) {
+        *outValue = toIsoTimestamp(std::get<std::chrono::system_clock::time_point>(value));
         return true;
     }
 
@@ -405,21 +451,6 @@ void appendCheckVariableSnapshot(
 }
 
 [[nodiscard]] std::string normalizeRuleIdentifier(const std::string& ruleIdentifier) {
-    if (ruleIdentifier.empty()) {
-        return {};
-    }
-
-    constexpr std::string_view rulesSegment{"/rules/"};
-    const std::size_t rulesSegmentPos = ruleIdentifier.find(rulesSegment);
-    if (rulesSegmentPos != std::string::npos) {
-        return ruleIdentifier.substr(rulesSegmentPos + rulesSegment.size());
-    }
-
-    constexpr std::string_view rulesPrefix{"rules/"};
-    if (ruleIdentifier.starts_with(rulesPrefix)) {
-        return ruleIdentifier.substr(rulesPrefix.size());
-    }
-
     return ruleIdentifier;
 }
 
