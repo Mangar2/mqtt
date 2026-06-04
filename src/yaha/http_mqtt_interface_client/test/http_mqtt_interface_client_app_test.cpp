@@ -45,6 +45,7 @@ constexpr int k_http_timeout_microseconds{500000};
 constexpr int k_status_ok{200};
 constexpr int k_status_no_content{204};
 constexpr int k_status_internal_server_error{500};
+constexpr std::uint16_t k_test_broker_port{1883U};
 constexpr const char* k_expected_cors_methods{"POST, PUT, OPTIONS"};
 constexpr const char* k_expected_cors_headers{"Content-Type, Authorization, X-Requested-With"};
 
@@ -947,6 +948,112 @@ TEST_CASE("http_mqtt_interface_component_compat_publish_managed_session_failure_
     REQUIRE(publishResponse->status == 500);
 
     component.close();
+}
+
+TEST_CASE("http_mqtt_interface_component_connect_legacy_host_port_do_not_override_broker_target", "[http_mqtt_interface_client]") {
+    struct CapturedConnectConfig {
+        std::string brokerHost{};
+        std::uint16_t brokerPort{0U};
+    };
+
+    const std::uint16_t port = reserveFreeLocalPort();
+    auto captured = std::make_shared<CapturedConnectConfig>();
+
+    auto sessionFactory = [captured]() {
+        yaha::YahaMqttClient::Transport transport{};
+        transport.connect = [captured](const yaha::YahaMqttClient::Config& config) {
+            captured->brokerHost = config.brokerHost;
+            captured->brokerPort = config.brokerPort;
+            return true;
+        };
+        transport.disconnect = []() {};
+        transport.publish = [](const yaha::Message&) {};
+        transport.subscribe = [](const std::string&, const yaha::Qos) { return true; };
+        transport.unsubscribe = [](const std::string&) { return true; };
+        transport.pollIncoming = []() -> std::optional<yaha::Message> { return std::nullopt; };
+        transport.ping = []() {};
+        transport.isConnected = []() { return true; };
+        return transport;
+    };
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = port;
+    config.mqttConfig.brokerHost = "configured-broker";
+    config.mqttConfig.brokerPort = k_test_broker_port;
+
+    yaha::HttpMqttInterfaceClientComponent component{config, sessionFactory};
+    component.run();
+    REQUIRE(waitForHttpServer(port));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
+
+    const auto connectResponse = client.Put(
+        "/connect",
+        R"({"clientId":"ts-compat-connect","host":"10.0.0.99","port":49999,"brokerHost":"127.0.0.1","brokerPort":1883})",
+        "application/json");
+    REQUIRE(connectResponse != nullptr);
+    REQUIRE(connectResponse->status == k_status_ok);
+
+    REQUIRE(captured->brokerHost == "127.0.0.1");
+    REQUIRE(captured->brokerPort == k_test_broker_port);
+
+    component.close();
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("http_mqtt_interface_component_legacy_clientid_commands_without_token", "[http_mqtt_interface_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    SessionMockFactory sessionFactory{};
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = port;
+
+    yaha::HttpMqttInterfaceClientComponent component{config, sessionFactory.makeFactory()};
+    component.run();
+    REQUIRE(waitForHttpServer(port));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
+
+    const auto connectResponse = client.Put(
+        "/connect",
+        R"({"clientId":"legacy-clientid-flow"})",
+        "application/json");
+    REQUIRE(connectResponse != nullptr);
+    REQUIRE(connectResponse->status == k_status_ok);
+
+    const auto subscribeResponse = client.Put(
+        "/subscribe",
+        httplib::Headers{{"version", "1.0"}},
+        R"({"clientId":"legacy-clientid-flow","packetid":11,"topics":{"demo/topic":1}})",
+        "application/json");
+    REQUIRE(subscribeResponse != nullptr);
+    REQUIRE(subscribeResponse->status == k_status_ok);
+
+    const auto unsubscribeResponse = client.Put(
+        "/unsubscribe",
+        httplib::Headers{{"version", "1.0"}},
+        R"({"clientId":"legacy-clientid-flow","packetid":12,"topics":{"demo/topic":1}})",
+        "application/json");
+    REQUIRE(unsubscribeResponse != nullptr);
+    REQUIRE(unsubscribeResponse->status == k_status_ok);
+
+    const auto disconnectResponse = client.Put(
+        "/disconnect",
+        httplib::Headers{{"version", "1.0"}},
+        R"({"clientId":"legacy-clientid-flow"})",
+        "application/json");
+    REQUIRE(disconnectResponse != nullptr);
+    REQUIRE(disconnectResponse->status == k_status_no_content);
+
+    component.close();
+
+    REQUIRE(sessionFactory.states.size() == 1);
+    REQUIRE(sessionFactory.states.front()->subscribeCalls == 1);
+    REQUIRE(sessionFactory.states.front()->unsubscribeCalls == 1);
 }
 
 TEST_CASE("http_mqtt_interface_component_command_options_preflight_endpoints_return_204", "[http_mqtt_interface_client]") {

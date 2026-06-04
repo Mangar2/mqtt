@@ -20,6 +20,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 
 namespace yaha {
@@ -45,6 +46,7 @@ constexpr int k_httpStatusOk{200};
 constexpr int k_httpStatusNoContent{204};
 constexpr int k_httpStatusBadRequest{400};
 constexpr int k_httpStatusInternalServerError{500};
+constexpr int k_legacy_listener_timeout_us{300000};
 constexpr int k_uint16_max{65535};
 constexpr long long k_uint32_max{4294967295LL};
 constexpr std::string_view k_publishCorsMethods{"POST, PUT, OPTIONS"};
@@ -328,6 +330,61 @@ std::string resolveCompatibilityToken(const httplib::Request& request, const Htt
     return payload.stringify();
 }
 
+struct LegacyListenerEndpoint {
+    std::string host{};
+    std::uint16_t port{0U};
+};
+
+[[nodiscard]] bool forwardLegacyListenerPublish(
+    const LegacyListenerEndpoint& endpoint,
+    const Message& message,
+    const HttpMqttHeaders& requestHeaders) {
+    if (endpoint.host.empty() || endpoint.port == 0U) {
+        return false;
+    }
+
+    mqtt::json::JsonValue payload = mqtt::json::JsonValue::object();
+    payload["message"] = mqtt::json::JsonValue::object();
+    payload["message"]["topic"] = message.topic();
+    payload["message"]["value"] = messageValueToJson(message.value());
+    payload["message"]["reason"] = mqtt::json::JsonValue::array();
+    for (const auto& reasonEntry : message.reason()) {
+        mqtt::json::JsonValue reasonObject = mqtt::json::JsonValue::object();
+        reasonObject["message"] = reasonEntry.message;
+        reasonObject["timestamp"] = reasonEntry.timestamp;
+        payload["message"]["reason"].push_back(std::move(reasonObject));
+    }
+
+    httplib::Headers headers{};
+    headers.emplace("content-type", "application/json; charset=UTF-8");
+    headers.emplace("version", "1.0");
+    if (const auto qos = requestHeaders.find("qos"); qos != requestHeaders.end()) {
+        headers.emplace("qos", qos->second);
+    } else {
+        headers.emplace("qos", std::to_string(static_cast<int>(message.qos())));
+    }
+    if (const auto retain = requestHeaders.find("retain"); retain != requestHeaders.end()) {
+        headers.emplace("retain", retain->second);
+    } else {
+        headers.emplace("retain", message.retain() ? "1" : "0");
+    }
+    if (const auto dup = requestHeaders.find("dup"); dup != requestHeaders.end()) {
+        headers.emplace("dup", dup->second);
+    } else {
+        headers.emplace("dup", "0");
+    }
+    if (const auto packetId = requestHeaders.find("packetid"); packetId != requestHeaders.end()) {
+        headers.emplace("packetid", packetId->second);
+    }
+
+    httplib::Client client{endpoint.host, static_cast<int>(endpoint.port)};
+    client.set_connection_timeout(0, k_legacy_listener_timeout_us);
+    client.set_read_timeout(0, k_legacy_listener_timeout_us);
+
+    const auto response = client.Put("/publish", headers, payload.stringify(), "application/json");
+    return response != nullptr && (response->status == k_httpStatusOk || response->status == k_httpStatusNoContent);
+}
+
 [[nodiscard]] HttpMqttResult makeJsonErrorResult(const int statusCode, const std::string_view errorCode) {
     HttpMqttResult result{};
     result.statusCode = statusCode;
@@ -398,6 +455,9 @@ struct HttpMqttInterfaceClientComponent::Impl {
     bool stopRequested{false};
     bool running{false};
     std::thread serverThread{};
+
+    std::mutex legacyListenerMutex{};
+    std::unordered_map<std::string, LegacyListenerEndpoint> legacyListenerBySendToken{};
 };
 
 HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(HttpMqttInterfaceClientConfig configInput)
@@ -418,10 +478,91 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
     });
 
     impl_->server.Put(k_publishEndpoint.data(),
+                      // NOLINTNEXTLINE(readability-function-cognitive-complexity)
                       [this](const httplib::Request& request, httplib::Response& response) {
                           logIncomingPublishRequest(request, k_publishEndpoint);
                           try {
-                              applyHttpMqttResult(impl_->interfaces.onPublish(collectHeaders(request)), response);
+                              const HttpMqttHeaders fields = collectFields(request);
+                              const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
+                              const HttpMqttPublishCompatibilityRequest compatibilityRequest{
+                                  .method = request.method,
+                                  .endpoint = std::string{k_publishEndpoint},
+                                  .headers = collectHeaders(request),
+                                  .fields = fields,
+                                  .body = request.body,
+                                  .token = resolveToken(request, fields, jsonBody),
+                              };
+
+                              const HttpMqttResult compatibilityResult = handlePublishCompatibilityRequest(
+                                  impl_->interfaces,
+                                  compatibilityRequest,
+                                  impl_->compatibilityConfig,
+                                  [this](const HttpMqttRequestData& downstreamRequest, const Message& mappedMessage) {
+                                      std::string sessionToken{};
+                                      if (const auto parsedPayload = mqtt::json::JsonValue::try_parse(downstreamRequest.payload);
+                                          parsedPayload.has_value()) {
+                                          if (const auto tokenField = tryReadStringField(*parsedPayload, "token"); tokenField.has_value()) {
+                                              sessionToken = *tokenField;
+                                          }
+                                      }
+
+                                      if (!sessionToken.empty() && impl_->sessionManager.hasSession(sessionToken)) {
+                                          std::string sessionError{};
+                                          if (!impl_->sessionManager.publish(sessionToken, mappedMessage, sessionError)) {
+                                              const std::string publishReason = sessionError.empty()
+                                                  ? "broker publish callback failed"
+                                                  : sessionError;
+                                              logBrokerForwardPublishError(mappedMessage, publishReason);
+                                              throw YahaError{
+                                                  k_error_code_broker_publish_failed,
+                                                  publishReason,
+                                                  "broker publish failed",
+                                              };
+                                          }
+
+                                          std::optional<LegacyListenerEndpoint> legacyEndpoint{};
+                                          {
+                                              std::lock_guard<std::mutex> lock{impl_->legacyListenerMutex};
+                                              if (const auto entry = impl_->legacyListenerBySendToken.find(sessionToken);
+                                                  entry != impl_->legacyListenerBySendToken.end()) {
+                                                  legacyEndpoint = entry->second;
+                                              }
+                                          }
+                                          if (legacyEndpoint.has_value()) {
+                                              const bool forwarded = forwardLegacyListenerPublish(
+                                                  *legacyEndpoint,
+                                                  mappedMessage,
+                                                  downstreamRequest.headers);
+                                              (void)forwarded;
+                                          }
+                                      } else {
+                                          PublishResult publishResult{};
+                                          {
+                                              std::lock_guard<std::mutex> lock{impl_->publishCallbackMutex};
+                                              publishResult = impl_->publishCallback(mappedMessage);
+                                          }
+
+                                          if (!publishResult.success) {
+                                              const std::string publishReason = publishResult.reason.empty()
+                                                  ? "broker publish callback failed"
+                                                  : publishResult.reason;
+                                              logBrokerForwardPublishError(mappedMessage, publishReason);
+                                              throw YahaError{
+                                                  k_error_code_broker_publish_failed,
+                                                  publishReason,
+                                                  "broker publish failed",
+                                              };
+                                          }
+                                      }
+
+                                      logBrokerForwardPublishAck(mappedMessage);
+                                      return impl_->interfaces.onPublish(downstreamRequest.headers);
+                                  });
+
+                              if (compatibilityResult.statusCode >= k_httpStatusInternalServerError) {
+                                  logCompatibilityInternalResultFailure(k_publishEndpoint, compatibilityResult);
+                              }
+                              applyHttpMqttResult(compatibilityResult, response);
                           } catch (const std::exception& exceptionValue) {
                               logCompatibilityRequestFailure(k_publishEndpoint, exceptionValue.what());
                               applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
@@ -464,9 +605,18 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           HttpMqttSessionConnectRequest connectRequest{};
                           connectRequest.clientId = *clientId;
                           if (jsonBody.has_value()) {
-                              connectRequest.brokerHost = tryReadStringField(*jsonBody, "host");
-                              connectRequest.brokerPort = tryReadUInt16Field(*jsonBody, "port");
-                              connectRequest.keepAliveSeconds = tryReadUInt32Field(*jsonBody, "keepAlive");
+                              // Compatibility rule:
+                              // - legacy TypeScript connect payload uses host/port for client callback listener.
+                              // - broker target overrides are accepted only via explicit brokerHost/brokerPort.
+                              connectRequest.brokerHost = tryReadStringField(*jsonBody, "brokerHost");
+                              connectRequest.brokerPort = tryReadUInt16Field(*jsonBody, "brokerPort");
+
+                              const auto keepAliveSeconds = tryReadUInt32Field(*jsonBody, "keepAliveSeconds");
+                              if (keepAliveSeconds.has_value()) {
+                                  connectRequest.keepAliveSeconds = keepAliveSeconds;
+                              } else {
+                                  connectRequest.keepAliveSeconds = tryReadUInt32Field(*jsonBody, "keepAlive");
+                              }
                           }
 
                           HttpMqttSessionConnectTokens tokens{};
@@ -474,6 +624,18 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           if (!impl_->sessionManager.connect(connectRequest, tokens, connectError)) {
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "connect_failed"), response);
                               return;
+                          }
+
+                          if (jsonBody.has_value()) {
+                              const auto legacyListenerHost = tryReadStringField(*jsonBody, "host");
+                              const auto legacyListenerPort = tryReadUInt16Field(*jsonBody, "port");
+                              if (legacyListenerHost.has_value() && !legacyListenerHost->empty() && legacyListenerPort.has_value()) {
+                                  std::lock_guard<std::mutex> lock{impl_->legacyListenerMutex};
+                                  impl_->legacyListenerBySendToken[tokens.sendToken] = LegacyListenerEndpoint{
+                                      .host = *legacyListenerHost,
+                                      .port = *legacyListenerPort,
+                                  };
+                              }
                           }
 
                           HttpMqttConnectResult connectResult{};
@@ -510,7 +672,16 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           }
 
                           const std::string token = resolveToken(request, fields, jsonBody);
-                          if (token.empty()) {
+                          std::string resolvedToken = token;
+                          if (resolvedToken.empty() && jsonBody.has_value()) {
+                              if (const auto clientId = tryReadStringField(*jsonBody, "clientId"); clientId.has_value()) {
+                                  const bool clientResolved = impl_->sessionManager.resolveSendTokenByClientId(
+                                      *clientId,
+                                      resolvedToken);
+                                  (void)clientResolved;
+                              }
+                          }
+                          if (resolvedToken.empty()) {
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "missing_token"), response);
                               return;
                           }
@@ -527,7 +698,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
 
                           std::vector<std::uint8_t> subscribeResult{};
                           std::string subscribeError{};
-                          if (!impl_->sessionManager.subscribe(token, topics, subscribeResult, subscribeError)) {
+                          if (!impl_->sessionManager.subscribe(resolvedToken, topics, subscribeResult, subscribeError)) {
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "subscribe_failed"), response);
                               return;
                           }
@@ -556,7 +727,16 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           }
 
                           const std::string token = resolveToken(request, fields, jsonBody);
-                          if (token.empty()) {
+                          std::string resolvedToken = token;
+                          if (resolvedToken.empty() && jsonBody.has_value()) {
+                              if (const auto clientId = tryReadStringField(*jsonBody, "clientId"); clientId.has_value()) {
+                                  const bool clientResolved = impl_->sessionManager.resolveSendTokenByClientId(
+                                      *clientId,
+                                      resolvedToken);
+                                  (void)clientResolved;
+                              }
+                          }
+                          if (resolvedToken.empty()) {
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "missing_token"), response);
                               return;
                           }
@@ -573,7 +753,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
 
                           std::vector<std::uint8_t> unsubscribeResult{};
                           std::string unsubscribeError{};
-                          if (!impl_->sessionManager.unsubscribe(token, topics, unsubscribeResult, unsubscribeError)) {
+                          if (!impl_->sessionManager.unsubscribe(resolvedToken, topics, unsubscribeResult, unsubscribeError)) {
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "unsubscribe_failed"), response);
                               return;
                           }
@@ -595,15 +775,29 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           }
 
                           const std::string token = resolveToken(request, fields, jsonBody);
-                          if (token.empty()) {
+                          std::string resolvedToken = token;
+                          if (resolvedToken.empty() && jsonBody.has_value()) {
+                              if (const auto clientId = tryReadStringField(*jsonBody, "clientId"); clientId.has_value()) {
+                                  const bool clientResolved = impl_->sessionManager.resolveSendTokenByClientId(
+                                      *clientId,
+                                      resolvedToken);
+                                  (void)clientResolved;
+                              }
+                          }
+                          if (resolvedToken.empty()) {
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "missing_token"), response);
                               return;
                           }
 
                           std::string disconnectError{};
-                          if (!impl_->sessionManager.disconnect(token, disconnectError)) {
+                          if (!impl_->sessionManager.disconnect(resolvedToken, disconnectError)) {
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "disconnect_failed"), response);
                               return;
+                          }
+
+                          {
+                              std::lock_guard<std::mutex> lock{impl_->legacyListenerMutex};
+                              impl_->legacyListenerBySendToken.erase(resolvedToken);
                           }
 
                           HttpMqttHeaders headers = collectHeaders(request);
@@ -686,13 +880,14 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
         logIncomingPublishRequest(request, endpoint);
         try {
             const HttpMqttHeaders fields = collectFields(request);
+            const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
             const HttpMqttPublishCompatibilityRequest compatibilityRequest{
                 .method = request.method,
                 .endpoint = std::string{endpoint},
                 .headers = collectHeaders(request),
                 .fields = fields,
                 .body = request.body,
-                .token = resolveCompatibilityToken(request, fields),
+                .token = resolveToken(request, fields, jsonBody),
             };
 
             const HttpMqttResult compatibilityResult = handlePublishCompatibilityRequest(
@@ -720,6 +915,22 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                                 publishReason,
                                 "broker publish failed",
                             };
+                        }
+
+                        std::optional<LegacyListenerEndpoint> legacyEndpoint{};
+                        {
+                            std::lock_guard<std::mutex> lock{impl_->legacyListenerMutex};
+                            if (const auto entry = impl_->legacyListenerBySendToken.find(sessionToken);
+                                entry != impl_->legacyListenerBySendToken.end()) {
+                                legacyEndpoint = entry->second;
+                            }
+                        }
+                        if (legacyEndpoint.has_value()) {
+                            const bool forwarded = forwardLegacyListenerPublish(
+                                *legacyEndpoint,
+                                mappedMessage,
+                                downstreamRequest.headers);
+                            (void)forwarded;
                         }
                     } else {
                         PublishResult publishResult{};

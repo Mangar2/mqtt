@@ -64,6 +64,7 @@ public:
     [[nodiscard]] bool ping(const std::string& token, std::string& errorOut);
 
     [[nodiscard]] bool hasSession(const std::string& token) const;
+    [[nodiscard]] bool resolveSendTokenByClientId(const std::string& clientId, std::string& tokenOut) const;
 
 private:
     struct SessionState;
@@ -77,6 +78,7 @@ private:
     mutable std::mutex sessionsMutex_{};
     std::unordered_map<std::string, std::shared_ptr<SessionState>> sessionsBySendToken_{};
     std::unordered_map<std::string, std::shared_ptr<SessionState>> sessionsByReceiveToken_{};
+    std::unordered_map<std::string, std::string> sendTokenByClientId_{};
 };
 
 } // namespace yaha

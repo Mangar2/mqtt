@@ -67,11 +67,18 @@ Component starts `httplib::Server` and wires:
 
 - `GET /health` returns `200` `ok`
 - `PUT /connect` creates a broker-backed session and returns token pair
+	- payload compatibility:
+		- `clientId` required
+		- `brokerHost` / `brokerPort` are optional broker-target overrides
+		- `keepAliveSeconds` preferred; legacy `keepAlive` accepted
+		- legacy TypeScript fields `host` / `port` are treated as non-broker listener metadata and do not override broker target
+		- if legacy listener metadata is present, it is associated with the connected session send-token for callback forwarding
 - `PUT /subscribe` forwards topic subscriptions to token-bound broker session
 - `PUT /unsubscribe` forwards topic unsubscriptions to token-bound broker session
 - `PUT /receive` polls one message from token-bound broker session
 - `PUT /pingreq` forwards keepalive ping to token-bound broker session
 - `PUT /disconnect` closes token-bound broker session
+	- compatibility: when `token` is missing, legacy `clientId` payload can resolve the active send-token for `subscribe`, `unsubscribe`, and `disconnect`
 - `PUT /publish` maps to native `HttpMqttInterfaces::onPublish`
 - `PUT /pubrel` maps to native `HttpMqttInterfaces::onPubrel`
 - `POST /publish` maps through compatibility profile
@@ -95,6 +102,9 @@ Publish broker-forward logging:
 	session, it continues to use injected generic MQTT publish callback unchanged
 - if token matches a managed session, compatibility publish is forwarded through the
 	corresponding token-bound broker session
+- when a token-bound session has legacy listener metadata from connect (`host`/`port`),
+	compatibility publish additionally forwards the mapped publish packet to that listener via
+	`PUT /publish` to preserve legacy TypeScript `onPublish` callback flow
 
 Native PUT error mapping:
 

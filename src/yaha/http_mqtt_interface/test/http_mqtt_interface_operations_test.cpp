@@ -399,7 +399,7 @@ TEST_CASE("compat_publish_post_form_maps_to_publish_v1_defaults", "[http_mqtt_in
     const yaha::HttpMqttPublishCompatibilityRequest requestInput{
         .method = "POST",
         .endpoint = "/publish",
-        .headers = {},
+        .headers = {{"packetid", "42"}},
         .fields = {{"topic", "sensor%2Ftemp"}, {"value", "42"}},
         .body = "",
         .token = "token-compat"};
@@ -419,6 +419,7 @@ TEST_CASE("compat_publish_post_form_maps_to_publish_v1_defaults", "[http_mqtt_in
     REQUIRE(response.statusCode == 204);
     REQUIRE(capturedRequest.headers.at("qos") == "1");
     REQUIRE(capturedRequest.headers.at("retain") == "0");
+    REQUIRE(capturedRequest.headers.at("packetid") == "42");
     REQUIRE(capturedRequest.payload.find("\"topic\":\"sensor/temp\"") != std::string::npos);
     REQUIRE(capturedRequest.payload.find("\"message\":\"Request by User\"") != std::string::npos);
     REQUIRE(capturedMappedMessage.rawPayload().has_value());

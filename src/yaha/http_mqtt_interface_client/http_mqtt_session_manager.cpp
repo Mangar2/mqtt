@@ -21,6 +21,7 @@ constexpr std::uint8_t k_unsubscribe_no_subscription{17U};
 
 struct HttpMqttSessionManager::SessionState {
     YahaMqttClient::Transport transport{};
+    std::string clientId{};
     std::string sendToken{};
     std::string receiveToken{};
     std::mutex operationMutex{};
@@ -50,6 +51,7 @@ bool HttpMqttSessionManager::connect(
 
     auto session = std::make_shared<SessionState>();
     session->transport = transportFactory_();
+    session->clientId = request.clientId;
     session->sendToken = createToken();
     session->receiveToken = createToken();
 
@@ -82,6 +84,7 @@ bool HttpMqttSessionManager::connect(
         std::lock_guard<std::mutex> lock{sessionsMutex_};
         sessionsBySendToken_[session->sendToken] = session;
         sessionsByReceiveToken_[session->receiveToken] = session;
+        sendTokenByClientId_[session->clientId] = session->sendToken;
     }
 
     tokensOut.sendToken = session->sendToken;
@@ -116,6 +119,10 @@ bool HttpMqttSessionManager::disconnect(const std::string& token, std::string& e
     std::lock_guard<std::mutex> lock{sessionsMutex_};
     sessionsBySendToken_.erase(session->sendToken);
     sessionsByReceiveToken_.erase(session->receiveToken);
+    if (const auto byClientId = sendTokenByClientId_.find(session->clientId);
+        byClientId != sendTokenByClientId_.end() && byClientId->second == session->sendToken) {
+        sendTokenByClientId_.erase(byClientId);
+    }
     return true;
 }
 
@@ -284,6 +291,27 @@ bool HttpMqttSessionManager::ping(const std::string& token, std::string& errorOu
 
 bool HttpMqttSessionManager::hasSession(const std::string& token) const {
     return findSession(token).has_value();
+}
+
+bool HttpMqttSessionManager::resolveSendTokenByClientId(
+    const std::string& clientId,
+    std::string& tokenOut) const {
+    tokenOut.clear();
+    if (clientId.empty()) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock{sessionsMutex_};
+    const auto byClientId = sendTokenByClientId_.find(clientId);
+    if (byClientId == sendTokenByClientId_.end()) {
+        return false;
+    }
+    if (sessionsBySendToken_.find(byClientId->second) == sessionsBySendToken_.end()) {
+        return false;
+    }
+
+    tokenOut = byClientId->second;
+    return true;
 }
 
 std::optional<std::shared_ptr<HttpMqttSessionManager::SessionState>> HttpMqttSessionManager::findSession(

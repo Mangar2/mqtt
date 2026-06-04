@@ -719,7 +719,8 @@ struct CompatibilityParsedFields {
     const Message& mappedMessage) {
     HttpMqttResult downstreamResult = forwarder(mappedRequest, mappedMessage);
 
-    if (downstreamResult.statusCode != k_httpStatusNoContent) {
+    if (downstreamResult.statusCode != k_httpStatusNoContent &&
+        downstreamResult.statusCode != k_httpStatusOk) {
         return makeCompatibilityErrorResponse(k_httpStatusInternalServerError, "internal_failure");
     }
     return downstreamResult;
@@ -1281,7 +1282,7 @@ HttpMqttResult handlePublishCompatibilityRequest(
         .token = requestInput.token,
         .message = mappedMessage,
         .dup = std::nullopt,
-        .packetId = std::nullopt};
+        .packetId = readPacketIdHeader(requestInput.headers)};
     const HttpMqttRequestData mappedRequest = interfaces.publish(k_versionValue, mappedOptions);
     mappedMessage.setRawPayload(mappedRequest.payload);
 

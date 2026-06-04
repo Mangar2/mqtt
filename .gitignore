@@ -8,6 +8,7 @@ tmp/
 *.profdata
 *.json
 *.jsonl
+*.js
 !test/rules.json
 *.log
 *.trace
