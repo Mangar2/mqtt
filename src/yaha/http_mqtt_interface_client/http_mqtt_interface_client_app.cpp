@@ -20,6 +20,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 
@@ -47,6 +48,7 @@ constexpr int k_httpStatusNoContent{204};
 constexpr int k_httpStatusBadRequest{400};
 constexpr int k_httpStatusInternalServerError{500};
 constexpr int k_legacy_listener_timeout_us{300000};
+constexpr int k_legacy_dispatch_idle_sleep_ms{25};
 constexpr int k_uint16_max{65535};
 constexpr long long k_uint32_max{4294967295LL};
 constexpr std::string_view k_publishCorsMethods{"POST, PUT, OPTIONS"};
@@ -458,6 +460,9 @@ struct HttpMqttInterfaceClientComponent::Impl {
 
     std::mutex legacyListenerMutex{};
     std::unordered_map<std::string, LegacyListenerEndpoint> legacyListenerBySendToken{};
+    std::unordered_map<std::string, std::string> receiveTokenBySendToken{};
+    bool legacyDispatchStopRequested{false};
+    std::thread legacyDispatchThread{};
 };
 
 HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(HttpMqttInterfaceClientConfig configInput)
@@ -482,13 +487,18 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                       [this](const httplib::Request& request, httplib::Response& response) {
                           logIncomingPublishRequest(request, k_publishEndpoint);
                           try {
+                              const HttpMqttHeaders headers = collectHeaders(request);
                               const HttpMqttHeaders fields = collectFields(request);
+                              HttpMqttHeaders compatibilityFields = headers;
+                              for (const auto& [fieldName, fieldValue] : fields) {
+                                  compatibilityFields[fieldName] = fieldValue;
+                              }
                               const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
                               const HttpMqttPublishCompatibilityRequest compatibilityRequest{
                                   .method = request.method,
                                   .endpoint = std::string{k_publishEndpoint},
-                                  .headers = collectHeaders(request),
-                                  .fields = fields,
+                                  .headers = headers,
+                                  .fields = compatibilityFields,
                                   .body = request.body,
                                   .token = resolveToken(request, fields, jsonBody),
                               };
@@ -520,21 +530,6 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                                               };
                                           }
 
-                                          std::optional<LegacyListenerEndpoint> legacyEndpoint{};
-                                          {
-                                              std::lock_guard<std::mutex> lock{impl_->legacyListenerMutex};
-                                              if (const auto entry = impl_->legacyListenerBySendToken.find(sessionToken);
-                                                  entry != impl_->legacyListenerBySendToken.end()) {
-                                                  legacyEndpoint = entry->second;
-                                              }
-                                          }
-                                          if (legacyEndpoint.has_value()) {
-                                              const bool forwarded = forwardLegacyListenerPublish(
-                                                  *legacyEndpoint,
-                                                  mappedMessage,
-                                                  downstreamRequest.headers);
-                                              (void)forwarded;
-                                          }
                                       } else {
                                           PublishResult publishResult{};
                                           {
@@ -635,6 +630,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                                       .host = *legacyListenerHost,
                                       .port = *legacyListenerPort,
                                   };
+                                  impl_->receiveTokenBySendToken[tokens.sendToken] = tokens.receiveToken;
                               }
                           }
 
@@ -798,6 +794,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           {
                               std::lock_guard<std::mutex> lock{impl_->legacyListenerMutex};
                               impl_->legacyListenerBySendToken.erase(resolvedToken);
+                              impl_->receiveTokenBySendToken.erase(resolvedToken);
                           }
 
                           HttpMqttHeaders headers = collectHeaders(request);
@@ -879,13 +876,18 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                                                 const std::string_view endpoint) {
         logIncomingPublishRequest(request, endpoint);
         try {
+            const HttpMqttHeaders headers = collectHeaders(request);
             const HttpMqttHeaders fields = collectFields(request);
+            HttpMqttHeaders compatibilityFields = headers;
+            for (const auto& [fieldName, fieldValue] : fields) {
+                compatibilityFields[fieldName] = fieldValue;
+            }
             const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
             const HttpMqttPublishCompatibilityRequest compatibilityRequest{
                 .method = request.method,
                 .endpoint = std::string{endpoint},
-                .headers = collectHeaders(request),
-                .fields = fields,
+                .headers = headers,
+                .fields = compatibilityFields,
                 .body = request.body,
                 .token = resolveToken(request, fields, jsonBody),
             };
@@ -917,21 +919,6 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                             };
                         }
 
-                        std::optional<LegacyListenerEndpoint> legacyEndpoint{};
-                        {
-                            std::lock_guard<std::mutex> lock{impl_->legacyListenerMutex};
-                            if (const auto entry = impl_->legacyListenerBySendToken.find(sessionToken);
-                                entry != impl_->legacyListenerBySendToken.end()) {
-                                legacyEndpoint = entry->second;
-                            }
-                        }
-                        if (legacyEndpoint.has_value()) {
-                            const bool forwarded = forwardLegacyListenerPublish(
-                                *legacyEndpoint,
-                                mappedMessage,
-                                downstreamRequest.headers);
-                            (void)forwarded;
-                        }
                     } else {
                         PublishResult publishResult{};
                         {
@@ -1046,6 +1033,7 @@ void HttpMqttInterfaceClientComponent::handleMessage(const Message& /*message*/)
     // No inbound topic handling required for this HTTP->MQTT forwarding component.
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void HttpMqttInterfaceClientComponent::run() {
     std::unique_lock<std::mutex> lifecycleLock{impl_->lifecycleMutex};
     if (impl_->running) {
@@ -1109,12 +1097,73 @@ void HttpMqttInterfaceClientComponent::run() {
             "http listener start failed",
         };
     }
+
+    {
+        std::lock_guard<std::mutex> lock{impl_->legacyListenerMutex};
+        impl_->legacyDispatchStopRequested = false;
+    }
+
+    impl_->legacyDispatchThread = std::thread([this]() {
+        while (true) {
+            std::vector<std::tuple<std::string, std::string, LegacyListenerEndpoint>> snapshots{};
+            {
+                std::lock_guard<std::mutex> lock{impl_->legacyListenerMutex};
+                if (impl_->legacyDispatchStopRequested) {
+                    break;
+                }
+
+                snapshots.reserve(impl_->legacyListenerBySendToken.size());
+                for (const auto& [sendToken, endpoint] : impl_->legacyListenerBySendToken) {
+                    const auto receiveTokenIt = impl_->receiveTokenBySendToken.find(sendToken);
+                    if (receiveTokenIt == impl_->receiveTokenBySendToken.end()) {
+                        continue;
+                    }
+                    snapshots.emplace_back(sendToken, receiveTokenIt->second, endpoint);
+                }
+            }
+
+            if (snapshots.empty()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds{k_legacy_dispatch_idle_sleep_ms});
+                continue;
+            }
+
+            for (const auto& snapshot : snapshots) {
+                const auto& receiveToken = std::get<1>(snapshot);
+                const auto& endpoint = std::get<2>(snapshot);
+
+                std::optional<Message> receivedMessage{};
+                std::string receiveError{};
+                if (!impl_->sessionManager.receive(receiveToken, receivedMessage, receiveError)) {
+                    continue;
+                }
+
+                if (!receivedMessage.has_value()) {
+                    continue;
+                }
+
+                const bool forwarded = forwardLegacyListenerPublish(
+                    endpoint,
+                    *receivedMessage,
+                    HttpMqttHeaders{});
+                (void)forwarded;
+            }
+        }
+    });
 }
 
 void HttpMqttInterfaceClientComponent::close() {
     {
         std::lock_guard<std::mutex> lock{impl_->lifecycleMutex};
         impl_->stopRequested = true;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock{impl_->legacyListenerMutex};
+        impl_->legacyDispatchStopRequested = true;
+    }
+
+    if (impl_->legacyDispatchThread.joinable()) {
+        impl_->legacyDispatchThread.join();
     }
 
     impl_->server.stop();

@@ -50,6 +50,10 @@ export class Callbacks {
         this.callbacks[normalized].push(callback);
     }
 
+    hasCallback(event: string): boolean {
+        return event.toLowerCase() in this.callbacks;
+    }
+
     invokeCallback(event: string, ...args: any[]): any {
         const normalized = event.toLowerCase();
         if (!(normalized in this.callbacks)) {

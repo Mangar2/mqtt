@@ -165,10 +165,10 @@ def _prepare_node_modules(output_dir: Path) -> None:
     shutil.copy2(checkinput_source, checkinput_dir / "index.js")
 
 
-def _run_typescript_flow(http_host: str, http_port: int, output_dir: Path) -> dict:
-    candidates = sorted(output_dir.rglob("flow_runner.js"))
+def _run_typescript_flow(http_host: str, http_port: int, output_dir: Path, runner_name: str) -> dict:
+    candidates = sorted(output_dir.rglob(runner_name))
     if len(candidates) != 1:
-        raise RuntimeError(f"compiled flow runner missing or ambiguous under {output_dir}")
+        raise RuntimeError(f"compiled TypeScript runner '{runner_name}' missing or ambiguous under {output_dir}")
     runner_js = candidates[0]
 
     output = _run_or_raise(
@@ -176,6 +176,15 @@ def _run_typescript_flow(http_host: str, http_port: int, output_dir: Path) -> di
         "run original TypeScript HTTP MQTT flow",
         cwd=output_dir,
     )
+
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    for candidate in reversed(lines):
+        if not candidate.startswith("{"):
+            continue
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
 
     try:
         return json.loads(output.strip() or "{}")
@@ -233,7 +242,7 @@ def run_typescript_full_flow_against_http_mqtt_service(config) -> tuple[bool, st
 
         _compile_typescript_runner(ts_output_dir)
         _prepare_node_modules(ts_output_dir)
-        flow_result = _run_typescript_flow("127.0.0.1", http_port, ts_output_dir)
+        flow_result = _run_typescript_flow("127.0.0.1", http_port, ts_output_dir, "flow_runner.js")
 
         if flow_result.get("ok") is not True:
             return False, f"TypeScript flow result is not ok: {flow_result}"
@@ -265,10 +274,107 @@ def run_typescript_full_flow_against_http_mqtt_service(config) -> tuple[bool, st
             shutil.rmtree(working_dir, ignore_errors=True)
 
 
+def run_typescript_two_client_cross_flow_against_http_mqtt_service(config) -> tuple[bool, str]:
+    broker_process = None
+    interface_process = None
+    working_dir: Path | None = None
+
+    broker_port = _find_free_port()
+    http_port = _find_free_port()
+
+    try:
+        working_dir = Path(tempfile.mkdtemp(prefix="yaha-http-mqtt-ts-it-two-clients-"))
+        ts_output_dir = working_dir / "tsdist"
+
+        broker_overrides = {
+            "network.mqtt_port": broker_port,
+            "network.ws_port": 0,
+            "broker.allow_anonymous": True,
+        }
+        broker_process = start_broker(broker_overrides)
+        broker_host = resolve_target_host("127.0.0.1")
+
+        _run_or_raise(
+            ["cmake", "--build", "--preset", "release", "--target", "yahahttpmqttinterfaceclient"],
+            "build yahahttpmqttinterfaceclient",
+            cwd=_PROJECT_ROOT,
+        )
+        if not _HTTP_INTERFACE_BINARY.exists():
+            return False, f"http interface binary missing: {_HTTP_INTERFACE_BINARY}"
+
+        ini_path = working_dir / "http_interface.ini"
+        _write_http_interface_ini(
+            ini_path,
+            broker_host=broker_host,
+            broker_port=broker_port,
+            listener_port=http_port,
+        )
+
+        interface_process = subprocess.Popen(
+            [str(_HTTP_INTERFACE_BINARY), str(ini_path)],
+            cwd=str(_PROJECT_ROOT),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+
+        _wait_for_http_health("127.0.0.1", http_port, timeout_seconds=max(2.0, config.timeout_seconds))
+        if interface_process.poll() is not None:
+            return False, "yahahttpmqttinterfaceclient exited before TypeScript two-client flow started"
+
+        _compile_typescript_runner(ts_output_dir)
+        _prepare_node_modules(ts_output_dir)
+        flow_result = _run_typescript_flow(
+            "127.0.0.1",
+            http_port,
+            ts_output_dir,
+            "two_clients_cross_flow_runner.js",
+        )
+
+        if flow_result.get("ok") is not True:
+            return False, f"TypeScript two-client flow result is not ok: {flow_result}"
+
+        client_a_payloads = set(flow_result.get("clientA", {}).get("receivedPayloads", []))
+        client_b_payloads = set(flow_result.get("clientB", {}).get("receivedPayloads", []))
+
+        if "from-b" not in client_a_payloads:
+            return False, f"client A did not receive expected payload from client B: {sorted(client_a_payloads)}"
+        if "from-a" not in client_b_payloads:
+            return False, f"client B did not receive expected payload from client A: {sorted(client_b_payloads)}"
+        if "from-a" in client_a_payloads:
+            return False, f"client A received its own payload unexpectedly: {sorted(client_a_payloads)}"
+        if "from-b" in client_b_payloads:
+            return False, f"client B received its own payload unexpectedly: {sorted(client_b_payloads)}"
+
+        return True, (
+            "TypeScript two-client cross flow completed successfully against YAHA HTTP MQTT service "
+            f"(clientA_received={flow_result.get('clientA', {}).get('receivedCount', 0)}, "
+            f"clientB_received={flow_result.get('clientB', {}).get('receivedCount', 0)})"
+        )
+    except Exception as error:
+        return False, f"TypeScript two-client compatibility integration failed: {error}"
+    finally:
+        if interface_process is not None:
+            interface_process.terminate()
+            try:
+                interface_process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                interface_process.kill()
+                interface_process.wait(timeout=3)
+        stop_broker(broker_process)
+        if working_dir is not None:
+            shutil.rmtree(working_dir, ignore_errors=True)
+
+
 TEST_CASES = [
     {
         "name": "yaha/http_mqtt_interface_client/typescript_full_flow",
         "description": "Original TypeScript client flow (connect/subscribe/publish/ping/unsubscribe/disconnect) against broker-backed HTTP MQTT service",
         "run": run_typescript_full_flow_against_http_mqtt_service,
-    }
+    },
+    {
+        "name": "yaha/http_mqtt_interface_client/typescript_two_clients_cross_flow",
+        "description": "Two original TypeScript compatibility clients exchange messages over YAHA HTTP MQTT service and only receive peer messages",
+        "run": run_typescript_two_client_cross_flow_against_http_mqtt_service,
+    },
 ]
