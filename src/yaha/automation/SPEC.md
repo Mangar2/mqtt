@@ -221,7 +221,15 @@ Sun-time calculation behavior:
   - astronomical: `108`
 
 Error behavior:
-- Throws `std::runtime_error` when a sun event is undefined for date/coordinates.
+- Twilight events (`/civildawn`, `/nauticaldawn`, `/astronomicaldawn`,
+  `/civildusk`, `/nauticaldusk`, `/astronomicaldusk`) use fallback behavior
+  when undefined at the configured date/coordinates:
+  dawn events fall back to `/sunrise`, dusk events fall back to `/sunset`.
+- Throws `std::runtime_error` when required sunrise/sunset events are undefined
+  for date/coordinates.
+- Error text includes event name and root-cause context (`cause`, `cosHourAngle`,
+  zenith, latitude/longitude, sunrise/sunset branch, and UTC date) so runtime
+  logs can explain why the sun-event crossing was not solvable.
 
 Expression time semantics:
 - When expression evaluation converts a `std::chrono::system_clock::time_point`

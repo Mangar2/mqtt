@@ -34,6 +34,15 @@ struct RuleValidationResult {
     std::vector<std::string> errors;
 };
 
+void applyBaseInternalVariables(
+    ExpressionEvaluator::VariableMap* variableMap,
+    const std::chrono::system_clock::time_point& evaluationTime) {
+    (*variableMap)["/time"] = evaluationTime;
+    const auto dayPoint = std::chrono::floor<std::chrono::days>(evaluationTime);
+    const std::chrono::weekday weekdayValue{dayPoint};
+    (*variableMap)["/weekday"] = static_cast<double>(weekdayValue.c_encoding());
+}
+
 [[nodiscard]] bool keyPathAffectsRulesRoot(
     const std::string& changedKeyPath,
     const std::string& rulesRootPath) {
@@ -413,6 +422,7 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
     } else {
         automation_trace_format::appendTraceEntry(&traceEntries, "rule: " + resolvedRulePath);
         const auto evaluationTime = std::chrono::system_clock::now();
+        applyBaseInternalVariables(&variablesSnapshot, evaluationTime);
         try {
             const InternalVariables internalVariables{
                 InternalVariables::GeoCoordinates{.longitude = config_.longitude, .latitude = config_.latitude}};
@@ -426,6 +436,10 @@ void AutomationClientComponent::handleDebugMessage(const Message& message) {
                         variableValue);
                 }
             }
+        } catch (const std::exception& exceptionValue) {
+            automation_trace_format::appendTraceEntry(
+                &traceEntries,
+                "error: internal variable calculation failed: " + std::string{exceptionValue.what()});
         } catch (...) {
             automation_trace_format::appendTraceEntry(&traceEntries, "error: internal variable calculation failed");
         }
@@ -533,6 +547,7 @@ void AutomationClientComponent::evaluateAndPublishRules() {
     }
 
     const auto evaluationTime = std::chrono::system_clock::now();
+    applyBaseInternalVariables(&variablesSnapshot, evaluationTime);
 
     try {
         const InternalVariables internalVariables{
@@ -546,6 +561,11 @@ void AutomationClientComponent::evaluateAndPublishRules() {
                     variableValue);
             }
         }
+    } catch (const std::exception& exceptionValue) {
+        std::cerr << "automation_client[error] op=internal_variables reason=calculation_failed"
+              << " detail=\"" << escapeJsonString(exceptionValue.what()) << "\""
+              << '\n'
+              << std::flush;
     } catch (...) {
         std::cerr << "automation_client[error] op=internal_variables reason=calculation_failed"
               << '\n'

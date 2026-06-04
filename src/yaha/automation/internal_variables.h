@@ -3,6 +3,7 @@
 #include <chrono>
 #include <map>
 #include <string>
+#include <string_view>
 #include <variant>
 
 namespace yaha {
@@ -49,7 +50,8 @@ private:
         const TimePoint& date,
         const GeoCoordinates& coordinates,
         double zenithDegrees,
-        bool sunriseEvent);
+        bool sunriseEvent,
+        std::string_view eventName);
 
     [[nodiscard]] static double weekdayIndex(const TimePoint& date);
 

@@ -130,3 +130,7 @@ Unit tests for phase-1 to phase-4 serial_device parity contracts:
 30. serial_device_runtime_logs_publish_failures_for_missing_and_failed_callbacks
 - Scenario: process one serial reply without publish callback and one with callback returning explicit failure.
 - Expected: stderr contains structured `event=publish_failed` entries with `category=callback_missing` and failed callback reason payload.
+
+31. serial_device_runtime_internal_trace_logs_keepalive_and_status_reply_flow
+- Scenario: with `trace=internal`, run keep-alive loop and feed one serial status reply frame `{S,R,K,V}`.
+- Expected: stdout contains legacy-style trace lines for keep-alive send (`at -> serial`), raw serial data (`data: ...`), and parsed serial message (`serial -> ...`); status reply is mapped to outbound MQTT publish with expected topic/value/reason/qos.

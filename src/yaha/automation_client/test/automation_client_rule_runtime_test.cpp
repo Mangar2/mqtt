@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <iostream>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -20,6 +22,10 @@ constexpr int k_wait_sleep_ms{10};
 constexpr int k_http_ok_status{200};
 constexpr int k_http_timeout_microseconds{500000};
 constexpr int k_gate_delay_milliseconds{60};
+constexpr double k_polar_latitude_degrees{90.0};
+constexpr double k_berlin_longitude_degrees{13.4050};
+constexpr double k_central_europe_latitude_degrees{49.912};
+constexpr double k_central_europe_longitude_degrees{8.205};
 
 [[nodiscard]] std::uint16_t reserveFreeLocalPort() {
     httplib::Server probeServer;
@@ -276,6 +282,92 @@ TEST_CASE("automation_component_iso_time_value_does_not_bypass_cooldown", "[auto
         published.end(),
         [](const yaha::Message& message) {
             return message.topic() == "house/time/set";
+        }));
+    REQUIRE(outputCount == 1U);
+
+    component.close();
+}
+
+TEST_CASE("automation_component_time_check_still_works_when_sun_events_are_undefined", "[automation_client]") {
+    const std::uint16_t portValue = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{portValue};
+    fileStore.setRulesJson(
+        R"({"rules":{"timeRule":{"topic":"house/light/set","check":"\"/time\" >= \"00:00\"","value":"on"}}})");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = portValue;
+    config.latitude = k_polar_latitude_degrees;
+    config.longitude = k_berlin_longitude_degrees;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    std::ostringstream capturedError;
+    std::streambuf* previousStderrBuffer = std::cerr.rdbuf(capturedError.rdbuf());
+    component.handleMessage(yaha::Message{"house/event/trigger", std::string{"1"}, yaha::Qos::AtLeastOnce, false});
+    std::cerr.rdbuf(previousStderrBuffer);
+
+    const std::string errorOutput = capturedError.str();
+    REQUIRE(errorOutput.find("op=internal_variables reason=calculation_failed") != std::string::npos);
+    REQUIRE(errorOutput.find("detail=\"sun event calculation failed") != std::string::npos);
+    REQUIRE(errorOutput.find("cause=") != std::string::npos);
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    const auto outputCount = static_cast<std::size_t>(std::count_if(
+        published.begin(),
+        published.end(),
+        [](const yaha::Message& message) {
+            return message.topic() == "house/light/set";
+        }));
+    REQUIRE(outputCount == 1U);
+
+    component.close();
+}
+
+TEST_CASE("automation_component_does_not_log_internal_variable_error_for_central_europe_summer", "[automation_client]") {
+    const std::uint16_t portValue = reserveFreeLocalPort();
+    FileStoreMockServer fileStore{portValue};
+    fileStore.setRulesJson(
+        R"({"rules":{"timeRule":{"topic":"house/light/set","check":"\"/time\" >= \"00:00\"","value":"on"}}})");
+
+    yaha::AutomationClientConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = portValue;
+    config.latitude = k_central_europe_latitude_degrees;
+    config.longitude = k_central_europe_longitude_degrees;
+
+    yaha::AutomationClientComponent component{config};
+    component.run();
+
+    std::mutex publishMutex{};
+    std::vector<yaha::Message> published{};
+    component.setPublishCallback([&publishMutex, &published](const yaha::Message& message) {
+        std::lock_guard<std::mutex> lock{publishMutex};
+        published.push_back(message.clone());
+    });
+
+    std::ostringstream capturedError;
+    std::streambuf* previousStderrBuffer = std::cerr.rdbuf(capturedError.rdbuf());
+    component.handleMessage(yaha::Message{"house/event/trigger", std::string{"1"}, yaha::Qos::AtLeastOnce, false});
+    std::cerr.rdbuf(previousStderrBuffer);
+
+    const std::string errorOutput = capturedError.str();
+    REQUIRE(errorOutput.find("op=internal_variables reason=calculation_failed") == std::string::npos);
+
+    std::lock_guard<std::mutex> lock{publishMutex};
+    const auto outputCount = static_cast<std::size_t>(std::count_if(
+        published.begin(),
+        published.end(),
+        [](const yaha::Message& message) {
+            return message.topic() == "house/light/set";
         }));
     REQUIRE(outputCount == 1U);
 

@@ -13,6 +13,7 @@
 #include <optional>
 #include <ranges>
 #include <sstream>
+#include <ctime>
 #include <string_view>
 #include <utility>
 
@@ -24,6 +25,7 @@ constexpr std::uint32_t k_open_retry_count{10U};
 constexpr std::chrono::milliseconds k_open_retry_delay{15000};
 constexpr std::chrono::milliseconds k_send_queue_spacing{100};
 constexpr double k_integer_epsilon{1e-9};
+constexpr std::size_t k_trace_time_buffer_size{16U};
 
 [[nodiscard]] bool valueEquals(const Value& leftValue, const Value& rightValue) {
     if (leftValue.index() != rightValue.index()) {
@@ -50,6 +52,21 @@ constexpr double k_integer_epsilon{1e-9};
     }
 
     return outputMessage;
+}
+
+[[nodiscard]] std::string traceTimestampNow() {
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t nowTime = std::chrono::system_clock::to_time_t(now);
+    std::tm localTime{};
+    localtime_r(&nowTime, &localTime);
+
+    std::array<char, k_trace_time_buffer_size> buffer{};
+    const std::size_t sizeValue = std::strftime(buffer.data(), buffer.size(), "%H:%M:%S", &localTime);
+    if (sizeValue == 0U) {
+        return "";
+    }
+
+    return std::string{buffer.data(), sizeValue};
 }
 
 } // namespace
@@ -276,6 +293,7 @@ void SerialDeviceComponent::runSendQueueLoop() {
 
 void SerialDeviceComponent::processReceivedSerialData(const std::vector<std::uint8_t>& chunkBytes) {
     const std::string chunkText{chunkBytes.begin(), chunkBytes.end()};
+    traceRawSerialDataIfEnabled(chunkText);
 
     if (const auto firstMessage = parser_.parseChunk(chunkText); firstMessage.has_value()) {
         processParsedSerialMessage(firstMessage.value());
@@ -291,6 +309,8 @@ void SerialDeviceComponent::processReceivedSerialData(const std::vector<std::uin
 }
 
 void SerialDeviceComponent::processParsedSerialMessage(const SerialDeviceMessage& serialMessage) {
+    traceParsedSerialMessageIfEnabled(serialMessage);
+
     try {
         const std::vector<Message> mqttMessages = mapSerialMessageToMqttMessages(config_, serialMessage);
         publishMessages(mqttMessages);
@@ -382,6 +402,7 @@ void SerialDeviceComponent::sendDataToSerialWithRetry(const std::string& serialS
     std::uint32_t retry = k_send_retry_count;
     while (retry > 0U) {
         try {
+            traceSendPayloadIfEnabled(serialString);
             transport_->sendData(serialString);
             retry = 0U;
         } catch (const std::exception&) {
@@ -392,6 +413,36 @@ void SerialDeviceComponent::sendDataToSerialWithRetry(const std::string& serialS
             retry -= 1U;
         }
     }
+}
+
+void SerialDeviceComponent::traceRawSerialDataIfEnabled(const std::string& serialData) const {
+    if (serialData.empty()) {
+        return;
+    }
+    if (config_.traceLevel != "internal") {
+        return;
+    }
+
+    std::cout << traceTimestampNow() << " data: " << serialData << '\n' << std::flush;
+}
+
+void SerialDeviceComponent::traceParsedSerialMessageIfEnabled(const SerialDeviceMessage& serialMessage) const {
+    if (config_.traceLevel != "internal" && config_.traceLevel != "messages") {
+        return;
+    }
+
+    std::cout << traceTimestampNow() << " serial -> " << serialMessage.toString() << '\n' << std::flush;
+}
+
+void SerialDeviceComponent::traceSendPayloadIfEnabled(const std::string& serialString) const {
+    if (serialString.empty()) {
+        return;
+    }
+    if (config_.traceLevel != "internal") {
+        return;
+    }
+
+    std::cout << traceTimestampNow() << " " << serialString << " -> serial" << '\n' << std::flush;
 }
 
 void SerialDeviceComponent::openSerialInterface() {

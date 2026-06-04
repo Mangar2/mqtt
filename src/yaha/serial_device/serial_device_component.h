@@ -148,6 +148,9 @@ private:
 
     void processReceivedSerialData(const std::vector<std::uint8_t>& chunkBytes);
     void processParsedSerialMessage(const SerialDeviceMessage& serialMessage);
+    void traceRawSerialDataIfEnabled(const std::string& serialData) const;
+    void traceParsedSerialMessageIfEnabled(const SerialDeviceMessage& serialMessage) const;
+    void traceSendPayloadIfEnabled(const std::string& serialString) const;
 
     void publishMessages(const std::vector<Message>& mqttMessages);
 

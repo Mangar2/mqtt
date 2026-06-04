@@ -91,4 +91,36 @@ TEST_CASE("internal_variables_time_value_matches_input_date", "[yaha][automation
     REQUIRE(asTime(map.at("/time")) == date);
 }
 
+TEST_CASE("internal_variables_reports_detailed_reason_when_sun_event_is_undefined", "[yaha][automation]") {
+    const yaha::InternalVariables variables{{.longitude = 13.4050, .latitude = 90.0}};
+    const auto date = makeUtcDate({.year = 2026, .month = 6, .day = 2, .hour = 12, .minute = 0, .second = 0});
+
+    try {
+        (void)variables.calculate(date);
+        FAIL("expected sun-event calculation to fail for polar coordinates");
+    } catch (const std::runtime_error& exceptionValue) {
+        const std::string errorText = exceptionValue.what();
+        REQUIRE(errorText.find("sun event calculation failed") != std::string::npos);
+        REQUIRE(errorText.find("event=/") != std::string::npos);
+        REQUIRE(errorText.find("cause=") != std::string::npos);
+        REQUIRE(errorText.find("cosHourAngle=") != std::string::npos);
+        REQUIRE(errorText.find("outside [-1") != std::string::npos);
+        REQUIRE(errorText.find("latitude=90") != std::string::npos);
+        REQUIRE(errorText.find("longitude=13.405") != std::string::npos);
+        REQUIRE(errorText.find("utcDate=") != std::string::npos);
+    }
+}
+
+TEST_CASE("internal_variables_keeps_twilight_keys_defined_for_central_europe_summer", "[yaha][automation]") {
+    const yaha::InternalVariables variables{{.longitude = 8.205, .latitude = 49.912}};
+    const auto date = makeUtcDate({.year = 2026, .month = 6, .day = 2, .hour = 12, .minute = 0, .second = 0});
+
+    const yaha::InternalVariables::VariableMap map = variables.calculate(date);
+
+    REQUIRE(map.contains("/sunrise"));
+    REQUIRE(map.contains("/sunset"));
+    REQUIRE(map.contains("/astronomicaldawn"));
+    REQUIRE(map.contains("/astronomicaldusk"));
+}
+
 // NOLINTEND(readability-function-cognitive-complexity)

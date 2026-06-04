@@ -188,6 +188,10 @@ Behavior:
   - special control topic `$SYS/serialdevice/trace/set` updates runtime trace level
   - normal messages are normalized (`/set` stripped), mapped, serialized, and queued for sending
 - receive path parses serial frames, maps to MQTT messages, and publishes via callback with configured QoS.
+- trace output parity:
+  - `internal`: raw serial chunk `<HH:MM:SS> data: <chunk>`
+  - `messages|internal`: parsed serial message `<HH:MM:SS> serial -> <SerialDeviceMessage::toString()>`
+  - `internal`: outgoing serial payload `<HH:MM:SS> <payload> -> serial` (includes keep-alive `at`)
 - message-flow logging uses shared YAHA message-log service format (`component="serial_device"`) and is controlled by `logIncomingMessages` / `logOutgoingMessages` / `logReason`.
 - publish callback failures emit structured `event=publish_failed` logs with category/reason metadata.
 

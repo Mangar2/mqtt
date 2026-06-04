@@ -414,6 +414,57 @@ TEST_CASE("serial_device_runtime_logs_incoming_and_outgoing_messages_in_yaha_for
     REQUIRE(logText.find("component=\"serial_device\" direction=\"outgoing\" topic=\"demo/topic\"") != std::string::npos);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("serial_device_runtime_internal_trace_logs_keepalive_and_status_reply_flow", "[serial_device][runtime]") {
+    yaha::SerialDeviceConfig config = makeRuntimeConfig();
+    config.traceLevel = "internal";
+    config.interfaces.clear();
+
+    yaha::SerialDeviceInterfaceDefinition serialDefinition{};
+    serialDefinition.commandMap["a"] = "status/state";
+    serialDefinition.receiverMap["demo/"] = "main";
+    serialDefinition.receiverMapProvided = true;
+    config.interfaces["serial"] = serialDefinition;
+
+    auto transport = std::make_shared<FakeSerialTransport>();
+    std::vector<yaha::Message> published{};
+    yaha::SerialDeviceComponent component{config, transport, [](std::chrono::milliseconds) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }};
+    component.setPublishCallback([&published](const yaha::Message& messageValue) {
+        published.push_back(messageValue.clone());
+        return yaha::PublishResult::ok();
+    });
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    component.run();
+    transport->emit(R"({"S":"main","R":"gateway","K":"a","V":1})");
+    std::this_thread::sleep_for(k_short_wait);
+    component.close();
+
+    std::cout.rdbuf(previousBuffer);
+
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find(" at -> serial") != std::string::npos);
+    REQUIRE(logText.find("data: {\"S\":\"main\",\"R\":\"gateway\",\"K\":\"a\",\"V\":1}") != std::string::npos);
+    REQUIRE(logText.find("serial -> Interface: serial Sender: main Receiver: gateway Command: a Value: 1") != std::string::npos);
+
+    REQUIRE_FALSE(published.empty());
+    const auto publishedIterator = std::ranges::find_if(published, [](const yaha::Message& messageValue) {
+        return messageValue.topic() == "demo/status/state";
+    });
+    REQUIRE(publishedIterator != published.end());
+    CHECK(std::holds_alternative<double>(publishedIterator->value()));
+    if (std::holds_alternative<double>(publishedIterator->value())) {
+        CHECK(std::get<double>(publishedIterator->value()) == 1.0);
+    }
+    CHECK(static_cast<std::uint32_t>(publishedIterator->qos()) == 1U);
+    REQUIRE_FALSE(publishedIterator->reason().empty());
+    CHECK(publishedIterator->reason().front().message == "received from arduino");
+}
+
 TEST_CASE("serial_device_runtime_logs_publish_failures_for_missing_and_failed_callbacks", "[serial_device][runtime]") {
     yaha::SerialDeviceConfig config = makeRuntimeConfig();
     yaha::SerialDeviceInterfaceDefinition fs20Definition{};

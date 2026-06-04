@@ -91,6 +91,7 @@ INI error handling:
     - non-motion events as one-cycle topic set
   - Incoming domain messages with payload value `0` are ignored for event-history insertion.
   - It builds evaluation context from runtime variables plus internal variables (`/time`, `/weekday`, sun/twilight).
+  - It always pre-populates `/time` and `/weekday` from current evaluation timestamp before sun/twilight calculation, so rules using `/time` never fail due to sun-event calculation errors.
   - It processes complete rule tree with runtime gates before rule execution:
     - `active` boolean skip gate
     - weekday gate (`weekdays`, evaluated in local calendar weekday)
@@ -146,6 +147,12 @@ INI error handling:
     rather than the emitted topic name when available.
   - Failed outbound sends are logged as shared structured outgoing lines with `event=publish_failed`, `category=<publish-failure-category>`, and escaped failure reason detail.
   - FileStore GET/POST failures and internal-variable calculation failures emit structured `automation_client[error]` lines.
+  - Internal-variable calculation failures include escaped exception detail text
+    (for example unresolved required sunrise/sunset cause context from
+    automation internal variable calculation).
+  - Undefined twilight-only conditions no longer emit this error path because
+    twilight events fall back to sunrise/sunset values inside automation
+    internal variable calculation.
 
 ## Files
 
