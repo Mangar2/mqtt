@@ -1,0 +1,1015 @@
+    1|       |#include "yaha/http_mqtt_interface_client/http_mqtt_interface_client_app.h"
+    2|       |
+    3|       |#include "yaha/error_handling/yaha_error.h"
+    4|       |#include "yaha/http_mqtt_interface/http_mqtt_interface_operations.h"
+    5|       |#include "yaha/message/message_log_service.h"
+    6|       |#include "yaha/message/message_payload_codec.h"
+    7|       |#include "yaha/mqtt_client/mqtt_client_config.h"
+    8|       |#include "yaha/mqtt_client/broker_transport.h"
+    9|       |#include "json/json_value.h"
+   10|       |
+   11|       |#include <httplib.h>
+   12|       |
+   13|       |#include <cstdint>
+   14|       |#include <condition_variable>
+   15|       |#include <iostream>
+   16|       |#include <map>
+   17|       |#include <mutex>
+   18|       |#include <optional>
+   19|       |#include <sstream>
+   20|       |#include <string>
+   21|       |#include <string_view>
+   22|       |#include <thread>
+   23|       |#include <utility>
+   24|       |
+   25|       |namespace yaha {
+   26|       |
+   27|       |namespace {
+   28|       |
+   29|       |constexpr std::string_view k_httpSection{"httpMqttInterface"};
+   30|       |constexpr std::string_view k_listenerHostKey{"listenerHost"};
+   31|       |constexpr std::string_view k_listenerPortKey{"listenerPort"};
+   32|       |constexpr std::string_view k_enablePublishPhpAliasKey{"enablePublishPhpAlias"};
+   33|       |constexpr std::string_view k_useLegacyPhpResponseKey{"useLegacyPhpResponse"};
+   34|       |constexpr std::string_view k_healthEndpoint{"/health"};
+   35|       |constexpr std::string_view k_publishEndpoint{"/publish"};
+   36|       |constexpr std::string_view k_publishPhpEndpoint{"/publish.php"};
+   37|       |constexpr std::string_view k_pubrelEndpoint{"/pubrel"};
+   38|       |constexpr std::string_view k_connectEndpoint{"/connect"};
+   39|       |constexpr std::string_view k_disconnectEndpoint{"/disconnect"};
+   40|       |constexpr std::string_view k_subscribeEndpoint{"/subscribe"};
+   41|       |constexpr std::string_view k_unsubscribeEndpoint{"/unsubscribe"};
+   42|       |constexpr std::string_view k_pingEndpoint{"/pingreq"};
+   43|       |constexpr std::string_view k_receiveEndpoint{"/receive"};
+   44|       |constexpr int k_httpStatusOk{200};
+   45|       |constexpr int k_httpStatusNoContent{204};
+   46|       |constexpr int k_httpStatusBadRequest{400};
+   47|       |constexpr int k_httpStatusInternalServerError{500};
+   48|       |constexpr int k_uint16_max{65535};
+   49|       |constexpr long long k_uint32_max{4294967295LL};
+   50|       |constexpr std::string_view k_publishCorsMethods{"POST, PUT, OPTIONS"};
+   51|       |constexpr std::string_view k_publishCorsHeaders{"Content-Type, Authorization, X-Requested-With"};
+   52|       |constexpr const char* k_error_code_broker_publish_failed{"HTTP_MQTT_BROKER_PUBLISH_FAILED"};
+   53|       |constexpr const char* k_error_code_listener_start_failed{"HTTP_MQTT_LISTENER_START_FAILED"};
+   54|       |
+   55|     12|[[nodiscard]] std::optional<std::string> buildBrokerForwardLogLine(const Message& message) {
+   56|     12|    constexpr MessageLogConfig k_log_config{
+   57|     12|        .enableIncoming = false,
+   58|     12|        .enableOutgoing = true,
+   59|     12|        .includeReasonChain = true,
+   60|     12|    };
+   61|       |
+   62|     12|    return buildMessageLogLine(
+   63|     12|        "http_mqtt_interface_client",
+   64|     12|        MessageLogDirection::Outgoing,
+   65|     12|        message,
+   66|     12|        k_log_config);
+   67|     12|}
+   68|       |
+   69|      4|[[nodiscard]] bool isBrokerNoAckError(const std::string_view errorText) {
+   70|      4|    return errorText.find("timed out waiting for PUBACK") != std::string_view::npos ||
+   71|      4|           errorText.find("timed out waiting for PUBREC") != std::string_view::npos ||
+   72|      4|           errorText.find("timed out waiting for PUBCOMP") != std::string_view::npos;
+   73|      4|}
+   74|       |
+   75|      8|void logBrokerForwardPublishAck(const Message& message) {
+   76|      8|    if (const auto line = buildBrokerForwardLogLine(message); line.has_value()) {
+   77|      8|        std::cout << *line << " event=broker_publish_ack" << '\n' << std::flush;
+   78|      8|    }
+   79|      8|}
+   80|       |
+   81|       |void logBrokerForwardPublishError(
+   82|       |    const Message& message,
+   83|      4|    const std::string_view errorText) {
+   84|      4|    if (const auto line = buildBrokerForwardLogLine(message); line.has_value()) {
+   85|      4|        std::cout << *line
+   86|      4|                  << " event=broker_publish_failed"
+   87|      4|                  << " error=\"" << escapeJsonString(errorText) << '\"';
+   88|      4|        if (isBrokerNoAckError(errorText)) {
+   89|      4|            std::cout << " detail=message_was_sent_but_broker_reported_no_ack";
+   90|      4|        }
+   91|      4|        std::cout << '\n' << std::flush;
+   92|      4|    }
+   93|      4|}
+   94|       |
+   95|      6|void logCompatibilityRequestFailure(const std::string_view endpoint, const std::string_view errorText) {
+   96|      6|    std::cerr << "http_mqtt_interface_client[error] publish_request_failed"
+   97|      6|              << " endpoint=" << endpoint
+   98|      6|              << " error=" << errorText
+   99|      6|              << '\n' << std::flush;
+  100|      6|}
+  101|       |
+  102|      0|void logCompatibilityInternalResultFailure(const std::string_view endpoint, const HttpMqttResult& result) {
+  103|      0|    std::ostringstream errorText{};
+  104|      0|    errorText << "compatibility_result_status=" << result.statusCode;
+  105|      0|    if (!result.payload.empty()) {
+  106|      0|        errorText << " payload=" << result.payload;
+  107|      0|    }
+  108|      0|    logCompatibilityRequestFailure(endpoint, errorText.str());
+  109|      0|}
+  110|       |
+  111|      6|[[nodiscard]] HttpMqttResult makeCompatibilityInternalErrorResult() {
+  112|      6|    HttpMqttResult result{};
+  113|      6|    result.statusCode = k_httpStatusInternalServerError;
+  114|      6|    result.headers["content-type"] = "application/json";
+  115|      6|    result.payload = R"({"error":"internal_error"})";
+  116|      6|    return result;
+  117|      6|}
+  118|       |
+  119|     37|void applyHttpMqttCorsHeaders(httplib::Response& response, const bool includeMaxAge) {
+  120|     37|    response.set_header("Access-Control-Allow-Origin", "*");
+  121|     37|    response.set_header("Access-Control-Allow-Methods", std::string{k_publishCorsMethods});
+  122|     37|    response.set_header("Access-Control-Allow-Headers", std::string{k_publishCorsHeaders});
+  123|     37|    if (includeMaxAge) {
+  124|      3|        response.set_header("Access-Control-Max-Age", "86400");
+  125|      3|    }
+  126|     37|}
+  127|       |
+  128|     34|void applyHttpMqttResult(const HttpMqttResult& result, httplib::Response& response) {
+  129|     34|    applyHttpMqttCorsHeaders(response, false);
+  130|     34|    response.status = result.statusCode;
+  131|    128|    for (const auto& [headerName, headerValue] : result.headers) {
+  132|    128|        response.set_header(headerName, headerValue);
+  133|    128|    }
+  134|     34|    response.set_content(result.payload, "application/json");
+  135|     34|}
+  136|       |
+  137|     14|void logIncomingPublishRequest(const httplib::Request& request, const std::string_view endpoint) {
+  138|     14|    std::cout << "http_mqtt_interface_client[in] method=" << request.method
+  139|     14|              << " endpoint=" << endpoint;
+  140|       |
+  141|     14|    const auto versionIterator = request.headers.find("version");
+  142|     14|    if (versionIterator != request.headers.end()) {
+  143|      1|        std::cout << " version=" << versionIterator->second;
+  144|      1|    }
+  145|       |
+  146|     14|    std::cout << '\n' << std::flush;
+  147|     14|}
+  148|       |
+  149|     24|HttpMqttHeaders collectHeaders(const httplib::Request& request) {
+  150|     24|    HttpMqttHeaders headers{};
+  151|    278|    for (const auto& [headerName, headerValue] : request.headers) {
+  152|    278|        headers[headerName] = headerValue;
+  153|    278|    }
+  154|       |
+  155|     24|    return headers;
+  156|     24|}
+  157|       |
+  158|     30|HttpMqttHeaders collectFields(const httplib::Request& request) {
+  159|     30|    HttpMqttHeaders fields{};
+  160|     31|    for (const auto& [fieldName, fieldValue] : request.params) {
+  161|     31|        fields[fieldName] = fieldValue;
+  162|     31|    }
+  163|       |
+  164|     30|    return fields;
+  165|     30|}
+  166|       |
+  167|     24|std::string resolveCompatibilityToken(const httplib::Request& request, const HttpMqttHeaders& fields) {
+  168|     24|    const auto tokenHeaderIterator = request.headers.find("token");
+  169|     24|    if (tokenHeaderIterator != request.headers.end()) {
+  170|      1|        return tokenHeaderIterator->second;
+  171|      1|    }
+  172|       |
+  173|     23|    const auto fieldIterator = fields.find("token");
+  174|     23|    if (fieldIterator != fields.end()) {
+  175|      9|        return fieldIterator->second;
+  176|      9|    }
+  177|       |
+  178|     14|    return "";
+  179|     23|}
+  180|       |
+  181|     18|[[nodiscard]] std::optional<mqtt::json::JsonValue> tryParseJsonBody(const httplib::Request& request) {
+  182|     18|    if (request.body.empty()) {
+  183|      0|        return std::nullopt;
+  184|      0|    }
+  185|     18|    return mqtt::json::JsonValue::try_parse(request.body);
+  186|     18|}
+  187|       |
+  188|       |[[nodiscard]] std::optional<std::string> tryReadStringField(
+  189|       |    const mqtt::json::JsonValue& value,
+  190|     31|    const std::string_view fieldName) {
+  191|     31|    if (!value.is_object() || !value.contains(fieldName)) {
+  192|      8|        return std::nullopt;
+  193|      8|    }
+  194|     23|    const auto& fieldValue = value.at(fieldName);
+  195|     23|    if (!fieldValue.is_string()) {
+  196|      0|        return std::nullopt;
+  197|      0|    }
+  198|     23|    return fieldValue.as_string();
+  199|     23|}
+  200|       |
+  201|       |[[nodiscard]] std::optional<std::uint16_t> tryReadUInt16Field(
+  202|       |    const mqtt::json::JsonValue& value,
+  203|      3|    const std::string_view fieldName) {
+  204|      3|    if (!value.is_object() || !value.contains(fieldName)) {
+  205|      3|        return std::nullopt;
+  206|      3|    }
+  207|      0|    const auto& fieldValue = value.at(fieldName);
+  208|      0|    if (!fieldValue.is_number()) {
+  209|      0|        return std::nullopt;
+  210|      0|    }
+  211|      0|    const auto numberValue = static_cast<int>(fieldValue.as_number());
+  212|      0|    if (numberValue < 0 || numberValue > k_uint16_max) {
+  213|      0|        return std::nullopt;
+  214|      0|    }
+  215|      0|    return static_cast<std::uint16_t>(numberValue);
+  216|      0|}
+  217|       |
+  218|       |[[nodiscard]] std::optional<std::uint32_t> tryReadUInt32Field(
+  219|       |    const mqtt::json::JsonValue& value,
+  220|      3|    const std::string_view fieldName) {
+  221|      3|    if (!value.is_object() || !value.contains(fieldName)) {
+  222|      3|        return std::nullopt;
+  223|      3|    }
+  224|      0|    const auto& fieldValue = value.at(fieldName);
+  225|      0|    if (!fieldValue.is_number()) {
+  226|      0|        return std::nullopt;
+  227|      0|    }
+  228|      0|    const auto numberValue = static_cast<long long>(fieldValue.as_number());
+  229|      0|    if (numberValue < 0 || numberValue > k_uint32_max) {
+  230|      0|        return std::nullopt;
+  231|      0|    }
+  232|      0|    return static_cast<std::uint32_t>(numberValue);
+  233|      0|}
+  234|       |
+  235|       |[[nodiscard]] std::optional<int> tryReadIntField(
+  236|       |    const mqtt::json::JsonValue& value,
+  237|      4|    const std::string_view fieldName) {
+  238|      4|    if (!value.is_object() || !value.contains(fieldName)) {
+  239|      0|        return std::nullopt;
+  240|      0|    }
+  241|      4|    const auto& fieldValue = value.at(fieldName);
+  242|      4|    if (!fieldValue.is_number()) {
+  243|      0|        return std::nullopt;
+  244|      0|    }
+  245|      4|    return static_cast<int>(fieldValue.as_number());
+  246|      4|}
+  247|       |
+  248|       |[[nodiscard]] std::string resolveToken(
+  249|       |    const httplib::Request& request,
+  250|       |    const HttpMqttHeaders& fields,
+  251|     12|    const std::optional<mqtt::json::JsonValue>& jsonBody) {
+  252|     12|    std::string tokenFromHeaders = resolveCompatibilityToken(request, fields);
+  253|     12|    if (!tokenFromHeaders.empty()) {
+  254|      0|        return tokenFromHeaders;
+  255|      0|    }
+  256|       |
+  257|     12|    if (jsonBody.has_value()) {
+  258|     12|        const auto tokenFromJson = tryReadStringField(*jsonBody, "token");
+  259|     12|        if (tokenFromJson.has_value()) {
+  260|      8|            return *tokenFromJson;
+  261|      8|        }
+  262|     12|    }
+  263|       |
+  264|      4|    return "";
+  265|     12|}
+  266|       |
+  267|       |[[nodiscard]] std::map<std::string, Qos> parseTopicsObject(
+  268|       |    const std::optional<mqtt::json::JsonValue>& jsonBody,
+  269|      6|    std::string& errorText) {
+  270|      6|    std::map<std::string, Qos> topics{};
+  271|      6|    errorText.clear();
+  272|       |
+  273|      6|    if (!jsonBody.has_value() || !jsonBody->is_object() || !jsonBody->contains("topics")) {
+  274|      1|        errorText = "missing topics object";
+  275|      1|        return topics;
+  276|      1|    }
+  277|       |
+  278|      5|    const auto& topicsValue = jsonBody->at("topics");
+  279|      5|    if (!topicsValue.is_object()) {
+  280|      0|        errorText = "topics must be object";
+  281|      0|        return topics;
+  282|      0|    }
+  283|       |
+  284|      5|    for (const auto& [topic, qosValue] : topicsValue.as_object()) {
+  285|      5|        if (!qosValue.is_number()) {
+  286|      0|            errorText = "topic qos must be numeric";
+  287|      0|            topics.clear();
+  288|      0|            return topics;
+  289|      0|        }
+  290|       |
+  291|      5|        const int qosNumber = static_cast<int>(qosValue.as_number());
+  292|      5|        if (qosNumber < 0 || qosNumber > 2) {
+  293|      0|            errorText = "topic qos out of range";
+  294|      0|            topics.clear();
+  295|      0|            return topics;
+  296|      0|        }
+  297|       |
+  298|      5|        topics[topic] = static_cast<Qos>(qosNumber);
+  299|      5|    }
+  300|       |
+  301|      5|    return topics;
+  302|      5|}
+  303|       |
+  304|      1|[[nodiscard]] mqtt::json::JsonValue messageValueToJson(const Value& value) {
+  305|      1|    if (std::holds_alternative<double>(value)) {
+  306|      0|        return mqtt::json::JsonValue{std::get<double>(value)};
+  307|      0|    }
+  308|      1|    return mqtt::json::JsonValue{std::get<std::string>(value)};
+  309|      1|}
+  310|       |
+  311|      1|[[nodiscard]] std::string buildReceivePayload(const Message& message) {
+  312|      1|    mqtt::json::JsonValue payload = mqtt::json::JsonValue::object();
+  313|      1|    payload["message"] = mqtt::json::JsonValue::object();
+  314|      1|    payload["message"]["topic"] = message.topic();
+  315|      1|    payload["message"]["value"] = messageValueToJson(message.value());
+  316|      1|    payload["message"]["qos"] = static_cast<double>(static_cast<int>(message.qos()));
+  317|      1|    payload["message"]["retain"] = message.retain();
+  318|      1|    payload["message"]["dup"] = message.dup();
+  319|       |
+  320|      1|    payload["message"]["reason"] = mqtt::json::JsonValue::array();
+  321|      1|    for (const auto& reasonEntry : message.reason()) {
+  322|      1|        mqtt::json::JsonValue reasonObject = mqtt::json::JsonValue::object();
+  323|      1|        reasonObject["message"] = reasonEntry.message;
+  324|      1|        reasonObject["timestamp"] = reasonEntry.timestamp;
+  325|      1|        payload["message"]["reason"].push_back(std::move(reasonObject));
+  326|      1|    }
+  327|       |
+  328|      1|    return payload.stringify();
+  329|      1|}
+  330|       |
+  331|     11|[[nodiscard]] HttpMqttResult makeJsonErrorResult(const int statusCode, const std::string_view errorCode) {
+  332|     11|    HttpMqttResult result{};
+  333|     11|    result.statusCode = statusCode;
+  334|     11|    result.headers["content-type"] = "application/json; charset=UTF-8";
+  335|     11|    result.headers["version"] = "1.0";
+  336|     11|    result.payload = std::string{R"({"error":")"} + std::string{errorCode} + R"("})";
+  337|     11|    return result;
+  338|     11|}
+  339|       |
+  340|      1|[[nodiscard]] HttpMqttResult makeNoContentResult(const std::string_view packetName = "") {
+  341|      1|    HttpMqttResult result{};
+  342|      1|    result.statusCode = k_httpStatusNoContent;
+  343|      1|    result.headers["content-type"] = "application/json; charset=UTF-8";
+  344|      1|    result.headers["version"] = "1.0";
+  345|      1|    if (!packetName.empty()) {
+  346|      1|        result.headers["packet"] = std::string{packetName};
+  347|      1|    }
+  348|      1|    result.payload.clear();
+  349|      1|    return result;
+  350|      1|}
+  351|       |
+  352|       |void logConfigFallbackWarning(
+  353|       |    const std::string_view serviceName,
+  354|       |    const std::string_view sectionName,
+  355|       |    const std::string_view keyName,
+  356|       |    const std::string& rawValue,
+  357|       |    const std::string& defaultValue,
+  358|      3|    const std::string& reasonText) {
+  359|      3|    std::cerr << serviceName << "[warn] config_fallback"
+  360|      3|              << " section=" << sectionName
+  361|      3|              << " key=" << keyName
+  362|      3|              << " value='" << rawValue << "'"
+  363|      3|              << " default='" << defaultValue << "'"
+  364|      3|              << " reason='" << reasonText << "'"
+  365|      3|              << '\n' << std::flush;
+  366|      3|}
+  367|       |
+  368|       |} // namespace
+  369|       |
+  370|       |struct HttpMqttInterfaceClientComponent::Impl {
+  371|       |    explicit Impl(
+  372|       |        HttpMqttInterfaceClientConfig configInput,
+  373|       |        HttpMqttSessionTransportFactory sessionTransportFactory)
+  374|     12|        : config(std::move(configInput))
+  375|     12|        , interfaces(makeHttpMqttInterfacesV1())
+  376|     12|        , sessionManager(config.mqttConfig, std::move(sessionTransportFactory))
+  377|     12|        , compatibilityConfig{
+  378|     12|            .enablePublishPhpAlias = config.enablePublishPhpAlias,
+  379|     12|            .responseMode = config.useLegacyPhpResponse
+  380|     12|                ? HttpMqttPublishCompatibilityResponseMode::LegacyPhp
+  381|     12|                : HttpMqttPublishCompatibilityResponseMode::Native,
+  382|     12|        } {}
+  383|       |
+  384|       |    HttpMqttInterfaceClientConfig config{};
+  385|       |    HttpMqttInterfaces interfaces;
+  386|       |    HttpMqttSessionManager sessionManager;
+  387|       |    HttpMqttPublishCompatibilityConfig compatibilityConfig{};
+  388|       |    httplib::Server server{};
+  389|       |
+  390|       |    std::mutex publishCallbackMutex{};
+  391|       |    PublishCallback publishCallback{};
+  392|       |
+  393|       |    std::mutex lifecycleMutex{};
+  394|       |    std::condition_variable startupCondition{};
+  395|       |    bool startupResultReady{false};
+  396|       |    bool startupSucceeded{false};
+  397|       |    std::string startupError{};
+  398|       |    bool stopRequested{false};
+  399|       |    bool running{false};
+  400|       |    std::thread serverThread{};
+  401|       |};
+  402|       |
+  403|       |HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(HttpMqttInterfaceClientConfig configInput)
+  404|      7|    : HttpMqttInterfaceClientComponent(
+  405|      7|        std::move(configInput),
+  406|      7|        []() {
+  407|      0|            return makeBrokerTransport();
+  408|      7|        }) {}
+  ------------------
+  | Unexecuted instantiation: _ZN4yaha32HttpMqttInterfaceClientComponentC2ENS_29HttpMqttInterfaceClientConfigE
+  ------------------
+  | _ZN4yaha32HttpMqttInterfaceClientComponentC1ENS_29HttpMqttInterfaceClientConfigE:
+  |  404|      7|    : HttpMqttInterfaceClientComponent(
+  |  405|      7|        std::move(configInput),
+  |  406|      7|        []() {
+  |  407|      7|            return makeBrokerTransport();
+  |  408|      7|        }) {}
+  ------------------
+  409|       |
+  410|       |// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+  411|       |HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
+  412|       |    HttpMqttInterfaceClientConfig configInput,
+  413|       |    HttpMqttSessionTransportFactory sessionTransportFactory)
+  414|     12|    : impl_(std::make_unique<Impl>(std::move(configInput), std::move(sessionTransportFactory))) {
+  415|     12|    impl_->server.Get(k_healthEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+  416|     11|        response.status = k_httpStatusOk;
+  417|     11|        response.set_content("ok", "text/plain");
+  418|     11|    });
+  419|       |
+  420|     12|    impl_->server.Put(k_publishEndpoint.data(),
+  421|     12|                      [this](const httplib::Request& request, httplib::Response& response) {
+  422|      2|                          logIncomingPublishRequest(request, k_publishEndpoint);
+  423|      2|                          try {
+  424|      2|                              applyHttpMqttResult(impl_->interfaces.onPublish(collectHeaders(request)), response);
+  425|      2|                          } catch (const std::exception& exceptionValue) {
+  426|      1|                              logCompatibilityRequestFailure(k_publishEndpoint, exceptionValue.what());
+  427|      1|                              applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+  428|      1|                          } catch (...) {
+  429|      0|                              logCompatibilityRequestFailure(k_publishEndpoint, "unknown publish request error");
+  430|      0|                              applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+  431|      0|                          }
+  432|      2|                      });
+  433|       |
+  434|     12|    impl_->server.Put(k_pubrelEndpoint.data(),
+  435|     12|                      [this](const httplib::Request& request, httplib::Response& response) {
+  436|      2|                          try {
+  437|      2|                              applyHttpMqttResult(impl_->interfaces.onPubrel(collectHeaders(request)), response);
+  438|      2|                          } catch (const std::exception& exceptionValue) {
+  439|      1|                              logCompatibilityRequestFailure(k_pubrelEndpoint, exceptionValue.what());
+  440|      1|                              applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+  441|      1|                          } catch (...) {
+  442|      0|                              logCompatibilityRequestFailure(k_pubrelEndpoint, "unknown publish request error");
+  443|      0|                              applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+  444|      0|                          }
+  445|      2|                      });
+  446|       |
+  447|     12|    impl_->server.Put(k_connectEndpoint.data(),
+  448|     12|                      [this](const httplib::Request& request, httplib::Response& response) {
+  449|      5|                          const HttpMqttHeaders fields = collectFields(request);
+  450|      5|                          const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
+  451|      5|                          if (!request.body.empty() && !jsonBody.has_value()) {
+  452|      1|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "invalid_json"), response);
+  453|      1|                              return;
+  454|      1|                          }
+  455|       |
+  456|      4|                          const auto clientId = jsonBody.has_value()
+  457|      4|                              ? tryReadStringField(*jsonBody, "clientId")
+  458|      4|                              : std::nullopt;
+  459|      4|                          if (!clientId.has_value() || clientId->empty()) {
+  460|      1|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "missing_client_id"), response);
+  461|      1|                              return;
+  462|      1|                          }
+  463|       |
+  464|      3|                          HttpMqttSessionConnectRequest connectRequest{};
+  465|      3|                          connectRequest.clientId = *clientId;
+  466|      3|                          if (jsonBody.has_value()) {
+  467|      3|                              connectRequest.brokerHost = tryReadStringField(*jsonBody, "host");
+  468|      3|                              connectRequest.brokerPort = tryReadUInt16Field(*jsonBody, "port");
+  469|      3|                              connectRequest.keepAliveSeconds = tryReadUInt32Field(*jsonBody, "keepAlive");
+  470|      3|                          }
+  471|       |
+  472|      3|                          HttpMqttSessionConnectTokens tokens{};
+  473|      3|                          std::string connectError{};
+  474|      3|                          if (!impl_->sessionManager.connect(connectRequest, tokens, connectError)) {
+  475|      0|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "connect_failed"), response);
+  476|      0|                              return;
+  477|      0|                          }
+  478|       |
+  479|      3|                          HttpMqttConnectResult connectResult{};
+  480|      3|                          connectResult.present = 0U;
+  481|      3|                          connectResult.token.send = tokens.sendToken;
+  482|      3|                          connectResult.token.receive = tokens.receiveToken;
+  483|       |
+  484|      3|                          HttpMqttHeaders headers = collectHeaders(request);
+  485|      3|                          if (headers.find("version") == headers.end()) {
+  486|      0|                              headers["version"] = "1.0";
+  487|      0|                          }
+  488|       |
+  489|      3|                          try {
+  490|      3|                              applyHttpMqttResult(impl_->interfaces.onConnect(headers, connectResult), response);
+  491|      3|                          } catch (...) {
+  492|      1|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "connect_response_failed"), response);
+  493|      1|                          }
+  494|      3|                      });
+  495|       |
+  496|     12|    impl_->server.Put(k_subscribeEndpoint.data(),
+  497|     12|                      [this](const httplib::Request& request, httplib::Response& response) {
+  498|      3|                          const HttpMqttHeaders fields = collectFields(request);
+  499|      3|                          const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
+  500|      3|                          if (!request.body.empty() && !jsonBody.has_value()) {
+  501|      0|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "invalid_json"), response);
+  502|      0|                              return;
+  503|      0|                          }
+  504|       |
+  505|      3|                          std::string topicsError{};
+  506|      3|                          const std::map<std::string, Qos> topics = parseTopicsObject(jsonBody, topicsError);
+  507|      3|                          if (!topicsError.empty()) {
+  508|      1|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "invalid_topics"), response);
+  509|      1|                              return;
+  510|      1|                          }
+  511|       |
+  512|      2|                          const std::string token = resolveToken(request, fields, jsonBody);
+  513|      2|                          if (token.empty()) {
+  514|      0|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "missing_token"), response);
+  515|      0|                              return;
+  516|      0|                          }
+  517|       |
+  518|      2|                          HttpMqttHeaders headers = collectHeaders(request);
+  519|      2|                          if (headers.find("version") == headers.end()) {
+  520|      0|                              headers["version"] = "1.0";
+  521|      0|                          }
+  522|      2|                          if (jsonBody.has_value()) {
+  523|      2|                              if (const auto packetId = tryReadIntField(*jsonBody, "packetid"); packetId.has_value()) {
+  524|      2|                                  headers["packetid"] = std::to_string(*packetId);
+  525|      2|                              }
+  526|      2|                          }
+  527|       |
+  528|      2|                          std::vector<std::uint8_t> subscribeResult{};
+  529|      2|                          std::string subscribeError{};
+  530|      2|                          if (!impl_->sessionManager.subscribe(token, topics, subscribeResult, subscribeError)) {
+  531|      1|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "subscribe_failed"), response);
+  532|      1|                              return;
+  533|      1|                          }
+  534|       |
+  535|      1|                          try {
+  536|      1|                              applyHttpMqttResult(impl_->interfaces.onSubscribe(headers, subscribeResult), response);
+  537|      1|                          } catch (...) {
+  538|      0|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "subscribe_response_failed"), response);
+  539|      0|                          }
+  540|      1|                      });
+  541|       |
+  542|     12|    impl_->server.Put(k_unsubscribeEndpoint.data(),
+  543|     12|                      [this](const httplib::Request& request, httplib::Response& response) {
+  544|      3|                          const HttpMqttHeaders fields = collectFields(request);
+  545|      3|                          const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
+  546|      3|                          if (!request.body.empty() && !jsonBody.has_value()) {
+  547|      0|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "invalid_json"), response);
+  548|      0|                              return;
+  549|      0|                          }
+  550|       |
+  551|      3|                          std::string topicsError{};
+  552|      3|                          const std::map<std::string, Qos> topics = parseTopicsObject(jsonBody, topicsError);
+  553|      3|                          if (!topicsError.empty()) {
+  554|      0|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "invalid_topics"), response);
+  555|      0|                              return;
+  556|      0|                          }
+  557|       |
+  558|      3|                          const std::string token = resolveToken(request, fields, jsonBody);
+  559|      3|                          if (token.empty()) {
+  560|      1|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "missing_token"), response);
+  561|      1|                              return;
+  562|      1|                          }
+  563|       |
+  564|      2|                          HttpMqttHeaders headers = collectHeaders(request);
+  565|      2|                          if (headers.find("version") == headers.end()) {
+  566|      0|                              headers["version"] = "1.0";
+  567|      0|                          }
+  568|      2|                          if (jsonBody.has_value()) {
+  569|      2|                              if (const auto packetId = tryReadIntField(*jsonBody, "packetid"); packetId.has_value()) {
+  570|      2|                                  headers["packetid"] = std::to_string(*packetId);
+  571|      2|                              }
+  572|      2|                          }
+  573|       |
+  574|      2|                          std::vector<std::uint8_t> unsubscribeResult{};
+  575|      2|                          std::string unsubscribeError{};
+  576|      2|                          if (!impl_->sessionManager.unsubscribe(token, topics, unsubscribeResult, unsubscribeError)) {
+  577|      1|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "unsubscribe_failed"), response);
+  578|      1|                              return;
+  579|      1|                          }
+  580|       |
+  581|      1|                          try {
+  582|      1|                              applyHttpMqttResult(impl_->interfaces.onUnsubscribe(headers, unsubscribeResult), response);
+  583|      1|                          } catch (...) {
+  584|      0|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "unsubscribe_response_failed"), response);
+  585|      0|                          }
+  586|      1|                      });
+  587|       |
+  588|     12|    impl_->server.Put(k_disconnectEndpoint.data(),
+  589|     12|                      [this](const httplib::Request& request, httplib::Response& response) {
+  590|      3|                          const HttpMqttHeaders fields = collectFields(request);
+  591|      3|                          const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
+  592|      3|                          if (!request.body.empty() && !jsonBody.has_value()) {
+  593|      0|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "invalid_json"), response);
+  594|      0|                              return;
+  595|      0|                          }
+  596|       |
+  597|      3|                          const std::string token = resolveToken(request, fields, jsonBody);
+  598|      3|                          if (token.empty()) {
+  599|      1|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "missing_token"), response);
+  600|      1|                              return;
+  601|      1|                          }
+  602|       |
+  603|      2|                          std::string disconnectError{};
+  604|      2|                          if (!impl_->sessionManager.disconnect(token, disconnectError)) {
+  605|      1|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "disconnect_failed"), response);
+  606|      1|                              return;
+  607|      1|                          }
+  608|       |
+  609|      1|                          HttpMqttHeaders headers = collectHeaders(request);
+  610|      1|                          if (headers.find("version") == headers.end()) {
+  611|      0|                              headers["version"] = "1.0";
+  612|      0|                          }
+  613|       |
+  614|      1|                          try {
+  615|      1|                              applyHttpMqttResult(impl_->interfaces.onDisconnect(headers), response);
+  616|      1|                          } catch (...) {
+  617|      0|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "disconnect_response_failed"), response);
+  618|      0|                          }
+  619|      1|                      });
+  620|       |
+  621|     12|    impl_->server.Put(k_pingEndpoint.data(),
+  622|     12|                      [this](const httplib::Request& request, httplib::Response& response) {
+  623|      2|                          const HttpMqttHeaders fields = collectFields(request);
+  624|      2|                          const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
+  625|      2|                          if (!request.body.empty() && !jsonBody.has_value()) {
+  626|      0|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "invalid_json"), response);
+  627|      0|                              return;
+  628|      0|                          }
+  629|       |
+  630|      2|                          const std::string token = resolveToken(request, fields, jsonBody);
+  631|      2|                          if (token.empty()) {
+  632|      1|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "missing_token"), response);
+  633|      1|                              return;
+  634|      1|                          }
+  635|       |
+  636|      1|                          std::string pingError{};
+  637|      1|                          if (!impl_->sessionManager.ping(token, pingError)) {
+  638|      0|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "ping_failed"), response);
+  639|      0|                              return;
+  640|      0|                          }
+  641|       |
+  642|      1|                          applyHttpMqttResult(makeNoContentResult("pingresp"), response);
+  643|      1|                      });
+  644|       |
+  645|     12|    impl_->server.Put(k_receiveEndpoint.data(),
+  646|     12|                      [this](const httplib::Request& request, httplib::Response& response) {
+  647|      2|                          const HttpMqttHeaders fields = collectFields(request);
+  648|      2|                          const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
+  649|      2|                          if (!request.body.empty() && !jsonBody.has_value()) {
+  650|      0|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "invalid_json"), response);
+  651|      0|                              return;
+  652|      0|                          }
+  653|       |
+  654|      2|                          const std::string token = resolveToken(request, fields, jsonBody);
+  655|      2|                          if (token.empty()) {
+  656|      1|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "missing_token"), response);
+  657|      1|                              return;
+  658|      1|                          }
+  659|       |
+  660|      1|                          std::optional<Message> receivedMessage{};
+  661|      1|                          std::string receiveError{};
+  662|      1|                          if (!impl_->sessionManager.receive(token, receivedMessage, receiveError)) {
+  663|      0|                              applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "receive_failed"), response);
+  664|      0|                              return;
+  665|      0|                          }
+  666|       |
+  667|      1|                          if (!receivedMessage.has_value()) {
+  668|      0|                              applyHttpMqttResult(makeNoContentResult(), response);
+  669|      0|                              return;
+  670|      0|                          }
+  671|       |
+  672|      1|                          HttpMqttResult receiveResult{};
+  673|      1|                          receiveResult.statusCode = k_httpStatusOk;
+  674|      1|                          receiveResult.headers["content-type"] = "application/json; charset=UTF-8";
+  675|      1|                          receiveResult.headers["version"] = "1.0";
+  676|      1|                          receiveResult.headers["packet"] = "publish";
+  677|      1|                          receiveResult.payload = buildReceivePayload(*receivedMessage);
+  678|      1|                          applyHttpMqttResult(receiveResult, response);
+  679|      1|                      });
+  680|       |
+  681|       |    // NOLINTNEXTLINE(readability-function-cognitive-complexity)
+  682|     12|    const auto handleCompatibilityRequest = [this](
+  683|     12|                                                const httplib::Request& request,
+  684|     12|                                                httplib::Response& response,
+  685|     12|                                                const std::string_view endpoint) {
+  686|     12|        logIncomingPublishRequest(request, endpoint);
+  687|     12|        try {
+  688|     12|            const HttpMqttHeaders fields = collectFields(request);
+  689|     12|            const HttpMqttPublishCompatibilityRequest compatibilityRequest{
+  690|     12|                .method = request.method,
+  691|     12|                .endpoint = std::string{endpoint},
+  692|     12|                .headers = collectHeaders(request),
+  693|     12|                .fields = fields,
+  694|     12|                .body = request.body,
+  695|     12|                .token = resolveCompatibilityToken(request, fields),
+  696|     12|            };
+  697|       |
+  698|     12|            const HttpMqttResult compatibilityResult = handlePublishCompatibilityRequest(
+  699|     12|                impl_->interfaces,
+  700|     12|                compatibilityRequest,
+  701|     12|                impl_->compatibilityConfig,
+  702|     12|                [this](const HttpMqttRequestData& downstreamRequest, const Message& mappedMessage) {
+  703|     12|                    std::string sessionToken{};
+  704|     12|                    if (const auto parsedPayload = mqtt::json::JsonValue::try_parse(downstreamRequest.payload);
+  705|     12|                        parsedPayload.has_value()) {
+  706|     12|                        if (const auto tokenField = tryReadStringField(*parsedPayload, "token"); tokenField.has_value()) {
+  707|     12|                            sessionToken = *tokenField;
+  708|     12|                        }
+  709|     12|                    }
+  710|       |
+  711|     12|                    if (!sessionToken.empty() && impl_->sessionManager.hasSession(sessionToken)) {
+  712|      2|                        std::string sessionError{};
+  713|      2|                        if (!impl_->sessionManager.publish(sessionToken, mappedMessage, sessionError)) {
+  714|      1|                            const std::string publishReason = sessionError.empty()
+  715|      1|                                ? "broker publish callback failed"
+  716|      1|                                : sessionError;
+  717|      1|                            logBrokerForwardPublishError(mappedMessage, publishReason);
+  718|      1|                            throw YahaError{
+  719|      1|                                k_error_code_broker_publish_failed,
+  720|      1|                                publishReason,
+  721|      1|                                "broker publish failed",
+  722|      1|                            };
+  723|      1|                        }
+  724|     10|                    } else {
+  725|     10|                        PublishResult publishResult{};
+  726|     10|                        {
+  727|     10|                            std::lock_guard<std::mutex> lock{impl_->publishCallbackMutex};
+  728|     10|                            publishResult = impl_->publishCallback(mappedMessage);
+  729|     10|                        }
+  730|       |
+  731|     10|                        if (!publishResult.success) {
+  732|      3|                            const std::string publishReason = publishResult.reason.empty()
+  733|      3|                                ? "broker publish callback failed"
+  734|      3|                                : publishResult.reason;
+  735|      3|                            logBrokerForwardPublishError(mappedMessage, publishReason);
+  736|      3|                            throw YahaError{
+  737|      3|                                k_error_code_broker_publish_failed,
+  738|      3|                                publishReason,
+  739|      3|                                "broker publish failed",
+  740|      3|                            };
+  741|      3|                        }
+  742|     10|                    }
+  743|       |
+  744|      8|                    logBrokerForwardPublishAck(mappedMessage);
+  745|      8|                    return impl_->interfaces.onPublish(downstreamRequest.headers);
+  746|     12|                });
+  747|       |
+  748|     12|            if (compatibilityResult.statusCode >= k_httpStatusInternalServerError) {
+  749|      0|                logCompatibilityInternalResultFailure(endpoint, compatibilityResult);
+  750|      0|            }
+  751|     12|            applyHttpMqttResult(compatibilityResult, response);
+  752|     12|        } catch (const std::exception& exceptionValue) {
+  753|      4|            logCompatibilityRequestFailure(endpoint, exceptionValue.what());
+  754|      4|            applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+  755|      4|        } catch (...) {
+  756|      0|            logCompatibilityRequestFailure(endpoint, "unknown publish request error");
+  757|      0|            applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
+  758|      0|        }
+  759|     12|    };
+  760|       |
+  761|     12|    impl_->server.Post(k_publishEndpoint.data(),
+  762|     12|                       [handleCompatibilityRequest](const httplib::Request& request, httplib::Response& response) {
+  763|     11|                           handleCompatibilityRequest(request, response, k_publishEndpoint);
+  764|     11|                       });
+  765|       |
+  766|     12|    impl_->server.Post(k_publishPhpEndpoint.data(),
+  767|     12|                       [handleCompatibilityRequest](const httplib::Request& request, httplib::Response& response) {
+  768|      1|                           handleCompatibilityRequest(request, response, k_publishPhpEndpoint);
+  769|      1|                       });
+  770|       |
+  771|     12|    impl_->server.Options(k_publishEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+  772|      1|        applyHttpMqttCorsHeaders(response, true);
+  773|      1|        response.status = k_httpStatusNoContent;
+  774|      1|        response.set_content("", "text/plain");
+  775|      1|    });
+  776|       |
+  777|     12|    impl_->server.Options(k_publishPhpEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+  778|      1|        applyHttpMqttCorsHeaders(response, true);
+  779|      1|        response.status = k_httpStatusNoContent;
+  780|      1|        response.set_content("", "text/plain");
+  781|      1|    });
+  782|       |
+  783|     12|    impl_->server.Options(k_pubrelEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+  784|      1|        applyHttpMqttCorsHeaders(response, true);
+  785|      1|        response.status = k_httpStatusNoContent;
+  786|      1|        response.set_content("", "text/plain");
+  787|      1|    });
+  788|       |
+  789|     12|    impl_->server.Options(k_connectEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+  790|      0|        applyHttpMqttCorsHeaders(response, true);
+  791|      0|        response.status = k_httpStatusNoContent;
+  792|      0|        response.set_content("", "text/plain");
+  793|      0|    });
+  794|       |
+  795|     12|    impl_->server.Options(k_disconnectEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+  796|      0|        applyHttpMqttCorsHeaders(response, true);
+  797|      0|        response.status = k_httpStatusNoContent;
+  798|      0|        response.set_content("", "text/plain");
+  799|      0|    });
+  800|       |
+  801|     12|    impl_->server.Options(k_subscribeEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+  802|      0|        applyHttpMqttCorsHeaders(response, true);
+  803|      0|        response.status = k_httpStatusNoContent;
+  804|      0|        response.set_content("", "text/plain");
+  805|      0|    });
+  806|       |
+  807|     12|    impl_->server.Options(k_unsubscribeEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+  808|      0|        applyHttpMqttCorsHeaders(response, true);
+  809|      0|        response.status = k_httpStatusNoContent;
+  810|      0|        response.set_content("", "text/plain");
+  811|      0|    });
+  812|       |
+  813|     12|    impl_->server.Options(k_pingEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+  814|      0|        applyHttpMqttCorsHeaders(response, true);
+  815|      0|        response.status = k_httpStatusNoContent;
+  816|      0|        response.set_content("", "text/plain");
+  817|      0|    });
+  818|       |
+  819|     12|    impl_->server.Options(k_receiveEndpoint.data(), [](const httplib::Request&, httplib::Response& response) {
+  820|      0|        applyHttpMqttCorsHeaders(response, true);
+  821|      0|        response.status = k_httpStatusNoContent;
+  822|      0|        response.set_content("", "text/plain");
+  823|      0|    });
+  824|     12|}
+  825|       |
+  826|     12|HttpMqttInterfaceClientComponent::~HttpMqttInterfaceClientComponent() {
+  827|     12|    close();
+  828|     12|}
+  829|       |
+  830|    137|SubscriptionMap HttpMqttInterfaceClientComponent::getSubscriptions() const {
+  831|    137|    return {};
+  832|    137|}
+  833|       |
+  834|      1|void HttpMqttInterfaceClientComponent::handleMessage(const Message& /*message*/) {
+  835|       |    // No inbound topic handling required for this HTTP->MQTT forwarding component.
+  836|      1|}
+  837|       |
+  838|     13|void HttpMqttInterfaceClientComponent::run() {
+  839|     13|    std::unique_lock<std::mutex> lifecycleLock{impl_->lifecycleMutex};
+  840|     13|    if (impl_->running) {
+  841|      1|        return;
+  842|      1|    }
+  843|       |
+  844|     12|    impl_->startupResultReady = false;
+  845|     12|    impl_->startupSucceeded = false;
+  846|     12|    impl_->startupError.clear();
+  847|     12|    impl_->stopRequested = false;
+  848|       |
+  849|     12|    impl_->serverThread = std::thread([this]() {
+  850|     12|        const int boundPort = impl_->server.bind_to_port(impl_->config.listenerHost, impl_->config.listenerPort);
+  851|     12|        {
+  852|     12|            std::lock_guard<std::mutex> lifecycleLock{impl_->lifecycleMutex};
+  853|     12|            impl_->startupResultReady = true;
+  854|     12|            if (boundPort <= 0) {
+  855|      1|                impl_->startupSucceeded = false;
+  856|      1|                impl_->startupError = "failed to bind HTTP listener on " +
+  857|      1|                    impl_->config.listenerHost + ":" + std::to_string(impl_->config.listenerPort);
+  858|     11|            } else {
+  859|     11|                impl_->startupSucceeded = true;
+  860|     11|                impl_->running = true;
+  861|     11|            }
+  862|     12|        }
+  863|     12|        impl_->startupCondition.notify_all();
+  864|       |
+  865|     12|        if (boundPort <= 0) {
+  866|      1|            return;
+  867|      1|        }
+  868|       |
+  869|     11|        const bool listenSuccess = impl_->server.listen_after_bind();
+  870|     11|        if (!listenSuccess) {
+  871|      0|            const bool shouldLogFailure = [&]() {
+  872|      0|                std::lock_guard<std::mutex> lifecycleLock{impl_->lifecycleMutex};
+  873|      0|                return !impl_->stopRequested;
+  874|      0|            }();
+  875|      0|            if (shouldLogFailure) {
+  876|      0|                std::cerr << "Failed to run HTTP listener on " << impl_->config.listenerHost << ':'
+  877|      0|                          << impl_->config.listenerPort << '\n';
+  878|      0|            }
+  879|      0|        }
+  880|       |
+  881|     11|        std::lock_guard<std::mutex> lifecycleLock{impl_->lifecycleMutex};
+  882|     11|        impl_->running = false;
+  883|     11|    });
+  884|       |
+  885|     24|    impl_->startupCondition.wait(lifecycleLock, [this]() {
+  886|     24|        return impl_->startupResultReady;
+  887|     24|    });
+  888|       |
+  889|     12|    if (!impl_->startupSucceeded) {
+  890|      1|        const std::string startupErrorText = impl_->startupError;
+  891|      1|        lifecycleLock.unlock();
+  892|      1|        if (impl_->serverThread.joinable()) {
+  893|      1|            impl_->serverThread.join();
+  894|      1|        }
+  895|      1|        throw YahaError{
+  896|      1|            k_error_code_listener_start_failed,
+  897|      1|            startupErrorText,
+  898|      1|            "http listener start failed",
+  899|      1|        };
+  900|      1|    }
+  901|     12|}
+  902|       |
+  903|     24|void HttpMqttInterfaceClientComponent::close() {
+  904|     24|    {
+  905|     24|        std::lock_guard<std::mutex> lock{impl_->lifecycleMutex};
+  906|     24|        impl_->stopRequested = true;
+  907|     24|    }
+  908|       |
+  909|     24|    impl_->server.stop();
+  910|       |
+  911|     24|    if (impl_->serverThread.joinable()) {
+  912|     11|        impl_->serverThread.join();
+  913|     11|    }
+  914|       |
+  915|     24|    std::lock_guard<std::mutex> lock{impl_->lifecycleMutex};
+  916|     24|    impl_->running = false;
+  917|     24|}
+  918|       |
+  919|     10|void HttpMqttInterfaceClientComponent::setPublishCallback(PublishCallback callback) {
+  920|     10|    std::lock_guard<std::mutex> lock{impl_->publishCallbackMutex};
+  921|     10|    impl_->publishCallback = std::move(callback);
+  922|     10|}
+  923|       |
+  924|       |bool tryLoadHttpMqttInterfaceClientConfigFromIni(
+  925|       |    const IniDocument& iniDocument,
+  926|       |    HttpMqttInterfaceClientConfig& configOutput,
+  927|      6|    std::string& errorOutput) {
+  928|      6|    errorOutput.clear();
+  929|       |
+  930|      6|    if (const auto maybeHost = iniDocument.lastValue(k_httpSection, k_listenerHostKey); maybeHost.has_value()) {
+  931|      1|        configOutput.listenerHost = *maybeHost;
+  932|      1|    }
+  933|       |
+  934|      6|    const auto [maybePort, portError] = iniDocument.readUnsigned(
+  935|      6|        k_httpSection,
+  936|      6|        k_listenerPortKey,
+  937|      6|        1U,
+  938|      6|        65535U);
+  939|      6|    if (!portError.empty()) {
+  940|      1|        const std::string rawValue = iniDocument.lastValue(k_httpSection, k_listenerPortKey).value_or("<missing>");
+  941|      1|        logConfigFallbackWarning(
+  942|      1|            "http_mqtt_interface_client",
+  943|      1|            k_httpSection,
+  944|      1|            k_listenerPortKey,
+  945|      1|            rawValue,
+  946|      1|            std::to_string(configOutput.listenerPort),
+  947|      1|            portError);
+  948|      1|    }
+  949|      6|    if (maybePort.has_value()) {
+  950|      1|        configOutput.listenerPort = static_cast<std::uint16_t>(*maybePort);
+  951|      1|    }
+  952|       |
+  953|      6|    const auto [maybePublishPhpAlias, publishPhpAliasError] = iniDocument.readBool(
+  954|      6|        k_httpSection,
+  955|      6|        k_enablePublishPhpAliasKey);
+  956|      6|    if (!publishPhpAliasError.empty()) {
+  957|      1|        const std::string rawValue =
+  958|      1|            iniDocument.lastValue(k_httpSection, k_enablePublishPhpAliasKey).value_or("<missing>");
+  959|      1|        logConfigFallbackWarning(
+  960|      1|            "http_mqtt_interface_client",
+  961|      1|            k_httpSection,
+  962|      1|            k_enablePublishPhpAliasKey,
+  963|      1|            rawValue,
+  964|      1|            configOutput.enablePublishPhpAlias ? "true" : "false",
+  965|      1|            publishPhpAliasError);
+  966|      1|    }
+  967|      6|    if (maybePublishPhpAlias.has_value()) {
+  968|      1|        configOutput.enablePublishPhpAlias = *maybePublishPhpAlias;
+  969|      1|    }
+  970|       |
+  971|      6|    const auto [maybeLegacyResponse, legacyResponseError] = iniDocument.readBool(
+  972|      6|        k_httpSection,
+  973|      6|        k_useLegacyPhpResponseKey);
+  974|      6|    if (!legacyResponseError.empty()) {
+  975|      1|        const std::string rawValue =
+  976|      1|            iniDocument.lastValue(k_httpSection, k_useLegacyPhpResponseKey).value_or("<missing>");
+  977|      1|        logConfigFallbackWarning(
+  978|      1|            "http_mqtt_interface_client",
+  979|      1|            k_httpSection,
+  980|      1|            k_useLegacyPhpResponseKey,
+  981|      1|            rawValue,
+  982|      1|            configOutput.useLegacyPhpResponse ? "true" : "false",
+  983|      1|            legacyResponseError);
+  984|      1|    }
+  985|      6|    if (maybeLegacyResponse.has_value()) {
+  986|      1|        configOutput.useLegacyPhpResponse = *maybeLegacyResponse;
+  987|      1|    }
+  988|       |
+  989|      6|    std::string mqttErrorMessage{};
+  990|      6|    if (!tryLoadMqttClientConfigFromIni(iniDocument, configOutput.mqttConfig, mqttErrorMessage)) {
+  991|      0|        logConfigFallbackWarning(
+  992|      0|            "http_mqtt_interface_client",
+  993|      0|            "mqtt",
+  994|      0|            "*",
+  995|      0|            "<composite>",
+  996|      0|            "defaults",
+  997|      0|            mqttErrorMessage);
+  998|      0|    }
+  999|       |
+ 1000|      6|    errorOutput.clear();
+ 1001|      6|    return true;
+ 1002|      6|}
+ 1003|       |
+ 1004|       |} // namespace yaha
+

@@ -30,6 +30,13 @@ Behavior:
 - `close()` stops listener and joins thread.
 - `setPublishCallback(...)` stores callback injected by generic MQTT client.
 
+Additional command behavior:
+
+- component also owns a session manager that maintains multiple broker-backed sessions
+	addressed by tokens returned from `PUT /connect`
+- session manager uses one broker transport per connected HTTP client session
+	and forwards command operations to broker transport directly
+
 Publish forwarding path uses only IMqttComponent publish callback contract.
 No direct broker transport callback bundle is owned in this module.
 
@@ -59,11 +66,19 @@ Behavior:
 Component starts `httplib::Server` and wires:
 
 - `GET /health` returns `200` `ok`
+- `PUT /connect` creates a broker-backed session and returns token pair
+- `PUT /subscribe` forwards topic subscriptions to token-bound broker session
+- `PUT /unsubscribe` forwards topic unsubscriptions to token-bound broker session
+- `PUT /receive` polls one message from token-bound broker session
+- `PUT /pingreq` forwards keepalive ping to token-bound broker session
+- `PUT /disconnect` closes token-bound broker session
 - `PUT /publish` maps to native `HttpMqttInterfaces::onPublish`
 - `PUT /pubrel` maps to native `HttpMqttInterfaces::onPubrel`
 - `POST /publish` maps through compatibility profile
 - `POST /publish.php` maps through compatibility profile
-- `OPTIONS /publish`, `OPTIONS /publish.php`, `OPTIONS /pubrel` return CORS preflight `204`
+- `OPTIONS /publish`, `OPTIONS /publish.php`, `OPTIONS /pubrel`, `OPTIONS /connect`,
+  `OPTIONS /subscribe`, `OPTIONS /unsubscribe`, `OPTIONS /receive`, `OPTIONS /pingreq`,
+  `OPTIONS /disconnect` return CORS preflight `204`
 
 Publish ingress logging:
 
@@ -76,6 +91,10 @@ Publish broker-forward logging:
 - failed callback publish emits one shared outgoing message log line plus `event=broker_publish_failed` and escaped error text
 - broker publish logs include full message reason chain (`reason=[...]`) from mapped incoming publish payload
 - timeout-style failures add `detail=message_was_sent_but_broker_reported_no_ack`
+- compatibility publish keeps existing behavior: if token does not match a managed
+	session, it continues to use injected generic MQTT publish callback unchanged
+- if token matches a managed session, compatibility publish is forwarded through the
+	corresponding token-bound broker session
 
 Native PUT error mapping:
 
@@ -96,7 +115,8 @@ CORS headers on publish/pubrel responses:
 
 ## Ownership Boundaries
 
-- generic MQTT client owns connect disconnect reconnect keepalive subscribe unsubscribe publish delivery status
+- generic MQTT client still owns the legacy single-session publish callback path used by browser compatibility flows
+- session manager owns token-bound multi-session connect subscribe publish receive ping unsubscribe disconnect forwarding
 - generic runtime owns signal handling and shutdown choreography
 - this domain component owns only HTTP request mapping and domain-level compatibility behavior
 
@@ -106,5 +126,7 @@ CORS headers on publish/pubrel responses:
 |------|------|
 | `http_mqtt_interface_client_app.h` | Runtime config and domain component declarations |
 | `http_mqtt_interface_client_app.cpp` | INI mapping and IMqttComponent implementation |
+| `http_mqtt_session_manager.h` | Token-bound broker session manager API |
+| `http_mqtt_session_manager.cpp` | Token-bound broker session forwarding implementation |
 | `test/TEST_SPEC.md` | Unit test specification |
 | `test/http_mqtt_interface_client_app_test.cpp` | Unit tests for config and component runtime behavior |

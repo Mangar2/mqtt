@@ -4,14 +4,19 @@
 #include <chrono>
 #include <csignal>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <map>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "httplib.h"
 
@@ -20,6 +25,7 @@
 #include "yaha/ini/ini_document.h"
 #include "yaha/mqtt_client/mqtt_client.h"
 #include "yaha/mqtt_client/mqtt_client_runtime.h"
+#include "json/json_value.h"
 
 namespace {
 
@@ -149,6 +155,91 @@ yaha::YahaMqttClient::Transport makeMockTransport(
     mockTransport.ping = []() {};
     mockTransport.isConnected = []() -> bool { return true; };
     return mockTransport;
+}
+
+struct SessionMockState {
+    bool connected{false};
+    std::string clientId{};
+    std::map<std::string, yaha::Qos> subscriptions{};
+    std::deque<yaha::Message> inbox{};
+    int publishCalls{0};
+    int subscribeCalls{0};
+    int unsubscribeCalls{0};
+    int pingCalls{0};
+};
+
+struct SessionMockFactory {
+    std::mutex mutex{};
+    std::vector<std::shared_ptr<SessionMockState>> states{};
+
+    [[nodiscard]] yaha::HttpMqttSessionTransportFactory makeFactory() {
+        return [this]() {
+            auto state = std::make_shared<SessionMockState>();
+            {
+                std::lock_guard<std::mutex> lock{mutex};
+                states.push_back(state);
+            }
+
+            yaha::YahaMqttClient::Transport transport{};
+            transport.connect = [state](const yaha::YahaMqttClient::Config& config) {
+                state->connected = true;
+                state->clientId = config.clientId;
+                return true;
+            };
+            transport.disconnect = [state]() {
+                state->connected = false;
+            };
+            transport.publish = [state](const yaha::Message& message) {
+                ++state->publishCalls;
+                state->inbox.push_back(message);
+            };
+            transport.subscribe = [state](const std::string& topicFilter, const yaha::Qos qos) {
+                ++state->subscribeCalls;
+                state->subscriptions[topicFilter] = qos;
+                return true;
+            };
+            transport.unsubscribe = [state](const std::string& topicFilter) {
+                ++state->unsubscribeCalls;
+                state->subscriptions.erase(topicFilter);
+                return true;
+            };
+            transport.pollIncoming = [state]() -> std::optional<yaha::Message> {
+                if (state->inbox.empty()) {
+                    return std::nullopt;
+                }
+                yaha::Message message = state->inbox.front();
+                state->inbox.pop_front();
+                return message;
+            };
+            transport.ping = [state]() {
+                ++state->pingCalls;
+            };
+            transport.isConnected = [state]() {
+                return state->connected;
+            };
+
+            return transport;
+        };
+    }
+};
+
+[[nodiscard]] std::optional<std::string> tryReadConnectSendToken(const std::string& payload) {
+    const auto parsed = mqtt::json::JsonValue::try_parse(payload);
+    if (!parsed.has_value() || !parsed->is_object() || !parsed->contains("token")) {
+        return std::nullopt;
+    }
+
+    const auto& tokenObject = parsed->at("token");
+    if (!tokenObject.is_object() || !tokenObject.contains("send")) {
+        return std::nullopt;
+    }
+
+    const auto& sendToken = tokenObject.at("send");
+    if (!sendToken.is_string()) {
+        return std::nullopt;
+    }
+
+    return sendToken.as_string();
 }
 
 } // namespace
@@ -554,4 +645,438 @@ TEST_CASE("http_mqtt_interface_component_put_pubrel_failure_returns_500_and_logs
     const std::string errorOutputText = capturedErrorOutput.str();
     REQUIRE(errorOutputText.find("publish_request_failed endpoint=/pubrel") != std::string::npos);
     REQUIRE(harness.resultCode() == 0);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("http_mqtt_interface_component_session_commands_flow", "[http_mqtt_interface_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    SessionMockFactory sessionFactory{};
+    std::atomic<int> legacyPublishCalls{0};
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = port;
+
+    yaha::HttpMqttInterfaceClientComponent component{config, sessionFactory.makeFactory()};
+    component.setPublishCallback([&legacyPublishCalls](const yaha::Message&) {
+        ++legacyPublishCalls;
+        return yaha::PublishResult::ok();
+    });
+
+    component.run();
+    REQUIRE(waitForHttpServer(port));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
+
+    const auto connectResponse = client.Put(
+        "/connect",
+        httplib::Headers{{"version", "1.0"}},
+        R"({"clientId":"http-client-1"})",
+        "application/json");
+    REQUIRE(connectResponse != nullptr);
+    REQUIRE(connectResponse->status == k_status_ok);
+
+    const auto maybeSendToken = tryReadConnectSendToken(connectResponse->body);
+    REQUIRE(maybeSendToken.has_value());
+    REQUIRE_FALSE(maybeSendToken->empty());
+
+    const std::string subscribeBody =
+        std::string{R"({"token":")"} + *maybeSendToken +
+        R"(","packetid":42,"topics":{"demo/topic":1}})";
+    const auto subscribeResponse = client.Put(
+        "/subscribe",
+        httplib::Headers{{"version", "1.0"}},
+        subscribeBody,
+        "application/json");
+    REQUIRE(subscribeResponse != nullptr);
+    REQUIRE(subscribeResponse->status == k_status_ok);
+
+    const httplib::Params publishParams{
+        {"token", *maybeSendToken},
+        {"topic", "demo%2Ftopic"},
+        {"value", "42"},
+    };
+    const auto publishResponse = client.Post("/publish", publishParams);
+    REQUIRE(publishResponse != nullptr);
+    REQUIRE(publishResponse->status == k_status_no_content);
+
+    const std::string receiveBody = std::string{R"({"token":")"} + *maybeSendToken + R"("})";
+    const auto receiveResponse = client.Put(
+        "/receive",
+        httplib::Headers{{"version", "1.0"}},
+        receiveBody,
+        "application/json");
+    REQUIRE(receiveResponse != nullptr);
+    REQUIRE(receiveResponse->status == k_status_ok);
+    REQUIRE(receiveResponse->body.find("demo/topic") != std::string::npos);
+
+    const auto pingResponse = client.Put(
+        "/pingreq",
+        httplib::Headers{{"version", "1.0"}},
+        receiveBody,
+        "application/json");
+    REQUIRE(pingResponse != nullptr);
+    REQUIRE(pingResponse->status == k_status_no_content);
+
+    const std::string unsubscribeBody =
+        std::string{R"({"token":")"} + *maybeSendToken +
+        R"(","packetid":43,"topics":{"demo/topic":1}})";
+    const auto unsubscribeResponse = client.Put(
+        "/unsubscribe",
+        httplib::Headers{{"version", "1.0"}},
+        unsubscribeBody,
+        "application/json");
+    REQUIRE(unsubscribeResponse != nullptr);
+    REQUIRE(unsubscribeResponse->status == k_status_ok);
+
+    const auto disconnectResponse = client.Put(
+        "/disconnect",
+        httplib::Headers{{"version", "1.0"}},
+        receiveBody,
+        "application/json");
+    REQUIRE(disconnectResponse != nullptr);
+    REQUIRE(disconnectResponse->status == k_status_no_content);
+
+    component.close();
+
+    REQUIRE(legacyPublishCalls.load() == 0);
+    REQUIRE(sessionFactory.states.size() == 1);
+    REQUIRE(sessionFactory.states.front()->publishCalls == 1);
+    REQUIRE(sessionFactory.states.front()->subscribeCalls == 1);
+    REQUIRE(sessionFactory.states.front()->unsubscribeCalls == 1);
+    REQUIRE(sessionFactory.states.front()->pingCalls == 1);
+}
+
+TEST_CASE("http_mqtt_interface_component_compat_publish_without_managed_token_uses_legacy_callback", "[http_mqtt_interface_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    SessionMockFactory sessionFactory{};
+    std::atomic<int> legacyPublishCalls{0};
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = port;
+
+    yaha::HttpMqttInterfaceClientComponent component{config, sessionFactory.makeFactory()};
+    component.setPublishCallback([&legacyPublishCalls](const yaha::Message&) {
+        ++legacyPublishCalls;
+        return yaha::PublishResult::ok();
+    });
+
+    component.run();
+    REQUIRE(waitForHttpServer(port));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
+
+    const httplib::Params publishParams{
+        {"topic", "fallback%2Ftopic"},
+        {"value", "1"},
+    };
+    const auto publishResponse = client.Post("/publish", publishParams);
+    REQUIRE(publishResponse != nullptr);
+    REQUIRE(publishResponse->status == k_status_no_content);
+
+    component.close();
+
+    REQUIRE(legacyPublishCalls.load() == 1);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("http_mqtt_interface_component_command_endpoints_validate_bad_requests", "[http_mqtt_interface_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    SessionMockFactory sessionFactory{};
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = port;
+
+    yaha::HttpMqttInterfaceClientComponent component{config, sessionFactory.makeFactory()};
+    component.run();
+    REQUIRE(waitForHttpServer(port));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
+
+    const auto connectInvalidJson = client.Put("/connect", "{", "application/json");
+    REQUIRE(connectInvalidJson != nullptr);
+    REQUIRE(connectInvalidJson->status == 400);
+    REQUIRE(connectInvalidJson->body.find("invalid_json") != std::string::npos);
+
+    const auto connectMissingClientId = client.Put("/connect", "{}", "application/json");
+    REQUIRE(connectMissingClientId != nullptr);
+    REQUIRE(connectMissingClientId->status == 400);
+    REQUIRE(connectMissingClientId->body.find("missing_client_id") != std::string::npos);
+
+    const auto subscribeMissingTopics = client.Put("/subscribe", R"({"token":"abc"})", "application/json");
+    REQUIRE(subscribeMissingTopics != nullptr);
+    REQUIRE(subscribeMissingTopics->status == 400);
+    REQUIRE(subscribeMissingTopics->body.find("invalid_topics") != std::string::npos);
+
+    const auto unsubscribeMissingToken = client.Put(
+        "/unsubscribe",
+        R"({"topics":{"demo/topic":1}})",
+        "application/json");
+    REQUIRE(unsubscribeMissingToken != nullptr);
+    REQUIRE(unsubscribeMissingToken->status == 400);
+    REQUIRE(unsubscribeMissingToken->body.find("missing_token") != std::string::npos);
+
+    const auto disconnectMissingToken = client.Put("/disconnect", "{}", "application/json");
+    REQUIRE(disconnectMissingToken != nullptr);
+    REQUIRE(disconnectMissingToken->status == 400);
+    REQUIRE(disconnectMissingToken->body.find("missing_token") != std::string::npos);
+
+    const auto pingMissingToken = client.Put("/pingreq", "{}", "application/json");
+    REQUIRE(pingMissingToken != nullptr);
+    REQUIRE(pingMissingToken->status == 400);
+    REQUIRE(pingMissingToken->body.find("missing_token") != std::string::npos);
+
+    const auto receiveMissingToken = client.Put("/receive", "{}", "application/json");
+    REQUIRE(receiveMissingToken != nullptr);
+    REQUIRE(receiveMissingToken->status == 400);
+    REQUIRE(receiveMissingToken->body.find("missing_token") != std::string::npos);
+
+    component.close();
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("http_mqtt_interface_component_command_response_mapping_handles_unsupported_version", "[http_mqtt_interface_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    SessionMockFactory sessionFactory{};
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = port;
+
+    yaha::HttpMqttInterfaceClientComponent component{config, sessionFactory.makeFactory()};
+    component.run();
+    REQUIRE(waitForHttpServer(port));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
+
+    const auto connectResponse = client.Put(
+        "/connect",
+        httplib::Headers{{"version", "9.9"}},
+        R"({"clientId":"client-unsupported"})",
+        "application/json");
+    REQUIRE(connectResponse != nullptr);
+    REQUIRE(connectResponse->status == 500);
+    REQUIRE(connectResponse->body.find("connect_response_failed") != std::string::npos);
+
+    const auto subscribeResponse = client.Put(
+        "/subscribe",
+        httplib::Headers{{"version", "9.9"}},
+        R"({"token":"unknown","topics":{"demo/topic":1},"packetid":1})",
+        "application/json");
+    REQUIRE(subscribeResponse != nullptr);
+    REQUIRE(subscribeResponse->status == 500);
+    REQUIRE(subscribeResponse->body.find("subscribe_failed") != std::string::npos);
+
+    const auto unsubscribeResponse = client.Put(
+        "/unsubscribe",
+        httplib::Headers{{"version", "9.9"}},
+        R"({"token":"unknown","topics":{"demo/topic":1},"packetid":1})",
+        "application/json");
+    REQUIRE(unsubscribeResponse != nullptr);
+    REQUIRE(unsubscribeResponse->status == 500);
+    REQUIRE(unsubscribeResponse->body.find("unsubscribe_failed") != std::string::npos);
+
+    const auto disconnectResponse = client.Put(
+        "/disconnect",
+        httplib::Headers{{"version", "9.9"}},
+        R"({"token":"unknown"})",
+        "application/json");
+    REQUIRE(disconnectResponse != nullptr);
+    REQUIRE(disconnectResponse->status == 500);
+    REQUIRE(disconnectResponse->body.find("disconnect_failed") != std::string::npos);
+
+    component.close();
+}
+
+TEST_CASE("http_mqtt_interface_component_compat_publish_managed_session_failure_returns_500", "[http_mqtt_interface_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+
+    auto sessionFactory = []() {
+        yaha::YahaMqttClient::Transport transport{};
+        transport.connect = [](const yaha::YahaMqttClient::Config&) { return true; };
+        transport.disconnect = []() {};
+        transport.publish = [](const yaha::Message&) {
+            throw std::runtime_error{"timed out waiting for PUBACK from broker"};
+        };
+        transport.subscribe = [](const std::string&, const yaha::Qos) { return true; };
+        transport.unsubscribe = [](const std::string&) { return true; };
+        transport.pollIncoming = []() -> std::optional<yaha::Message> { return std::nullopt; };
+        transport.ping = []() {};
+        transport.isConnected = []() { return true; };
+        return transport;
+    };
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = port;
+
+    yaha::HttpMqttInterfaceClientComponent component{config, sessionFactory};
+    component.setPublishCallback([](const yaha::Message&) {
+        return yaha::PublishResult::ok();
+    });
+    component.run();
+    REQUIRE(waitForHttpServer(port));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
+
+    const auto connectResponse = client.Put(
+        "/connect",
+        httplib::Headers{{"version", "1.0"}},
+        R"({"clientId":"managed-failing"})",
+        "application/json");
+    REQUIRE(connectResponse != nullptr);
+    REQUIRE(connectResponse->status == 200);
+
+    const auto maybeSendToken = tryReadConnectSendToken(connectResponse->body);
+    REQUIRE(maybeSendToken.has_value());
+
+    const httplib::Params publishParams{
+        {"token", *maybeSendToken},
+        {"topic", "demo%2Ftopic"},
+        {"value", "1"},
+    };
+    const auto publishResponse = client.Post("/publish", publishParams);
+    REQUIRE(publishResponse != nullptr);
+    REQUIRE(publishResponse->status == 500);
+
+    component.close();
+}
+
+TEST_CASE("http_mqtt_interface_component_command_options_preflight_endpoints_return_204", "[http_mqtt_interface_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    SessionMockFactory sessionFactory{};
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = port;
+
+    yaha::HttpMqttInterfaceClientComponent component{config, sessionFactory.makeFactory()};
+    component.run();
+    REQUIRE(waitForHttpServer(port));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
+
+    const std::array<std::string, 6> endpoints{
+        "/connect",
+        "/disconnect",
+        "/subscribe",
+        "/unsubscribe",
+        "/pingreq",
+        "/receive",
+    };
+
+    for (const auto& endpoint : endpoints) {
+        const auto response = client.Options(endpoint);
+        REQUIRE(response != nullptr);
+        REQUIRE(response->status == k_status_no_content);
+        REQUIRE(response->get_header_value("Access-Control-Allow-Origin") == "*");
+    }
+
+    component.close();
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("http_mqtt_interface_component_receive_without_message_returns_204", "[http_mqtt_interface_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    SessionMockFactory sessionFactory{};
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = port;
+
+    yaha::HttpMqttInterfaceClientComponent component{config, sessionFactory.makeFactory()};
+    component.run();
+    REQUIRE(waitForHttpServer(port));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
+
+    const auto connectResponse = client.Put(
+        "/connect",
+        R"({"clientId":"receive-empty"})",
+        "application/json");
+    REQUIRE(connectResponse != nullptr);
+    REQUIRE(connectResponse->status == k_status_ok);
+
+    const auto maybeSendToken = tryReadConnectSendToken(connectResponse->body);
+    REQUIRE(maybeSendToken.has_value());
+
+    const std::string receiveBody = std::string{R"({"token":")"} + *maybeSendToken + R"("})";
+    const auto receiveResponse = client.Put("/receive", receiveBody, "application/json");
+    REQUIRE(receiveResponse != nullptr);
+    REQUIRE(receiveResponse->status == k_status_no_content);
+    REQUIRE(receiveResponse->get_header_value("packet").empty());
+
+    component.close();
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("http_mqtt_interface_component_command_response_failed_paths_with_valid_session", "[http_mqtt_interface_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    SessionMockFactory sessionFactory{};
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = port;
+
+    yaha::HttpMqttInterfaceClientComponent component{config, sessionFactory.makeFactory()};
+    component.run();
+    REQUIRE(waitForHttpServer(port));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
+
+    const auto connectResponse = client.Put(
+        "/connect",
+        R"({"clientId":"response-failed"})",
+        "application/json");
+    REQUIRE(connectResponse != nullptr);
+    REQUIRE(connectResponse->status == k_status_ok);
+
+    const auto maybeSendToken = tryReadConnectSendToken(connectResponse->body);
+    REQUIRE(maybeSendToken.has_value());
+
+    const std::string subscribeBody =
+        std::string{R"({"token":")"} + *maybeSendToken +
+        R"(","packetid":1,"topics":{"demo/topic":1}})";
+    const auto subscribeResponse = client.Put(
+        "/subscribe",
+        httplib::Headers{{"version", "9.9"}},
+        subscribeBody,
+        "application/json");
+    REQUIRE(subscribeResponse != nullptr);
+    REQUIRE(subscribeResponse->status == 500);
+    REQUIRE(subscribeResponse->body.find("subscribe_response_failed") != std::string::npos);
+
+    const std::string unsubscribeBody =
+        std::string{R"({"token":")"} + *maybeSendToken +
+        R"(","packetid":2,"topics":{"demo/topic":1}})";
+    const auto unsubscribeResponse = client.Put(
+        "/unsubscribe",
+        httplib::Headers{{"version", "9.9"}},
+        unsubscribeBody,
+        "application/json");
+    REQUIRE(unsubscribeResponse != nullptr);
+    REQUIRE(unsubscribeResponse->status == 500);
+    REQUIRE(unsubscribeResponse->body.find("unsubscribe_response_failed") != std::string::npos);
+
+    const std::string disconnectBody = std::string{R"({"token":")"} + *maybeSendToken + R"("})";
+    const auto disconnectResponse = client.Put(
+        "/disconnect",
+        httplib::Headers{{"version", "9.9"}},
+        disconnectBody,
+        "application/json");
+    REQUIRE(disconnectResponse != nullptr);
+    REQUIRE(disconnectResponse->status == 500);
+    REQUIRE(disconnectResponse->body.find("disconnect_response_failed") != std::string::npos);
+
+    component.close();
 }

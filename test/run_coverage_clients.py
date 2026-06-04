@@ -20,6 +20,7 @@ Scoped coverage report (reuse existing profdata):
 
 Line-level detail:
     python test/run_coverage_clients.py --show src/yaha/mqtt_client/mqtt_client.cpp
+    # writes stable report file under test/coverage/show/
 """
 
 import argparse
@@ -45,6 +46,7 @@ COV_BINARY = COV_DIR / ("yahabroker-tests.exe" if sys.platform == "win32" else "
 PROFDATA = TEST_DIR / "coverage_clients.profdata"
 PROFRAW_GLOB = "coverage-clients-*.profraw"
 COVERAGE_ARTIFACTS_DIR = TEST_DIR / "coverage" / "clients"
+SHOW_REPORTS_DIR = TEST_DIR / "coverage" / "show"
 SRC_DIR = PROJECT_ROOT / "src"
 LOG_FILE = TEST_DIR / "run_clients.log"
 SUMMARY_FILE = TEST_DIR / "run_coverage_clients.summary.json"
@@ -575,6 +577,32 @@ def step_coverage_show(path: str) -> str:
     )
 
 
+def _stable_show_report_path(path: str) -> Path:
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        candidate = (PROJECT_ROOT / candidate).resolve()
+
+    try:
+        rel = candidate.relative_to(PROJECT_ROOT)
+        stem = rel.as_posix()
+    except ValueError:
+        stem = str(candidate)
+
+    sanitized = re.sub(r"[^A-Za-z0-9._/-]", "_", stem)
+    sanitized = sanitized.replace("/", "__")
+    if not sanitized:
+        sanitized = "unknown"
+    return SHOW_REPORTS_DIR / f"{sanitized}.show.txt"
+
+
+def _write_show_report(path: str, output: str) -> Path:
+    SHOW_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    report_path = _stable_show_report_path(path)
+    report_path.write_text(output, encoding="utf-8")
+    _log(f"[show-report] {report_path}")
+    return report_path
+
+
 def _parse_test_summary(test_output: str) -> tuple[int, int]:
     for line in reversed(test_output.splitlines()):
         match = re.search(r"All tests passed \((\d+) assertions in (\d+) test cases\)", line)
@@ -797,7 +825,10 @@ def scoped_run(paths: list[str]) -> None:
 def show_run(path: str) -> None:
     _require_profdata()
     _open_log()
-    print(step_coverage_show(path))
+    output = step_coverage_show(path)
+    print(output)
+    report_path = _write_show_report(path, output)
+    print(f"[show-report] {report_path}")
     _close_log()
 
 

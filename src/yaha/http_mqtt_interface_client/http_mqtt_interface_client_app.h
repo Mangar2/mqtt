@@ -6,6 +6,7 @@
  */
 
 #include "yaha/ini/ini_document.h"
+#include "yaha/http_mqtt_interface_client/http_mqtt_session_manager.h"
 #include "yaha/mqtt_component/mqtt_component.h"
 #include "yaha/mqtt_client/mqtt_client.h"
 
@@ -38,6 +39,15 @@ public:
      * @param configInput Runtime configuration.
      */
     explicit HttpMqttInterfaceClientComponent(HttpMqttInterfaceClientConfig configInput);
+
+    /**
+     * @brief Constructs component with runtime configuration and custom session transport factory.
+     * @param configInput Runtime configuration.
+     * @param sessionTransportFactory Factory used to build per-session broker transport adapters.
+     */
+    HttpMqttInterfaceClientComponent(
+        HttpMqttInterfaceClientConfig configInput,
+        HttpMqttSessionTransportFactory sessionTransportFactory);
 
     /**
      * @brief Destructor stops active HTTP server thread.

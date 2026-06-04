@@ -197,6 +197,12 @@ Enforcement note:
 - do not run test executables directly
 - use only `test/run_coverage_broker.py` and `test/run_coverage_clients.py` (with `--scope` when needed)
 
+Coverage show output reuse (mandatory):
+- For client coverage details, `python3 test/run_coverage_clients.py --show <file>` writes a stable report file under `test/coverage/show/`.
+- If a matching report file already exists for the same `<file>` and no code changed since that report was created, reuse that report and do not rerun the identical `--show` command.
+- A repeated identical `--show` command is allowed only when code changed or when `coverage_clients.profdata` was regenerated.
+- Before any rerun, state the delta reason in one sentence (what changed since the last run).
+
 Before marking any code change complete, run the scope-matching coverage script from the project root:
 
 - broker scope: `python3 test/run_coverage_broker.py`
