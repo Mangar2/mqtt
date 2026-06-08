@@ -94,7 +94,7 @@ constexpr std::string_view k_publishIngressReasonMessage{"Request by User"};
     responseOutput.statusCode = statusCode;
     responseOutput.headers = makeStandardJsonHeaders();
     responseOutput.headers["version"] = std::string{k_versionValue};
-    responseOutput.payload = std::format("{{\"error\":\"{}\"}}", errorCode);
+    responseOutput.payload = std::format(R"({{"error":"{}"}})", errorCode);
     return responseOutput;
 }
 
@@ -167,7 +167,7 @@ constexpr std::string_view k_publishIngressReasonMessage{"Request by User"};
         }
         firstEntry = false;
         outputStream << std::format(
-            "{{\"message\":\"{}\",\"timestamp\":\"{}\"}}",
+            R"({{"message":"{}","timestamp":"{}"}})",
             escapeJsonString(reasonEntry.message),
             escapeJsonString(reasonEntry.timestamp));
     }
@@ -460,7 +460,7 @@ struct JsonTokenScanState {
     if (!messageText.has_value() || !timestampText.has_value()) {
         return std::nullopt;
     }
-    return ReasonEntry{*messageText, *timestampText};
+    return ReasonEntry{.message = *messageText, .timestamp = *timestampText};
 }
 
 [[nodiscard]] std::optional<ReasonList> parseReasonArray(const std::string_view arrayText) {
@@ -890,19 +890,19 @@ void validatePacketIdMatch(
     outputStream << std::format("\"clean\":{}", optionsInput.clean ? "true" : "false");
     outputStream << std::format(",\"keepAlive\":{}", static_cast<unsigned long long>(keepAliveValue));
     if (optionsInput.clientId.has_value()) {
-        outputStream << std::format(",\"clientId\":\"{}\"", escapeJsonString(*optionsInput.clientId));
+        outputStream << std::format(R"(,"clientId":"{}")", escapeJsonString(*optionsInput.clientId));
     }
     if (optionsInput.host.has_value()) {
-        outputStream << std::format(",\"host\":\"{}\"", escapeJsonString(*optionsInput.host));
+        outputStream << std::format(R"(,"host":"{}")", escapeJsonString(*optionsInput.host));
     }
     if (optionsInput.port.has_value()) {
         outputStream << std::format(",\"port\":{}", static_cast<unsigned int>(*optionsInput.port));
     }
     if (optionsInput.user.has_value()) {
-        outputStream << std::format(",\"user\":\"{}\"", escapeJsonString(*optionsInput.user));
+        outputStream << std::format(R"(,"user":"{}")", escapeJsonString(*optionsInput.user));
     }
     if (optionsInput.password.has_value()) {
-        outputStream << std::format(",\"password\":\"{}\"", escapeJsonString(*optionsInput.password));
+        outputStream << std::format(R"(,"password":"{}")", escapeJsonString(*optionsInput.password));
     }
     outputStream << '}';
     requestData.payload = outputStream.str();
@@ -967,7 +967,7 @@ void validatePacketIdMatch(
     }
     outputStream << std::format("\"present\":{}", static_cast<unsigned int>(resultInput.present));
     outputStream << std::format(
-        ",\"token\":{{\"send\":\"{}\",\"receive\":\"{}\"}}",
+        R"(,"token":{{"send":"{}","receive":"{}"}})",
         escapeJsonString(resultInput.token.send),
         escapeJsonString(resultInput.token.receive));
     outputStream << '}';
@@ -980,7 +980,7 @@ void validatePacketIdMatch(
     HttpMqttRequestData requestData{};
     requestData.headers = makeStandardJsonHeaders();
     requestData.headers["version"] = std::string{k_versionValue};
-    requestData.payload = std::format("{{\"clientId\":\"{}\"}}", escapeJsonString(clientId));
+    requestData.payload = std::format(R"({{"clientId":"{}"}})", escapeJsonString(clientId));
     requestData.resultCheck = [](const HttpMqttResult& resultInput) {
         validateStatusCode(resultInput, k_httpStatusNoContent, "disconnect result");
     };
@@ -1018,7 +1018,7 @@ void validatePacketIdMatch(
         requestData.payload = *optionsInput.message.rawPayload();
     } else {
         requestData.payload = std::format(
-            "{{\"token\":\"{}\",\"message\":{{\"topic\":\"{}\",\"value\":{},\"reason\":{}}}}}",
+            R"({{"token":"{}","message":{{"topic":"{}","value":{},"reason":{}}}}})",
             escapeJsonString(optionsInput.token),
             escapeJsonString(optionsInput.message.topic()),
             messageValueToJson(optionsInput.message.value()),
@@ -1087,7 +1087,7 @@ void validatePacketIdMatch(
         requestData.headers["packetid"] = std::to_string(*optionsInput.packetId);
     }
 
-    requestData.payload = std::format("{{\"token\":\"{}\"}}", escapeJsonString(optionsInput.token));
+    requestData.payload = std::format(R"({{"token":"{}"}})", escapeJsonString(optionsInput.token));
     requestData.resultCheck = [expectedPacketId = optionsInput.packetId](const HttpMqttResult& resultInput) {
         validateStatusCode(resultInput, k_httpStatusNoContent, "pubrel result");
         validatePacketIdMatch(resultInput, expectedPacketId, "pubrel result");
@@ -1123,7 +1123,7 @@ void validatePacketIdMatch(
     requestData.headers["version"] = std::string{k_versionValue};
     requestData.headers["packetid"] = std::to_string(packetId);
     requestData.payload = std::format(
-        "{{\"clientId\":\"{}\",\"topics\":{}}}",
+        R"({{"clientId":"{}","topics":{}}})",
         escapeJsonString(clientId),
         serializeTopics(topicsInput));
 
@@ -1173,7 +1173,7 @@ void validatePacketIdMatch(
     requestData.headers["version"] = std::string{k_versionValue};
     requestData.headers["packetid"] = std::to_string(packetId);
     requestData.payload = std::format(
-        "{{\"topics\":{},\"clientId\":\"{}\"}}",
+        R"({{"topics":{},"clientId":"{}"}})",
         serializeTopics(topicsInput),
         escapeJsonString(clientId));
 

@@ -41,7 +41,7 @@ void verifyPhase7Connect(const yaha::HttpMqttInterfaces& interfaces) {
     const yaha::HttpMqttResult connectResult = makeResult(
         k_statusOk,
         {{"content-type", "application/json; charset=UTF-8"}, {"packet", "connack"}},
-        "{\"present\":1,\"token\":{\"send\":\"send-token\",\"receive\":\"recv-token\"}}"
+        R"({"present":1,"token":{"send":"send-token","receive":"recv-token"}})"
     );
     REQUIRE_NOTHROW(connectRequest.resultCheck(connectResult));
 
@@ -206,7 +206,7 @@ TEST_CASE("connect_v1_result_check_accepts_valid_connack", "[http_mqtt_interface
     const yaha::HttpMqttResult result = makeResult(
         200,
         { {"content-type", "application/json; charset=UTF-8"}, {"packet", "connack"} },
-        "{\"present\":1,\"token\":{\"send\":\"send-token\",\"receive\":\"recv-token\"}}"
+        R"({"present":1,"token":{"send":"send-token","receive":"recv-token"}})"
     );
 
     REQUIRE_NOTHROW(requestData.resultCheck(result));
@@ -231,7 +231,7 @@ TEST_CASE("connect_v1_result_check_throws_for_mqtt_error_code", "[http_mqtt_inte
     const yaha::HttpMqttResult result = makeResult(
         200,
         { {"content-type", "application/json; charset=UTF-8"}, {"packet", "connack"} },
-        "{\"present\":0,\"mqttcode\":4,\"token\":{\"send\":\"send\",\"receive\":\"recv\"}}"
+        R"({"present":0,"mqttcode":4,"token":{"send":"send","receive":"recv"}})"
     );
 
     try {
@@ -282,7 +282,7 @@ TEST_CASE("publish_v1_request_preserves_raw_payload_without_rebuild", "[http_mqt
     const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
     yaha::Message message{"topic/demo", std::string{"fallback"}, yaha::Qos::AtLeastOnce, false};
     const std::string rawPayload =
-        "{\"token\":\"send-token\",\"message\":{\"topic\":\"topic/demo\",\"value\":\"keep\",\"reason\":[{\"message\":\"source\",\"timestamp\":\"2026-05-08T10:00:00Z\"}],\"extra\":{\"x\":1}}}";
+        R"({"token":"send-token","message":{"topic":"topic/demo","value":"keep","reason":[{"message":"source","timestamp":"2026-05-08T10:00:00Z"}],"extra":{"x":1}}})";
     message.setRawPayload(rawPayload);
 
     const yaha::HttpMqttPublishOptions options{
@@ -394,6 +394,8 @@ TEST_CASE("unsubscribe_v1_result_and_response_with_codes", "[http_mqtt_interface
     REQUIRE(responseData.payload == "[0,17]");
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("compat_publish_post_form_maps_to_publish_v1_defaults", "[http_mqtt_interface]") {
     const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
     const yaha::HttpMqttPublishCompatibilityRequest requestInput{
@@ -433,7 +435,7 @@ TEST_CASE("compat_publish_falls_back_to_json_body_when_topic_missing", "[http_mq
         .endpoint = "/publish",
         .headers = {{"content-type", "application/json"}},
         .fields = {},
-        .body = "{\"topic\":\"alpha%2fbeta\",\"value\":\"payload\"}",
+        .body = R"({"topic":"alpha%2fbeta","value":"payload"})",
         .token = "token-body"};
 
     yaha::HttpMqttRequestData capturedRequest{};
@@ -676,7 +678,7 @@ TEST_CASE("compat_publish_json_body_parses_null_value_as_string", "[http_mqtt_in
         .endpoint = "/publish",
         .headers = {{"content-type", "application/json"}},
         .fields = {},
-        .body = "{\"topic\":\"compat/topic\",\"value\":null}",
+        .body = R"({"topic":"compat/topic","value":null})",
         .token = "compat-token"};
 
     yaha::HttpMqttRequestData capturedRequest{};
