@@ -17,6 +17,7 @@
 namespace yaha {
 
 constexpr std::uint16_t k_defaultHttpMqttInterfaceListenerPort{8092U};
+constexpr std::uint32_t k_defaultHttpMqttInterfaceConnectedClientsReportIntervalSeconds{60U};
 
 /**
  * @brief Runtime settings for the standalone HTTP MQTT interface client.
@@ -26,6 +27,8 @@ struct HttpMqttInterfaceClientConfig {
     std::uint16_t listenerPort{k_defaultHttpMqttInterfaceListenerPort};  ///< HTTP bind port.
     bool enablePublishPhpAlias{true};         ///< Enables POST /publish.php compatibility alias.
     bool useLegacyPhpResponse{false};         ///< Enables legacy 200 JSON-string response mode.
+    std::uint32_t connectedClientsReportIntervalSeconds{
+        k_defaultHttpMqttInterfaceConnectedClientsReportIntervalSeconds};  ///< Periodic connected-clients report interval.
     YahaMqttClient::Config mqttConfig{};      ///< Broker publish transport runtime settings.
 };
 

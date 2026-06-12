@@ -12,7 +12,7 @@ std::atomic<bool> shutdownRequested{false};
 
 void handleSignal(const int signalNumber) {
     (void)signalNumber;
-    shutdownRequested.store(true);
+    YahaMqttClientRuntime::requestShutdown();
 }
 
 } // namespace
@@ -44,6 +44,10 @@ void YahaMqttClientRuntime::runUntilSignal() {
 
     component_.close();
     mqttClient_.close();
+}
+
+void YahaMqttClientRuntime::requestShutdown() noexcept {
+    shutdownRequested.store(true);
 }
 
 } // namespace yaha

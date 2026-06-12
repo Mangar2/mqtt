@@ -17,6 +17,8 @@ namespace yaha {
  */
 class YahaMqttClientRuntime {
 public:
+    static constexpr int k_default_poll_interval_ms{100};
+
     /**
      * @brief Constructs runtime wrapper around one mqtt client and one component.
      * @param mqttClient Client to run and stop.
@@ -29,10 +31,15 @@ public:
      */
     void runUntilSignal();
 
+    /**
+     * @brief Requests runtime shutdown without sending an OS signal.
+     */
+    static void requestShutdown() noexcept;
+
 private:
     YahaMqttClient& mqttClient_;
     IMqttComponent& component_;
-    std::chrono::milliseconds pollInterval_{100};
+    std::chrono::milliseconds pollInterval_{k_default_poll_interval_ms};
 };
 
 } // namespace yaha

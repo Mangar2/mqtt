@@ -314,6 +314,43 @@ bool HttpMqttSessionManager::resolveSendTokenByClientId(
     return true;
 }
 
+std::vector<HttpMqttSessionSnapshot> HttpMqttSessionManager::listSessions() const {
+    std::vector<std::shared_ptr<SessionState>> sessions{};
+    {
+        std::lock_guard<std::mutex> lock{sessionsMutex_};
+        sessions.reserve(sessionsBySendToken_.size());
+        for (const auto& [token, session] : sessionsBySendToken_) {
+            (void)token;
+            sessions.push_back(session);
+        }
+    }
+
+    std::vector<HttpMqttSessionSnapshot> snapshots{};
+    snapshots.reserve(sessions.size());
+    for (const auto& session : sessions) {
+        if (!session) {
+            continue;
+        }
+
+        bool isConnected = false;
+        {
+            std::lock_guard<std::mutex> operationLock{session->operationMutex};
+            if (session->transport.isConnected) {
+                isConnected = session->transport.isConnected();
+            }
+        }
+
+        snapshots.push_back(HttpMqttSessionSnapshot{
+            .clientId = session->clientId,
+            .sendToken = session->sendToken,
+            .receiveToken = session->receiveToken,
+            .brokerConnected = isConnected,
+        });
+    }
+
+    return snapshots;
+}
+
 std::optional<std::shared_ptr<HttpMqttSessionManager::SessionState>> HttpMqttSessionManager::findSession(
     const std::string& token) const {
     std::lock_guard<std::mutex> lock{sessionsMutex_};

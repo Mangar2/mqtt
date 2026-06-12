@@ -89,6 +89,14 @@ def _log(text: str) -> None:
         _log_fh.flush()
 
 
+def _coerce_timeout_output(timeout_output: str | bytes | None) -> str:
+    if timeout_output is None:
+        return ""
+    if isinstance(timeout_output, bytes):
+        return timeout_output.decode("utf-8", errors="replace")
+    return timeout_output
+
+
 def _close_log() -> None:
     if _log_fh:
         _log_fh.close()
@@ -124,7 +132,7 @@ def _run_captured(
         _log(result.stdout)
         return result.returncode, result.stdout
     except subprocess.TimeoutExpired as exc:
-        captured = exc.stdout or ""
+        captured = _coerce_timeout_output(exc.stdout)
         _log(captured)
         _log(f"[TIMEOUT] command exceeded {timeout_seconds}s: {' '.join(str(c) for c in cmd)}")
         return 124, captured
@@ -187,7 +195,7 @@ def _run_single_test_case_with_timeout(
         _log(output)
         return process.returncode, output
     except subprocess.TimeoutExpired as exc:
-        partial_output = exc.stdout or ""
+        partial_output = _coerce_timeout_output(exc.stdout)
         _log(partial_output)
         timeout_note = (
             "[TIMEOUT] test process exceeded "

@@ -52,6 +52,7 @@ INI mapping contract for `tryLoadMqttClientConfigFromIni`:
 |------|--------|-------|
 | `YahaMqttClientRuntime` | ctor `(YahaMqttClient&, IMqttComponent&)` | runtime owns generic orchestration only and talks to component via interface |
 | `YahaMqttClientRuntime` | `runUntilSignal()` | installs SIGINT/SIGTERM handlers, calls `component.run()`, starts mqtt loop, waits, then calls `component.close()` and stops mqtt |
+| `YahaMqttClientRuntime` | `requestShutdown()` | static shutdown request hook that sets the same runtime shutdown flag used by signal handlers, enabling deterministic non-signal shutdown triggers |
 
 ## Transport callback contract
 

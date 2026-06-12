@@ -1,7 +1,7 @@
 @host = 192.168.0.183
 @port = 8210
-#@keyPath = /zwave/settings
-@keyPath = /automation/rules
+@keyPath = /zwave/settings
+#@keyPath = /automation/rules
 @baseUrl = http://{{host}}:{{port}}{{keyPath}}
 @baseUrlNginx = http://{{host}}/kvstore{{keyPath}}
 

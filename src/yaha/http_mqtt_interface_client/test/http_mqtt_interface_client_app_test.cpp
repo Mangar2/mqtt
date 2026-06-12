@@ -110,7 +110,7 @@ public:
     }
 
     void stop() {
-        std::raise(SIGTERM);
+        yaha::YahaMqttClientRuntime::requestShutdown();
         if (runtimeThread.joinable()) {
             runtimeThread.join();
         }
@@ -398,67 +398,73 @@ TEST_CASE("http_mqtt_interface_component_serves_endpoints_logs_publish_and_stops
     harness.start();
     REQUIRE(waitForHttpServer(port));
 
-    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
-    configureHttpClientTimeouts(client);
+    {
+        httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+        configureHttpClientTimeouts(client);
 
-    const auto healthResponse = client.Get("/health");
-    REQUIRE(healthResponse != nullptr);
-    REQUIRE(healthResponse->status == k_status_ok);
+        const auto healthResponse = client.Get("/health");
+        REQUIRE(healthResponse != nullptr);
+        REQUIRE(healthResponse->status == k_status_ok);
 
-    const auto optionsPublishResponse = client.Options("/publish");
-    REQUIRE(optionsPublishResponse != nullptr);
-    REQUIRE(optionsPublishResponse->status == k_status_no_content);
-    verifyCorsHeaders(optionsPublishResponse);
-    REQUIRE(optionsPublishResponse->get_header_value("Access-Control-Max-Age") == "86400");
+        const auto optionsPublishResponse = client.Options("/publish");
+        REQUIRE(optionsPublishResponse != nullptr);
+        REQUIRE(optionsPublishResponse->status == k_status_no_content);
+        verifyCorsHeaders(optionsPublishResponse);
+        REQUIRE(optionsPublishResponse->get_header_value("Access-Control-Max-Age") == "86400");
 
-    const auto optionsPublishPhpResponse = client.Options("/publish.php");
-    REQUIRE(optionsPublishPhpResponse != nullptr);
-    REQUIRE(optionsPublishPhpResponse->status == k_status_no_content);
-    verifyCorsHeaders(optionsPublishPhpResponse);
+        const auto optionsPublishPhpResponse = client.Options("/publish.php");
+        REQUIRE(optionsPublishPhpResponse != nullptr);
+        REQUIRE(optionsPublishPhpResponse->status == k_status_no_content);
+        verifyCorsHeaders(optionsPublishPhpResponse);
 
-    const auto optionsPubrelResponse = client.Options("/pubrel");
-    REQUIRE(optionsPubrelResponse != nullptr);
-    REQUIRE(optionsPubrelResponse->status == k_status_no_content);
-    verifyCorsHeaders(optionsPubrelResponse);
+        const auto optionsPubrelResponse = client.Options("/pubrel");
+        REQUIRE(optionsPubrelResponse != nullptr);
+        REQUIRE(optionsPubrelResponse->status == k_status_no_content);
+        verifyCorsHeaders(optionsPubrelResponse);
 
-    const httplib::Headers putHeaders{
-        {"version", "1.0"},
-        {"qos", "1"},
-        {"retain", "0"},
-    };
-    const auto putPublishResponse = client.Put("/publish", putHeaders, "{}", "application/json");
-    REQUIRE(putPublishResponse != nullptr);
-    REQUIRE(putPublishResponse->status == k_status_no_content);
+        const httplib::Headers putHeaders{
+            {"version", "1.0"},
+            {"qos", "1"},
+            {"retain", "0"},
+        };
+        const auto putPublishResponse = client.Put(
+            "/publish",
+            putHeaders,
+            R"({"topic":"sensor%2Fput","value":"11"})",
+            "application/json");
+        REQUIRE(putPublishResponse != nullptr);
+        REQUIRE(putPublishResponse->status == k_status_no_content);
 
-    const auto putPubrelResponse = client.Put("/pubrel", httplib::Headers{{"version", "1.0"}}, "{}", "application/json");
-    REQUIRE(putPubrelResponse != nullptr);
-    REQUIRE(putPubrelResponse->status == k_status_no_content);
+        const auto putPubrelResponse = client.Put("/pubrel", httplib::Headers{{"version", "1.0"}}, "{}", "application/json");
+        REQUIRE(putPubrelResponse != nullptr);
+        REQUIRE(putPubrelResponse->status == k_status_no_content);
 
-    const httplib::Params formParams{{"topic", "sensor%2Ftemp"}, {"value", "42"}, {"token", "tok-form"}};
-    const auto postResponse = client.Post("/publish", formParams);
-    REQUIRE(postResponse != nullptr);
-    REQUIRE(postResponse->status == k_status_no_content);
-    verifyCorsHeaders(postResponse);
+        const httplib::Params formParams{{"topic", "sensor%2Ftemp"}, {"value", "42"}, {"token", "tok-form"}};
+        const auto postResponse = client.Post("/publish", formParams);
+        REQUIRE(postResponse != nullptr);
+        REQUIRE(postResponse->status == k_status_no_content);
+        verifyCorsHeaders(postResponse);
 
-    const httplib::Params formParamsNoToken{{"topic", "sensor%2Ffallback"}, {"value", "7"}};
-    const auto postNoTokenResponse = client.Post("/publish", formParamsNoToken);
-    REQUIRE(postNoTokenResponse != nullptr);
-    REQUIRE(postNoTokenResponse->status == k_status_no_content);
+        const httplib::Params formParamsNoToken{{"topic", "sensor%2Ffallback"}, {"value", "7"}};
+        const auto postNoTokenResponse = client.Post("/publish", formParamsNoToken);
+        REQUIRE(postNoTokenResponse != nullptr);
+        REQUIRE(postNoTokenResponse->status == k_status_no_content);
 
-    const std::string jsonBody =
-        "{"
-        "\"topic\":\"sensor%2Fjson\","
-        "\"value\":2.5,"
-        "\"qos\":2,"
-        "\"retain\":false"
-        "}";
-    const auto postJsonResponse = client.Post("/publish", httplib::Headers{{"content-type", "application/json"}, {"token", "tok-json"}}, jsonBody, "application/json");
-    REQUIRE(postJsonResponse != nullptr);
-    REQUIRE(postJsonResponse->status == k_status_no_content);
+        const std::string jsonBody =
+            "{"
+            "\"topic\":\"sensor%2Fjson\","
+            "\"value\":2.5,"
+            "\"qos\":2,"
+            "\"retain\":false"
+            "}";
+        const auto postJsonResponse = client.Post("/publish", httplib::Headers{{"content-type", "application/json"}, {"token", "tok-json"}}, jsonBody, "application/json");
+        REQUIRE(postJsonResponse != nullptr);
+        REQUIRE(postJsonResponse->status == k_status_no_content);
 
-    const auto postPhpResponse = client.Post("/publish.php", formParams);
-    REQUIRE(postPhpResponse != nullptr);
-    REQUIRE(postPhpResponse->status == k_status_no_content);
+        const auto postPhpResponse = client.Post("/publish.php", formParams);
+        REQUIRE(postPhpResponse != nullptr);
+        REQUIRE(postPhpResponse->status == k_status_no_content);
+    }
 
     harness.stop();
     std::cout.rdbuf(previousOutputBuffer);

@@ -15,6 +15,13 @@
 
 namespace yaha {
 
+struct HttpMqttSessionSnapshot {
+    std::string clientId{};
+    std::string sendToken{};
+    std::string receiveToken{};
+    bool brokerConnected{false};
+};
+
 struct HttpMqttSessionConnectRequest {
     std::string clientId{};
     std::optional<std::string> brokerHost{};
@@ -65,6 +72,7 @@ public:
 
     [[nodiscard]] bool hasSession(const std::string& token) const;
     [[nodiscard]] bool resolveSendTokenByClientId(const std::string& clientId, std::string& tokenOut) const;
+    [[nodiscard]] std::vector<HttpMqttSessionSnapshot> listSessions() const;
 
 private:
     struct SessionState;
