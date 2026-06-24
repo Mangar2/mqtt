@@ -22,6 +22,9 @@
 
 namespace {
 
+constexpr int k_wait_attempt_limit{80};
+constexpr int k_wait_sleep_ms{5};
+
 std::filesystem::path makeTempDirectory() {
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto path = std::filesystem::temp_directory_path() /
@@ -67,13 +70,13 @@ bool waitForHttpReady(const std::uint16_t port) {
     httplib::Client client{"127.0.0.1", static_cast<int>(port)};
     client.set_connection_timeout(0, 100000);
     client.set_read_timeout(0, 100000);
-    for (int attemptIndex = 0; attemptIndex < 50; ++attemptIndex) {
+    for (int attemptIndex = 0; attemptIndex < k_wait_attempt_limit; ++attemptIndex) {
         if (const auto res = client.Options("/")) {
             if (res->status == 200) {
                 return true;
             }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        std::this_thread::sleep_for(std::chrono::milliseconds{k_wait_sleep_ms});
     }
     return false;
 }
@@ -82,7 +85,7 @@ bool waitForTopicAtLeast(std::mutex& eventsMutex,
                          const std::vector<yaha::Message>& events,
                          const std::string& topicName,
                          const std::size_t minimumCount) {
-    for (int attemptIndex = 0; attemptIndex < 200; ++attemptIndex) {
+    for (int attemptIndex = 0; attemptIndex < k_wait_attempt_limit; ++attemptIndex) {
         std::size_t count = 0U;
         {
             std::lock_guard<std::mutex> lock{eventsMutex};
@@ -95,7 +98,7 @@ bool waitForTopicAtLeast(std::mutex& eventsMutex,
         if (count >= minimumCount) {
             return true;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        std::this_thread::sleep_for(std::chrono::milliseconds{k_wait_sleep_ms});
     }
     return false;
 }
@@ -104,7 +107,7 @@ bool waitForAnyTopicAtLeast(std::mutex& eventsMutex,
                             const std::vector<yaha::Message>& events,
                             const std::vector<std::string>& topicNames,
                             const std::size_t minimumCount) {
-    for (int attemptIndex = 0; attemptIndex < 200; ++attemptIndex) {
+    for (int attemptIndex = 0; attemptIndex < k_wait_attempt_limit; ++attemptIndex) {
         std::size_t count = 0U;
         {
             std::lock_guard<std::mutex> lock{eventsMutex};
@@ -120,7 +123,7 @@ bool waitForAnyTopicAtLeast(std::mutex& eventsMutex,
         if (count >= minimumCount) {
             return true;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        std::this_thread::sleep_for(std::chrono::milliseconds{k_wait_sleep_ms});
     }
     return false;
 }
@@ -133,7 +136,7 @@ bool waitForMonitoringEventWithSourceAndKeyPath(std::mutex& eventsMutex,
     const std::string sourceToken = std::string{"\"source\":\""} + sourceText + "\"";
     const std::string keyPathToken = std::string{"\"keyPath\":\""} + keyPathText + "\"";
 
-    for (int attemptIndex = 0; attemptIndex < 200; ++attemptIndex) {
+    for (int attemptIndex = 0; attemptIndex < k_wait_attempt_limit; ++attemptIndex) {
         {
             std::lock_guard<std::mutex> lock{eventsMutex};
             for (const auto& eventValue : events) {
@@ -150,7 +153,7 @@ bool waitForMonitoringEventWithSourceAndKeyPath(std::mutex& eventsMutex,
                 }
             }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        std::this_thread::sleep_for(std::chrono::milliseconds{k_wait_sleep_ms});
     }
 
     return false;
@@ -165,7 +168,7 @@ bool waitForMonitoringEventWithSourceAndKeyPathInTopics(
     const std::string sourceToken = std::string{"\"source\":\""} + sourceText + "\"";
     const std::string keyPathToken = std::string{"\"keyPath\":\""} + keyPathText + "\"";
 
-    for (int attemptIndex = 0; attemptIndex < 200; ++attemptIndex) {
+    for (int attemptIndex = 0; attemptIndex < k_wait_attempt_limit; ++attemptIndex) {
         {
             std::lock_guard<std::mutex> lock{eventsMutex};
             for (const auto& eventValue : events) {
@@ -189,7 +192,7 @@ bool waitForMonitoringEventWithSourceAndKeyPathInTopics(
                 }
             }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        std::this_thread::sleep_for(std::chrono::milliseconds{k_wait_sleep_ms});
     }
 
     return false;

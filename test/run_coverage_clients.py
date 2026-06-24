@@ -64,8 +64,8 @@ CLIENT_SCOPE_PREFIXES = (
 CTEST_TOTAL_TIMEOUT_SECONDS = int(os.environ.get("MQTT_CTEST_TOTAL_TIMEOUT", "1800"))
 CTEST_NO_OUTPUT_TIMEOUT_SECONDS = int(os.environ.get("MQTT_CTEST_NO_OUTPUT_TIMEOUT", "300"))
 COVERAGE_TEST_TIMEOUT_SECONDS = int(os.environ.get("MQTT_COVERAGE_TEST_TIMEOUT", "600"))
-# Hard safety cap: one single test must never run longer than one minute.
-PER_TEST_TIMEOUT_SECONDS = max(1, min(int(os.environ.get("MQTT_PER_TEST_TIMEOUT", "60")), 60))
+# Hard safety cap: one single test must never run longer than two seconds.
+PER_TEST_TIMEOUT_SECONDS = max(1, min(int(os.environ.get("MQTT_PER_TEST_TIMEOUT", "2")), 2))
 SLOW_TEST_WARNING_SECONDS = float(os.environ.get("MQTT_SLOW_TEST_WARNING", "2"))
 
 _log_fh = None

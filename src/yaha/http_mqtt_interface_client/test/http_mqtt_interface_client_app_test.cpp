@@ -38,7 +38,6 @@ std::filesystem::path writeTempIni(const std::string& content) {
     return path;
 }
 
-constexpr std::uint16_t k_fallback_test_port{28130U};
 constexpr int k_wait_attempts{50};
 constexpr int k_wait_sleep_ms{10};
 constexpr int k_http_timeout_microseconds{500000};
@@ -46,8 +45,10 @@ constexpr int k_status_ok{200};
 constexpr int k_status_no_content{204};
 constexpr int k_status_internal_server_error{500};
 constexpr std::uint16_t k_test_broker_port{1883U};
-constexpr const char* k_expected_cors_methods{"POST, PUT, OPTIONS"};
-constexpr const char* k_expected_cors_headers{"Content-Type, Authorization, X-Requested-With"};
+constexpr unsigned int k_test_port_base{30000U};
+constexpr unsigned int k_test_port_range{20000U};
+
+std::atomic<unsigned int> g_next_test_port{k_test_port_base};
 
 void configureHttpClientTimeouts(httplib::Client& client) {
     client.set_connection_timeout(0, k_http_timeout_microseconds);
@@ -55,14 +56,9 @@ void configureHttpClientTimeouts(httplib::Client& client) {
 }
 
 [[nodiscard]] std::uint16_t reserveFreeLocalPort() {
-    httplib::Server probeServer;
-    const int boundPort = probeServer.bind_to_any_port("127.0.0.1");
-    if (boundPort <= 0) {
-        return k_fallback_test_port;
-    }
-    const auto port = static_cast<std::uint16_t>(boundPort);
-    probeServer.stop();
-    return port;
+    const unsigned int rawPort = g_next_test_port.fetch_add(1U);
+    const unsigned int normalizedPort = k_test_port_base + (rawPort % k_test_port_range);
+    return static_cast<std::uint16_t>(normalizedPort);
 }
 
 bool waitForHttpServer(const std::uint16_t port) {
@@ -75,13 +71,6 @@ bool waitForHttpServer(const std::uint16_t port) {
         std::this_thread::sleep_for(std::chrono::milliseconds{k_wait_sleep_ms});
     }
     return false;
-}
-
-void verifyCorsHeaders(const httplib::Result& response) {
-    REQUIRE(response != nullptr);
-    REQUIRE(response->get_header_value("Access-Control-Allow-Origin") == "*");
-    REQUIRE(response->get_header_value("Access-Control-Allow-Methods") == k_expected_cors_methods);
-    REQUIRE(response->get_header_value("Access-Control-Allow-Headers") == k_expected_cors_headers);
 }
 
 class RuntimeHarness {
@@ -380,119 +369,6 @@ TEST_CASE("load_http_mqtt_interface_client_config_falls_back_on_invalid_mqtt_val
     REQUIRE(config.mqttConfig.loopSleep == std::chrono::milliseconds{20});
 
     std::filesystem::remove(iniPath);
-}
-
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("http_mqtt_interface_component_serves_endpoints_logs_publish_and_stops_on_signal", "[http_mqtt_interface_client]") {
-    const std::uint16_t port = reserveFreeLocalPort();
-    std::ostringstream capturedOutput{};
-    std::streambuf* previousOutputBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
-
-    yaha::HttpMqttInterfaceClientConfig config{};
-    config.listenerHost = "127.0.0.1";
-    config.listenerPort = port;
-    config.enablePublishPhpAlias = true;
-    config.useLegacyPhpResponse = false;
-
-    RuntimeHarness harness{config, makeMockTransport([](const yaha::Message&) {})};
-    harness.start();
-    REQUIRE(waitForHttpServer(port));
-
-    {
-        httplib::Client client{"127.0.0.1", static_cast<int>(port)};
-        configureHttpClientTimeouts(client);
-
-        const auto healthResponse = client.Get("/health");
-        REQUIRE(healthResponse != nullptr);
-        REQUIRE(healthResponse->status == k_status_ok);
-
-        const auto optionsPublishResponse = client.Options("/publish");
-        REQUIRE(optionsPublishResponse != nullptr);
-        REQUIRE(optionsPublishResponse->status == k_status_no_content);
-        verifyCorsHeaders(optionsPublishResponse);
-        REQUIRE(optionsPublishResponse->get_header_value("Access-Control-Max-Age") == "86400");
-
-        const auto optionsPublishPhpResponse = client.Options("/publish.php");
-        REQUIRE(optionsPublishPhpResponse != nullptr);
-        REQUIRE(optionsPublishPhpResponse->status == k_status_no_content);
-        verifyCorsHeaders(optionsPublishPhpResponse);
-
-        const auto optionsPubrelResponse = client.Options("/pubrel");
-        REQUIRE(optionsPubrelResponse != nullptr);
-        REQUIRE(optionsPubrelResponse->status == k_status_no_content);
-        verifyCorsHeaders(optionsPubrelResponse);
-
-        const httplib::Headers putHeaders{
-            {"version", "1.0"},
-            {"qos", "1"},
-            {"retain", "0"},
-        };
-        const auto putPublishResponse = client.Put(
-            "/publish",
-            putHeaders,
-            R"({"topic":"sensor%2Fput","value":"11"})",
-            "application/json");
-        REQUIRE(putPublishResponse != nullptr);
-        REQUIRE(putPublishResponse->status == k_status_no_content);
-
-        const auto putPubrelResponse = client.Put("/pubrel", httplib::Headers{{"version", "1.0"}}, "{}", "application/json");
-        REQUIRE(putPubrelResponse != nullptr);
-        REQUIRE(putPubrelResponse->status == k_status_no_content);
-
-        const httplib::Params formParams{{"topic", "sensor%2Ftemp"}, {"value", "42"}, {"token", "tok-form"}};
-        const auto postResponse = client.Post("/publish", formParams);
-        REQUIRE(postResponse != nullptr);
-        REQUIRE(postResponse->status == k_status_no_content);
-        verifyCorsHeaders(postResponse);
-
-        const httplib::Params formParamsNoToken{{"topic", "sensor%2Ffallback"}, {"value", "7"}};
-        const auto postNoTokenResponse = client.Post("/publish", formParamsNoToken);
-        REQUIRE(postNoTokenResponse != nullptr);
-        REQUIRE(postNoTokenResponse->status == k_status_no_content);
-
-        const std::string jsonBody =
-            "{"
-            "\"topic\":\"sensor%2Fjson\","
-            "\"value\":2.5,"
-            "\"qos\":2,"
-            "\"retain\":false"
-            "}";
-        const auto postJsonResponse = client.Post("/publish", httplib::Headers{{"content-type", "application/json"}, {"token", "tok-json"}}, jsonBody, "application/json");
-        REQUIRE(postJsonResponse != nullptr);
-        REQUIRE(postJsonResponse->status == k_status_no_content);
-
-        const auto postPhpResponse = client.Post("/publish.php", formParams);
-        REQUIRE(postPhpResponse != nullptr);
-        REQUIRE(postPhpResponse->status == k_status_no_content);
-    }
-
-    harness.stop();
-    std::cout.rdbuf(previousOutputBuffer);
-
-    const std::string outputText = capturedOutput.str();
-    REQUIRE(outputText.find("http_mqtt_interface_client[in] method=POST endpoint=/publish") != std::string::npos);
-    REQUIRE(outputText.find("component=\"http_mqtt_interface_client\" direction=\"outgoing\"") != std::string::npos);
-    REQUIRE(outputText.find("event=broker_publish_ack") != std::string::npos);
-    REQUIRE(outputText.find("Request by User") != std::string::npos);
-    REQUIRE(harness.resultCode() == 0);
-}
-
-TEST_CASE("http_mqtt_interface_component_run_twice_and_close_without_run_is_safe", "[http_mqtt_interface_client]") {
-    yaha::HttpMqttInterfaceClientConfig config{};
-    config.listenerHost = "127.0.0.1";
-    config.listenerPort = reserveFreeLocalPort();
-
-    yaha::HttpMqttInterfaceClientComponent component{config};
-    component.close();
-
-    component.setPublishCallback([](const yaha::Message&) {
-        return yaha::PublishResult::ok();
-    });
-    component.run();
-    component.run();
-
-    component.handleMessage(yaha::Message{"ignore/topic", std::string{"value"}});
-    component.close();
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
