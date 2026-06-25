@@ -14,7 +14,6 @@ namespace yaha {
 namespace {
 
 constexpr std::uint32_t k_minimum_trimmed_history_length{1U};
-constexpr std::uint32_t k_legacy_interval_conversion_minimum{3U};
 
 template <typename... Visitor>
 struct VariantVisitor : Visitor... {
@@ -88,7 +87,7 @@ void MessageTree::addOrConvertTimeValueEntry(CompressedHistoryEntry& newest,
 
     timeValueEntry->values.emplace_back(entryToAdd.timeMs, entryToAdd.value);
 
-    if (timeValueEntry->values.size() > config_.lengthForFurtherCompression) {
+    if (timeValueEntry->values.size() == config_.lengthForFurtherCompression) {
         const std::vector<std::int64_t> timestamps = newestIdenticalValueTimestamps(*timeValueEntry);
         if (timestamps.size() == timeValueEntry->values.size()) {
             TimeHistoryEntry timeEntry{};
@@ -111,10 +110,7 @@ void MessageTree::addOrConvertTimeValueEntry(CompressedHistoryEntry& newest,
     }
 
     const std::vector<std::int64_t> timestamps = newestIdenticalValueTimestamps(*currentTimeValueEntry);
-    const std::size_t intervalThreshold =
-        std::min<std::size_t>(config_.lengthForFurtherCompression,
-                              k_legacy_interval_conversion_minimum);
-    if (timestamps.size() <= intervalThreshold) {
+    if (timestamps.size() < config_.lengthForFurtherCompression) {
         return;
     }
 

@@ -38,9 +38,9 @@ struct MessageTreeConfig {
     static constexpr std::uint32_t k_default_max_values_per_history_entry{256U};
     static constexpr std::uint32_t k_default_length_for_further_compression{10U};
     static constexpr double k_default_upper_bound_factor{1.2};
-    static constexpr std::uint32_t k_default_upper_bound_add_in_milliseconds{60000U};
+    static constexpr std::uint32_t k_default_upper_bound_add_in_milliseconds{1000U};
     static constexpr double k_default_lower_bound_factor{0.8};
-    static constexpr std::uint32_t k_default_lower_bound_sub_in_milliseconds{60000U};
+    static constexpr std::uint32_t k_default_lower_bound_sub_in_milliseconds{1000U};
 
     std::uint32_t maxHistoryLength{k_default_max_history_length}; ///< Hard limit for decompressed history entries.
     std::uint32_t historyHysterese{k_default_history_hysterese}; ///< Batch trim amount once max is exceeded.
