@@ -28,7 +28,10 @@
 #include "network/stream_buffer.h"
 
 #if !defined(_WIN32)
+#include <spawn.h>
 #include <sys/wait.h>
+
+extern char** environ;
 #endif
 
 namespace mqtt {
@@ -89,8 +92,9 @@ std::string shell_quote(const std::string& value) {
   return quoted;
 }
 
-std::string build_cmdline(const std::string& executable,
-                         const std::vector<std::string>& arguments) {
+[[maybe_unused]] std::string build_cmdline(
+  const std::string& executable,
+  const std::vector<std::string>& arguments) {
   std::ostringstream command_stream;
   command_stream << shell_quote(executable);
   for (const auto& argument : arguments) {
@@ -99,7 +103,7 @@ std::string build_cmdline(const std::string& executable,
   return command_stream.str();
 }
 
-int run_command(const std::string& command_line) {
+[[maybe_unused]] int run_command(const std::string& command_line) {
   const int raw_exit = std::system(command_line.c_str());
   if (raw_exit < 0) {
     return 1;
@@ -109,6 +113,42 @@ int run_command(const std::string& command_line) {
 #else
   if (WIFEXITED(raw_exit)) {
     return WEXITSTATUS(raw_exit);
+  }
+  return 1;
+#endif
+}
+
+int run_command(const std::string& executable,
+                const std::vector<std::string>& arguments) {
+#if defined(_WIN32)
+  return run_command(build_cmdline(executable, arguments));
+#else
+  std::vector<std::string> argv_storage;
+  argv_storage.reserve(arguments.size() + 1U);
+  argv_storage.push_back(executable);
+  argv_storage.insert(argv_storage.end(), arguments.begin(), arguments.end());
+
+  std::vector<char*> argv;
+  argv.reserve(argv_storage.size() + 1U);
+  for (std::string& token : argv_storage) {
+    argv.push_back(token.data());
+  }
+  argv.push_back(nullptr);
+
+  pid_t pid = 0;
+  const int spawn_result =
+      posix_spawn(&pid, executable.c_str(), nullptr, nullptr, argv.data(), environ);
+  if (spawn_result != 0) {
+    return 1;
+  }
+
+  int wait_status = 0;
+  if (waitpid(pid, &wait_status, 0) < 0) {
+    return 1;
+  }
+
+  if (WIFEXITED(wait_status)) {
+    return WEXITSTATUS(wait_status);
   }
   return 1;
 #endif
@@ -1327,7 +1367,7 @@ int run_test_client_scenario_command(const TestClientCliOptions& options,
         merge_arguments(step.arguments, base_arguments);
 
     std::cout << "[STEP] " << step.label << "\n";
-    const int step_code = run_command(build_cmdline(executable_path, command_arguments));
+    const int step_code = run_command(executable_path, command_arguments);
     if (step_code != 0) {
       std::cerr << "[FAIL] step '" << step.label << "' exited with code "
                 << step_code << "\n";

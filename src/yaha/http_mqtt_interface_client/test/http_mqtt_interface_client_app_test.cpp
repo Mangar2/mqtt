@@ -38,9 +38,9 @@ std::filesystem::path writeTempIni(const std::string& content) {
     return path;
 }
 
-constexpr int k_wait_attempts{50};
-constexpr int k_wait_sleep_ms{10};
-constexpr int k_http_timeout_microseconds{500000};
+constexpr int k_wait_attempts{20};
+constexpr int k_wait_sleep_ms{5};
+constexpr int k_http_timeout_microseconds{50000};
 constexpr int k_status_ok{200};
 constexpr int k_status_no_content{204};
 constexpr int k_status_internal_server_error{500};
@@ -51,6 +51,7 @@ constexpr unsigned int k_test_port_range{20000U};
 std::atomic<unsigned int> g_next_test_port{k_test_port_base};
 
 void configureHttpClientTimeouts(httplib::Client& client) {
+    client.set_keep_alive(false);
     client.set_connection_timeout(0, k_http_timeout_microseconds);
     client.set_read_timeout(0, k_http_timeout_microseconds);
 }
@@ -385,11 +386,15 @@ TEST_CASE("http_mqtt_interface_component_logs_broker_publish_error_when_ack_miss
     config.enablePublishPhpAlias = true;
     config.useLegacyPhpResponse = false;
 
-    RuntimeHarness harness{config, makeMockTransport([](const yaha::Message&) {
-                             throw std::runtime_error{"timed out waiting for PUBACK from broker"};
-                         })};
-    harness.start();
-    REQUIRE(waitForHttpServer(port));
+    yaha::HttpMqttInterfaceClientComponent component{config};
+    yaha::YahaMqttClient mqttClient{
+        config.mqttConfig,
+        component,
+        makeMockTransport([](const yaha::Message&) {
+            throw std::runtime_error{"timed out waiting for PUBACK from broker"};
+        })};
+    mqttClient.run();
+    component.run();
 
     httplib::Client client{"127.0.0.1", static_cast<int>(port)};
     configureHttpClientTimeouts(client);
@@ -398,7 +403,8 @@ TEST_CASE("http_mqtt_interface_component_logs_broker_publish_error_when_ack_miss
     REQUIRE(postResponse != nullptr);
     REQUIRE(postResponse->status == k_status_internal_server_error);
 
-    harness.stop();
+    component.close();
+    mqttClient.close();
     std::cout.rdbuf(previousOutputBuffer);
     std::cerr.rdbuf(previousErrorBuffer);
 
@@ -410,7 +416,6 @@ TEST_CASE("http_mqtt_interface_component_logs_broker_publish_error_when_ack_miss
     const std::string errorOutputText = capturedErrorOutput.str();
     REQUIRE(errorOutputText.find("http_mqtt_interface_client[error] publish_request_failed endpoint=/publish") !=
         std::string::npos);
-    REQUIRE(harness.resultCode() == 0);
 }
 
 TEST_CASE("http_mqtt_interface_component_returns_error_on_listen_failure", "[http_mqtt_interface_client]") {
@@ -450,7 +455,7 @@ TEST_CASE("http_mqtt_interface_component_recovers_across_repeated_broker_publish
 
     httplib::Client client{"127.0.0.1", static_cast<int>(port)};
     configureHttpClientTimeouts(client);
-    const httplib::Params formParams{{"topic", "home%2Fstate"}, {"value", "1"}, {"token", "tok"}};
+    const httplib::Params formParams{{"topic", "home%2Fstate"}, {"value", "1"}};
 
     const auto firstResponse = client.Post("/publish", formParams);
     REQUIRE(firstResponse != nullptr);

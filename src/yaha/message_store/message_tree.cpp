@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <iomanip>
 #include <istream>
+#include <limits>
 #include <ostream>
 #include <stdexcept>
 #include <type_traits>
@@ -60,6 +61,42 @@ constexpr std::uint32_t k_legacy_length_for_further_compression_minimum{3U};
     }
 
     return timestampText;
+}
+
+[[nodiscard]] bool readReasonTimestampAndFraction(std::istream& stream,
+                                                  std::int64_t& timestampMs,
+                                                  std::uint8_t& fractionalDigits) {
+    stream >> std::ws;
+    const int nextChar = stream.peek();
+    if (nextChar == std::char_traits<char>::eof()) {
+        return false;
+    }
+
+    if (nextChar == '"') {
+        std::string timestampText{};
+        if (!(stream >> std::quoted(timestampText))) {
+            return false;
+        }
+
+        const CompactReasonEntry compactReason = CompactReasonEntry::fromStrings("", timestampText);
+        timestampMs = compactReason.timestampMs();
+        fractionalDigits = compactReason.fractionalDigits();
+        return true;
+    }
+
+    std::int64_t parsedTimestampMs = 0;
+    std::uint32_t parsedFractionalDigits = 0U;
+    if (!(stream >> parsedTimestampMs >> parsedFractionalDigits)) {
+        return false;
+    }
+
+    if (parsedFractionalDigits > static_cast<std::uint32_t>(std::numeric_limits<std::uint8_t>::max())) {
+        return false;
+    }
+
+    timestampMs = parsedTimestampMs;
+    fractionalDigits = static_cast<std::uint8_t>(parsedFractionalDigits);
+    return true;
 }
 
 } // namespace
@@ -388,13 +425,9 @@ bool MessageTree::writeReasonListToken(std::ostream& stream,
             return false;
         }
 
-        std::string timestampText{};
-        if (reason.timestampMs != 0) {
-            timestampText = formatReasonTimestamp(reason);
-        }
-
         stream << std::quoted(*messageText) << ' '
-               << std::quoted(timestampText) << '\n';
+               << reason.timestampMs << ' '
+               << static_cast<std::uint32_t>(reason.fractionalDigits) << '\n';
     }
     return static_cast<bool>(stream);
 }
@@ -411,16 +444,20 @@ bool MessageTree::readReasonListToken(std::istream& stream,
     reasonList.reserve(count);
     for (std::size_t idx = 0U; idx < count; ++idx) {
         std::string messageText{};
-        std::string timestampText{};
-        if (!(stream >> std::quoted(messageText) >> std::quoted(timestampText))) {
+        if (!(stream >> std::quoted(messageText))) {
             return false;
         }
 
-        const CompactReasonEntry compactReason = CompactReasonEntry::fromStrings(messageText, timestampText);
+        std::int64_t timestampMs = 0;
+        std::uint8_t fractionalDigits = 0U;
+        if (!readReasonTimestampAndFraction(stream, timestampMs, fractionalDigits)) {
+            return false;
+        }
+
         reasonList.push_back(TreeNodeReasonEntry{
             .messageSlotIndex = reasonDirectory.add(messageText),
-            .timestampMs = compactReason.timestampMs(),
-            .fractionalDigits = compactReason.fractionalDigits()
+            .timestampMs = timestampMs,
+            .fractionalDigits = fractionalDigits
         });
     }
     return true;

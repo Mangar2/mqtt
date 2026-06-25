@@ -9,7 +9,9 @@
 #include "yaha/mqtt_client/mqtt_client.h"
 #include "yaha/opensensemap/opensensemap_component.h"
 
+#include <functional>
 #include <string>
+#include <utility>
 
 namespace yaha {
 
@@ -53,5 +55,15 @@ struct OpenSenseMapClientRuntimeConfig {
  */
 [[nodiscard]] OpenSenseMapRequestSender makeOpenSenseMapRequestSender(
     const OpenSenseMapConfig& config);
+
+/**
+ * @brief Builds OpenSenseMap HTTP sender with injectable command executor.
+ * @param config OpenSenseMap runtime config.
+ * @param commandExecutor Command runner used to execute curl command text.
+ * @return Request sender callback.
+ */
+[[nodiscard]] OpenSenseMapRequestSender makeOpenSenseMapRequestSender(
+    const OpenSenseMapConfig& config,
+    std::function<std::pair<int, std::string>(const std::string&)> commandExecutor);
 
 } // namespace yaha

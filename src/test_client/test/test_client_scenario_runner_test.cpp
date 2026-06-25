@@ -378,7 +378,7 @@ TEST_CASE("test_client_scenario_command_unknown_name_fails_fast",
 TEST_CASE("test_client_scenario_command_executes_qos1_scenario_successfully",
           "[test_client][scenario]") {
   const std::filesystem::path script_path =
-      make_temp_script_path("scenario_success", true);
+  make_temp_script_path("scenario_success", true);
 
   TestClientCliOptions options;
   options.command = TestClientCommand::Scenario;
@@ -392,7 +392,7 @@ TEST_CASE("test_client_scenario_command_executes_qos1_scenario_successfully",
 TEST_CASE("test_client_scenario_command_propagates_step_failures",
           "[test_client][scenario]") {
   const std::filesystem::path script_path =
-      make_temp_script_path("scenario_failure", false);
+  make_temp_script_path("scenario_failure", false);
 
   TestClientCliOptions options;
   options.command = TestClientCommand::Scenario;

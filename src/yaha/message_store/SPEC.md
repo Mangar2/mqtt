@@ -150,9 +150,10 @@ class MessageTreeNode;
 ## Persistence behavior
 
 - File naming: `<filename>_<timestamp>.mtree` in configured directory.
-- `persistNow` writes full tree snapshot in compressed internal tree form (`MTREE2`) without history decompression.
+- `persistNow` writes full tree snapshot in compressed internal tree form (`MTREE3`) without history decompression.
+- `MTREE3` stores reason timestamp metadata in numeric form (`timestampMs`, `fractionalDigits`) and avoids ISO string conversion during snapshot write/read.
 - `restoreLatest` scans candidate files newest-first and loads first valid snapshot.
-- `restoreLatest` supports `MTREE2` direct compressed format only.
+- `restoreLatest` supports `MTREE2` and `MTREE3` compressed formats.
 - Missing/corrupt files are handled silently; restore returns false and tree remains usable.
 - Retention keeps newest `keepFiles` snapshots and deletes older files.
 - Periodic mode persists every `interval` milliseconds; `interval == 0` disables periodic loop.

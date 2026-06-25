@@ -436,15 +436,15 @@ def _run_selected_tests(label: str, binary: Path, test_names: list[str], env: di
 
         combined_output.append(output)
 
-        if duration_seconds > SLOW_TEST_WARNING_SECONDS:
-            print(f"[WARN] slow test: {duration_seconds:.3f}s  {test_name}")
-            slow_tests.append((test_name, duration_seconds))
-
         if rc == 124:
             print(f"\n[FAILED] {label}")
             print(f"  timeout             : {PER_TEST_TIMEOUT_SECONDS}s")
             print(f"  long running test   : {test_name}")
-            print("  action              : timed out and forcibly terminated (possible hang)")
+            print("  action              : hard interrupted after exceeding timeout")
+            print(
+                "  note                : test run was forcibly stopped because it exceeded "
+                f"{PER_TEST_TIMEOUT_SECONDS}s; it is either hanging or simply running too long"
+            )
             tail = "\n".join(output.splitlines()[-20:])
             if tail:
                 print("\n  --- last output ---")
@@ -452,6 +452,10 @@ def _run_selected_tests(label: str, binary: Path, test_names: list[str], env: di
             print(f"\n  Full log: {LOG_FILE}")
             _close_log()
             sys.exit(124)
+
+        if duration_seconds > SLOW_TEST_WARNING_SECONDS:
+            print(f"[WARN] slow test: {duration_seconds:.3f}s  {test_name}")
+            slow_tests.append((test_name, duration_seconds))
 
         if rc != 0:
             print(f"\n[FAILED] {label}")

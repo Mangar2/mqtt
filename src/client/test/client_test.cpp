@@ -269,7 +269,7 @@ TEST_CASE("alias_manager_reuses_alias_when_capacity_is_full", "[client][alias]")
 TEST_CASE("connection_negotiator_dial_tcp_invalid_host_throws",
           "[client][negotiator]") {
   CHECK_THROWS_AS(
-      ConnectionNegotiator::dial_tcp("definitely.invalid.host.name", 1883U),
+  ConnectionNegotiator::dial_tcp("256.256.256.256", 1883U),
       ClientException);
 }
 

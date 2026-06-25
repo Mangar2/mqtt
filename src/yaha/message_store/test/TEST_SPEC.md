@@ -60,13 +60,14 @@ Unit tests for MessageTree behavior required by step 4.
 | `restore_latest_skips_corrupt_newest_file_and_uses_previous_valid` | Most recent valid file must be selected | valid file + newer corrupt file | restore succeeds from older valid file |
 | `restore_latest_returns_false_when_no_files_exist` | No snapshot available | empty directory | restore returns false |
 | `restore_latest_skips_malformed_node_payload` | Valid header with malformed compressed payload | file with MTREE2 and invalid compressed body | restore returns false |
+| `restore_latest_accepts_legacy_mtree2_header` | Backward compatibility for legacy snapshots | generated snapshot body wrapped with MTREE2 header | restore succeeds and reason timestamp roundtrip remains intact |
 | `retention_deletes_old_files_beyond_keep_files` | Snapshot retention enforcement | keepFiles=2 with 3 persists | only newest two files remain |
 | `retention_keep_files_zero_disables_deletion` | Retention disabled branch | keepFiles=0 with multiple persists | all files remain |
 | `persist_now_returns_false_when_directory_is_regular_file` | create_directories failure path | directory path points to regular file | persistNow returns false |
 | `start_periodic_persists_until_stopped` | Periodic persistence loop | short interval + running period | at least one snapshot file created |
 | `start_periodic_noop_when_interval_zero_or_already_running` | startPeriodic guard branches | interval=0 and repeated start call | no periodic files for interval=0 and stable run for repeated start |
 | `default_constructor_can_persist_and_restore_reason_history` | Default-config constructor and reason/history serialization | value + reason + history | roundtrip keeps reason and history entries |
-| `persist_now_writes_mtree2_and_restore_keeps_compression_stats` | Compressed persistence format and roundtrip invariants | mixed interval/timeValue source tree persisted and restored | snapshot magic is `MTREE2` and compression counters match before/after restore |
+| `persist_now_writes_mtree3_and_restore_keeps_compression_stats` | Compressed persistence format and roundtrip invariants | mixed interval/timeValue source tree persisted and restored | snapshot magic is `MTREE3` and compression counters match before/after restore |
 | `compact_reason_entry_parses_plain_iso_timestamp` | Plain UTC timestamp parsing and reconstruction | reason + `2026-01-01T00:00:00Z` | timestamp is parsed, fractional digits are `0`, and reconstruction matches input |
 | `compact_reason_entry_keeps_fractional_precision_1_to_3_digits` | Fractional precision retention for millisecond-scale inputs | reason + timestamps with `.1`, `.12`, `.123` | fractional digit count is retained and reconstructed text preserves precision |
 | `compact_reason_entry_counts_fraction_digits_with_plus_offset` | Fractional digit detection with positive timezone offset | reason + `... .12+01:00` | timestamp parses, fractional digits are `2`, output keeps `.12` precision in UTC text |

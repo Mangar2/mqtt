@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <thread>
 #include <vector>
@@ -244,6 +245,60 @@ TEST_CASE("restore_latest_skips_malformed_node_payload", "[message_store]") {
     removeDirectoryQuiet(tempDir);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("restore_latest_accepts_legacy_mtree2_header", "[message_store]") {
+    FakeClock clock{};
+    yaha::MessageTree source = makeTree(clock);
+    yaha::Message message{"legacy/topic", std::string{"value"}};
+    message.addReason("legacy reason", "2026-01-01T00:00:00Z");
+    source.addData(message);
+
+    const auto tempDir = makeTempDirectory();
+
+    yaha::MessageTreePersistence::Config persistenceConfig{};
+    persistenceConfig.directory = tempDir;
+    persistenceConfig.filename = "state";
+
+    yaha::MessageTreePersistence persistence{persistenceConfig};
+    REQUIRE(persistence.persistNow(source));
+
+    std::filesystem::path generatedPath{};
+    for (const auto& entry : std::filesystem::directory_iterator{tempDir}) {
+        if (entry.path().extension().string() == ".mtree") {
+            generatedPath = entry.path();
+            break;
+        }
+    }
+    REQUIRE(!generatedPath.empty());
+
+    std::ifstream generatedInput{generatedPath};
+    REQUIRE(generatedInput.is_open());
+    std::string generatedBody{};
+    std::getline(generatedInput, generatedBody); // magic line
+    generatedBody.assign(std::istreambuf_iterator<char>{generatedInput},
+                         std::istreambuf_iterator<char>{});
+    generatedInput.close();
+
+    std::filesystem::remove(generatedPath);
+    const auto legacyPath = tempDir / "state_9999999999999.mtree";
+    std::ofstream legacyOutput{legacyPath, std::ios::out | std::ios::trunc};
+    REQUIRE(legacyOutput.is_open());
+    legacyOutput << "MTREE2\n";
+    legacyOutput << generatedBody;
+    legacyOutput.close();
+
+    FakeClock restoreClock{};
+    yaha::MessageTree restored = makeTree(restoreClock);
+    REQUIRE(persistence.restoreLatest(restored));
+
+    const auto nodes = restored.getSection("legacy/topic", 0U, true, true);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().reason().size() == 1U);
+    REQUIRE(nodes.front().reason().front().timestamp == "2026-01-01T00:00:00Z");
+
+    removeDirectoryQuiet(tempDir);
+}
+
 TEST_CASE("retention_keep_files_zero_disables_deletion", "[message_store]") {
     FakeClock clock{};
     yaha::MessageTree source = makeTree(clock);
@@ -379,7 +434,7 @@ TEST_CASE("default_constructor_can_persist_and_restore_reason_history", "[messag
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("persist_now_writes_mtree2_and_restore_keeps_compression_stats", "[message_store]") {
+TEST_CASE("persist_now_writes_mtree3_and_restore_keeps_compression_stats", "[message_store]") {
     FakeClock clock{};
     yaha::MessageTree source = makeTree(clock);
 
@@ -420,7 +475,7 @@ TEST_CASE("persist_now_writes_mtree2_and_restore_keeps_compression_stats", "[mes
     REQUIRE(snapshotStream.is_open());
     std::string magic{};
     snapshotStream >> magic;
-    REQUIRE(magic == "MTREE2");
+    REQUIRE(magic == "MTREE3");
 
     FakeClock restoreClock{};
     yaha::MessageTree restored = makeTree(restoreClock);

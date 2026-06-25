@@ -11,9 +11,16 @@ namespace yaha {
 
 namespace {
 
+constexpr std::string_view k_snapshot_magic_v2{"MTREE2"};
+constexpr std::string_view k_snapshot_magic_v3{"MTREE3"};
+
 std::int64_t wallClockMilliseconds() {
     const auto now = std::chrono::system_clock::now().time_since_epoch();
     return std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+}
+
+[[nodiscard]] bool isSupportedSnapshotMagic(const std::string& magicText) {
+    return magicText == k_snapshot_magic_v2 || magicText == k_snapshot_magic_v3;
 }
 
 } // namespace
@@ -46,7 +53,7 @@ MessageTreePersistence::persistNowWithPath(const MessageTree& tree) {
         return std::nullopt;
     }
 
-    stream << "MTREE2\n";
+    stream << k_snapshot_magic_v3 << '\n';
     if (!tree.writeCompressed(stream)) {
         return std::nullopt;
     }
@@ -72,7 +79,7 @@ bool MessageTreePersistence::restoreLatest(MessageTree& tree) {
             continue;
         }
 
-        if (magic != "MTREE2") {
+        if (!isSupportedSnapshotMagic(magic)) {
             continue;
         }
 

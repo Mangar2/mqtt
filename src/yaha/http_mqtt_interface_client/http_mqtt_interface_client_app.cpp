@@ -567,77 +567,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                       [this](const httplib::Request& request, httplib::Response& response) {
                           logIncomingPublishRequest(request, k_publishEndpoint);
                           try {
-                              const HttpMqttHeaders headers = collectHeaders(request);
-                              const HttpMqttHeaders fields = collectFields(request);
-                              HttpMqttHeaders compatibilityFields = headers;
-                              for (const auto& [fieldName, fieldValue] : fields) {
-                                  compatibilityFields[fieldName] = fieldValue;
-                              }
-                              const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
-                              const HttpMqttPublishCompatibilityRequest compatibilityRequest{
-                                  .method = request.method,
-                                  .endpoint = std::string{k_publishEndpoint},
-                                  .headers = headers,
-                                  .fields = compatibilityFields,
-                                  .body = request.body,
-                                  .token = resolveToken(request, fields, jsonBody),
-                              };
-
-                              const HttpMqttResult compatibilityResult = handlePublishCompatibilityRequest(
-                                  impl_->interfaces,
-                                  compatibilityRequest,
-                                  impl_->compatibilityConfig,
-                                  [this](const HttpMqttRequestData& downstreamRequest, const Message& mappedMessage) {
-                                      std::string sessionToken{};
-                                      if (const auto parsedPayload = mqtt::json::JsonValue::try_parse(downstreamRequest.payload);
-                                          parsedPayload.has_value()) {
-                                          if (const auto tokenField = tryReadStringField(*parsedPayload, "token"); tokenField.has_value()) {
-                                              sessionToken = *tokenField;
-                                          }
-                                      }
-
-                                      if (!sessionToken.empty() && impl_->sessionManager.hasSession(sessionToken)) {
-                                          std::string sessionError{};
-                                          if (!impl_->sessionManager.publish(sessionToken, mappedMessage, sessionError)) {
-                                              const std::string publishReason = sessionError.empty()
-                                                  ? "broker publish callback failed"
-                                                  : sessionError;
-                                              logBrokerForwardPublishError(mappedMessage, publishReason);
-                                              throw YahaError{
-                                                  k_error_code_broker_publish_failed,
-                                                  publishReason,
-                                                  "broker publish failed",
-                                              };
-                                          }
-
-                                      } else {
-                                          PublishResult publishResult{};
-                                          {
-                                              std::lock_guard<std::mutex> lock{impl_->publishCallbackMutex};
-                                              publishResult = impl_->publishCallback(mappedMessage);
-                                          }
-
-                                          if (!publishResult.success) {
-                                              const std::string publishReason = publishResult.reason.empty()
-                                                  ? "broker publish callback failed"
-                                                  : publishResult.reason;
-                                              logBrokerForwardPublishError(mappedMessage, publishReason);
-                                              throw YahaError{
-                                                  k_error_code_broker_publish_failed,
-                                                  publishReason,
-                                                  "broker publish failed",
-                                              };
-                                          }
-                                      }
-
-                                      logBrokerForwardPublishAck(mappedMessage);
-                                      return impl_->interfaces.onPublish(downstreamRequest.headers);
-                                  });
-
-                              if (compatibilityResult.statusCode >= k_httpStatusInternalServerError) {
-                                  logCompatibilityInternalResultFailure(k_publishEndpoint, compatibilityResult);
-                              }
-                              applyHttpMqttResult(compatibilityResult, response);
+                              applyHttpMqttResult(impl_->interfaces.onPublish(collectHeaders(request)), response);
                           } catch (const std::exception& exceptionValue) {
                               logCompatibilityRequestFailure(k_publishEndpoint, exceptionValue.what());
                               applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
@@ -1217,6 +1147,8 @@ void HttpMqttInterfaceClientComponent::run() {
             "http listener start failed",
         };
     }
+
+    lifecycleLock.unlock();
 
     {
         std::lock_guard<std::mutex> lock{impl_->legacyListenerMutex};

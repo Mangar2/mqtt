@@ -7,7 +7,6 @@
 
 #include <chrono>
 #include <stdexcept>
-#include <utility>
 #include <vector>
 
 #include "broker/broker.h"

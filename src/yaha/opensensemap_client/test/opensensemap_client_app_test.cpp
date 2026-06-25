@@ -297,25 +297,24 @@ TEST_CASE("load_runtime_config_falls_back_on_invalid_mqtt_values", "[opensensema
 }
 
 TEST_CASE("opensensemap_request_sender_parses_successful_curl_output", "[opensensemap_client]") {
-    const auto fakeCurlDirectory = makeFakeCurlDirectory(
-        "printf '{\"message\":\"created\"}\\n__YAHA_STATUS__:201\\n__YAHA_CTYPE__:application/json\\n'\n"
-        "exit 0");
-    const ScopedPathPrefix scopedPath{fakeCurlDirectory};
-
     const yaha::OpenSenseMapConfig config{
         .boxIdentifier = "box-abc",
         .host = "example.org",
         .port = 443U,
         .useTls = true,
     };
-    const auto sender = yaha::makeOpenSenseMapRequestSender(config);
+    const auto sender = yaha::makeOpenSenseMapRequestSender(
+        config,
+        [](const std::string&) {
+            return std::pair<int, std::string>{
+                0,
+                "{\"message\":\"created\"}\n__YAHA_STATUS__:201\n__YAHA_CTYPE__:application/json\n"};
+        });
 
     const yaha::OpenSenseMapHttpResult result = sender("/boxes/box-abc/sensor-1", "{\"value\":12}");
     REQUIRE(result.statusCode == 201);
     REQUIRE(result.payload.find("created") != std::string::npos);
     REQUIRE(result.contentType == "application/json");
-
-    removeDirectoryQuiet(fakeCurlDirectory);
 }
 
 TEST_CASE("opensensemap_request_sender_throws_on_non_zero_curl_exit", "[opensensemap_client]") {

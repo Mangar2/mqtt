@@ -434,9 +434,16 @@ bool tryLoadOpenSenseMapClientRuntimeConfigFromIni(
 }
 
 OpenSenseMapRequestSender makeOpenSenseMapRequestSender(const OpenSenseMapConfig& config) {
+    return makeOpenSenseMapRequestSender(config, executeCommand);
+}
+
+OpenSenseMapRequestSender makeOpenSenseMapRequestSender(
+    const OpenSenseMapConfig& config,
+    std::function<std::pair<int, std::string>(const std::string&)> commandExecutor) {
     return [host = config.host,
             port = config.port,
-            useTls = config.useTls](
+            useTls = config.useTls,
+            commandExecutor = std::move(commandExecutor)](
                const std::string& requestPath,
                const std::string& requestPayload) {
         const std::string scheme = useTls ? "https" : "http";
@@ -451,7 +458,7 @@ OpenSenseMapRequestSender makeOpenSenseMapRequestSender(const OpenSenseMapConfig
             shellQuote("\n__YAHA_STATUS__:%{http_code}\n__YAHA_CTYPE__:%{content_type}") +
             " " + shellQuote(targetUrl);
 
-        const auto [exitStatus, outputText] = executeCommand(commandText);
+        const auto [exitStatus, outputText] = commandExecutor(commandText);
         if (exitStatus != 0) {
             throw std::runtime_error("curl request execution failed");
         }
