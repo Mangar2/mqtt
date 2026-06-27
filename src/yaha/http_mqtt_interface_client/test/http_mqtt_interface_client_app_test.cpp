@@ -541,6 +541,32 @@ TEST_CASE("http_mqtt_interface_component_put_publish_missing_topic_returns_400",
     REQUIRE(harness.resultCode() == 0);
 }
 
+TEST_CASE("http_mqtt_interface_component_put_publish_reason_without_timestamp_is_accepted", "[http_mqtt_interface_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = port;
+
+    RuntimeHarness harness{config, makeMockTransport([](const yaha::Message&) {})};
+    harness.start();
+    REQUIRE(waitForHttpServer(port));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
+
+    const auto putResponse = client.Put(
+        "/publish",
+        httplib::Headers{{"version", "1.0"}},
+        R"({"topic":"outdoor/garden/weather2/sensor/humidity","value":"39.86","reason":[{"message":"send by ESP8266"}]})",
+        "application/json");
+    REQUIRE(putResponse != nullptr);
+    REQUIRE(putResponse->status == k_status_no_content);
+
+    harness.stop();
+    REQUIRE(harness.resultCode() == 0);
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("http_mqtt_interface_component_put_publish_forwards_to_managed_session", "[http_mqtt_interface_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
@@ -1031,6 +1057,52 @@ TEST_CASE("http_mqtt_interface_component_legacy_clientid_commands_without_token"
         "application/json");
     REQUIRE(disconnectResponse != nullptr);
     REQUIRE(disconnectResponse->status == k_status_no_content);
+
+    component.close();
+
+    REQUIRE(sessionFactory.states.size() == 1);
+    REQUIRE(sessionFactory.states.front()->subscribeCalls == 1);
+    REQUIRE(sessionFactory.states.front()->unsubscribeCalls == 1);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("http_mqtt_interface_component_legacy_subscribe_payload_accepts_string_qos", "[http_mqtt_interface_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    SessionMockFactory sessionFactory{};
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = port;
+
+    yaha::HttpMqttInterfaceClientComponent component{config, sessionFactory.makeFactory()};
+    component.run();
+    REQUIRE(waitForHttpServer(port));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
+
+    const auto connectResponse = client.Put(
+        "/connect",
+        R"({"clientId":"legacy-subscribe-client"})",
+        "application/json");
+    REQUIRE(connectResponse != nullptr);
+    REQUIRE(connectResponse->status == k_status_ok);
+
+    const auto subscribeResponse = client.Put(
+        "/subscribe",
+        httplib::Headers{{"version", "1.0"}},
+        R"({"clientId":"legacy-subscribe-client","subscribe":{"demo/topic":"1"},"packetid":11})",
+        "application/json");
+    REQUIRE(subscribeResponse != nullptr);
+    REQUIRE(subscribeResponse->status == k_status_ok);
+
+    const auto unsubscribeResponse = client.Put(
+        "/unsubscribe",
+        httplib::Headers{{"version", "1.0"}},
+        R"({"clientId":"legacy-subscribe-client","unsubscribe":{"demo/topic":"1"},"packetid":12})",
+        "application/json");
+    REQUIRE(unsubscribeResponse != nullptr);
+    REQUIRE(unsubscribeResponse->status == k_status_ok);
 
     component.close();
 

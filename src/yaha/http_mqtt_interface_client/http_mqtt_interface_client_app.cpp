@@ -512,29 +512,55 @@ std::string resolveCompatibilityToken(const httplib::Request& request, const Htt
 
 [[nodiscard]] std::map<std::string, Qos> parseTopicsObject(
     const std::optional<mqtt::json::JsonValue>& jsonBody,
-    std::string& errorText) {
+    std::string& errorText,
+    const std::string_view legacyFieldName = "") {
     std::map<std::string, Qos> topics{};
     errorText.clear();
 
-    if (!jsonBody.has_value() || !jsonBody->is_object() || !jsonBody->contains("topics")) {
+    if (!jsonBody.has_value() || !jsonBody->is_object()) {
         errorText = "missing topics object";
         return topics;
     }
 
-    const auto& topicsValue = jsonBody->at("topics");
-    if (!topicsValue.is_object()) {
+    const mqtt::json::JsonValue* topicsValue = nullptr;
+    if (jsonBody->contains("topics")) {
+        topicsValue = &jsonBody->at("topics");
+    } else if (!legacyFieldName.empty() && jsonBody->contains(legacyFieldName)) {
+        topicsValue = &jsonBody->at(legacyFieldName);
+    } else {
+        errorText = "missing topics object";
+        return topics;
+    }
+
+    const auto& topicsObject = *topicsValue;
+    if (!topicsObject.is_object()) {
         errorText = "topics must be object";
         return topics;
     }
 
-    for (const auto& [topic, qosValue] : topicsValue.as_object()) {
-        if (!qosValue.is_number()) {
-            errorText = "topic qos must be numeric";
+    for (const auto& [topic, qosValue] : topicsObject.as_object()) {
+        int qosNumber = -1;
+        if (qosValue.is_number()) {
+            qosNumber = static_cast<int>(qosValue.as_number());
+        } else if (qosValue.is_string()) {
+            const std::string qosText = qosValue.as_string();
+            if (qosText == "0") {
+                qosNumber = 0;
+            } else if (qosText == "1") {
+                qosNumber = 1;
+            } else if (qosText == "2") {
+                qosNumber = 2;
+            } else {
+                errorText = "topic qos string must be one of 0,1,2";
+                topics.clear();
+                return topics;
+            }
+        } else {
+            errorText = "topic qos must be numeric or numeric-string";
             topics.clear();
             return topics;
         }
 
-        const int qosNumber = static_cast<int>(qosValue.as_number());
         if (qosNumber < 0 || qosNumber > 2) {
             errorText = "topic qos out of range";
             topics.clear();
@@ -1055,12 +1081,12 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           }
 
                           std::string topicsError{};
-                          const std::map<std::string, Qos> topics = parseTopicsObject(jsonBody, topicsError);
+                          const std::map<std::string, Qos> topics = parseTopicsObject(jsonBody, topicsError, "subscribe");
                           if (!topicsError.empty()) {
                               const std::string token = resolveToken(request, fields, jsonBody);
                               const std::string clientId = resolveClientIdForRequest(impl_->sessionManager, jsonBody, token);
                               std::string detailText =
-                                  "request_invalid: expected JSON field 'topics' as object {\"topic/filter\": qos0..2}; parse_error=" +
+                                  "request_invalid: expected JSON field 'topics' or legacy 'subscribe' as object {\"topic/filter\": qos0..2}; parse_error=" +
                                   topicsError;
                               if (!clientId.empty()) {
                                   detailText += " clientId=" + clientId;
@@ -1157,12 +1183,12 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           }
 
                           std::string topicsError{};
-                          const std::map<std::string, Qos> topics = parseTopicsObject(jsonBody, topicsError);
+                          const std::map<std::string, Qos> topics = parseTopicsObject(jsonBody, topicsError, "unsubscribe");
                           if (!topicsError.empty()) {
                               const std::string token = resolveToken(request, fields, jsonBody);
                               const std::string clientId = resolveClientIdForRequest(impl_->sessionManager, jsonBody, token);
                               std::string detailText =
-                                  "request_invalid: expected JSON field 'topics' as object {\"topic/filter\": qos0..2}; parse_error=" +
+                                  "request_invalid: expected JSON field 'topics' or legacy 'unsubscribe' as object {\"topic/filter\": qos0..2}; parse_error=" +
                                   topicsError;
                               if (!clientId.empty()) {
                                   detailText += " clientId=" + clientId;

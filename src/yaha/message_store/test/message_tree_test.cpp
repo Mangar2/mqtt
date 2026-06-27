@@ -410,7 +410,11 @@ TEST_CASE("history_interval_compression_merges_regular_updates", "[message_store
                                       yaha::MessageTreeConfig::k_default_max_history_length,
                                       yaha::MessageTreeConfig::k_default_history_hysterese,
                                       yaha::MessageTreeConfig::k_default_max_values_per_history_entry,
-                                      k_length_for_time_value_only);
+                                      3U,
+                                      k_interval_upper_bound_factor,
+                                      0U,
+                                      k_interval_lower_bound_factor,
+                                      0U);
 
     clock.nowMs = k_time_zero_ms;
     tree.addData(makeReasonedMessage("sensor/compression_interval", k_value_five, "source", "1970-01-01T00:00:00.000Z"));

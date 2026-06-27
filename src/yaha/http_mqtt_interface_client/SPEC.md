@@ -92,7 +92,11 @@ Component starts `httplib::Server` and wires:
 		- legacy TypeScript fields `host` / `port` are treated as non-broker listener metadata and do not override broker target
 		- if legacy listener metadata is present, it is associated with the connected session send-token for callback forwarding
 - `PUT /subscribe` forwards topic subscriptions to token-bound broker session
+	- payload compatibility: canonical `topics` object is preferred; legacy `subscribe` object is accepted
+	- QoS values in topic maps accept numeric `0..2` and legacy numeric-string values `"0".."2"`
 - `PUT /unsubscribe` forwards topic unsubscriptions to token-bound broker session
+	- payload compatibility: canonical `topics` object is preferred; legacy `unsubscribe` object is accepted
+	- QoS values in topic maps accept numeric `0..2` and legacy numeric-string values `"0".."2"`
 - `PUT /receive` polls one message from token-bound broker session
 - `PUT /pingreq` forwards keepalive ping to token-bound broker session
 - `PUT /disconnect` closes token-bound broker session
@@ -110,6 +114,11 @@ Publish ingress logging:
 - each handled publish request writes one stdout line
 - includes method, endpoint, `version` header when present, request body byte size,
   and resolved request context fields (`clientId`, `token`, `topic`) when available
+
+Publish payload compatibility:
+
+- publish `reason` entries require `message`; `timestamp` is optional for legacy clients
+- when `timestamp` is missing, request remains valid and reason is forwarded with empty timestamp
 
 Publish broker-forward logging:
 
@@ -135,7 +144,7 @@ Subscription and disconnect logging:
 - invalid subscribe payload logs include reason and resolved request context
 	fields (`clientId`, `token`) when available
 - invalid subscribe/unsubscribe topics payload logs include an explicit
-	request-contract hint (expected JSON `topics` object with QoS values `0..2`)
+	request-contract hint (expected JSON `topics` object or legacy `subscribe`/`unsubscribe` object with QoS values `0..2`)
 - all HTTP request error logs include the raw incoming request body string
 	(`raw_body=`) for exact input reconstruction
 - publish forwarding logs include explicit broker dispatch lifecycle entries:

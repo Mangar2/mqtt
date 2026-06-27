@@ -457,10 +457,13 @@ struct JsonTokenScanState {
 [[nodiscard]] std::optional<ReasonEntry> tryParseReasonEntry(const std::string_view objectText) {
     const std::optional<std::string> messageText = tryExtractStringField(objectText, "message");
     const std::optional<std::string> timestampText = tryExtractStringField(objectText, "timestamp");
-    if (!messageText.has_value() || !timestampText.has_value()) {
+    if (!messageText.has_value()) {
         return std::nullopt;
     }
-    return ReasonEntry{.message = *messageText, .timestamp = *timestampText};
+    return ReasonEntry{
+        .message = *messageText,
+        .timestamp = timestampText.value_or("")
+    };
 }
 
 [[nodiscard]] std::optional<ReasonList> parseReasonArray(const std::string_view arrayText) {

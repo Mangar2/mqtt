@@ -642,7 +642,7 @@ TEST_CASE("compat_publish_json_body_parses_reason_qos_retain_and_bool_value", "[
     REQUIRE(capturedRequest.payload.find("\"message\":\"ok\"") != std::string::npos);
 }
 
-TEST_CASE("compat_publish_json_body_invalid_reason_shape_returns_400", "[http_mqtt_interface]") {
+TEST_CASE("compat_publish_json_body_reason_without_timestamp_is_accepted", "[http_mqtt_interface]") {
     const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
     const yaha::HttpMqttPublishCompatibilityRequest requestInput{
         .method = "POST",
@@ -667,8 +667,8 @@ TEST_CASE("compat_publish_json_body_invalid_reason_shape_returns_400", "[http_mq
             return makeResult(k_statusNoContent, {}, "");
         });
 
-    REQUIRE(response.statusCode == k_statusBadRequest);
-    REQUIRE_FALSE(forwarded);
+    REQUIRE(response.statusCode == k_statusNoContent);
+    REQUIRE(forwarded);
 }
 
 TEST_CASE("compat_publish_json_body_parses_null_value_as_string", "[http_mqtt_interface]") {
