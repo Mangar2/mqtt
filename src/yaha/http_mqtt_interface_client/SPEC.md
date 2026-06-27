@@ -97,7 +97,7 @@ Component starts `httplib::Server` and wires:
 - `PUT /pingreq` forwards keepalive ping to token-bound broker session
 - `PUT /disconnect` closes token-bound broker session
 	- compatibility: when `token` is missing, legacy `clientId` payload can resolve the active send-token for `subscribe`, `unsubscribe`, and `disconnect`
-- `PUT /publish` maps to native `HttpMqttInterfaces::onPublish`
+- `PUT /publish` maps through compatibility profile
 - `PUT /pubrel` maps to native `HttpMqttInterfaces::onPubrel`
 - `POST /publish` maps through compatibility profile
 - `POST /publish.php` maps through compatibility profile
@@ -136,8 +136,11 @@ Subscription and disconnect logging:
 	fields (`clientId`, `token`) when available
 - invalid subscribe/unsubscribe topics payload logs include an explicit
 	request-contract hint (expected JSON `topics` object with QoS values `0..2`)
-- invalid subscribe/unsubscribe topics payload logs include the raw incoming
-	request body string (`raw_body=`) for exact input reconstruction
+- all HTTP request error logs include the raw incoming request body string
+	(`raw_body=`) for exact input reconstruction
+- publish forwarding logs include explicit broker dispatch lifecycle entries:
+	`broker_publish_dispatch` (attempt), `broker_publish_sent` (dispatch success),
+	and `broker_publish` error with reason when dispatch fails
 - disconnect event logs include token and resolved clientId when available
 - subscribe/unsubscribe/ping events use the same context style and include
 	resolved `clientId` and `token` when available

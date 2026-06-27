@@ -518,10 +518,8 @@ TEST_CASE("http_mqtt_interface_component_recovers_across_repeated_broker_publish
     REQUIRE(harness.resultCode() == 0);
 }
 
-TEST_CASE("http_mqtt_interface_component_put_publish_failure_returns_500_and_logs", "[http_mqtt_interface_client]") {
+TEST_CASE("http_mqtt_interface_component_put_publish_missing_topic_returns_400", "[http_mqtt_interface_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
-    std::ostringstream capturedErrorOutput{};
-    std::streambuf* previousErrorBuffer = std::cerr.rdbuf(capturedErrorOutput.rdbuf());
 
     yaha::HttpMqttInterfaceClientConfig config{};
     config.listenerHost = "127.0.0.1";
@@ -536,14 +534,73 @@ TEST_CASE("http_mqtt_interface_component_put_publish_failure_returns_500_and_log
 
     const auto putResponse = client.Put("/publish", "{}", "application/json");
     REQUIRE(putResponse != nullptr);
-    REQUIRE(putResponse->status == k_status_internal_server_error);
+    REQUIRE(putResponse->status == 400);
+    REQUIRE(putResponse->body.find("missing_topic") != std::string::npos);
 
     harness.stop();
-    std::cerr.rdbuf(previousErrorBuffer);
-
-    const std::string errorOutputText = capturedErrorOutput.str();
-    REQUIRE(errorOutputText.find("publish_request_failed endpoint=/publish") != std::string::npos);
     REQUIRE(harness.resultCode() == 0);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("http_mqtt_interface_component_put_publish_forwards_to_managed_session", "[http_mqtt_interface_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    SessionMockFactory sessionFactory{};
+    std::atomic<int> legacyPublishCalls{0};
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = port;
+
+    yaha::HttpMqttInterfaceClientComponent component{config, sessionFactory.makeFactory()};
+    component.setPublishCallback([&legacyPublishCalls](const yaha::Message&) {
+        ++legacyPublishCalls;
+        return yaha::PublishResult::ok();
+    });
+
+    component.run();
+    REQUIRE(waitForHttpServer(port));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
+
+    const auto connectResponse = client.Put(
+        "/connect",
+        httplib::Headers{{"version", "1.0"}},
+        R"({"clientId":"http-put-publisher"})",
+        "application/json");
+    REQUIRE(connectResponse != nullptr);
+    REQUIRE(connectResponse->status == k_status_ok);
+
+    const auto maybeSendToken = tryReadConnectSendToken(connectResponse->body);
+    REQUIRE(maybeSendToken.has_value());
+    REQUIRE_FALSE(maybeSendToken->empty());
+
+    const std::string publishBody =
+        std::string{R"({"token":")"} + *maybeSendToken +
+        R"(","topic":"put/demo/topic","value":"42"})";
+    const auto publishResponse = client.Put(
+        "/publish",
+        httplib::Headers{{"version", "1.0"}},
+        publishBody,
+        "application/json");
+    REQUIRE(publishResponse != nullptr);
+    REQUIRE(publishResponse->status == k_status_no_content);
+
+    const std::string receiveBody = std::string{R"({"token":")"} + *maybeSendToken + R"("})";
+    const auto receiveResponse = client.Put(
+        "/receive",
+        httplib::Headers{{"version", "1.0"}},
+        receiveBody,
+        "application/json");
+    REQUIRE(receiveResponse != nullptr);
+    REQUIRE(receiveResponse->status == k_status_ok);
+    REQUIRE(receiveResponse->body.find("put/demo/topic") != std::string::npos);
+
+    component.close();
+
+    REQUIRE(legacyPublishCalls.load() == 0);
+    REQUIRE(sessionFactory.states.size() == 1);
+    REQUIRE(sessionFactory.states.front()->publishCalls == 1);
 }
 
 TEST_CASE("http_mqtt_interface_component_put_pubrel_failure_returns_500_and_logs", "[http_mqtt_interface_client]") {
