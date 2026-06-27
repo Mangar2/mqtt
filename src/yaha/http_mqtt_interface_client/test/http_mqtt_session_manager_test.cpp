@@ -94,6 +94,13 @@ TEST_CASE("http_mqtt_session_manager_connect_overrides_and_disconnect_via_receiv
     REQUIRE(manager.hasSession(tokens.sendToken));
     REQUIRE(manager.hasSession(tokens.receiveToken));
 
+    std::string resolvedClientId{};
+    REQUIRE(manager.resolveClientIdByToken(tokens.sendToken, resolvedClientId));
+    REQUIRE(resolvedClientId == "http-client");
+    REQUIRE(manager.resolveClientIdByToken(tokens.receiveToken, resolvedClientId));
+    REQUIRE(resolvedClientId == "http-client");
+    REQUIRE_FALSE(manager.resolveClientIdByToken("unknown-token", resolvedClientId));
+
     REQUIRE(manager.disconnect(tokens.receiveToken, errorText));
     REQUIRE_FALSE(manager.hasSession(tokens.sendToken));
     REQUIRE_FALSE(manager.hasSession(tokens.receiveToken));

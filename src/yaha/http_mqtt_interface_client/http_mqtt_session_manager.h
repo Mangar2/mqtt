@@ -71,6 +71,7 @@ public:
     [[nodiscard]] bool ping(const std::string& token, std::string& errorOut);
 
     [[nodiscard]] bool hasSession(const std::string& token) const;
+    [[nodiscard]] bool resolveClientIdByToken(const std::string& token, std::string& clientIdOut) const;
     [[nodiscard]] bool resolveSendTokenByClientId(const std::string& clientId, std::string& tokenOut) const;
     [[nodiscard]] std::vector<HttpMqttSessionSnapshot> listSessions() const;
 

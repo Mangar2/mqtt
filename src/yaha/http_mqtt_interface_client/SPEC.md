@@ -71,6 +71,14 @@ Behavior:
 - invalid MQTT sub-loader values keep MQTT defaults, emit warning, and do not
 	abort config loading
 
+Request version validation:
+
+- supported HTTP request version is `1.0`
+- unsupported explicit versions (for example `0`, `9.9`) are rejected with
+  deterministic `400` JSON error `{"error":"unsupported_version"}`
+- version validation is executed before payload-format validation so unsupported
+  version is reported first
+
 ## HTTP Endpoint Behavior
 
 Component starts `httplib::Server` and wires:
@@ -100,7 +108,8 @@ Component starts `httplib::Server` and wires:
 Publish ingress logging:
 
 - each handled publish request writes one stdout line
-- includes method, endpoint, and `version` header when present
+- includes method, endpoint, `version` header when present, request body byte size,
+  and resolved request context fields (`clientId`, `token`, `topic`) when available
 
 Publish broker-forward logging:
 
@@ -120,6 +129,20 @@ Native PUT error mapping:
 
 - `PUT /publish` and `PUT /pubrel` wrap dispatcher exceptions into deterministic internal error response (`500`, JSON `{"error":"internal_error"}`)
 - failed PUT requests emit `publish_request_failed` with endpoint and reason
+
+Subscription and disconnect logging:
+
+- invalid subscribe payload logs include reason and resolved request context
+	fields (`clientId`, `token`) when available
+- invalid subscribe/unsubscribe topics payload logs include an explicit
+	request-contract hint (expected JSON `topics` object with QoS values `0..2`)
+- invalid subscribe/unsubscribe topics payload logs include the raw incoming
+	request body string (`raw_body=`) for exact input reconstruction
+- disconnect event logs include token and resolved clientId when available
+- subscribe/unsubscribe/ping events use the same context style and include
+	resolved `clientId` and `token` when available
+- legacy listener forward events include resolved `clientId` and session
+	send-token when available
 
 Compatibility error mapping:
 

@@ -788,8 +788,8 @@ TEST_CASE("http_mqtt_interface_component_command_response_mapping_handles_unsupp
         R"({"clientId":"client-unsupported"})",
         "application/json");
     REQUIRE(connectResponse != nullptr);
-    REQUIRE(connectResponse->status == 500);
-    REQUIRE(connectResponse->body.find("connect_response_failed") != std::string::npos);
+    REQUIRE(connectResponse->status == 400);
+    REQUIRE(connectResponse->body.find("unsupported_version") != std::string::npos);
 
     const auto subscribeResponse = client.Put(
         "/subscribe",
@@ -797,8 +797,8 @@ TEST_CASE("http_mqtt_interface_component_command_response_mapping_handles_unsupp
         R"({"token":"unknown","topics":{"demo/topic":1},"packetid":1})",
         "application/json");
     REQUIRE(subscribeResponse != nullptr);
-    REQUIRE(subscribeResponse->status == 500);
-    REQUIRE(subscribeResponse->body.find("subscribe_failed") != std::string::npos);
+    REQUIRE(subscribeResponse->status == 400);
+    REQUIRE(subscribeResponse->body.find("unsupported_version") != std::string::npos);
 
     const auto unsubscribeResponse = client.Put(
         "/unsubscribe",
@@ -806,8 +806,8 @@ TEST_CASE("http_mqtt_interface_component_command_response_mapping_handles_unsupp
         R"({"token":"unknown","topics":{"demo/topic":1},"packetid":1})",
         "application/json");
     REQUIRE(unsubscribeResponse != nullptr);
-    REQUIRE(unsubscribeResponse->status == 500);
-    REQUIRE(unsubscribeResponse->body.find("unsubscribe_failed") != std::string::npos);
+    REQUIRE(unsubscribeResponse->status == 400);
+    REQUIRE(unsubscribeResponse->body.find("unsupported_version") != std::string::npos);
 
     const auto disconnectResponse = client.Put(
         "/disconnect",
@@ -815,8 +815,8 @@ TEST_CASE("http_mqtt_interface_component_command_response_mapping_handles_unsupp
         R"({"token":"unknown"})",
         "application/json");
     REQUIRE(disconnectResponse != nullptr);
-    REQUIRE(disconnectResponse->status == 500);
-    REQUIRE(disconnectResponse->body.find("disconnect_failed") != std::string::npos);
+    REQUIRE(disconnectResponse->status == 400);
+    REQUIRE(disconnectResponse->body.find("unsupported_version") != std::string::npos);
 
     component.close();
 }
@@ -1086,8 +1086,8 @@ TEST_CASE("http_mqtt_interface_component_command_response_failed_paths_with_vali
         subscribeBody,
         "application/json");
     REQUIRE(subscribeResponse != nullptr);
-    REQUIRE(subscribeResponse->status == 500);
-    REQUIRE(subscribeResponse->body.find("subscribe_response_failed") != std::string::npos);
+    REQUIRE(subscribeResponse->status == 400);
+    REQUIRE(subscribeResponse->body.find("unsupported_version") != std::string::npos);
 
     const std::string unsubscribeBody =
         std::string{R"({"token":")"} + *maybeSendToken +
@@ -1098,8 +1098,8 @@ TEST_CASE("http_mqtt_interface_component_command_response_failed_paths_with_vali
         unsubscribeBody,
         "application/json");
     REQUIRE(unsubscribeResponse != nullptr);
-    REQUIRE(unsubscribeResponse->status == 500);
-    REQUIRE(unsubscribeResponse->body.find("unsubscribe_response_failed") != std::string::npos);
+    REQUIRE(unsubscribeResponse->status == 400);
+    REQUIRE(unsubscribeResponse->body.find("unsupported_version") != std::string::npos);
 
     const std::string disconnectBody = std::string{R"({"token":")"} + *maybeSendToken + R"("})";
     const auto disconnectResponse = client.Put(
@@ -1108,8 +1108,35 @@ TEST_CASE("http_mqtt_interface_component_command_response_failed_paths_with_vali
         disconnectBody,
         "application/json");
     REQUIRE(disconnectResponse != nullptr);
-    REQUIRE(disconnectResponse->status == 500);
-    REQUIRE(disconnectResponse->body.find("disconnect_response_failed") != std::string::npos);
+    REQUIRE(disconnectResponse->status == 400);
+    REQUIRE(disconnectResponse->body.find("unsupported_version") != std::string::npos);
+
+    component.close();
+}
+
+TEST_CASE("http_mqtt_interface_component_subscribe_version_zero_returns_unsupported_version", "[http_mqtt_interface_client]") {
+    const std::uint16_t port = reserveFreeLocalPort();
+    SessionMockFactory sessionFactory{};
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = port;
+
+    yaha::HttpMqttInterfaceClientComponent component{config, sessionFactory.makeFactory()};
+    component.run();
+    REQUIRE(waitForHttpServer(port));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    configureHttpClientTimeouts(client);
+
+    const auto response = client.Put(
+        "/subscribe",
+        httplib::Headers{{"version", "0"}},
+        R"({"token":"abc"})",
+        "application/json");
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 400);
+    REQUIRE(response->body.find("unsupported_version") != std::string::npos);
 
     component.close();
 }

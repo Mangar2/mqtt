@@ -293,6 +293,21 @@ bool HttpMqttSessionManager::hasSession(const std::string& token) const {
     return findSession(token).has_value();
 }
 
+bool HttpMqttSessionManager::resolveClientIdByToken(const std::string& token, std::string& clientIdOut) const {
+    clientIdOut.clear();
+    if (token.empty()) {
+        return false;
+    }
+
+    const auto maybeSession = findSession(token);
+    if (!maybeSession.has_value()) {
+        return false;
+    }
+
+    clientIdOut = (*maybeSession)->clientId;
+    return !clientIdOut.empty();
+}
+
 bool HttpMqttSessionManager::resolveSendTokenByClientId(
     const std::string& clientId,
     std::string& tokenOut) const {
