@@ -8,11 +8,12 @@ Unit tests for standalone HTTP MQTT interface client INI mapping behavior.
 
 | Name | Scenario | Input | Expected |
 |------|----------|-------|----------|
-| `load_http_mqtt_interface_client_config_defaults` | default behavior with empty ini | empty INI document | loader succeeds and keeps default values |
-| `load_http_mqtt_interface_client_config_from_ini` | explicit field mapping | INI with all `[httpMqttInterface]` keys | loader succeeds and mapped values match |
-| `load_http_mqtt_interface_client_config_reports_invalid_port` | numeric bounds validation | `listenerPort=70000` | loader fails with `httpMqttInterface.listenerPort` error |
-| `load_http_mqtt_interface_client_config_reports_invalid_alias_flag` | bool parsing for publish.php toggle | `enablePublishPhpAlias=maybe` | loader fails with `httpMqttInterface.enablePublishPhpAlias` error |
-| `load_http_mqtt_interface_client_config_reports_invalid_legacy_flag` | bool parsing for legacy response toggle | `useLegacyPhpResponse=invalid` | loader fails with `httpMqttInterface.useLegacyPhpResponse` error |
+| `load_http_mqtt_interface_client_config_defaults` | default behavior with empty ini | empty INI document | loader succeeds and keeps all default values including logging toggles and connected-clients report interval |
+| `load_http_mqtt_interface_client_config_from_ini` | explicit field mapping | INI with all `[httpMqttInterface]` keys including logging and interval keys | loader succeeds and mapped values match |
+| `load_http_mqtt_interface_client_config_falls_back_on_invalid_port` | numeric bounds validation | `listenerPort=70000` | loader succeeds and keeps default port |
+| `load_http_mqtt_interface_client_config_falls_back_on_invalid_alias_flag` | bool parsing for publish.php toggle | `enablePublishPhpAlias=maybe` | loader succeeds and keeps default alias flag |
+| `load_http_mqtt_interface_client_config_falls_back_on_invalid_legacy_flag` | bool parsing for legacy response toggle | `useLegacyPhpResponse=invalid` | loader succeeds and keeps default legacy flag |
+| `load_http_mqtt_interface_client_config_falls_back_on_invalid_log_events_flag` | bool parsing for event logging toggle | `logEvents=invalid` | loader succeeds and keeps default event logging flag |
 | `http_mqtt_interface_component_logs_broker_publish_error_when_ack_missing` | broker publish callback fails with ACK timeout and maps to deterministic 500 | POST `/publish` compatibility payload while generic publish callback throws timeout text | response is `500`, and shared outgoing message log contains `event=broker_publish_failed` plus no-ack detail |
 | `http_mqtt_interface_component_returns_error_on_listen_failure` | invalid listener host produces deterministic startup failure | component runtime with invalid `listenerHost` | generic runtime throws `YahaError` startup failure |
 | `http_mqtt_interface_component_recovers_across_repeated_broker_publish_failures` | repeated broker publish failures must not break long-running request handling | sequence of multiple POST `/publish` requests while publish callback alternates fail/success | responses alternate `500` then `204`, process keeps serving requests |

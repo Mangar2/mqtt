@@ -27,6 +27,10 @@ struct HttpMqttInterfaceClientConfig {
     std::uint16_t listenerPort{k_defaultHttpMqttInterfaceListenerPort};  ///< HTTP bind port.
     bool enablePublishPhpAlias{true};         ///< Enables POST /publish.php compatibility alias.
     bool useLegacyPhpResponse{false};         ///< Enables legacy 200 JSON-string response mode.
+    bool logIncomingRequests{true};            ///< Enables request ingress logs.
+    bool logEvents{true};                      ///< Enables event logs.
+    bool logErrors{true};                      ///< Enables error logs.
+    bool logBrokerMessages{true};              ///< Enables broker in/out message logs.
     std::uint32_t connectedClientsReportIntervalSeconds{
         k_defaultHttpMqttInterfaceConnectedClientsReportIntervalSeconds};  ///< Periodic connected-clients report interval.
     YahaMqttClient::Config mqttConfig{};      ///< Broker publish transport runtime settings.

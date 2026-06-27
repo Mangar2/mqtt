@@ -35,6 +35,10 @@ constexpr std::string_view k_listenerHostKey{"listenerHost"};
 constexpr std::string_view k_listenerPortKey{"listenerPort"};
 constexpr std::string_view k_enablePublishPhpAliasKey{"enablePublishPhpAlias"};
 constexpr std::string_view k_useLegacyPhpResponseKey{"useLegacyPhpResponse"};
+constexpr std::string_view k_logIncomingRequestsKey{"logIncomingRequests"};
+constexpr std::string_view k_logEventsKey{"logEvents"};
+constexpr std::string_view k_logErrorsKey{"logErrors"};
+constexpr std::string_view k_logBrokerMessagesKey{"logBrokerMessages"};
 constexpr std::string_view k_connectedClientsReportIntervalSecondsKey{"connectedClientsReportIntervalSeconds"};
 constexpr std::string_view k_healthEndpoint{"/health"};
 constexpr std::string_view k_publishEndpoint{"/publish"};
@@ -60,7 +64,11 @@ constexpr std::string_view k_publishCorsHeaders{"Content-Type, Authorization, X-
 constexpr const char* k_error_code_broker_publish_failed{"HTTP_MQTT_BROKER_PUBLISH_FAILED"};
 constexpr const char* k_error_code_listener_start_failed{"HTTP_MQTT_LISTENER_START_FAILED"};
 
-void logHttpMqttEvent(const std::string_view eventName, const std::string_view detailText = "") {
+void logHttpMqttEvent(const bool enabled, const std::string_view eventName, const std::string_view detailText = "") {
+    if (!enabled) {
+        return;
+    }
+
     std::cout << "http_mqtt_interface_client[event] " << eventName;
     if (!detailText.empty()) {
         std::cout << ' ' << detailText;
@@ -69,9 +77,14 @@ void logHttpMqttEvent(const std::string_view eventName, const std::string_view d
 }
 
 void logHttpMqttError(
+    const bool enabled,
     const std::string_view operationName,
     const std::string_view reasonText,
     const std::string_view detailText = "") {
+    if (!enabled) {
+        return;
+    }
+
     std::cerr << "http_mqtt_interface_client[error] operation=" << operationName
               << " reason=\"" << escapeJsonString(reasonText) << '\"';
     if (!detailText.empty()) {
@@ -100,13 +113,21 @@ void logHttpMqttError(
            errorText.find("timed out waiting for PUBCOMP") != std::string_view::npos;
 }
 
-void logBrokerForwardPublishAck(const Message& message) {
+void logBrokerForwardPublishAck(const bool enabled, const Message& message) {
+    if (!enabled) {
+        return;
+    }
+
     if (const auto line = buildBrokerForwardLogLine(message); line.has_value()) {
         std::cout << *line << " event=broker_publish_ack" << '\n' << std::flush;
     }
 }
 
-void logBrokerIncomingMessage(const Message& message) {
+void logBrokerIncomingMessage(const bool enabled, const Message& message) {
+    if (!enabled) {
+        return;
+    }
+
     constexpr MessageLogConfig k_log_config{
         .enableIncoming = true,
         .enableOutgoing = false,
@@ -123,19 +144,27 @@ void logBrokerIncomingMessage(const Message& message) {
     }
 }
 
-void logLegacyForwardResult(const Message& message, const bool forwarded) {
+void logLegacyForwardResult(
+    const bool eventLoggingEnabled,
+    const bool errorLoggingEnabled,
+    const Message& message,
+    const bool forwarded) {
     std::ostringstream details{};
     details << "topic=" << message.topic()
             << " qos=" << static_cast<int>(message.qos())
             << " forwarded=" << (forwarded ? "true" : "false");
     if (forwarded) {
-        logHttpMqttEvent("legacy_listener_forward", details.str());
+        logHttpMqttEvent(eventLoggingEnabled, "legacy_listener_forward", details.str());
     } else {
-        logHttpMqttError("legacy_listener_forward", "forward failed", details.str());
+        logHttpMqttError(errorLoggingEnabled, "legacy_listener_forward", "forward failed", details.str());
     }
 }
 
-void logConnectedClientsReport(const std::vector<HttpMqttSessionSnapshot>& sessions) {
+void logConnectedClientsReport(const bool enabled, const std::vector<HttpMqttSessionSnapshot>& sessions) {
+    if (!enabled) {
+        return;
+    }
+
     std::size_t connectedCount = 0U;
     std::ostringstream clients{};
     bool firstClient = true;
@@ -156,12 +185,17 @@ void logConnectedClientsReport(const std::vector<HttpMqttSessionSnapshot>& sessi
     if (connectedCount > 0U) {
         details << " client_ids=" << clients.str();
     }
-    logHttpMqttEvent("connected_clients_report", details.str());
+    logHttpMqttEvent(enabled, "connected_clients_report", details.str());
 }
 
 void logBrokerForwardPublishError(
+    const bool enabled,
     const Message& message,
     const std::string_view errorText) {
+    if (!enabled) {
+        return;
+    }
+
     if (const auto line = buildBrokerForwardLogLine(message); line.has_value()) {
         std::cout << *line
                   << " event=broker_publish_failed"
@@ -173,20 +207,34 @@ void logBrokerForwardPublishError(
     }
 }
 
-void logCompatibilityRequestFailure(const std::string_view endpoint, const std::string_view errorText) {
+void logCompatibilityRequestFailure(
+    const bool enabled,
+    const std::string_view endpoint,
+    const std::string_view errorText) {
+    if (!enabled) {
+        return;
+    }
+
     std::cerr << "http_mqtt_interface_client[error] publish_request_failed"
               << " endpoint=" << endpoint
               << " error=" << errorText
               << '\n' << std::flush;
 }
 
-void logCompatibilityInternalResultFailure(const std::string_view endpoint, const HttpMqttResult& result) {
+void logCompatibilityInternalResultFailure(
+    const bool enabled,
+    const std::string_view endpoint,
+    const HttpMqttResult& result) {
+    if (!enabled) {
+        return;
+    }
+
     std::ostringstream errorText{};
     errorText << "compatibility_result_status=" << result.statusCode;
     if (!result.payload.empty()) {
         errorText << " payload=" << result.payload;
     }
-    logCompatibilityRequestFailure(endpoint, errorText.str());
+    logCompatibilityRequestFailure(enabled, endpoint, errorText.str());
 }
 
 [[nodiscard]] HttpMqttResult makeCompatibilityInternalErrorResult() {
@@ -215,7 +263,11 @@ void applyHttpMqttResult(const HttpMqttResult& result, httplib::Response& respon
     response.set_content(result.payload, "application/json");
 }
 
-void logIncomingPublishRequest(const httplib::Request& request, const std::string_view endpoint) {
+void logIncomingPublishRequest(const bool enabled, const httplib::Request& request, const std::string_view endpoint) {
+    if (!enabled) {
+        return;
+    }
+
     std::cout << "http_mqtt_interface_client[in] method=" << request.method
               << " endpoint=" << endpoint;
 
@@ -501,6 +553,27 @@ void logConfigFallbackWarning(
               << '\n' << std::flush;
 }
 
+void applyBoolConfigWithFallback(
+    const IniDocument& iniDocument,
+    bool& configValue,
+    const std::string_view sectionName,
+    const std::string_view keyName) {
+    const auto [maybeBoolValue, parseError] = iniDocument.readBool(sectionName, keyName);
+    if (!parseError.empty()) {
+        const std::string rawValue = iniDocument.lastValue(sectionName, keyName).value_or("<missing>");
+        logConfigFallbackWarning(
+            "http_mqtt_interface_client",
+            sectionName,
+            keyName,
+            rawValue,
+            configValue ? "true" : "false",
+            parseError);
+    }
+    if (maybeBoolValue.has_value()) {
+        configValue = *maybeBoolValue;
+    }
+}
+
 } // namespace
 
 struct HttpMqttInterfaceClientComponent::Impl {
@@ -565,14 +638,20 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
     impl_->server.Put(k_publishEndpoint.data(),
                       // NOLINTNEXTLINE(readability-function-cognitive-complexity)
                       [this](const httplib::Request& request, httplib::Response& response) {
-                          logIncomingPublishRequest(request, k_publishEndpoint);
+                          logIncomingPublishRequest(impl_->config.logIncomingRequests, request, k_publishEndpoint);
                           try {
                               applyHttpMqttResult(impl_->interfaces.onPublish(collectHeaders(request)), response);
                           } catch (const std::exception& exceptionValue) {
-                              logCompatibilityRequestFailure(k_publishEndpoint, exceptionValue.what());
+                              logCompatibilityRequestFailure(
+                                  impl_->config.logErrors,
+                                  k_publishEndpoint,
+                                  exceptionValue.what());
                               applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
                           } catch (...) {
-                              logCompatibilityRequestFailure(k_publishEndpoint, "unknown publish request error");
+                              logCompatibilityRequestFailure(
+                                  impl_->config.logErrors,
+                                  k_publishEndpoint,
+                                  "unknown publish request error");
                               applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
                           }
                       });
@@ -582,10 +661,13 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           try {
                               applyHttpMqttResult(impl_->interfaces.onPubrel(collectHeaders(request)), response);
                           } catch (const std::exception& exceptionValue) {
-                              logCompatibilityRequestFailure(k_pubrelEndpoint, exceptionValue.what());
+                              logCompatibilityRequestFailure(impl_->config.logErrors, k_pubrelEndpoint, exceptionValue.what());
                               applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
                           } catch (...) {
-                              logCompatibilityRequestFailure(k_pubrelEndpoint, "unknown publish request error");
+                              logCompatibilityRequestFailure(
+                                  impl_->config.logErrors,
+                                  k_pubrelEndpoint,
+                                  "unknown publish request error");
                               applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
                           }
                       });
@@ -595,7 +677,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           const HttpMqttHeaders fields = collectFields(request);
                           const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
                           if (!request.body.empty() && !jsonBody.has_value()) {
-                              logHttpMqttError("connect", "invalid json payload");
+                              logHttpMqttError(impl_->config.logErrors, "connect", "invalid json payload");
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "invalid_json"), response);
                               return;
                           }
@@ -604,7 +686,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                               ? tryReadStringField(*jsonBody, "clientId")
                               : std::nullopt;
                           if (!clientId.has_value() || clientId->empty()) {
-                              logHttpMqttError("connect", "missing clientId");
+                              logHttpMqttError(impl_->config.logErrors, "connect", "missing clientId");
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "missing_client_id"), response);
                               return;
                           }
@@ -629,7 +711,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           HttpMqttSessionConnectTokens tokens{};
                           std::string connectError{};
                           if (!impl_->sessionManager.connect(connectRequest, tokens, connectError)) {
-                              logHttpMqttError("connect", "session connect failed", connectError);
+                              logHttpMqttError(impl_->config.logErrors, "connect", "session connect failed", connectError);
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "connect_failed"), response);
                               return;
                           }
@@ -660,12 +742,13 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           try {
                               applyHttpMqttResult(impl_->interfaces.onConnect(headers, connectResult), response);
                               logHttpMqttEvent(
+                                  impl_->config.logEvents,
                                   "connect",
                                   std::string{"clientId="} + *clientId +
                                       " sendToken=" + tokens.sendToken +
                                       " receiveToken=" + tokens.receiveToken);
                           } catch (...) {
-                              logHttpMqttError("connect", "connect response mapping failed");
+                              logHttpMqttError(impl_->config.logErrors, "connect", "connect response mapping failed");
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "connect_response_failed"), response);
                           }
                       });
@@ -675,7 +758,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           const HttpMqttHeaders fields = collectFields(request);
                           const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
                           if (!request.body.empty() && !jsonBody.has_value()) {
-                              logHttpMqttError("subscribe", "invalid json payload");
+                              logHttpMqttError(impl_->config.logErrors, "subscribe", "invalid json payload");
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "invalid_json"), response);
                               return;
                           }
@@ -683,7 +766,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           std::string topicsError{};
                           const std::map<std::string, Qos> topics = parseTopicsObject(jsonBody, topicsError);
                           if (!topicsError.empty()) {
-                              logHttpMqttError("subscribe", "invalid topics payload", topicsError);
+                              logHttpMqttError(impl_->config.logErrors, "subscribe", "invalid topics payload", topicsError);
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "invalid_topics"), response);
                               return;
                           }
@@ -699,7 +782,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                               }
                           }
                           if (resolvedToken.empty()) {
-                              logHttpMqttError("subscribe", "missing token");
+                              logHttpMqttError(impl_->config.logErrors, "subscribe", "missing token");
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "missing_token"), response);
                               return;
                           }
@@ -717,7 +800,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           std::vector<std::uint8_t> subscribeResult{};
                           std::string subscribeError{};
                           if (!impl_->sessionManager.subscribe(resolvedToken, topics, subscribeResult, subscribeError)) {
-                              logHttpMqttError("subscribe", "session subscribe failed", subscribeError);
+                              logHttpMqttError(impl_->config.logErrors, "subscribe", "session subscribe failed", subscribeError);
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "subscribe_failed"), response);
                               return;
                           }
@@ -725,11 +808,12 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           try {
                               applyHttpMqttResult(impl_->interfaces.onSubscribe(headers, subscribeResult), response);
                               logHttpMqttEvent(
+                                  impl_->config.logEvents,
                                   "subscribe",
                                   std::string{"token="} + resolvedToken +
                                       " topics=" + std::to_string(topics.size()));
                           } catch (...) {
-                              logHttpMqttError("subscribe", "subscribe response mapping failed");
+                              logHttpMqttError(impl_->config.logErrors, "subscribe", "subscribe response mapping failed");
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "subscribe_response_failed"), response);
                           }
                       });
@@ -739,7 +823,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           const HttpMqttHeaders fields = collectFields(request);
                           const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
                           if (!request.body.empty() && !jsonBody.has_value()) {
-                              logHttpMqttError("unsubscribe", "invalid json payload");
+                              logHttpMqttError(impl_->config.logErrors, "unsubscribe", "invalid json payload");
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "invalid_json"), response);
                               return;
                           }
@@ -747,7 +831,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           std::string topicsError{};
                           const std::map<std::string, Qos> topics = parseTopicsObject(jsonBody, topicsError);
                           if (!topicsError.empty()) {
-                              logHttpMqttError("unsubscribe", "invalid topics payload", topicsError);
+                              logHttpMqttError(impl_->config.logErrors, "unsubscribe", "invalid topics payload", topicsError);
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "invalid_topics"), response);
                               return;
                           }
@@ -763,7 +847,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                               }
                           }
                           if (resolvedToken.empty()) {
-                              logHttpMqttError("unsubscribe", "missing token");
+                              logHttpMqttError(impl_->config.logErrors, "unsubscribe", "missing token");
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "missing_token"), response);
                               return;
                           }
@@ -781,7 +865,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           std::vector<std::uint8_t> unsubscribeResult{};
                           std::string unsubscribeError{};
                           if (!impl_->sessionManager.unsubscribe(resolvedToken, topics, unsubscribeResult, unsubscribeError)) {
-                              logHttpMqttError("unsubscribe", "session unsubscribe failed", unsubscribeError);
+                              logHttpMqttError(impl_->config.logErrors, "unsubscribe", "session unsubscribe failed", unsubscribeError);
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "unsubscribe_failed"), response);
                               return;
                           }
@@ -789,11 +873,12 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           try {
                               applyHttpMqttResult(impl_->interfaces.onUnsubscribe(headers, unsubscribeResult), response);
                               logHttpMqttEvent(
+                                  impl_->config.logEvents,
                                   "unsubscribe",
                                   std::string{"token="} + resolvedToken +
                                       " topics=" + std::to_string(topics.size()));
                           } catch (...) {
-                              logHttpMqttError("unsubscribe", "unsubscribe response mapping failed");
+                              logHttpMqttError(impl_->config.logErrors, "unsubscribe", "unsubscribe response mapping failed");
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "unsubscribe_response_failed"), response);
                           }
                       });
@@ -803,7 +888,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           const HttpMqttHeaders fields = collectFields(request);
                           const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
                           if (!request.body.empty() && !jsonBody.has_value()) {
-                              logHttpMqttError("disconnect", "invalid json payload");
+                              logHttpMqttError(impl_->config.logErrors, "disconnect", "invalid json payload");
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "invalid_json"), response);
                               return;
                           }
@@ -819,14 +904,14 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                               }
                           }
                           if (resolvedToken.empty()) {
-                              logHttpMqttError("disconnect", "missing token");
+                              logHttpMqttError(impl_->config.logErrors, "disconnect", "missing token");
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "missing_token"), response);
                               return;
                           }
 
                           std::string disconnectError{};
                           if (!impl_->sessionManager.disconnect(resolvedToken, disconnectError)) {
-                              logHttpMqttError("disconnect", "session disconnect failed", disconnectError);
+                              logHttpMqttError(impl_->config.logErrors, "disconnect", "session disconnect failed", disconnectError);
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "disconnect_failed"), response);
                               return;
                           }
@@ -844,9 +929,9 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
 
                           try {
                               applyHttpMqttResult(impl_->interfaces.onDisconnect(headers), response);
-                              logHttpMqttEvent("disconnect", std::string{"token="} + resolvedToken);
+                              logHttpMqttEvent(impl_->config.logEvents, "disconnect", std::string{"token="} + resolvedToken);
                           } catch (...) {
-                              logHttpMqttError("disconnect", "disconnect response mapping failed");
+                              logHttpMqttError(impl_->config.logErrors, "disconnect", "disconnect response mapping failed");
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "disconnect_response_failed"), response);
                           }
                       });
@@ -856,27 +941,27 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           const HttpMqttHeaders fields = collectFields(request);
                           const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
                           if (!request.body.empty() && !jsonBody.has_value()) {
-                              logHttpMqttError("ping", "invalid json payload");
+                              logHttpMqttError(impl_->config.logErrors, "ping", "invalid json payload");
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "invalid_json"), response);
                               return;
                           }
 
                           const std::string token = resolveToken(request, fields, jsonBody);
                           if (token.empty()) {
-                              logHttpMqttError("ping", "missing token");
+                              logHttpMqttError(impl_->config.logErrors, "ping", "missing token");
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "missing_token"), response);
                               return;
                           }
 
                           std::string pingError{};
                           if (!impl_->sessionManager.ping(token, pingError)) {
-                              logHttpMqttError("ping", "session ping failed", pingError);
+                              logHttpMqttError(impl_->config.logErrors, "ping", "session ping failed", pingError);
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "ping_failed"), response);
                               return;
                           }
 
                           applyHttpMqttResult(makeNoContentResult("pingresp"), response);
-                          logHttpMqttEvent("ping", std::string{"token="} + token);
+                          logHttpMqttEvent(impl_->config.logEvents, "ping", std::string{"token="} + token);
                       });
 
     impl_->server.Put(k_receiveEndpoint.data(),
@@ -884,14 +969,14 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           const HttpMqttHeaders fields = collectFields(request);
                           const std::optional<mqtt::json::JsonValue> jsonBody = tryParseJsonBody(request);
                           if (!request.body.empty() && !jsonBody.has_value()) {
-                              logHttpMqttError("receive", "invalid json payload");
+                              logHttpMqttError(impl_->config.logErrors, "receive", "invalid json payload");
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "invalid_json"), response);
                               return;
                           }
 
                           const std::string token = resolveToken(request, fields, jsonBody);
                           if (token.empty()) {
-                              logHttpMqttError("receive", "missing token");
+                              logHttpMqttError(impl_->config.logErrors, "receive", "missing token");
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusBadRequest, "missing_token"), response);
                               return;
                           }
@@ -899,7 +984,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           std::optional<Message> receivedMessage{};
                           std::string receiveError{};
                           if (!impl_->sessionManager.receive(token, receivedMessage, receiveError)) {
-                              logHttpMqttError("receive", "session receive failed", receiveError);
+                              logHttpMqttError(impl_->config.logErrors, "receive", "session receive failed", receiveError);
                               applyHttpMqttResult(makeJsonErrorResult(k_httpStatusInternalServerError, "receive_failed"), response);
                               return;
                           }
@@ -916,7 +1001,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           receiveResult.headers["packet"] = "publish";
                           receiveResult.payload = buildReceivePayload(*receivedMessage);
                           applyHttpMqttResult(receiveResult, response);
-                          logBrokerIncomingMessage(*receivedMessage);
+                          logBrokerIncomingMessage(impl_->config.logBrokerMessages, *receivedMessage);
                       });
 
     // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -924,7 +1009,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                                                 const httplib::Request& request,
                                                 httplib::Response& response,
                                                 const std::string_view endpoint) {
-        logIncomingPublishRequest(request, endpoint);
+        logIncomingPublishRequest(impl_->config.logIncomingRequests, request, endpoint);
         try {
             const HttpMqttHeaders headers = collectHeaders(request);
             const HttpMqttHeaders fields = collectFields(request);
@@ -961,7 +1046,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                             const std::string publishReason = sessionError.empty()
                                 ? "broker publish callback failed"
                                 : sessionError;
-                            logBrokerForwardPublishError(mappedMessage, publishReason);
+                            logBrokerForwardPublishError(impl_->config.logBrokerMessages, mappedMessage, publishReason);
                             throw YahaError{
                                 k_error_code_broker_publish_failed,
                                 publishReason,
@@ -980,7 +1065,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                             const std::string publishReason = publishResult.reason.empty()
                                 ? "broker publish callback failed"
                                 : publishResult.reason;
-                            logBrokerForwardPublishError(mappedMessage, publishReason);
+                            logBrokerForwardPublishError(impl_->config.logBrokerMessages, mappedMessage, publishReason);
                             throw YahaError{
                                 k_error_code_broker_publish_failed,
                                 publishReason,
@@ -989,19 +1074,19 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                         }
                     }
 
-                    logBrokerForwardPublishAck(mappedMessage);
+                    logBrokerForwardPublishAck(impl_->config.logBrokerMessages, mappedMessage);
                     return impl_->interfaces.onPublish(downstreamRequest.headers);
                 });
 
             if (compatibilityResult.statusCode >= k_httpStatusInternalServerError) {
-                logCompatibilityInternalResultFailure(endpoint, compatibilityResult);
+                logCompatibilityInternalResultFailure(impl_->config.logErrors, endpoint, compatibilityResult);
             }
             applyHttpMqttResult(compatibilityResult, response);
         } catch (const std::exception& exceptionValue) {
-            logCompatibilityRequestFailure(endpoint, exceptionValue.what());
+            logCompatibilityRequestFailure(impl_->config.logErrors, endpoint, exceptionValue.what());
             applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
         } catch (...) {
-            logCompatibilityRequestFailure(endpoint, "unknown publish request error");
+            logCompatibilityRequestFailure(impl_->config.logErrors, endpoint, "unknown publish request error");
             applyHttpMqttResult(makeCompatibilityInternalErrorResult(), response);
         }
     };
@@ -1187,7 +1272,7 @@ void HttpMqttInterfaceClientComponent::run() {
                 std::string receiveError{};
                 if (!impl_->sessionManager.receive(receiveToken, receivedMessage, receiveError)) {
                     if (!receiveError.empty()) {
-                        logHttpMqttError("receive_dispatch", "session receive failed", receiveError);
+                        logHttpMqttError(impl_->config.logErrors, "receive_dispatch", "session receive failed", receiveError);
                     }
                     continue;
                 }
@@ -1196,13 +1281,13 @@ void HttpMqttInterfaceClientComponent::run() {
                     continue;
                 }
 
-                logBrokerIncomingMessage(*receivedMessage);
+                logBrokerIncomingMessage(impl_->config.logBrokerMessages, *receivedMessage);
 
                 const bool forwarded = forwardLegacyListenerPublish(
                     endpoint,
                     *receivedMessage,
                     HttpMqttHeaders{});
-                logLegacyForwardResult(*receivedMessage, forwarded);
+                logLegacyForwardResult(impl_->config.logEvents, impl_->config.logErrors, *receivedMessage, forwarded);
             }
         }
     });
@@ -1229,7 +1314,7 @@ void HttpMqttInterfaceClientComponent::run() {
             }
 
             const auto sessions = impl_->sessionManager.listSessions();
-            logConnectedClientsReport(sessions);
+            logConnectedClientsReport(impl_->config.logEvents, sessions);
         }
     });
 }
@@ -1302,41 +1387,36 @@ bool tryLoadHttpMqttInterfaceClientConfigFromIni(
         configOutput.listenerPort = static_cast<std::uint16_t>(*maybePort);
     }
 
-    const auto [maybePublishPhpAlias, publishPhpAliasError] = iniDocument.readBool(
+    applyBoolConfigWithFallback(
+        iniDocument,
+        configOutput.enablePublishPhpAlias,
         k_httpSection,
         k_enablePublishPhpAliasKey);
-    if (!publishPhpAliasError.empty()) {
-        const std::string rawValue =
-            iniDocument.lastValue(k_httpSection, k_enablePublishPhpAliasKey).value_or("<missing>");
-        logConfigFallbackWarning(
-            "http_mqtt_interface_client",
-            k_httpSection,
-            k_enablePublishPhpAliasKey,
-            rawValue,
-            configOutput.enablePublishPhpAlias ? "true" : "false",
-            publishPhpAliasError);
-    }
-    if (maybePublishPhpAlias.has_value()) {
-        configOutput.enablePublishPhpAlias = *maybePublishPhpAlias;
-    }
-
-    const auto [maybeLegacyResponse, legacyResponseError] = iniDocument.readBool(
+    applyBoolConfigWithFallback(
+        iniDocument,
+        configOutput.useLegacyPhpResponse,
         k_httpSection,
         k_useLegacyPhpResponseKey);
-    if (!legacyResponseError.empty()) {
-        const std::string rawValue =
-            iniDocument.lastValue(k_httpSection, k_useLegacyPhpResponseKey).value_or("<missing>");
-        logConfigFallbackWarning(
-            "http_mqtt_interface_client",
-            k_httpSection,
-            k_useLegacyPhpResponseKey,
-            rawValue,
-            configOutput.useLegacyPhpResponse ? "true" : "false",
-            legacyResponseError);
-    }
-    if (maybeLegacyResponse.has_value()) {
-        configOutput.useLegacyPhpResponse = *maybeLegacyResponse;
-    }
+    applyBoolConfigWithFallback(
+        iniDocument,
+        configOutput.logIncomingRequests,
+        k_httpSection,
+        k_logIncomingRequestsKey);
+    applyBoolConfigWithFallback(
+        iniDocument,
+        configOutput.logEvents,
+        k_httpSection,
+        k_logEventsKey);
+    applyBoolConfigWithFallback(
+        iniDocument,
+        configOutput.logErrors,
+        k_httpSection,
+        k_logErrorsKey);
+    applyBoolConfigWithFallback(
+        iniDocument,
+        configOutput.logBrokerMessages,
+        k_httpSection,
+        k_logBrokerMessagesKey);
 
     const auto [maybeConnectedClientsReportIntervalSeconds, connectedClientsReportIntervalError] =
         iniDocument.readUnsigned(

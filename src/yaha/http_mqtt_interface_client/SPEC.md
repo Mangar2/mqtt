@@ -16,6 +16,11 @@ Generic MQTT client and generic runtime orchestrator own broker communication an
 | `listenerPort` | `std::uint16_t` | `8092` | HTTP bind port |
 | `enablePublishPhpAlias` | `bool` | `true` | Enables `POST /publish.php` compatibility route |
 | `useLegacyPhpResponse` | `bool` | `false` | Enables legacy PHP response conversion mode |
+| `logIncomingRequests` | `bool` | `true` | Enables ingress request logging for publish compatibility routes |
+| `logEvents` | `bool` | `true` | Enables domain event logging (connect/subscribe/unsubscribe/disconnect/ping and connected-clients report) |
+| `logErrors` | `bool` | `true` | Enables error logging for request and session failure paths |
+| `logBrokerMessages` | `bool` | `true` | Enables broker in/out message logs for publish and receive paths |
+| `connectedClientsReportIntervalSeconds` | `std::uint32_t` | `60` | Interval for periodic connected-clients event report |
 | `mqttConfig` | `YahaMqttClient::Config` | defaults from MQTT client config | Generic MQTT client session config |
 
 ### Class `HttpMqttInterfaceClientComponent`
@@ -48,6 +53,11 @@ Reads optional keys from section `[httpMqttInterface]`:
 - `listenerPort` (range `1..65535`)
 - `enablePublishPhpAlias`
 - `useLegacyPhpResponse`
+- `logIncomingRequests`
+- `logEvents`
+- `logErrors`
+- `logBrokerMessages`
+- `connectedClientsReportIntervalSeconds` (range `1..86400`)
 
 Also delegates MQTT client config parsing to shared MQTT config loader:
 

@@ -325,7 +325,7 @@ MessageStore client INI sections:
 
 HTTP MQTT interface client INI sections:
 
-- `[httpMqttInterface]`: `listenerHost`, `listenerPort`, `enablePublishPhpAlias`, `useLegacyPhpResponse`
+- `[httpMqttInterface]`: `listenerHost`, `listenerPort`, `enablePublishPhpAlias`, `useLegacyPhpResponse`, `logIncomingRequests`, `logEvents`, `logErrors`, `logBrokerMessages`, `connectedClientsReportIntervalSeconds`
 
 RemoteService client INI sections:
 

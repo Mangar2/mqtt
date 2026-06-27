@@ -235,6 +235,7 @@ struct SessionMockFactory {
 
 } // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("load_http_mqtt_interface_client_config_defaults", "[http_mqtt_interface_client]") {
     const auto iniPath = writeTempIni("");
     const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniPath);
@@ -252,17 +253,28 @@ TEST_CASE("load_http_mqtt_interface_client_config_defaults", "[http_mqtt_interfa
     REQUIRE(config.listenerPort == 8092U);
     REQUIRE(config.enablePublishPhpAlias);
     REQUIRE_FALSE(config.useLegacyPhpResponse);
+    REQUIRE(config.logIncomingRequests);
+    REQUIRE(config.logEvents);
+    REQUIRE(config.logErrors);
+    REQUIRE(config.logBrokerMessages);
+    REQUIRE(config.connectedClientsReportIntervalSeconds == 60U);
 
     std::filesystem::remove(iniPath);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("load_http_mqtt_interface_client_config_from_ini", "[http_mqtt_interface_client]") {
     const std::string iniText =
         "[httpMqttInterface]\n"
         "listenerHost=0.0.0.0\n"
         "listenerPort=8123\n"
         "enablePublishPhpAlias=false\n"
-        "useLegacyPhpResponse=true\n";
+        "useLegacyPhpResponse=true\n"
+        "logIncomingRequests=false\n"
+        "logEvents=false\n"
+        "logErrors=false\n"
+        "logBrokerMessages=false\n"
+        "connectedClientsReportIntervalSeconds=120\n";
 
     const auto iniPath = writeTempIni(iniText);
     const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniPath);
@@ -280,6 +292,11 @@ TEST_CASE("load_http_mqtt_interface_client_config_from_ini", "[http_mqtt_interfa
     REQUIRE(config.listenerPort == 8123U);
     REQUIRE_FALSE(config.enablePublishPhpAlias);
     REQUIRE(config.useLegacyPhpResponse);
+    REQUIRE_FALSE(config.logIncomingRequests);
+    REQUIRE_FALSE(config.logEvents);
+    REQUIRE_FALSE(config.logErrors);
+    REQUIRE_FALSE(config.logBrokerMessages);
+    REQUIRE(config.connectedClientsReportIntervalSeconds == 120U);
 
     std::filesystem::remove(iniPath);
 }
@@ -346,6 +363,28 @@ TEST_CASE("load_http_mqtt_interface_client_config_falls_back_on_invalid_legacy_f
     REQUIRE(success);
     REQUIRE(errorMessage.empty());
     REQUIRE_FALSE(config.useLegacyPhpResponse);
+
+    std::filesystem::remove(iniPath);
+}
+
+TEST_CASE("load_http_mqtt_interface_client_config_falls_back_on_invalid_log_events_flag", "[http_mqtt_interface_client]") {
+    const std::string iniText =
+        "[httpMqttInterface]\n"
+        "logEvents=invalid\n";
+
+    const auto iniPath = writeTempIni(iniText);
+    const yaha::IniDocument document = yaha::IniDocument::loadFromFile(iniPath);
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    std::string errorMessage{};
+    const bool success = yaha::tryLoadHttpMqttInterfaceClientConfigFromIni(
+        document,
+        config,
+        errorMessage);
+
+    REQUIRE(success);
+    REQUIRE(errorMessage.empty());
+    REQUIRE(config.logEvents);
 
     std::filesystem::remove(iniPath);
 }
