@@ -1,0 +1,213 @@
+    1|       |#include "yaha/http_mqtt_interface/http_mqtt_interface_dispatcher.h"
+    2|       |
+    3|       |#include "yaha/http_mqtt_interface/http_mqtt_interface_contracts.h"
+    4|       |
+    5|       |#include <format>
+    6|       |#include <stdexcept>
+    7|       |
+    8|       |namespace yaha {
+    9|       |
+   10|       |namespace {
+   11|       |
+   12|      2|[[nodiscard]] std::string makeUndefinedVersionMessage(const std::string_view version) {
+   13|      2|    return std::format("undefined version {}", version);
+   14|      2|}
+   15|       |
+   16|       |template <typename HandlerMap>
+   17|       |[[nodiscard]] const typename HandlerMap::mapped_type& resolveHandler(
+   18|       |    const HandlerMap& handlerMap,
+   19|     79|    const std::string_view version) {
+   20|     79|    const auto iterator = handlerMap.find(std::string{version});
+   21|     79|    if (iterator == handlerMap.end()) {
+   22|      0|        throw std::runtime_error{makeUndefinedVersionMessage(version)};
+   23|      0|    }
+   24|     79|    return iterator->second;
+   25|     79|}
+  ------------------
+  | http_mqtt_interface_dispatcher.cpp:_ZN4yaha12_GLOBAL__N_114resolveHandlerINSt3__13mapINS2_12basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEENS2_8functionIFNS_19HttpMqttRequestDataERKNS_22HttpMqttPublishOptionsEEEENS2_4lessIS9_EENS7_INS2_4pairIKS9_SG_EEEEEEEERKNT_11mapped_typeERKSO_NS2_17basic_string_viewIcS6_EE:
+  |   19|     23|    const std::string_view version) {
+  |   20|     23|    const auto iterator = handlerMap.find(std::string{version});
+  |   21|     23|    if (iterator == handlerMap.end()) {
+  |   22|      0|        throw std::runtime_error{makeUndefinedVersionMessage(version)};
+  |   23|      0|    }
+  |   24|     23|    return iterator->second;
+  |   25|     23|}
+  ------------------
+  | http_mqtt_interface_dispatcher.cpp:_ZN4yaha12_GLOBAL__N_114resolveHandlerINSt3__13mapINS2_12basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEENS2_8functionIFNS_14HttpMqttResultERKNS3_IS9_S9_NS2_4lessIS9_EENS7_INS2_4pairIKS9_S9_EEEEEEEEESD_NS7_INSE_ISF_SM_EEEEEEEERKNT_11mapped_typeERKSQ_NS2_17basic_string_viewIcS6_EE:
+  |   19|     14|    const std::string_view version) {
+  |   20|     14|    const auto iterator = handlerMap.find(std::string{version});
+  |   21|     14|    if (iterator == handlerMap.end()) {
+  |   22|      0|        throw std::runtime_error{makeUndefinedVersionMessage(version)};
+  |   23|      0|    }
+  |   24|     14|    return iterator->second;
+  |   25|     14|}
+  ------------------
+  | http_mqtt_interface_dispatcher.cpp:_ZN4yaha12_GLOBAL__N_114resolveHandlerINSt3__13mapINS2_12basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEENS2_8functionIFNS_19HttpMqttRequestDataERKNS_21HttpMqttPubrelOptionsEEEENS2_4lessIS9_EENS7_INS2_4pairIKS9_SG_EEEEEEEERKNT_11mapped_typeERKSO_NS2_17basic_string_viewIcS6_EE:
+  |   19|      2|    const std::string_view version) {
+  |   20|      2|    const auto iterator = handlerMap.find(std::string{version});
+  |   21|      2|    if (iterator == handlerMap.end()) {
+  |   22|      0|        throw std::runtime_error{makeUndefinedVersionMessage(version)};
+  |   23|      0|    }
+  |   24|      2|    return iterator->second;
+  |   25|      2|}
+  ------------------
+  | http_mqtt_interface_dispatcher.cpp:_ZN4yaha12_GLOBAL__N_114resolveHandlerINSt3__13mapINS2_12basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEENS2_8functionIFNS_19HttpMqttRequestDataERKNS3_IS9_NS_3QosENS2_4lessIS9_EENS7_INS2_4pairIKS9_SC_EEEEEERSG_tEEESE_NS7_INSF_ISG_SO_EEEEEEEERKNT_11mapped_typeERKSS_NS2_17basic_string_viewIcS6_EE:
+  |   19|      5|    const std::string_view version) {
+  |   20|      5|    const auto iterator = handlerMap.find(std::string{version});
+  |   21|      5|    if (iterator == handlerMap.end()) {
+  |   22|      0|        throw std::runtime_error{makeUndefinedVersionMessage(version)};
+  |   23|      0|    }
+  |   24|      5|    return iterator->second;
+  |   25|      5|}
+  ------------------
+  | http_mqtt_interface_dispatcher.cpp:_ZN4yaha12_GLOBAL__N_114resolveHandlerINSt3__13mapINS2_12basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEENS2_8functionIFNS_14HttpMqttResultERKNS3_IS9_S9_NS2_4lessIS9_EENS7_INS2_4pairIKS9_S9_EEEEEERKNS2_6vectorIhNS7_IhEEEEEEESD_NS7_INSE_ISF_SR_EEEEEEEERKNT_11mapped_typeERKSV_NS2_17basic_string_viewIcS6_EE:
+  |   19|     12|    const std::string_view version) {
+  |   20|     12|    const auto iterator = handlerMap.find(std::string{version});
+  |   21|     12|    if (iterator == handlerMap.end()) {
+  |   22|      0|        throw std::runtime_error{makeUndefinedVersionMessage(version)};
+  |   23|      0|    }
+  |   24|     12|    return iterator->second;
+  |   25|     12|}
+  ------------------
+  | http_mqtt_interface_dispatcher.cpp:_ZN4yaha12_GLOBAL__N_114resolveHandlerINSt3__13mapINS2_12basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEENS2_8functionIFNS_19HttpMqttRequestDataERKNS_22HttpMqttConnectOptionsEEEENS2_4lessIS9_EENS7_INS2_4pairIKS9_SG_EEEEEEEERKNT_11mapped_typeERKSO_NS2_17basic_string_viewIcS6_EE:
+  |   19|      4|    const std::string_view version) {
+  |   20|      4|    const auto iterator = handlerMap.find(std::string{version});
+  |   21|      4|    if (iterator == handlerMap.end()) {
+  |   22|      0|        throw std::runtime_error{makeUndefinedVersionMessage(version)};
+  |   23|      0|    }
+  |   24|      4|    return iterator->second;
+  |   25|      4|}
+  ------------------
+  | http_mqtt_interface_dispatcher.cpp:_ZN4yaha12_GLOBAL__N_114resolveHandlerINSt3__13mapINS2_12basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEENS2_8functionIFNS_14HttpMqttResultERKNS_21HttpMqttConnectResultEEEENS2_4lessIS9_EENS7_INS2_4pairIKS9_SG_EEEEEEEERKNT_11mapped_typeERKSO_NS2_17basic_string_viewIcS6_EE:
+  |   19|     12|    const std::string_view version) {
+  |   20|     12|    const auto iterator = handlerMap.find(std::string{version});
+  |   21|     12|    if (iterator == handlerMap.end()) {
+  |   22|      0|        throw std::runtime_error{makeUndefinedVersionMessage(version)};
+  |   23|      0|    }
+  |   24|     12|    return iterator->second;
+  |   25|     12|}
+  ------------------
+  | http_mqtt_interface_dispatcher.cpp:_ZN4yaha12_GLOBAL__N_114resolveHandlerINSt3__13mapINS2_12basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEENS2_8functionIFNS_19HttpMqttRequestDataERKS9_EEENS2_4lessIS9_EENS7_INS2_4pairISC_SF_EEEEEEEERKNT_11mapped_typeERKSM_NS2_17basic_string_viewIcS6_EE:
+  |   19|      2|    const std::string_view version) {
+  |   20|      2|    const auto iterator = handlerMap.find(std::string{version});
+  |   21|      2|    if (iterator == handlerMap.end()) {
+  |   22|      0|        throw std::runtime_error{makeUndefinedVersionMessage(version)};
+  |   23|      0|    }
+  |   24|      2|    return iterator->second;
+  |   25|      2|}
+  ------------------
+  | http_mqtt_interface_dispatcher.cpp:_ZN4yaha12_GLOBAL__N_114resolveHandlerINSt3__13mapINS2_12basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEENS2_8functionIFNS_14HttpMqttResultEvEEENS2_4lessIS9_EENS7_INS2_4pairIKS9_SD_EEEEEEEERKNT_11mapped_typeERKSL_NS2_17basic_string_viewIcS6_EE:
+  |   19|      5|    const std::string_view version) {
+  |   20|      5|    const auto iterator = handlerMap.find(std::string{version});
+  |   21|      5|    if (iterator == handlerMap.end()) {
+  |   22|      0|        throw std::runtime_error{makeUndefinedVersionMessage(version)};
+  |   23|      0|    }
+  |   24|      5|    return iterator->second;
+  |   25|      5|}
+  ------------------
+   26|       |
+   27|       |} // namespace
+   28|       |
+   29|       |std::string getVersion(
+   30|       |    const HttpMqttHeaders& headersInput,
+   31|     46|    const HttpMqttPublishResponseHandlerMap& onPublishHandlers) {
+   32|     46|    const std::string selectedVersion = resolveVersion(headersInput, "0.0");
+   33|     46|    if (onPublishHandlers.find(selectedVersion) == onPublishHandlers.end()) {
+   34|      2|        throw std::runtime_error{makeUndefinedVersionMessage(selectedVersion)};
+   35|      2|    }
+   36|     44|    return selectedVersion;
+   37|     46|}
+   38|       |
+   39|       |HttpMqttInterfaces::HttpMqttInterfaces(HttpMqttInterfaceHandlerRegistry registryInput)
+   40|     48|    : registry_(std::move(registryInput)) {}
+   41|       |
+   42|       |HttpMqttRequestData HttpMqttInterfaces::publish(
+   43|       |    const std::string_view version,
+   44|     23|    const HttpMqttPublishOptions& options) const {
+   45|     23|    const auto& handler = resolveHandler(registry_.publishRequests, version);
+   46|     23|    return handler(options);
+   47|     23|}
+   48|       |
+   49|     12|HttpMqttResult HttpMqttInterfaces::onPublish(const HttpMqttHeaders& headersInput) const {
+   50|     12|    const std::string version = getVersion(headersInput, registry_.publishResponses);
+   51|     12|    const auto& handler = resolveHandler(registry_.publishResponses, version);
+   52|     12|    return handler(headersInput);
+   53|     12|}
+   54|       |
+   55|       |HttpMqttRequestData HttpMqttInterfaces::pubrel(
+   56|       |    const std::string_view version,
+   57|      2|    const HttpMqttPubrelOptions& options) const {
+   58|      2|    const auto& handler = resolveHandler(registry_.pubrelRequests, version);
+   59|      2|    return handler(options);
+   60|      2|}
+   61|       |
+   62|      3|HttpMqttResult HttpMqttInterfaces::onPubrel(const HttpMqttHeaders& headersInput) const {
+   63|      3|    const std::string version = getVersion(headersInput, registry_.publishResponses);
+   64|      3|    const auto& handler = resolveHandler(registry_.pubrelResponses, version);
+   65|      3|    return handler(headersInput);
+   66|      3|}
+   67|       |
+   68|       |HttpMqttRequestData HttpMqttInterfaces::subscribe(
+   69|       |    const std::string_view version,
+   70|       |    const HttpMqttTopics& topics,
+   71|       |    const std::string& clientId,
+   72|      2|    const std::uint16_t packetId) const {
+   73|      2|    const auto& handler = resolveHandler(registry_.subscribeRequests, version);
+   74|      2|    return handler(topics, clientId, packetId);
+   75|      2|}
+   76|       |
+   77|       |HttpMqttResult HttpMqttInterfaces::onSubscribe(
+   78|       |    const HttpMqttHeaders& headersInput,
+   79|      6|    const HttpMqttSubscribeResult& result) const {
+   80|      6|    const std::string version = getVersion(headersInput, registry_.publishResponses);
+   81|      6|    const auto& handler = resolveHandler(registry_.subscribeResponses, version);
+   82|      6|    return handler(headersInput, result);
+   83|      6|}
+   84|       |
+   85|       |HttpMqttRequestData HttpMqttInterfaces::unsubscribe(
+   86|       |    const std::string_view version,
+   87|       |    const HttpMqttTopics& topics,
+   88|       |    const std::string& clientId,
+   89|      3|    const std::uint16_t packetId) const {
+   90|      3|    const auto& handler = resolveHandler(registry_.unsubscribeRequests, version);
+   91|      3|    return handler(topics, clientId, packetId);
+   92|      3|}
+   93|       |
+   94|       |HttpMqttResult HttpMqttInterfaces::onUnsubscribe(
+   95|       |    const HttpMqttHeaders& headersInput,
+   96|      6|    const HttpMqttUnsubscribeResult& result) const {
+   97|      6|    const std::string version = getVersion(headersInput, registry_.publishResponses);
+   98|      6|    const auto& handler = resolveHandler(registry_.unsubscribeResponses, version);
+   99|      6|    return handler(headersInput, result);
+  100|      6|}
+  101|       |
+  102|       |HttpMqttRequestData HttpMqttInterfaces::connect(
+  103|       |    const std::string_view version,
+  104|      4|    const HttpMqttConnectOptions& options) const {
+  105|      4|    const auto& handler = resolveHandler(registry_.connectRequests, version);
+  106|      4|    return handler(options);
+  107|      4|}
+  108|       |
+  109|       |HttpMqttResult HttpMqttInterfaces::onConnect(
+  110|       |    const HttpMqttHeaders& headersInput,
+  111|     12|    const HttpMqttConnectResult& payload) const {
+  112|     12|    const std::string version = getVersion(headersInput, registry_.publishResponses);
+  113|     12|    const auto& handler = resolveHandler(registry_.connectResponses, version);
+  114|     12|    return handler(payload);
+  115|     12|}
+  116|       |
+  117|       |HttpMqttRequestData HttpMqttInterfaces::disconnect(
+  118|       |    const std::string_view version,
+  119|      2|    const std::string& clientId) const {
+  120|      2|    const auto& handler = resolveHandler(registry_.disconnectRequests, version);
+  121|      2|    return handler(clientId);
+  122|      2|}
+  123|       |
+  124|      5|HttpMqttResult HttpMqttInterfaces::onDisconnect(const HttpMqttHeaders& headersInput) const {
+  125|      5|    const std::string version = getVersion(headersInput, registry_.publishResponses);
+  126|      5|    const auto& handler = resolveHandler(registry_.disconnectResponses, version);
+  127|      5|    return handler();
+  128|      5|}
+  129|       |
+  130|       |} // namespace yaha
+

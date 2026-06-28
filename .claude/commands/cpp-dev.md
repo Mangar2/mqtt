@@ -11,6 +11,8 @@ C++20 coding rules for this project.
 - NEVER violate module structure
 - NEVER build large classes with logic beloging to other modules, good size for a class is 300 loc larger is bad
 - more than 600 loc is a hard limit. Ask for refactoring once it is larger.
+- NEVER use `.inc` files as a workaround to satisfy line-limit goals.
+- If refactoring is required for file size, split into domain-meaningful `.h`/`.cpp` objects.
 - NOLINT is allowed only in C++ unit test source files (for example `src/**/test/*_test.cpp`)
 - If clang-tidy reports diagnostics in C++ unit test source files, suppress them using the narrowest practical `NOLINTNEXTLINE` or `NOLINTBEGIN`/`NOLINTEND` block in that test file
 - In all non-test C++ files (`.h`/`.cpp` outside unit test paths), any NOLINT usage is strictly forbidden

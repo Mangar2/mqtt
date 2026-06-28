@@ -1,0 +1,108 @@
+    1|       |[[nodiscard]] HttpMqttRequestData buildSubscribeV1Request(
+    2|       |    const HttpMqttTopics& topicsInput,
+    3|       |    const std::string& clientId,
+    4|      2|    const std::uint16_t packetId) {
+    5|      2|    HttpMqttRequestData requestData{};
+    6|      2|    requestData.headers = makeStandardJsonHeaders();
+    7|      2|    requestData.headers["version"] = std::string{k_versionValue};
+    8|      2|    requestData.headers["packetid"] = std::to_string(packetId);
+    9|      2|    requestData.payload = std::format(
+   10|      2|        R"({{"clientId":"{}","topics":{}}})",
+   11|      2|        escapeJsonString(clientId),
+   12|      2|        serializeTopics(topicsInput));
+   13|       |
+   14|      2|    requestData.resultCheck = [expectedPacketId = packetId](const HttpMqttResult& resultInput) {
+   15|      2|        validateStatusCode(resultInput, k_httpStatusOk, "subscribe result");
+   16|      2|        validateContentTypeJson(resultInput, "subscribe result");
+   17|      2|        validateHeaderEquals(resultInput, "packet", "suback", "subscribe result");
+   18|      2|        validatePacketIdMatch(resultInput, expectedPacketId, "subscribe result");
+   19|       |
+   20|      2|        const std::vector<int> qosValues = parseIntegerArrayPayload(resultInput.payload);
+   21|      2|        for (const int qosValue : qosValues) {
+   22|      2|            if (qosValue != 0 && qosValue != 1 && qosValue != 2 &&
+   23|      2|                qosValue != k_subscribeCodeFailLegacy && qosValue != k_subscribeCodeFailModern) {
+   24|      0|                throw std::runtime_error{"subscribe result: unsupported qos return code"};
+   25|      0|            }
+   26|      2|        }
+   27|      2|    };
+   28|       |
+   29|      2|    return requestData;
+   30|      2|}
+   31|       |
+   32|       |[[nodiscard]] HttpMqttResult buildSubscribeV1Response(
+   33|       |    const HttpMqttHeaders& headersInput,
+   34|      6|    const HttpMqttSubscribeResult& resultInput) {
+   35|      6|    HttpMqttResult resultOutput{};
+   36|      6|    resultOutput.statusCode = k_httpStatusOk;
+   37|      6|    resultOutput.headers = makeStandardJsonHeaders();
+   38|      6|    resultOutput.headers["version"] = std::string{k_versionValue};
+   39|      6|    resultOutput.headers["packet"] = "suback";
+   40|       |
+   41|      6|    const auto packetId = readPacketIdHeader(headersInput);
+   42|      6|    if (packetId.has_value()) {
+   43|      6|        resultOutput.packetId = packetId;
+   44|      6|        resultOutput.headers["packetid"] = std::to_string(*packetId);
+   45|      6|    }
+   46|       |
+   47|      6|    resultOutput.payload = std::format("{{\"qos\":{}}}", serializeUInt8Array(resultInput));
+   48|      6|    return resultOutput;
+   49|      6|}
+   50|       |
+   51|       |[[nodiscard]] HttpMqttRequestData buildUnsubscribeV1Request(
+   52|       |    const HttpMqttTopics& topicsInput,
+   53|       |    const std::string& clientId,
+   54|      3|    const std::uint16_t packetId) {
+   55|      3|    HttpMqttRequestData requestData{};
+   56|      3|    requestData.headers = makeStandardJsonHeaders();
+   57|      3|    requestData.headers["version"] = std::string{k_versionValue};
+   58|      3|    requestData.headers["packetid"] = std::to_string(packetId);
+   59|      3|    requestData.payload = std::format(
+   60|      3|        R"({{"topics":{},"clientId":"{}"}})",
+   61|      3|        serializeTopics(topicsInput),
+   62|      3|        escapeJsonString(clientId));
+   63|       |
+   64|      3|    requestData.resultCheck = [expectedPacketId = packetId](const HttpMqttResult& resultInput) {
+   65|      3|        if (resultInput.statusCode != k_httpStatusOk &&
+   66|      3|            resultInput.statusCode != k_httpStatusNoContent) {
+   67|      0|            throw std::runtime_error{"unsubscribe result: invalid status"};
+   68|      0|        }
+   69|       |
+   70|      3|        validateContentTypeJson(resultInput, "unsubscribe result");
+   71|      3|        validateHeaderEquals(resultInput, "packet", "unsuback", "unsubscribe result");
+   72|      3|        validatePacketIdMatch(resultInput, expectedPacketId, "unsubscribe result");
+   73|       |
+   74|      3|        if (resultInput.statusCode == k_httpStatusNoContent && resultInput.payload.empty()) {
+   75|      1|            return;
+   76|      1|        }
+   77|       |
+   78|      2|        const std::vector<int> returnCodes = parseIntegerArrayPayload(resultInput.payload);
+   79|      3|        for (const int returnCode : returnCodes) {
+   80|      3|            if (returnCode != 0 && returnCode != k_unsubscribeNoSubscription) {
+   81|      0|                throw std::runtime_error{"unsubscribe result: unsupported return code"};
+   82|      0|            }
+   83|      3|        }
+   84|      2|    };
+   85|       |
+   86|      3|    return requestData;
+   87|      3|}
+   88|       |
+   89|       |[[nodiscard]] HttpMqttResult buildUnsubscribeV1Response(
+   90|       |    const HttpMqttHeaders& headersInput,
+   91|      6|    const HttpMqttUnsubscribeResult& resultInput) {
+   92|      6|    HttpMqttResult resultOutput{};
+   93|      6|    resultOutput.statusCode = k_httpStatusOk;
+   94|      6|    resultOutput.headers = makeStandardJsonHeaders();
+   95|      6|    resultOutput.headers["version"] = std::string{k_versionValue};
+   96|      6|    resultOutput.headers["packet"] = "unsuback";
+   97|       |
+   98|      6|    const auto packetId = readPacketIdHeader(headersInput);
+   99|      6|    if (packetId.has_value()) {
+  100|      6|        resultOutput.packetId = packetId;
+  101|      6|        resultOutput.headers["packetid"] = std::to_string(*packetId);
+  102|      6|    }
+  103|       |
+  104|      6|    resultOutput.payload = serializeUInt8Array(resultInput);
+  105|      6|    return resultOutput;
+  106|      6|}
+  107|       |
+

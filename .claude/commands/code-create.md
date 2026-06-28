@@ -103,6 +103,14 @@ src/my_module/          ← has .h/.cpp files
 If a module grows beyond the file count limit, promote it to a set of sibling
 directories under the parent rather than nesting one inside another.
 
+## No .inc workaround for line-limit goals
+
+Do not use `.inc` files to satisfy file-size or line-limit targets.
+
+- `.inc` include-chunk splitting is forbidden as a workaround for the 1000-line rule.
+- Refactoring must produce domain-meaningful `.h`/`.cpp` objects with clear responsibilities and APIs.
+- If a file exceeds limits, split by business responsibility, not by textual chunking.
+
 ## File count rule
 
 Keep the number of code files per directory (and subdirectory) below 10.

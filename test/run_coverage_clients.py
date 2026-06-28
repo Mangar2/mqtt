@@ -68,6 +68,7 @@ NON_TEST_SOURCE_EXTENSIONS = {
     ".tpp",
     ".py",
 }
+ILLEGAL_WORKAROUND_EXTENSIONS = {".inc"}
 
 CLIENT_SCOPE_PREFIXES = (
     "src/client/",
@@ -86,6 +87,7 @@ SLOW_TEST_WARNING_SECONDS = float(os.environ.get("MQTT_SLOW_TEST_WARNING", "2"))
 _log_fh = None
 _run_id = None
 _line_limit_violations: list[tuple[str, int]] = []
+_illegal_workaround_files: list[str] = []
 
 
 def _open_log() -> None:
@@ -168,25 +170,59 @@ def _collect_non_test_line_limit_violations() -> list[tuple[str, int]]:
     return violations
 
 
+def _collect_illegal_workaround_files() -> list[str]:
+    illegal_files: list[str] = []
+    for path in SRC_DIR.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in ILLEGAL_WORKAROUND_EXTENSIONS:
+            continue
+        if _is_test_source_file(path):
+            continue
+
+        rel_path = path.relative_to(PROJECT_ROOT).as_posix()
+        illegal_files.append(rel_path)
+
+    illegal_files.sort()
+    return illegal_files
+
+
 def _enforce_non_test_source_line_limit() -> None:
-    global _line_limit_violations
+    global _line_limit_violations, _illegal_workaround_files
     violations = _collect_non_test_line_limit_violations()
+    illegal_workaround_files = _collect_illegal_workaround_files()
     _line_limit_violations = violations
-    if not violations:
+    _illegal_workaround_files = illegal_workaround_files
+    if not violations and not illegal_workaround_files:
         return
 
-    _log("[ERROR] non-test source file line-count limit exceeded")
-    _log(f"  limit   : {MAX_NON_TEST_FILE_LINES} lines")
-    for rel_path, line_count in violations:
-        _log(f"  - {rel_path} ({line_count} lines)")
+    if violations:
+        _log("[ERROR] non-test source file line-count limit exceeded")
+        _log(f"  limit   : {MAX_NON_TEST_FILE_LINES} lines")
+        for rel_path, line_count in violations:
+            _log(f"  - {rel_path} ({line_count} lines)")
 
-    print("\n[ERROR] non-test source file line-count limit exceeded")
-    print(f"  limit   : {MAX_NON_TEST_FILE_LINES} lines")
-    print("  files   :")
-    for rel_path, line_count in violations:
-        print(f"    - {rel_path} ({line_count} lines)")
-    print("\n  Action: split/refactor files so each non-test source file has <= 1000 lines.")
-    print("  Note  : execution continues; this error is reported in summary.")
+        print("\n[ERROR] non-test source file line-count limit exceeded")
+        print(f"  limit   : {MAX_NON_TEST_FILE_LINES} lines")
+        print("  files   :")
+        for rel_path, line_count in violations:
+            print(f"    - {rel_path} ({line_count} lines)")
+        print("\n  Action: split/refactor files so each non-test source file has <= 1000 lines.")
+        print("  Note  : execution continues; this error is reported in summary.")
+
+    if illegal_workaround_files:
+        _log("[ERROR] illegal workaround detected")
+        _log("  message : illegal workaround: .inc files are not allowed to satisfy 1000-line targets")
+        for rel_path in illegal_workaround_files:
+            _log(f"  - {rel_path}")
+
+        print("\n[ERROR] illegal workaround detected")
+        print("  message : illegal workaround: .inc files are not allowed to satisfy 1000-line targets")
+        print("  files   :")
+        for rel_path in illegal_workaround_files:
+            print(f"    - {rel_path}")
+        print("\n  Action: replace .inc include chunks with domain-focused .h/.cpp objects.")
+        print("  Note  : execution continues; this error is reported in summary.")
 
 
 def _run_captured(
@@ -779,11 +815,12 @@ def _parse_summary_data(test_output: str, cov_output: str) -> dict:
         "threshold_met": len(below) == 0,
         "files_below_threshold": below,
         "coverage_total": total_row,
-        "line_limit_met": len(_line_limit_violations) == 0,
+        "line_limit_met": len(_line_limit_violations) == 0 and len(_illegal_workaround_files) == 0,
         "line_limit_violations": [
             {"file": file_path, "lines": line_count}
             for file_path, line_count in _line_limit_violations
         ],
+        "illegal_workaround_files": list(_illegal_workaround_files),
     }
 
 
@@ -825,10 +862,12 @@ def print_summary(test_output: str, cov_output: str) -> None:
     else:
         print(f"  Threshold  : MET  (all client production files >= {THRESHOLD:.0f}%)")
 
-    if _line_limit_violations:
+    if _line_limit_violations or _illegal_workaround_files:
         print("  Line Limit : ERROR (non-test files above 1000 lines)")
         for rel_path, line_count in _line_limit_violations:
             print(f"    - {rel_path} ({line_count} lines)")
+        for rel_path in _illegal_workaround_files:
+            print(f"    - {rel_path} (illegal workaround: .inc files are not allowed)")
     else:
         print("  Line Limit : OK")
 

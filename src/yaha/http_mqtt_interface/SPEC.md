@@ -172,7 +172,12 @@ Implemented compatibility behavior:
 | `http_mqtt_interface_dispatcher.h` | Versioned handler registry and `HttpMqttInterfaces` facade declarations |
 | `http_mqtt_interface_dispatcher.cpp` | Dispatcher and facade implementation |
 | `http_mqtt_interface_operations.h` | V1 operation factory declarations and phase-6 compatibility API |
-| `http_mqtt_interface_operations.cpp` | V1 operation builders, validators, response handlers, and compatibility mapping |
+| `http_mqtt_interface_operations.cpp` | V1 registry wiring and public factory entry points |
+| `internal/http_mqtt_interface_operations_internal.h` | Shared internal declarations/constants for operation modules |
+| `internal/http_mqtt_interface_operations_helpers.cpp` | Shared parsing/validation/serialization helpers |
+| `internal/http_mqtt_interface_operations_connect_publish.cpp` | Connect/Disconnect/Publish/Pubrel operation handlers |
+| `internal/http_mqtt_interface_operations_subscriptions.cpp` | Subscribe/Unsubscribe operation handlers |
+| `internal/http_mqtt_interface_operations_compatibility.cpp` | Browser compatibility mapping and response adaptation |
 | `test/TEST_SPEC.md` | Unit test specification |
 | `test/http_mqtt_interface_contracts_test.cpp` | Unit tests for phase 1 contracts and helpers |
 | `test/http_mqtt_interface_dispatcher_test.cpp` | Unit tests for phase 2 dispatcher and facade shell |

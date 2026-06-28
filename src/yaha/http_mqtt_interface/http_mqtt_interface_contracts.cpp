@@ -1,5 +1,7 @@
 #include "yaha/http_mqtt_interface/http_mqtt_interface_contracts.h"
 
+#include "json/json_value.h"
+
 #include <algorithm>
 #include <charconv>
 #include <cctype>
@@ -22,7 +24,7 @@ constexpr unsigned int k_packetIdMaxValue{65535U};
 
 [[nodiscard]] std::string toLowerCopy(std::string_view valueText) {
     std::string loweredText{valueText};
-    std::transform(
+    std::ranges::transform(
         loweredText.begin(),
         loweredText.end(),
         loweredText.begin(),
@@ -142,8 +144,8 @@ std::string resolveVersion(const HttpMqttHeaders& headersInput, const std::strin
 }
 
 void requireJsonObjectPayload(const std::string_view payloadText, const std::string_view contextText) {
-    const std::string cleanedPayload = trimCopy(payloadText);
-    if (cleanedPayload.empty() || cleanedPayload.front() != '{' || cleanedPayload.back() != '}') {
+    const auto parsedValue = mqtt::json::JsonValue::try_parse(trimCopy(payloadText));
+    if (!parsedValue.has_value() || !parsedValue->is_object()) {
         throw std::runtime_error{std::format("{}: payload must be a JSON object", contextText)};
     }
 }

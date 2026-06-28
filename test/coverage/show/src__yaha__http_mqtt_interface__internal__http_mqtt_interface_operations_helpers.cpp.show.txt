@@ -1,0 +1,640 @@
+    1|       |#include "yaha/http_mqtt_interface/internal/http_mqtt_interface_operations_internal.h"
+    2|       |
+    3|       |#include "yaha/http_mqtt_interface/http_mqtt_interface_contracts.h"
+    4|       |
+    5|       |#include <cctype>
+    6|       |#include <charconv>
+    7|       |#include <cstdlib>
+    8|       |#include <format>
+    9|       |#include <optional>
+   10|       |#include <sstream>
+   11|       |#include <stdexcept>
+   12|       |#include <string>
+   13|       |#include <string_view>
+   14|       |#include <vector>
+   15|       |
+   16|       |namespace yaha::http_mqtt_ops_internal {
+   17|       |
+   18|     66|std::string trimCopy(const std::string_view valueText) {
+   19|     66|    std::size_t firstIndex = 0U;
+   20|     66|    while (firstIndex < valueText.size() && std::isspace(static_cast<unsigned char>(valueText[firstIndex])) != 0) {
+   21|      0|        ++firstIndex;
+   22|      0|    }
+   23|       |
+   24|     66|    std::size_t lastIndex = valueText.size();
+   25|     66|    while (lastIndex > firstIndex && std::isspace(static_cast<unsigned char>(valueText[lastIndex - 1U])) != 0) {
+   26|      0|        --lastIndex;
+   27|      0|    }
+   28|       |
+   29|     66|    return std::string{valueText.substr(firstIndex, lastIndex - firstIndex)};
+   30|     66|}
+   31|       |
+   32|      3|std::string toLowerCopy(const std::string_view valueText) {
+   33|      3|    std::string loweredText{};
+   34|      3|    loweredText.reserve(valueText.size());
+   35|     12|    for (const char currentChar : valueText) {
+   36|     12|        loweredText.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(currentChar))));
+   37|     12|    }
+   38|      3|    return loweredText;
+   39|      3|}
+   40|       |
+   41|     23|std::string toUpperCopy(const std::string_view valueText) {
+   42|     23|    std::string upperText{};
+   43|     23|    upperText.reserve(valueText.size());
+   44|     89|    for (const char currentChar : valueText) {
+   45|     89|        upperText.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(currentChar))));
+   46|     89|    }
+   47|     23|    return upperText;
+   48|     23|}
+   49|       |
+   50|     21|std::string decodeTopicSlashEscapes(const std::string_view topicInput) {
+   51|     21|    std::string normalizedTopic{};
+   52|     21|    normalizedTopic.reserve(topicInput.size());
+   53|       |
+   54|     21|    std::size_t cursorIndex = 0U;
+   55|    263|    while (cursorIndex < topicInput.size()) {
+   56|    242|        if (cursorIndex + 2U < topicInput.size() &&
+   57|    242|            topicInput[cursorIndex] == '%' &&
+   58|    242|            topicInput[cursorIndex + 1U] == '2' &&
+   59|    242|            (topicInput[cursorIndex + 2U] == 'F' || topicInput[cursorIndex + 2U] == 'f')) {
+   60|     13|            normalizedTopic.push_back('/');
+   61|     13|            cursorIndex += 3U;
+   62|     13|            continue;
+   63|     13|        }
+   64|       |
+   65|    229|        normalizedTopic.push_back(topicInput[cursorIndex]);
+   66|    229|        ++cursorIndex;
+   67|    229|    }
+   68|       |
+   69|     21|    return normalizedTopic;
+   70|     21|}
+   71|       |
+   72|    148|std::string escapeJsonString(const std::string_view valueText) {
+   73|    148|    std::string escapedText{};
+   74|    148|    escapedText.reserve(valueText.size() + k_escapeReservePadding);
+   75|  1.79k|    for (const char currentChar : valueText) {
+   76|  1.79k|        switch (currentChar) {
+   77|      2|            case '"':
+   78|      2|                escapedText += "\\\"";
+   79|      2|                break;
+   80|      0|            case '\\':
+   81|      0|                escapedText += "\\\\";
+   82|      0|                break;
+   83|      0|            case '\n':
+   84|      0|                escapedText += "\\n";
+   85|      0|                break;
+   86|      0|            case '\r':
+   87|      0|                escapedText += "\\r";
+   88|      0|                break;
+   89|      0|            case '\t':
+   90|      0|                escapedText += "\\t";
+   91|      0|                break;
+   92|  1.79k|            default:
+   93|  1.79k|                escapedText.push_back(currentChar);
+   94|  1.79k|                break;
+   95|  1.79k|        }
+   96|  1.79k|    }
+   97|       |
+   98|    148|    return escapedText;
+   99|    148|}
+  100|       |
+  101|     21|std::string messageValueToJson(const Value& valueInput) {
+  102|     21|    if (std::holds_alternative<std::string>(valueInput)) {
+  103|     21|        return std::format("\"{}\"", escapeJsonString(std::get<std::string>(valueInput)));
+  104|     21|    }
+  105|       |
+  106|      0|    std::ostringstream outputStream{};
+  107|      0|    outputStream << std::get<double>(valueInput);
+  108|      0|    return outputStream.str();
+  109|     21|}
+  110|       |
+  111|     21|std::string reasonToJson(const Message& messageInput) {
+  112|     21|    std::ostringstream outputStream{};
+  113|     21|    outputStream << '[';
+  114|     21|    bool firstEntry = true;
+  115|     22|    for (const auto& reasonEntry : messageInput.reason()) {
+  116|     22|        if (!firstEntry) {
+  117|      3|            outputStream << ',';
+  118|      3|        }
+  119|     22|        firstEntry = false;
+  120|     22|        outputStream << std::format(
+  121|     22|            R"({{"message":"{}","timestamp":"{}"}})",
+  122|     22|            escapeJsonString(reasonEntry.message),
+  123|     22|            escapeJsonString(reasonEntry.timestamp));
+  124|     22|    }
+  125|     21|    outputStream << ']';
+  126|       |
+  127|     21|    return outputStream.str();
+  128|     21|}
+  129|       |
+  130|       |bool tryFindObjectRange(
+  131|       |    const std::string_view textValue,
+  132|       |    const std::string_view keyName,
+  133|       |    std::size_t& objectStart,
+  134|      2|    std::size_t& objectEnd) {
+  135|      2|    const std::string keyToken = std::format("\"{}\"", keyName);
+  136|      2|    const std::size_t keyPosition = textValue.find(keyToken);
+  137|      2|    if (keyPosition == std::string::npos) {
+  138|      0|        return false;
+  139|      0|    }
+  140|       |
+  141|      2|    std::size_t cursorIndex = textValue.find(':', keyPosition + keyToken.size());
+  142|      2|    if (cursorIndex == std::string::npos) {
+  143|      0|        return false;
+  144|      0|    }
+  145|      2|    ++cursorIndex;
+  146|       |
+  147|      2|    while (cursorIndex < textValue.size() && std::isspace(static_cast<unsigned char>(textValue[cursorIndex])) != 0) {
+  148|      0|        ++cursorIndex;
+  149|      0|    }
+  150|      2|    if (cursorIndex >= textValue.size() || textValue[cursorIndex] != '{') {
+  151|      0|        return false;
+  152|      0|    }
+  153|       |
+  154|      2|    int depthValue = 0;
+  155|     88|    for (std::size_t scanIndex = cursorIndex; scanIndex < textValue.size(); ++scanIndex) {
+  156|     88|        if (textValue[scanIndex] == '{') {
+  157|      2|            ++depthValue;
+  158|     86|        } else if (textValue[scanIndex] == '}') {
+  159|      2|            --depthValue;
+  160|      2|            if (depthValue == 0) {
+  161|      2|                objectStart = cursorIndex;
+  162|      2|                objectEnd = scanIndex;
+  163|      2|                return true;
+  164|      2|            }
+  165|      2|        }
+  166|     88|    }
+  167|       |
+  168|      0|    return false;
+  169|      2|}
+  170|       |
+  171|       |std::optional<std::string> tryExtractStringField(
+  172|       |    const std::string_view objectText,
+  173|     20|    const std::string_view keyName) {
+  174|     20|    const std::string keyToken = std::format("\"{}\"", keyName);
+  175|     20|    const std::size_t keyPosition = objectText.find(keyToken);
+  176|     20|    if (keyPosition == std::string::npos) {
+  177|      3|        return std::nullopt;
+  178|      3|    }
+  179|       |
+  180|     17|    std::size_t cursorIndex = objectText.find(':', keyPosition + keyToken.size());
+  181|     17|    if (cursorIndex == std::string::npos) {
+  182|      0|        return std::nullopt;
+  183|      0|    }
+  184|     17|    ++cursorIndex;
+  185|       |
+  186|     17|    while (cursorIndex < objectText.size() && std::isspace(static_cast<unsigned char>(objectText[cursorIndex])) != 0) {
+  187|      0|        ++cursorIndex;
+  188|      0|    }
+  189|     17|    if (cursorIndex >= objectText.size() || objectText[cursorIndex] != '"') {
+  190|      0|        return std::nullopt;
+  191|      0|    }
+  192|       |
+  193|     17|    ++cursorIndex;
+  194|     17|    std::string parsedText{};
+  195|    228|    while (cursorIndex < objectText.size()) {
+  196|    228|        const char currentChar = objectText[cursorIndex];
+  197|    228|        if (currentChar == '\\') {
+  198|      0|            ++cursorIndex;
+  199|      0|            if (cursorIndex >= objectText.size()) {
+  200|      0|                return std::nullopt;
+  201|      0|            }
+  202|      0|            parsedText.push_back(objectText[cursorIndex]);
+  203|      0|            ++cursorIndex;
+  204|      0|            continue;
+  205|      0|        }
+  206|    228|        if (currentChar == '"') {
+  207|     17|            return parsedText;
+  208|     17|        }
+  209|    211|        parsedText.push_back(currentChar);
+  210|    211|        ++cursorIndex;
+  211|    211|    }
+  212|       |
+  213|      0|    return std::nullopt;
+  214|     17|}
+  215|       |
+  216|       |std::optional<int> tryExtractIntegerField(
+  217|       |    const std::string_view objectText,
+  218|      6|    const std::string_view keyName) {
+  219|      6|    const std::string keyToken = std::format("\"{}\"", keyName);
+  220|      6|    const std::size_t keyPosition = objectText.find(keyToken);
+  221|      6|    if (keyPosition == std::string::npos) {
+  222|      2|        return std::nullopt;
+  223|      2|    }
+  224|       |
+  225|      4|    std::size_t cursorIndex = objectText.find(':', keyPosition + keyToken.size());
+  226|      4|    if (cursorIndex == std::string::npos) {
+  227|      0|        return std::nullopt;
+  228|      0|    }
+  229|      4|    ++cursorIndex;
+  230|       |
+  231|      4|    while (cursorIndex < objectText.size() && std::isspace(static_cast<unsigned char>(objectText[cursorIndex])) != 0) {
+  232|      0|        ++cursorIndex;
+  233|      0|    }
+  234|      4|    if (cursorIndex >= objectText.size()) {
+  235|      0|        return std::nullopt;
+  236|      0|    }
+  237|       |
+  238|      4|    std::size_t endIndex = cursorIndex;
+  239|      8|    while (endIndex < objectText.size() &&
+  240|      8|           (std::isdigit(static_cast<unsigned char>(objectText[endIndex])) != 0 || objectText[endIndex] == '-')) {
+  241|      4|        ++endIndex;
+  242|      4|    }
+  243|       |
+  244|      4|    if (endIndex <= cursorIndex) {
+  245|      0|        return std::nullopt;
+  246|      0|    }
+  247|       |
+  248|      4|    int parsedValue = 0;
+  249|      4|    const auto* beginPtr = objectText.data() + static_cast<std::ptrdiff_t>(cursorIndex);
+  250|      4|    const auto* endPtr = objectText.data() + static_cast<std::ptrdiff_t>(endIndex);
+  251|      4|    const auto parseResult = std::from_chars(beginPtr, endPtr, parsedValue);
+  252|      4|    if (parseResult.ec != std::errc{} || parseResult.ptr != endPtr) {
+  253|      0|        return std::nullopt;
+  254|      0|    }
+  255|       |
+  256|      4|    return parsedValue;
+  257|      4|}
+  258|       |
+  259|       |namespace {
+  260|       |
+  261|       |struct JsonTokenScanState {
+  262|       |    int objectDepth{0};
+  263|       |    int arrayDepth{0};
+  264|       |    bool inString{false};
+  265|       |    bool escaped{false};
+  266|       |};
+  267|       |
+  268|    271|bool advanceScanState(const char currentChar, JsonTokenScanState& stateOutput) {
+  269|    271|    if (stateOutput.inString) {
+  270|    201|        if (stateOutput.escaped) {
+  271|      0|            stateOutput.escaped = false;
+  272|    201|        } else if (currentChar == '\\') {
+  273|      0|            stateOutput.escaped = true;
+  274|    201|        } else if (currentChar == '"') {
+  275|     19|            stateOutput.inString = false;
+  276|     19|        }
+  277|    201|        return true;
+  278|    201|    }
+  279|       |
+  280|     70|    if (currentChar == '"') {
+  281|     19|        stateOutput.inString = true;
+  282|     19|        return true;
+  283|     19|    }
+  284|     51|    if (currentChar == '{') {
+  285|      6|        ++stateOutput.objectDepth;
+  286|      6|        return true;
+  287|      6|    }
+  288|     45|    if (currentChar == '}') {
+  289|     12|        --stateOutput.objectDepth;
+  290|     12|        return stateOutput.objectDepth >= -1;
+  291|     12|    }
+  292|     33|    if (currentChar == '[') {
+  293|      3|        ++stateOutput.arrayDepth;
+  294|      3|        return true;
+  295|      3|    }
+  296|     30|    if (currentChar == ']') {
+  297|      3|        --stateOutput.arrayDepth;
+  298|      3|        return stateOutput.arrayDepth >= 0;
+  299|      3|    }
+  300|     27|    return true;
+  301|     30|}
+  302|       |
+  303|       |std::optional<std::size_t> tryFindRawTokenEnd(
+  304|       |    const std::string_view objectText,
+  305|     10|    const std::size_t tokenStart) {
+  306|     10|    JsonTokenScanState state{};
+  307|    160|    for (std::size_t cursorIndex = tokenStart; cursorIndex < objectText.size(); ++cursorIndex) {
+  308|    160|        const char currentChar = objectText[cursorIndex];
+  309|    160|        if (!advanceScanState(currentChar, state)) {
+  310|      0|            return std::nullopt;
+  311|      0|        }
+  312|    160|        if (!state.inString && state.objectDepth == 0 && state.arrayDepth == 0 && currentChar == ',') {
+  313|      4|            return cursorIndex;
+  314|      4|        }
+  315|    156|        if (!state.inString && state.objectDepth == -1 && state.arrayDepth == 0 && currentChar == '}') {
+  316|      6|            return cursorIndex;
+  317|      6|        }
+  318|    156|    }
+  319|       |
+  320|      0|    if (state.inString || state.objectDepth != 0 || state.arrayDepth != 0) {
+  321|      0|        return std::nullopt;
+  322|      0|    }
+  323|      0|    return objectText.size();
+  324|      0|}
+  325|       |
+  326|      3|bool isReasonArrayShapeValid(const std::string& textInput) {
+  327|      3|    return !textInput.empty() && textInput.front() == '[' && textInput.back() == ']';
+  328|      3|}
+  329|       |
+  330|       |std::optional<std::size_t> tryFindReasonObjectEnd(
+  331|       |    const std::string_view reasonArray,
+  332|       |    const std::size_t objectStart,
+  333|      3|    const std::size_t endIndex) {
+  334|      3|    JsonTokenScanState state{};
+  335|    111|    for (std::size_t cursorIndex = objectStart; cursorIndex < endIndex; ++cursorIndex) {
+  336|    111|        const char currentChar = reasonArray[cursorIndex];
+  337|    111|        if (!advanceScanState(currentChar, state)) {
+  338|      0|            return std::nullopt;
+  339|      0|        }
+  340|    111|        if (!state.inString && state.objectDepth == 0 && currentChar == '}') {
+  341|      3|            return cursorIndex;
+  342|      3|        }
+  343|    111|    }
+  344|      0|    return std::nullopt;
+  345|      3|}
+  346|       |
+  347|      3|std::optional<ReasonEntry> tryParseReasonEntry(const std::string_view objectText) {
+  348|      3|    const std::optional<std::string> messageText = tryExtractStringField(objectText, "message");
+  349|      3|    const std::optional<std::string> timestampText = tryExtractStringField(objectText, "timestamp");
+  350|      3|    if (!messageText.has_value()) {
+  351|      0|        return std::nullopt;
+  352|      0|    }
+  353|      3|    return ReasonEntry{
+  354|      3|        .message = *messageText,
+  355|      3|        .timestamp = timestampText.value_or("")
+  356|      3|    };
+  357|      3|}
+  358|       |
+  359|       |} // namespace
+  360|       |
+  361|       |std::optional<std::string> extractRawToken(
+  362|       |    const std::string_view objectText,
+  363|     28|    const std::string_view keyName) {
+  364|     28|    const std::string keyToken = std::format("\"{}\"", keyName);
+  365|     28|    const std::size_t keyPosition = objectText.find(keyToken);
+  366|     28|    if (keyPosition == std::string::npos) {
+  367|     18|        return std::nullopt;
+  368|     18|    }
+  369|       |
+  370|     10|    std::size_t tokenStart = objectText.find(':', keyPosition + keyToken.size());
+  371|     10|    if (tokenStart == std::string::npos) {
+  372|      0|        return std::nullopt;
+  373|      0|    }
+  374|     10|    ++tokenStart;
+  375|       |
+  376|     10|    while (tokenStart < objectText.size() && std::isspace(static_cast<unsigned char>(objectText[tokenStart])) != 0) {
+  377|      0|        ++tokenStart;
+  378|      0|    }
+  379|     10|    if (tokenStart >= objectText.size()) {
+  380|      0|        return std::nullopt;
+  381|      0|    }
+  382|       |
+  383|     10|    const std::optional<std::size_t> tokenEnd = tryFindRawTokenEnd(objectText, tokenStart);
+  384|     10|    if (!tokenEnd.has_value() || *tokenEnd < tokenStart) {
+  385|      0|        return std::nullopt;
+  386|      0|    }
+  387|       |
+  388|     10|    std::string token = trimCopy(objectText.substr(tokenStart, *tokenEnd - tokenStart));
+  389|     10|    if (token.empty()) {
+  390|      0|        return std::nullopt;
+  391|      0|    }
+  392|     10|    return token;
+  393|     10|}
+  394|       |
+  395|      5|std::optional<Value> parseJsonValueToken(const std::string_view tokenInput) {
+  396|      5|    const std::string tokenText = trimCopy(tokenInput);
+  397|      5|    if (tokenText.empty()) {
+  398|      0|        return std::nullopt;
+  399|      0|    }
+  400|       |
+  401|      5|    if (tokenText.front() == '"' && tokenText.back() == '"') {
+  402|      3|        const std::string wrappedValue = std::format("{{\"value\":{}}}", tokenText);
+  403|      3|        const std::optional<std::string> parsedString = tryExtractStringField(wrappedValue, "value");
+  404|      3|        if (!parsedString.has_value()) {
+  405|      0|            return std::nullopt;
+  406|      0|        }
+  407|      3|        return Value{*parsedString};
+  408|      3|    }
+  409|       |
+  410|      2|    const std::string lowered = toLowerCopy(tokenText);
+  411|      2|    if (lowered == "true" || lowered == "false" || lowered == "null") {
+  412|      2|        return Value{lowered};
+  413|      2|    }
+  414|       |
+  415|      0|    char* parseEnd = nullptr;
+  416|      0|    const double parsedNumber = std::strtod(tokenText.c_str(), &parseEnd);
+  417|      0|    if (parseEnd == nullptr || *parseEnd != '\0') {
+  418|      0|        return std::nullopt;
+  419|      0|    }
+  420|       |
+  421|      0|    return Value{parsedNumber};
+  422|      0|}
+  423|       |
+  424|      3|std::optional<ReasonList> parseReasonArray(const std::string_view arrayText) {
+  425|      3|    const std::string trimmedArray = trimCopy(arrayText);
+  426|      3|    if (!isReasonArrayShapeValid(trimmedArray)) {
+  427|      0|        return std::nullopt;
+  428|      0|    }
+  429|       |
+  430|      3|    ReasonList entriesOutput{};
+  431|      3|    std::size_t cursorIndex = 1U;
+  432|      3|    const std::size_t endIndex = trimmedArray.size() - 1U;
+  433|       |
+  434|      6|    while (cursorIndex < endIndex) {
+  435|      3|        while (cursorIndex < endIndex && std::isspace(static_cast<unsigned char>(trimmedArray[cursorIndex])) != 0) {
+  436|      0|            ++cursorIndex;
+  437|      0|        }
+  438|      3|        if (cursorIndex >= endIndex) {
+  439|      0|            break;
+  440|      0|        }
+  441|       |
+  442|      3|        if (trimmedArray[cursorIndex] != '{') {
+  443|      0|            return std::nullopt;
+  444|      0|        }
+  445|       |
+  446|      3|        const std::optional<std::size_t> objectEnd = tryFindReasonObjectEnd(trimmedArray, cursorIndex, endIndex);
+  447|      3|        if (!objectEnd.has_value() || *objectEnd < cursorIndex) {
+  448|      0|            return std::nullopt;
+  449|      0|        }
+  450|       |
+  451|      3|        const std::string_view objectText =
+  452|      3|            std::string_view{trimmedArray}.substr(cursorIndex, *objectEnd - cursorIndex + 1U);
+  453|      3|        const std::optional<ReasonEntry> parsedEntry = tryParseReasonEntry(objectText);
+  454|      3|        if (!parsedEntry.has_value()) {
+  455|      0|            return std::nullopt;
+  456|      0|        }
+  457|      3|        entriesOutput.push_back(*parsedEntry);
+  458|       |
+  459|      3|        cursorIndex = *objectEnd + 1U;
+  460|       |
+  461|      3|        while (cursorIndex < endIndex && std::isspace(static_cast<unsigned char>(trimmedArray[cursorIndex])) != 0) {
+  462|      0|            ++cursorIndex;
+  463|      0|        }
+  464|      3|        if (cursorIndex < endIndex && trimmedArray[cursorIndex] == ',') {
+  465|      0|            ++cursorIndex;
+  466|      0|            continue;
+  467|      0|        }
+  468|      3|        if (cursorIndex < endIndex) {
+  469|      0|            return std::nullopt;
+  470|      0|        }
+  471|      3|    }
+  472|       |
+  473|      3|    return entriesOutput;
+  474|      3|}
+  475|       |
+  476|       |void appendReasonsPreservingOrder(
+  477|       |    Message& messageOutput,
+  478|      3|    const ReasonList& reasonEntries) {
+  479|      6|    for (std::size_t reverseIndex = reasonEntries.size(); reverseIndex > 0U; --reverseIndex) {
+  480|      3|        const ReasonEntry& entry = reasonEntries[reverseIndex - 1U];
+  481|      3|        messageOutput.addReason(entry.message, entry.timestamp);
+  482|      3|    }
+  483|      3|}
+  484|       |
+  485|      1|std::optional<Qos> parseQosField(const std::string_view textInput) {
+  486|      1|    const std::string trimmedText = trimCopy(textInput);
+  487|      1|    if (trimmedText.empty()) {
+  488|      0|        return std::nullopt;
+  489|      0|    }
+  490|       |
+  491|      1|    int parsedQos = 0;
+  492|      1|    const auto parseResult = std::from_chars(trimmedText.data(), trimmedText.data() + trimmedText.size(), parsedQos);
+  493|      1|    if (parseResult.ec != std::errc{} || parseResult.ptr != trimmedText.data() + trimmedText.size()) {
+  494|      0|        return std::nullopt;
+  495|      0|    }
+  496|       |
+  497|      1|    if (parsedQos < 0 || parsedQos > 2) {
+  498|      0|        return std::nullopt;
+  499|      0|    }
+  500|       |
+  501|      1|    return static_cast<Qos>(parsedQos);
+  502|      1|}
+  503|       |
+  504|      1|std::optional<bool> parseRetainField(const std::string_view textInput) {
+  505|      1|    const std::string loweredText = toLowerCopy(trimCopy(textInput));
+  506|      1|    if (loweredText.empty()) {
+  507|      0|        return std::nullopt;
+  508|      0|    }
+  509|      1|    if (loweredText == "1" || loweredText == "true") {
+  510|      1|        return true;
+  511|      1|    }
+  512|      0|    if (loweredText == "0" || loweredText == "false") {
+  513|      0|        return false;
+  514|      0|    }
+  515|      0|    return std::nullopt;
+  516|      0|}
+  517|       |
+  518|      5|std::string serializeTopics(const HttpMqttTopics& topicsInput) {
+  519|      5|    std::ostringstream outputStream{};
+  520|      5|    outputStream << '{';
+  521|       |
+  522|      5|    bool firstEntry = true;
+  523|      5|    for (const auto& [topicFilter, qosValue] : topicsInput) {
+  524|      5|        if (!firstEntry) {
+  525|      0|            outputStream << ',';
+  526|      0|        }
+  527|      5|        firstEntry = false;
+  528|      5|        outputStream << std::format("\"{}\":{}", escapeJsonString(topicFilter), static_cast<int>(qosValue));
+  529|      5|    }
+  530|       |
+  531|      5|    outputStream << '}';
+  532|      5|    return outputStream.str();
+  533|      5|}
+  534|       |
+  535|     12|std::string serializeUInt8Array(const std::vector<std::uint8_t>& valuesInput) {
+  536|     12|    std::ostringstream outputStream{};
+  537|     12|    outputStream << '[';
+  538|       |
+  539|     12|    bool firstEntry = true;
+  540|     13|    for (const std::uint8_t valueItem : valuesInput) {
+  541|     13|        if (!firstEntry) {
+  542|      1|            outputStream << ',';
+  543|      1|        }
+  544|     13|        firstEntry = false;
+  545|     13|        outputStream << static_cast<unsigned int>(valueItem);
+  546|     13|    }
+  547|       |
+  548|     12|    outputStream << ']';
+  549|     12|    return outputStream.str();
+  550|     12|}
+  551|       |
+  552|      4|std::vector<int> parseIntegerArrayPayload(const std::string_view payloadText) {
+  553|      4|    const std::string trimmedPayload = trimCopy(payloadText);
+  554|      4|    if (trimmedPayload.empty()) {
+  555|      0|        throw std::runtime_error{"result payload must be a JSON array"};
+  556|      0|    }
+  557|       |
+  558|      4|    std::size_t startIndex = trimmedPayload.find('[');
+  559|      4|    std::size_t endIndex = trimmedPayload.rfind(']');
+  560|      4|    if (startIndex == std::string::npos || endIndex == std::string::npos || endIndex < startIndex) {
+  561|      0|        throw std::runtime_error{"result payload must be a JSON array"};
+  562|      0|    }
+  563|       |
+  564|      4|    std::vector<int> valuesOutput{};
+  565|      4|    std::size_t cursorIndex = startIndex + 1U;
+  566|      9|    while (cursorIndex < endIndex) {
+  567|      5|        while (cursorIndex < endIndex && std::isspace(static_cast<unsigned char>(trimmedPayload[cursorIndex])) != 0) {
+  568|      0|            ++cursorIndex;
+  569|      0|        }
+  570|       |
+  571|      5|        if (cursorIndex >= endIndex) {
+  572|      0|            break;
+  573|      0|        }
+  574|       |
+  575|      5|        std::size_t tokenEndIndex = cursorIndex;
+  576|     11|        while (tokenEndIndex < endIndex && trimmedPayload[tokenEndIndex] != ',') {
+  577|      6|            ++tokenEndIndex;
+  578|      6|        }
+  579|       |
+  580|      5|        const std::string tokenText = trimCopy(std::string_view{trimmedPayload}.substr(cursorIndex, tokenEndIndex - cursorIndex));
+  581|      5|        if (!tokenText.empty()) {
+  582|      5|            int parsedValue = 0;
+  583|      5|            const auto parseResult = std::from_chars(tokenText.data(), tokenText.data() + tokenText.size(), parsedValue);
+  584|      5|            if (parseResult.ec != std::errc{} || parseResult.ptr != tokenText.data() + tokenText.size()) {
+  585|      0|                throw std::runtime_error{"result payload contains non-integer array value"};
+  586|      0|            }
+  587|      5|            valuesOutput.push_back(parsedValue);
+  588|      5|        }
+  589|       |
+  590|      5|        cursorIndex = tokenEndIndex + 1U;
+  591|      5|    }
+  592|       |
+  593|      4|    return valuesOutput;
+  594|      4|}
+  595|       |
+  596|     10|void validateStatusCode(const HttpMqttResult& resultInput, const int expectedStatus, const std::string_view contextText) {
+  597|     10|    if (resultInput.statusCode != expectedStatus) {
+  598|      0|        throw std::runtime_error{
+  599|      0|            std::format("{}: invalid status {} expected {}", contextText, resultInput.statusCode, expectedStatus)};
+  600|      0|    }
+  601|     10|}
+  602|       |
+  603|      8|void validateContentTypeJson(const HttpMqttResult& resultInput, const std::string_view contextText) {
+  604|      8|    if (!headerValueStartsWith(resultInput.headers, "content-type", k_contentTypeJsonPrefix)) {
+  605|      0|        throw std::runtime_error{std::format("{}: invalid content-type header", contextText)};
+  606|      0|    }
+  607|      8|}
+  608|       |
+  609|       |void validateHeaderEquals(
+  610|       |    const HttpMqttResult& resultInput,
+  611|       |    const std::string_view headerName,
+  612|       |    const std::string_view expectedValue,
+  613|     12|    const std::string_view contextText) {
+  614|     12|    const std::string actualValue = requireHeaderValue(resultInput.headers, headerName);
+  615|     12|    if (actualValue != expectedValue) {
+  616|      0|        throw std::runtime_error{std::format(
+  617|      0|            "{}: invalid header '{}' value '{}' expected '{}'",
+  618|      0|            contextText,
+  619|      0|            headerName,
+  620|      0|            actualValue,
+  621|      0|            expectedValue)};
+  622|      0|    }
+  623|     12|}
+  624|       |
+  625|       |void validatePacketIdMatch(
+  626|       |    const HttpMqttResult& resultInput,
+  627|       |    const std::optional<std::uint16_t> expectedPacketId,
+  628|      9|    const std::string_view contextText) {
+  629|      9|    if (!expectedPacketId.has_value()) {
+  630|      0|        return;
+  631|      0|    }
+  632|       |
+  633|      9|    const auto receivedPacketId = readPacketIdHeader(resultInput.headers);
+  634|      9|    if (!receivedPacketId.has_value() || receivedPacketId != expectedPacketId) {
+  635|      0|        throw std::runtime_error{std::format("{}: packetid mismatch", contextText)};
+  636|      0|    }
+  637|      9|}
+  638|       |
+  639|       |} // namespace yaha::http_mqtt_ops_internal
+

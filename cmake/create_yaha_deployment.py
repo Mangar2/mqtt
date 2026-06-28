@@ -40,7 +40,7 @@ REMOTE_DEPLOY_HELPER_SCRIPT = PROJECT_ROOT / "cmake" / "deploy.sh"
 OPENZWAVE_CONFIG_SOURCE = PROJECT_ROOT / "third_party" / "openzwave" / "config"
 DEFAULT_REMOTE_COPY_DIR = "~/mqtt"
 DEPLOY_HELPER_NAME = "deploy.sh"
-CLIENT_MQTT_SETTINGS_SCRIPT_NAME = "update_yaha_client_mqtt_settings.sh"
+CLIENT_MQTT_SETTINGS_SCRIPT_NAME = "setbroker.sh"
 
 SERVICE_COMPONENTS = (
     {
@@ -601,7 +601,7 @@ def render_client_mqtt_settings_script() -> str:
             "usage() {",
             "  cat <<'EOF'",
             "Usage:",
-            "  update_yaha_client_mqtt_settings.sh [--root <dir>] --set <key=value> [--set <key=value> ...] [--dry-run]",
+            "  setbroker.sh [--root <dir>] --set <key=value> [--set <key=value> ...] [--dry-run]",
             "",
             "Description:",
             "  Updates [mqtt] settings in YAHA client INI files only.",

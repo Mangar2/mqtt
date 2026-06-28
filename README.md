@@ -176,18 +176,18 @@ bash deploy.sh --zip yaha.zip --target-dir ~/mqtt
 - supports `--verbose-identical` to also print per-file logs for `third_party/openzwave/config/*`
 - restarts only changed services (component install runs only when files changed)
 
-Deployment package includes helper script `update_yaha_client_mqtt_settings.sh` in the deployment root.
+Deployment package includes helper script `setbroker.sh` in the deployment root.
 Use it to update `[mqtt]` broker settings across all YAHA client `.ini` files without restarting any service:
 
 ```sh
 cd ~/mqtt
-bash update_yaha_client_mqtt_settings.sh --set host=192.168.1.10 --set port=1883
+bash setbroker.sh --set host=192.168.1.10 --set port=1883
 ```
 
 Optional dry-run preview:
 
 ```sh
-bash update_yaha_client_mqtt_settings.sh --dry-run --set host=192.168.1.10 --set port=1883
+bash setbroker.sh --dry-run --set host=192.168.1.10 --set port=1883
 ```
 
 `cmake/deploy_yaha_scp.py` supports selective remote installer calls with `--install-component`.
