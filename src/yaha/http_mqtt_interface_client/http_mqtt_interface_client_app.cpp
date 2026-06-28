@@ -144,7 +144,7 @@ void logBrokerIncomingMessage(const bool enabled, const Message& message) {
     }
 }
 
-void logLegacyForwardResult(
+void logListenerForwardResult(
     const bool eventLoggingEnabled,
     const bool errorLoggingEnabled,
     const std::string_view clientId,
@@ -162,9 +162,9 @@ void logLegacyForwardResult(
             << " qos=" << static_cast<int>(message.qos())
             << " forwarded=" << (forwarded ? "true" : "false");
     if (forwarded) {
-        logHttpMqttEvent(eventLoggingEnabled, "legacy_listener_forward", details.str());
+        logHttpMqttEvent(eventLoggingEnabled, "listener_forward", details.str());
     } else {
-        logHttpMqttError(errorLoggingEnabled, "legacy_listener_forward", "forward failed", details.str());
+        logHttpMqttError(errorLoggingEnabled, "listener_forward", "forward failed", details.str());
     }
 }
 
@@ -538,7 +538,7 @@ std::string resolveCompatibilityToken(const httplib::Request& request, const Htt
         return topics;
     }
 
-    for (const auto& [topic, qosValue] : topicsObject.as_object()) {
+    const auto tryParseQos = [&errorText](const mqtt::json::JsonValue& qosValue) -> std::optional<int> {
         int qosNumber = -1;
         if (qosValue.is_number()) {
             qosNumber = static_cast<int>(qosValue.as_number());
@@ -552,22 +552,57 @@ std::string resolveCompatibilityToken(const httplib::Request& request, const Htt
                 qosNumber = 2;
             } else {
                 errorText = "topic qos string must be one of 0,1,2";
-                topics.clear();
-                return topics;
+                return std::nullopt;
             }
         } else {
             errorText = "topic qos must be numeric or numeric-string";
-            topics.clear();
-            return topics;
+            return std::nullopt;
         }
 
         if (qosNumber < 0 || qosNumber > 2) {
             errorText = "topic qos out of range";
+            return std::nullopt;
+        }
+
+        return qosNumber;
+    };
+
+    if (topicsObject.contains("QoS") && topicsObject.contains("topics")) {
+        const auto qosNumber = tryParseQos(topicsObject.at("QoS"));
+        if (!qosNumber.has_value()) {
             topics.clear();
             return topics;
         }
 
-        topics[topic] = static_cast<Qos>(qosNumber);
+        const auto& sharedTopics = topicsObject.at("topics");
+        if (sharedTopics.is_string()) {
+            topics[sharedTopics.as_string()] = static_cast<Qos>(*qosNumber);
+            return topics;
+        }
+        if (!sharedTopics.is_array()) {
+            errorText = "topics must be string or array of strings";
+            topics.clear();
+            return topics;
+        }
+
+        for (const auto& topicValue : sharedTopics.as_array()) {
+            if (!topicValue.is_string()) {
+                errorText = "topics array must contain only strings";
+                topics.clear();
+                return topics;
+            }
+            topics[topicValue.as_string()] = static_cast<Qos>(*qosNumber);
+        }
+        return topics;
+    }
+
+    for (const auto& [topic, qosValue] : topicsObject.as_object()) {
+        const auto qosNumber = tryParseQos(qosValue);
+        if (!qosNumber.has_value()) {
+            topics.clear();
+            return topics;
+        }
+        topics[topic] = static_cast<Qos>(*qosNumber);
     }
 
     return topics;
@@ -848,7 +883,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                                           !sessionToken.empty() && impl_->sessionManager.hasSession(sessionToken);
                                       const std::string_view dispatchPath = useManagedSessionPath
                                           ? std::string_view{"managed_session"}
-                                          : std::string_view{"legacy_callback"};
+                                          : std::string_view{"callback_listener"};
                                       logBrokerPublishDispatchAttempt(
                                           impl_->config.logEvents,
                                           mappedMessage,
@@ -1086,7 +1121,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                               const std::string token = resolveToken(request, fields, jsonBody);
                               const std::string clientId = resolveClientIdForRequest(impl_->sessionManager, jsonBody, token);
                               std::string detailText =
-                                  "request_invalid: expected JSON field 'topics' or legacy 'subscribe' as object {\"topic/filter\": qos0..2}; parse_error=" +
+                                  "request_invalid: expected JSON field 'topics' as object {\"topic/filter\": qos0..2} or field 'subscribe' as object {\"topic/filter\": qos0..2} or {\"QoS\":0..2,\"topics\":\"topic/filter\"|[\"topic/1\",\"topic/2\"]}; parse_error=" +
                                   topicsError;
                               if (!clientId.empty()) {
                                   detailText += " clientId=" + clientId;
@@ -1188,7 +1223,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                               const std::string token = resolveToken(request, fields, jsonBody);
                               const std::string clientId = resolveClientIdForRequest(impl_->sessionManager, jsonBody, token);
                               std::string detailText =
-                                  "request_invalid: expected JSON field 'topics' or legacy 'unsubscribe' as object {\"topic/filter\": qos0..2}; parse_error=" +
+                                  "request_invalid: expected JSON field 'topics' as object {\"topic/filter\": qos0..2} or field 'unsubscribe' as object {\"topic/filter\": qos0..2} or {\"QoS\":0..2,\"topics\":\"topic/filter\"|[\"topic/1\",\"topic/2\"]}; parse_error=" +
                                   topicsError;
                               if (!clientId.empty()) {
                                   detailText += " clientId=" + clientId;
@@ -1506,7 +1541,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                         !sessionToken.empty() && impl_->sessionManager.hasSession(sessionToken);
                     const std::string_view dispatchPath = useManagedSessionPath
                         ? std::string_view{"managed_session"}
-                        : std::string_view{"legacy_callback"};
+                        : std::string_view{"callback_listener"};
                     logBrokerPublishDispatchAttempt(
                         impl_->config.logEvents,
                         mappedMessage,
@@ -1786,7 +1821,7 @@ void HttpMqttInterfaceClientComponent::run() {
                     HttpMqttHeaders{});
                 std::string resolvedClientId{};
                 (void)impl_->sessionManager.resolveClientIdByToken(sendToken, resolvedClientId);
-                logLegacyForwardResult(
+                logListenerForwardResult(
                     impl_->config.logEvents,
                     impl_->config.logErrors,
                     resolvedClientId,

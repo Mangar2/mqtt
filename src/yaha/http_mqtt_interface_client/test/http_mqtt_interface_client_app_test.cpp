@@ -1066,7 +1066,7 @@ TEST_CASE("http_mqtt_interface_component_legacy_clientid_commands_without_token"
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-TEST_CASE("http_mqtt_interface_component_legacy_subscribe_payload_accepts_string_qos", "[http_mqtt_interface_client]") {
+TEST_CASE("http_mqtt_interface_component_subscribe_payload_accepts_qos_topics_shape", "[http_mqtt_interface_client]") {
     const std::uint16_t port = reserveFreeLocalPort();
     SessionMockFactory sessionFactory{};
 
@@ -1091,7 +1091,7 @@ TEST_CASE("http_mqtt_interface_component_legacy_subscribe_payload_accepts_string
     const auto subscribeResponse = client.Put(
         "/subscribe",
         httplib::Headers{{"version", "1.0"}},
-        R"({"clientId":"legacy-subscribe-client","subscribe":{"demo/topic":"1"},"packetid":11})",
+        R"({"clientId":"legacy-subscribe-client","subscribe":{"QoS":"1","topics":"demo/topic"},"packetid":11})",
         "application/json");
     REQUIRE(subscribeResponse != nullptr);
     REQUIRE(subscribeResponse->status == k_status_ok);
@@ -1099,7 +1099,7 @@ TEST_CASE("http_mqtt_interface_component_legacy_subscribe_payload_accepts_string
     const auto unsubscribeResponse = client.Put(
         "/unsubscribe",
         httplib::Headers{{"version", "1.0"}},
-        R"({"clientId":"legacy-subscribe-client","unsubscribe":{"demo/topic":"1"},"packetid":12})",
+        R"({"clientId":"legacy-subscribe-client","unsubscribe":{"QoS":1,"topics":["demo/topic"]},"packetid":12})",
         "application/json");
     REQUIRE(unsubscribeResponse != nullptr);
     REQUIRE(unsubscribeResponse->status == k_status_ok);
