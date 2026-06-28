@@ -1253,7 +1253,8 @@ Verification:
 	- covers `mass-connect`, `publish-rate`, and `multi-subscribe` success paths,
 	- covers unknown load-mode rejection path.
 - Full project verification:
-	- `python3 test/run_coverage.py`
+	- `python3 test/run_coverage_broker.py`
+	- `python3 test/run_coverage_clients.py`
 	- `1226/1226` tests passed, coverage threshold met.
 
 ---

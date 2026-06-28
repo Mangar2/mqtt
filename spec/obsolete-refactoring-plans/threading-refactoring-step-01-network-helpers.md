@@ -53,7 +53,7 @@ Reine Hilfsklassen für non-blocking I/O bauen. Keine Integration in Broker / Co
 ## Akzeptanzkriterien
 
 1. Alle neuen Dateien compileren in der bestehenden CMake-Struktur (Eintrag in `src/network/CMakeLists.txt` o. ä.).
-2. Alle Unit-Tests grün via `python test/run_coverage.py`.
+2. Alle Unit-Tests grün via `python test/run_coverage_broker.py` und `python test/run_coverage_clients.py`.
 3. Bestehende Unit- und Integrationstests unverändert grün.
 4. Broker- und ConnectionManager-Quellen **unverändert**.
 5. `socket_ops.cpp` < 80 Zeilen, `connection_slot.cpp` < 120 Zeilen, `connection_table.cpp` < 100 Zeilen.

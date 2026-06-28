@@ -4,7 +4,7 @@
 Workflow:
 1. Validate git context and parameters.
 2. Create/switch feature branch when needed.
-3. Run coverage gate (`test/run_coverage.py`) and verify success.
+3. Run coverage gates (`test/run_coverage_broker.py` and `test/run_coverage_clients.py`) and verify success.
 4. Commit pending changes.
 5. Push branch and wait until remote branch is visible.
 6. Create PR via GitHub REST API and verify it is open.
@@ -223,134 +223,140 @@ def resolve_python_command() -> list[str]:
 
     raise WorkflowError(
         "No compatible Python interpreter found. "
-        "Need Python >= 3.9 for test/run_coverage.py."
+        "Need Python >= 3.9 for coverage gate scripts."
     )
 
 
 def run_coverage_gate() -> None:
-    coverage_script = Path("test") / "run_coverage.py"
     python_command = resolve_python_command()
-    coverage_cmd = python_command + [coverage_script.as_posix()]
-    log(
-        "Running coverage gate: " + shlex.join(coverage_cmd)
+    coverage_scripts = (
+        Path("test") / "run_coverage_broker.py",
+        Path("test") / "run_coverage_clients.py",
     )
+
     command_env = dict(os.environ)
     command_env["GIT_TERMINAL_PROMPT"] = "0"
     command_env["GCM_INTERACTIVE"] = "Never"
 
-    process = subprocess.Popen(
-        coverage_cmd,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        env=command_env,
-    )
+    for coverage_script in coverage_scripts:
+        coverage_cmd = python_command + [coverage_script.as_posix()]
+        log("Running coverage gate: " + shlex.join(coverage_cmd))
 
-    combined_lines: list[str] = []
-    output_queue: queue.Queue[str | None] = queue.Queue()
-    coverage_timeout_sec = 900.0
-    heartbeat_interval_sec = 10.0
-    step_marker = re.compile(r"^\[(\d+/\d+)\]\s+(.+)$")
+        process = subprocess.Popen(
+            coverage_cmd,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=command_env,
+        )
 
-    def reader_thread() -> None:
-        assert process.stdout is not None
-        try:
-            for line in process.stdout:
-                output_queue.put(line)
-        finally:
-            output_queue.put(None)
+        combined_lines: list[str] = []
+        output_queue: queue.Queue[str | None] = queue.Queue()
+        coverage_timeout_sec = 900.0
+        heartbeat_interval_sec = 10.0
+        step_marker = re.compile(r"^\[(\d+/\d+)\]\s+(.+)$")
 
-    thread = threading.Thread(target=reader_thread, daemon=True)
-    thread.start()
+        def reader_thread() -> None:
+            assert process.stdout is not None
+            try:
+                for line in process.stdout:
+                    output_queue.put(line)
+            finally:
+                output_queue.put(None)
 
-    start_time = time.monotonic()
-    last_output_time = start_time
-    last_heartbeat_time = start_time
-    current_step_name: str | None = None
-    current_step_start: float | None = None
-    stream_finished = False
+        thread = threading.Thread(target=reader_thread, daemon=True)
+        thread.start()
 
-    while True:
-        now = time.monotonic()
-        if now - start_time > coverage_timeout_sec:
-            process.kill()
+        start_time = time.monotonic()
+        last_output_time = start_time
+        last_heartbeat_time = start_time
+        current_step_name: str | None = None
+        current_step_start: float | None = None
+        stream_finished = False
+
+        while True:
+            now = time.monotonic()
+            if now - start_time > coverage_timeout_sec:
+                process.kill()
+                raise WorkflowError(
+                    f"Coverage process timed out after {coverage_timeout_sec:.0f}s."
+                )
+
+            try:
+                item = output_queue.get(timeout=0.5)
+            except queue.Empty:
+                if process.poll() is not None and stream_finished:
+                    break
+                if now - last_heartbeat_time >= heartbeat_interval_sec:
+                    since_output = now - last_output_time
+                    total = now - start_time
+                    log(
+                        "Coverage still running: "
+                        f"total={total:.1f}s, since last output={since_output:.1f}s"
+                    )
+                    last_heartbeat_time = now
+                continue
+
+            if item is None:
+                stream_finished = True
+                if process.poll() is not None:
+                    break
+                continue
+
+            line = item
+            combined_lines.append(line)
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            last_output_time = time.monotonic()
+
+            stripped = line.strip()
+            match = step_marker.match(stripped)
+            if match:
+                marker = match.group(1)
+                title = match.group(2)
+                new_step_name = f"Coverage step {marker} {title}"
+                now_step = time.monotonic()
+                if current_step_name is not None and current_step_start is not None:
+                    elapsed_prev = now_step - current_step_start
+                    log(f"{current_step_name} finished in {elapsed_prev:.2f}s")
+                current_step_name = new_step_name
+                current_step_start = now_step
+                log(f"{current_step_name} started")
+
+            if process.poll() is not None and stream_finished and output_queue.empty():
+                break
+
+        return_code = process.wait(timeout=5)
+        if current_step_name is not None and current_step_start is not None:
+            elapsed_last = time.monotonic() - current_step_start
+            log(f"{current_step_name} finished in {elapsed_last:.2f}s")
+
+        total_coverage_time = time.monotonic() - start_time
+        log(f"Coverage gate finished in {total_coverage_time:.2f}s")
+        output = "".join(combined_lines)
+
+        if return_code != 0:
             raise WorkflowError(
-                f"Coverage process timed out after {coverage_timeout_sec:.0f}s."
+                f"Coverage script failed ({coverage_script}).\n"
+                f"Exit code: {return_code}\n"
+                f"Output:\n{output}"
             )
 
-        try:
-            item = output_queue.get(timeout=0.5)
-        except queue.Empty:
-            if process.poll() is not None and stream_finished:
-                break
-            if now - last_heartbeat_time >= heartbeat_interval_sec:
-                since_output = now - last_output_time
-                total = now - start_time
-                log(
-                    "Coverage still running: "
-                    f"total={total:.1f}s, since last output={since_output:.1f}s"
-                )
-                last_heartbeat_time = now
-            continue
+        tests_ok = re.search(r"Tests\s*:\s*\d+/\d+\s*\[OK\]", output) is not None
+        if not tests_ok:
+            raise WorkflowError(
+                "Coverage output does not confirm successful tests.\n"
+                f"Script: {coverage_script}\n"
+                f"Output:\n{output}"
+            )
 
-        if item is None:
-            stream_finished = True
-            if process.poll() is not None:
-                break
-            continue
-
-        line = item
-        combined_lines.append(line)
-        sys.stdout.write(line)
-        sys.stdout.flush()
-        last_output_time = time.monotonic()
-
-        stripped = line.strip()
-        match = step_marker.match(stripped)
-        if match:
-            marker = match.group(1)
-            title = match.group(2)
-            new_step_name = f"Coverage step {marker} {title}"
-            now_step = time.monotonic()
-            if current_step_name is not None and current_step_start is not None:
-                elapsed_prev = now_step - current_step_start
-                log(f"{current_step_name} finished in {elapsed_prev:.2f}s")
-            current_step_name = new_step_name
-            current_step_start = now_step
-            log(f"{current_step_name} started")
-
-        if process.poll() is not None and stream_finished and output_queue.empty():
-            break
-
-    return_code = process.wait(timeout=5)
-    if current_step_name is not None and current_step_start is not None:
-        elapsed_last = time.monotonic() - current_step_start
-        log(f"{current_step_name} finished in {elapsed_last:.2f}s")
-
-    total_coverage_time = time.monotonic() - start_time
-    log(f"Coverage gate finished in {total_coverage_time:.2f}s")
-    output = "".join(combined_lines)
-
-    if return_code != 0:
-        raise WorkflowError(
-            "Coverage script failed.\n"
-            f"Exit code: {return_code}\n"
-            f"Output:\n{output}"
-        )
-
-    tests_ok = re.search(r"Tests\s*:\s*\d+/\d+\s*\[OK\]", output) is not None
-    if not tests_ok:
-        raise WorkflowError(
-            "Coverage output does not confirm successful tests.\n"
-            f"Output:\n{output}"
-        )
-
-    if "Threshold  : MET" not in output:
-        raise WorkflowError(
-            "Coverage threshold is not MET "
-            f"(required >= {COVERAGE_THRESHOLD_PERCENT:.0f}%).\n"
-            f"Output:\n{output}"
-        )
+        if "Threshold  : MET" not in output:
+            raise WorkflowError(
+                "Coverage threshold is not MET "
+                f"(required >= {COVERAGE_THRESHOLD_PERCENT:.0f}%).\n"
+                f"Script: {coverage_script}\n"
+                f"Output:\n{output}"
+            )
 
 
 def checkout_or_create_branch(base_branch: str, branch: str) -> None:

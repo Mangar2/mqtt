@@ -64,7 +64,7 @@ Eigenständiges `executor`-Modul: Job-Typ, Queue, Scheduler, Scaling-Policy, Wor
 ## Akzeptanzkriterien
 
 1. Neues CMake-Target `executor` (oder Eintrag in bestehende Struktur), kompiliert standalone.
-2. Alle Unit-Tests grün via `python test/run_coverage.py`.
+2. Alle Unit-Tests grün via `python test/run_coverage_broker.py` und `python test/run_coverage_clients.py`.
 3. Bestehende Unit- und Integrationstests unverändert grün.
 4. Broker- und ConnectionManager-Quellen **unverändert**.
 5. Zeilenlimits aus Tabelle eingehalten.

@@ -91,7 +91,7 @@ Für jede neue Klasse co-located neben der .cpp:
 1. **Broker.h < 350 Zeilen, Broker.cpp < 165 Zeilen** (§6 / §15.3).
 2. Kein `mutex_` / `shared_mutex_` Member in `broker.h`.
 3. Alle bestehenden Unit- und Integrationstests **unverändert grün** (inkl. 18.x Load-Tests bis aktuelle Stage).
-4. Alle neuen Facade-Tests grün via `python test/run_coverage.py`.
+4. Alle neuen Facade-Tests grün via `python test/run_coverage_broker.py` und `python test/run_coverage_clients.py`.
 5. ConnectionManager unverändert.
 6. Threading-Modell unverändert (per-connection Threads bleiben).
 7. Zeilenlimits pro Facade laut Tabelle eingehalten.

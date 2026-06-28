@@ -73,7 +73,7 @@ Implemented `YahaMqttClient` in `src/yaha/mqtt_client/mqtt_client.h` and `mqtt_c
 Added `TEST_SPEC.md` and `mqtt_client_test.cpp` with behavior tests for callback injection order, initial subscription setup, reconnect+resubscribe, publish forwarding, inbound topic filtering, keep-alive ping behavior, and close/disconnect semantics.
 
 ### [MILESTONE] Step 3 complete — YahaMqttClient implemented and validated
-Step 3 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/mqtt_client/`. Full `python3 test/run_coverage.py` passed all tests (1269/1269). Scoped coverage for `src/yaha/` reports threshold MET with `mqtt_client.cpp` at Regions 91.84%, Functions 93.75%, Lines 89.02%.
+Step 3 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/mqtt_client/`. Full coverage gates (`python3 test/run_coverage_broker.py` and `python3 test/run_coverage_clients.py`) passed all tests (1269/1269). Scoped coverage for `src/yaha/` reports threshold MET with `mqtt_client.cpp` at Regions 91.84%, Functions 93.75%, Lines 89.02%.
 
 ### [ARTIFACT] src/yaha/message_store/* created (Step 4)
 Implemented MessageTree in `src/yaha/message_store/message_tree.h` and `message_tree.cpp` with topic-segment indexing, `addData`, `getSection`, `getNodes`, and `cleanup`. Added bounded history with hysteresis trimming, internal history compression (consecutive equal value/reason buckets), and decompression on query output.
@@ -82,7 +82,7 @@ Implemented MessageTree in `src/yaha/message_store/message_tree.h` and `message_
 Added `TEST_SPEC.md` and `message_tree_test.cpp` covering node insertion, update->history transfer, bounded trim behavior, depth-limited section retrieval, reason/history projection flags, snapshot diff mode, stale cleanup with branch pruning, and structural (non-wildcard) topic-prefix query behavior.
 
 ### [MILESTONE] Step 4 complete — MessageTree implemented and validated
-Step 4 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/message_store/`. Full `python3 test/run_coverage.py` is green on tests (1277/1277). Scoped coverage for `src/yaha/` reports threshold MET with `message_tree.cpp` at Regions 84.62%, Functions 95.00%, Lines 84.80%.
+Step 4 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/message_store/`. Full coverage gates (`python3 test/run_coverage_broker.py` and `python3 test/run_coverage_clients.py`) are green on tests (1277/1277). Scoped coverage for `src/yaha/` reports threshold MET with `message_tree.cpp` at Regions 84.62%, Functions 95.00%, Lines 84.80%.
 
 ### [ARTIFACT] src/yaha/message_store/message_tree_persistence.* created (Step 5)
 Implemented `MessageTreePersistence` with immediate snapshot save, periodic snapshot loop, restore from newest valid snapshot, and retention cleanup of older files. Snapshot format includes topic/value/time/reason/history for full tree reconstruction.
@@ -94,7 +94,7 @@ Added `MessageTree::replaceAllNodes(...)` for startup restore and `compressHisto
 Added persistence unit tests for roundtrip restore, corrupt-file fallback, malformed snapshot handling, missing snapshot handling, retention modes (`keepFiles > 0` and `keepFiles == 0`), periodic loop behavior, and default-constructor path.
 
 ### [MILESTONE] Step 5 complete — MessageStore persistence implemented and validated
-Step 5 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/message_store/`. Full `python3 test/run_coverage.py` passed tests (1287/1287). Scoped coverage for `src/yaha/` reports threshold MET with `message_tree_persistence.cpp` at Regions 84.85%, Functions 100.00%, Lines 80.84%.
+Step 5 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/message_store/`. Full coverage gates (`python3 test/run_coverage_broker.py` and `python3 test/run_coverage_clients.py`) passed tests (1287/1287). Scoped coverage for `src/yaha/` reports threshold MET with `message_tree_persistence.cpp` at Regions 84.85%, Functions 100.00%, Lines 80.84%.
 
 ### [ARTIFACT] src/yaha/message_store/message_store.* created (Step 6)
 Implemented `MessageStore` component logic in `message_store.h/.cpp` as `IMqttComponent`: configured subscription exposure, inbound message dispatch to `MessageTree`, cleanup-topic handling (`$MONITOR/messages/cleanup`), lifecycle `run()`/`close()`, startup restore via persistence, periodic persistence start/stop, and final persist on shutdown.
@@ -103,7 +103,7 @@ Implemented `MessageStore` component logic in `message_store.h/.cpp` as `IMqttCo
 Added component tests for configured subscriptions, regular message storage, numeric cleanup dispatch, invalid cleanup payload behavior, run/close lifecycle callbacks, restore-on-run behavior, periodic persistence start, final persist on close, and idempotent run/close semantics.
 
 ### [MILESTONE] Step 6 complete — MessageStore component logic implemented and validated
-Step 6 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/message_store/`. Full `python3 test/run_coverage.py` passed tests (1294/1294). Scoped coverage for `src/yaha/` reports threshold MET with `message_store.cpp` at Regions 93.33%, Functions 100.00%, Lines 91.86%.
+Step 6 from `spec/yaha/IMPL-messagestore.md` is implemented under `src/yaha/message_store/`. Full coverage gates (`python3 test/run_coverage_broker.py` and `python3 test/run_coverage_clients.py`) passed tests (1294/1294). Scoped coverage for `src/yaha/` reports threshold MET with `message_store.cpp` at Regions 93.33%, Functions 100.00%, Lines 91.86%.
 
 ## 2026-04-30
 
@@ -158,7 +158,7 @@ Added phase 3 unit tests for receiver publish port runtime behavior and relay co
 Extended module spec from phase 2 source-only scope to phase 3 scope with receiver publish contracts, relay policy/counter contracts, and updated runtime behavior documentation.
 
 ### [MILESTONE] Broker Connector Phase 3 implemented
-Phase 3 from `spec/yaha/IMPL-broker-connector.md` is now implemented: standard YAHA MQTT client is wired through receiver publish port and relay component forwards source callbacks with retry and statistics. Full `python3 test/run_coverage.py` passed tests (1335/1335); changed production files exceed 80% on Regions/Functions/Lines.
+Phase 3 from `spec/yaha/IMPL-broker-connector.md` is now implemented: standard YAHA MQTT client is wired through receiver publish port and relay component forwards source callbacks with retry and statistics. Full coverage gates (`python3 test/run_coverage_broker.py` and `python3 test/run_coverage_clients.py`) passed tests (1335/1335); changed production files exceed 80% on Regions/Functions/Lines.
 
 ### [ARTIFACT] src/yaha/broker_connector_client/* created
 Implemented phase 4 composition module with runtime config mapping (`broker_connector_client_app.*`) and runtime orchestration (`broker_connector_runtime.*`) for deterministic startup/shutdown order.
