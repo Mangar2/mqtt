@@ -392,6 +392,16 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                               detailText << "token=" << resolvedToken
                                          << " topics_count=" << topics.size();
                               logHttpMqttEvent(impl_->config.logEvents, "subscribe", detailText.str());
+                              for (const auto& [topicFilter, qosValue] : topics) {
+                                  std::ostringstream topicDetail{};
+                                  if (!resolvedClientId.empty()) {
+                                      topicDetail << "clientId=" << resolvedClientId << ' ';
+                                  }
+                                  topicDetail << "token=" << resolvedToken
+                                              << " topic=" << topicFilter
+                                              << " qos=" << static_cast<int>(qosValue);
+                                  logHttpMqttEvent(impl_->config.logEvents, "subscribe_topic", topicDetail.str());
+                              }
                           } catch (...) {
                               logHttpMqttError(
                                   impl_->config.logErrors,
