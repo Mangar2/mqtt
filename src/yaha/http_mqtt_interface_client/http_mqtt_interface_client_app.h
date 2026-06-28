@@ -28,9 +28,11 @@ struct HttpMqttInterfaceClientConfig {
     bool enablePublishPhpAlias{true};         ///< Enables POST /publish.php compatibility alias.
     bool useLegacyPhpResponse{false};         ///< Enables legacy 200 JSON-string response mode.
     bool logIncomingRequests{true};            ///< Enables request ingress logs.
-    bool logEvents{true};                      ///< Enables event logs.
+    bool logEvents{true};                      ///< Enables domain event logs.
     bool logErrors{true};                      ///< Enables error logs.
     bool logBrokerMessages{true};              ///< Enables broker in/out message logs.
+    bool logReason{true};                      ///< Includes reason chain in broker message logs.
+    bool logTracing{false};                    ///< Enables publish dispatch tracing logs.
     std::uint32_t connectedClientsReportIntervalSeconds{
         k_defaultHttpMqttInterfaceConnectedClientsReportIntervalSeconds};  ///< Periodic connected-clients report interval.
     YahaMqttClient::Config mqttConfig{};      ///< Broker publish transport runtime settings.

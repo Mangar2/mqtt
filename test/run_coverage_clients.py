@@ -53,6 +53,21 @@ SUMMARY_FILE = TEST_DIR / "run_coverage_clients.summary.json"
 SELECTION_FILE = TEST_DIR / "clients_tests.selection.txt"
 
 THRESHOLD = 80.0
+MAX_NON_TEST_FILE_LINES = 1000
+NON_TEST_SOURCE_EXTENSIONS = {
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cxx",
+    ".h",
+    ".hh",
+    ".hpp",
+    ".hxx",
+    ".ipp",
+    ".inl",
+    ".tpp",
+    ".py",
+}
 
 CLIENT_SCOPE_PREFIXES = (
     "src/client/",
@@ -111,6 +126,65 @@ def _write_summary(summary: dict) -> None:
 
 def _emit_done_marker(status: str, exit_code: int) -> None:
     print(f"RUN_COVERAGE_DONE status={status} exit={exit_code}")
+
+
+def _is_test_source_file(path: Path) -> bool:
+    rel_parts = [part.lower() for part in path.relative_to(PROJECT_ROOT).parts]
+    if "test" in rel_parts or "tests" in rel_parts:
+        return True
+
+    name = path.name.lower()
+    if name.startswith("test_"):
+        return True
+    if name.endswith("_test.cpp") or name.endswith("_test.h"):
+        return True
+    if name.endswith("_tests.cpp") or name.endswith("_tests.h"):
+        return True
+    return False
+
+
+def _count_file_lines(path: Path) -> int:
+    with open(path, "rb") as file_handle:
+        return sum(1 for _ in file_handle)
+
+
+def _collect_non_test_line_limit_violations() -> list[tuple[str, int]]:
+    violations: list[tuple[str, int]] = []
+    for path in SRC_DIR.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in NON_TEST_SOURCE_EXTENSIONS:
+            continue
+        if _is_test_source_file(path):
+            continue
+
+        line_count = _count_file_lines(path)
+        if line_count > MAX_NON_TEST_FILE_LINES:
+            rel_path = path.relative_to(PROJECT_ROOT).as_posix()
+            violations.append((rel_path, line_count))
+
+    violations.sort(key=lambda item: item[0])
+    return violations
+
+
+def _enforce_non_test_source_line_limit() -> None:
+    violations = _collect_non_test_line_limit_violations()
+    if not violations:
+        return
+
+    _log("[FAILED] non-test source file line-count limit exceeded")
+    _log(f"  limit   : {MAX_NON_TEST_FILE_LINES} lines")
+    for rel_path, line_count in violations:
+        _log(f"  - {rel_path} ({line_count} lines)")
+
+    print("\n[FAILED] non-test source file line-count limit exceeded")
+    print(f"  limit   : {MAX_NON_TEST_FILE_LINES} lines")
+    print("  files   :")
+    for rel_path, line_count in violations:
+        print(f"    - {rel_path} ({line_count} lines)")
+    print("\n  Fix: split/refactor files so each non-test source file has <= 1000 lines.")
+    _close_log()
+    sys.exit(1)
 
 
 def _run_captured(
@@ -752,6 +826,7 @@ def print_summary(test_output: str, cov_output: str) -> None:
 
 def full_run() -> dict:
     _open_log()
+    _enforce_non_test_source_line_limit()
 
     print("[1/4] Building debug binary ...")
     step_build_debug()
@@ -778,6 +853,7 @@ def full_run() -> dict:
 
 def unit_only_run() -> dict:
     _open_log()
+    _enforce_non_test_source_line_limit()
 
     print("[1/2] Building debug binary ...")
     step_build_debug()
@@ -811,6 +887,7 @@ def unit_only_run() -> dict:
 
 def coverage_only_run() -> dict:
     _open_log()
+    _enforce_non_test_source_line_limit()
 
     print("[1/2] Building coverage binary ...")
     step_build_coverage()
@@ -829,6 +906,7 @@ def coverage_only_run() -> dict:
 def scoped_run(paths: list[str]) -> None:
     _require_profdata()
     _open_log()
+    _enforce_non_test_source_line_limit()
     cov_output = step_coverage_report(paths)
     print_summary("All tests passed (0 assertions in 0 test cases)", cov_output)
     _close_log()
@@ -837,6 +915,7 @@ def scoped_run(paths: list[str]) -> None:
 def show_run(path: str) -> None:
     _require_profdata()
     _open_log()
+    _enforce_non_test_source_line_limit()
     output = step_coverage_show(path)
     print(output)
     report_path = _write_show_report(path, output)

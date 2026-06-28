@@ -257,6 +257,8 @@ TEST_CASE("load_http_mqtt_interface_client_config_defaults", "[http_mqtt_interfa
     REQUIRE(config.logEvents);
     REQUIRE(config.logErrors);
     REQUIRE(config.logBrokerMessages);
+    REQUIRE(config.logReason);
+    REQUIRE_FALSE(config.logTracing);
     REQUIRE(config.connectedClientsReportIntervalSeconds == 60U);
 
     std::filesystem::remove(iniPath);
@@ -274,6 +276,8 @@ TEST_CASE("load_http_mqtt_interface_client_config_from_ini", "[http_mqtt_interfa
         "logEvents=false\n"
         "logErrors=false\n"
         "logBrokerMessages=false\n"
+        "logReason=false\n"
+        "logTracing=true\n"
         "connectedClientsReportIntervalSeconds=120\n";
 
     const auto iniPath = writeTempIni(iniText);
@@ -296,6 +300,8 @@ TEST_CASE("load_http_mqtt_interface_client_config_from_ini", "[http_mqtt_interfa
     REQUIRE_FALSE(config.logEvents);
     REQUIRE_FALSE(config.logErrors);
     REQUIRE_FALSE(config.logBrokerMessages);
+    REQUIRE_FALSE(config.logReason);
+    REQUIRE(config.logTracing);
     REQUIRE(config.connectedClientsReportIntervalSeconds == 120U);
 
     std::filesystem::remove(iniPath);

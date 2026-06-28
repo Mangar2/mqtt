@@ -20,6 +20,8 @@ Generic MQTT client and generic runtime orchestrator own broker communication an
 | `logEvents` | `bool` | `true` | Enables domain event logging (connect/subscribe/unsubscribe/disconnect/ping and connected-clients report) |
 | `logErrors` | `bool` | `true` | Enables error logging for request and session failure paths |
 | `logBrokerMessages` | `bool` | `true` | Enables broker in/out message logs for publish and receive paths |
+| `logReason` | `bool` | `true` | Includes reason chain in broker message logs |
+| `logTracing` | `bool` | `false` | Enables publish-dispatch tracing logs (`broker_publish_dispatch`, `broker_publish_sent`) |
 | `connectedClientsReportIntervalSeconds` | `std::uint32_t` | `60` | Interval for periodic connected-clients event report |
 | `mqttConfig` | `YahaMqttClient::Config` | defaults from MQTT client config | Generic MQTT client session config |
 
@@ -57,6 +59,8 @@ Reads optional keys from section `[httpMqttInterface]`:
 - `logEvents`
 - `logErrors`
 - `logBrokerMessages`
+- `logReason`
+- `logTracing`
 - `connectedClientsReportIntervalSeconds` (range `1..86400`)
 
 Also delegates MQTT client config parsing to shared MQTT config loader:
@@ -149,7 +153,9 @@ Subscription and disconnect logging:
 	(`raw_body=`) for exact input reconstruction
 - publish forwarding logs include explicit broker dispatch lifecycle entries:
 	`broker_publish_dispatch` (attempt), `broker_publish_sent` (dispatch success),
-	and `broker_publish` error with reason when dispatch fails
+	and `broker_publish` error with reason when dispatch fails; dispatch attempt/sent are trace logs
+	gated by `logTracing`, broker in/out message logs are gated by `logBrokerMessages`,
+	reason-chain rendering inside broker message logs is gated by `logReason`, and dispatch failure is an error log gated by `logErrors`
 - disconnect event logs include token and resolved clientId when available
 - subscribe/unsubscribe/ping events use the same context style and include
 	resolved `clientId` and `token` when available

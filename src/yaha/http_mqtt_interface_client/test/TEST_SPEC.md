@@ -9,7 +9,7 @@ Unit tests for standalone HTTP MQTT interface client INI mapping behavior.
 | Name | Scenario | Input | Expected |
 |------|----------|-------|----------|
 | `load_http_mqtt_interface_client_config_defaults` | default behavior with empty ini | empty INI document | loader succeeds and keeps all default values including logging toggles and connected-clients report interval |
-| `load_http_mqtt_interface_client_config_from_ini` | explicit field mapping | INI with all `[httpMqttInterface]` keys including logging and interval keys | loader succeeds and mapped values match |
+| `load_http_mqtt_interface_client_config_from_ini` | explicit field mapping | INI with all `[httpMqttInterface]` keys including logging, reason, tracing, and interval keys | loader succeeds and mapped values match |
 | `load_http_mqtt_interface_client_config_falls_back_on_invalid_port` | numeric bounds validation | `listenerPort=70000` | loader succeeds and keeps default port |
 | `load_http_mqtt_interface_client_config_falls_back_on_invalid_alias_flag` | bool parsing for publish.php toggle | `enablePublishPhpAlias=maybe` | loader succeeds and keeps default alias flag |
 | `load_http_mqtt_interface_client_config_falls_back_on_invalid_legacy_flag` | bool parsing for legacy response toggle | `useLegacyPhpResponse=invalid` | loader succeeds and keeps default legacy flag |

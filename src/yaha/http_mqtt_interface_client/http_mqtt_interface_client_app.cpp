@@ -39,6 +39,8 @@ constexpr std::string_view k_logIncomingRequestsKey{"logIncomingRequests"};
 constexpr std::string_view k_logEventsKey{"logEvents"};
 constexpr std::string_view k_logErrorsKey{"logErrors"};
 constexpr std::string_view k_logBrokerMessagesKey{"logBrokerMessages"};
+constexpr std::string_view k_logReasonKey{"logReason"};
+constexpr std::string_view k_logTracingKey{"logTracing"};
 constexpr std::string_view k_connectedClientsReportIntervalSecondsKey{"connectedClientsReportIntervalSeconds"};
 constexpr std::string_view k_healthEndpoint{"/health"};
 constexpr std::string_view k_publishEndpoint{"/publish"};
@@ -80,6 +82,18 @@ void logHttpMqttEvent(const bool enabled, const std::string_view eventName, cons
     std::cout << '\n' << std::flush;
 }
 
+void logHttpMqttTrace(const bool enabled, const std::string_view traceName, const std::string_view detailText = "") {
+    if (!enabled) {
+        return;
+    }
+
+    std::cout << "http_mqtt_interface_client[trace] " << traceName;
+    if (!detailText.empty()) {
+        std::cout << ' ' << detailText;
+    }
+    std::cout << '\n' << std::flush;
+}
+
 void logHttpMqttError(
     const bool enabled,
     const std::string_view operationName,
@@ -97,18 +111,18 @@ void logHttpMqttError(
     std::cerr << '\n' << std::flush;
 }
 
-[[nodiscard]] std::optional<std::string> buildBrokerForwardLogLine(const Message& message) {
-    constexpr MessageLogConfig k_log_config{
+[[nodiscard]] std::optional<std::string> buildBrokerForwardLogLine(const Message& message, const bool includeReasonChain) {
+    const MessageLogConfig logConfig{
         .enableIncoming = false,
         .enableOutgoing = true,
-        .includeReasonChain = true,
+        .includeReasonChain = includeReasonChain,
     };
 
     return buildMessageLogLine(
         "http_mqtt_interface_client",
         MessageLogDirection::Outgoing,
         message,
-        k_log_config);
+        logConfig);
 }
 
 [[nodiscard]] bool isBrokerNoAckError(const std::string_view errorText) {
@@ -117,32 +131,32 @@ void logHttpMqttError(
            errorText.find("timed out waiting for PUBCOMP") != std::string_view::npos;
 }
 
-void logBrokerForwardPublishAck(const bool enabled, const Message& message) {
+void logBrokerForwardPublishAck(const bool enabled, const bool includeReasonChain, const Message& message) {
     if (!enabled) {
         return;
     }
 
-    if (const auto line = buildBrokerForwardLogLine(message); line.has_value()) {
+    if (const auto line = buildBrokerForwardLogLine(message, includeReasonChain); line.has_value()) {
         std::cout << *line << " event=broker_publish_ack" << '\n' << std::flush;
     }
 }
 
-void logBrokerIncomingMessage(const bool enabled, const Message& message) {
+void logBrokerIncomingMessage(const bool enabled, const bool includeReasonChain, const Message& message) {
     if (!enabled) {
         return;
     }
 
-    constexpr MessageLogConfig k_log_config{
+    const MessageLogConfig logConfig{
         .enableIncoming = true,
         .enableOutgoing = false,
-        .includeReasonChain = true,
+        .includeReasonChain = includeReasonChain,
     };
 
     if (const auto line = buildMessageLogLine(
             "http_mqtt_interface_client",
             MessageLogDirection::Incoming,
             message,
-            k_log_config);
+            logConfig);
         line.has_value()) {
         std::cout << *line << " event=broker_message_in" << '\n' << std::flush;
     }
@@ -202,13 +216,14 @@ void logConnectedClientsReport(const bool enabled, const std::vector<HttpMqttSes
 
 void logBrokerForwardPublishError(
     const bool enabled,
+    const bool includeReasonChain,
     const Message& message,
     const std::string_view errorText) {
     if (!enabled) {
         return;
     }
 
-    if (const auto line = buildBrokerForwardLogLine(message); line.has_value()) {
+    if (const auto line = buildBrokerForwardLogLine(message, includeReasonChain); line.has_value()) {
         std::cout << *line
                   << " event=broker_publish_failed"
                   << " error=\"" << escapeJsonString(errorText) << '\"';
@@ -231,7 +246,7 @@ void logBrokerPublishDispatchAttempt(
     detail << "path=" << dispatchPath
            << " topic=" << message.topic()
            << " qos=" << static_cast<int>(message.qos());
-    logHttpMqttEvent(enabled, "broker_publish_dispatch", detail.str());
+    logHttpMqttTrace(enabled, "broker_publish_dispatch", detail.str());
 }
 
 void logBrokerPublishDispatchSent(
@@ -246,7 +261,7 @@ void logBrokerPublishDispatchSent(
     detail << "path=" << dispatchPath
            << " topic=" << message.topic()
            << " qos=" << static_cast<int>(message.qos());
-    logHttpMqttEvent(enabled, "broker_publish_sent", detail.str());
+    logHttpMqttTrace(enabled, "broker_publish_sent", detail.str());
 }
 
 void logBrokerPublishDispatchFailed(
@@ -902,7 +917,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                                           ? std::string_view{"managed_session"}
                                           : std::string_view{"callback_listener"};
                                       logBrokerPublishDispatchAttempt(
-                                          impl_->config.logEvents,
+                                          impl_->config.logTracing,
                                           mappedMessage,
                                           sessionToken,
                                           dispatchPath);
@@ -921,6 +936,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                                                   publishReason);
                                               logBrokerForwardPublishError(
                                                   impl_->config.logBrokerMessages,
+                                                  impl_->config.logReason,
                                                   mappedMessage,
                                                   publishReason);
                                               throw YahaError{
@@ -949,6 +965,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                                                   publishReason);
                                               logBrokerForwardPublishError(
                                                   impl_->config.logBrokerMessages,
+                                                  impl_->config.logReason,
                                                   mappedMessage,
                                                   publishReason);
                                               throw YahaError{
@@ -960,11 +977,14 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                                       }
 
                                       logBrokerPublishDispatchSent(
-                                          impl_->config.logEvents,
+                                          impl_->config.logTracing,
                                           mappedMessage,
                                           sessionToken,
                                           dispatchPath);
-                                      logBrokerForwardPublishAck(impl_->config.logBrokerMessages, mappedMessage);
+                                      logBrokerForwardPublishAck(
+                                          impl_->config.logBrokerMessages,
+                                          impl_->config.logReason,
+                                          mappedMessage);
                                       return impl_->interfaces.onPublish(downstreamRequest.headers);
                                   });
 
@@ -1498,7 +1518,10 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           receiveResult.headers["packet"] = "publish";
                           receiveResult.payload = buildReceivePayload(*receivedMessage);
                           applyHttpMqttResult(receiveResult, response);
-                          logBrokerIncomingMessage(impl_->config.logBrokerMessages, *receivedMessage);
+                          logBrokerIncomingMessage(
+                              impl_->config.logBrokerMessages,
+                              impl_->config.logReason,
+                              *receivedMessage);
                       });
 
     // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -1556,7 +1579,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                         ? std::string_view{"managed_session"}
                         : std::string_view{"callback_listener"};
                     logBrokerPublishDispatchAttempt(
-                        impl_->config.logEvents,
+                        impl_->config.logTracing,
                         mappedMessage,
                         sessionToken,
                         dispatchPath);
@@ -1573,7 +1596,11 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                                 sessionToken,
                                 dispatchPath,
                                 publishReason);
-                            logBrokerForwardPublishError(impl_->config.logBrokerMessages, mappedMessage, publishReason);
+                            logBrokerForwardPublishError(
+                                impl_->config.logBrokerMessages,
+                                impl_->config.logReason,
+                                mappedMessage,
+                                publishReason);
                             throw YahaError{
                                 k_error_code_broker_publish_failed,
                                 publishReason,
@@ -1598,7 +1625,11 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                                 sessionToken,
                                 dispatchPath,
                                 publishReason);
-                            logBrokerForwardPublishError(impl_->config.logBrokerMessages, mappedMessage, publishReason);
+                            logBrokerForwardPublishError(
+                                impl_->config.logBrokerMessages,
+                                impl_->config.logReason,
+                                mappedMessage,
+                                publishReason);
                             throw YahaError{
                                 k_error_code_broker_publish_failed,
                                 publishReason,
@@ -1608,11 +1639,14 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                     }
 
                     logBrokerPublishDispatchSent(
-                        impl_->config.logEvents,
+                        impl_->config.logTracing,
                         mappedMessage,
                         sessionToken,
                         dispatchPath);
-                    logBrokerForwardPublishAck(impl_->config.logBrokerMessages, mappedMessage);
+                    logBrokerForwardPublishAck(
+                        impl_->config.logBrokerMessages,
+                        impl_->config.logReason,
+                        mappedMessage);
                     return impl_->interfaces.onPublish(downstreamRequest.headers);
                 });
 
@@ -1826,7 +1860,10 @@ void HttpMqttInterfaceClientComponent::run() {
                     continue;
                 }
 
-                logBrokerIncomingMessage(impl_->config.logBrokerMessages, *receivedMessage);
+                logBrokerIncomingMessage(
+                    impl_->config.logBrokerMessages,
+                    impl_->config.logReason,
+                    *receivedMessage);
 
                 const bool forwarded = forwardLegacyListenerPublish(
                     endpoint,
@@ -1970,6 +2007,16 @@ bool tryLoadHttpMqttInterfaceClientConfigFromIni(
         configOutput.logBrokerMessages,
         k_httpSection,
         k_logBrokerMessagesKey);
+    applyBoolConfigWithFallback(
+        iniDocument,
+        configOutput.logReason,
+        k_httpSection,
+        k_logReasonKey);
+    applyBoolConfigWithFallback(
+        iniDocument,
+        configOutput.logTracing,
+        k_httpSection,
+        k_logTracingKey);
 
     const auto [maybeConnectedClientsReportIntervalSeconds, connectedClientsReportIntervalError] =
         iniDocument.readUnsigned(
