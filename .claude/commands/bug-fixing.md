@@ -133,6 +133,16 @@ Caveman rules. AI only. No deviation. No skipping steps.
   - if no causal link found -> abandon suspect -> reread `## user report` -> step 4 with fresh hypothesis
 - after two failed fix attempts on different suspects: stop and ask user for more reproduction details, do not guess further
 - on success:
+  - mandatory quality gate before done:
+    - run `get_errors` on all changed files and fix all findings first
+    - run scope-matching coverage script(s):
+      - broker scope: `python3 test/run_coverage_broker.py`
+      - YAHA client scope: `python3 test/run_coverage_clients.py`
+      - mixed or unclear scope: run both
+    - do not close bug if required coverage scripts were not run
+    - do not close bug if tests fail
+    - do not close bug if changed production files are below 80% in Regions, Functions, or Lines
+    - record the exact command(s) and summary result in `spec/bug/<short-slug>/bug.md` under `## resolution`
   - grep `BUG-TRACE-TEMP <bug-slug>` -> remove all matches
   - update bug file `## resolution` section: root cause, proof (which trace events), fix summary, files touched
   - integrate test case into standard test suite:

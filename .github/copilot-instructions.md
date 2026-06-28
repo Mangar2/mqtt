@@ -65,3 +65,17 @@ Before coding, read the code-create.md skill.
 - Test commands must be short and timeout-safe; avoid long-running waits; keep individual test runtime to about 1-2 seconds maximum.
 - Never run all integration tests; run only integration tests related to the current project scope.
 - Before any action outside the repository, explain it first and get agreement.
+
+## Mandatory completion gate for all code changes
+
+For every code change, completion is forbidden until all required coverage checks were run and documented.
+
+- Always run `get_errors` first on all changed files. Zero problems required.
+- Then run scope-matching coverage script(s):
+	- broker scope: `python3 test/run_coverage_broker.py`
+	- YAHA client scope: `python3 test/run_coverage_clients.py`
+	- mixed or unclear scope: run both
+- A change is not complete if required scripts were skipped.
+- A change is not complete if tests fail.
+- A change is not complete if any changed production file in scope is below 80% in Regions, Functions, or Lines.
+- No final success statement without reporting the executed coverage command(s) and the pass result.

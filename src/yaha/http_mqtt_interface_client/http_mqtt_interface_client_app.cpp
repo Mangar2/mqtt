@@ -63,6 +63,10 @@ constexpr std::string_view k_publishCorsMethods{"POST, PUT, OPTIONS"};
 constexpr std::string_view k_publishCorsHeaders{"Content-Type, Authorization, X-Requested-With"};
 constexpr const char* k_error_code_broker_publish_failed{"HTTP_MQTT_BROKER_PUBLISH_FAILED"};
 constexpr const char* k_error_code_listener_start_failed{"HTTP_MQTT_LISTENER_START_FAILED"};
+constexpr std::string_view k_subscribe_topics_shape_error_prefix =
+    R"(request_invalid: expected JSON field 'topics' as object {"topic/filter": qos0..2} or field 'subscribe' as object {"topic/filter": qos0..2} or {"QoS":0..2,"topics":"topic/filter"|["topic/1","topic/2"]}; parse_error=)";
+constexpr std::string_view k_unsubscribe_topics_shape_error_prefix =
+    R"(request_invalid: expected JSON field 'topics' as object {"topic/filter": qos0..2} or field 'unsubscribe' as object {"topic/filter": qos0..2} or {"QoS":0..2,"topics":"topic/filter"|["topic/1","topic/2"]}; parse_error=)";
 
 void logHttpMqttEvent(const bool enabled, const std::string_view eventName, const std::string_view detailText = "") {
     if (!enabled) {
@@ -510,6 +514,73 @@ std::string resolveCompatibilityToken(const httplib::Request& request, const Htt
     return "";
 }
 
+[[nodiscard]] std::optional<int> tryParseTopicQos(
+    const mqtt::json::JsonValue& qosValue,
+    std::string& errorText) {
+    int qosNumber = -1;
+    if (qosValue.is_number()) {
+        qosNumber = static_cast<int>(qosValue.as_number());
+    } else if (qosValue.is_string()) {
+        const std::string& qosText = qosValue.as_string();
+        if (qosText == "0") {
+            qosNumber = 0;
+        } else if (qosText == "1") {
+            qosNumber = 1;
+        } else if (qosText == "2") {
+            qosNumber = 2;
+        } else {
+            errorText = "topic qos string must be one of 0,1,2";
+            return std::nullopt;
+        }
+    } else {
+        errorText = "topic qos must be numeric or numeric-string";
+        return std::nullopt;
+    }
+
+    if (qosNumber < 0 || qosNumber > 2) {
+        errorText = "topic qos out of range";
+        return std::nullopt;
+    }
+
+    return qosNumber;
+}
+
+[[nodiscard]] bool parseSharedQosTopicsShape(
+    const mqtt::json::JsonValue& topicsObject,
+    std::map<std::string, Qos>& topics,
+    std::string& errorText) {
+    if (!topicsObject.contains("QoS") || !topicsObject.contains("topics")) {
+        return false;
+    }
+
+    const auto qosNumber = tryParseTopicQos(topicsObject.at("QoS"), errorText);
+    if (!qosNumber.has_value()) {
+        topics.clear();
+        return true;
+    }
+
+    const auto& sharedTopics = topicsObject.at("topics");
+    if (sharedTopics.is_string()) {
+        topics[sharedTopics.as_string()] = static_cast<Qos>(*qosNumber);
+        return true;
+    }
+    if (!sharedTopics.is_array()) {
+        errorText = "topics must be string or array of strings";
+        topics.clear();
+        return true;
+    }
+
+    for (const auto& topicValue : sharedTopics.as_array()) {
+        if (!topicValue.is_string()) {
+            errorText = "topics array must contain only strings";
+            topics.clear();
+            return true;
+        }
+        topics[topicValue.as_string()] = static_cast<Qos>(*qosNumber);
+    }
+    return true;
+}
+
 [[nodiscard]] std::map<std::string, Qos> parseTopicsObject(
     const std::optional<mqtt::json::JsonValue>& jsonBody,
     std::string& errorText,
@@ -538,66 +609,12 @@ std::string resolveCompatibilityToken(const httplib::Request& request, const Htt
         return topics;
     }
 
-    const auto tryParseQos = [&errorText](const mqtt::json::JsonValue& qosValue) -> std::optional<int> {
-        int qosNumber = -1;
-        if (qosValue.is_number()) {
-            qosNumber = static_cast<int>(qosValue.as_number());
-        } else if (qosValue.is_string()) {
-            const std::string qosText = qosValue.as_string();
-            if (qosText == "0") {
-                qosNumber = 0;
-            } else if (qosText == "1") {
-                qosNumber = 1;
-            } else if (qosText == "2") {
-                qosNumber = 2;
-            } else {
-                errorText = "topic qos string must be one of 0,1,2";
-                return std::nullopt;
-            }
-        } else {
-            errorText = "topic qos must be numeric or numeric-string";
-            return std::nullopt;
-        }
-
-        if (qosNumber < 0 || qosNumber > 2) {
-            errorText = "topic qos out of range";
-            return std::nullopt;
-        }
-
-        return qosNumber;
-    };
-
-    if (topicsObject.contains("QoS") && topicsObject.contains("topics")) {
-        const auto qosNumber = tryParseQos(topicsObject.at("QoS"));
-        if (!qosNumber.has_value()) {
-            topics.clear();
-            return topics;
-        }
-
-        const auto& sharedTopics = topicsObject.at("topics");
-        if (sharedTopics.is_string()) {
-            topics[sharedTopics.as_string()] = static_cast<Qos>(*qosNumber);
-            return topics;
-        }
-        if (!sharedTopics.is_array()) {
-            errorText = "topics must be string or array of strings";
-            topics.clear();
-            return topics;
-        }
-
-        for (const auto& topicValue : sharedTopics.as_array()) {
-            if (!topicValue.is_string()) {
-                errorText = "topics array must contain only strings";
-                topics.clear();
-                return topics;
-            }
-            topics[topicValue.as_string()] = static_cast<Qos>(*qosNumber);
-        }
+    if (parseSharedQosTopicsShape(topicsObject, topics, errorText)) {
         return topics;
     }
 
     for (const auto& [topic, qosValue] : topicsObject.as_object()) {
-        const auto qosNumber = tryParseQos(qosValue);
+        const auto qosNumber = tryParseTopicQos(qosValue, errorText);
         if (!qosNumber.has_value()) {
             topics.clear();
             return topics;
@@ -1120,9 +1137,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           if (!topicsError.empty()) {
                               const std::string token = resolveToken(request, fields, jsonBody);
                               const std::string clientId = resolveClientIdForRequest(impl_->sessionManager, jsonBody, token);
-                              std::string detailText =
-                                  "request_invalid: expected JSON field 'topics' as object {\"topic/filter\": qos0..2} or field 'subscribe' as object {\"topic/filter\": qos0..2} or {\"QoS\":0..2,\"topics\":\"topic/filter\"|[\"topic/1\",\"topic/2\"]}; parse_error=" +
-                                  topicsError;
+                              std::string detailText = std::string{k_subscribe_topics_shape_error_prefix} + topicsError;
                               if (!clientId.empty()) {
                                   detailText += " clientId=" + clientId;
                               }
@@ -1222,9 +1237,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                           if (!topicsError.empty()) {
                               const std::string token = resolveToken(request, fields, jsonBody);
                               const std::string clientId = resolveClientIdForRequest(impl_->sessionManager, jsonBody, token);
-                              std::string detailText =
-                                  "request_invalid: expected JSON field 'topics' as object {\"topic/filter\": qos0..2} or field 'unsubscribe' as object {\"topic/filter\": qos0..2} or {\"QoS\":0..2,\"topics\":\"topic/filter\"|[\"topic/1\",\"topic/2\"]}; parse_error=" +
-                                  topicsError;
+                              std::string detailText = std::string{k_unsubscribe_topics_shape_error_prefix} + topicsError;
                               if (!clientId.empty()) {
                                   detailText += " clientId=" + clientId;
                               }

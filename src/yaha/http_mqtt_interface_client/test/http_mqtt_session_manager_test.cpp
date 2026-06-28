@@ -232,3 +232,76 @@ TEST_CASE("http_mqtt_session_manager_operation_error_paths", "[http_mqtt_interfa
     REQUIRE_FALSE(manager.ping("unknown-token", errorText));
     REQUIRE(errorText == "unknown token");
 }
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("http_mqtt_session_manager_reject_codes_snapshot_and_additional_failures", "[http_mqtt_interface_client]") {
+    {
+        yaha::HttpMqttSessionManager manager{
+            makeBaseConfig(),
+            []() {
+                yaha::YahaMqttClient::Transport transport{};
+                transport.connect = [](const yaha::YahaMqttClient::Config&) { return true; };
+                transport.disconnect = []() { throw k_unknown_connect_error_marker; };
+                transport.publish = [](const yaha::Message&) { throw k_unknown_connect_error_marker; };
+                transport.subscribe = [](const std::string& topic, const yaha::Qos) {
+                    return topic != "reject/topic";
+                };
+                transport.unsubscribe = [](const std::string& topic) {
+                    return topic != "reject/topic";
+                };
+                transport.pollIncoming = []() -> std::optional<yaha::Message> {
+                    throw std::runtime_error{"receive std boom"};
+                };
+                transport.ping = []() {};
+                transport.isConnected = []() { return false; };
+                return transport;
+            }};
+
+        yaha::HttpMqttSessionConnectRequest request{};
+        request.clientId = "snapshot-client";
+
+        yaha::HttpMqttSessionConnectTokens tokens{};
+        std::string errorText{};
+        REQUIRE(manager.connect(request, tokens, errorText));
+
+        std::vector<std::uint8_t> resultCodes{};
+        std::map<std::string, yaha::Qos> topics{
+            {"ok/topic", yaha::Qos::AtLeastOnce},
+            {"reject/topic", yaha::Qos::AtLeastOnce},
+        };
+
+        REQUIRE(manager.subscribe(tokens.sendToken, topics, resultCodes, errorText));
+        REQUIRE(resultCodes.size() == 2U);
+        REQUIRE(resultCodes.front() == static_cast<std::uint8_t>(yaha::Qos::AtLeastOnce));
+        REQUIRE(resultCodes.back() == 128U);
+
+        REQUIRE(manager.unsubscribe(tokens.sendToken, topics, resultCodes, errorText));
+        REQUIRE(resultCodes.size() == 2U);
+        REQUIRE(resultCodes.front() == 0U);
+        REQUIRE(resultCodes.back() == 17U);
+
+        std::optional<yaha::Message> message{};
+        REQUIRE_FALSE(manager.receive(tokens.sendToken, message, errorText));
+        REQUIRE(errorText == "receive std boom");
+
+        REQUIRE_FALSE(manager.publish(tokens.sendToken, yaha::Message{"topic", std::string{"x"}}, errorText));
+        REQUIRE(errorText == "unknown broker publish failure");
+
+        REQUIRE_FALSE(manager.ping(tokens.sendToken, errorText));
+        REQUIRE(errorText == "session disconnected");
+
+        std::vector<yaha::HttpMqttSessionSnapshot> snapshots = manager.listSessions();
+        REQUIRE(snapshots.size() == 1U);
+        REQUIRE(snapshots.front().clientId == "snapshot-client");
+        REQUIRE_FALSE(snapshots.front().brokerConnected);
+
+        std::string resolvedToken{};
+        REQUIRE_FALSE(manager.resolveSendTokenByClientId("", resolvedToken));
+        REQUIRE_FALSE(manager.resolveSendTokenByClientId("missing", resolvedToken));
+        REQUIRE(manager.resolveSendTokenByClientId("snapshot-client", resolvedToken));
+        REQUIRE(resolvedToken == tokens.sendToken);
+
+        REQUIRE_FALSE(manager.disconnect(tokens.sendToken, errorText));
+        REQUIRE(errorText == "unknown broker disconnect failure");
+    }
+}

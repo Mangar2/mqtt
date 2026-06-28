@@ -95,3 +95,5 @@
 | `test_client_scenario_command_step32_mass_connect_mode_qos2_succeeds_with_fake_broker` | `[test_client][scenario]` | Step 32 `mass-connect` mode with QoS2 succeeds against fake broker and covers direct publish Pubrec/Pubrel/Pubcomp handshake path. |
 | `test_client_scenario_command_step32_multi_subscribe_rejects_invalid_bench_settings` | `[test_client][scenario]` | Step 32 `multi-subscribe` mode validates bench settings and rejects invalid qos/retain-handling/subscription-identifier combinations. |
 | `test_client_scenario_command_step32_publish_rate_mode_fails_when_broker_disconnects_on_publish` | `[test_client][scenario]` | Step 32 `publish-rate` mode returns non-zero when broker disconnects immediately after receiving a publish frame. |
+| `test_client_scenario_command_step31_uses_auth_and_connect_properties` | `[test_client][scenario]` | Step 31 scenario execution covers profile username/password and CONNECT user-property argument mapping. |
+| `test_client_scenario_command_step31_reports_spawn_failure` | `[test_client][scenario]` | Step 31 scenario execution returns failure when process spawning the test-client executable fails. |
