@@ -131,20 +131,15 @@ dependency" section below.
   - migrated request payload builder to `JsonValue` object serialization
     for token/user/message/priority/title/device fields.
 
-### 8. remote_service_client — OPEN (largest gap besides value_service)
+### 8. remote_service_client — DONE
 
-- [ ] `remote_service/remote_service_component.cpp` — full hand-written
-  recursive-descent JSON parser: `parseJsonString`, `parseJsonUnsignedInteger`,
-  `skipJsonValue`, `skipJsonObject`, `skipJsonArray`, `skipJsonNumber`
-  (~lines 42-665), used to parse FileStore-persisted service mapping config
-  and monitor payloads.
-- [ ] `remote_service_http/remote_service_http_adapter.cpp` — a **second,
-  separate** hand-written JSON parser: `parseJsonString`,
-  `parseJsonValueToken`, `parseFlatJsonObject` (~lines 34-285), used to parse
-  incoming HTTP POST request bodies.
-- These two files duplicate the same kind of parsing logic independently of
-  each other — migrating both to `JsonValue` also removes the duplication
-  between them.
+- [x] `remote_service/remote_service_component.cpp` — migrated FileStore
+  mapping payload and monitor event payload parsing to `JsonValue::try_parse(...)`
+  with object/array access and explicit field/type validation for
+  `services/path/devices/qos/reason` and `keyPath`.
+- [x] `remote_service_http/remote_service_http_adapter.cpp` — migrated incoming
+  HTTP POST payload parsing to `JsonValue::try_parse(...)` with object access for
+  `deviceId/state/deviceToken` and `state` conversion for string/number/bool/null.
 
 ### 9. rs485_interface_client — NO ACTION NEEDED
 

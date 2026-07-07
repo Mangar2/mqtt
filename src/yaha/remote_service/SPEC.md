@@ -97,8 +97,9 @@ Member function:
 - Optional fields:
 	- `qos` integer in range `0..2`
 	- `reason` string
-- Numeric token parsing for mapping `qos` uses shared message token parsing utility
-  from `yaha/message/message_payload_codec.*` and then enforces integral range checks.
+- Mapping payload parsing uses `mqtt::json::JsonValue::try_parse(...)` and validates
+	field types/constraints on the parsed object model.
+- `qos` is accepted only as integral JSON number in range `0..2`.
 - Validation is all-or-nothing:
 	- any invalid structure rejects the full payload
 	- output mapping is not modified on failure
@@ -114,6 +115,8 @@ Member function:
 - Successful GET with valid payload atomically replaces full in-memory map.
 - Startup load failure keeps empty map and continues runtime.
 - `handleMessage()` inspects monitor payloads on `<monitorTopicPrefix>/#`.
+- Monitor payload parsing for `keyPath` uses `JsonValue::try_parse(...)` and requires
+	`keyPath` to be a JSON string.
 - Only monitor events with matching `keyPath == mappingKeyPath` trigger reload.
 - Failed reload keeps previous valid map unchanged.
 

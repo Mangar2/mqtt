@@ -52,11 +52,16 @@ Token validator callback used for request-mode specific token checks.
   - `state` (string or number; `true`/`false`/`null` accepted as string payload)
   - `deviceToken` (string)
 - Malformed JSON or missing/invalid required fields return `400`.
+- POST payload is parsed via `mqtt::json::JsonValue::try_parse(...)` and must be a JSON object.
 - `deviceToken` is validated via configured POST token validator.
 - Invalid token returns `400`.
 - On valid input, adapter calls `publishCommand` on component.
-- `state` token parsing reuses shared token parser from
-  `yaha/message/message_payload_codec.*` for non-string JSON tokens.
+- `state` conversion rules:
+  - JSON string -> `Value{std::string}`
+  - JSON number -> `Value{double}`
+  - JSON boolean -> `Value{"true"|"false"}`
+  - JSON null -> `Value{"null"}`
+  - JSON object/array -> invalid (`400`)
 
 ### Domain-result to HTTP mapping
 

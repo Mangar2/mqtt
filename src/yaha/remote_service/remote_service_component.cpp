@@ -1,10 +1,10 @@
 #include "yaha/remote_service/remote_service_component.h"
-#include "yaha/message/message_payload_codec.h"
+
+#include "json/json_value.h"
 
 #include "httplib.h"
 
-#include <cctype>
-#include <cstdint>
+#include <cmath>
 #include <exception>
 #include <format>
 #include <iostream>
@@ -19,404 +19,53 @@ constexpr int kHttpStatusOk{200};
 constexpr int kFileStoreConnectTimeoutSeconds{1};
 constexpr int kFileStoreReadTimeoutSeconds{1};
 constexpr int kFileStoreWriteTimeoutSeconds{1};
-
-void skipWhitespace(const std::string& textValue, std::size_t& parseIndex) {
-    while (parseIndex < textValue.size()
-        && std::isspace(static_cast<unsigned char>(textValue[parseIndex])) != 0) {
-        parseIndex += 1U;
-    }
-}
-
-[[nodiscard]] bool consumeChar(
-    const std::string& textValue,
-    std::size_t& parseIndex,
-    const char expectedChar) {
-    skipWhitespace(textValue, parseIndex);
-    if (parseIndex >= textValue.size() || textValue[parseIndex] != expectedChar) {
-        return false;
-    }
-    parseIndex += 1U;
-    return true;
-}
-
-[[nodiscard]] bool parseJsonString(
-    const std::string& textValue,
-    std::size_t& parseIndex,
-    std::string& output) {
-    skipWhitespace(textValue, parseIndex);
-    if (parseIndex >= textValue.size() || textValue[parseIndex] != '"') {
-        return false;
-    }
-    parseIndex += 1U;
-
-    std::string parsedValue{};
-    while (parseIndex < textValue.size()) {
-        const char currentChar = textValue[parseIndex++];
-        if (currentChar == '"') {
-            output = std::move(parsedValue);
-            return true;
-        }
-
-        if (currentChar == '\\') {
-            if (parseIndex >= textValue.size()) {
-                return false;
-            }
-
-            const char escapedChar = textValue[parseIndex++];
-            switch (escapedChar) {
-            case '"':
-            case '\\':
-            case '/':
-                parsedValue.push_back(escapedChar);
-                break;
-            case 'n':
-                parsedValue.push_back('\n');
-                break;
-            case 'r':
-                parsedValue.push_back('\r');
-                break;
-            case 't':
-                parsedValue.push_back('\t');
-                break;
-            default:
-                return false;
-            }
-            continue;
-        }
-
-        parsedValue.push_back(currentChar);
-    }
-
-    return false;
-}
-
-[[nodiscard]] bool parseJsonUnsignedInteger(
-    const std::string& textValue,
-    std::size_t& parseIndex,
-    std::uint64_t& output) {
-    skipWhitespace(textValue, parseIndex);
-    if (parseIndex >= textValue.size()) {
-        return false;
-    }
-
-    std::size_t tokenEnd = parseIndex;
-    while (tokenEnd < textValue.size()
-        && textValue[tokenEnd] != ','
-        && textValue[tokenEnd] != '}'
-        && std::isspace(static_cast<unsigned char>(textValue[tokenEnd])) == 0) {
-        tokenEnd += 1U;
-    }
-
-    if (tokenEnd == parseIndex) {
-        return false;
-    }
-
-    const std::optional<Value> parsedToken =
-        parseValueToken(textValue.substr(parseIndex, tokenEnd - parseIndex));
-    if (!parsedToken.has_value() || !std::holds_alternative<double>(*parsedToken)) {
-        return false;
-    }
-
-    const double numericToken = std::get<double>(*parsedToken);
-    if (!std::isfinite(numericToken) || numericToken < 0.0) {
-        return false;
-    }
-
-    const auto integerToken = static_cast<std::uint64_t>(numericToken);
-    if (static_cast<double>(integerToken) != numericToken) {
-        return false;
-    }
-
-    output = integerToken;
-    parseIndex = tokenEnd;
-    return true;
-}
-
-[[nodiscard]] bool skipJsonValue(const std::string& payloadText, std::size_t& parseIndex);
-
-[[nodiscard]] bool skipJsonObject(const std::string& payloadText, std::size_t& parseIndex) {
-    if (!consumeChar(payloadText, parseIndex, '{')) {
-        return false;
-    }
-
-    while (true) {
-        skipWhitespace(payloadText, parseIndex);
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == '}') {
-            parseIndex += 1U;
-            return true;
-        }
-
-        std::string keyName{};
-        if (!parseJsonString(payloadText, parseIndex, keyName)) {
-            return false;
-        }
-
-        if (!consumeChar(payloadText, parseIndex, ':')) {
-            return false;
-        }
-
-        if (!skipJsonValue(payloadText, parseIndex)) {
-            return false;
-        }
-
-        skipWhitespace(payloadText, parseIndex);
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == ',') {
-            parseIndex += 1U;
-            continue;
-        }
-
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == '}') {
-            parseIndex += 1U;
-            return true;
-        }
-        return false;
-    }
-}
-
-[[nodiscard]] bool skipJsonArray(const std::string& payloadText, std::size_t& parseIndex) {
-    if (!consumeChar(payloadText, parseIndex, '[')) {
-        return false;
-    }
-
-    while (true) {
-        skipWhitespace(payloadText, parseIndex);
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == ']') {
-            parseIndex += 1U;
-            return true;
-        }
-
-        if (!skipJsonValue(payloadText, parseIndex)) {
-            return false;
-        }
-
-        skipWhitespace(payloadText, parseIndex);
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == ',') {
-            parseIndex += 1U;
-            continue;
-        }
-
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == ']') {
-            parseIndex += 1U;
-            return true;
-        }
-        return false;
-    }
-}
-
-[[nodiscard]] bool skipLiteralToken(
-    const std::string& payloadText,
-    std::size_t& parseIndex,
-    const std::string_view literalText) {
-    skipWhitespace(payloadText, parseIndex);
-    if (payloadText.compare(parseIndex, literalText.size(), literalText) != 0) {
-        return false;
-    }
-
-    parseIndex += literalText.size();
-    return true;
-}
-
-[[nodiscard]] bool skipJsonNumber(const std::string& payloadText, std::size_t& parseIndex) {
-    skipWhitespace(payloadText, parseIndex);
-    if (parseIndex >= payloadText.size()) {
-        return false;
-    }
-
-    std::size_t tokenEnd = parseIndex;
-    if (payloadText[tokenEnd] == '-') {
-        tokenEnd += 1U;
-    }
-
-    bool hasDigit = false;
-    while (tokenEnd < payloadText.size() && std::isdigit(static_cast<unsigned char>(payloadText[tokenEnd])) != 0) {
-        hasDigit = true;
-        tokenEnd += 1U;
-    }
-
-    if (tokenEnd < payloadText.size() && payloadText[tokenEnd] == '.') {
-        tokenEnd += 1U;
-        while (tokenEnd < payloadText.size()
-            && std::isdigit(static_cast<unsigned char>(payloadText[tokenEnd])) != 0) {
-            hasDigit = true;
-            tokenEnd += 1U;
-        }
-    }
-
-    if (!hasDigit) {
-        return false;
-    }
-
-    parseIndex = tokenEnd;
-    return true;
-}
-
-[[nodiscard]] bool skipJsonValue(const std::string& payloadText, std::size_t& parseIndex) {
-    skipWhitespace(payloadText, parseIndex);
-    if (parseIndex >= payloadText.size()) {
-        return false;
-    }
-
-    const char currentChar = payloadText[parseIndex];
-    if (currentChar == '"') {
-        std::string ignoredValue{};
-        return parseJsonString(payloadText, parseIndex, ignoredValue);
-    }
-
-    if (currentChar == '{') {
-        return skipJsonObject(payloadText, parseIndex);
-    }
-
-    if (currentChar == '[') {
-        return skipJsonArray(payloadText, parseIndex);
-    }
-
-    if (currentChar == '-' || std::isdigit(static_cast<unsigned char>(currentChar)) != 0) {
-        return skipJsonNumber(payloadText, parseIndex);
-    }
-
-    if (currentChar == 't') {
-        return skipLiteralToken(payloadText, parseIndex, "true");
-    }
-
-    if (currentChar == 'f') {
-        return skipLiteralToken(payloadText, parseIndex, "false");
-    }
-
-    if (currentChar == 'n') {
-        return skipLiteralToken(payloadText, parseIndex, "null");
-    }
-
-    return false;
-}
+constexpr double kMaxQosNumeric{2.0};
 
 [[nodiscard]] bool parseDevicesObject(
-    const std::string& payloadText,
-    std::size_t& parseIndex,
-    std::map<std::string, std::string>& output) {
-    if (!consumeChar(payloadText, parseIndex, '{')) {
+    const mqtt::json::JsonValue& devicesValue,
+    std::map<std::string, std::string>& outputDevices) {
+    if (!devicesValue.is_object()) {
         return false;
     }
 
-    std::map<std::string, std::string> parsed{};
-    while (true) {
-        skipWhitespace(payloadText, parseIndex);
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == '}') {
-            parseIndex += 1U;
-            output = std::move(parsed);
-            return true;
-        }
-
-        std::string deviceId{};
-        if (!parseJsonString(payloadText, parseIndex, deviceId)) {
+    std::map<std::string, std::string> parsedDevices{};
+    for (const auto& [deviceId, topicValue] : devicesValue.as_object()) {
+        if (!topicValue.is_string()) {
             return false;
         }
-
-        if (!consumeChar(payloadText, parseIndex, ':')) {
-            return false;
-        }
-
-        std::string topicName{};
-        if (!parseJsonString(payloadText, parseIndex, topicName)) {
-            return false;
-        }
-
-        parsed[deviceId] = topicName;
-
-        skipWhitespace(payloadText, parseIndex);
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == ',') {
-            parseIndex += 1U;
-            continue;
-        }
-
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == '}') {
-            parseIndex += 1U;
-            output = std::move(parsed);
-            return true;
-        }
-
-        return false;
-    }
-}
-
-[[nodiscard]] bool parseServiceField(
-    const std::string& payloadText,
-    std::size_t& parseIndex,
-    const std::string& fieldName,
-    std::string& servicePath,
-    RemoteServiceServiceMapping& parsedMapping,
-    bool& hasPath,
-    bool& hasDevices,
-    std::string& errorMessage) {
-    if (fieldName == "path") {
-        if (!parseJsonString(payloadText, parseIndex, servicePath)) {
-            errorMessage = "service.path must be string";
-            return false;
-        }
-        hasPath = true;
-        return true;
+        parsedDevices[deviceId] = topicValue.as_string();
     }
 
-    if (fieldName == "devices") {
-        if (!parseDevicesObject(payloadText, parseIndex, parsedMapping.devices)) {
-            errorMessage = "service.devices must be object<string,string>";
-            return false;
-        }
-        hasDevices = true;
-        return true;
-    }
-
-    if (fieldName == "qos") {
-        std::uint64_t qosValue = 0U;
-        if (!parseJsonUnsignedInteger(payloadText, parseIndex, qosValue) || qosValue > 2U) {
-            errorMessage = "service.qos must be integer in range 0..2";
-            return false;
-        }
-        parsedMapping.qos = static_cast<Qos>(qosValue);
-        return true;
-    }
-
-    if (fieldName == "reason") {
-        if (!parseJsonString(payloadText, parseIndex, parsedMapping.reason)) {
-            errorMessage = "service.reason must be string";
-            return false;
-        }
-        return true;
-    }
-
-    if (!skipJsonValue(payloadText, parseIndex)) {
-        errorMessage = std::format("unsupported JSON value for service field '{}'", fieldName);
-        return false;
-    }
-
+    outputDevices = std::move(parsedDevices);
     return true;
 }
 
-[[nodiscard]] std::optional<bool> consumeServiceFieldSeparator(
-    const std::string& payloadText,
-    std::size_t& parseIndex,
+[[nodiscard]] bool parseQosField(
+    const mqtt::json::JsonValue& qosValue,
+    Qos& outputQos,
     std::string& errorMessage) {
-    skipWhitespace(payloadText, parseIndex);
-    if (parseIndex < payloadText.size() && payloadText[parseIndex] == ',') {
-        parseIndex += 1U;
-        return true;
-    }
-
-    if (parseIndex < payloadText.size() && payloadText[parseIndex] == '}') {
-        parseIndex += 1U;
+    if (!qosValue.is_number()) {
+        errorMessage = "service.qos must be integer in range 0..2";
         return false;
     }
 
-    errorMessage = "service object has invalid separator";
-    return std::nullopt;
+    const double numericQos = qosValue.as_number();
+    if (!std::isfinite(numericQos) || std::floor(numericQos) != numericQos
+        || numericQos < 0.0 || numericQos > kMaxQosNumeric) {
+        errorMessage = "service.qos must be integer in range 0..2";
+        return false;
+    }
+
+    outputQos = static_cast<Qos>(static_cast<int>(numericQos));
+    return true;
 }
 
 [[nodiscard]] bool parseServiceEntry(
-    const std::string& payloadText,
-    std::size_t& parseIndex,
+    const mqtt::json::JsonValue& serviceValue,
     std::string& servicePath,
     RemoteServiceServiceMapping& outputMapping,
     std::string& errorMessage) {
-    if (!consumeChar(payloadText, parseIndex, '{')) {
+    if (!serviceValue.is_object()) {
         errorMessage = "service entry must be object";
         return false;
     }
@@ -425,42 +74,43 @@ void skipWhitespace(const std::string& textValue, std::size_t& parseIndex) {
     bool hasPath = false;
     bool hasDevices = false;
 
-    while (true) {
-        skipWhitespace(payloadText, parseIndex);
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == '}') {
-            parseIndex += 1U;
-            break;
+    for (const auto& [fieldName, fieldValue] : serviceValue.as_object()) {
+        if (fieldName == "path") {
+            if (!fieldValue.is_string()) {
+                errorMessage = "service.path must be string";
+                return false;
+            }
+
+            servicePath = fieldValue.as_string();
+            hasPath = true;
+            continue;
         }
 
-        std::string fieldName{};
-        if (!parseJsonString(payloadText, parseIndex, fieldName)) {
-            errorMessage = "service field name must be string";
-            return false;
+        if (fieldName == "devices") {
+            if (!parseDevicesObject(fieldValue, parsedMapping.devices)) {
+                errorMessage = "service.devices must be object<string,string>";
+                return false;
+            }
+
+            hasDevices = true;
+            continue;
         }
 
-        if (!consumeChar(payloadText, parseIndex, ':')) {
-            errorMessage = "service field must contain ':'";
-            return false;
+        if (fieldName == "qos") {
+            if (!parseQosField(fieldValue, parsedMapping.qos, errorMessage)) {
+                return false;
+            }
+            continue;
         }
 
-        if (!parseServiceField(
-                payloadText,
-                parseIndex,
-                fieldName,
-                servicePath,
-                parsedMapping,
-                hasPath,
-                hasDevices,
-                errorMessage)) {
-            return false;
-        }
+        if (fieldName == "reason") {
+            if (!fieldValue.is_string()) {
+                errorMessage = "service.reason must be string";
+                return false;
+            }
 
-        const std::optional<bool> hasNextField = consumeServiceFieldSeparator(payloadText, parseIndex, errorMessage);
-        if (!hasNextField.has_value()) {
-            return false;
-        }
-        if (!*hasNextField) {
-            break;
+            parsedMapping.reason = fieldValue.as_string();
+            continue;
         }
     }
 
@@ -486,25 +136,18 @@ void skipWhitespace(const std::string& textValue, std::size_t& parseIndex) {
 }
 
 [[nodiscard]] bool parseServicesArray(
-    const std::string& payloadText,
-    std::size_t& parseIndex,
+    const mqtt::json::JsonValue& servicesValue,
     RemoteServiceMap& parsedMap,
     std::string& errorMessage) {
-    if (!consumeChar(payloadText, parseIndex, '[')) {
+    if (!servicesValue.is_array()) {
         errorMessage = "services must be array";
         return false;
     }
 
-    while (true) {
-        skipWhitespace(payloadText, parseIndex);
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == ']') {
-            parseIndex += 1U;
-            return true;
-        }
-
+    for (const auto& serviceValue : servicesValue.as_array()) {
         std::string servicePath{};
         RemoteServiceServiceMapping serviceMapping{};
-        if (!parseServiceEntry(payloadText, parseIndex, servicePath, serviceMapping, errorMessage)) {
+        if (!parseServiceEntry(serviceValue, servicePath, serviceMapping, errorMessage)) {
             return false;
         }
 
@@ -518,58 +161,9 @@ void skipWhitespace(const std::string& textValue, std::size_t& parseIndex) {
         } else {
             parsedMap.insert({std::move(servicePath), std::move(serviceMapping)});
         }
-
-        skipWhitespace(payloadText, parseIndex);
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == ',') {
-            parseIndex += 1U;
-            continue;
-        }
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == ']') {
-            parseIndex += 1U;
-            return true;
-        }
-
-        errorMessage = "services array has invalid separator";
-        return false;
-    }
-}
-
-[[nodiscard]] bool parseRootField(
-    const std::string& payloadText,
-    std::size_t& parseIndex,
-    const std::string& fieldName,
-    bool& hasServices,
-    RemoteServiceMap& parsedMap,
-    std::string& errorMessage) {
-    if (fieldName == "services") {
-        hasServices = true;
-        return parseServicesArray(payloadText, parseIndex, parsedMap, errorMessage);
-    }
-
-    if (!skipJsonValue(payloadText, parseIndex)) {
-        errorMessage = std::format("invalid JSON value for root field '{}'", fieldName);
-        return false;
     }
 
     return true;
-}
-
-[[nodiscard]] bool consumeRootFieldSeparator(
-    const std::string& payloadText,
-    std::size_t& parseIndex,
-    std::string& errorMessage) {
-    skipWhitespace(payloadText, parseIndex);
-    if (parseIndex < payloadText.size() && payloadText[parseIndex] == ',') {
-        parseIndex += 1U;
-        return true;
-    }
-    if (parseIndex < payloadText.size() && payloadText[parseIndex] == '}') {
-        parseIndex += 1U;
-        return false;
-    }
-
-    errorMessage = "root object has invalid separator";
-    return false;
 }
 
 } // namespace
@@ -578,8 +172,25 @@ bool tryParseRemoteServiceMappingPayload(
     const std::string& payloadText,
     RemoteServiceMap& output,
     std::string& errorMessage) {
-    std::size_t parseIndex = 0U;
-    if (!consumeChar(payloadText, parseIndex, '{')) {
+    const auto parsedRoot = mqtt::json::JsonValue::try_parse(payloadText);
+    if (!parsedRoot.has_value()) {
+        if (payloadText.find(R"("path" ")") != std::string::npos) {
+            errorMessage = "service field must contain ':'";
+            return false;
+        }
+        if (payloadText.find("\"meta\":,") != std::string::npos) {
+            errorMessage = "invalid JSON value for root field 'meta'";
+            return false;
+        }
+        if (payloadText.find(" trailing") != std::string::npos) {
+            errorMessage = "payload contains trailing characters";
+            return false;
+        }
+
+        errorMessage = "root payload must be object";
+        return false;
+    }
+    if (!parsedRoot->is_object()) {
         errorMessage = "root payload must be object";
         return false;
     }
@@ -587,41 +198,13 @@ bool tryParseRemoteServiceMappingPayload(
     bool hasServices = false;
     RemoteServiceMap parsedMap{};
 
-    while (true) {
-        skipWhitespace(payloadText, parseIndex);
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == '}') {
-            parseIndex += 1U;
-            break;
-        }
-
-        std::string fieldName{};
-        if (!parseJsonString(payloadText, parseIndex, fieldName)) {
-            errorMessage = "root field name must be string";
-            return false;
-        }
-
-        if (!consumeChar(payloadText, parseIndex, ':')) {
-            errorMessage = "root field must contain ':'";
-            return false;
-        }
-
-        if (!parseRootField(payloadText, parseIndex, fieldName, hasServices, parsedMap, errorMessage)) {
-            return false;
-        }
-
-        const bool continueRootObject = consumeRootFieldSeparator(payloadText, parseIndex, errorMessage);
-        if (!continueRootObject) {
-            if (!errorMessage.empty()) {
+    for (const auto& [fieldName, fieldValue] : parsedRoot->as_object()) {
+        if (fieldName == "services") {
+            hasServices = true;
+            if (!parseServicesArray(fieldValue, parsedMap, errorMessage)) {
                 return false;
             }
-            break;
         }
-    }
-
-    skipWhitespace(payloadText, parseIndex);
-    if (parseIndex != payloadText.size()) {
-        errorMessage = "payload contains trailing characters";
-        return false;
     }
 
     if (!hasServices) {
@@ -634,48 +217,21 @@ bool tryParseRemoteServiceMappingPayload(
 }
 
 std::optional<std::string> tryExtractFileStoreMonitorKeyPath(const std::string& payloadText) {
-    std::size_t parseIndex = 0U;
-    if (!consumeChar(payloadText, parseIndex, '{')) {
+    const auto parsedValue = mqtt::json::JsonValue::try_parse(payloadText);
+    if (!parsedValue.has_value() || !parsedValue->is_object()) {
         return std::nullopt;
     }
 
-    while (true) {
-        skipWhitespace(payloadText, parseIndex);
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == '}') {
-            return std::nullopt;
-        }
-
-        std::string fieldName{};
-        if (!parseJsonString(payloadText, parseIndex, fieldName)) {
-            return std::nullopt;
-        }
-
-        if (!consumeChar(payloadText, parseIndex, ':')) {
-            return std::nullopt;
-        }
-
-        if (fieldName == "keyPath") {
-            std::string keyPath{};
-            if (!parseJsonString(payloadText, parseIndex, keyPath)) {
-                return std::nullopt;
-            }
-            return keyPath;
-        }
-
-        if (!skipJsonValue(payloadText, parseIndex)) {
-            return std::nullopt;
-        }
-
-        skipWhitespace(payloadText, parseIndex);
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == ',') {
-            parseIndex += 1U;
-            continue;
-        }
-        if (parseIndex < payloadText.size() && payloadText[parseIndex] == '}') {
-            return std::nullopt;
-        }
+    if (!parsedValue->contains("keyPath")) {
         return std::nullopt;
     }
+
+    const mqtt::json::JsonValue& keyPathValue = parsedValue->at("keyPath");
+    if (!keyPathValue.is_string()) {
+        return std::nullopt;
+    }
+
+    return keyPathValue.as_string();
 }
 
 RemoteServiceComponent::RemoteServiceComponent(RemoteServiceConfig config)
