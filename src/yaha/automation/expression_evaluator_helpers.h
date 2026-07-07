@@ -49,13 +49,6 @@ struct EvaluatedNode {
 };
 
 /**
- * @brief Converts a string to its ASCII lower-case form.
- * @param textValue Text to convert.
- * @return Lower-cased copy of textValue.
- */
-[[nodiscard]] std::string toLower(std::string textValue);
-
-/**
  * @brief Parses a full token as a double, rejecting partial matches.
  * @param tokenText Text to parse.
  * @param parsedValue Receives the parsed value on success.

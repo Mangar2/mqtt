@@ -1,13 +1,12 @@
 #include "yaha/zwave_client/zwave_client_app.h"
 
+#include "helper/string_helper.h"
 #include "httplib.h"
 #include "json/json_error.h"
 #include "json/json_value.h"
 #include "yaha/message/message_log_service.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
-#include <algorithm>
-#include <cctype>
 #include <cstdint>
 #include <cmath>
 #include <iostream>
@@ -23,15 +22,6 @@ namespace yaha {
 
 namespace {
 
-[[nodiscard]] std::string trimCopy(std::string input) {
-    auto notSpace = [](unsigned char character) {
-        return std::isspace(character) == 0;
-    };
-
-    input.erase(input.begin(), std::ranges::find_if(input, notSpace));
-    input.erase(std::ranges::find_if(input.rbegin(), input.rend(), notSpace).base(), input.end());
-    return input;
-}
 constexpr std::size_t kDeviceFieldCountMin = 2U;
 constexpr std::size_t kDeviceFieldCountMax = 7U;
 constexpr std::size_t kDeviceFieldTopic = 0U;
@@ -74,11 +64,11 @@ constexpr int kHttpNotFoundStatus = 404;
     while (fieldStart <= line.size()) {
         const std::size_t delimiterPos = line.find('|', fieldStart);
         if (delimiterPos == std::string::npos) {
-            fields.push_back(trimCopy(line.substr(fieldStart)));
+            fields.push_back(mqtt::helper::trim(line.substr(fieldStart)));
             break;
         }
 
-        fields.push_back(trimCopy(line.substr(fieldStart, delimiterPos - fieldStart)));
+        fields.push_back(mqtt::helper::trim(line.substr(fieldStart, delimiterPos - fieldStart)));
         fieldStart = delimiterPos + 1U;
     }
 

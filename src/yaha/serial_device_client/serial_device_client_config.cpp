@@ -1,37 +1,17 @@
 #include "yaha/serial_device_client/serial_device_client_config.h"
 
+#include "helper/string_helper.h"
 #include "yaha/message/message_log_service.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <cstdint>
 #include <format>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
-#include <vector>
 
 namespace yaha {
 namespace {
-
-[[nodiscard]] std::string trimCopy(const std::string& text) {
-    const auto first = text.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) {
-        return {};
-    }
-    const auto last = text.find_last_not_of(" \t\r\n");
-    return text.substr(first, (last - first) + 1U);
-}
-
-[[nodiscard]] std::vector<std::string> split(const std::string& text, const char delimiter) {
-    std::vector<std::string> tokens{};
-    std::stringstream stream{text};
-    std::string token{};
-    while (std::getline(stream, token, delimiter)) {
-        tokens.push_back(trimCopy(token));
-    }
-    return tokens;
-}
 
 bool requireNonEmptyString(
     const IniDocument& document,
@@ -40,12 +20,12 @@ bool requireNonEmptyString(
     std::string& output,
     std::string& errorMessage) {
     const auto value = document.lastValue(sectionName, keyName);
-    if (!value.has_value() || trimCopy(*value).empty()) {
+    if (!value.has_value() || mqtt::helper::trim(*value).empty()) {
         errorMessage = std::format("missing required setting '{}.{}'", sectionName, keyName);
         return false;
     }
 
-    output = trimCopy(*value);
+    output = mqtt::helper::trim(*value);
     return true;
 }
 
@@ -100,8 +80,8 @@ void parseCommandMapSection(
     }
 
     for (const auto& entry : section->entries()) {
-        const std::string commandKey = trimCopy(entry.key);
-        const std::string topicSuffix = trimCopy(entry.value);
+        const std::string commandKey = mqtt::helper::trim(entry.key);
+        const std::string topicSuffix = mqtt::helper::trim(entry.value);
         if (commandKey.empty() || topicSuffix.empty()) {
             warningText = std::format(
                 "invalid mapping in [{}] (key and topic suffix must not be empty)",
@@ -126,8 +106,8 @@ void parseReceiverMapSection(
     output.receiverMap.clear();
 
     for (const auto& entry : section->entries()) {
-        const std::string topicPrefix = trimCopy(entry.key);
-        const std::string addressValue = trimCopy(entry.value);
+        const std::string topicPrefix = mqtt::helper::trim(entry.key);
+        const std::string addressValue = mqtt::helper::trim(entry.value);
         if (topicPrefix.empty() || addressValue.empty()) {
             warningText = std::format(
                 "invalid mapping in [{}] (topic prefix and address must not be empty)",
@@ -150,8 +130,8 @@ void parseSwitchTopicMapSection(
     output.topicMap.clear();
 
     for (const auto& entry : section->entries()) {
-        const std::string topic = trimCopy(entry.key);
-        const auto parts = split(entry.value, ',');
+        const std::string topic = mqtt::helper::trim(entry.key);
+        const auto parts = mqtt::helper::split(entry.value, ',');
         if (topic.empty() || parts.size() != 3U) {
             warningText = "invalid mapping in [serialdevice.switch.topicMap] (expected command,value,address)";
             continue;
@@ -193,8 +173,8 @@ void parseValueMapSection(
             return;
         }
 
-        const std::string mapKey = trimCopy(mapToken.substr(0U, separator));
-        const std::string mapValueText = trimCopy(mapToken.substr(separator + 1U));
+        const std::string mapKey = mqtt::helper::trim(mapToken.substr(0U, separator));
+        const std::string mapValueText = mqtt::helper::trim(mapToken.substr(separator + 1U));
         const auto mapValue = IniDocument::parseUnsigned(mapValueText, 0U, 65535U);
         if (mapKey.empty() || !mapValue.has_value()) {
             warningText = std::format(
@@ -207,7 +187,7 @@ void parseValueMapSection(
     };
 
     for (const auto& entry : section->entries()) {
-        const std::string itemName = trimCopy(entry.key);
+        const std::string itemName = mqtt::helper::trim(entry.key);
         if (itemName.empty()) {
             warningText = "invalid entry in [serialdevice.serial.valueMap] (empty key)";
             continue;
@@ -216,15 +196,15 @@ void parseValueMapSection(
         SerialDeviceValueMapDefinition item{};
         std::string usedByText{};
         std::string mapText{};
-        const auto segments = split(entry.value, ';');
+        const auto segments = mqtt::helper::split(entry.value, ';');
         for (const auto& segment : segments) {
             const auto separator = segment.find('=');
             if (separator == std::string::npos) {
                 continue;
             }
 
-            const std::string name = trimCopy(segment.substr(0U, separator));
-            const std::string value = trimCopy(segment.substr(separator + 1U));
+            const std::string name = mqtt::helper::trim(segment.substr(0U, separator));
+            const std::string value = mqtt::helper::trim(segment.substr(separator + 1U));
             if (name == "description") {
                 item.description = value;
             } else if (name == "usedby") {
@@ -241,8 +221,8 @@ void parseValueMapSection(
             continue;
         }
 
-        item.usedBy = split(usedByText, ',');
-        const auto mapTokens = split(mapText, '|');
+        item.usedBy = mqtt::helper::split(usedByText, ',');
+        const auto mapTokens = mqtt::helper::split(mapText, '|');
         for (const auto& mapToken : mapTokens) {
             parseMapToken(mapToken, item);
         }
@@ -294,7 +274,7 @@ bool tryLoadSerialDeviceConfigFromIni(
 
     if (const auto trace = document.lastValue("serialdevice", "trace"); trace.has_value()) {
         std::string warningText{};
-        const std::string traceValue = trimCopy(*trace);
+        const std::string traceValue = mqtt::helper::trim(*trace);
         if (!parseTraceLevel(traceValue, parsed.traceLevel, warningText)) {
             document.reportFallback("serialdevice", "trace", traceValue, parsed.traceLevel, warningText);
         }

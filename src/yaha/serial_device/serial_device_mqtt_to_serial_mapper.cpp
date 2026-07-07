@@ -1,9 +1,9 @@
 #include "yaha/serial_device/serial_device_mqtt_to_serial_mapper.h"
 
+#include "helper/string_helper.h"
 #include "yaha/serial_device/serial_device_wire_serializer.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cstdint>
 #include <optional>
 #include <stdexcept>
@@ -15,21 +15,13 @@ namespace {
 
 constexpr std::int64_t k_serial_value_max{0xFFFF};
 
-[[nodiscard]] std::string toLowerCopy(const std::string& valueText) {
-    std::string outputText = valueText;
-    std::ranges::transform(outputText, outputText.begin(), [](const unsigned char characterValue) {
-        return static_cast<char>(std::tolower(characterValue));
-    });
-    return outputText;
-}
-
 [[nodiscard]] bool endsWithIgnoreCase(const std::string& inputValue, const std::string& suffixValue) {
     if (suffixValue.size() > inputValue.size()) {
         return false;
     }
 
     const std::string inputTail = inputValue.substr(inputValue.size() - suffixValue.size());
-    return toLowerCopy(inputTail) == toLowerCopy(suffixValue);
+    return mqtt::helper::toLower(inputTail) == mqtt::helper::toLower(suffixValue);
 }
 
 [[nodiscard]] bool startsWithIgnoreCase(const std::string& inputValue, const std::string& prefixValue) {
@@ -38,7 +30,7 @@ constexpr std::int64_t k_serial_value_max{0xFFFF};
     }
 
     const std::string inputHead = inputValue.substr(0U, prefixValue.size());
-    return toLowerCopy(inputHead) == toLowerCopy(prefixValue);
+    return mqtt::helper::toLower(inputHead) == mqtt::helper::toLower(prefixValue);
 }
 
 [[nodiscard]] std::optional<std::int64_t> tryParseInteger(const std::string& valueText) {
@@ -77,9 +69,9 @@ constexpr std::int64_t k_serial_value_max{0xFFFF};
             continue;
         }
 
-        const std::string loweredInput = toLowerCopy(inputValue);
+        const std::string loweredInput = mqtt::helper::toLower(inputValue);
         for (const auto& candidateEntry : definition.map) {
-            if (toLowerCopy(candidateEntry.first) == loweredInput) {
+            if (mqtt::helper::toLower(candidateEntry.first) == loweredInput) {
                 return static_cast<std::int64_t>(candidateEntry.second);
             }
         }
@@ -89,7 +81,7 @@ constexpr std::int64_t k_serial_value_max{0xFFFF};
 }
 
 [[nodiscard]] std::optional<std::int64_t> tryFallbackBooleanMap(const std::string& inputValue) {
-    const std::string loweredInput = toLowerCopy(inputValue);
+    const std::string loweredInput = mqtt::helper::toLower(inputValue);
     if (loweredInput == "on" || loweredInput == "true" || loweredInput == "1") {
         return 1;
     }

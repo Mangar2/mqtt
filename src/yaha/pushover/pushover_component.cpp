@@ -1,9 +1,9 @@
 #include "yaha/pushover/pushover_component.h"
 
+#include "helper/string_helper.h"
 #include "json/json_value.h"
 
 #include <cmath>
-#include <cctype>
 #include <exception>
 #include <format>
 #include <iostream>
@@ -35,22 +35,6 @@ void logHttpError(const int statusCode, const std::string& reasonText, const std
               << " httpStatus=" << statusCode
               << " reason=" << reasonText
               << '\n' << std::flush;
-}
-
-[[nodiscard]] std::string trimCopy(const std::string_view textValue) {
-    std::size_t beginIndex = 0U;
-    while (beginIndex < textValue.size()
-           && std::isspace(static_cast<unsigned char>(textValue[beginIndex])) != 0) {
-        beginIndex += 1U;
-    }
-
-    std::size_t endIndex = textValue.size();
-    while (endIndex > beginIndex
-           && std::isspace(static_cast<unsigned char>(textValue[endIndex - 1U])) != 0) {
-        endIndex -= 1U;
-    }
-
-    return std::string{textValue.substr(beginIndex, endIndex - beginIndex)};
 }
 
 [[nodiscard]] std::optional<mqtt::json::JsonValue> tryParseJsonObject(const std::string& payloadText) {
@@ -276,7 +260,7 @@ std::string PushoverComponent::buildResultReason(
         "pushover status({}) = {} errors = {}",
         device,
         parsedStatus,
-        trimCopy(parsedErrors));
+        mqtt::helper::trim(parsedErrors));
 }
 
 Message PushoverComponent::buildStatusMessage(

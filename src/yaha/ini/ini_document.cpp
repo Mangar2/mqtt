@@ -1,5 +1,7 @@
 #include "yaha/ini/ini_document.h"
 
+#include "helper/string_helper.h"
+
 #include <cerrno>
 #include <charconv>
 #include <cctype>
@@ -31,26 +33,6 @@ void logConfigFallbackWarningToStderr(
               << " default='" << defaultValue << "'"
               << " reason='" << reasonText << "'"
               << '\n' << std::flush;
-}
-
-std::string trimCopy(std::string value) {
-    std::size_t beginIndex = 0U;
-    while (beginIndex < value.size() &&
-           std::isspace(static_cast<unsigned char>(value[beginIndex])) != 0) {
-        beginIndex += 1U;
-    }
-
-    if (beginIndex == value.size()) {
-        return "";
-    }
-
-    std::size_t endIndex = value.size();
-    while (endIndex > beginIndex &&
-           std::isspace(static_cast<unsigned char>(value[endIndex - 1U])) != 0) {
-        endIndex -= 1U;
-    }
-
-    return value.substr(beginIndex, endIndex - beginIndex);
 }
 
 std::string stripComment(std::string line) {
@@ -145,13 +127,13 @@ IniDocument IniDocument::loadFromFile(
     while (std::getline(input, line)) {
         lineNumber += 1U;
 
-        std::string cleaned = trimCopy(stripComment(std::move(line)));
+        std::string cleaned = mqtt::helper::trim(stripComment(std::move(line)));
         if (cleaned.empty()) {
             continue;
         }
 
         if (cleaned.front() == '[' && cleaned.back() == ']') {
-            currentSection = trimCopy(cleaned.substr(1U, cleaned.size() - 2U));
+            currentSection = mqtt::helper::trim(cleaned.substr(1U, cleaned.size() - 2U));
             if (currentSection.empty()) {
                 throw std::runtime_error{std::format(
                     "invalid config syntax in '{}' at line {}: empty section name",
@@ -173,8 +155,8 @@ IniDocument IniDocument::loadFromFile(
                 cleaned)};
         }
 
-        const std::string key = trimCopy(cleaned.substr(0U, delimiterPosition));
-        const std::string value = trimCopy(cleaned.substr(delimiterPosition + 1U));
+        const std::string key = mqtt::helper::trim(cleaned.substr(0U, delimiterPosition));
+        const std::string value = mqtt::helper::trim(cleaned.substr(delimiterPosition + 1U));
         if (key.empty()) {
             throw std::runtime_error{std::format(
                 "invalid config syntax in '{}' at line {}: empty key",

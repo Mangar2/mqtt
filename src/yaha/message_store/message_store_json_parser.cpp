@@ -1,9 +1,9 @@
 #include "yaha/message_store/message_store_json_parser.h"
 
+#include "helper/string_helper.h"
 #include "json/json_value.h"
 #include "yaha/message_store/iso_timestamp_parser.h"
 
-#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <limits>
@@ -14,20 +14,6 @@ namespace {
 
 constexpr std::uint32_t k_default_level_amount{1U};
 
-std::string trim(const std::string& valueText) {
-    std::size_t beginIndex = 0U;
-    while (beginIndex < valueText.size() && std::isspace(static_cast<unsigned char>(valueText[beginIndex])) != 0) {
-        beginIndex += 1U;
-    }
-
-    std::size_t endIndex = valueText.size();
-    while (endIndex > beginIndex && std::isspace(static_cast<unsigned char>(valueText[endIndex - 1U])) != 0) {
-        endIndex -= 1U;
-    }
-
-    return valueText.substr(beginIndex, endIndex - beginIndex);
-}
-
 std::string normalizeTopicPrefixForTree(const std::string& topicPrefix) {
     if (!topicPrefix.empty() && topicPrefix.front() == '/') {
         return topicPrefix.substr(1U);
@@ -35,15 +21,8 @@ std::string normalizeTopicPrefixForTree(const std::string& topicPrefix) {
     return topicPrefix;
 }
 
-std::string toLower(std::string valueText) {
-    for (char& charValue : valueText) {
-        charValue = static_cast<char>(std::tolower(static_cast<unsigned char>(charValue)));
-    }
-    return valueText;
-}
-
 bool tryParseLegacyBoolToken(const std::string& tokenRaw, bool& outputValue) {
-    const std::string tokenText = toLower(trim(tokenRaw));
+    const std::string tokenText = mqtt::helper::toLower(mqtt::helper::trim(tokenRaw));
     if (tokenText == "1" || tokenText == "true" || tokenText == "yes" || tokenText == "on") {
         outputValue = true;
         return true;
@@ -58,7 +37,7 @@ bool tryParseLegacyBoolToken(const std::string& tokenRaw, bool& outputValue) {
 bool tryParseUnsignedValue(const std::string& valueText,
                            const std::uint32_t defaultValue,
                            std::uint32_t& outputValue) {
-    const std::string cleanedText = trim(valueText);
+    const std::string cleanedText = mqtt::helper::trim(valueText);
     if (cleanedText.empty()) {
         outputValue = defaultValue;
         return true;
@@ -252,7 +231,7 @@ bool parseSensorPostBody(const std::string& body, SensorPostRequest& output) {
     }
 
     if (rootObject.contains("nodes")) {
-        const std::string nodesText = trim(rootObject.at("nodes").stringify());
+        const std::string nodesText = mqtt::helper::trim(rootObject.at("nodes").stringify());
         output.hasNodes = !nodesText.empty() && nodesText != "[]" && nodesText != "null";
         output.nodesJson = output.hasNodes ? nodesText : std::string{};
     }

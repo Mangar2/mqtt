@@ -1,5 +1,7 @@
 #include "yaha/automation/expression_evaluator.h"
 
+#include "helper/string_helper.h"
+
 #include <cmath>
 #include <map>
 #include <optional>
@@ -142,10 +144,10 @@ private:
 
     [[nodiscard]] static std::optional<EvaluatedNode> evalIdentifierNode(const IdentifierNode& identifierNode) {
         const std::string identifierName = identifierNode.name;
-        if (toLower(identifierName) == "true") {
+        if (mqtt::helper::toLower(identifierName) == "true") {
             return EvaluatedNode{.value = RuntimeValue{true}, .reason = "constant true"};
         }
-        if (toLower(identifierName) == "false") {
+        if (mqtt::helper::toLower(identifierName) == "false") {
             return EvaluatedNode{.value = RuntimeValue{false}, .reason = "constant false"};
         }
         return EvaluatedNode{.value = RuntimeValue{identifierName}, .reason = identifierName};

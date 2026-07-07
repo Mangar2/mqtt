@@ -1,17 +1,15 @@
 #include "yaha/rs485_interface_client/rs485_interface_client_app.h"
 
+#include "helper/string_helper.h"
 #include "yaha/mqtt_client/broker_transport.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 #include "yaha/error_handling/yaha_error.h"
 #include "yaha/message/message_log_service.h"
 #include "yaha/rs485_interface/rs485_interface_component.h"
 
-#include <algorithm>
-#include <cctype>
 #include <cstdint>
 #include <format>
 #include <iostream>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -20,34 +18,6 @@
 namespace yaha {
 namespace {
 
-[[nodiscard]] std::string trimCopy(std::string value) {
-    const auto notSpace = [](const unsigned char character) {
-        return !std::isspace(character);
-    };
-
-    value.erase(value.begin(), std::ranges::find_if(value, [&](const char characterValue) {
-        return notSpace(static_cast<unsigned char>(characterValue));
-    }));
-
-    value.erase(
-        std::ranges::find_if(value.rbegin(), value.rend(), [&](const char characterValue) {
-            return notSpace(static_cast<unsigned char>(characterValue));
-        }).base(),
-        value.end());
-
-    return value;
-}
-
-[[nodiscard]] std::vector<std::string> split(std::string text, const char delimiter) {
-    std::vector<std::string> tokens{};
-    std::stringstream stream{std::move(text)};
-    std::string part{};
-    while (std::getline(stream, part, delimiter)) {
-        tokens.push_back(trimCopy(part));
-    }
-    return tokens;
-}
-
 [[nodiscard]] bool requireNonEmptyString(
     const IniDocument& document,
     const std::string_view sectionName,
@@ -55,7 +25,7 @@ namespace {
     std::string& output,
     std::string& errorMessage) {
     const auto value = document.lastValue(sectionName, keyName);
-    if (!value.has_value() || trimCopy(*value).empty()) {
+    if (!value.has_value() || mqtt::helper::trim(*value).empty()) {
         errorMessage = std::format(
             "missing required setting '{}.{}'",
             sectionName,
@@ -63,7 +33,7 @@ namespace {
         return false;
     }
 
-    output = trimCopy(*value);
+    output = mqtt::helper::trim(*value);
     return true;
 }
 
@@ -110,13 +80,13 @@ namespace {
 
     std::unordered_map<std::string, Rs485TopicMapping> parsed{};
     for (const auto& entry : section->entries()) {
-        const std::string topic = trimCopy(entry.key);
+        const std::string topic = mqtt::helper::trim(entry.key);
         if (topic.empty()) {
             errorMessage = "invalid entry in [rs485interface.topics] (topic key must not be empty)";
             return false;
         }
 
-        const auto parts = split(entry.value, ',');
+        const auto parts = mqtt::helper::split(entry.value, ',');
         if (parts.size() != 3U) {
             errorMessage = std::format(
                 "invalid mapping for topic '{}' in [rs485interface.topics] "
@@ -168,14 +138,14 @@ struct ParsedInterfaceSegments {
 
 [[nodiscard]] ParsedInterfaceSegments extractInterfaceSegments(const std::string& rawValue) {
     ParsedInterfaceSegments parsed{};
-    const auto segments = split(rawValue, ';');
+    const auto segments = mqtt::helper::split(rawValue, ';');
     for (const auto& segment : segments) {
         const auto equalPos = segment.find('=');
         if (equalPos == std::string::npos) {
             continue;
         }
-        const std::string name = trimCopy(segment.substr(0U, equalPos));
-        const std::string value = trimCopy(segment.substr(equalPos + 1U));
+        const std::string name = mqtt::helper::trim(segment.substr(0U, equalPos));
+        const std::string value = mqtt::helper::trim(segment.substr(equalPos + 1U));
         if (name == "usedby") {
             parsed.usedByText = value;
         } else if (name == "map") {
@@ -190,7 +160,7 @@ struct ParsedInterfaceSegments {
     const std::string& usedByText,
     Rs485InterfaceDefinition& output,
     std::string& errorMessage) {
-    const auto usedByTokens = split(usedByText, ',');
+    const auto usedByTokens = mqtt::helper::split(usedByText, ',');
     for (const auto& token : usedByTokens) {
         if (token.size() != 1U) {
             errorMessage = std::format(
@@ -210,7 +180,7 @@ struct ParsedInterfaceSegments {
     const std::string& mapText,
     Rs485InterfaceDefinition& output,
     std::string& errorMessage) {
-    const auto mapTokens = split(mapText, '|');
+    const auto mapTokens = mqtt::helper::split(mapText, '|');
     for (const auto& token : mapTokens) {
         const auto colonPos = token.find(':');
         if (colonPos == std::string::npos) {
@@ -222,8 +192,8 @@ struct ParsedInterfaceSegments {
             return false;
         }
 
-        const std::string mapKey = trimCopy(token.substr(0U, colonPos));
-        const std::string mapValueText = trimCopy(token.substr(colonPos + 1U));
+        const std::string mapKey = mqtt::helper::trim(token.substr(0U, colonPos));
+        const std::string mapValueText = mqtt::helper::trim(token.substr(colonPos + 1U));
         if (mapKey.empty()) {
             errorMessage = std::format(
                 "invalid map key for interface '{}' in [rs485interface.interfaces]",
@@ -251,7 +221,7 @@ struct ParsedInterfaceSegments {
     std::string& interfaceName,
     Rs485InterfaceDefinition& output,
     std::string& errorMessage) {
-    interfaceName = trimCopy(entry.key);
+    interfaceName = mqtt::helper::trim(entry.key);
     if (interfaceName.empty()) {
         errorMessage = "invalid key in [rs485interface.interfaces] (interface name must not be empty)";
         return false;
@@ -330,7 +300,7 @@ struct ParsedInterfaceSegments {
             return false;
         }
 
-        const std::string topicSuffix = trimCopy(entry.value);
+        const std::string topicSuffix = mqtt::helper::trim(entry.value);
         if (topicSuffix.empty()) {
             errorMessage = std::format(
                 "invalid value for [{}].{} (topic suffix must not be empty)",
@@ -358,7 +328,7 @@ struct ParsedInterfaceSegments {
 
     std::unordered_map<std::string, std::uint8_t> parsed{};
     for (const auto& entry : section->entries()) {
-        const std::string topicPrefix = trimCopy(entry.key);
+        const std::string topicPrefix = mqtt::helper::trim(entry.key);
         if (topicPrefix.empty()) {
             errorMessage = "invalid key in [rs485interface.addresses] (topic prefix must not be empty)";
             return false;
@@ -461,7 +431,7 @@ Rs485InterfaceConfig loadRs485InterfaceConfigFromIni(const IniDocument& document
     }
 
     if (const auto trace = document.lastValue("rs485interface", "trace"); trace.has_value()) {
-        if (!parseTraceLevel(trimCopy(*trace), parsed.traceLevel, errorMessage)) {
+        if (!parseTraceLevel(mqtt::helper::trim(*trace), parsed.traceLevel, errorMessage)) {
             document.reportFallback("rs485interface", "trace", *trace, parsed.traceLevel, errorMessage);
         }
     }

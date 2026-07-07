@@ -5,7 +5,8 @@
 
 #include "broker/monitoring/trace_runtime_command.h"
 
-#include <cctype>
+#include "helper/string_helper.h"
+
 #include <string>
 #include <string_view>
 
@@ -19,25 +20,9 @@ namespace {
   return std::string(payload.data.begin(), payload.data.end());
 }
 
-[[nodiscard]] std::string trim_copy(std::string_view text) {
-  std::size_t start_index = 0U;
-  while (start_index < text.size() &&
-         std::isspace(static_cast<unsigned char>(text[start_index])) != 0) {
-    ++start_index;
-  }
-
-  std::size_t end_index = text.size();
-  while (end_index > start_index &&
-         std::isspace(static_cast<unsigned char>(text[end_index - 1U])) != 0) {
-    --end_index;
-  }
-
-  return std::string(text.substr(start_index, end_index - start_index));
-}
-
 [[nodiscard]] bool parse_module_override_payload(std::string_view payload,
                                                  bool &enable_trace) {
-  const std::string normalised = trim_copy(payload);
+  const std::string normalised = mqtt::helper::trim(payload);
   if (normalised == "trace" || normalised == "on") {
     enable_trace = true;
     return true;
@@ -63,7 +48,7 @@ void apply_trace_runtime_command(StructuredTracer &tracer,
 
   if (topic_name == k_trace_global_topic) {
     const std::optional<TraceLevel> parsed_level =
-        parse_trace_level(trim_copy(payload_text));
+        parse_trace_level(mqtt::helper::trim(payload_text));
     if (parsed_level.has_value()) {
       tracer.set_global_level(*parsed_level);
     }

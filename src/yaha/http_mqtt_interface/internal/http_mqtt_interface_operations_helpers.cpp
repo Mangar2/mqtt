@@ -1,5 +1,6 @@
 #include "yaha/http_mqtt_interface/internal/http_mqtt_interface_operations_internal.h"
 
+#include "helper/string_helper.h"
 #include "yaha/http_mqtt_interface/http_mqtt_interface_contracts.h"
 #include "json/json_value.h"
 
@@ -16,29 +17,6 @@
 #include <vector>
 
 namespace yaha::http_mqtt_ops_internal {
-
-std::string trimCopy(const std::string_view valueText) {
-    std::size_t firstIndex = 0U;
-    while (firstIndex < valueText.size() && std::isspace(static_cast<unsigned char>(valueText[firstIndex])) != 0) {
-        ++firstIndex;
-    }
-
-    std::size_t lastIndex = valueText.size();
-    while (lastIndex > firstIndex && std::isspace(static_cast<unsigned char>(valueText[lastIndex - 1U])) != 0) {
-        --lastIndex;
-    }
-
-    return std::string{valueText.substr(firstIndex, lastIndex - firstIndex)};
-}
-
-std::string toLowerCopy(const std::string_view valueText) {
-    std::string loweredText{};
-    loweredText.reserve(valueText.size());
-    for (const char currentChar : valueText) {
-        loweredText.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(currentChar))));
-    }
-    return loweredText;
-}
 
 std::string toUpperCopy(const std::string_view valueText) {
     std::string upperText{};
@@ -103,7 +81,7 @@ std::string reasonToJson(const Message& messageInput) {
 
 namespace {
 [[nodiscard]] std::optional<mqtt::json::JsonValue> tryParseObjectValue(const std::string_view jsonText) {
-    auto parsedValue = mqtt::json::JsonValue::try_parse(trimCopy(jsonText));
+    auto parsedValue = mqtt::json::JsonValue::try_parse(mqtt::helper::trim(jsonText));
     if (!parsedValue.has_value() || !parsedValue->is_object()) {
         return std::nullopt;
     }
@@ -159,11 +137,11 @@ std::optional<std::string> extractRawToken(
     }
 
     const std::string tokenText = parsedObject->at(keyName).stringify();
-    return trimCopy(tokenText);
+    return mqtt::helper::trim(tokenText);
 }
 
 std::optional<Value> parseJsonValueToken(const std::string_view tokenInput) {
-    const auto parsedToken = mqtt::json::JsonValue::try_parse(trimCopy(tokenInput));
+    const auto parsedToken = mqtt::json::JsonValue::try_parse(mqtt::helper::trim(tokenInput));
     if (!parsedToken.has_value()) {
         return std::nullopt;
     }
@@ -188,7 +166,7 @@ std::optional<Value> parseJsonValueToken(const std::string_view tokenInput) {
 }
 
 std::optional<ReasonList> parseReasonArray(const std::string_view arrayText) {
-    const auto parsedArray = mqtt::json::JsonValue::try_parse(trimCopy(arrayText));
+    const auto parsedArray = mqtt::json::JsonValue::try_parse(mqtt::helper::trim(arrayText));
     if (!parsedArray.has_value() || !parsedArray->is_array()) {
         return std::nullopt;
     }
@@ -227,7 +205,7 @@ void appendReasonsPreservingOrder(
 }
 
 std::optional<Qos> parseQosField(const std::string_view textInput) {
-    const std::string trimmedText = trimCopy(textInput);
+    const std::string trimmedText = mqtt::helper::trim(textInput);
     if (trimmedText.empty()) {
         return std::nullopt;
     }
@@ -246,7 +224,7 @@ std::optional<Qos> parseQosField(const std::string_view textInput) {
 }
 
 std::optional<bool> parseRetainField(const std::string_view textInput) {
-    const std::string loweredText = toLowerCopy(trimCopy(textInput));
+    const std::string loweredText = mqtt::helper::toLower(mqtt::helper::trim(textInput));
     if (loweredText.empty()) {
         return std::nullopt;
     }
@@ -285,7 +263,7 @@ std::string serializeUInt8Array(const std::vector<std::uint8_t>& valuesInput) {
 }
 
 std::vector<int> parseIntegerArrayPayload(const std::string_view payloadText) {
-    const auto parsedRoot = mqtt::json::JsonValue::try_parse(trimCopy(payloadText));
+    const auto parsedRoot = mqtt::json::JsonValue::try_parse(mqtt::helper::trim(payloadText));
     if (!parsedRoot.has_value()) {
         throw std::runtime_error{"result payload must be a JSON array"};
     }

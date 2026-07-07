@@ -138,7 +138,7 @@ python3 test/check_duplicate_functions.py
   - src/yaha/automation/expression_evaluator_helpers.cpp:331
   - src/yaha/automation_client/rule_runtime_engine.cpp:56
 
-- [ ] `logConfigFallbackWarning` (13 occurrences)
+- [X] `logConfigFallbackWarning` (13 occurrences)
   - src/yaha/automation_client/automation_client_app.cpp:53
   - src/yaha/broker_connector_client/broker_connector_client_app.cpp:24
   - src/yaha/file_store_client/file_store_client_app.cpp:13
@@ -284,9 +284,9 @@ python3 test/check_duplicate_functions.py
   - src/yaha/opensensemap_client/opensensemap_client_app.cpp:205
   - src/yaha/pushover_client/pushover_client_app.cpp:39
 
-- [ ] `split` (2 occurrences)
-  - src/yaha/rs485_interface_client/rs485_interface_client_app.cpp:39
-  - src/yaha/serial_device_client/serial_device_client_config.cpp:25
+- [x] `split` (2 occurrences) — merged into `mqtt::helper::split(std::string_view, char)` in `src/helper/string_helper.h`. Call sites migrated:
+  - src/yaha/rs485_interface_client/rs485_interface_client_app.cpp (was :39)
+  - src/yaha/serial_device_client/serial_device_client_config.cpp (was :25)
 
 - [ ] `splitTopic` (2 occurrences)
   - src/yaha/mqtt_client/mqtt_client.cpp:28
@@ -311,19 +311,19 @@ python3 test/check_duplicate_functions.py
   - src/yaha/automation/expression_evaluator_helpers.cpp:259
   - src/yaha/automation_client/rule_runtime_engine.cpp:40
 
-- [ ] `toLower` (6 occurrences)
-  - src/yaha/automation/expression_evaluator_helpers.cpp:294
-  - src/yaha/broker_connector/source_http_adapter.cpp:46
-  - src/yaha/message_store/message_store.cpp:66
-  - src/yaha/message_store/message_store_json_parser.cpp:36
-  - src/yaha/zwave/zwave_service_component.cpp:71
-  - src/yaha/zwave_client/openzwave_write_dispatcher.cpp:56
-
-- [ ] `toLowerCopy` (4 occurrences)
-  - src/yaha/http_mqtt_interface/http_mqtt_interface_contracts.cpp:23
-  - src/yaha/http_mqtt_interface/internal/http_mqtt_interface_operations_helpers.cpp:32
-  - src/yaha/rs485_interface/rs485_topic_mapper.cpp:19
-  - src/yaha/serial_device/serial_device_mqtt_to_serial_mapper.cpp:16
+- [x] `toLower` (6 occurrences) + `toLowerCopy` (4 occurrences) — merged into `mqtt::helper::toLower(std::string_view)` in `src/helper/string_helper.h`. All 10 call sites migrated:
+  - src/yaha/automation/expression_evaluator_helpers.cpp (was :294)
+  - src/yaha/automation/expression_evaluator.cpp (extra call site found during migration, not in original scan)
+  - src/yaha/broker_connector/source_http_adapter.cpp (was :46)
+  - src/yaha/message_store/message_store.cpp (was :66)
+  - src/yaha/message_store/message_store_json_parser.cpp (was :36)
+  - src/yaha/zwave/zwave_service_component.cpp (was :71)
+  - src/yaha/zwave_client/openzwave_write_dispatcher.cpp (was :56)
+  - src/yaha/http_mqtt_interface/http_mqtt_interface_contracts.cpp (was :23, toLowerCopy)
+  - src/yaha/http_mqtt_interface/internal/http_mqtt_interface_operations_helpers.cpp (was :32, toLowerCopy)
+  - src/yaha/rs485_interface/rs485_topic_mapper.cpp (was :19, toLowerCopy)
+  - src/yaha/serial_device/serial_device_mqtt_to_serial_mapper.cpp (was :16, toLowerCopy)
+  - Not merged (out of scope, class member functions, not free functions): `FileStore::toLower` (src/yaha/file_store/file_store.cpp), `Rs485InterfaceComponent::toLowerCopy` (src/yaha/rs485_interface/rs485_interface_component.cpp).
 
 - [ ] `to_fd` (4 occurrences)
   - src/client/connection_negotiator.cpp:41
@@ -342,24 +342,22 @@ python3 test/check_duplicate_functions.py
   - src/broker/monitoring/trace_level.cpp:12
   - src/test_client/test_client_profile.cpp:200
 
-- [ ] `trim` (4 occurrences)
-  - src/broker/transport/websocket_handshake.cpp:157
-  - src/yaha/broker_connector/source_http_adapter.cpp:32
-  - src/yaha/message_store/message_store.cpp:52
-  - src/yaha/message_store/message_store_json_parser.cpp:15
-
-- [ ] `trimCopy` (7 occurrences)
-  - src/yaha/http_mqtt_interface/http_mqtt_interface_contracts.cpp:35
-  - src/yaha/http_mqtt_interface/internal/http_mqtt_interface_operations_helpers.cpp:18
-  - src/yaha/ini/ini_document.cpp:17
-  - src/yaha/pushover/pushover_component.cpp:38
-  - src/yaha/rs485_interface_client/rs485_interface_client_app.cpp:21
-  - src/yaha/serial_device_client/serial_device_client_config.cpp:16
-  - src/yaha/zwave_client/zwave_client_app.cpp:24
-
-- [ ] `trim_copy` (2 occurrences)
-  - src/broker/monitoring/trace_runtime_command.cpp:20
-  - src/test_client/test_client_profile.cpp:11
+- [x] `trim` (3 of 4 occurrences) + `trimCopy` (8 occurrences, 1 more than original scan) + `trim_copy` (2 occurrences) — merged into `mqtt::helper::trim(std::string_view)` in `src/helper/string_helper.h`. Call sites migrated:
+  - src/yaha/broker_connector/source_http_adapter.cpp (was :32, trim)
+  - src/yaha/message_store/message_store.cpp (was :52, trim)
+  - src/yaha/message_store/message_store_json_parser.cpp (was :15, trim)
+  - src/yaha/http_mqtt_interface/http_mqtt_interface_contracts.cpp (was :35, trimCopy)
+  - src/yaha/http_mqtt_interface/internal/http_mqtt_interface_operations_helpers.cpp (was :18, trimCopy)
+  - src/yaha/http_mqtt_interface/internal/http_mqtt_interface_operations_compatibility.cpp (extra call site via `using namespace http_mqtt_ops_internal`, not in original scan)
+  - src/yaha/ini/ini_document.cpp (was :17, trimCopy)
+  - src/yaha/pushover/pushover_component.cpp (was :38, trimCopy)
+  - src/yaha/rs485_interface_client/rs485_interface_client_app.cpp (was :21, trimCopy)
+  - src/yaha/serial_device_client/serial_device_client_config.cpp (was :16, trimCopy)
+  - src/yaha/zwave_client/zwave_client_app.cpp (was :24, trimCopy)
+  - src/yaha/message/message_payload_codec.cpp:12 (extra trimCopy, not in original scan)
+  - src/broker/monitoring/trace_runtime_command.cpp (was :20, trim_copy)
+  - src/test_client/test_client_profile.cpp (was :11, trim_copy)
+  - NOT merged (intentionally kept separate): `trim` in src/broker/transport/websocket_handshake.cpp:160. Returns a non-allocating `std::string_view` and trims only HTTP OWS characters (space/tab leading, space/tab/CR/LF trailing) on a hot WebSocket-handshake parsing path. Forcing it onto the allocating generic `trim()` would add an allocation to a hot path and narrow/change trimmed-character semantics. See `src/helper/SPEC.md` "Out of scope". Also not merged: `ConfigLoader::trim` (src/broker/core/config_loader.cpp, class member, not a free function).
 
 - [ ] `tryLoadSubscriptionsFromIni` (2 occurrences)
   - src/yaha/mqtt_client/mqtt_client_config.cpp:127

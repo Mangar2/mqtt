@@ -1,5 +1,7 @@
 #include "yaha/automation/expression_evaluator_helpers.h"
 
+#include "helper/string_helper.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -293,13 +295,6 @@ struct IsoInstantComponents {
 
 } // namespace
 
-std::string toLower(std::string textValue) {
-    std::ranges::transform(textValue, textValue.begin(), [](const unsigned char charValue) {
-        return static_cast<char>(std::tolower(charValue));
-    });
-    return textValue;
-}
-
 bool parseDouble(const std::string& tokenText, double* parsedValue) {
     std::size_t parsedLength = 0U;
     try {
@@ -474,7 +469,7 @@ bool toBool(const RuntimeValue& runtimeValue) {
         return std::fabs(std::get<double>(runtimeValue)) > k_numeric_epsilon;
     }
     if (std::holds_alternative<std::string>(runtimeValue)) {
-        const std::string loweredValue = toLower(std::get<std::string>(runtimeValue));
+        const std::string loweredValue = mqtt::helper::toLower(std::get<std::string>(runtimeValue));
         if (loweredValue == "" || loweredValue == "false" || loweredValue == "off" || loweredValue == "0") {
             return false;
         }

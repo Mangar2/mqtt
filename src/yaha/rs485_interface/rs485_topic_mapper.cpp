@@ -1,7 +1,8 @@
 #include "yaha/rs485_interface/rs485_topic_mapper.h"
 
+#include "helper/string_helper.h"
+
 #include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -18,19 +19,12 @@ constexpr std::uint16_t k_switch_off{0x2000U};
 constexpr double k_u16_max_as_double{65535.0};
 constexpr double k_integer_epsilon{1e-9};
 
-[[nodiscard]] std::string toLowerCopy(std::string text) {
-    std::ranges::transform(text, text.begin(), [](unsigned char characterValue) {
-        return static_cast<char>(std::tolower(characterValue));
-    });
-    return text;
-}
-
 [[nodiscard]] bool startsWithCaseInsensitive(const std::string& text, const std::string& prefix) {
     if (prefix.size() > text.size()) {
         return false;
     }
 
-    return toLowerCopy(text.substr(0U, prefix.size())) == toLowerCopy(prefix);
+    return mqtt::helper::toLower(text.substr(0U, prefix.size())) == mqtt::helper::toLower(prefix);
 }
 
 [[nodiscard]] bool endsWithCaseInsensitive(const std::string& text, const std::string& suffix) {
@@ -38,7 +32,7 @@ constexpr double k_integer_epsilon{1e-9};
         return false;
     }
 
-    return toLowerCopy(text.substr(text.size() - suffix.size())) == toLowerCopy(suffix);
+    return mqtt::helper::toLower(text.substr(text.size() - suffix.size())) == mqtt::helper::toLower(suffix);
 }
 
 [[nodiscard]] bool isOnPayload(const Value& value) {
@@ -185,7 +179,7 @@ std::uint16_t Rs485TopicMapper::resolveValueByCommandAndPayload(
         return requireUInt16Integer(parsedNumber, textValue);
     }
 
-    const std::string normalizedValue = toLowerCopy(textValue);
+    const std::string normalizedValue = mqtt::helper::toLower(textValue);
     for (const auto& [interfaceName, definition] : config_.interfaces) {
         (void)interfaceName;
         const bool commandUsedByInterface =

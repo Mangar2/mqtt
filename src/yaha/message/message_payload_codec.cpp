@@ -1,6 +1,7 @@
 #include "yaha/message/message_payload_codec.h"
 
-#include <cctype>
+#include "helper/string_helper.h"
+
 #include <cmath>
 
 #include "json/json_value.h"
@@ -8,22 +9,6 @@
 namespace yaha {
 
 namespace {
-
-[[nodiscard]] std::string trimCopy(const std::string& textValue) {
-    std::size_t beginIndex = 0U;
-    while (beginIndex < textValue.size()
-           && std::isspace(static_cast<unsigned char>(textValue[beginIndex])) != 0) {
-        ++beginIndex;
-    }
-
-    std::size_t endIndex = textValue.size();
-    while (endIndex > beginIndex
-           && std::isspace(static_cast<unsigned char>(textValue[endIndex - 1U])) != 0) {
-        --endIndex;
-    }
-
-    return textValue.substr(beginIndex, endIndex - beginIndex);
-}
 
 [[nodiscard]] std::string quoteJsonString(const std::string_view textValue) {
     return mqtt::json::JsonValue{std::string{textValue}}.stringify();
@@ -153,7 +138,7 @@ std::string buildEnvelopePayload(const Message& messageValue) {
 }
 
 std::optional<Value> parseValueToken(const std::string_view valueToken) {
-    const std::string tokenText = trimCopy(std::string{valueToken});
+    const std::string tokenText = mqtt::helper::trim(std::string{valueToken});
     if (tokenText.empty()) {
         return std::nullopt;
     }
@@ -170,7 +155,7 @@ std::optional<Value> parseValueToken(const std::string_view valueToken) {
 }
 
 std::optional<ReasonList> parseReasonArray(const std::string_view reasonArrayToken) {
-    const std::string reasonArrayText = trimCopy(std::string{reasonArrayToken});
+    const std::string reasonArrayText = mqtt::helper::trim(std::string{reasonArrayToken});
 
     const auto parsedValue = mqtt::json::JsonValue::try_parse(reasonArrayText);
     if (!parsedValue.has_value()) {

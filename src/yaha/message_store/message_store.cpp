@@ -4,13 +4,12 @@
 #include "yaha/message/message_payload_codec.h"
 #include "yaha/message_store/iso_timestamp_parser.h"
 
+#include "helper/string_helper.h"
 #include "httplib.h"
 #include "json/json_value.h"
 #include "yaha/error_handling/yaha_error.h"
 
-#include <algorithm>
 #include <charconv>
-#include <cctype>
 #include <cmath>
 #include <ctime>
 #include <cstdlib>
@@ -49,27 +48,6 @@ void applyStoreCorsHeaders(httplib::Response& response, const bool includeMaxAge
     if (includeMaxAge) {
         response.set_header("Access-Control-Max-Age", "86400");
     }
-}
-
-std::string trim(const std::string& value) {
-    std::size_t begin = 0U;
-    while (begin < value.size() && std::isspace(static_cast<unsigned char>(value[begin])) != 0) {
-        begin += 1U;
-    }
-
-    std::size_t end = value.size();
-    while (end > begin && std::isspace(static_cast<unsigned char>(value[end - 1U])) != 0) {
-        end -= 1U;
-    }
-
-    return value.substr(begin, end - begin);
-}
-
-std::string toLower(std::string value) {
-    std::ranges::transform(value, value.begin(), [](unsigned char currentChar) {
-        return static_cast<char>(std::tolower(currentChar));
-    });
-    return value;
 }
 
 std::uint32_t parseUnsignedHeaderOrDefault(const std::string& text, std::uint32_t defaultValue);
@@ -252,7 +230,7 @@ std::vector<MessageSnapshot> filterSnapshotByLevel(const std::vector<MessageSnap
 }
 
 std::uint32_t parseUnsignedHeaderOrDefault(const std::string& text, std::uint32_t defaultValue) {
-    const std::string cleaned = trim(text);
+    const std::string cleaned = mqtt::helper::trim(text);
     if (cleaned.empty()) {
         return defaultValue;
     }
@@ -270,7 +248,7 @@ std::uint32_t parseUnsignedHeaderOrDefault(const std::string& text, std::uint32_
 }
 
 bool parseBoolHeaderToken(const std::string& value, bool defaultValue) {
-    const std::string normalized = toLower(trim(value));
+    const std::string normalized = mqtt::helper::toLower(mqtt::helper::trim(value));
     if (normalized.empty()) {
         return defaultValue;
     }
@@ -888,7 +866,7 @@ std::optional<std::uint32_t> MessageStore::parseCleanupDays(const Value& value) 
 }
 
 bool MessageStore::parseBoolHeaderValue(const std::string& value, bool defaultValue) {
-    const std::string cleaned = toLower(trim(value));
+    const std::string cleaned = mqtt::helper::toLower(mqtt::helper::trim(value));
     if (cleaned.empty()) {
         return defaultValue;
     }

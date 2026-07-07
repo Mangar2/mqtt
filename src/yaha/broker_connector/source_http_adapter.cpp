@@ -1,13 +1,12 @@
 #include "yaha/broker_connector/source_http_adapter.h"
 
+#include "helper/string_helper.h"
 #include "json/json_value.h"
 #include "yaha/message/message_log_service.h"
 
 #include <httplib.h>
 
-#include <algorithm>
 #include <chrono>
-#include <cctype>
 #include <charconv>
 #include <cmath>
 #include <iostream>
@@ -31,27 +30,6 @@ constexpr int k_connect_retry_count{50};
 constexpr int k_connect_retry_delay_ms{20};
 constexpr int k_suback_qos_reject_code{128};
 
-std::string trim(const std::string& text) {
-    std::size_t first = 0U;
-    while (first < text.size() && std::isspace(static_cast<unsigned char>(text[first])) != 0) {
-        ++first;
-    }
-
-    std::size_t last = text.size();
-    while (last > first && std::isspace(static_cast<unsigned char>(text[last - 1U])) != 0) {
-        --last;
-    }
-
-    return text.substr(first, last - first);
-}
-
-std::string toLower(std::string text) {
-    std::ranges::transform(text, text.begin(), [](const unsigned char value) {
-        return static_cast<char>(std::tolower(value));
-    });
-    return text;
-}
-
 [[nodiscard]] std::string buildSingleFieldJsonText(const std::string& fieldName, const std::string& fieldValue) {
     mqtt::json::JsonValue::Object rootObject{};
     rootObject.emplace(fieldName, mqtt::json::JsonValue{fieldValue});
@@ -59,7 +37,7 @@ std::string toLower(std::string text) {
 }
 
 bool parseBool(const std::string& text, const bool defaultValue) {
-    const std::string cleaned = toLower(trim(text));
+    const std::string cleaned = mqtt::helper::toLower(mqtt::helper::trim(text));
     if (cleaned.empty()) {
         return defaultValue;
     }
@@ -474,7 +452,7 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
         meta.retain = parseBool(request.get_header_value("retain"), false);
         meta.dup = parseBool(request.get_header_value("dup"), false);
         const std::string rawPacketIdHeader = request.get_header_value("packetid");
-        const std::string cleanedPacketIdHeader = trim(rawPacketIdHeader);
+        const std::string cleanedPacketIdHeader = mqtt::helper::trim(rawPacketIdHeader);
         std::uint16_t packetId = 0U;
         if (parseUnsigned16(cleanedPacketIdHeader, packetId)) {
             meta.packetId = packetId;

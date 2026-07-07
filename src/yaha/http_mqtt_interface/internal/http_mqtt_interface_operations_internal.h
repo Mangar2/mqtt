@@ -26,8 +26,6 @@ inline constexpr int k_unsubscribeNoSubscription{17};
 inline constexpr std::size_t k_escapeReservePadding{8U};
 inline constexpr std::string_view k_publishIngressReasonMessage{"Request by User"};
 
-[[nodiscard]] std::string trimCopy(std::string_view valueText);
-[[nodiscard]] std::string toLowerCopy(std::string_view valueText);
 [[nodiscard]] std::string toUpperCopy(std::string_view valueText);
 [[nodiscard]] std::string decodeTopicSlashEscapes(std::string_view topicInput);
 [[nodiscard]] std::string escapeJsonString(std::string_view valueText);

@@ -23,7 +23,7 @@ struct PacketData {
   FixedHeader fh;
   std::vector<uint8_t> payload;
 
-  ReadBuffer payload_buf() const {
+  [[nodiscard]] ReadBuffer payload_buf() const {
     return ReadBuffer{std::span<const uint8_t>{payload.data(), payload.size()}};
   }
 };

@@ -1,10 +1,10 @@
 #include "yaha/zwave/zwave_service_component.h"
+#include "helper/string_helper.h"
 #include "json/json_value.h"
 #include "yaha/message/message_payload_codec.h"
 #include "yaha/message/message_log_service.h"
 
 #include <exception>
-#include <cctype>
 #include <cmath>
 #include <iostream>
 #include <optional>
@@ -66,13 +66,6 @@ constexpr double kNumericCommandTolerance = 1e-9;
     return error;
 }
 
-[[nodiscard]] std::string toLower(std::string value) {
-    for (char& character : value) {
-        character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
-    }
-    return value;
-}
-
 [[nodiscard]] std::optional<std::string> valueAsString(const Value& value) {
     if (const auto* text = std::get_if<std::string>(&value); text != nullptr) {
         return *text;
@@ -91,7 +84,7 @@ constexpr double kNumericCommandTolerance = 1e-9;
         return std::nullopt;
     }
 
-    const std::string normalized = toLower(std::get<std::string>(value));
+    const std::string normalized = mqtt::helper::toLower(std::get<std::string>(value));
     if (normalized == "on"
         || normalized == "true"
         || normalized == "1"
@@ -398,7 +391,7 @@ void ZwaveServiceComponent::updateScanStatusFromControllerMessage(const Message&
         return;
     }
 
-    const std::string normalizedValue = toLower(*value);
+    const std::string normalizedValue = mqtt::helper::toLower(*value);
     const bool scanCompleted = normalizedValue == "scan complete"
         || normalizedValue.find("scan completed") != std::string::npos
         || normalizedValue.find("scan done") != std::string::npos;
@@ -426,7 +419,7 @@ void ZwaveServiceComponent::updateAddNodeStatusFromControllerMessage(const Messa
         return;
     }
 
-    const std::string normalizedValue = toLower(*value);
+    const std::string normalizedValue = mqtt::helper::toLower(*value);
     const bool inclusionFinished = normalizedValue.find("done") != std::string::npos
         || normalizedValue.find("complete") != std::string::npos
         || normalizedValue.find("failed") != std::string::npos

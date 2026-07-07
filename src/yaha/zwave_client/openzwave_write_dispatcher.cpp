@@ -1,9 +1,8 @@
 #include "yaha/zwave_client/openzwave_write_dispatcher.h"
 
+#include "helper/string_helper.h"
 #include "Manager.h"
 
-#include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -53,13 +52,6 @@ constexpr float kNumericTolerance = 1e-6F;
     default:
         return OpenZWave::ValueID::ValueGenre_User;
     }
-}
-
-[[nodiscard]] std::string toLower(std::string value) {
-    std::ranges::transform(value, value.begin(), [](unsigned char character) {
-        return static_cast<char>(std::tolower(character));
-    });
-    return value;
 }
 
 [[nodiscard]] OpenZWave::ValueID::ValueType toValueType(const std::string& typeName) {
@@ -239,7 +231,7 @@ OpenZwaveWriteDispatcher::WriteMetadata OpenZwaveWriteDispatcher::buildWriteMeta
     const ZwaveResolvedId& target,
     const std::uint8_t genreCode,
     const std::variant<bool, double, std::string>& value) {
-    const std::string normalizedType = toLower(target.type);
+    const std::string normalizedType = mqtt::helper::toLower(target.type);
     auto valueType = toValueType(normalizedType);
     if (valueType == OpenZWave::ValueID::ValueType_Bool && target.classId == kRuntimeSwitchMultilevelClass) {
         valueType = OpenZWave::ValueID::ValueType_Byte;

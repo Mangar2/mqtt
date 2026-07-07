@@ -38,7 +38,6 @@ void requireRuntimeErrorMessage(Callable&& callable, const std::string& expected
 } // namespace
 
 TEST_CASE("helpers_trim_escape_and_value_serialization_cover_special_cases", "[http_mqtt_interface]") {
-    REQUIRE(trimCopy("  demo\t") == "demo");
     REQUIRE(escapeJsonString("a\\b\n\r\t\"") == "a\\\\b\\n\\r\\t\\\"");
 
     const Value numericValue{12.5};

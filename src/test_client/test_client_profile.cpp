@@ -1,31 +1,13 @@
 #include "test_client/test_client_profile.h"
 
-#include <algorithm>
-#include <cctype>
-#include <filesystem>
+#include "helper/string_helper.h"
+
 #include <fstream>
 #include <limits>
 #include <stdexcept>
 
 namespace mqtt {
 namespace {
-
-[[nodiscard]] std::string trim_copy(std::string text) {
-  const auto first_it = std::find_if_not(text.begin(), text.end(),
-                                         [](unsigned char value) {
-                                           return std::isspace(value) != 0;
-                                         });
-  if (first_it == text.end()) {
-    return {};
-  }
-
-  const auto last_it = std::find_if_not(text.rbegin(), text.rend(),
-                                        [](unsigned char value) {
-                                          return std::isspace(value) != 0;
-                                        })
-                           .base();
-  return std::string(first_it, last_it);
-}
 
 [[nodiscard]] bool parse_bool(std::string_view text, std::string_view key) {
   if (text == "true" || text == "1" || text == "yes") {
@@ -95,9 +77,9 @@ parse_user_property(std::string_view value, std::string_view key_name) {
                                 "' (expected name=value)");
   }
 
-  const std::string property_name = trim_copy(std::string(value.substr(0U, equal_index)));
+  const std::string property_name = mqtt::helper::trim(std::string(value.substr(0U, equal_index)));
   const std::string property_value =
-      trim_copy(std::string(value.substr(equal_index + 1U)));
+      mqtt::helper::trim(std::string(value.substr(equal_index + 1U)));
   if (property_name.empty()) {
     throw std::invalid_argument("User property name must not be empty for key '" +
                                 std::string(key_name) + "'");
@@ -176,7 +158,7 @@ void validate_subscribe_entry_or_throw(const std::string &entry) {
         "Profile subscribe_entry must use format filter|qos|no_local|retain_as_published|retain_handling");
   }
 
-  if (trim_copy(std::string(*topic_filter)).empty()) {
+  if (mqtt::helper::trim(std::string(*topic_filter)).empty()) {
     throw std::invalid_argument("Profile subscribe_entry requires non-empty filter");
   }
 
@@ -771,7 +753,7 @@ TestClientProfile load_test_client_profile_from_file(const std::string &path) {
   uint32_t line_number = 0U;
   while (std::getline(input_stream, line)) {
     ++line_number;
-    const std::string trimmed_line = trim_copy(line);
+    const std::string trimmed_line = mqtt::helper::trim(line);
     if (trimmed_line.empty() || trimmed_line.front() == '#') {
       continue;
     }
@@ -783,9 +765,9 @@ TestClientProfile load_test_client_profile_from_file(const std::string &path) {
     }
 
     const std::string key_name =
-        trim_copy(trimmed_line.substr(0U, equal_sign_index));
+        mqtt::helper::trim(trimmed_line.substr(0U, equal_sign_index));
     const std::string value =
-        trim_copy(trimmed_line.substr(equal_sign_index + 1U));
+        mqtt::helper::trim(trimmed_line.substr(equal_sign_index + 1U));
     if (key_name.empty()) {
       throw std::invalid_argument("Invalid empty key at line " +
                                   std::to_string(line_number));

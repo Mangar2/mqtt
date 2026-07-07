@@ -1,10 +1,9 @@
 #include "yaha/http_mqtt_interface/http_mqtt_interface_contracts.h"
 
+#include "helper/string_helper.h"
 #include "json/json_value.h"
 
-#include <algorithm>
 #include <charconv>
-#include <cctype>
 #include <format>
 #include <stdexcept>
 
@@ -21,34 +20,6 @@ constexpr std::string_view k_acceptDefault{"application/json,text/plain"};
 constexpr std::string_view k_acceptCharsetUtf8{"UTF-8"};
 constexpr std::string_view k_packetIdName{"packetid"};
 constexpr unsigned int k_packetIdMaxValue{65535U};
-
-[[nodiscard]] std::string toLowerCopy(std::string_view valueText) {
-    std::string loweredText{valueText};
-    std::ranges::transform(
-        loweredText.begin(),
-        loweredText.end(),
-        loweredText.begin(),
-        [](const unsigned char characterValue) {
-            return static_cast<char>(std::tolower(characterValue));
-        });
-    return loweredText;
-}
-
-[[nodiscard]] std::string trimCopy(std::string_view valueText) {
-    std::size_t firstIndex = 0U;
-    while (firstIndex < valueText.size() &&
-           std::isspace(static_cast<unsigned char>(valueText[firstIndex])) != 0) {
-        ++firstIndex;
-    }
-
-    std::size_t lastIndex = valueText.size();
-    while (lastIndex > firstIndex &&
-           std::isspace(static_cast<unsigned char>(valueText[lastIndex - 1U])) != 0) {
-        --lastIndex;
-    }
-
-    return std::string{valueText.substr(firstIndex, lastIndex - firstIndex)};
-}
 
 } // namespace
 
@@ -69,7 +40,7 @@ HttpMqttHeaders makeStandardTextHeaders() {
 HttpMqttHeaders normalizeHeaderKeys(const HttpMqttHeaders& headersInput) {
     HttpMqttHeaders normalizedHeaders{};
     for (const auto& [keyText, valueText] : headersInput) {
-        normalizedHeaders[toLowerCopy(keyText)] = valueText;
+        normalizedHeaders[mqtt::helper::toLower(keyText)] = valueText;
     }
     return normalizedHeaders;
 }
@@ -78,7 +49,7 @@ std::optional<std::string> tryReadHeaderValue(
     const HttpMqttHeaders& headersInput,
     const std::string_view headerName) {
     const HttpMqttHeaders normalizedHeaders = normalizeHeaderKeys(headersInput);
-    const auto iterator = normalizedHeaders.find(toLowerCopy(headerName));
+    const auto iterator = normalizedHeaders.find(mqtt::helper::toLower(headerName));
     if (iterator == normalizedHeaders.end()) {
         return std::nullopt;
     }
@@ -108,7 +79,7 @@ std::string requireHeaderValue(
 }
 
 std::optional<std::uint16_t> parsePacketId(const std::string_view packetIdText) {
-    const std::string cleanedText = trimCopy(packetIdText);
+    const std::string cleanedText = mqtt::helper::trim(packetIdText);
     if (cleanedText.empty()) {
         return std::nullopt;
     }
@@ -144,7 +115,7 @@ std::string resolveVersion(const HttpMqttHeaders& headersInput, const std::strin
 }
 
 void requireJsonObjectPayload(const std::string_view payloadText, const std::string_view contextText) {
-    const auto parsedValue = mqtt::json::JsonValue::try_parse(trimCopy(payloadText));
+    const auto parsedValue = mqtt::json::JsonValue::try_parse(mqtt::helper::trim(payloadText));
     if (!parsedValue.has_value() || !parsedValue->is_object()) {
         throw std::runtime_error{std::format("{}: payload must be a JSON object", contextText)};
     }

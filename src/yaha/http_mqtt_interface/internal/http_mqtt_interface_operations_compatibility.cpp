@@ -1,5 +1,6 @@
 #include "yaha/http_mqtt_interface/internal/http_mqtt_interface_operations_internal.h"
 
+#include "helper/string_helper.h"
 #include "yaha/http_mqtt_interface/http_mqtt_interface_contracts.h"
 #include "yaha/http_mqtt_interface/http_mqtt_interface_operations.h"
 
@@ -117,7 +118,7 @@ struct CompatibilityParsedFields {
     const HttpMqttHeaders& normalizedFields) {
     CompatibilityParsedFields fieldsOutput{};
 
-    fieldsOutput.topic = trimCopy(tryReadHeaderValue(normalizedFields, "topic").value_or(""));
+    fieldsOutput.topic = mqtt::helper::trim(tryReadHeaderValue(normalizedFields, "topic").value_or(""));
 
     if (const auto extractedValue = tryReadHeaderValue(normalizedFields, "value"); extractedValue.has_value()) {
         fieldsOutput.value = Value{*extractedValue};
@@ -149,7 +150,7 @@ struct CompatibilityParsedFields {
         return true;
     }
 
-    const std::string trimmedBody = trimCopy(bodyText);
+    const std::string trimmedBody = mqtt::helper::trim(bodyText);
     if (trimmedBody.empty()) {
         return true;
     }
@@ -160,7 +161,7 @@ struct CompatibilityParsedFields {
     }
 
     if (bodyFields->topic.has_value()) {
-        parsedFields.topic = trimCopy(*bodyFields->topic);
+        parsedFields.topic = mqtt::helper::trim(*bodyFields->topic);
     }
     if (!parsedFields.value.has_value() && bodyFields->value.has_value()) {
         parsedFields.value = bodyFields->value;
