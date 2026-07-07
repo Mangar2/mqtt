@@ -158,20 +158,16 @@ dependency" section below.
 - `serial_device/serial_device_component.cpp` only calls a shared
   `escapeJsonString` for a log line (~line 610) — no structural JSON there.
 
-### 11. value_service_client — OPEN (largest gap)
+### 11. value_service_client — DONE
 
-- [ ] `value_service/value_service_component.cpp` — full hand-written parser
-  and serializer, closely mirroring what `zwave_client_app.cpp` used to have
-  before its migration:
-  - Parser: `parseJsonStringToken`, `parseJsonIntegerToken`,
-    `parseValueMapEntry`, `parseValueMapJson` (~lines 57-530).
-  - Serializer: manual `jsonText` concatenation building a flat
-    `{"key":"value"|number, ...}` object (~lines 465-486), plus
-    `extractJsonStringField` (~line 417) for reading individual fields from
-    FileStore responses.
-  - This is the best candidate to migrate next after `message_store_client`,
-    given its similarity to the already-completed `zwave_client_app.cpp`
-    migration (same author style, same scale).
+- [x] `value_service/value_service_component.cpp` — migrated parser and
+  serializer to `JsonValue`:
+  - `parseValueMapJson` now parses with `JsonValue::try_parse(...)` and
+    validates object entries as `string` or integral `number`.
+  - `serializeValueMap` now builds a `JsonValue` object and serializes via
+    `.stringify()`.
+  - `extractJsonStringField` now reads fields from parsed JSON object access
+    instead of manual token scanning.
 
 ### 12. zwave_client — DONE
 
@@ -185,16 +181,18 @@ dependency" section below.
 
 ## 2. Shared dependency used by (almost) every client — flagged separately
 
-- [ ] **message/message_payload_codec.cpp** / `.h` (`src/yaha/message/`, 609 lines)
-  - Not a `_client` directory itself, but implements the full custom JSON
-    envelope codec used by `mqtt_client` for every published/subscribed
-    message: `escapeJsonString`, `buildEnvelopePayload`, `parseValueToken`,
-    `parseReasonArray`, `parseEnvelopePayload`, `validateEnvelopeShape`.
-  - Because every `*_client` app sends/receives messages through
-    `mqtt_client`, this codec is indirectly used by all 12 clients.
-  - Treat as its own migration item, not a "client": it sits on the hot path
-    for every MQTT message, so replacing it with `JsonValue` needs a
-    performance check (parse/stringify cost per message) before rollout.
+- [x] **message/message_payload_codec.cpp** / `.h` (`src/yaha/message/`) — DONE
+  - Migrated shared envelope codec parsing/building to `JsonValue`:
+    `escapeJsonString`, `serializeReasonArrayOldestFirst`,
+    `buildEnvelopePayload`, `parseValueToken`, `parseReasonArray`,
+    `parseEnvelopePayload`, and `validateEnvelopeShape` now use
+    `JsonValue::try_parse(...)`, typed object/array access, and
+    `JsonValue::stringify()` instead of manual range/token scanning.
+  - Backward-compatible token behavior is preserved for scalar values:
+    string/number remain native `Value` variants; `true`/`false`/`null`
+    are still mapped to string values.
+  - Reason wire ordering remains oldest-first on serialization and
+    parser semantics remain compatible with existing message reason chain use.
 - [ ] **message/message_log_formatter.cpp** — calls a shared
   `escapeJsonString` (line 12) to quote a value for a log line; small,
   worth folding into the same cleanup as `message_payload_codec`.

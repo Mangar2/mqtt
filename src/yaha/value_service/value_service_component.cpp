@@ -1,10 +1,11 @@
 #include "yaha/value_service/value_service_component.h"
+
+#include "json/json_value.h"
 #include "yaha/message/message_log_service.h"
 #include "yaha/message/message_payload_codec.h"
 
 #include "httplib.h"
 
-#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -20,7 +21,6 @@ namespace {
 
 constexpr int k_http_ok_status{200};
 constexpr std::size_t k_set_suffix_size{4U};
-constexpr int k_decimal_base{10};
 constexpr std::size_t k_max_pending_publish_attempts{3U};
 constexpr int k_file_store_connect_timeout_seconds{1};
 constexpr int k_file_store_read_timeout_seconds{1};
@@ -54,61 +54,6 @@ constexpr int k_file_store_write_timeout_seconds{1};
         && textValue.compare(textValue.size() - k_set_suffix_size, k_set_suffix_size, "/set") == 0;
 }
 
-[[nodiscard]] bool parseJsonStringToken(
-    const std::string& jsonText,
-    std::size_t& parseIndex,
-    std::string& output) {
-    if (parseIndex >= jsonText.size() || jsonText[parseIndex] != '"') {
-        return false;
-    }
-    parseIndex += 1U;
-
-    std::string valueText{};
-    while (parseIndex < jsonText.size()) {
-        const char currentChar = jsonText[parseIndex++];
-        if (currentChar == '"') {
-            output = std::move(valueText);
-            return true;
-        }
-
-        if (currentChar == '\\') {
-            if (parseIndex >= jsonText.size()) {
-                return false;
-            }
-            const char escapedChar = jsonText[parseIndex++];
-            switch (escapedChar) {
-            case '"':
-            case '\\':
-            case '/':
-                valueText.push_back(escapedChar);
-                break;
-            case 'n':
-                valueText.push_back('\n');
-                break;
-            case 'r':
-                valueText.push_back('\r');
-                break;
-            case 't':
-                valueText.push_back('\t');
-                break;
-            default:
-                return false;
-            }
-            continue;
-        }
-
-        valueText.push_back(currentChar);
-    }
-
-    return false;
-}
-
-void skipWhitespace(const std::string& text, std::size_t& parseIndex) {
-    while (parseIndex < text.size() && std::isspace(static_cast<unsigned char>(text[parseIndex])) != 0) {
-        parseIndex += 1U;
-    }
-}
-
 void configureFileStoreClientTimeouts(httplib::Client* client) {
     if (client == nullptr) {
         return;
@@ -117,92 +62,6 @@ void configureFileStoreClientTimeouts(httplib::Client* client) {
     client->set_connection_timeout(k_file_store_connect_timeout_seconds, 0);
     client->set_read_timeout(k_file_store_read_timeout_seconds, 0);
     client->set_write_timeout(k_file_store_write_timeout_seconds, 0);
-}
-
-[[nodiscard]] bool consumeChar(const std::string& text, std::size_t& parseIndex, const char expectedChar) {
-    skipWhitespace(text, parseIndex);
-    if (parseIndex >= text.size() || text[parseIndex] != expectedChar) {
-        return false;
-    }
-    parseIndex += 1U;
-    return true;
-}
-
-[[nodiscard]] bool parseJsonIntegerToken(
-    const std::string& text,
-    std::size_t& parseIndex,
-    std::int64_t& output) {
-    skipWhitespace(text, parseIndex);
-    if (parseIndex >= text.size()) {
-        return false;
-    }
-
-    std::size_t tokenEnd = parseIndex;
-    if (text[tokenEnd] == '-') {
-        tokenEnd += 1U;
-    }
-
-    const std::size_t firstDigitIndex = tokenEnd;
-    while (tokenEnd < text.size() && std::isdigit(static_cast<unsigned char>(text[tokenEnd])) != 0) {
-        tokenEnd += 1U;
-    }
-
-    if (tokenEnd == firstDigitIndex) {
-        return false;
-    }
-
-    const std::string numberText = text.substr(parseIndex, tokenEnd - parseIndex);
-    std::size_t consumedChars = 0U;
-    std::int64_t parsedInteger = 0;
-    try {
-        parsedInteger = std::stoll(numberText, &consumedChars, k_decimal_base);
-    } catch (...) {
-        return false;
-    }
-
-    if (consumedChars != numberText.size()) {
-        return false;
-    }
-
-    output = parsedInteger;
-    parseIndex = tokenEnd;
-    return true;
-}
-
-[[nodiscard]] bool parseValueMapEntry(
-    const std::string& jsonText,
-    std::size_t& parseIndex,
-    std::string& key,
-    Value& value) {
-    skipWhitespace(jsonText, parseIndex);
-    if (!parseJsonStringToken(jsonText, parseIndex, key)) {
-        return false;
-    }
-
-    if (!consumeChar(jsonText, parseIndex, ':')) {
-        return false;
-    }
-
-    skipWhitespace(jsonText, parseIndex);
-    if (parseIndex >= jsonText.size()) {
-        return false;
-    }
-
-    if (jsonText[parseIndex] == '"') {
-        std::string stringValue{};
-        if (!parseJsonStringToken(jsonText, parseIndex, stringValue)) {
-            return false;
-        }
-        value = std::move(stringValue);
-        return true;
-    }
-
-    std::int64_t parsedInteger = 0;
-    if (!parseJsonIntegerToken(jsonText, parseIndex, parsedInteger)) {
-        return false;
-    }
-    value = static_cast<double>(parsedInteger);
-    return true;
 }
 
 } // namespace
@@ -417,29 +276,21 @@ std::string ValueServiceComponent::stripSetSuffix(const std::string& topicName) 
 std::optional<std::string> ValueServiceComponent::extractJsonStringField(
     const std::string& payload,
     const std::string& fieldName) {
-    const std::string keyToken = "\"" + fieldName + "\"";
-    std::size_t keyPosition = payload.find(keyToken);
-    if (keyPosition == std::string::npos) {
+    const auto parsedPayload = mqtt::json::JsonValue::try_parse(payload);
+    if (!parsedPayload.has_value() || !parsedPayload->is_object()) {
         return std::nullopt;
     }
 
-    keyPosition = payload.find(':', keyPosition + keyToken.size());
-    if (keyPosition == std::string::npos) {
+    if (!parsedPayload->contains(fieldName)) {
         return std::nullopt;
     }
 
-    std::size_t parseIndex = keyPosition + 1U;
-    while (parseIndex < payload.size()
-        && std::isspace(static_cast<unsigned char>(payload[parseIndex])) != 0) {
-        parseIndex += 1U;
-    }
-
-    std::string valueText{};
-    if (!parseJsonStringToken(payload, parseIndex, valueText)) {
+    const mqtt::json::JsonValue& fieldValue = parsedPayload->at(fieldName);
+    if (!fieldValue.is_string()) {
         return std::nullopt;
     }
 
-    return valueText;
+    return fieldValue.as_string();
 }
 
 bool ValueServiceComponent::isSupportedValueType(const Value& value) {
@@ -462,72 +313,51 @@ bool ValueServiceComponent::isSupportedValueType(const Value& value) {
 }
 
 std::string ValueServiceComponent::serializeValueMap(const ValueMap& values) {
-    std::string jsonText{"{"};
-    bool firstEntry = true;
+    mqtt::json::JsonValue rootValue = mqtt::json::JsonValue::object();
     for (const auto& [key, value] : values) {
-        if (!firstEntry) {
-            jsonText.push_back(',');
-        }
-        firstEntry = false;
-        jsonText.append("\"");
-        jsonText.append(escapeJsonString(key));
-        jsonText.append("\":");
-
         if (std::holds_alternative<std::string>(value)) {
-            jsonText.push_back('"');
-            jsonText.append(escapeJsonString(std::get<std::string>(value)));
-            jsonText.push_back('"');
+            rootValue[key] = mqtt::json::JsonValue{std::get<std::string>(value)};
         } else {
             const auto integerValue = static_cast<std::int64_t>(std::get<double>(value));
-            jsonText.append(std::to_string(integerValue));
+            rootValue[key] = mqtt::json::JsonValue{static_cast<double>(integerValue)};
         }
     }
-    jsonText.push_back('}');
-    return jsonText;
+
+    return rootValue.stringify();
 }
 
 bool ValueServiceComponent::parseValueMapJson(const std::string& jsonText, ValueMap& output) {
-    output.clear();
-
-    std::size_t parseIndex = 0U;
-    if (!consumeChar(jsonText, parseIndex, '{')) {
+    const auto parsedValue = mqtt::json::JsonValue::try_parse(jsonText);
+    if (!parsedValue.has_value() || !parsedValue->is_object()) {
         return false;
     }
 
-    while (true) {
-        skipWhitespace(jsonText, parseIndex);
-
-        if (parseIndex < jsonText.size() && jsonText[parseIndex] == '}') {
-            parseIndex += 1U;
-            break;
-        }
-
-        std::string keyText{};
-        Value parsedValue{};
-        if (!parseValueMapEntry(jsonText, parseIndex, keyText, parsedValue)) {
-            return false;
-        }
-
-        output[keyText] = parsedValue;
-
-        skipWhitespace(jsonText, parseIndex);
-
-        if (parseIndex < jsonText.size() && jsonText[parseIndex] == ',') {
-            parseIndex += 1U;
+    ValueMap parsedMap{};
+    for (const auto& [keyText, entryValue] : parsedValue->as_object()) {
+        if (entryValue.is_string()) {
+            parsedMap[keyText] = entryValue.as_string();
             continue;
         }
 
-        if (parseIndex < jsonText.size() && jsonText[parseIndex] == '}') {
-            parseIndex += 1U;
-            break;
+        if (!entryValue.is_number()) {
+            return false;
         }
 
-        return false;
+        const double numericValue = entryValue.as_number();
+        if (!std::isfinite(numericValue) || std::trunc(numericValue) != numericValue) {
+            return false;
+        }
+
+        if (numericValue < static_cast<double>(std::numeric_limits<std::int64_t>::min())
+            || numericValue > static_cast<double>(std::numeric_limits<std::int64_t>::max())) {
+            return false;
+        }
+
+        parsedMap[keyText] = numericValue;
     }
 
-    skipWhitespace(jsonText, parseIndex);
-
-    return parseIndex == jsonText.size();
+    output = std::move(parsedMap);
+    return true;
 }
 
 void ValueServiceComponent::logIncomingMessageIfEnabled(const Message& message) const {

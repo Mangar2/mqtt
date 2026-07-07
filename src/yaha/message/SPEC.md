@@ -39,12 +39,16 @@ bool validateEnvelopeShape(std::string_view);
 ```
 
 Notes:
+- Payload codec internals are implemented via `mqtt::json::JsonValue`
+    (`JsonValue::try_parse(...)`, typed object/array access, `.stringify()`) instead
+    of manual token/range scanning.
 - `buildEnvelopePayload` emits canonical YAHA transport envelope JSON.
 - `serializeReasonArrayOldestFirst` writes reason entries in oldest-first wire order.
 - `parseEnvelopePayload` validates topic consistency (`message.topic` must match MQTT topic).
 - `parseValueToken` supports canonical string/number values and accepts `true`/`false`/`null`
     as string tokens for backward compatibility behavior already used by transports.
-- String parsing decodes JSON escapes for control tokens and ASCII unicode escapes (`\\u00XX`).
+- String parsing decodes the full JSON escape set supported by `JsonValue`
+    (control escapes and unicode escapes, including non-ASCII code points).
 - Regression tests in `test/message_payload_codec_test.cpp` pin TS-reference-compatible
     envelope semantics (message shape, escaping, and reason ordering).
 

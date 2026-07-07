@@ -75,8 +75,12 @@ for FileStore-backed value-map lifecycle.
 - Persistence format:
 	- full JSON object map `key -> value`
 	- values restricted to `string` or integer numbers
-	- JSON escaping for keys/string values uses shared utility
-	  `yaha/message/message_payload_codec.*`.
+	- serialization uses `mqtt::json::JsonValue` object construction with
+	  `.stringify()`
+	- parsing uses `JsonValue::try_parse(...)` with object/entry type checks
+	  (`string` or integral `number` only)
+- Monitor payload field extraction (`keyPath`, `source`) is parsed via
+	`JsonValue::try_parse(...)` object access instead of manual token scanning.
 
 ## Files
 
