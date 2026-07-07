@@ -124,38 +124,48 @@ if (port.has_value()) {
 
 ## Migration Phases
 
-### Phase 1: Extend `IniDocument`
+Phase boundaries are chosen so the build stays green (all tests pass) after every phase,
+per the project's mandatory build/test gate. `readUnsigned`/`readBool` change their return
+shape (`pair<optional<T>, string>` -> `optional<T>`), which breaks every call site at once —
+that change must land together with consumer migration (Phase 3), not standalone.
 
-- Add `serviceName_` member, threaded through `loadFromFile(path, serviceName)`.
+### Phase 1: Extend `IniDocument` (additive only, nothing breaks)
+
+- Add `serviceName_` member. `loadFromFile(path, serviceName = {})` gets a defaulted
+  parameter so every existing call site (12 `*_main.cpp`, ~50 test files) keeps compiling
+  unchanged.
 - Add `ConfigWarningHandler`, `warningHandlers_`, `addWarningHandler()`, `clearWarningHandlers()`.
 - Install one default handler in `loadFromFile` reproducing today's `std::cerr` format
   exactly (same field order/labels as current `logConfigFallbackWarning`).
-- Add `reportFallback()` and route it through the same internal helper that
-  `readUnsigned`/`readBool` use for invalid values.
-- Change `readUnsigned`/`readBool` signatures: add `defaultValue` parameter, drop the
-  `string` half of the return pair, fire warning handlers internally on invalid (not missing)
-  values.
-- Update `test/ini_document_test.cpp` and `test/ini_document_typed_read_test.cpp`:
-  - default handler produces same text as today
-  - `addWarningHandler`/`clearWarningHandlers` behavior
-  - missing key stays silent
-  - invalid value triggers handler exactly once with correct fields
+- Add `reportFallback()` as the shared primitive (fires all registered handlers with
+  `serviceName_` plus the given section/key/rawValue/defaultValue/reasonText). Nothing calls
+  it yet in production code — it is exercised directly by new unit tests and will be wired
+  into `readUnsigned`/`readBool` and used by composite-fallback call sites in Phase 3.
+- `readUnsigned`/`readBool` are NOT touched in this phase (signature/behavior unchanged).
+- New test file `test/ini_document_warning_handler_test.cpp` covers: default handler text
+  format, multiple handlers all invoked, `clearWarningHandlers` removes the default handler
+  too, `reportFallback` forwards fields and `serviceName` correctly.
 - Update `src/yaha/ini/SPEC.md` API table.
 
-Status: not started.
+Status: implemented.
 
-### Phase 2: Update `loadFromFile` call sites
+### Phase 2: Pass real `serviceName` at production `loadFromFile` call sites
 
 - Add the `serviceName` argument at all 12 `*_main.cpp` call sites, reusing the exact service
   name string each client already uses today in its local `logConfigFallbackWarning` calls.
-- Update ~50 test call sites (`src/yaha/**/test/*.cpp`) to pass a `serviceName`.
+- Test call sites keep relying on the default parameter unless a test specifically exercises
+  warning-handler/service-name behavior (no mass edit of ~50 test files required).
 
 Status: not started.
 
-### Phase 3: Migrate client config-loading files
+### Phase 3: Change `readUnsigned`/`readBool` signature and migrate client config files
 
-For each of the 16 files listed above:
+Must happen together (signature change + all consumers) to keep the build compiling. For
+each of the 16 files listed above:
 
+- Add `defaultValue` argument to `readUnsigned`/`readBool`, drop the `string` half of the
+  return pair, fire warning handlers internally (via the Phase-1 `reportFallback` primitive)
+  on invalid (not missing) values.
 - Remove the local `logConfigFallbackWarning` function (definition + forward declaration).
 - Replace `readUnsigned`/`readBool` call sites: add `defaultValue` argument, drop the manual
   `if (!result.second.empty()) { rawValue fetch; logConfigFallbackWarning(...); }` block,

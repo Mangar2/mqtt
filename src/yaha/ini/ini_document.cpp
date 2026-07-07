@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <fstream>
 #include <format>
+#include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -15,6 +16,22 @@
 namespace yaha {
 
 namespace {
+
+void logConfigFallbackWarningToStderr(
+    const std::string_view serviceName,
+    const std::string_view sectionName,
+    const std::string_view keyName,
+    const std::string& rawValue,
+    const std::string& defaultValue,
+    const std::string& reasonText) {
+    std::cerr << serviceName << "[warn] config_fallback"
+              << " section=" << sectionName
+              << " key=" << keyName
+              << " value='" << rawValue << "'"
+              << " default='" << defaultValue << "'"
+              << " reason='" << reasonText << "'"
+              << '\n' << std::flush;
+}
 
 std::string trimCopy(std::string value) {
     std::size_t beginIndex = 0U;
@@ -109,7 +126,9 @@ std::optional<std::string> IniDocument::Section::lastValueForKey(std::string_vie
     return maybeValues->back();
 }
 
-IniDocument IniDocument::loadFromFile(const std::filesystem::path& filePath) {
+IniDocument IniDocument::loadFromFile(
+    const std::filesystem::path& filePath,
+    std::string serviceName) {
     std::ifstream input{filePath};
     if (!input.is_open()) {
         const auto systemError = std::error_code{errno, std::generic_category()};
@@ -117,6 +136,8 @@ IniDocument IniDocument::loadFromFile(const std::filesystem::path& filePath) {
     }
 
     IniDocument parsed{};
+    parsed.serviceName_ = std::move(serviceName);
+    parsed.addWarningHandler(logConfigFallbackWarningToStderr);
     std::string currentSection{};
     std::string line{};
     std::uint32_t lineNumber = 0U;
@@ -262,6 +283,25 @@ std::pair<std::optional<bool>, std::string> IniDocument::readBool(
     return {
         std::nullopt,
         std::format("invalid boolean value for '{}' (got '{}')", fieldName, text)};
+}
+
+void IniDocument::addWarningHandler(ConfigWarningHandler handler) const {
+    warningHandlers_.push_back(std::move(handler));
+}
+
+void IniDocument::clearWarningHandlers() const {
+    warningHandlers_.clear();
+}
+
+void IniDocument::reportFallback(
+    const std::string_view sectionName,
+    const std::string_view keyName,
+    const std::string& rawValue,
+    const std::string& defaultValue,
+    const std::string& reasonText) const {
+    for (const auto& handler : warningHandlers_) {
+        handler(serviceName_, sectionName, keyName, rawValue, defaultValue, reasonText);
+    }
 }
 
 } // namespace yaha

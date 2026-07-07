@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -15,6 +16,21 @@
 #include <vector>
 
 namespace yaha {
+
+/**
+ * @brief Callback invoked when a config value falls back to its default.
+ *
+ * Parameters: service name (as given to `IniDocument::loadFromFile`), section name, key
+ * name, raw value text as found in the INI file (or `<missing>`-style placeholder chosen by
+ * the caller), default value text that was applied, and a human-readable reason.
+ */
+using ConfigWarningHandler = std::function<void(
+    std::string_view serviceName,
+    std::string_view sectionName,
+    std::string_view keyName,
+    const std::string& rawValue,
+    const std::string& defaultValue,
+    const std::string& reasonText)>;
 
 /**
  * @brief Parsed INI document with section/key/value access.
@@ -69,10 +85,13 @@ public:
     /**
      * @brief Loads and parses one INI file.
      * @param filePath Source INI file path.
-     * @return Parsed INI document.
+     * @param serviceName Service name forwarded to config-fallback warning handlers.
+     * @return Parsed INI document with one default warning handler already registered.
      * @throws std::runtime_error when file open/read or parse fails.
      */
-    [[nodiscard]] static IniDocument loadFromFile(const std::filesystem::path& filePath);
+    [[nodiscard]] static IniDocument loadFromFile(
+        const std::filesystem::path& filePath,
+        std::string serviceName = {});
 
     /**
      * @brief Finds one section by name.
@@ -131,8 +150,38 @@ public:
         std::string_view sectionName,
         std::string_view key) const;
 
+    /**
+     * @brief Registers one additional config-fallback warning handler.
+     * @param handler Handler invoked by future `reportFallback` calls.
+     */
+    void addWarningHandler(ConfigWarningHandler handler) const;
+
+    /**
+     * @brief Removes all registered config-fallback warning handlers.
+     *
+     * This also removes the default handler installed by `loadFromFile`.
+     */
+    void clearWarningHandlers() const;
+
+    /**
+     * @brief Invokes all registered config-fallback warning handlers.
+     * @param sectionName Section name of the affected key.
+     * @param keyName Key name of the affected value.
+     * @param rawValue Raw value text that triggered the fallback.
+     * @param defaultValue Default value text that was applied instead.
+     * @param reasonText Human-readable reason for the fallback.
+     */
+    void reportFallback(
+        std::string_view sectionName,
+        std::string_view keyName,
+        const std::string& rawValue,
+        const std::string& defaultValue,
+        const std::string& reasonText) const;
+
 private:
     std::unordered_map<std::string, Section> sections_{};
+    std::string serviceName_{};
+    mutable std::vector<ConfigWarningHandler> warningHandlers_{};
 };
 
 } // namespace yaha
