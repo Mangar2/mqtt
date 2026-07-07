@@ -6,7 +6,7 @@
 #include "yaha/message_store/message_store_json_parser.h"
 
 TEST_CASE("message_store_json_parser_parses_snapshot_array_values", "[message_store]") {
-    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+    std::vector<yaha::MessageSnapshot> nodes{};
     const bool parseSucceeded = yaha::message_store_json::parseSnapshotBody(
         "["
         "{\"topic\":\"home/light\",\"value\":\"on\\n\"},"
@@ -22,7 +22,7 @@ TEST_CASE("message_store_json_parser_parses_snapshot_array_values", "[message_st
 }
 
 TEST_CASE("message_store_json_parser_rejects_malformed_snapshot_payload", "[message_store]") {
-    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+    std::vector<yaha::MessageSnapshot> nodes{};
 
     REQUIRE_FALSE(yaha::message_store_json::parseSnapshotBody("{\"topic\":\"x\"}", nodes));
     REQUIRE_FALSE(yaha::message_store_json::parseSnapshotBody("[{\"topic\":\"x\",\"value\":\"y\"", nodes));
@@ -30,7 +30,7 @@ TEST_CASE("message_store_json_parser_rejects_malformed_snapshot_payload", "[mess
 }
 
 TEST_CASE("message_store_json_parser_accepts_empty_snapshot_with_whitespace", "[message_store]") {
-    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+    std::vector<yaha::MessageSnapshot> nodes{};
     const bool parseSucceeded = yaha::message_store_json::parseSnapshotBody("  [   ]  ", nodes);
 
     REQUIRE(parseSucceeded);
@@ -38,15 +38,15 @@ TEST_CASE("message_store_json_parser_accepts_empty_snapshot_with_whitespace", "[
 }
 
 TEST_CASE("message_store_json_parser_rejects_snapshot_entries_missing_required_fields", "[message_store]") {
-    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+    std::vector<yaha::MessageSnapshot> nodes{};
     REQUIRE_FALSE(yaha::message_store_json::parseSnapshotBody("[{}]", nodes));
     REQUIRE_FALSE(yaha::message_store_json::parseSnapshotBody("[{\"topic\":\"only-topic\"}]", nodes));
 }
 
 TEST_CASE("message_store_json_parser_skips_unknown_snapshot_fields", "[message_store]") {
-    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+    std::vector<yaha::MessageSnapshot> nodes{};
     const bool parseSucceeded = yaha::message_store_json::parseSnapshotBody(
-        "[{\"topic\":\"home/light\",\"value\":\"on\",\"meta\":{\"nested\":[1,2,{\"x\":true}]}}]",
+        R"([{"topic":"home/light","value":"on","meta":{"nested":[1,2,{"x":true}]}}])",
         nodes);
 
     REQUIRE(parseSucceeded);
@@ -55,7 +55,7 @@ TEST_CASE("message_store_json_parser_skips_unknown_snapshot_fields", "[message_s
 }
 
 TEST_CASE("message_store_json_parser_parses_optional_snapshot_time", "[message_store]") {
-    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+    std::vector<yaha::MessageSnapshot> nodes{};
     const bool parseSucceeded = yaha::message_store_json::parseSnapshotBody(
         "["
         "{\"topic\":\"home/light\",\"value\":\"on\",\"time\":\"2024-03-21T10:15:30.123Z\"},"
@@ -149,7 +149,7 @@ TEST_CASE("message_store_json_parser_rejects_invalid_nested_sensor_json", "[mess
 TEST_CASE("message_store_json_parser_parses_escaped_topic_sequences", "[message_store]") {
     yaha::message_store_json::SensorPostRequest request{};
     const bool parseSucceeded = yaha::message_store_json::parseSensorPostBody(
-        "{\"topic\":\"home\\r\\troom\\/light\"}",
+        R"({"topic":"home\r\troom\/light"})",
         request);
 
     REQUIRE(parseSucceeded);
@@ -170,7 +170,7 @@ TEST_CASE("message_store_json_parser_handles_deep_nested_objects", "[message_sto
 }
 
 TEST_CASE("message_store_json_parser_rejects_unsupported_value_types_in_snapshot", "[message_store]") {
-    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+    std::vector<yaha::MessageSnapshot> nodes{};
     const bool parseSucceeded = yaha::message_store_json::parseSnapshotBody(
         "["
         "{\"topic\":\"bad/bool\",\"value\":false},"
@@ -184,7 +184,7 @@ TEST_CASE("message_store_json_parser_rejects_unsupported_value_types_in_snapshot
 }
 
 TEST_CASE("message_store_json_parser_handles_complex_escape_sequences", "[message_store]") {
-    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+    std::vector<yaha::MessageSnapshot> nodes{};
     const bool parseSucceeded = yaha::message_store_json::parseSnapshotBody(
         "["
         "{\"topic\":\"esc\",\"value\":\"\\\"quote\\\" and \\\\backslash\"},"
@@ -196,8 +196,9 @@ TEST_CASE("message_store_json_parser_handles_complex_escape_sequences", "[messag
     REQUIRE(nodes.size() == 2U);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("message_store_json_parser_parses_snapshot_reason_and_numeric_time", "[message_store]") {
-    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+    std::vector<yaha::MessageSnapshot> nodes{};
     const bool parseSucceeded = yaha::message_store_json::parseSnapshotBody(
         "["
         "{\"topic\":\"home/light\",\"value\":\"on\",\"time\":1700000000,"
@@ -207,7 +208,6 @@ TEST_CASE("message_store_json_parser_parses_snapshot_reason_and_numeric_time", "
 
     REQUIRE(parseSucceeded);
     REQUIRE(nodes.size() == 1U);
-    REQUIRE(nodes[0].hasReason);
     REQUIRE(nodes[0].reason.size() == 1U);
     REQUIRE(nodes[0].reason[0].message == "manual");
     REQUIRE(nodes[0].timeMs.has_value());
@@ -215,7 +215,7 @@ TEST_CASE("message_store_json_parser_parses_snapshot_reason_and_numeric_time", "
 }
 
 TEST_CASE("message_store_json_parser_rejects_invalid_reason_shapes", "[message_store]") {
-    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+    std::vector<yaha::MessageSnapshot> nodes{};
 
     REQUIRE_FALSE(yaha::message_store_json::parseSnapshotBody(
         "[{\"topic\":\"a\",\"value\":\"x\",\"reason\":{}}]",
@@ -233,7 +233,7 @@ TEST_CASE("message_store_json_parser_rejects_invalid_reason_shapes", "[message_s
 }
 
 TEST_CASE("message_store_json_parser_rejects_invalid_snapshot_time_values", "[message_store]") {
-    std::vector<yaha::MessageTreeSnapshotNode> nodes{};
+    std::vector<yaha::MessageSnapshot> nodes{};
 
     REQUIRE_FALSE(yaha::message_store_json::parseSnapshotBody(
         "[{\"topic\":\"a\",\"value\":\"x\",\"time\":{\"bad\":}]",

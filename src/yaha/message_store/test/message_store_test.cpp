@@ -870,6 +870,38 @@ TEST_CASE("http_get_store_snapshot_body_ignores_reason_when_snapshot_reason_is_m
     REQUIRE(response->body == "[]");
 }
 
+TEST_CASE("http_get_store_snapshot_body_ignores_reason_when_snapshot_reason_is_empty", "[message_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::MessageStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.persistenceConfig.directory = tempDir;
+    config.persistenceConfig.filename = "state";
+
+    yaha::MessageStore store{config};
+    StoreCloseGuard guard{&store};
+    yaha::Message lamp{"home/lamp", std::string{"on"}};
+    lamp.addReason("gui", "2026-05-10T10:00:00.000Z");
+    store.handleMessage(lamp);
+    store.run();
+
+    REQUIRE(waitForHttpReady(config.serverPort));
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+
+    const std::string snapshotBody = R"([{"topic":"home/lamp","value":"on","reason":[]}])";
+    httplib::Request request{};
+    request.method = "GET";
+    request.path = "/store/home";
+    request.body = snapshotBody;
+    request.set_header("Content-Type", "application/json");
+    const auto response = client.send(request);
+
+    REQUIRE(response != nullptr);
+    REQUIRE(response->status == 200);
+    REQUIRE(response->body == "[]");
+}
+
 TEST_CASE("http_get_store_snapshot_body_skips_unknown_fields_and_json_variants", "[message_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};

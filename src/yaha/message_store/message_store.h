@@ -121,7 +121,7 @@ public:
      * @return Flat node list that changed since snapshot.
      */
     [[nodiscard]] std::vector<MessageTreeNode>
-        queryNodes(const std::vector<MessageTreeSnapshotNode>& snapshot,
+        queryNodes(const std::vector<MessageSnapshot>& snapshot,
                 bool includeHistory,
                 bool includeReason) const;
 

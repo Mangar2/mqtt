@@ -1,32 +1,31 @@
 #include "yaha/message_store/message_store_json_parser.h"
 
-#include "yaha/message/message.h"
+#include "json/json_value.h"
 #include "yaha/message_store/iso_timestamp_parser.h"
 
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <limits>
 #include <string>
-#include <utility>
-#include <vector>
 
 namespace yaha::message_store_json {
 namespace {
 
 constexpr std::uint32_t k_default_level_amount{1U};
 
-std::string trim(const std::string& value) {
-    std::size_t begin = 0U;
-    while (begin < value.size() && std::isspace(static_cast<unsigned char>(value[begin])) != 0) {
-        begin += 1U;
+std::string trim(const std::string& valueText) {
+    std::size_t beginIndex = 0U;
+    while (beginIndex < valueText.size() && std::isspace(static_cast<unsigned char>(valueText[beginIndex])) != 0) {
+        beginIndex += 1U;
     }
 
-    std::size_t end = value.size();
-    while (end > begin && std::isspace(static_cast<unsigned char>(value[end - 1U])) != 0) {
-        end -= 1U;
+    std::size_t endIndex = valueText.size();
+    while (endIndex > beginIndex && std::isspace(static_cast<unsigned char>(valueText[endIndex - 1U])) != 0) {
+        endIndex -= 1U;
     }
 
-    return value.substr(begin, end - begin);
+    return valueText.substr(beginIndex, endIndex - beginIndex);
 }
 
 std::string normalizeTopicPrefixForTree(const std::string& topicPrefix) {
@@ -36,810 +35,229 @@ std::string normalizeTopicPrefixForTree(const std::string& topicPrefix) {
     return topicPrefix;
 }
 
-std::string toLower(std::string value) {
-    for (char& charValue : value) {
-        charValue = static_cast<char>(
-            std::tolower(static_cast<unsigned char>(charValue)));
+std::string toLower(std::string valueText) {
+    for (char& charValue : valueText) {
+        charValue = static_cast<char>(std::tolower(static_cast<unsigned char>(charValue)));
     }
-    return value;
+    return valueText;
 }
 
-bool tryParseLegacyBoolToken(const std::string& tokenRaw, bool& output) {
-    const std::string token = toLower(trim(tokenRaw));
-    if (token == "1" || token == "true" || token == "yes" || token == "on") {
-        output = true;
+bool tryParseLegacyBoolToken(const std::string& tokenRaw, bool& outputValue) {
+    const std::string tokenText = toLower(trim(tokenRaw));
+    if (tokenText == "1" || tokenText == "true" || tokenText == "yes" || tokenText == "on") {
+        outputValue = true;
         return true;
     }
-    if (token == "0" || token == "false" || token == "no" || token == "off") {
-        output = false;
+    if (tokenText == "0" || tokenText == "false" || tokenText == "no" || tokenText == "off") {
+        outputValue = false;
         return true;
     }
     return false;
 }
 
-bool tryParseUnsignedValue(const std::string& text,
-                           std::uint32_t defaultValue,
-                           std::uint32_t& output) {
-    const std::string cleaned = trim(text);
-    if (cleaned.empty()) {
-        output = defaultValue;
+bool tryParseUnsignedValue(const std::string& valueText,
+                           const std::uint32_t defaultValue,
+                           std::uint32_t& outputValue) {
+    const std::string cleanedText = trim(valueText);
+    if (cleanedText.empty()) {
+        outputValue = defaultValue;
         return true;
     }
 
-    char* endPtr = nullptr;
-    const unsigned long parsed = std::strtoul(cleaned.c_str(), &endPtr, 10);
-    if (endPtr == nullptr || *endPtr != '\0') {
-        output = defaultValue;
+    char* parseEnd = nullptr;
+    const unsigned long parsedNumber = std::strtoul(cleanedText.c_str(), &parseEnd, 10);
+    if (parseEnd == nullptr || *parseEnd != '\0') {
+        outputValue = defaultValue;
         return false;
     }
 
-    output = static_cast<std::uint32_t>(parsed);
+    outputValue = static_cast<std::uint32_t>(parsedNumber);
     return true;
 }
 
-class SnapshotJsonParser {
-public:
-    explicit SnapshotJsonParser(std::string json)
-        : json_(std::move(json)) {}
-
-    bool parse(std::vector<MessageTreeSnapshotNode>& out) {
-        skipWs();
-        if (!consume('[')) {
-            return false;
-        }
-        skipWs();
-        if (consume(']')) {
-            return true;
-        }
-
-        while (true) {
-            MessageTreeSnapshotNode node{};
-            if (!parseObject(node)) {
-                return false;
-            }
-            out.push_back(std::move(node));
-            skipWs();
-            if (consume(']')) {
-                return true;
-            }
-            if (!consume(',')) {
-                return false;
-            }
-        }
-    }
-
-private:
-    bool parseObject(MessageTreeSnapshotNode& node) {
-        if (!consume('{')) {
+bool parseSnapshotReasonArray(const mqtt::json::JsonValue::Array& reasonArray,
+                              ReasonList& reasonOutput) {
+    reasonOutput.clear();
+    reasonOutput.reserve(reasonArray.size());
+    for (const auto& reasonNode : reasonArray) {
+        if (!reasonNode.is_object() || !reasonNode.contains("message") || !reasonNode.contains("timestamp")) {
             return false;
         }
 
-        bool hasTopic = false;
-        bool hasValue = false;
-        skipWs();
-        if (consume('}')) {
+        const mqtt::json::JsonValue& messageNode = reasonNode.at("message");
+        const mqtt::json::JsonValue& timestampNode = reasonNode.at("timestamp");
+        if (!messageNode.is_string() || !timestampNode.is_string()) {
             return false;
         }
 
-        while (true) {
-            std::string key;
-            if (!parseString(key)) {
-                return false;
-            }
-            if (!consume(':')) {
-                return false;
-            }
-
-            if (!parseObjectField(key, node, hasTopic, hasValue)) {
-                return false;
-            }
-
-            skipWs();
-            if (consume('}')) {
-                return hasTopic && hasValue;
-            }
-            if (!consume(',')) {
-                return false;
-            }
-        }
+        reasonOutput.push_back(ReasonEntry{
+            .message = messageNode.as_string(),
+            .timestamp = timestampNode.as_string(),
+        });
     }
 
-    bool parseObjectField(const std::string& key,
-                          MessageTreeSnapshotNode& node,
-                          bool& hasTopic,
-                          bool& hasValue) {
-        if (key == "topic") {
-            if (!parseString(node.topic)) {
-                return false;
-            }
-            hasTopic = true;
-            return true;
-        }
+    return true;
+}
 
-        if (key == "value") {
-            Value parsed{};
-            if (!parseValue(parsed)) {
-                return false;
-            }
-            node.value = std::move(parsed);
-            hasValue = true;
-            return true;
-        }
-
-        if (key == "time") {
-            return parseSnapshotTime(node.timeMs);
-        }
-
-        if (key == "reason") {
-            ReasonList parsedReasons{};
-            if (!parseReasonArray(parsedReasons)) {
-                return false;
-            }
-            node.reason = std::move(parsedReasons);
-            node.hasReason = true;
-            return true;
-        }
-
-        return skipValue();
-    }
-
-    bool parseReasonArray(ReasonList& output) {
-        skipWs();
-        if (!consume('[')) {
-            return false;
-        }
-
-        skipWs();
-        if (consume(']')) {
-            return true;
-        }
-
-        while (true) {
-            ReasonEntry entry{};
-            if (!parseReasonObject(entry)) {
-                return false;
-            }
-            output.push_back(std::move(entry));
-
-            skipWs();
-            if (consume(']')) {
-                return true;
-            }
-            if (!consume(',')) {
-                return false;
-            }
-        }
-    }
-
-    bool parseReasonObject(ReasonEntry& output) {
-        if (!consume('{')) {
-            return false;
-        }
-
-        bool hasMessage = false;
-        bool hasTimestamp = false;
-        skipWs();
-        if (consume('}')) {
-            return false;
-        }
-
-        while (true) {
-            std::string key{};
-            if (!parseString(key)) {
-                return false;
-            }
-            if (!consume(':')) {
-                return false;
-            }
-
-            if (key == "message") {
-                if (!parseString(output.message)) {
-                    return false;
-                }
-                hasMessage = true;
-            } else if (key == "timestamp") {
-                if (!parseString(output.timestamp)) {
-                    return false;
-                }
-                hasTimestamp = true;
-            } else if (!skipValue()) {
-                return false;
-            }
-
-            skipWs();
-            if (consume('}')) {
-                return hasMessage && hasTimestamp;
-            }
-            if (!consume(',')) {
-                return false;
-            }
-        }
-    }
-
-    bool parseValue(Value& output) {
-        skipWs();
-        std::string text{};
-        if (peek() == '"') {
-            if (!parseString(text)) {
-                return false;
-            }
-            output = std::move(text);
-            return true;
-        }
-
-        double number = 0.0;
-        if (!parseNumber(number)) {
-            return false;
-        }
-        output = number;
-        return true;
-    }
-
-    bool parseSnapshotTime(std::optional<std::int64_t>& output) {
-        skipWs();
-        if (peek() == '"') {
-            std::string parsedTimestamp{};
-            if (!parseString(parsedTimestamp)) {
-                return false;
-            }
-
-            std::int64_t parsedTimeMs = 0;
-            if (tryParseIsoTimestampMilliseconds(parsedTimestamp, parsedTimeMs)) {
-                output = parsedTimeMs;
-            }
-            return true;
-        }
-
-        double parsedNumber = 0.0;
-        if (parseNumber(parsedNumber)) {
-            if (std::isfinite(parsedNumber) && std::floor(parsedNumber) == parsedNumber) {
-                output = static_cast<std::int64_t>(parsedNumber);
-            }
-            return true;
-        }
-
-        return skipValue();
-    }
-
-    bool skipValue() {
-        skipWs();
-        const char current = peek();
-        if (current == '"') {
-            std::string ignored;
-            return parseString(ignored);
-        }
-        if (current == '{') {
-            return skipNestedStructure('{', '}');
-        }
-        if (current == '[') {
-            return skipNestedStructure('[', ']');
-        }
-
-        return skipPrimitiveValue();
-    }
-
-    bool skipNestedStructure(char openChar, char closeChar) {
-        int depth = 0;
-        do {
-            const char currentChar = peek();
-            if (currentChar == '\0') {
-                return false;
-            }
-            if (currentChar == openChar) {
-                depth += 1;
-            }
-            if (currentChar == closeChar) {
-                depth -= 1;
-            }
-            pos_ += 1U;
-        } while (depth > 0);
-        return true;
-    }
-
-    bool skipPrimitiveValue() {
-        double ignored = 0.0;
-        if (parseNumber(ignored)) {
-            return true;
-        }
-        return parseLiteral("true") || parseLiteral("false") || parseLiteral("null");
-    }
-
-    bool parseNumber(double& out) {
-        skipWs();
-        std::size_t consumed = 0U;
-        try {
-            out = std::stod(json_.substr(pos_), &consumed);
-        } catch (...) {
-            return false;
-        }
-        pos_ += consumed;
-        return consumed > 0U;
-    }
-
-    bool parseString(std::string& out) {
-        skipWs();
-        if (!consume('"')) {
-            return false;
-        }
-
-        std::string result;
-        while (pos_ < json_.size()) {
-            const char currentChar = json_[pos_++];
-            if (currentChar == '"') {
-                out = std::move(result);
-                return true;
-            }
-            if (currentChar == '\\') {
-                if (pos_ >= json_.size()) {
-                    return false;
-                }
-                const char escaped = json_[pos_++];
-                switch (escaped) {
-                    case '"':
-                    case '\\':
-                    case '/':
-                        result.push_back(escaped);
-                        break;
-                    case 'n':
-                        result.push_back('\n');
-                        break;
-                    case 'r':
-                        result.push_back('\r');
-                        break;
-                    case 't':
-                        result.push_back('\t');
-                        break;
-                    default:
-                        return false;
-                }
-                continue;
-            }
-            result.push_back(currentChar);
-        }
-
+bool parseSnapshotNode(const mqtt::json::JsonValue& snapshotNodeValue,
+                       MessageSnapshot& snapshotNodeOutput) {
+    if (!snapshotNodeValue.is_object()) {
         return false;
     }
 
-    bool parseLiteral(const std::string& literal) {
-        skipWs();
-        if (json_.substr(pos_, literal.size()) != literal) {
-            return false;
-        }
-        pos_ += literal.size();
-        return true;
-    }
-
-    bool consume(char expected) {
-        skipWs();
-        if (peek() != expected) {
-            return false;
-        }
-        pos_ += 1U;
-        return true;
-    }
-
-    char peek() const {
-        if (pos_ >= json_.size()) {
-            return '\0';
-        }
-        return json_[pos_];
-    }
-
-    void skipWs() {
-        while (pos_ < json_.size() && std::isspace(static_cast<unsigned char>(json_[pos_])) != 0) {
-            pos_ += 1U;
-        }
-    }
-
-    std::string json_;
-    std::size_t pos_{0U};
-};
-
-class SensorPostJsonParser {
-public:
-    explicit SensorPostJsonParser(std::string json)
-        : json_(std::move(json)) {}
-
-    bool parse(SensorPostRequest& output) {
-        skipWs();
-        if (!consume('{')) {
-            return false;
-        }
-
-        skipWs();
-        if (consume('}')) {
-            return true;
-        }
-
-        while (true) {
-            std::string key{};
-            if (!parseString(key)) {
-                return false;
-            }
-
-            if (!consume(':')) {
-                return false;
-            }
-
-            if (!parseField(key, output)) {
-                return false;
-            }
-
-            skipWs();
-            if (consume('}')) {
-                return true;
-            }
-            if (!consume(',')) {
-                return false;
-            }
-        }
-    }
-
-private:
-    bool parseField(const std::string& key, SensorPostRequest& output) {
-        if (key == "topic") {
-            std::string topic{};
-            if (!parseString(topic)) {
-                return false;
-            }
-            output.topicPrefix = normalizeTopicPrefixForTree(topic);
-            return true;
-        }
-
-        if (key == "history") {
-            std::string historyRaw{};
-            if (!captureRawValue(historyRaw)) {
-                return false;
-            }
-            bool includeHistory = false;
-            if (tryParseBoolValue(historyRaw, includeHistory)) {
-                output.includeHistory = includeHistory;
-            } else {
-                output.includeHistory = false;
-            }
-            return true;
-        }
-
-        if (key == "reason") {
-            std::string reasonRaw{};
-            if (!captureRawValue(reasonRaw)) {
-                return false;
-            }
-            bool includeReason = false;
-            if (tryParseBoolValue(reasonRaw, includeReason)) {
-                output.includeReason = includeReason;
-            } else {
-                output.includeReason = false;
-            }
-            return true;
-        }
-
-        if (key == "time") {
-            std::string timeRaw{};
-            if (!captureRawValue(timeRaw)) {
-                return false;
-            }
-            bool includeTime = false;
-            if (tryParseBoolValue(timeRaw, includeTime)) {
-                output.includeTime = includeTime;
-            } else {
-                output.includeTime = false;
-            }
-            return true;
-        }
-
-        if (key == "levelAmount" || key == "levelamount") {
-            std::string levelAmountRaw{};
-            if (!captureRawValue(levelAmountRaw)) {
-                return false;
-            }
-            output.hasLevelAmount = true;
-            applyLevelAmount(levelAmountRaw, output.levelAmount);
-            return true;
-        }
-
-        if (key == "nodes") {
-            std::string nodesRaw{};
-            if (!captureRawValue(nodesRaw)) {
-                return false;
-            }
-            const std::string trimmedNodesRaw = trim(nodesRaw);
-            output.hasNodes = !trimmedNodesRaw.empty() && trimmedNodesRaw != "[]" && trimmedNodesRaw != "null";
-            output.nodesJson = output.hasNodes ? trimmedNodesRaw : std::string{};
-            return true;
-        }
-
-        return skipValue();
-    }
-
-    static void applyLevelAmount(const std::string& rawValue, std::uint32_t& output) {
-        const std::string cleaned = trim(rawValue);
-        if (cleaned.empty()) {
-            output = k_default_level_amount;
-            return;
-        }
-
-        if (cleaned.front() == '"') {
-            std::string textValue{};
-            SensorPostJsonParser decoder{cleaned};
-            if (!decoder.parseSingleString(textValue)) {
-                output = k_default_level_amount;
-                return;
-            }
-            (void)tryParseUnsignedValue(textValue, k_default_level_amount, output);
-            return;
-        }
-
-        double numericValue = 0.0;
-        std::size_t consumed = 0U;
-        try {
-            numericValue = std::stod(cleaned, &consumed);
-        } catch (...) {
-            output = k_default_level_amount;
-            return;
-        }
-
-        if (consumed != cleaned.size() || !std::isfinite(numericValue) || numericValue < 0.0
-            || std::floor(numericValue) != numericValue) {
-            output = k_default_level_amount;
-            return;
-        }
-
-        output = static_cast<std::uint32_t>(numericValue);
-    }
-
-    static bool tryParseBoolValue(const std::string& rawValue, bool& output) {
-        const std::string cleaned = trim(rawValue);
-        if (cleaned.empty()) {
-            return false;
-        }
-
-        if (cleaned.front() == '"') {
-            std::string textValue{};
-            SensorPostJsonParser decoder{cleaned};
-            if (!decoder.parseSingleString(textValue)) {
-                return false;
-            }
-            return tryParseLegacyBoolToken(textValue, output);
-        }
-
-        return tryParseLegacyBoolToken(cleaned, output);
-    }
-
-    bool parseSingleString(std::string& output) {
-        skipWs();
-        if (!parseString(output)) {
-            return false;
-        }
-        skipWs();
-        return pos_ == json_.size();
-    }
-
-    bool captureRawValue(std::string& output) {
-        skipWs();
-        const std::size_t start = pos_;
-        if (!skipValue()) {
-            return false;
-        }
-        output = json_.substr(start, pos_ - start);
-        return true;
-    }
-
-    bool skipValue() {
-        skipWs();
-        const char currentChar = peek();
-        if (currentChar == '"') {
-            std::string ignored{};
-            return parseString(ignored);
-        }
-        if (currentChar == '{' || currentChar == '[') {
-            return skipNestedJson();
-        }
-
-        double ignoredNumber = 0.0;
-        if (parseNumber(ignoredNumber)) {
-            return true;
-        }
-
-        return parseLiteral("true") || parseLiteral("false") || parseLiteral("null");
-    }
-
-    bool skipNestedJson() {
-        std::vector<char> expectedClosings{};
-        if (!initializeNestedJson(expectedClosings)) {
-            return false;
-        }
-
-        bool inString = false;
-        bool escaped = false;
-        while (!expectedClosings.empty()) {
-            char currentChar = '\0';
-            if (!readNextChar(currentChar)) {
-                return false;
-            }
-
-            if (inString) {
-                updateStringState(currentChar, inString, escaped);
-                continue;
-            }
-
-            if (currentChar == '"') {
-                inString = true;
-                continue;
-            }
-
-            if (!updateNestedState(currentChar, expectedClosings)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    bool initializeNestedJson(std::vector<char>& expectedClosings) {
-        const char firstChar = peek();
-        if (firstChar == '{') {
-            expectedClosings.push_back('}');
-            pos_ += 1U;
-            return true;
-        }
-        if (firstChar == '[') {
-            expectedClosings.push_back(']');
-            pos_ += 1U;
-            return true;
-        }
+    if (!snapshotNodeValue.contains("topic") || !snapshotNodeValue.contains("value")) {
         return false;
     }
 
-    bool readNextChar(char& output) {
-        if (pos_ >= json_.size()) {
-            return false;
-        }
-        output = json_[pos_++];
-        return true;
-    }
-
-    static void updateStringState(char currentChar, bool& inString, bool& escaped) {
-        if (escaped) {
-            escaped = false;
-            return;
-        }
-        if (currentChar == '\\') {
-            escaped = true;
-            return;
-        }
-        if (currentChar == '"') {
-            inString = false;
-        }
-    }
-
-    static bool isClosingChar(char currentChar) {
-        return currentChar == '}' || currentChar == ']';
-    }
-
-    static bool updateNestedState(char currentChar, std::vector<char>& expectedClosings) {
-        if (currentChar == '{') {
-            expectedClosings.push_back('}');
-            return true;
-        }
-        if (currentChar == '[') {
-            expectedClosings.push_back(']');
-            return true;
-        }
-        if (!isClosingChar(currentChar)) {
-            return true;
-        }
-        if (expectedClosings.back() != currentChar) {
-            return false;
-        }
-        expectedClosings.pop_back();
-        return true;
-    }
-
-    bool parseNumber(double& output) {
-        skipWs();
-        std::size_t consumed = 0U;
-        try {
-            output = std::stod(json_.substr(pos_), &consumed);
-        } catch (...) {
-            return false;
-        }
-        if (consumed == 0U) {
-            return false;
-        }
-        pos_ += consumed;
-        return true;
-    }
-
-    bool parseString(std::string& output) {
-        skipWs();
-        if (!consume('"')) {
-            return false;
-        }
-
-        std::string parsed{};
-        while (pos_ < json_.size()) {
-            const char currentChar = json_[pos_++];
-            if (currentChar == '"') {
-                output = std::move(parsed);
-                return true;
-            }
-            if (currentChar == '\\') {
-                if (pos_ >= json_.size()) {
-                    return false;
-                }
-                const char escaped = json_[pos_++];
-                switch (escaped) {
-                    case '"':
-                    case '\\':
-                    case '/':
-                        parsed.push_back(escaped);
-                        break;
-                    case 'n':
-                        parsed.push_back('\n');
-                        break;
-                    case 'r':
-                        parsed.push_back('\r');
-                        break;
-                    case 't':
-                        parsed.push_back('\t');
-                        break;
-                    default:
-                        return false;
-                }
-                continue;
-            }
-            parsed.push_back(currentChar);
-        }
-
+    const mqtt::json::JsonValue& topicNode = snapshotNodeValue.at("topic");
+    const mqtt::json::JsonValue& valueNode = snapshotNodeValue.at("value");
+    if (!topicNode.is_string()) {
         return false;
     }
 
-    bool parseLiteral(const std::string& literal) {
-        skipWs();
-        if (json_.substr(pos_, literal.size()) != literal) {
+    if (valueNode.is_string()) {
+        snapshotNodeOutput.value = valueNode.as_string();
+    } else if (valueNode.is_number()) {
+        snapshotNodeOutput.value = valueNode.as_number();
+    } else {
+        return false;
+    }
+
+    snapshotNodeOutput.topic = topicNode.as_string();
+
+    if (snapshotNodeValue.contains("time")) {
+        const mqtt::json::JsonValue& timeNode = snapshotNodeValue.at("time");
+        if (timeNode.is_string()) {
+            std::int64_t parsedTimeMilliseconds = 0;
+            if (tryParseIsoTimestampMilliseconds(timeNode.as_string(), parsedTimeMilliseconds)) {
+                snapshotNodeOutput.timeMs = parsedTimeMilliseconds;
+            }
+        } else if (timeNode.is_number()) {
+            const double numericTime = timeNode.as_number();
+            if (std::isfinite(numericTime) && std::floor(numericTime) == numericTime) {
+                snapshotNodeOutput.timeMs = static_cast<std::int64_t>(numericTime);
+            }
+        }
+    }
+
+    if (snapshotNodeValue.contains("reason")) {
+        const mqtt::json::JsonValue& reasonNode = snapshotNodeValue.at("reason");
+        if (!reasonNode.is_array()) {
             return false;
         }
-        pos_ += literal.size();
-        return true;
-    }
 
-    bool consume(char expected) {
-        skipWs();
-        if (peek() != expected) {
+        if (!parseSnapshotReasonArray(reasonNode.as_array(), snapshotNodeOutput.reason)) {
             return false;
         }
-        pos_ += 1U;
-        return true;
     }
 
-    char peek() const {
-        if (pos_ >= json_.size()) {
-            return '\0';
+    return true;
+}
+
+void applySensorBooleanField(const mqtt::json::JsonValue& fieldValue,
+                             bool& fieldOutput) {
+    if (fieldValue.is_boolean()) {
+        fieldOutput = fieldValue.as_boolean();
+        return;
+    }
+
+    if (fieldValue.is_string()) {
+        bool parsedValue = false;
+        if (tryParseLegacyBoolToken(fieldValue.as_string(), parsedValue)) {
+            fieldOutput = parsedValue;
+            return;
         }
-        return json_[pos_];
     }
 
-    void skipWs() {
-        while (pos_ < json_.size() && std::isspace(static_cast<unsigned char>(json_[pos_])) != 0) {
-            pos_ += 1U;
+    fieldOutput = false;
+}
+
+void applySensorLevelAmountField(const mqtt::json::JsonValue& fieldValue,
+                                 std::uint32_t& levelAmountOutput) {
+    if (fieldValue.is_string()) {
+        (void)tryParseUnsignedValue(fieldValue.as_string(), k_default_level_amount, levelAmountOutput);
+        return;
+    }
+
+    if (fieldValue.is_number()) {
+        const double numericValue = fieldValue.as_number();
+        if (std::isfinite(numericValue)
+            && numericValue >= 0.0
+            && std::floor(numericValue) == numericValue
+            && numericValue <= static_cast<double>(std::numeric_limits<std::uint32_t>::max())) {
+            levelAmountOutput = static_cast<std::uint32_t>(numericValue);
+            return;
         }
     }
 
-    std::string json_;
-    std::size_t pos_{0U};
-};
+    levelAmountOutput = k_default_level_amount;
+}
 
 } // namespace
 
-bool parseSnapshotBody(const std::string& body, std::vector<MessageTreeSnapshotNode>& out) {
-    SnapshotJsonParser parser{body};
-    return parser.parse(out);
+bool parseSnapshotBody(const std::string& body, std::vector<MessageSnapshot>& out) {
+    const auto parsedRoot = mqtt::json::JsonValue::try_parse(body);
+    if (!parsedRoot.has_value() || !parsedRoot->is_array()) {
+        return false;
+    }
+
+    std::vector<MessageSnapshot> parsedNodes{};
+    parsedNodes.reserve(parsedRoot->as_array().size());
+    for (const auto& snapshotNodeValue : parsedRoot->as_array()) {
+        MessageSnapshot parsedNode{};
+        if (!parseSnapshotNode(snapshotNodeValue, parsedNode)) {
+            return false;
+        }
+        parsedNodes.push_back(std::move(parsedNode));
+    }
+
+    out = std::move(parsedNodes);
+    return true;
 }
 
 bool parseSensorPostBody(const std::string& body, SensorPostRequest& output) {
-    SensorPostJsonParser parser{body};
-    return parser.parse(output);
+    const auto parsedRoot = mqtt::json::JsonValue::try_parse(body);
+    if (!parsedRoot.has_value() || !parsedRoot->is_object()) {
+        return false;
+    }
+
+    const mqtt::json::JsonValue::Object& rootObject = parsedRoot->as_object();
+
+    if (rootObject.contains("topic")) {
+        const mqtt::json::JsonValue& topicValue = rootObject.at("topic");
+        if (!topicValue.is_string()) {
+            return false;
+        }
+        output.topicPrefix = normalizeTopicPrefixForTree(topicValue.as_string());
+    }
+
+    if (rootObject.contains("history")) {
+        applySensorBooleanField(rootObject.at("history"), output.includeHistory);
+    }
+
+    if (rootObject.contains("reason")) {
+        applySensorBooleanField(rootObject.at("reason"), output.includeReason);
+    }
+
+    if (rootObject.contains("time")) {
+        applySensorBooleanField(rootObject.at("time"), output.includeTime);
+    }
+
+    if (rootObject.contains("levelAmount")) {
+        output.hasLevelAmount = true;
+        applySensorLevelAmountField(rootObject.at("levelAmount"), output.levelAmount);
+    } else if (rootObject.contains("levelamount")) {
+        output.hasLevelAmount = true;
+        applySensorLevelAmountField(rootObject.at("levelamount"), output.levelAmount);
+    }
+
+    if (rootObject.contains("nodes")) {
+        const std::string nodesText = trim(rootObject.at("nodes").stringify());
+        output.hasNodes = !nodesText.empty() && nodesText != "[]" && nodesText != "null";
+        output.nodesJson = output.hasNodes ? nodesText : std::string{};
+    }
+
+    return true;
 }
 
 } // namespace yaha::message_store_json

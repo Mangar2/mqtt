@@ -45,11 +45,11 @@ TEST_CASE("message_tree_get_nodes_clears_reason_when_include_reason_false", "[me
     message.addReason("request", "2026-01-01T00:00:00Z");
     tree.addData(message);
 
-    yaha::MessageTreeSnapshotNode snapshot{};
+    yaha::MessageSnapshot snapshot{};
     snapshot.topic = "home/light";
     snapshot.value = std::string{"off"};
 
-    const std::vector<yaha::MessageTreeSnapshotNode> snapshots{snapshot};
+    const std::vector<yaha::MessageSnapshot> snapshots{snapshot};
     const std::vector<yaha::MessageTreeNode> nodes = tree.getNodes(snapshots, false, false);
 
     REQUIRE(nodes.size() == 1U);

@@ -189,7 +189,7 @@ MessageTree::getSection(const std::string& topicPrefix,
 }
 
 std::vector<MessageTreeNode>
-MessageTree::getNodes(const std::vector<MessageTreeSnapshotNode>& snapshot,
+MessageTree::getNodes(const std::vector<MessageSnapshot>& snapshot,
                       bool includeHistory,
                       bool includeReason) const {
     std::vector<MessageTreeNode> diff{};
@@ -888,7 +888,7 @@ void MessageTree::collectSection(const TreeNode& node,
 }
 
 bool MessageTree::snapshotEquals(const MessageTreeNode& current,
-                                 const MessageTreeSnapshotNode& snapshot) {
+                                 const MessageSnapshot& snapshot) {
     if (snapshot.timeMs.has_value() && current.timeMs != *snapshot.timeMs) {
         return false;
     }
@@ -897,7 +897,7 @@ bool MessageTree::snapshotEquals(const MessageTreeNode& current,
         return false;
     }
 
-    if (!snapshot.hasReason) {
+    if (snapshot.reason.empty()) {
         return true;
     }
 

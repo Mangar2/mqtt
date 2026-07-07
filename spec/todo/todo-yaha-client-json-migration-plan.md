@@ -104,19 +104,16 @@ dependency" section below.
   `internal/http_mqtt_interface_operations_helpers.cpp` — now implemented
   with `JsonValue`-based serialization.
 
-### 5. message_store_client — OPEN
+### 5. message_store_client — DONE
 
-(unchanged from previous version of this plan)
-
-- [ ] `message_store/message_store_json_parser.cpp` / `.h` (845 / 46 lines):
-  fully custom parser for incoming HTTP request bodies — `parseSnapshotBody`,
-  `parseSensorPostBody` — no `json/json_value.h` include at all.
-- [ ] `message_store/message_store.cpp` (~lines 459-546): hand-rolled
-  string-concatenation JSON response builder — `jsonStringLiteral`,
-  `valueToJson`, `reasonsToJson`, `historyToJson`, `nodeToJson`,
-  `nodesToJson`, `wrapPayloadObject`. Only individual string values are
-  escaped via `JsonValue{...}.stringify()`; the surrounding object/array
-  structure is built by hand.
+- [x] `message_store/message_store_json_parser.cpp` / `.h` — migrated request
+  parsing to `JsonValue::try_parse(...)` with object/array access for both
+  `parseSnapshotBody` and `parseSensorPostBody`, while preserving legacy
+  sensor defaults and compatibility flags (`history`/`reason`/`time`,
+  `levelAmount`/`levelamount`, `nodes`).
+- [x] `message_store/message_store.cpp` — migrated HTTP response JSON building
+  from manual string concatenation to `JsonValue` object/array construction
+  and `.stringify()` (`value`, `reason`, `history`, node arrays, payload wrapper).
 
 ### 6. opensensemap_client — OPEN
 
@@ -216,9 +213,8 @@ dependency" section below.
 
 1. ~~`automation_client` + `automation/rules_tree_json_reader`~~ — done.
 2. ~~`zwave_client/zwave_client_app.cpp` + `zwave/zwave_service_component.cpp`~~ — done.
-3. `message_store_client` (`message_store_json_parser` +
-   `message_store.cpp` response builder) — self-contained, moderate size,
-   HTTP request/response path, not per-MQTT-message hot path.
+3. ~~`message_store_client` (`message_store_json_parser` +
+  `message_store.cpp` response builder)~~ — done.
 4. `value_service_client` (`value_service/value_service_component.cpp`) —
    self-contained, same scale/shape as the already-migrated
    `zwave_client_app.cpp`, good template reuse.

@@ -378,10 +378,10 @@ void applyGetQueryOptions(const httplib::Request& request, ParsedHttpQuery& quer
     query.snapshotBody = request.body;
 }
 
-std::vector<MessageTreeSnapshotNode> filterSnapshotByLevel(const std::vector<MessageTreeSnapshotNode>& snapshot,
+std::vector<MessageSnapshot> filterSnapshotByLevel(const std::vector<MessageSnapshot>& snapshot,
                                                            const std::string& topicPrefix,
                                                            std::uint32_t levelAmount) {
-    std::vector<MessageTreeSnapshotNode> filteredSnapshot{};
+    std::vector<MessageSnapshot> filteredSnapshot{};
     filteredSnapshot.reserve(snapshot.size());
     for (const auto& snapshotNode : snapshot) {
         if (isWithinRequestedLevel(snapshotNode.topic, topicPrefix, levelAmount)) {
@@ -457,92 +457,95 @@ std::string toIsoTimestamp(std::int64_t millisecondsSinceEpoch) {
     return stream.str();
 }
 
-std::string jsonStringLiteral(std::string_view text) {
-    return mqtt::json::JsonValue{std::string{text}}.stringify();
-}
-
-std::string valueToJson(const Value& value) {
+mqtt::json::JsonValue valueToJsonValue(const Value& value) {
     if (std::holds_alternative<std::string>(value)) {
-        return jsonStringLiteral(std::get<std::string>(value));
+        return mqtt::json::JsonValue{std::get<std::string>(value)};
     }
 
-    std::ostringstream stream;
-    stream << std::get<double>(value);
-    return stream.str();
+    return mqtt::json::JsonValue{std::get<double>(value)};
 }
 
-std::string reasonsToJson(const ReasonList& reasons) {
-    std::string result{"["};
-    for (std::size_t i = 0U; i < reasons.size(); ++i) {
-        if (i > 0U) {
-            result += ',';
-        }
-        result += std::string{"{\"message\":"} + jsonStringLiteral(reasons[i].message)
-            + std::string{",\"timestamp\":"} + jsonStringLiteral(reasons[i].timestamp) + '}';
+mqtt::json::JsonValue reasonsToJsonValue(const ReasonList& reasons) {
+    mqtt::json::JsonValue::Array reasonArray{};
+    reasonArray.reserve(reasons.size());
+    for (const auto& reasonEntry : reasons) {
+        reasonArray.emplace_back(mqtt::json::JsonValue::Object{
+            {"message", mqtt::json::JsonValue{reasonEntry.message}},
+            {"timestamp", mqtt::json::JsonValue{reasonEntry.timestamp}},
+        });
     }
-    result += "]";
-    return result;
+
+    return mqtt::json::JsonValue{std::move(reasonArray)};
 }
 
-std::string historyToJson(const std::vector<MessageTreeHistoryEntry>& history,
-                          const bool includeReason,
-                          const bool includeTime) {
-    std::string result{"["};
-    for (std::size_t i = 0U; i < history.size(); ++i) {
-        if (i > 0U) {
-            result += ',';
-        }
-        const MessageTreeHistoryEntry& item = history[i];
-        result += "{\"value\":" + valueToJson(item.value);
+mqtt::json::JsonValue historyToJsonValue(const std::vector<MessageTreeHistoryEntry>& history,
+                                         const bool includeReason,
+                                         const bool includeTime) {
+    mqtt::json::JsonValue::Array historyArray{};
+    historyArray.reserve(history.size());
+    for (const auto& historyEntry : history) {
+        mqtt::json::JsonValue::Object historyObject{
+            {"value", valueToJsonValue(historyEntry.value)},
+        };
+
         if (includeTime) {
-            result += std::string{",\"time\":"} + jsonStringLiteral(toIsoTimestamp(item.timeMs));
+            historyObject["time"] = mqtt::json::JsonValue{toIsoTimestamp(historyEntry.timeMs)};
         }
+
         if (includeReason) {
-            result += ",\"reason\":" + reasonsToJson(item.reason());
+            historyObject["reason"] = reasonsToJsonValue(historyEntry.reason());
         }
-        result += '}';
+
+        historyArray.emplace_back(std::move(historyObject));
     }
-    result += "]";
-    return result;
+
+    return mqtt::json::JsonValue{std::move(historyArray)};
 }
 
-std::string nodeToJson(const MessageTreeNode& node,
-                       const bool includeHistory,
-                       const bool includeReason,
-                       const bool includeTime) {
-    std::string result{"{"};
-    result += std::string{"\"topic\":"} + jsonStringLiteral(node.topic);
-    result += ",\"value\":" + valueToJson(node.value);
+mqtt::json::JsonValue nodeToJsonValue(const MessageTreeNode& node,
+                                      const bool includeHistory,
+                                      const bool includeReason,
+                                      const bool includeTime) {
+    mqtt::json::JsonValue::Object nodeObject{
+        {"topic", mqtt::json::JsonValue{node.topic}},
+        {"value", valueToJsonValue(node.value)},
+    };
+
     if (includeTime) {
-        result += std::string{",\"time\":"} + jsonStringLiteral(toIsoTimestamp(node.timeMs));
+        nodeObject["time"] = mqtt::json::JsonValue{toIsoTimestamp(node.timeMs)};
     }
+
     if (includeReason) {
-        result += ",\"reason\":" + reasonsToJson(node.reason());
+        nodeObject["reason"] = reasonsToJsonValue(node.reason());
     }
+
     if (includeHistory) {
-        result += ",\"history\":" + historyToJson(node.history(), includeReason, includeTime);
+        nodeObject["history"] = historyToJsonValue(node.history(), includeReason, includeTime);
     }
-    result += '}';
-    return result;
+
+    return mqtt::json::JsonValue{std::move(nodeObject)};
 }
 
 std::string nodesToJson(const std::vector<MessageTreeNode>& nodes,
                         const bool includeHistory,
                         const bool includeReason,
                         const bool includeTime) {
-    std::string result{"["};
-    for (std::size_t i = 0U; i < nodes.size(); ++i) {
-        if (i > 0U) {
-            result += ',';
-        }
-        result += nodeToJson(nodes[i], includeHistory, includeReason, includeTime);
+    mqtt::json::JsonValue::Array nodesArray{};
+    nodesArray.reserve(nodes.size());
+    for (const auto& node : nodes) {
+        nodesArray.push_back(nodeToJsonValue(node, includeHistory, includeReason, includeTime));
     }
-    result += "]";
-    return result;
+
+    return mqtt::json::JsonValue{std::move(nodesArray)}.stringify();
 }
 
 std::string wrapPayloadObject(const std::string& payloadJson) {
-    return std::string{"{\"payload\":"} + payloadJson + '}';
+    const auto payloadValue = mqtt::json::JsonValue::try_parse(payloadJson);
+    if (!payloadValue.has_value()) {
+        return std::string{"{\"payload\":"} + payloadJson + '}';
+    }
+
+    return mqtt::json::JsonValue{mqtt::json::JsonValue::Object{{"payload", *payloadValue}}}.stringify();
 }
 
 void setHttpErrorResponse(httplib::Response& response, int status, const YahaError& error) {
@@ -851,7 +854,7 @@ MessageStore::querySection(const std::string& topicPrefix,
 }
 
 std::vector<MessageTreeNode>
-MessageStore::queryNodes(const std::vector<MessageTreeSnapshotNode>& snapshot,
+MessageStore::queryNodes(const std::vector<MessageSnapshot>& snapshot,
                          bool includeHistory,
                          bool includeReason) const {
     std::lock_guard<std::mutex> lock{treeStateMutex_};
@@ -960,7 +963,7 @@ void MessageStore::handleHttpRequest(MessageStore& store,
                                    query.includeHistory,
                                    query.includeReason);
     } else {
-        std::vector<MessageTreeSnapshotNode> snapshot{};
+        std::vector<MessageSnapshot> snapshot{};
         if (message_store_json::parseSnapshotBody(query.snapshotBody, snapshot)) {
             if (query.hasExplicitLevelAmount) {
                 snapshot = filterSnapshotByLevel(snapshot, topicPrefix, query.levelAmount);

@@ -6,7 +6,8 @@ Provides MessageStore foundations for steps 4 to 7: internal MessageTree data st
 persistence service, MessageStore component logic implementing IMqttComponent, and HTTP query
 interface (GET + sensor-compatible POST) via cpp-httplib.
 JSON request parsing for snapshot and sensor-compatible payloads is isolated in dedicated
-parser helper files to keep component logic compact.
+parser helper files and implemented with `JsonValue::try_parse(...)` object/array traversal
+to keep component logic compact.
 The tree stores current topic state, bounded history, section and snapshot diff queries,
 plus stale-node cleanup. Persistence serializes tree state to disk, restores from the most
 recent valid file on startup, and manages periodic saves.
@@ -221,10 +222,15 @@ class MessageTreeNode;
   - response for successfully parsed sensor-compatible POST body is wrapped as JSON object
     with `payload` array field for legacy `sensor.php` compatibility.
   - Invalid POST JSON falls back to section query defaults (legacy bridge behavior).
+- Snapshot and sensor POST payload parsing is implemented via `JsonValue` and preserves
+  legacy compatibility behavior (invalid flag values fallback, unknown fields ignored,
+  strict required fields for snapshot entries).
 - Malformed body -> empty result array with status 200.
 - Unknown path -> status 404 with `YahaError` payload code `YAHA_MESSAGE_STORE_HTTP_NOT_FOUND`.
 - Invalid percent-encoding in topic prefix -> status 400 with `YahaError` payload code `YAHA_MESSAGE_STORE_HTTP_INVALID_PERCENT_ENCODING`.
 - Response is JSON array with `application/json`.
+- Response payload objects/arrays are built via `JsonValue` serialization (no manual
+  string-concatenation JSON assembly).
 - All HTTP JSON string fields (`topic`, string `value`, `time`, reason `message`, reason `timestamp`) use strict JSON escaping; ASCII control bytes below `0x20` are emitted as `\u00XX` escapes.
 - HTTP JSON node shape uses projection flags:
   - node field `time` (string, ISO-8601 UTC) is included only when `time=true`,

@@ -33,7 +33,7 @@ struct SensorPostRequest {
  * @param out Parsed topic/value snapshot entries.
  * @return True when parsing succeeds.
  */
-bool parseSnapshotBody(const std::string& body, std::vector<MessageTreeSnapshotNode>& out);
+bool parseSnapshotBody(const std::string& body, std::vector<MessageSnapshot>& out);
 
 /**
  * @brief Parses sensor.php-compatible POST JSON object.

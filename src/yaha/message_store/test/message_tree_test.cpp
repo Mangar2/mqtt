@@ -1145,8 +1145,8 @@ TEST_CASE("get_nodes_returns_only_changed_nodes_for_required_snapshot_topics", "
     tree.addData(yaha::Message{"home/a", std::string{"same"}});
     tree.addData(yaha::Message{"home/b", std::string{"new"}});
 
-    std::vector<yaha::MessageTreeSnapshotNode> snapshot{};
-    snapshot.push_back({"home/a", std::string{"same"}, {}, false, std::nullopt});
+    std::vector<yaha::MessageSnapshot> snapshot{};
+    snapshot.push_back({"home/a", std::string{"same"}, {}, std::nullopt});
 
     const auto nodes = tree.getNodes(snapshot, true, true);
     REQUIRE(nodes.empty());

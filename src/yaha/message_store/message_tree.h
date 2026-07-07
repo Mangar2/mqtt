@@ -21,11 +21,10 @@ namespace yaha {
 /**
  * @brief Snapshot node used by diff query mode.
  */
-struct MessageTreeSnapshotNode {
+struct MessageSnapshot {
     std::string topic;                          ///< Full topic path.
-    Value value{std::string{}};                 ///< Snapshot value.
-    ReasonList reason;            ///< Snapshot reason chain.
-    bool hasReason{false};                      ///< True when reason field was explicitly provided.
+    Value value{std::string{}};             ///< Snapshot value.
+    ReasonList reason;                          ///< Snapshot reason chain.
     std::optional<std::int64_t> timeMs;         ///< Optional snapshot timestamp for time-aware diff.
 };
 
@@ -112,7 +111,7 @@ public:
      * @return Changed or new nodes.
      */
     [[nodiscard]] std::vector<MessageTreeNode>
-    getNodes(const std::vector<MessageTreeSnapshotNode>& snapshot,
+    getNodes(const std::vector<MessageSnapshot>& snapshot,
              bool includeHistory,
              bool includeReason) const;
 
@@ -391,7 +390,7 @@ private:
      * @return True when equivalent for value and optional reason/timestamp checks.
      */
     [[nodiscard]] static bool snapshotEquals(const MessageTreeNode& current,
-                                             const MessageTreeSnapshotNode& snapshot);
+                                             const MessageSnapshot& snapshot);
 
     /**
      * @brief Builds a detached ReasonList copy with reserved target capacity.
