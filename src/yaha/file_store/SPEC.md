@@ -51,6 +51,8 @@ Implements a standalone key/value HTTP store with MQTT monitoring publishes.
 - Payload format:
   - `content-type: application/json` stores JSON payload as JSON.
   - other content types store payload as text.
+- JSON `POST` payload validation is performed via `mqtt::json::JsonValue::try_parse(...)`.
+- For text payload reads (`T`-prefixed and legacy untyped files), `GET` response JSON string wrapping is produced via `JsonValue{...}.stringify()`.
 - Key length > `maxKeyLength` returns `400`.
 - Missing key on `GET` returns `404`.
 - Internal filesystem/runtime errors return `500`.
@@ -64,6 +66,7 @@ Implements a standalone key/value HTTP store with MQTT monitoring publishes.
   - `YAHA_FILE_STORE_READ_FAILED` (500)
 - Monitoring publishes to `<topicPrefix>/created|changed|deleted|error`.
 - Monitoring payload exposes logical metadata only; mapped persistence filenames are never published externally.
+- Monitoring payload JSON is built from `mqtt::json::JsonValue` object serialization.
 - Monitoring trigger sources:
   - successful HTTP `POST` write (`source=http-post`),
   - filesystem watcher create/change/delete (`source=filesystem-watch`).

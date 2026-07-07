@@ -1,6 +1,7 @@
 #include "yaha/file_store/file_store.h"
 
 #include "httplib.h"
+#include "json/json_value.h"
 #include "yaha/error_handling/yaha_error.h"
 
 #include <algorithm>
@@ -32,7 +33,7 @@ std::int64_t nowMilliseconds() {
 }
 
 bool startsWith(const std::string& text, const std::string& prefix) {
-    return text.size() >= prefix.size() && text.compare(0U, prefix.size(), prefix) == 0;
+    return text.starts_with(prefix);
 }
 
 std::string joinTopic(const std::string& prefix, const std::string& suffix) {
@@ -404,8 +405,8 @@ FileStore::WritePayloadResult FileStore::writeKeyPayload(
             }
         }
 
-        std::sort(backups.begin(), backups.end());
-        const std::size_t maxBackups = static_cast<std::size_t>(config_.keepFiles - 1U);
+        std::ranges::sort(backups);
+        const auto maxBackups = static_cast<std::size_t>(config_.keepFiles - 1U);
         while (backups.size() > maxBackups) {
             std::error_code removeError{};
             std::filesystem::remove(backups.front(), removeError);
@@ -466,34 +467,21 @@ FileStore::ReadPayloadResult FileStore::readKeyPayload(const std::string& keyPat
         if (stored[0] == 'J') {
             result.responseJson = body;
         } else {
-            result.responseJson = std::format("\"{}\"", jsonEscape(body));
+            result.responseJson = mqtt::json::JsonValue{body}.stringify();
         }
         result.success = true;
         logFileIo("read", keyPath, filename, "ok");
         return result;
     }
 
-    result.responseJson = std::format("\"{}\"", jsonEscape(stored));
+    result.responseJson = mqtt::json::JsonValue{stored}.stringify();
     result.success = true;
     logFileIo("read", keyPath, filename, "ok");
     return result;
 }
 
 bool FileStore::validateJsonPayload(const std::string& jsonText) {
-    std::size_t index = 0U;
-    while (index < jsonText.size() && std::isspace(static_cast<unsigned char>(jsonText[index])) != 0) {
-        index += 1U;
-    }
-
-    if (index >= jsonText.size()) {
-        return false;
-    }
-
-    const char first = jsonText[index];
-    const bool startsLikeJson = first == '{' || first == '[' || first == '"' || first == '-'
-        || (first >= '0' && first <= '9') || first == 't' || first == 'f' || first == 'n';
-
-    return startsLikeJson;
+    return mqtt::json::JsonValue::try_parse(jsonText).has_value();
 }
 
 void FileStore::publishMonitoring(const std::string& eventType,
@@ -509,21 +497,20 @@ void FileStore::publishMonitoring(const std::string& eventType,
     const std::string prefix = trimTopicPrefix(config_.monitoring.topicPrefix);
     const std::string topic = joinTopic(prefix, eventType);
 
-    std::string payload{"{"};
-    payload += "\"keyPath\":";
+    mqtt::json::JsonValue::Object payloadObject{};
     if (keyPath == nullptr) {
-        payload += "null";
+        payloadObject.emplace("keyPath", mqtt::json::JsonValue{});
     } else {
-        payload += std::format("\"{}\"", jsonEscape(*keyPath));
+        payloadObject.emplace("keyPath", mqtt::json::JsonValue{*keyPath});
     }
-    payload += std::format(",\"directory\":\"{}\"", jsonEscape(config_.directory.string()));
-    payload += std::format(",\"changeType\":\"{}\"", jsonEscape(eventType));
-    payload += ",\"timestamp\":" + std::to_string(nowMilliseconds());
-    payload += std::format(",\"source\":\"{}\"", jsonEscape(source));
+    payloadObject.emplace("directory", mqtt::json::JsonValue{config_.directory.string()});
+    payloadObject.emplace("changeType", mqtt::json::JsonValue{eventType});
+    payloadObject.emplace("timestamp", mqtt::json::JsonValue{static_cast<double>(nowMilliseconds())});
+    payloadObject.emplace("source", mqtt::json::JsonValue{source});
     if (details != nullptr) {
-        payload += std::format(",\"details\":\"{}\"", jsonEscape(*details));
+        payloadObject.emplace("details", mqtt::json::JsonValue{*details});
     }
-    payload += "}";
+    const std::string payload = mqtt::json::JsonValue{std::move(payloadObject)}.stringify();
 
     if (!tryPublishMonitoringMessage(eventType, topic, payload)) {
         enqueuePendingMonitoringEvent(eventType, topic, payload);
@@ -587,7 +574,12 @@ void FileStore::enqueuePendingMonitoringEvent(const std::string& eventType,
                                               const std::string& topic,
                                               const std::string& payload) const {
     std::lock_guard<std::mutex> lock{pendingMonitoringQueueMutex_};
-    pendingMonitoringQueue_.push_back(PendingMonitoringEntry{eventType, topic, payload, 0U});
+    pendingMonitoringQueue_.push_back(PendingMonitoringEntry{
+        .eventType = eventType,
+        .topic = topic,
+        .payload = payload,
+        .attemptCount = 0U,
+    });
 }
 
 void FileStore::processPendingMonitoringQueue() const {
@@ -637,36 +629,8 @@ void FileStore::logMonitoringFailure(const std::string& eventType,
               << std::flush;
 }
 
-std::string FileStore::jsonEscape(const std::string& text) {
-    std::string escaped{};
-    escaped.reserve(text.size());
-    for (const char chr : text) {
-        switch (chr) {
-            case '\\':
-                escaped += "\\\\";
-                break;
-            case '"':
-                escaped += "\\\"";
-                break;
-            case '\n':
-                escaped += "\\n";
-                break;
-            case '\r':
-                escaped += "\\r";
-                break;
-            case '\t':
-                escaped += "\\t";
-                break;
-            default:
-                escaped.push_back(chr);
-                break;
-        }
-    }
-    return escaped;
-}
-
 std::string FileStore::toLower(std::string text) {
-    std::transform(text.begin(), text.end(), text.begin(), [](const unsigned char chr) {
+    std::ranges::transform(text, text.begin(), [](const unsigned char chr) {
         return static_cast<char>(std::tolower(chr));
     });
     return text;

@@ -39,7 +39,7 @@ what each `yaha_..._main.cpp` actually includes/instantiates.
 |---|---|---|---|---|
 | 1 | `yaha_automationclient_main.cpp` | `automation_client/` | `automation_client/` (own) + `automation/` | Yes — migrated |
 | 2 | `yaha_brokerconnectorclient_main.cpp` | `broker_connector_client/` | `broker_connector/` | Yes — migrated |
-| 3 | `yaha_filestoreclient_main.cpp` | `file_store_client/` | `file_store/` | Yes — open |
+| 3 | `yaha_filestoreclient_main.cpp` | `file_store_client/` | `file_store/` | Yes — migrated |
 | 4 | `yaha_httpmqttinterfaceclient_main.cpp` | `http_mqtt_interface_client/` | `http_mqtt_interface_client/internal/` (own) + `http_mqtt_interface/` | Yes — partially open |
 | 5 | `yaha_msgstoreclient_main.cpp` | `message_store_client/` | `message_store/` | Yes — open |
 | 6 | `yaha_opensensemapclient_main.cpp` | `opensensemap_client/` | `opensensemap/` | Yes — open |
@@ -78,21 +78,15 @@ dependency" section below.
   - `/connect` token-object parsing and `/subscribe` qos-array parsing now use
     parsed `JsonValue` object/array access instead of range/token scanning.
 
-### 3. file_store_client — OPEN
+### 3. file_store_client — DONE
 
-- [ ] `file_store/file_store.cpp` — local `jsonEscape` (line 640):
-  - `validateJsonPayload` (~line 482): shallow "does this look like JSON"
-    check (only inspects the first non-whitespace character). FileStore
-    stores caller-provided JSON as an opaque blob, so this could become a
-    real `JsonValue::try_parse(...).has_value()` check — stricter and
-    simpler than the current heuristic.
-  - `publishMonitoring` (~line 505): hand-built monitoring-event JSON
-    payload (`{"keyPath":...,"directory":...,"changeType":...,"timestamp":...,"source":...,"details":...}`)
-    via string concatenation and `std::format` with `jsonEscape` — a
-    straightforward `JsonValue::stringify()` replacement.
-  - Response wrapping at read time (~lines 467, 476) wraps a stored string in
-    quotes via `std::format("\"{}\"", jsonEscape(body))` — same pattern,
-    replaceable with `JsonValue{body}.stringify()`.
+- [x] `file_store/file_store.cpp` — migrated to `JsonValue`:
+  - `validateJsonPayload` now validates by parsing with
+    `JsonValue::try_parse(...).has_value()`.
+  - `publishMonitoring` now builds payload object and serializes via
+    `JsonValue::stringify()`.
+  - Text response wrapping on read path now uses
+    `JsonValue{body}.stringify()` (also for legacy untyped payload files).
 
 ### 4. http_mqtt_interface_client — PARTIALLY OPEN
 

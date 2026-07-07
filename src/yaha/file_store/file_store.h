@@ -227,9 +227,9 @@ private:
     [[nodiscard]] ReadPayloadResult readKeyPayload(const std::string& keyPath) const;
 
     /**
-     * @brief Performs lightweight JSON payload validation.
+     * @brief Validates JSON payload by parsing with JsonValue.
      * @param jsonText Candidate JSON text.
-     * @return True when text resembles valid JSON payload start.
+     * @return True when text parses as valid JSON.
      */
     [[nodiscard]] static bool validateJsonPayload(const std::string& jsonText);
 
@@ -284,13 +284,6 @@ private:
                                      const std::string& payload,
                                      const std::string& categoryText,
                                      const std::string& reasonText);
-
-    /**
-     * @brief Escapes one text for embedding in JSON string value.
-     * @param text Input text.
-     * @return Escaped text.
-     */
-    [[nodiscard]] static std::string jsonEscape(const std::string& text);
 
     /**
      * @brief Converts one ASCII string to lowercase.
