@@ -503,6 +503,8 @@ if(BUILD_TESTING)
         ${YAHA_ZWAVE_SOURCES})
     list(FILTER MQTT_LIB_SOURCES EXCLUDE REGEX "/main\\.cpp$")
     list(FILTER MQTT_LIB_SOURCES EXCLUDE REGEX "/openzwave_runtime_driver_port\\.cpp$")
+    list(FILTER MQTT_LIB_SOURCES EXCLUDE REGEX "/openzwave_notification_bridge\\.cpp$")
+    list(FILTER MQTT_LIB_SOURCES EXCLUDE REGEX "/openzwave_write_dispatcher\\.cpp$")
     list(APPEND MQTT_LIB_SOURCES
         src/yaha/automation_client/automation_client_app.cpp
         src/yaha/broker_connector_client/broker_connector_client_app.cpp

@@ -2,90 +2,215 @@
 
 ## Scope
 
-Several `src/yaha/*_client` modules parse or build JSON with their own hand-rolled
-code instead of the generic `src/json` module (`JsonValue::parse` /
-`JsonValue::stringify`, see `src/json/SPEC.md`). This plan inventories where that
-custom JSON handling lives so it can be replaced module by module.
+Several YAHA client apps parse or build JSON with their own hand-rolled code
+instead of the generic `src/json` module (`JsonValue::parse` /
+`JsonValue::stringify`, see `src/json/SPEC.md`). This plan inventories where
+that custom JSON handling lives so it can be replaced client by client.
 
 Goal: every client uses `JsonValue` for JSON parsing/serialization. Custom
-recursive-descent parsers, manual escaping, and manual string-concatenation
-JSON builders in client code should be removed.
+recursive-descent parsers, manual field-extraction via `find`/`substr`, manual
+escaping, and manual string-concatenation JSON builders should be removed.
 
-## All 12 YAHA clients
+### Correction from the first version of this plan
 
-There are exactly 12 YAHA client apps, one per `src/yaha_..._main.cpp` entry point.
-Every one of them was checked for own JSON handling in its `src/yaha/*_client/`
-directory.
+The first version of this plan only looked inside `src/yaha/*_client/`
+directories and missed most of the actual JSON handling. In this codebase
+each client app is really two halves that are wired together in its
+`src/yaha_..._main.cpp` entry point:
 
-| # | Main entry point | Client directory | Own JSON? | Action |
+- `src/yaha/<name>_client/` — CLI/INI config loading, runtime wiring, process
+  lifecycle. Usually thin, rarely touches JSON itself.
+- `src/yaha/<name>/` (no `_client` suffix) — the actual domain component
+  (`XyzComponent`) that talks to the broker or an external HTTP API, and does
+  the real JSON parsing/building. **This is where the custom JSON code
+  actually lives.**
+
+`message_store_client` is a clear example: `message_store_client_app.cpp`
+itself has no JSON code, but the `message_store` library it starts
+(`message_store.cpp`, `message_store_json_parser.cpp`) has ~1300 lines of
+hand-rolled JSON parsing/serialization. The same client-app/component split
+exists for every other client, so the search below was redone by re-checking
+each `_client` directory's paired component directory(ies), confirmed via
+what each `yaha_..._main.cpp` actually includes/instantiates.
+
+## All 12 YAHA clients, with paired component directory
+
+| # | Main entry point | Client directory | Paired component directory | Own JSON? |
 |---|---|---|---|---|
-| 1 | `yaha_automationclient_main.cpp` | `automation_client/` | Yes | Migrate |
-| 2 | `yaha_brokerconnectorclient_main.cpp` | `broker_connector_client/` | No | none |
-| 3 | `yaha_filestoreclient_main.cpp` | `file_store_client/` | No | none |
-| 4 | `yaha_httpmqttinterfaceclient_main.cpp` | `http_mqtt_interface_client/` | No (already uses `JsonValue`) | none |
-| 5 | `yaha_msgstoreclient_main.cpp` | `message_store_client/` | Yes | Migrate |
-| 6 | `yaha_opensensemapclient_main.cpp` | `opensensemap_client/` | No | none |
-| 7 | `yaha_pushoverclient_main.cpp` | `pushover_client/` | No | none |
-| 8 | `yaha_remoteserviceclient_main.cpp` | `remote_service_client/` | No | none |
-| 9 | `yaha_rs485interfaceclient_main.cpp` | `rs485_interface_client/` | No | none |
-| 10 | `yaha_serialdeviceclient_main.cpp` | `serial_device_client/` | No | none |
-| 11 | `yaha_valueserviceclient_main.cpp` | `value_service_client/` | No | none |
-| 12 | `yaha_zwaveclient_main.cpp` | `zwave_client/` | Yes | Migrate |
+| 1 | `yaha_automationclient_main.cpp` | `automation_client/` | `automation_client/` (own) + `automation/` | Yes — migrated |
+| 2 | `yaha_brokerconnectorclient_main.cpp` | `broker_connector_client/` | `broker_connector/` | Yes — open |
+| 3 | `yaha_filestoreclient_main.cpp` | `file_store_client/` | `file_store/` | Yes — open |
+| 4 | `yaha_httpmqttinterfaceclient_main.cpp` | `http_mqtt_interface_client/` | `http_mqtt_interface_client/internal/` (own) + `http_mqtt_interface/` | Yes — partially open |
+| 5 | `yaha_msgstoreclient_main.cpp` | `message_store_client/` | `message_store/` | Yes — open |
+| 6 | `yaha_opensensemapclient_main.cpp` | `opensensemap_client/` | `opensensemap/` | Yes — open |
+| 7 | `yaha_pushoverclient_main.cpp` | `pushover_client/` | `pushover/` | Yes — open |
+| 8 | `yaha_remoteserviceclient_main.cpp` | `remote_service_client/` | `remote_service/` + `remote_service_http/` | Yes — open (2 duplicate parsers) |
+| 9 | `yaha_rs485interfaceclient_main.cpp` | `rs485_interface_client/` | `rs485_interface/`, `rs485_protocol/`, `rs485_state/` | No |
+| 10 | `yaha_serialdeviceclient_main.cpp` | `serial_device_client/` | `serial_device/` | Partially — parse side done, build side open |
+| 11 | `yaha_valueserviceclient_main.cpp` | `value_service_client/` | `value_service/` | Yes — open |
+| 12 | `yaha_zwaveclient_main.cpp` | `zwave_client/` | `zwave_client/` (own, migrated) + `zwave/` | Partially — client done, component open |
 
 `mqtt_client/` is **not** one of the 12 clients (no `yaha_..._main.cpp` of its
 own) — it is shared infrastructure used by all 12 clients, see the "shared
 dependency" section below.
 
-## 1. Clients with own JSON implementation — migration needed
+## 1. Per-client findings
 
-- [x] **zwave_client** (`src/yaha/zwave_client/`, client #12)
-  - `zwave_client_app.cpp` (~lines 462-1136): full custom recursive-descent
-    parser for FileStore-persisted device settings —
-    `parseJsonStringToken`, `parseJsonUnsignedToken`, `parseJsonDeviceField`,
-    `parseJsonDeviceObject`, `parseJsonDevicesArray`, `parseJsonRootEntry`,
-    `parseJsonRootEntries`, `parseJsonRootDevices` — plus a custom builder:
-    `appendStringField`, `appendNumberField`, `appendOptionalNumberField`,
-    `appendOptionalStringField`, `appendDeviceAsJson`,
-    `serializeZwaveSettingsToJson`.
-  - `zwave_client_app.h`: declares the public entry points
-    `tryApplyZwaveDeviceSettingsFromJson(...)` and
-    `serializeZwaveSettingsToJson(...)` — signatures may need to change if the
-    payload is represented as `JsonValue` instead of raw `std::string`.
-  - Biggest and clearest migration candidate: largest amount of duplicated
-    parser/serializer logic among all clients.
+### 1. automation_client — DONE
 
-- [x] **automation_client** (`src/yaha/automation_client/`, client #1)
-  - `automation_rule_json.cpp` / `automation_rule_json.h`: custom
-    `escapeJsonString` and a recursive `toJsonText` serializer that turns a
-    `RuleTreeNode` into JSON text.
-  - Parsing itself is delegated to `automation/rules_tree_json_reader.cpp` /
-    `.h` (398 lines) — **not** located in `automation_client`, but it is the
-    only parser backing `automation_client`'s `parseJsonNode`, and it
-    duplicates a full recursive-descent JSON parser incl. UTF-8/escape
-    handling that already exists in `src/json/json_value.cpp`. Must be
-    migrated together with `automation_rule_json.cpp`, otherwise the
-    duplicate parser just moves rather than disappears.
+- [x] `automation_client/automation_rule_json.cpp` / `.h` — migrated to
+  `JsonValue`.
+- [x] `automation/rules_tree_json_reader.cpp` / `.h` — migrated to
+  `JsonValue`.
 
-- [ ] **message_store_client** (`src/yaha/message_store_client/`, client #5)
-  - `message_store_client_app.cpp`/`.h` themselves have no JSON code, but the
-    HTTP interface they start is served by the `message_store` library, which
-    is the part that actually converts data to/from JSON for HTTP callers.
-    Same pattern as automation_client + `automation/rules_tree_json_reader`:
-    the client is clean, the shared library behind it is not.
-  - `message_store/message_store_json_parser.cpp` / `.h` (845 / 46 lines): a
-    fully custom, hand-written parser for incoming HTTP request bodies —
-    `parseSnapshotBody`, `parseSensorPostBody` — with no include of
-    `json/json_value.h` at all.
-  - `message_store/message_store.cpp` (~lines 459-546): hand-rolled
-    string-concatenation JSON response builder returned to HTTP callers —
-    `jsonStringLiteral`, `valueToJson`, `reasonsToJson`, `historyToJson`,
-    `nodeToJson`, `nodesToJson`, `wrapPayloadObject`. Only individual string
-    values are escaped via `JsonValue{...}.stringify()`
-    (`jsonStringLiteral`); the surrounding object/array structure is built by
-    hand instead of via `JsonValue::stringify()`.
-  - Must migrate both `message_store_json_parser` and the response builder in
-    `message_store.cpp` together — parsing and serialization are two ends of
-    the same custom implementation.
+### 2. broker_connector_client — OPEN
+
+- [ ] `broker_connector/relay_component.cpp` — local `escapeJsonString`
+  (line 15), used to embed a topic string in a log/error message.
+- [ ] `broker_connector/source_http_adapter.cpp` — local `escapeJson`
+  (line 55) plus hand-built request/response JSON via raw string
+  concatenation and `R"(...)"` literals:
+  - `buildConnectPayload` (~line 967): `{"clientId":...,"host":...,"port":...,"clean":...,"keepAlive":...}`
+  - `buildSubscribePayload` (~line 978): `{"clientId":...,"topics":{...}}`
+  - ping payload (~line 645): `{"token":"..."}`
+  - error responses (~lines 728, 737): `{"error":"bad_publish_packetid"}`, `{"error":"bad_publish_payload"}`
+  - `makeStandardJsonHeaders` (~line 553) only builds HTTP headers, not JSON
+    body — no change needed there.
+  - This is the client that talks HTTP to the broker connector's own
+    `/connect`, `/subscribe`, `/pingreq`, `/disconnect`, `/publish`
+    endpoints — a full custom mini JSON-RPC layer.
+
+### 3. file_store_client — OPEN
+
+- [ ] `file_store/file_store.cpp` — local `jsonEscape` (line 640):
+  - `validateJsonPayload` (~line 482): shallow "does this look like JSON"
+    check (only inspects the first non-whitespace character). FileStore
+    stores caller-provided JSON as an opaque blob, so this could become a
+    real `JsonValue::try_parse(...).has_value()` check — stricter and
+    simpler than the current heuristic.
+  - `publishMonitoring` (~line 505): hand-built monitoring-event JSON
+    payload (`{"keyPath":...,"directory":...,"changeType":...,"timestamp":...,"source":...,"details":...}`)
+    via string concatenation and `std::format` with `jsonEscape` — a
+    straightforward `JsonValue::stringify()` replacement.
+  - Response wrapping at read time (~lines 467, 476) wraps a stored string in
+    quotes via `std::format("\"{}\"", jsonEscape(body))` — same pattern,
+    replaceable with `JsonValue{body}.stringify()`.
+
+### 4. http_mqtt_interface_client — PARTIALLY OPEN
+
+- [x] `http_mqtt_interface/http_mqtt_interface_contracts.cpp` and
+  `internal/http_mqtt_interface_operations_helpers.cpp` — already use
+  `JsonValue` (e.g. `requireJsonObjectPayload` uses
+  `JsonValue::try_parse`).
+- [ ] `internal/http_mqtt_interface_operations_connect_publish.cpp` — still
+  builds outgoing broker request bodies by hand via `std::format` +
+  `escapeJsonString`, e.g. connect payload (~line 48-60), publish payload
+  (~line 175-178 using `messageValueToJson`/`reasonToJson`), disconnect
+  payload (~line 243).
+- [ ] `internal/http_mqtt_interface_operations_subscriptions.cpp` — same
+  pattern for subscribe/unsubscribe request bodies (~lines 19-107).
+- [ ] `messageValueToJson` / `reasonToJson` in
+  `internal/http_mqtt_interface_operations_helpers.cpp` (~lines 103-125) —
+  hand-built value/reason JSON fragments instead of building a `JsonValue`
+  tree and calling `.stringify()`.
+- This client is the most-migrated one already; the remaining gap is
+  specifically the *outgoing request body* builders, not the response
+  parsing (which is already on `JsonValue`).
+
+### 5. message_store_client — OPEN
+
+(unchanged from previous version of this plan)
+
+- [ ] `message_store/message_store_json_parser.cpp` / `.h` (845 / 46 lines):
+  fully custom parser for incoming HTTP request bodies — `parseSnapshotBody`,
+  `parseSensorPostBody` — no `json/json_value.h` include at all.
+- [ ] `message_store/message_store.cpp` (~lines 459-546): hand-rolled
+  string-concatenation JSON response builder — `jsonStringLiteral`,
+  `valueToJson`, `reasonsToJson`, `historyToJson`, `nodeToJson`,
+  `nodesToJson`, `wrapPayloadObject`. Only individual string values are
+  escaped via `JsonValue{...}.stringify()`; the surrounding object/array
+  structure is built by hand.
+
+### 6. opensensemap_client — OPEN
+
+- [ ] `opensensemap/opensensemap_component.cpp`:
+  - `extractJsonMessage` (~line 251): manual `find("\"message\"")` field
+    extraction from the openSenseMap API response instead of
+    `JsonValue::parse(...)["message"]`.
+  - Request body building (~line ~220): `stream << R"({"value":)" <<
+    numericValue << '}';` — trivial today, but should still go through
+    `JsonValue` for consistency.
+
+### 7. pushover_client — OPEN
+
+- [ ] `pushover/pushover_component.cpp`:
+  - `tryExtractJsonInteger` (~line 54) and `tryExtractJsonArray` (~line 103):
+    manual key-search field extraction from the Pushover API response.
+  - Request payload builder (~line 291): `R"({"token":")" <<
+    escapeJsonString(token) << ...` manual concatenation for
+    token/user/message/title/device fields.
+
+### 8. remote_service_client — OPEN (largest gap besides value_service)
+
+- [ ] `remote_service/remote_service_component.cpp` — full hand-written
+  recursive-descent JSON parser: `parseJsonString`, `parseJsonUnsignedInteger`,
+  `skipJsonValue`, `skipJsonObject`, `skipJsonArray`, `skipJsonNumber`
+  (~lines 42-665), used to parse FileStore-persisted service mapping config
+  and monitor payloads.
+- [ ] `remote_service_http/remote_service_http_adapter.cpp` — a **second,
+  separate** hand-written JSON parser: `parseJsonString`,
+  `parseJsonValueToken`, `parseFlatJsonObject` (~lines 34-285), used to parse
+  incoming HTTP POST request bodies.
+- These two files duplicate the same kind of parsing logic independently of
+  each other — migrating both to `JsonValue` also removes the duplication
+  between them.
+
+### 9. rs485_interface_client — NO ACTION NEEDED
+
+- Checked `rs485_interface/`, `rs485_protocol/`, `rs485_state/` — no JSON
+  handling anywhere in these directories (protocol is binary/RS485-frame
+  based, not JSON).
+
+### 10. serial_device_client — PARTIALLY OPEN
+
+- [x] `serial_device/serial_device_parser.cpp` — already parses incoming
+  frames via `mqtt::json::JsonValue::try_parse` / `JsonValue` accessors. Good
+  reference example, same directory as the remaining gap below.
+- [ ] `serial_device/serial_device_wire_serializer.cpp` — local
+  `escapeJsonString` (~line 42) plus hand-built outgoing wire JSON:
+  `endpointToJsonText`, `valueToJsonText`, and the final concatenation
+  `{"S":...,"R":...,"C":"...","V":...}` (~lines 58-113). Parsing already
+  uses `JsonValue`; serialization still doesn't.
+- `serial_device/serial_device_component.cpp` only calls a shared
+  `escapeJsonString` for a log line (~line 610) — no structural JSON there.
+
+### 11. value_service_client — OPEN (largest gap)
+
+- [ ] `value_service/value_service_component.cpp` — full hand-written parser
+  and serializer, closely mirroring what `zwave_client_app.cpp` used to have
+  before its migration:
+  - Parser: `parseJsonStringToken`, `parseJsonIntegerToken`,
+    `parseValueMapEntry`, `parseValueMapJson` (~lines 57-530).
+  - Serializer: manual `jsonText` concatenation building a flat
+    `{"key":"value"|number, ...}` object (~lines 465-486), plus
+    `extractJsonStringField` (~line 417) for reading individual fields from
+    FileStore responses.
+  - This is the best candidate to migrate next after `message_store_client`,
+    given its similarity to the already-completed `zwave_client_app.cpp`
+    migration (same author style, same scale).
+
+### 12. zwave_client — PARTIALLY OPEN
+
+- [x] `zwave_client/zwave_client_app.cpp` / `.h` — migrated to `JsonValue`
+  (`json/json_error.h`, `json/json_value.h` now included).
+- [ ] `zwave/zwave_service_component.cpp` — the paired domain component
+  still has its own hand-rolled JSON:
+  - `encodeKnownNodesJson` (~line 169): manual
+    `{"nodes":[...]}` builder.
+  - `extractJsonStringField` (~line 36): manual field extraction, used to
+    read `keyPath` from FileStore payloads (~line 666).
+  - The client-app migration is done, but the sibling component it's wired
+    to in `yaha_zwaveclient_main.cpp` is not.
 
 ## 2. Shared dependency used by (almost) every client — flagged separately
 
@@ -95,55 +220,43 @@ dependency" section below.
     message: `escapeJsonString`, `buildEnvelopePayload`, `parseValueToken`,
     `parseReasonArray`, `parseEnvelopePayload`, `validateEnvelopeShape`.
   - Because every `*_client` app sends/receives messages through
-    `mqtt_client`, this codec is indirectly used by all 12 clients
-    (automation_client, broker_connector_client, file_store_client,
-    http_mqtt_interface_client, message_store_client, opensensemap_client,
-    pushover_client, remote_service_client, rs485_interface_client,
-    serial_device_client, value_service_client, zwave_client).
+    `mqtt_client`, this codec is indirectly used by all 12 clients.
   - Treat as its own migration item, not a "client": it sits on the hot path
     for every MQTT message, so replacing it with `JsonValue` needs a
     performance check (parse/stringify cost per message) before rollout.
-
-## 3. Clients checked — no own JSON implementation, no action needed
-
-- **http_mqtt_interface_client** (client #4) — already uses `JsonValue` from
-  `src/json` directly
-  (`internal/http_mqtt_interface_client_app_constructors.cpp`,
-  `internal/http_mqtt_interface_client_app_helpers.cpp`,
-  `internal/http_mqtt_interface_client_app_internal.h`). Use this as the
-  reference example for how the migrated clients should look.
-- **opensensemap_client** (client #6), **pushover_client** (client #7) — the
-  client-app files only reference the literal string `"application/json"` as
-  an HTTP content-type header; they don't parse or build JSON themselves.
-  - Note: their non-client sibling components
-    `opensensemap/opensensemap_component.cpp` and
-    `pushover/pushover_component.cpp` do own light JSON handling
-    (`OpenSenseMapComponent::extractJsonMessage` does a manual
-    `find("\"message\"")` field extraction, and the request body is built with
-    `stream << R"({"value":)" << numericValue << '}'`). Out of scope here
-    because these are not `_client` directories — revisit if the scope should
-    widen to non-client components.
-- **broker_connector_client** (client #2) — no JSON parsing/building inside
-  `broker_connector_client_app.cpp`/`.h`.
-- **file_store_client** (client #3) — no JSON parsing/building inside
-  `file_store_client_app.cpp`/`.h`.
-- **remote_service_client** (client #8) — no JSON parsing/building inside
-  `remote_service_client_app.cpp`/`.h`.
-- **rs485_interface_client** (client #9) — no JSON parsing/building inside
-  `rs485_interface_client_app.cpp`/`.h`.
-- **serial_device_client** (client #10) — no JSON parsing/building inside
-  `serial_device_client_app.cpp`/`.h`.
-- **value_service_client** (client #11) — no JSON parsing/building inside
-  `value_service_client_app.cpp`/`.h`.
+- [ ] **message/message_log_formatter.cpp** — calls a shared
+  `escapeJsonString` (line 12) to quote a value for a log line; small,
+  worth folding into the same cleanup as `message_payload_codec`.
 
 ## Suggested order
 
-1. `automation_client` + `automation/rules_tree_json_reader` — done
-  (migrated to `src/json` `JsonValue` parse/stringify).
-2. `zwave_client` — done
-  (migrated to `src/json` `JsonValue` parse/stringify for settings sync).
-3. `message_store_client` (via `message_store/message_store_json_parser` +
+1. ~~`automation_client` + `automation/rules_tree_json_reader`~~ — done.
+2. ~~`zwave_client/zwave_client_app.cpp`~~ — done; still need
+   `zwave/zwave_service_component.cpp` (small, 2 functions).
+3. `message_store_client` (`message_store_json_parser` +
    `message_store.cpp` response builder) — self-contained, moderate size,
    HTTP request/response path, not per-MQTT-message hot path.
-4. `message/message_payload_codec` — shared, highest impact, needs a
-  performance check because it runs per MQTT message across all clients.
+4. `value_service_client` (`value_service/value_service_component.cpp`) —
+   self-contained, same scale/shape as the already-migrated
+   `zwave_client_app.cpp`, good template reuse.
+5. `zwave/zwave_service_component.cpp` — small leftover from item 2.
+6. `serial_device/serial_device_wire_serializer.cpp` — small, serializer
+   only, parser side is already done.
+7. `opensensemap/opensensemap_component.cpp`,
+   `pushover/pushover_component.cpp` — small, similar shape (HTTP API
+   response field extraction + request body build).
+8. `file_store/file_store.cpp` — small, monitoring payload + blob
+   passthrough validation.
+9. `broker_connector/relay_component.cpp` +
+   `broker_connector/source_http_adapter.cpp` — moderate size, custom
+   mini JSON-RPC layer for broker connect/subscribe/publish.
+10. `remote_service/remote_service_component.cpp` +
+    `remote_service_http/remote_service_http_adapter.cpp` — largest
+    remaining item besides `message_payload_codec`, two duplicate parsers
+    to consolidate into one `JsonValue`-based implementation.
+11. `http_mqtt_interface/internal/http_mqtt_interface_operations_connect_publish.cpp`
+    + `..._subscriptions.cpp` — outgoing request body builders only;
+    response parsing is already done.
+12. `message/message_payload_codec.cpp` (+ `message_log_formatter.cpp`) —
+    shared, highest impact, needs a performance check because it runs per
+    MQTT message across all clients.
