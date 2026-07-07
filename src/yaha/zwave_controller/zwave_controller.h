@@ -451,25 +451,9 @@ private:
     Dead = 2U
   };
 
-  [[nodiscard]] static std::optional<std::uint16_t>
-  parseNodeIdFromValue(const Value &value);
-  [[nodiscard]] static std::optional<std::string>
-  parseOptionalLabelFromSetTopic(const std::vector<std::string> &topicParts);
-  [[nodiscard]] static std::string
-  joinTopicParts(const std::vector<std::string> &parts, std::size_t count);
-  [[nodiscard]] static std::vector<std::string>
-  splitTopic(const std::string &topic);
   [[nodiscard]] ZwaveNodeMap buildNodeMap() const;
   [[nodiscard]] static ZwaveValueDescriptor
   buildDescriptor(const ZwaveControllerValueEvent &event);
-  [[nodiscard]] static std::string
-  notificationText(ZwaveNotificationCode notification);
-  [[nodiscard]] static bool valuesEquivalent(const Value &leftValue,
-                                             const Value &rightValue);
-  [[nodiscard]] static Value
-  writeValueToExpectedValue(const ZwaveWriteRequest &writeRequest);
-  [[nodiscard]] static Value
-  toExpectedOutboundValue(const Value &value, const std::string &typeName);
   [[nodiscard]] std::string describeTimeoutSource(std::uint16_t nodeId);
   void
   publishConfigParameterCapabilities(const ZwaveControllerValueEvent &event);

@@ -23,7 +23,7 @@ directory.
 | 2 | `yaha_brokerconnectorclient_main.cpp` | `broker_connector_client/` | No | none |
 | 3 | `yaha_filestoreclient_main.cpp` | `file_store_client/` | No | none |
 | 4 | `yaha_httpmqttinterfaceclient_main.cpp` | `http_mqtt_interface_client/` | No (already uses `JsonValue`) | none |
-| 5 | `yaha_msgstoreclient_main.cpp` | `message_store_client/` | No | none |
+| 5 | `yaha_msgstoreclient_main.cpp` | `message_store_client/` | Yes | Migrate |
 | 6 | `yaha_opensensemapclient_main.cpp` | `opensensemap_client/` | No | none |
 | 7 | `yaha_pushoverclient_main.cpp` | `pushover_client/` | No | none |
 | 8 | `yaha_remoteserviceclient_main.cpp` | `remote_service_client/` | No | none |
@@ -66,6 +66,27 @@ dependency" section below.
     migrated together with `automation_rule_json.cpp`, otherwise the
     duplicate parser just moves rather than disappears.
 
+- [ ] **message_store_client** (`src/yaha/message_store_client/`, client #5)
+  - `message_store_client_app.cpp`/`.h` themselves have no JSON code, but the
+    HTTP interface they start is served by the `message_store` library, which
+    is the part that actually converts data to/from JSON for HTTP callers.
+    Same pattern as automation_client + `automation/rules_tree_json_reader`:
+    the client is clean, the shared library behind it is not.
+  - `message_store/message_store_json_parser.cpp` / `.h` (845 / 46 lines): a
+    fully custom, hand-written parser for incoming HTTP request bodies —
+    `parseSnapshotBody`, `parseSensorPostBody` — with no include of
+    `json/json_value.h` at all.
+  - `message_store/message_store.cpp` (~lines 459-546): hand-rolled
+    string-concatenation JSON response builder returned to HTTP callers —
+    `jsonStringLiteral`, `valueToJson`, `reasonsToJson`, `historyToJson`,
+    `nodeToJson`, `nodesToJson`, `wrapPayloadObject`. Only individual string
+    values are escaped via `JsonValue{...}.stringify()`
+    (`jsonStringLiteral`); the surrounding object/array structure is built by
+    hand instead of via `JsonValue::stringify()`.
+  - Must migrate both `message_store_json_parser` and the response builder in
+    `message_store.cpp` together — parsing and serialization are two ends of
+    the same custom implementation.
+
 ## 2. Shared dependency used by (almost) every client — flagged separately
 
 - [ ] **message/message_payload_codec.cpp** / `.h` (`src/yaha/message/`, 609 lines)
@@ -106,10 +127,6 @@ dependency" section below.
   `broker_connector_client_app.cpp`/`.h`.
 - **file_store_client** (client #3) — no JSON parsing/building inside
   `file_store_client_app.cpp`/`.h`.
-- **message_store_client** (client #5) — no JSON parsing/building inside
-  `message_store_client_app.cpp`/`.h` (the only `"json"` hit in this
-  directory is the string `.jsonl` replay-file extension in a test, unrelated
-  to JSON parsing).
 - **remote_service_client** (client #8) — no JSON parsing/building inside
   `remote_service_client_app.cpp`/`.h`.
 - **rs485_interface_client** (client #9) — no JSON parsing/building inside
@@ -125,5 +142,8 @@ dependency" section below.
   (migrated to `src/json` `JsonValue` parse/stringify).
 2. `zwave_client` — done
   (migrated to `src/json` `JsonValue` parse/stringify for settings sync).
-3. `message/message_payload_codec` — shared, highest impact, needs a
+3. `message_store_client` (via `message_store/message_store_json_parser` +
+   `message_store.cpp` response builder) — self-contained, moderate size,
+   HTTP request/response path, not per-MQTT-message hot path.
+4. `message/message_payload_codec` — shared, highest impact, needs a
   performance check because it runs per MQTT message across all clients.

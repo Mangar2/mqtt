@@ -69,6 +69,16 @@ Concrete parity adapter implementation with additional callback entry points:
 
 ## Behavior
 
+## Internal component split
+
+- `zwave_controller_value_utils.*` encapsulates value/boolean conversion,
+  semantic value-equivalence checks, debug-value rendering, and YAHA
+  reason-entry sanitization/timestamp compliance handling.
+- `zwave_controller_topic_utils.*` encapsulates set-topic parsing/joining and
+  node-id extraction helpers for command routing.
+- `zwave_controller_reason_utils.*` encapsulates callback reason-text builders
+  and allowlisted command-class checks for polling behavior.
+
 ## Inbound set routing
 
 `setValue(topic, value)` behavior:
@@ -177,5 +187,11 @@ Concrete parity adapter implementation with additional callback entry points:
 
 - `zwave_controller.h`
 - `zwave_controller.cpp`
+- `zwave_controller_value_utils.h`
+- `zwave_controller_value_utils.cpp`
+- `zwave_controller_topic_utils.h`
+- `zwave_controller_topic_utils.cpp`
+- `zwave_controller_reason_utils.h`
+- `zwave_controller_reason_utils.cpp`
 - `test/TEST_SPEC.md`
 - `test/zwave_controller_test.cpp`

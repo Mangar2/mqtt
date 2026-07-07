@@ -1,15 +1,12 @@
 #include "yaha/zwave_controller/zwave_controller.h"
-
-#include <array>
+#include "yaha/zwave_controller/zwave_controller_reason_utils.h"
+#include "yaha/zwave_controller/zwave_controller_topic_utils.h"
+#include "yaha/zwave_controller/zwave_controller_value_utils.h"
 #include <cstddef>
-#include <cmath>
 #include <cstdint>
 #include <chrono>
-#include <limits>
 #include <mutex>
 #include <ranges>
-#include <regex>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <algorithm>
@@ -17,157 +14,14 @@
 #include <thread>
 #include <unordered_set>
 #include <utility>
-
 namespace yaha {
-
 namespace {
 
-constexpr std::size_t kSetTopicMinimumParts = 2U;
 constexpr std::uint16_t kUsbControllerNodeId = 1U;
 constexpr std::uint16_t kConfigCommandClassId = 0x70U;
-constexpr double kIntegerTolerance = 1e-9;
 constexpr std::uint32_t kPendingCommandLoopSleepMs = 20U;
-constexpr unsigned char kJsonControlThreshold = 0x20U;
 constexpr std::string_view kMonitorZwavePrefix = "$MONITOR/zwave";
 constexpr std::string_view kSystemZwavePrefix = "system/zwave";
-constexpr std::array<std::uint16_t, 2> kEnablePollAllowedClasses{
-    kZwaveSwitchBinaryClass, // COMMAND_CLASS_SWITCH_BINARY (0x25)
-    kZwaveSwitchMultilevelClass // COMMAND_CLASS_SWITCH_MULTILEVEL (0x26)
-};
-
-[[nodiscard]] bool isEnablePollAllowedClass(const std::uint16_t classId) {
-    return std::ranges::find(kEnablePollAllowedClasses, classId) != kEnablePollAllowedClasses.end();
-}
-
-const std::regex& iso8601TimestampRegex() {
-    static const std::regex regex{
-        R"(^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+\-]\d{2}:\d{2})$)",
-        std::regex::ECMAScript};
-    return regex;
-}
-
-[[nodiscard]] bool valueAsBool(const Value& value) {
-    if (const auto* text = std::get_if<std::string>(&value); text != nullptr) {
-        return *text == "on" || *text == "1" || *text == "true";
-    }
-    return std::fabs(std::get<double>(value)) >= kIntegerTolerance;
-}
-
-[[nodiscard]] Value applySwitchOutboundConversion(const Value& value, const std::string& typeName) {
-    if (typeName != "switch") {
-        return value;
-    }
-
-    return valueAsBool(value) ? Value{std::string{"on"}} : Value{std::string{"off"}};
-}
-
-[[nodiscard]] std::optional<bool> valueAsSemanticBool(const Value& value) {
-    if (const auto* numericValue = std::get_if<double>(&value); numericValue != nullptr) {
-        if (std::fabs(*numericValue) < kIntegerTolerance) {
-            return false;
-        }
-        if (std::isfinite(*numericValue)) {
-            return true;
-        }
-        return std::nullopt;
-    }
-
-    std::string normalized = std::get<std::string>(value);
-    std::ranges::transform(normalized, normalized.begin(), [](unsigned char character) {
-        return static_cast<char>(std::tolower(character));
-    });
-
-    if (normalized == "on" || normalized == "true" || normalized == "1") {
-        return true;
-    }
-    if (normalized == "off" || normalized == "false" || normalized == "0") {
-        return false;
-    }
-
-    return std::nullopt;
-}
-
-[[nodiscard]] bool isSpecCompliantReasonTimestamp(const std::string& timestamp) {
-    if (timestamp.empty()) {
-        return false;
-    }
-    return std::regex_match(timestamp, iso8601TimestampRegex());
-}
-
-[[nodiscard]] std::string buildZwaveNetworkReason(const std::uint16_t nodeId,
-                                                   const std::optional<std::uint64_t>& valueId) {
-    std::string reason = "received from zwave network node: " + std::to_string(nodeId);
-    if (!valueId.has_value()) {
-        return reason;
-    }
-    return reason + " id: " + std::to_string(*valueId);
-}
-
-[[nodiscard]] std::string buildValueEventCommunicationReason(
-    const ZwaveControllerValueEvent& event,
-    const std::string_view sourceName) {
-    std::string reason = "node " + std::to_string(event.nodeId)
-        + " communication succeeded; source=" + std::string{sourceName}
-        + " target=node/" + std::to_string(event.nodeId)
-        + "/class/" + std::to_string(event.classId)
-        + "/instance/" + std::to_string(event.instance)
-        + "/index/" + std::to_string(event.index);
-
-    if (event.valueId.has_value()) {
-        reason += " valueId=" + std::to_string(*event.valueId);
-    } else {
-        reason += " valueId=unknown";
-    }
-
-    return reason;
-}
-
-[[nodiscard]] std::string sanitizeReasonMessageForJson(std::string text) {
-    for (char& character : text) {
-        const auto unsignedCharacter = static_cast<unsigned char>(character);
-        if (unsignedCharacter < kJsonControlThreshold && character != '\n' && character != '\r' && character != '\t') {
-            character = ' ';
-        }
-    }
-    return text;
-}
-
-[[nodiscard]] std::string valueToDebugText(const Value& value) {
-    if (const auto* numericValue = std::get_if<double>(&value); numericValue != nullptr) {
-        std::ostringstream stream{};
-        stream << *numericValue;
-        return stream.str();
-    }
-    return std::get<std::string>(value);
-}
-
-void addSpecCompliantReason(Message& message, const ReasonEntry& reasonEntry) {
-    const std::string sanitizedMessage = sanitizeReasonMessageForJson(reasonEntry.message);
-    if (sanitizedMessage.empty()) {
-        return;
-    }
-
-    if (isSpecCompliantReasonTimestamp(reasonEntry.timestamp)) {
-        message.addReason(sanitizedMessage, reasonEntry.timestamp);
-        return;
-    }
-
-    message.addReason(sanitizedMessage);
-}
-
-[[nodiscard]] double valueAsDouble(const Value& value) {
-    if (const auto* numericValue = std::get_if<double>(&value); numericValue != nullptr) {
-        return *numericValue;
-    }
-
-    std::size_t parsedChars = 0U;
-    const auto& text = std::get<std::string>(value);
-    const double parsed = std::stod(text, &parsedChars);
-    if (parsedChars != text.size()) {
-        throw std::runtime_error("invalid numeric value '" + text + "'");
-    }
-    return parsed;
-}
 
 } // namespace
 
@@ -211,8 +65,8 @@ void ZwaveController::setDeviceConfiguration(const std::vector<ZwaveDeviceConfig
 }
 
 void ZwaveController::setValue(const std::string& topic, const Value& value, const ReasonList& reasons) {
-    const std::vector<std::string> topicParts = splitTopic(topic);
-    if (topicParts.size() < kSetTopicMinimumParts) {
+    const std::vector<std::string> topicParts = zwave_controller_topic_utils::splitTopic(topic);
+    if (topicParts.size() < zwave_controller_topic_utils::kSetTopicMinimumParts) {
         throw std::runtime_error("set expected as last element in topic " + topic);
     }
 
@@ -221,15 +75,17 @@ void ZwaveController::setValue(const std::string& topic, const Value& value, con
     }
 
     const ZwaveNodeMap nodeMap = buildNodeMap();
-    const std::string directTopic = joinTopicParts(topicParts, topicParts.size() - 1U);
+    const std::string directTopic = zwave_controller_topic_utils::joinTopicParts(topicParts, topicParts.size() - 1U);
 
     std::string replyTopic = directTopic;
     ZwaveResolvedId target{};
     try {
         target = devicesMapper_.topicToZwaveId(nodeMap, directTopic, std::nullopt);
     } catch (...) {
-        const std::optional<std::string> objectLabel = parseOptionalLabelFromSetTopic(topicParts);
-        const std::string deviceTopic = joinTopicParts(topicParts, topicParts.size() - kSetTopicMinimumParts);
+        const std::optional<std::string> objectLabel = zwave_controller_topic_utils::parseOptionalLabelFromSetTopic(topicParts);
+        const std::string deviceTopic = zwave_controller_topic_utils::joinTopicParts(
+            topicParts,
+            topicParts.size() - zwave_controller_topic_utils::kSetTopicMinimumParts);
         target = devicesMapper_.topicToZwaveId(nodeMap, deviceTopic, objectLabel);
         replyTopic = deviceTopic;
     }
@@ -250,7 +106,7 @@ void ZwaveController::addDevice() {
 }
 
 void ZwaveController::removeFailedNode(const Value& value) {
-    const std::optional<std::uint16_t> nodeId = parseNodeIdFromValue(value);
+    const std::optional<std::uint16_t> nodeId = zwave_controller_topic_utils::parseNodeIdFromValue(value);
     if (!nodeId.has_value()) {
         throw std::runtime_error("removefailednode requires numeric node id");
     }
@@ -274,7 +130,7 @@ void ZwaveController::requestConfigParametersForAllNodes() {
 }
 
 void ZwaveController::requestNodeInfo(const Value& value) {
-    const std::optional<std::uint16_t> nodeId = parseNodeIdFromValue(value);
+    const std::optional<std::uint16_t> nodeId = zwave_controller_topic_utils::parseNodeIdFromValue(value);
     if (!nodeId.has_value()) {
         throw std::runtime_error("requestnodeinfo requires numeric node id");
     }
@@ -515,7 +371,7 @@ void ZwaveController::onNodeReady(
     nodeIterator->second.dead = false;
 
     if (queryStage == "queries_complete") {
-        for (const std::uint16_t classId : kEnablePollAllowedClasses) {
+        for (const std::uint16_t classId : zwave_controller_reason_utils::kEnablePollAllowedClasses) {
             driverPort_.enablePoll(nodeId, classId);
         }
 
@@ -543,7 +399,7 @@ void ZwaveController::onValueAdded(const ZwaveControllerValueEvent& event) {
 
     const auto nodeIterator = nodes_.find(event.nodeId);
     if (nodeIterator != nodes_.end() && nodeIterator->second.ready) {
-        if (isEnablePollAllowedClass(event.classId)) {
+        if (zwave_controller_reason_utils::isEnablePollAllowedClass(event.classId)) {
             driverPort_.enablePoll(event.nodeId, event.classId);
         }
     }
@@ -581,7 +437,7 @@ void ZwaveController::onValueChanged(const ZwaveControllerValueEvent& event) {
     if (nodeIterator != nodes_.end()) {
         nodeIterator->second.dead = false;
         if (nodeIterator->second.ready) {
-            if (isEnablePollAllowedClass(event.classId)) {
+            if (zwave_controller_reason_utils::isEnablePollAllowedClass(event.classId)) {
                 driverPort_.enablePoll(event.nodeId, event.classId);
             }
         }
@@ -591,11 +447,14 @@ void ZwaveController::onValueChanged(const ZwaveControllerValueEvent& event) {
         NodeHealthState::Alive,
         "node " + std::to_string(event.nodeId) + " sent value information");
 
-    publishValue(event.nodeId, event, buildZwaveNetworkReason(event.nodeId, event.valueId));
+    publishValue(
+        event.nodeId,
+        event,
+        zwave_controller_reason_utils::buildZwaveNetworkReason(event.nodeId, event.valueId));
     updateNodeCommState(
         event.nodeId,
         NodeCommState::Ok,
-        buildValueEventCommunicationReason(event, "openzwave_value_changed"));
+        zwave_controller_reason_utils::buildValueEventCommunicationReason(event, "openzwave_value_changed"));
     clearNodeErrorState(event.nodeId, "node " + std::to_string(event.nodeId) + " communication recovered");
 }
 
@@ -622,65 +481,13 @@ void ZwaveController::onValueRefreshed(
     updateNodeCommState(
         event.nodeId,
         NodeCommState::Ok,
-        buildValueEventCommunicationReason(event, "openzwave_value_refreshed"));
+        zwave_controller_reason_utils::buildValueEventCommunicationReason(event, "openzwave_value_refreshed"));
     clearNodeErrorState(event.nodeId, "node " + std::to_string(event.nodeId) + " communication recovered");
 
-    publishValue(event.nodeId, event, buildZwaveNetworkReason(event.nodeId, event.valueId));
-}
-
-std::optional<std::uint16_t> ZwaveController::parseNodeIdFromValue(const Value& value) {
-    const double numericValue = valueAsDouble(value);
-    if (numericValue < 0.0 || numericValue > static_cast<double>(std::numeric_limits<std::uint16_t>::max())) {
-        return std::nullopt;
-    }
-
-    const double rounded = std::round(numericValue);
-    if (std::fabs(rounded - numericValue) > kIntegerTolerance) {
-        return std::nullopt;
-    }
-
-    return static_cast<std::uint16_t>(rounded);
-}
-
-std::optional<std::string> ZwaveController::parseOptionalLabelFromSetTopic(
-    const std::vector<std::string>& topicParts) {
-    if (topicParts.size() <= kSetTopicMinimumParts) {
-        return std::nullopt;
-    }
-
-    const std::string& label = topicParts[topicParts.size() - kSetTopicMinimumParts];
-    if (label.empty()) {
-        return std::nullopt;
-    }
-    return label;
-}
-
-std::string ZwaveController::joinTopicParts(const std::vector<std::string>& parts, const std::size_t count) {
-    if (count == 0U) {
-        return std::string{};
-    }
-
-    std::string joined = parts.front();
-    for (std::size_t index = 1U; index < count; ++index) {
-        joined += "/" + parts[index];
-    }
-    return joined;
-}
-
-std::vector<std::string> ZwaveController::splitTopic(const std::string& topic) {
-    std::vector<std::string> parts{};
-    std::size_t segmentStart = 0U;
-    while (segmentStart <= topic.size()) {
-        const std::size_t segmentEnd = topic.find('/', segmentStart);
-        if (segmentEnd == std::string::npos) {
-            parts.push_back(topic.substr(segmentStart));
-            break;
-        }
-
-        parts.push_back(topic.substr(segmentStart, segmentEnd - segmentStart));
-        segmentStart = segmentEnd + 1U;
-    }
-    return parts;
+    publishValue(
+        event.nodeId,
+        event,
+        zwave_controller_reason_utils::buildZwaveNetworkReason(event.nodeId, event.valueId));
 }
 
 ZwaveNodeMap ZwaveController::buildNodeMap() const {
@@ -714,27 +521,6 @@ ZwaveValueDescriptor ZwaveController::buildDescriptor(const ZwaveControllerValue
         .valueId = event.valueId};
 }
 
-std::string ZwaveController::notificationText(const ZwaveNotificationCode notification) {
-    switch (notification) {
-    case ZwaveNotificationCode::MessageComplete:
-        return "message completed";
-    case ZwaveNotificationCode::Timeout:
-        return "timeout";
-    case ZwaveNotificationCode::Nop:
-        return "nop";
-    case ZwaveNotificationCode::NodeAwake:
-        return "node awake";
-    case ZwaveNotificationCode::NodeSleep:
-        return "node sleep";
-    case ZwaveNotificationCode::NodeDead:
-        return "node dead";
-    case ZwaveNotificationCode::NodeAlive:
-        return "node alive";
-    default:
-        return "unknown_notification";
-    }
-}
-
 void ZwaveController::publish(const std::string& topic, const Value& value, const std::string& reason) {
     publish(topic, value, reason, ReasonList{});
 }
@@ -751,7 +537,7 @@ void ZwaveController::publish(
     Message message{topic, value};
     message.addReason(reason);
     for (const auto& entry : prependedReasons | std::views::reverse) {
-        addSpecCompliantReason(message, entry);
+        zwave_controller_value_utils::addSpecCompliantReason(message, entry);
     }
     publishCallback_(message);
 }
@@ -773,7 +559,7 @@ void ZwaveController::publishValue(
             }
 
             topic = mapping->topic;
-            outputValue = applySwitchOutboundConversion(event.value, mapping->type);
+            outputValue = zwave_controller_value_utils::applySwitchOutboundConversion(event.value, mapping->type);
             prependedReasons = takeMatchingPendingReasons(topic, event, outputValue).reasons;
         }
 
@@ -811,7 +597,7 @@ void ZwaveController::publishConfigParameterCapabilities(const ZwaveControllerVa
 
     const std::string parameterTopic = *baseTopic + "/config/param/" + std::to_string(event.index);
     const std::string reason = "discovered configuration parameter capability from "
-        + buildZwaveNetworkReason(event.nodeId, event.valueId);
+        + zwave_controller_reason_utils::buildZwaveNetworkReason(event.nodeId, event.valueId);
 
     publish(parameterTopic + "/supported", Value{std::string{"on"}}, reason);
     publish(parameterTopic + "/type", Value{event.type.empty() ? std::string{"unknown"} : event.type}, reason);
@@ -820,40 +606,6 @@ void ZwaveController::publishConfigParameterCapabilities(const ZwaveControllerVa
     if (event.label.has_value() && !event.label->empty()) {
         publish(parameterTopic + "/label", Value{*event.label}, reason);
     }
-}
-
-bool ZwaveController::valuesEquivalent(const Value& leftValue, const Value& rightValue) {
-    if (const auto* leftText = std::get_if<std::string>(&leftValue); leftText != nullptr) {
-        const auto* rightText = std::get_if<std::string>(&rightValue);
-        return rightText != nullptr && *leftText == *rightText;
-    }
-
-    const auto* leftNumber = std::get_if<double>(&leftValue);
-    const auto* rightNumber = std::get_if<double>(&rightValue);
-    if (leftNumber == nullptr || rightNumber == nullptr) {
-        const std::optional<bool> leftSemanticBool = valueAsSemanticBool(leftValue);
-        const std::optional<bool> rightSemanticBool = valueAsSemanticBool(rightValue);
-        return leftSemanticBool.has_value() && rightSemanticBool.has_value()
-            && *leftSemanticBool == *rightSemanticBool;
-    }
-
-    return std::fabs(*leftNumber - *rightNumber) < kIntegerTolerance;
-}
-
-Value ZwaveController::writeValueToExpectedValue(const ZwaveWriteRequest& writeRequest) {
-    if (const auto* boolValue = std::get_if<bool>(&writeRequest.value); boolValue != nullptr) {
-        return Value{*boolValue ? 1.0 : 0.0};
-    }
-
-    if (const auto* numericValue = std::get_if<double>(&writeRequest.value); numericValue != nullptr) {
-        return Value{*numericValue};
-    }
-
-    return Value{std::get<std::string>(writeRequest.value)};
-}
-
-Value ZwaveController::toExpectedOutboundValue(const Value& value, const std::string& typeName) {
-    return applySwitchOutboundConversion(value, typeName);
 }
 
 std::string ZwaveController::describeTimeoutSource(const std::uint16_t nodeId) {
@@ -871,7 +623,7 @@ std::string ZwaveController::describeTimeoutSource(const std::uint16_t nodeId) {
         + "/class/" + std::to_string(match->target.classId)
         + "/instance/" + std::to_string(match->target.instance)
         + "/index/" + std::to_string(match->target.index)
-        + " expected=" + valueToDebugText(match->expectedValue);
+        + " expected=" + zwave_controller_value_utils::valueToDebugText(match->expectedValue);
 }
 
 void ZwaveController::cacheLastKnownTopicState(const ZwaveControllerValueEvent& event) {
@@ -887,7 +639,7 @@ void ZwaveController::cacheLastKnownTopicState(const ZwaveControllerValueEvent& 
         }
 
         topic = mapping->topic;
-        cachedValue = applySwitchOutboundConversion(event.value, mapping->type);
+        cachedValue = zwave_controller_value_utils::applySwitchOutboundConversion(event.value, mapping->type);
     }
 
     std::scoped_lock lock{cachedTopicStatesMutex_};
@@ -925,7 +677,9 @@ void ZwaveController::rememberPendingCommand(
     PendingCommand pendingCommand{
         .replyTopic = replyTopic,
         .target = writeRequest.target,
-        .expectedValue = toExpectedOutboundValue(writeValueToExpectedValue(writeRequest), writeRequest.target.type),
+        .expectedValue = zwave_controller_value_utils::toExpectedOutboundValue(
+            zwave_controller_value_utils::writeValueToExpectedValue(writeRequest),
+            writeRequest.target.type),
         .reasons = reasons,
         .sentAt = std::chrono::steady_clock::now(),
         .lastPollAt = std::chrono::steady_clock::time_point{}}
@@ -939,7 +693,9 @@ void ZwaveController::rememberPendingCommand(
             && iterator->target.classId == pendingCommand.target.classId
             && iterator->target.instance == pendingCommand.target.instance
             && iterator->target.index == pendingCommand.target.index;
-        const bool sameExpectedValue = valuesEquivalent(iterator->expectedValue, pendingCommand.expectedValue);
+        const bool sameExpectedValue = zwave_controller_value_utils::valuesEquivalent(
+            iterator->expectedValue,
+            pendingCommand.expectedValue);
         if (sameReplyTopic && sameTarget && sameExpectedValue) {
             iterator = pendingCommands_.erase(iterator);
             continue;
@@ -970,9 +726,9 @@ ZwaveController::PendingCommandMatch ZwaveController::takeMatchingPendingReasons
             && iterator->target.classId == event.classId
             && iterator->target.instance == event.instance
             && iterator->target.index == event.index;
-        const auto expectedSemanticBool = valueAsSemanticBool(iterator->expectedValue);
-        const auto outboundSemanticBool = valueAsSemanticBool(outboundValue);
-        const bool sameExpectedValue = valuesEquivalent(iterator->expectedValue, outboundValue)
+        const auto expectedSemanticBool = zwave_controller_value_utils::valueAsSemanticBool(iterator->expectedValue);
+        const auto outboundSemanticBool = zwave_controller_value_utils::valueAsSemanticBool(outboundValue);
+        const bool sameExpectedValue = zwave_controller_value_utils::valuesEquivalent(iterator->expectedValue, outboundValue)
             || (event.classId == kZwaveSwitchMultilevelClass
                 && expectedSemanticBool.has_value()
                 && outboundSemanticBool.has_value()
