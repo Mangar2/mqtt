@@ -4,41 +4,12 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace yaha {
 namespace {
-
-[[nodiscard]] std::string endpointToString(const SerialDeviceEndpoint& endpointValue) {
-    if (std::holds_alternative<std::monostate>(endpointValue)) {
-        return "";
-    }
-    if (std::holds_alternative<std::int64_t>(endpointValue)) {
-        return std::to_string(std::get<std::int64_t>(endpointValue));
-    }
-    return std::get<std::string>(endpointValue);
-}
-
-[[nodiscard]] std::optional<std::int64_t> endpointToNumeric(const SerialDeviceEndpoint& endpointValue) {
-    if (std::holds_alternative<std::int64_t>(endpointValue)) {
-        return std::get<std::int64_t>(endpointValue);
-    }
-    if (std::holds_alternative<std::string>(endpointValue)) {
-        try {
-            const auto& textValue = std::get<std::string>(endpointValue);
-            std::size_t parsedLength{0U};
-            const std::int64_t numericValue = std::stoll(textValue, &parsedLength, 10);
-            if (parsedLength == textValue.size()) {
-                return numericValue;
-            }
-        } catch (const std::exception&) {
-        }
-    }
-    return std::nullopt;
-}
 
 [[nodiscard]] bool endpointMatchesAddress(
     const SerialDeviceEndpoint& endpointValue,

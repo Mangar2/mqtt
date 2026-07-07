@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "yaha/automation_client_rule_runtime/rule_field_access.h"
 #include "yaha/automation_client_rule_runtime/rule_runtime_engine.h"
 
 #include <array>
@@ -319,4 +320,26 @@ TEST_CASE("rule_runtime_engine_covers_event_gates_allow_noneof_and_inactivity", 
 
     CHECK(result.success);
     CHECK(result.messages.size() == 2U);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("rule_runtime_field_access_covers_type_and_shape_fallbacks", "[automation_client]") {
+    yaha::RuleTreeNode::Object rule{};
+    rule.emplace("numberAsString", yaha::RuleTreeNode{std::string{"1"}});
+    rule.emplace("singleFilter", yaha::RuleTreeNode{std::string{"house/a/#"}});
+    rule.emplace("invalidFilterType", yaha::RuleTreeNode{1.0});
+    rule.emplace("invalidArrayFilter", yaha::RuleTreeNode{yaha::RuleTreeNode::Array{yaha::RuleTreeNode{1.0}}});
+    rule.emplace("active", yaha::RuleTreeNode{std::string{"true"}});
+
+    CHECK_FALSE(yaha::readNumberField(rule, "numberAsString").has_value());
+
+    const auto singleFilterList = yaha::readTopicFilterList(rule, "singleFilter");
+    REQUIRE(singleFilterList.size() == 1U);
+    CHECK(singleFilterList.front() == "house/a/#");
+
+    CHECK(yaha::readTopicFilterList(rule, "invalidFilterType").empty());
+    CHECK(yaha::readTopicFilterList(rule, "invalidArrayFilter").empty());
+    CHECK_FALSE(yaha::readTopicFilterArrayOnly(rule, "invalidArrayFilter").has_value());
+
+    CHECK(yaha::readActiveFlag(rule));
 }

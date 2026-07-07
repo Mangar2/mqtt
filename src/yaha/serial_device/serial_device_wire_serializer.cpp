@@ -10,16 +10,6 @@ namespace {
 
 constexpr std::int64_t k_max_switch_bit_index{8};
 
-[[nodiscard]] std::string endpointToString(const SerialDeviceEndpoint& endpointValue) {
-    if (std::holds_alternative<std::int64_t>(endpointValue)) {
-        return std::to_string(std::get<std::int64_t>(endpointValue));
-    }
-    if (std::holds_alternative<std::string>(endpointValue)) {
-        return std::get<std::string>(endpointValue);
-    }
-    return "";
-}
-
 [[nodiscard]] std::string valueToString(const SerialDeviceValue& value) {
     if (std::holds_alternative<std::int64_t>(value)) {
         return std::to_string(std::get<std::int64_t>(value));
@@ -39,16 +29,6 @@ constexpr std::int64_t k_max_switch_bit_index{8};
         throw std::invalid_argument{"value is not fully numeric"};
     }
     return numericValue;
-}
-
-[[nodiscard]] mqtt::json::JsonValue endpointToJsonValue(const SerialDeviceEndpoint& endpointValue) {
-    if (std::holds_alternative<std::monostate>(endpointValue)) {
-        return mqtt::json::JsonValue{};
-    }
-    if (std::holds_alternative<std::int64_t>(endpointValue)) {
-        return mqtt::json::JsonValue{static_cast<double>(std::get<std::int64_t>(endpointValue))};
-    }
-    return mqtt::json::JsonValue{std::get<std::string>(endpointValue)};
 }
 
 [[nodiscard]] mqtt::json::JsonValue valueToJsonValue(const SerialDeviceValue& value) {

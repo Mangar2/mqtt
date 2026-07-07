@@ -1,0 +1,87 @@
+    1|       |#include "yaha/automation_client_rule_runtime/rule_field_access.h"
+    2|       |
+    3|       |#include <variant>
+    4|       |
+    5|       |namespace yaha {
+    6|       |
+    7|       |std::optional<double> readNumberField(
+    8|       |    const RuleTreeNode::Object& ruleObject,
+    9|    228|    const std::string& fieldName) {
+   10|    228|    const auto fieldIter = ruleObject.find(fieldName);
+   11|    228|    if (fieldIter == ruleObject.end()) {
+   12|    202|        return std::nullopt;
+   13|    202|    }
+   14|       |
+   15|     26|    if (!std::holds_alternative<double>(fieldIter->second.value)) {
+   16|      0|        return std::nullopt;
+   17|      0|    }
+   18|       |
+   19|     26|    return std::get<double>(fieldIter->second.value);
+   20|     26|}
+   21|       |
+   22|       |std::vector<std::string> readTopicFilterList(
+   23|       |    const RuleTreeNode::Object& ruleObject,
+   24|    120|    const std::string& fieldName) {
+   25|    120|    std::vector<std::string> filters{};
+   26|    120|    const auto fieldIter = ruleObject.find(fieldName);
+   27|    120|    if (fieldIter == ruleObject.end()) {
+   28|     71|        return filters;
+   29|     71|    }
+   30|       |
+   31|     49|    if (fieldIter->second.isString()) {
+   32|      0|        filters.push_back(fieldIter->second.asString());
+   33|      0|        return filters;
+   34|      0|    }
+   35|       |
+   36|     49|    if (!fieldIter->second.isArray()) {
+   37|      0|        return filters;
+   38|      0|    }
+   39|       |
+   40|     52|    for (const auto& arrayNode : fieldIter->second.asArray()) {
+   41|     52|        if (!arrayNode.isString()) {
+   42|      0|            return {};
+   43|      0|        }
+   44|     52|        filters.push_back(arrayNode.asString());
+   45|     52|    }
+   46|       |
+   47|     49|    return filters;
+   48|     49|}
+   49|       |
+   50|       |std::optional<std::vector<std::string>> readTopicFilterArrayOnly(
+   51|       |    const RuleTreeNode::Object& ruleObject,
+   52|     76|    const std::string& fieldName) {
+   53|     76|    const auto fieldIter = ruleObject.find(fieldName);
+   54|     76|    if (fieldIter == ruleObject.end() || !fieldIter->second.isArray()) {
+   55|     59|        return std::nullopt;
+   56|     59|    }
+   57|       |
+   58|     17|    std::vector<std::string> filters{};
+   59|     17|    for (const auto& arrayNode : fieldIter->second.asArray()) {
+   60|     17|        if (!arrayNode.isString()) {
+   61|      0|            return std::nullopt;
+   62|      0|        }
+   63|     17|        filters.push_back(arrayNode.asString());
+   64|     17|    }
+   65|     17|    return filters;
+   66|     17|}
+   67|       |
+   68|     67|bool fieldIsArray(const RuleTreeNode::Object& ruleObject, const std::string& fieldName) {
+   69|     67|    const auto fieldIter = ruleObject.find(fieldName);
+   70|     67|    return fieldIter != ruleObject.end() && fieldIter->second.isArray();
+   71|     67|}
+   72|       |
+   73|     55|bool readActiveFlag(const RuleTreeNode::Object& ruleObject) {
+   74|     55|    const auto activeIter = ruleObject.find("active");
+   75|     55|    if (activeIter == ruleObject.end()) {
+   76|     49|        return true;
+   77|     49|    }
+   78|       |
+   79|      6|    if (!std::holds_alternative<bool>(activeIter->second.value)) {
+   80|      0|        return true;
+   81|      0|    }
+   82|       |
+   83|      6|    return std::get<bool>(activeIter->second.value);
+   84|      6|}
+   85|       |
+   86|       |} // namespace yaha
+
