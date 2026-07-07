@@ -8,16 +8,15 @@
 #include "yaha/message/message.h"
 #include "yaha/mqtt_component/mqtt_component.h"
 #include "yaha/zwave/zwave_config.h"
+#include "yaha/zwave_controller/zwave_controller_polling.h"
 #include "yaha/zwave_devices/zwave_devices_mapper.h"
 
-#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <variant>
@@ -417,25 +416,6 @@ private:
         classes{};
   };
 
-  struct CachedTopicState {
-    Value value{std::string{}};
-    std::optional<std::uint64_t> valueId{};
-  };
-
-  struct PendingCommand {
-    std::string replyTopic{};
-    ZwaveResolvedId target{};
-    Value expectedValue{std::string{}};
-    ReasonList reasons{};
-    std::chrono::steady_clock::time_point sentAt{};
-    std::chrono::steady_clock::time_point lastPollAt{};
-  };
-
-  struct PendingCommandMatch {
-    bool matched{false};
-    ReasonList reasons{};
-  };
-
   enum class ErrorStateSeverity : std::uint8_t {
     NoError = 0U,
     PublishFailed = 1U,
@@ -458,20 +438,13 @@ private:
   void
   publishConfigParameterCapabilities(const ZwaveControllerValueEvent &event);
 
-  void rememberPendingCommand(const std::string &replyTopic,
-                              const ZwaveWriteRequest &writeRequest,
-                              const ReasonList &reasons);
-  [[nodiscard]] PendingCommandMatch
-  takeMatchingPendingReasons(const std::string &replyTopic,
-                             const ZwaveControllerValueEvent &event,
-                             const Value &outboundValue);
   void cacheLastKnownTopicState(const ZwaveControllerValueEvent &event);
-  [[nodiscard]] std::optional<CachedTopicState>
-  findCachedTopicState(const std::string &topic) const;
-  void publishTimeoutForPendingCommand(const PendingCommand &pendingCommand);
-  void pollPendingCommands();
-  void pollConfiguredNodes();
-  void runPendingCommandPollLoop();
+  [[nodiscard]] std::vector<std::uint16_t> collectConfiguredNodeIdsForPolling() const;
+  void publishTimeoutFeedback(
+      const std::string &replyTopic,
+      const Value &cachedValue,
+      const std::optional<std::uint64_t> &valueId,
+      const ReasonList &reasons);
   void markSuccessfulZwaveInput();
   void trackTimeoutDropAndTriggerIfNeeded();
 
@@ -508,8 +481,7 @@ private:
   mutable std::mutex devicesMutex_{};
   ZwaveDevicesMapper devicesMapper_{std::vector<ZwaveDeviceConfig>{}};
   std::unordered_map<std::uint16_t, NodeRuntimeState> nodes_{};
-  std::unordered_map<std::string, CachedTopicState> cachedTopicStates_{};
-  mutable std::mutex cachedTopicStatesMutex_{};
+  ZwaveControllerPolling polling_;
   std::unordered_map<std::uint16_t, ErrorStateSeverity> nodeErrorStates_{};
   std::mutex nodeErrorStatesMutex_{};
   std::unordered_map<std::uint16_t, NodeCommState> nodeCommStates_{};
@@ -522,16 +494,6 @@ private:
   std::mutex includeFlowCandidateNodeIdsMutex_{};
   std::unordered_set<std::string> publishedConfigCapabilityKeys_{};
   std::mutex publishedConfigCapabilityKeysMutex_{};
-  std::vector<PendingCommand> pendingCommands_{};
-  std::mutex pendingCommandsMutex_{};
-  std::thread pendingCommandPollThread_{};
-  std::atomic_bool pendingCommandPollStop_{false};
-  std::chrono::milliseconds fullDevicePollInterval_{
-      kZwaveDefaultPollIntervalMs};
-  std::chrono::milliseconds commandReactionPollInterval_{
-      kZwaveDefaultCommandReactionPollIntervalMs};
-  std::chrono::milliseconds commandReactionTimeout_{
-      kZwaveDefaultCommandReactionTimeoutMs};
   std::chrono::milliseconds unresponsiveInputTimeout_{std::chrono::minutes{3}};
   std::size_t unresponsiveTimeoutErrorThreshold_{
       kZwaveUnresponsiveTimeoutErrorThreshold};
@@ -540,7 +502,6 @@ private:
       std::chrono::steady_clock::now()};
   bool unresponsiveNetworkCallbackTriggered_{false};
   std::mutex unresponsiveNetworkMutex_{};
-  std::chrono::steady_clock::time_point lastFullDevicePollAt_{};
   PublishCallback publishCallback_{};
   std::function<void()> driverFailedCallback_{};
   std::function<void()> unresponsiveNetworkCallback_{};

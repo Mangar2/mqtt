@@ -78,6 +78,9 @@ Concrete parity adapter implementation with additional callback entry points:
   node-id extraction helpers for command routing.
 - `zwave_controller_reason_utils.*` encapsulates callback reason-text builders
   and allowlisted command-class checks for polling behavior.
+- `zwave_controller_polling.*` encapsulates pending-command tracking,
+  timeout feedback handling, and the full background poll loop for command
+  reaction and configured-node state refresh.
 
 ## Inbound set routing
 
@@ -193,5 +196,7 @@ Concrete parity adapter implementation with additional callback entry points:
 - `zwave_controller_topic_utils.cpp`
 - `zwave_controller_reason_utils.h`
 - `zwave_controller_reason_utils.cpp`
+- `zwave_controller_polling.h`
+- `zwave_controller_polling.cpp`
 - `test/TEST_SPEC.md`
 - `test/zwave_controller_test.cpp`

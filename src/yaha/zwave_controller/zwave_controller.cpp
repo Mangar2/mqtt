@@ -11,7 +11,6 @@
 #include <string>
 #include <algorithm>
 #include <cctype>
-#include <thread>
 #include <unordered_set>
 #include <utility>
 namespace yaha {
@@ -19,7 +18,6 @@ namespace {
 
 constexpr std::uint16_t kUsbControllerNodeId = 1U;
 constexpr std::uint16_t kConfigCommandClassId = 0x70U;
-constexpr std::uint32_t kPendingCommandLoopSleepMs = 20U;
 constexpr std::string_view kMonitorZwavePrefix = "$MONITOR/zwave";
 constexpr std::string_view kSystemZwavePrefix = "system/zwave";
 
@@ -36,22 +34,30 @@ ZwaveController::ZwaveController(
     : usb_(std::move(usbConfig))
     , driverPort_(driverPort)
     , devicesMapper_(std::vector<ZwaveDeviceConfig>{})
-    , fullDevicePollInterval_(fullDevicePollIntervalMs)
-    , commandReactionPollInterval_(commandReactionPollIntervalMs)
-    , commandReactionTimeout_(commandReactionTimeoutMs)
+    , polling_(
+        std::chrono::milliseconds{fullDevicePollIntervalMs},
+        std::chrono::milliseconds{commandReactionPollIntervalMs},
+        std::chrono::milliseconds{commandReactionTimeoutMs},
+        [this](const std::uint16_t nodeId) {
+            driverPort_.requestNodeState(nodeId);
+        },
+        [this](
+            const std::string& replyTopic,
+            const Value& cachedValue,
+            const std::optional<std::uint64_t>& valueId,
+            const ReasonList& reasons) {
+            publishTimeoutFeedback(replyTopic, cachedValue, valueId, reasons);
+        },
+        [this] {
+            return collectConfiguredNodeIdsForPolling();
+        })
     , unresponsiveInputTimeout_(unresponsiveInputTimeoutMs)
     , unresponsiveTimeoutErrorThreshold_(std::max<std::size_t>(1U, unresponsiveTimeoutErrorThreshold)) {
-    lastFullDevicePollAt_ = std::chrono::steady_clock::now();
-    pendingCommandPollThread_ = std::thread([this] {
-        runPendingCommandPollLoop();
-    });
+    polling_.start();
 }
 
 ZwaveController::~ZwaveController() {
-    if (pendingCommandPollThread_.joinable()) {
-        pendingCommandPollStop_.store(true);
-        pendingCommandPollThread_.join();
-    }
+    polling_.stop();
 }
 
 void ZwaveController::setPublishCallback(PublishCallback callback) {
@@ -98,7 +104,13 @@ void ZwaveController::setValue(const std::string& topic, const Value& value, con
     }
 
     driverPort_.setValue(target, writeRequest.value);
-    rememberPendingCommand(replyTopic, writeRequest, reasons);
+    polling_.rememberPendingCommand(
+        replyTopic,
+        writeRequest.target,
+        zwave_controller_value_utils::toExpectedOutboundValue(
+            zwave_controller_value_utils::writeValueToExpectedValue(writeRequest),
+            writeRequest.target.type),
+        reasons);
 }
 
 void ZwaveController::addDevice() {
@@ -312,15 +324,7 @@ void ZwaveController::onNodeRemoved(const std::uint16_t nodeId) {
         includeFlowCandidateNodeIds_.erase(nodeId);
     }
 
-    {
-        std::scoped_lock lock{pendingCommandsMutex_};
-        const auto remainingRange = std::ranges::remove_if(
-            pendingCommands_,
-            [nodeId](const PendingCommand& pendingCommand) {
-                return pendingCommand.target.nodeId == nodeId;
-            });
-        pendingCommands_.erase(remainingRange.begin(), remainingRange.end());
-    }
+    polling_.removePendingCommandsForNode(nodeId);
 
     {
         const std::string keyPrefix = std::to_string(nodeId) + ":";
@@ -350,10 +354,7 @@ void ZwaveController::onNodeRemoved(const std::uint16_t nodeId) {
     }
 
     if (!topicsToErase.empty()) {
-        std::scoped_lock lock{cachedTopicStatesMutex_};
-        for (const auto& topic : topicsToErase) {
-            cachedTopicStates_.erase(topic);
-        }
+        polling_.removeCachedTopics(topicsToErase);
     }
 }
 
@@ -560,7 +561,13 @@ void ZwaveController::publishValue(
 
             topic = mapping->topic;
             outputValue = zwave_controller_value_utils::applySwitchOutboundConversion(event.value, mapping->type);
-            prependedReasons = takeMatchingPendingReasons(topic, event, outputValue).reasons;
+            prependedReasons = polling_.takeMatchingPendingReasons(
+                topic,
+                event.nodeId,
+                event.classId,
+                event.instance,
+                event.index,
+                outputValue);
         }
 
         publish(topic, outputValue, reason, prependedReasons);
@@ -609,21 +616,7 @@ void ZwaveController::publishConfigParameterCapabilities(const ZwaveControllerVa
 }
 
 std::string ZwaveController::describeTimeoutSource(const std::uint16_t nodeId) {
-    std::scoped_lock lock{pendingCommandsMutex_};
-    const auto match = std::ranges::find_if(pendingCommands_, [nodeId](const PendingCommand& pendingCommand) {
-        return pendingCommand.target.nodeId == nodeId;
-    });
-
-    if (match == pendingCommands_.end()) {
-        return "source=openzwave_notification_timeout context=no_pending_command";
-    }
-
-    return "source=openzwave_notification_timeout context=pending_command topic=" + match->replyTopic
-        + " target=node/" + std::to_string(match->target.nodeId)
-        + "/class/" + std::to_string(match->target.classId)
-        + "/instance/" + std::to_string(match->target.instance)
-        + "/index/" + std::to_string(match->target.index)
-        + " expected=" + zwave_controller_value_utils::valueToDebugText(match->expectedValue);
+    return polling_.describeTimeoutSource(nodeId);
 }
 
 void ZwaveController::cacheLastKnownTopicState(const ZwaveControllerValueEvent& event) {
@@ -642,174 +635,35 @@ void ZwaveController::cacheLastKnownTopicState(const ZwaveControllerValueEvent& 
         cachedValue = zwave_controller_value_utils::applySwitchOutboundConversion(event.value, mapping->type);
     }
 
-    std::scoped_lock lock{cachedTopicStatesMutex_};
-    cachedTopicStates_[topic] = CachedTopicState{.value = cachedValue, .valueId = event.valueId};
+    polling_.cacheTopicState(topic, cachedValue, event.valueId);
 }
 
-std::optional<ZwaveController::CachedTopicState> ZwaveController::findCachedTopicState(const std::string& topic) const {
-    std::scoped_lock lock{cachedTopicStatesMutex_};
-    const auto iterator = cachedTopicStates_.find(topic);
-    if (iterator == cachedTopicStates_.end()) {
-        return std::nullopt;
-    }
-    return iterator->second;
-}
-
-void ZwaveController::publishTimeoutForPendingCommand(const PendingCommand& pendingCommand) {
-    const std::optional<CachedTopicState> cachedState = findCachedTopicState(pendingCommand.replyTopic);
-    if (!cachedState.has_value()) {
-        return;
-    }
-
-    const std::string timeoutReason = cachedState->valueId.has_value()
-        ? "timeout waiting for zwave network id: " + std::to_string(*cachedState->valueId)
-        : "timeout waiting for zwave network id: unknown";
-
-    publish(pendingCommand.replyTopic, cachedState->value, timeoutReason, pendingCommand.reasons);
-}
-
-void ZwaveController::rememberPendingCommand(
-    const std::string& replyTopic,
-    const ZwaveWriteRequest& writeRequest,
-    const ReasonList& reasons) {
-    // Correlation invariant: pending commands are keyed by resolved address
-    // (node/class/instance/index) and expected outbound value, never by ValueID.
-    PendingCommand pendingCommand{
-        .replyTopic = replyTopic,
-        .target = writeRequest.target,
-        .expectedValue = zwave_controller_value_utils::toExpectedOutboundValue(
-            zwave_controller_value_utils::writeValueToExpectedValue(writeRequest),
-            writeRequest.target.type),
-        .reasons = reasons,
-        .sentAt = std::chrono::steady_clock::now(),
-        .lastPollAt = std::chrono::steady_clock::time_point{}}
-    ;
-
-    std::scoped_lock lock{pendingCommandsMutex_};
-    auto iterator = pendingCommands_.begin();
-    while (iterator != pendingCommands_.end()) {
-        const bool sameReplyTopic = iterator->replyTopic == pendingCommand.replyTopic;
-        const bool sameTarget = iterator->target.nodeId == pendingCommand.target.nodeId
-            && iterator->target.classId == pendingCommand.target.classId
-            && iterator->target.instance == pendingCommand.target.instance
-            && iterator->target.index == pendingCommand.target.index;
-        const bool sameExpectedValue = zwave_controller_value_utils::valuesEquivalent(
-            iterator->expectedValue,
-            pendingCommand.expectedValue);
-        if (sameReplyTopic && sameTarget && sameExpectedValue) {
-            iterator = pendingCommands_.erase(iterator);
-            continue;
-        }
-        ++iterator;
-    }
-    pendingCommands_.push_back(std::move(pendingCommand));
-}
-
-ZwaveController::PendingCommandMatch ZwaveController::takeMatchingPendingReasons(
-    const std::string& replyTopic,
-    const ZwaveControllerValueEvent& event,
-    const Value& outboundValue) {
-    std::scoped_lock lock{pendingCommandsMutex_};
-    const auto nowValue = std::chrono::steady_clock::now();
-
-    auto iterator = pendingCommands_.begin();
-    while (iterator != pendingCommands_.end()) {
-        if (nowValue - iterator->sentAt >= commandReactionTimeout_) {
-            iterator = pendingCommands_.erase(iterator);
-            continue;
-        }
-
-        const bool sameReplyTopic = iterator->replyTopic == replyTopic;
-        // Correlate network feedback to the original command using address tuple.
-        // Do not couple feedback matching to runtime ValueID ids.
-        const bool sameTarget = iterator->target.nodeId == event.nodeId
-            && iterator->target.classId == event.classId
-            && iterator->target.instance == event.instance
-            && iterator->target.index == event.index;
-        const auto expectedSemanticBool = zwave_controller_value_utils::valueAsSemanticBool(iterator->expectedValue);
-        const auto outboundSemanticBool = zwave_controller_value_utils::valueAsSemanticBool(outboundValue);
-        const bool sameExpectedValue = zwave_controller_value_utils::valuesEquivalent(iterator->expectedValue, outboundValue)
-            || (event.classId == kZwaveSwitchMultilevelClass
-                && expectedSemanticBool.has_value()
-                && outboundSemanticBool.has_value()
-                && *expectedSemanticBool == *outboundSemanticBool);
-        if (sameReplyTopic && sameTarget && sameExpectedValue) {
-            ReasonList reasons = iterator->reasons;
-            pendingCommands_.erase(iterator);
-            return PendingCommandMatch{.matched = true, .reasons = std::move(reasons)};
-        }
-
-        ++iterator;
-    }
-
-    return PendingCommandMatch{};
-}
-
-void ZwaveController::pollPendingCommands() {
-    const auto nowValue = std::chrono::steady_clock::now();
-    std::unordered_set<std::uint16_t> nodesToPoll{};
-    std::vector<PendingCommand> timedOutCommands{};
-
-    {
-        std::scoped_lock lock{pendingCommandsMutex_};
-        auto iterator = pendingCommands_.begin();
-        while (iterator != pendingCommands_.end()) {
-            if (nowValue - iterator->sentAt >= commandReactionTimeout_) {
-                timedOutCommands.push_back(*iterator);
-                iterator = pendingCommands_.erase(iterator);
-                continue;
-            }
-
-            if (nowValue - iterator->lastPollAt >= commandReactionPollInterval_) {
-                iterator->lastPollAt = nowValue;
-                nodesToPoll.insert(iterator->target.nodeId);
-            }
-            ++iterator;
-        }
-    }
-
-    for (const auto& timedOutCommand : timedOutCommands) {
-        publishTimeoutForPendingCommand(timedOutCommand);
-    }
-
-    for (const auto nodeId : nodesToPoll) {
-        driverPort_.requestNodeState(nodeId);
-    }
-}
-
-void ZwaveController::pollConfiguredNodes() {
-    const auto nowValue = std::chrono::steady_clock::now();
-    if (nowValue - lastFullDevicePollAt_ < fullDevicePollInterval_) {
-        return;
-    }
-    lastFullDevicePollAt_ = nowValue;
-
+std::vector<std::uint16_t> ZwaveController::collectConfiguredNodeIdsForPolling() const {
     std::vector<ZwaveDeviceConfig> deviceSnapshot{};
     {
         std::scoped_lock lock{devicesMutex_};
         deviceSnapshot = devices_;
     }
 
-    std::unordered_set<std::uint16_t> nodeIds{};
+    std::vector<std::uint16_t> nodeIds{};
+    nodeIds.reserve(deviceSnapshot.size());
     for (const auto& device : deviceSnapshot) {
-        nodeIds.insert(device.nodeId);
+        nodeIds.push_back(device.nodeId);
     }
 
-    for (const auto nodeId : nodeIds) {
-        driverPort_.requestNodeState(nodeId);
-    }
+    return nodeIds;
 }
 
-void ZwaveController::runPendingCommandPollLoop() {
-    while (!pendingCommandPollStop_.load()) {
-        try {
-            pollPendingCommands();
-            pollConfiguredNodes();
-        } catch (...) {
-        }
+void ZwaveController::publishTimeoutFeedback(
+    const std::string& replyTopic,
+    const Value& cachedValue,
+    const std::optional<std::uint64_t>& valueId,
+    const ReasonList& reasons) {
+    const std::string timeoutReason = valueId.has_value()
+        ? "timeout waiting for zwave network id: " + std::to_string(*valueId)
+        : "timeout waiting for zwave network id: unknown";
 
-        std::this_thread::sleep_for(std::chrono::milliseconds{kPendingCommandLoopSleepMs});
-    }
+    publish(replyTopic, cachedValue, timeoutReason, reasons);
 }
 
 void ZwaveController::markSuccessfulZwaveInput() {
