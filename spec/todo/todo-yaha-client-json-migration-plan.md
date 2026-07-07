@@ -38,7 +38,7 @@ dependency" section below.
 
 ## 1. Clients with own JSON implementation — migration needed
 
-- [ ] **zwave_client** (`src/yaha/zwave_client/`, client #12)
+- [x] **zwave_client** (`src/yaha/zwave_client/`, client #12)
   - `zwave_client_app.cpp` (~lines 462-1136): full custom recursive-descent
     parser for FileStore-persisted device settings —
     `parseJsonStringToken`, `parseJsonUnsignedToken`, `parseJsonDeviceField`,
@@ -123,7 +123,7 @@ dependency" section below.
 
 1. `automation_client` + `automation/rules_tree_json_reader` — done
   (migrated to `src/json` `JsonValue` parse/stringify).
-2. `zwave_client` — self-contained, moderate size, settings loaded/saved
-  occasionally (FileStore sync), not per MQTT message.
+2. `zwave_client` — done
+  (migrated to `src/json` `JsonValue` parse/stringify for settings sync).
 3. `message/message_payload_codec` — shared, highest impact, needs a
   performance check because it runs per MQTT message across all clients.

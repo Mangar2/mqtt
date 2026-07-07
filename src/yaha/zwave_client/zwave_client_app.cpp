@@ -1,13 +1,15 @@
 #include "yaha/zwave_client/zwave_client_app.h"
 
 #include "httplib.h"
-#include "yaha/message/message_payload_codec.h"
+#include "json/json_error.h"
+#include "json/json_value.h"
 #include "yaha/message/message_log_service.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cmath>
 #include <iostream>
 #include <limits>
 #include <optional>
@@ -444,93 +446,6 @@ void configureFileStoreClientTimeouts(httplib::Client* client) {
     client->set_write_timeout(kFileStoreWriteTimeoutSeconds, 0);
 }
 
-void skipWhitespace(const std::string& text, std::size_t& parseIndex) {
-    while (parseIndex < text.size() && std::isspace(static_cast<unsigned char>(text[parseIndex])) != 0) {
-        parseIndex += 1U;
-    }
-}
-
-[[nodiscard]] bool consumeChar(const std::string& text, std::size_t& parseIndex, const char expectedChar) {
-    skipWhitespace(text, parseIndex);
-    if (parseIndex >= text.size() || text[parseIndex] != expectedChar) {
-        return false;
-    }
-    parseIndex += 1U;
-    return true;
-}
-
-[[nodiscard]] bool parseJsonStringToken(
-    const std::string& jsonText,
-    std::size_t& parseIndex,
-    std::string& output) {
-    if (parseIndex >= jsonText.size() || jsonText[parseIndex] != '"') {
-        return false;
-    }
-    parseIndex += 1U;
-
-    std::string valueText{};
-    while (parseIndex < jsonText.size()) {
-        const char currentChar = jsonText[parseIndex++];
-        if (currentChar == '"') {
-            output = std::move(valueText);
-            return true;
-        }
-
-        if (currentChar == '\\') {
-            if (parseIndex >= jsonText.size()) {
-                return false;
-            }
-
-            const char escapedChar = jsonText[parseIndex++];
-            switch (escapedChar) {
-            case '"':
-            case '\\':
-            case '/':
-                valueText.push_back(escapedChar);
-                break;
-            case 'n':
-                valueText.push_back('\n');
-                break;
-            case 'r':
-                valueText.push_back('\r');
-                break;
-            case 't':
-                valueText.push_back('\t');
-                break;
-            default:
-                return false;
-            }
-            continue;
-        }
-
-        valueText.push_back(currentChar);
-    }
-
-    return false;
-}
-
-[[nodiscard]] bool parseJsonUnsignedToken(const std::string& text, std::size_t& parseIndex, std::uint64_t& output) {
-    skipWhitespace(text, parseIndex);
-    if (parseIndex >= text.size() || std::isdigit(static_cast<unsigned char>(text[parseIndex])) == 0) {
-        return false;
-    }
-
-    std::size_t tokenEnd = parseIndex;
-    while (tokenEnd < text.size() && std::isdigit(static_cast<unsigned char>(text[tokenEnd])) != 0) {
-        tokenEnd += 1U;
-    }
-
-    const std::string numberText = text.substr(parseIndex, tokenEnd - parseIndex);
-    const auto parsedValue = IniDocument::parseUnsigned(numberText, 0U, std::numeric_limits<std::uint64_t>::max());
-    if (!parsedValue.has_value()) {
-        return false;
-    }
-
-    output = *parsedValue;
-    parseIndex = tokenEnd;
-    return true;
-}
-
 struct DeviceJsonDraft {
     std::optional<std::string> topic{};
     std::optional<std::uint64_t> nodeId{};
@@ -541,29 +456,48 @@ struct DeviceJsonDraft {
     std::optional<std::string> label{};
 };
 
+[[nodiscard]] bool tryParseUnsignedJsonValue(
+    const mqtt::json::JsonValue& value,
+    std::uint64_t& outputValue) {
+    if (!value.is_number()) {
+        return false;
+    }
+
+    const double numberValue = value.as_number();
+    if (numberValue < 0.0 || !std::isfinite(numberValue)) {
+        return false;
+    }
+
+    const double floorValue = std::floor(numberValue);
+    if (floorValue != numberValue || numberValue > static_cast<double>(std::numeric_limits<std::uint64_t>::max())) {
+        return false;
+    }
+
+    outputValue = static_cast<std::uint64_t>(numberValue);
+    return true;
+}
+
 [[nodiscard]] bool parseJsonDeviceField(
     const std::string& key,
-    const std::string& text,
-    std::size_t& parseIndex,
+    const mqtt::json::JsonValue& value,
     DeviceJsonDraft& output,
     std::string& errorMessage) {
     auto parseStringValue = [&](const char* errorPrefix, std::optional<std::string>& target) {
-        std::string value{};
-        if (!parseJsonStringToken(text, parseIndex, value)) {
+        if (!value.is_string()) {
             errorMessage = std::string{"invalid settings json: "} + errorPrefix;
             return false;
         }
-        target = std::move(value);
+        target = value.as_string();
         return true;
     };
 
-    auto parseNumberValue = [&](const char* errorPrefix, std::optional<std::uint64_t>& target) {
-        std::uint64_t value = 0U;
-        if (!parseJsonUnsignedToken(text, parseIndex, value)) {
+    auto parseNumberFromJsonValue = [&](const char* errorPrefix, std::optional<std::uint64_t>& target) {
+        std::uint64_t parsedValue = 0U;
+        if (!tryParseUnsignedJsonValue(value, parsedValue)) {
             errorMessage = std::string{"invalid settings json: "} + errorPrefix;
             return false;
         }
-        target = value;
+        target = parsedValue;
         return true;
     };
 
@@ -571,16 +505,16 @@ struct DeviceJsonDraft {
         return parseStringValue("device.topic must be string", output.topic);
     }
     if (key == "nodeId") {
-        return parseNumberValue("device.nodeId must be number", output.nodeId);
+        return parseNumberFromJsonValue("device.nodeId must be number", output.nodeId);
     }
     if (key == "classId") {
-        return parseNumberValue("device.classId must be number", output.classId);
+        return parseNumberFromJsonValue("device.classId must be number", output.classId);
     }
     if (key == "instance") {
-        return parseNumberValue("device.instance must be number", output.instance);
+        return parseNumberFromJsonValue("device.instance must be number", output.instance);
     }
     if (key == "index") {
-        return parseNumberValue("device.index must be number", output.index);
+        return parseNumberFromJsonValue("device.index must be number", output.index);
     }
     if (key == "type") {
         return parseStringValue("device.type must be string", output.type);
@@ -642,144 +576,72 @@ struct DeviceJsonDraft {
 }
 
 [[nodiscard]] bool parseJsonDeviceObject(
-    const std::string& text,
-    std::size_t& parseIndex,
+    const mqtt::json::JsonValue& value,
     ZwaveDeviceConfig& output,
     std::string& errorMessage) {
-    if (!consumeChar(text, parseIndex, '{')) {
+    if (!value.is_object()) {
         errorMessage = "invalid settings json: expected device object";
         return false;
     }
 
+    const auto& objectValue = value.as_object();
     DeviceJsonDraft draft{};
-    while (true) {
-        skipWhitespace(text, parseIndex);
-        if (parseIndex < text.size() && text[parseIndex] == '}') {
-            parseIndex += 1U;
-            break;
-        }
-
-        std::string key{};
-        if (!parseJsonStringToken(text, parseIndex, key)) {
-            errorMessage = "invalid settings json: expected device key";
+    for (const auto& [keyText, fieldValue] : objectValue) {
+        if (!parseJsonDeviceField(keyText, fieldValue, draft, errorMessage)) {
             return false;
         }
-        if (!consumeChar(text, parseIndex, ':')) {
-            errorMessage = "invalid settings json: expected ':' after device key";
-            return false;
-        }
-        if (!parseJsonDeviceField(key, text, parseIndex, draft, errorMessage)) {
-            return false;
-        }
-
-        skipWhitespace(text, parseIndex);
-        if (parseIndex < text.size() && text[parseIndex] == ',') {
-            parseIndex += 1U;
-            continue;
-        }
-        if (parseIndex < text.size() && text[parseIndex] == '}') {
-            parseIndex += 1U;
-            break;
-        }
-        errorMessage = "invalid settings json: malformed device object";
-        return false;
     }
 
     return buildDeviceConfigFromDraft(draft, output, errorMessage);
 }
 
 [[nodiscard]] bool parseJsonDevicesArray(
-    const std::string& text,
-    std::size_t& parseIndex,
+    const mqtt::json::JsonValue& value,
     std::vector<ZwaveDeviceConfig>& devices,
     std::string& errorMessage) {
-    if (!consumeChar(text, parseIndex, '[')) {
+    if (!value.is_array()) {
         errorMessage = "invalid settings json: expected devices array";
         return false;
     }
 
-    while (true) {
-        skipWhitespace(text, parseIndex);
-        if (parseIndex < text.size() && text[parseIndex] == ']') {
-            parseIndex += 1U;
-            return true;
-        }
-
+    for (const auto& entryValue : value.as_array()) {
         ZwaveDeviceConfig device{};
-        if (!parseJsonDeviceObject(text, parseIndex, device, errorMessage)) {
+        if (!parseJsonDeviceObject(entryValue, device, errorMessage)) {
             return false;
         }
         devices.push_back(std::move(device));
-
-        skipWhitespace(text, parseIndex);
-        if (parseIndex < text.size() && text[parseIndex] == ',') {
-            parseIndex += 1U;
-            continue;
-        }
-        if (parseIndex < text.size() && text[parseIndex] == ']') {
-            parseIndex += 1U;
-            return true;
-        }
-        errorMessage = "invalid settings json: malformed devices array";
-        return false;
     }
+
+    return true;
 }
 
 [[nodiscard]] bool parseJsonRootEntry(
-    const std::string& text,
-    std::size_t& parseIndex,
+    const std::string& key,
+    const mqtt::json::JsonValue& value,
     std::vector<ZwaveDeviceConfig>& devices,
     bool& hasDevices,
     std::string& errorMessage) {
-    std::string key{};
-    if (!parseJsonStringToken(text, parseIndex, key)) {
-        errorMessage = "invalid settings json: expected root key";
-        return false;
-    }
-    if (!consumeChar(text, parseIndex, ':')) {
-        errorMessage = "invalid settings json: expected ':' after root key";
-        return false;
-    }
-
     if (key != "devices") {
         errorMessage = "invalid settings json: unknown root key '" + key + "'";
         return false;
     }
 
     hasDevices = true;
-    return parseJsonDevicesArray(text, parseIndex, devices, errorMessage);
+    return parseJsonDevicesArray(value, devices, errorMessage);
 }
 
 [[nodiscard]] bool parseJsonRootEntries(
-    const std::string& text,
-    std::size_t& parseIndex,
+    const mqtt::json::JsonValue::Object& objectValue,
     std::vector<ZwaveDeviceConfig>& devices,
     bool& hasDevices,
     std::string& errorMessage) {
-    while (true) {
-        skipWhitespace(text, parseIndex);
-        if (parseIndex < text.size() && text[parseIndex] == '}') {
-            parseIndex += 1U;
-            return true;
-        }
-
-        if (!parseJsonRootEntry(text, parseIndex, devices, hasDevices, errorMessage)) {
+    for (const auto& [keyText, entryValue] : objectValue) {
+        if (!parseJsonRootEntry(keyText, entryValue, devices, hasDevices, errorMessage)) {
             return false;
         }
-
-        skipWhitespace(text, parseIndex);
-        if (parseIndex < text.size() && text[parseIndex] == ',') {
-            parseIndex += 1U;
-            continue;
-        }
-        if (parseIndex < text.size() && text[parseIndex] == '}') {
-            parseIndex += 1U;
-            return true;
-        }
-
-        errorMessage = "invalid settings json: malformed root object";
-        return false;
     }
+
+    return true;
 }
 
 [[nodiscard]] bool parseJsonRootDevices(
@@ -787,22 +649,28 @@ struct DeviceJsonDraft {
     std::vector<ZwaveDeviceConfig>& devices,
     std::string& errorMessage) {
     devices.clear();
-    std::size_t parseIndex = 0U;
-    bool hasDevices = false;
-    if (!consumeChar(text, parseIndex, '{')) {
+
+    mqtt::json::JsonValue rootValue{};
+    try {
+        rootValue = mqtt::json::JsonValue::parse(text);
+    } catch (const mqtt::json::JsonException& exception) {
+        errorMessage = "invalid settings json: parse failed (" + std::string{exception.what()} + ")";
+        return false;
+    } catch (const std::exception& exception) {
+        errorMessage = "invalid settings json: parse failed (" + std::string{exception.what()} + ")";
+        return false;
+    }
+
+    if (!rootValue.is_object()) {
         errorMessage = "invalid settings json: expected root object";
         return false;
     }
 
-    if (!parseJsonRootEntries(text, parseIndex, devices, hasDevices, errorMessage)) {
+    bool hasDevices = false;
+    if (!parseJsonRootEntries(rootValue.as_object(), devices, hasDevices, errorMessage)) {
         return false;
     }
 
-    skipWhitespace(text, parseIndex);
-    if (parseIndex != text.size()) {
-        errorMessage = "invalid settings json: trailing characters";
-        return false;
-    }
     if (!hasDevices) {
         errorMessage = "invalid settings json: missing devices array";
         return false;
@@ -886,92 +754,28 @@ void persistSettingsToFileStore(const ZwaveConfig& config) {
     }
 }
 
-void appendStringField(std::string& target, const std::string& key, const std::string& value, const bool withComma) {
-    target.append("\"");
-    target.append(escapeJsonString(key));
-    target.append("\":\"");
-    target.append(escapeJsonString(value));
-    target.push_back('"');
-    if (withComma) {
-        target.push_back(',');
+[[nodiscard]] mqtt::json::JsonValue buildZwaveDeviceJsonValue(const ZwaveDeviceConfig& device) {
+    mqtt::json::JsonValue::Object objectValue{};
+    objectValue.emplace("topic", mqtt::json::JsonValue{device.topic});
+    objectValue.emplace("nodeId", mqtt::json::JsonValue{static_cast<double>(device.nodeId)});
+
+    if (device.classId.has_value()) {
+        objectValue.emplace("classId", mqtt::json::JsonValue{static_cast<double>(*device.classId)});
     }
-}
-
-void appendNumberField(std::string& target, const std::string& key, const std::uint64_t value, const bool withComma) {
-    target.append("\"");
-    target.append(escapeJsonString(key));
-    target.append("\":");
-    target.append(std::to_string(value));
-    if (withComma) {
-        target.push_back(',');
+    if (device.instance.has_value()) {
+        objectValue.emplace("instance", mqtt::json::JsonValue{static_cast<double>(*device.instance)});
     }
-}
-
-void appendOptionalNumberField(
-    std::string& target,
-    const std::string& key,
-    const std::optional<std::uint64_t>& value,
-    bool& firstField) {
-    if (!value.has_value()) {
-        return;
+    if (device.index.has_value()) {
+        objectValue.emplace("index", mqtt::json::JsonValue{static_cast<double>(*device.index)});
     }
-    if (!firstField) {
-        target.push_back(',');
+    if (device.type.has_value() && !device.type->empty()) {
+        objectValue.emplace("type", mqtt::json::JsonValue{*device.type});
     }
-    firstField = false;
-    appendNumberField(target, key, *value, false);
-}
-
-void appendOptionalStringField(
-    std::string& target,
-    const std::string& key,
-    const std::optional<std::string>& value,
-    bool& firstField) {
-    if (!value.has_value() || value->empty()) {
-        return;
+    if (device.label.has_value() && !device.label->empty()) {
+        objectValue.emplace("label", mqtt::json::JsonValue{*device.label});
     }
-    if (!firstField) {
-        target.push_back(',');
-    }
-    firstField = false;
-    appendStringField(target, key, *value, false);
-}
 
-void appendDeviceAsJson(std::string& target, const ZwaveDeviceConfig& device) {
-    target.push_back('{');
-    bool firstField = true;
-
-    appendStringField(target, "topic", device.topic, false);
-    firstField = false;
-
-    target.push_back(',');
-    appendNumberField(target, "nodeId", device.nodeId, false);
-
-    appendOptionalNumberField(
-        target,
-        "classId",
-        device.classId.has_value()
-            ? std::optional<std::uint64_t>{*device.classId}
-            : std::nullopt,
-        firstField);
-    appendOptionalNumberField(
-        target,
-        "instance",
-        device.instance.has_value()
-            ? std::optional<std::uint64_t>{*device.instance}
-            : std::nullopt,
-        firstField);
-    appendOptionalNumberField(
-        target,
-        "index",
-        device.index.has_value()
-            ? std::optional<std::uint64_t>{*device.index}
-            : std::nullopt,
-        firstField);
-    appendOptionalStringField(target, "type", device.type, firstField);
-    appendOptionalStringField(target, "label", device.label, firstField);
-
-    target.push_back('}');
+    return mqtt::json::JsonValue{std::move(objectValue)};
 }
 
 } // namespace
@@ -1123,17 +927,15 @@ bool tryLoadZwaveDeviceSettingsSnapshotFromFileStore(
 }
 
 std::string serializeZwaveSettingsToJson(const ZwaveConfig& config) {
-    std::string json{"{\"devices\":["};
-
-    for (std::size_t index = 0U; index < config.devices.size(); ++index) {
-        appendDeviceAsJson(json, config.devices[index]);
-        if (index + 1U < config.devices.size()) {
-            json.push_back(',');
-        }
+    mqtt::json::JsonValue::Array devicesArray{};
+    devicesArray.reserve(config.devices.size());
+    for (const auto& device : config.devices) {
+        devicesArray.push_back(buildZwaveDeviceJsonValue(device));
     }
 
-    json.append("]}");
-    return json;
+    mqtt::json::JsonValue::Object rootObject{};
+    rootObject.emplace("devices", mqtt::json::JsonValue{std::move(devicesArray)});
+    return mqtt::json::JsonValue{std::move(rootObject)}.stringify();
 }
 
 bool tryLoadZwaveClientRuntimeConfigFromIni(

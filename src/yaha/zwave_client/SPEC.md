@@ -93,6 +93,8 @@ OpenZWave runtime driver behavior:
 - resolves OpenZWave user path from `YAHA_OPENZWAVE_USER_PATH` or `<deploy-root>/tmp/openzwave`
 - optional FileStore-backed device settings sync (same filestore section style as ValueService):
   - reads settings JSON from `filestore.filename` when `filestore.use=true`
+  - JSON parsing/serialization uses shared `src/json` `JsonValue` (no client-local recursive-descent parser)
+  - accepted settings payload shape is strict root object with only `devices` key; unknown root keys are rejected
   - startup sync applies the full FileStore snapshot to runtime `devices`
   - persists only the effective `devices` array back to FileStore as JSON root object (`{"devices":[...]}`)
   - startup sync is executed only after MQTT connect and `starting` status publish
