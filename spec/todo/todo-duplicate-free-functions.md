@@ -90,7 +90,7 @@ python3 test/check_duplicate_functions.py
   - src/broker/persistence/retained_message_persistence.cpp:20
   - src/codec/properties/properties_codec.cpp:95
 
-- [ ] `endpointToString` (3 occurrences)
+- [x] `endpointToString` (3 occurrences)
   - src/yaha/serial_device/serial_device_message.cpp:4
   - src/yaha/serial_device/serial_device_serial_to_mqtt_mapper.cpp:13
   - src/yaha/serial_device/serial_device_wire_serializer.cpp:11
