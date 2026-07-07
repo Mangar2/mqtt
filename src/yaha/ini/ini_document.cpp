@@ -236,53 +236,63 @@ std::optional<std::uint64_t> IniDocument::parseUnsigned(
     return parsed;
 }
 
-std::pair<std::optional<std::uint64_t>, std::string> IniDocument::readUnsigned(
+std::optional<std::uint64_t> IniDocument::readUnsigned(
     const std::string_view sectionName,
     const std::string_view key,
     const std::uint64_t minValue,
-    const std::uint64_t maxValue) const {
+    const std::uint64_t maxValue,
+    const std::string& defaultValueText) const {
     const auto maybeValue = lastValue(sectionName, key);
     if (!maybeValue.has_value()) {
-        return {std::nullopt, ""};
+        return std::nullopt;
     }
 
     const auto parsed = parseUnsigned(*maybeValue, minValue, maxValue);
     if (!parsed.has_value()) {
         const auto fieldName = makeFieldName(sectionName, key);
-        return {
-            std::nullopt,
+        reportFallback(
+            sectionName,
+            key,
+            *maybeValue,
+            defaultValueText,
             std::format(
                 "invalid unsigned value for '{}' (expected {}..{}, got '{}')",
                 fieldName,
                 minValue,
                 maxValue,
-                *maybeValue)};
+                *maybeValue));
+        return std::nullopt;
     }
 
-    return {*parsed, ""};
+    return *parsed;
 }
 
-std::pair<std::optional<bool>, std::string> IniDocument::readBool(
+std::optional<bool> IniDocument::readBool(
     const std::string_view sectionName,
-    const std::string_view key) const {
+    const std::string_view key,
+    const bool defaultValue) const {
     const auto maybeValue = lastValue(sectionName, key);
     if (!maybeValue.has_value()) {
-        return {std::nullopt, ""};
+        return std::nullopt;
     }
 
     const auto& text = *maybeValue;
     if (text == "true" || text == "1" || text == "yes" || text == "on") {
-        return {true, ""};
+        return true;
     }
 
     if (text == "false" || text == "0" || text == "no" || text == "off") {
-        return {false, ""};
+        return false;
     }
 
     const auto fieldName = makeFieldName(sectionName, key);
-    return {
-        std::nullopt,
-        std::format("invalid boolean value for '{}' (got '{}')", fieldName, text)};
+    reportFallback(
+        sectionName,
+        key,
+        text,
+        defaultValue ? "true" : "false",
+        std::format("invalid boolean value for '{}' (got '{}')", fieldName, text));
+    return std::nullopt;
 }
 
 void IniDocument::addWarningHandler(ConfigWarningHandler handler) const {

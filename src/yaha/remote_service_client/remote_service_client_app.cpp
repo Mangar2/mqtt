@@ -4,7 +4,6 @@
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <cstdint>
-#include <iostream>
 #include <string_view>
 #include <utility>
 
@@ -13,22 +12,6 @@ namespace yaha {
 namespace {
 
 constexpr std::string_view kRemoteServiceSection{"remoteservice"};
-
-void logConfigFallbackWarning(
-    const std::string_view serviceName,
-    const std::string_view sectionName,
-    const std::string_view keyName,
-    const std::string& rawValue,
-    const std::string& defaultValue,
-    const std::string& reasonText) {
-    std::cerr << serviceName << "[warn] config_fallback"
-              << " section=" << sectionName
-              << " key=" << keyName
-              << " value='" << rawValue << "'"
-              << " default='" << defaultValue << "'"
-              << " reason='" << reasonText << "'"
-              << '\n' << std::flush;
-}
 
 [[nodiscard]] bool requireSetting(
     const IniDocument& document,
@@ -60,34 +43,20 @@ bool tryLoadRemoteServiceConfigFromIni(
         parsed.listenHost = *listenerHost;
     }
 
-    const auto listenerPortResult = document.readUnsigned(kRemoteServiceSection, "listenPort", 1U, 65535U);
-    if (!listenerPortResult.second.empty()) {
-        const std::string rawValue = document.lastValue(kRemoteServiceSection, "listenPort").value_or("<missing>");
-        logConfigFallbackWarning(
-            "remote_service_client",
-            kRemoteServiceSection,
-            "listenPort",
-            rawValue,
-            std::to_string(parsed.listenPort),
-            listenerPortResult.second);
-    }
-    if (listenerPortResult.first.has_value()) {
-        parsed.listenPort = static_cast<std::uint16_t>(*listenerPortResult.first);
+    const auto listenerPortResult = document.readUnsigned(
+        kRemoteServiceSection, "listenPort", 1U, 65535U, std::to_string(parsed.listenPort));
+    if (listenerPortResult.has_value()) {
+        parsed.listenPort = static_cast<std::uint16_t>(*listenerPortResult);
     }
 
-    const auto subscribeQosResult = document.readUnsigned(kRemoteServiceSection, "subscribeQoS", 0U, 2U);
-    if (!subscribeQosResult.second.empty()) {
-        const std::string rawValue = document.lastValue(kRemoteServiceSection, "subscribeQoS").value_or("<missing>");
-        logConfigFallbackWarning(
-            "remote_service_client",
-            kRemoteServiceSection,
-            "subscribeQoS",
-            rawValue,
-            std::to_string(static_cast<unsigned int>(parsed.subscribeQos)),
-            subscribeQosResult.second);
-    }
-    if (subscribeQosResult.first.has_value()) {
-        parsed.subscribeQos = static_cast<Qos>(*subscribeQosResult.first);
+    const auto subscribeQosResult = document.readUnsigned(
+        kRemoteServiceSection,
+        "subscribeQoS",
+        0U,
+        2U,
+        std::to_string(static_cast<unsigned int>(parsed.subscribeQos)));
+    if (subscribeQosResult.has_value()) {
+        parsed.subscribeQos = static_cast<Qos>(*subscribeQosResult);
     }
 
     if (const auto monitorTopicPrefix = document.lastValue("filestore", "topicPrefix");
@@ -99,22 +68,12 @@ bool tryLoadRemoteServiceConfigFromIni(
         return false;
     }
 
-    const auto fileStorePortResult = document.readUnsigned("filestore", "port", 1U, 65535U);
-    if (!fileStorePortResult.second.empty()) {
-        const std::string rawValue = document.lastValue("filestore", "port").value_or("<missing>");
-        logConfigFallbackWarning(
-            "remote_service_client",
-            "filestore",
-            "port",
-            rawValue,
-            std::to_string(parsed.fileStorePort),
-            fileStorePortResult.second);
-    }
-    if (fileStorePortResult.first.has_value()) {
-        parsed.fileStorePort = static_cast<std::uint16_t>(*fileStorePortResult.first);
-    } else {
-        logConfigFallbackWarning(
-            "remote_service_client",
+    const auto fileStorePortResult = document.readUnsigned(
+        "filestore", "port", 1U, 65535U, std::to_string(parsed.fileStorePort));
+    if (fileStorePortResult.has_value()) {
+        parsed.fileStorePort = static_cast<std::uint16_t>(*fileStorePortResult);
+    } else if (!document.lastValue("filestore", "port").has_value()) {
+        document.reportFallback(
             "filestore",
             "port",
             "<missing>",
@@ -143,13 +102,7 @@ bool tryLoadRemoteServiceClientRuntimeConfigFromIni(
 
     std::string mqttErrorMessage{};
     if (!tryLoadMqttClientConfigFromIni(document, parsed.mqttConfig, mqttErrorMessage)) {
-        logConfigFallbackWarning(
-            "remote_service_client",
-            "mqtt",
-            "*",
-            "<composite>",
-            "defaults",
-            mqttErrorMessage);
+        document.reportFallback("mqtt", "*", "<composite>", "defaults", mqttErrorMessage);
     }
 
     MessageLogConfig messageLogConfig{
@@ -166,13 +119,7 @@ bool tryLoadRemoteServiceClientRuntimeConfigFromIni(
             },
             messageLogConfig,
             errorMessage)) {
-        logConfigFallbackWarning(
-            "remote_service_client",
-            kRemoteServiceSection,
-            "log*",
-            "<composite>",
-            "defaults",
-            errorMessage);
+        document.reportFallback(kRemoteServiceSection, "log*", "<composite>", "defaults", errorMessage);
         errorMessage.clear();
     }
 

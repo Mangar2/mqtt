@@ -706,38 +706,12 @@ std::string resolveCompatibilityToken(const httplib::Request& request, const Htt
     return detailText + " raw_body=" + request.body;
 }
 
-void logConfigFallbackWarning(
-    const std::string_view serviceName,
-    const std::string_view sectionName,
-    const std::string_view keyName,
-    const std::string& rawValue,
-    const std::string& defaultValue,
-    const std::string& reasonText) {
-    std::cerr << serviceName << "[warn] config_fallback"
-              << " section=" << sectionName
-              << " key=" << keyName
-              << " value='" << rawValue << "'"
-              << " default='" << defaultValue << "'"
-              << " reason='" << reasonText << "'"
-              << '\n' << std::flush;
-}
-
 void applyBoolConfigWithFallback(
     const IniDocument& iniDocument,
     bool& configValue,
     const std::string_view sectionName,
     const std::string_view keyName) {
-    const auto [maybeBoolValue, parseError] = iniDocument.readBool(sectionName, keyName);
-    if (!parseError.empty()) {
-        const std::string rawValue = iniDocument.lastValue(sectionName, keyName).value_or("<missing>");
-        logConfigFallbackWarning(
-            "http_mqtt_interface_client",
-            sectionName,
-            keyName,
-            rawValue,
-            configValue ? "true" : "false",
-            parseError);
-    }
+    const auto maybeBoolValue = iniDocument.readBool(sectionName, keyName, configValue);
     if (maybeBoolValue.has_value()) {
         configValue = *maybeBoolValue;
     }

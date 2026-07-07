@@ -14,8 +14,8 @@ Provides reusable INI infrastructure for YAHA clients. The parser is domain-agno
 | `findSection` | `const Section*(string_view) const` | returns section pointer or null |
 | `lastValue` | `optional<string>(string_view, string_view) const` | returns last value for section/key |
 | `parseUnsigned` | `static optional<uint64_t>(string_view, uint64_t, uint64_t)` | bounded unsigned parser |
-| `readUnsigned` | `pair<optional<uint64_t>, string>(string_view, string_view, uint64_t, uint64_t) const` | typed unsigned read with value/error result |
-| `readBool` | `pair<optional<bool>, string>(string_view, string_view) const` | typed bool read with value/error result |
+| `readUnsigned` | `optional<uint64_t>(string_view, string_view, uint64_t, uint64_t, const string& defaultValueText) const` | typed unsigned read; reports fallback via `reportFallback` on invalid (not missing) value |
+| `readBool` | `optional<bool>(string_view, string_view, bool defaultValue) const` | typed bool read; reports fallback via `reportFallback` on invalid (not missing) value |
 | `addWarningHandler` | `void(ConfigWarningHandler) const` | registers one additional config-fallback warning handler |
 | `clearWarningHandlers` | `void() const` | removes all registered handlers, including the built-in default one |
 | `reportFallback` | `void(string_view, string_view, const string&, const string&, const string&) const` | invokes all registered warning handlers with `serviceName`, section, key, raw value, default value, reason text |
@@ -34,9 +34,11 @@ One document instance registers a default handler automatically (constructed by
 
 Callers can add more handlers (`addWarningHandler`) or remove all of them, including the
 default one (`clearWarningHandlers`), for example to redirect fallback reporting to
-monitoring instead of stderr. `readUnsigned`/`readBool` do not yet call `reportFallback`
-internally (planned follow-up, see `spec/yaha/IMPL-ini-config-fallback-warning.md`); today it
-is a directly callable primitive for composite config-fallback cases and future integration.
+monitoring instead of stderr. `readUnsigned`/`readBool` call `reportFallback` internally
+whenever a present value fails to parse or is out of range (a missing key stays silent — the
+caller keeps its own default). Callers with a composite fallback (a sub-config load spanning
+several keys, where the failure reason comes from another module) call `reportFallback`
+directly instead.
 
 ### Class `IniDocument::Section`
 

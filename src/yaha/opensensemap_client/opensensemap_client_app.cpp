@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <array>
-#include <iostream>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -22,22 +21,6 @@ namespace {
 constexpr std::string_view k_open_sense_map_section{"opensensemap"};
 constexpr std::string_view k_sensor_section{"sensor"};
 constexpr std::size_t kCommandReadBufferSize{256U};
-
-void logConfigFallbackWarning(
-    const std::string_view serviceName,
-    const std::string_view sectionName,
-    const std::string_view keyName,
-    const std::string& rawValue,
-    const std::string& defaultValue,
-    const std::string& reasonText) {
-    std::cerr << serviceName << "[warn] config_fallback"
-              << " section=" << sectionName
-              << " key=" << keyName
-              << " value='" << rawValue << "'"
-              << " default='" << defaultValue << "'"
-              << " reason='" << reasonText << "'"
-              << '\n' << std::flush;
-}
 
 struct SensorAssembly {
     std::optional<std::string> sensorName{};
@@ -322,49 +305,25 @@ bool tryLoadOpenSenseMapConfigFromIni(
         output.host = *host;
     }
 
-    const auto portResult = document.readUnsigned(k_open_sense_map_section, "port", 1U, 65535U);
-    if (!portResult.second.empty()) {
-        const std::string rawValue = document.lastValue(k_open_sense_map_section, "port").value_or("<missing>");
-        logConfigFallbackWarning(
-            "opensensemap_client",
-            k_open_sense_map_section,
-            "port",
-            rawValue,
-            std::to_string(output.port),
-            portResult.second);
-    }
-    if (portResult.first.has_value()) {
-        output.port = static_cast<std::uint16_t>(*portResult.first);
+    const auto portResult = document.readUnsigned(
+        k_open_sense_map_section, "port", 1U, 65535U, std::to_string(output.port));
+    if (portResult.has_value()) {
+        output.port = static_cast<std::uint16_t>(*portResult);
     }
 
-    const auto qosResult = document.readUnsigned(k_open_sense_map_section, "qos", 0U, 2U);
-    if (!qosResult.second.empty()) {
-        const std::string rawValue = document.lastValue(k_open_sense_map_section, "qos").value_or("<missing>");
-        logConfigFallbackWarning(
-            "opensensemap_client",
-            k_open_sense_map_section,
-            "qos",
-            rawValue,
-            std::to_string(static_cast<unsigned int>(output.subscribeQos)),
-            qosResult.second);
-    }
-    if (qosResult.first.has_value()) {
-        output.subscribeQos = static_cast<Qos>(*qosResult.first);
+    const auto qosResult = document.readUnsigned(
+        k_open_sense_map_section,
+        "qos",
+        0U,
+        2U,
+        std::to_string(static_cast<unsigned int>(output.subscribeQos)));
+    if (qosResult.has_value()) {
+        output.subscribeQos = static_cast<Qos>(*qosResult);
     }
 
-    const auto useTlsResult = document.readBool(k_open_sense_map_section, "useTls");
-    if (!useTlsResult.second.empty()) {
-        const std::string rawValue = document.lastValue(k_open_sense_map_section, "useTls").value_or("<missing>");
-        logConfigFallbackWarning(
-            "opensensemap_client",
-            k_open_sense_map_section,
-            "useTls",
-            rawValue,
-            output.useTls ? "true" : "false",
-            useTlsResult.second);
-    }
-    if (useTlsResult.first.has_value()) {
-        output.useTls = *useTlsResult.first;
+    const auto useTlsResult = document.readBool(k_open_sense_map_section, "useTls", output.useTls);
+    if (useTlsResult.has_value()) {
+        output.useTls = *useTlsResult;
     }
 
     if (output.boxIdentifier.empty()) {
@@ -394,13 +353,7 @@ bool tryLoadOpenSenseMapClientRuntimeConfigFromIni(
 
     std::string mqttErrorMessage{};
     if (!tryLoadMqttClientConfigFromIni(document, parsed.mqttConfig, mqttErrorMessage)) {
-        logConfigFallbackWarning(
-            "opensensemap_client",
-            "mqtt",
-            "*",
-            "<composite>",
-            "defaults",
-            mqttErrorMessage);
+        document.reportFallback("mqtt", "*", "<composite>", "defaults", mqttErrorMessage);
     }
 
     MessageLogConfig messageLogConfig{
@@ -417,13 +370,8 @@ bool tryLoadOpenSenseMapClientRuntimeConfigFromIni(
             },
             messageLogConfig,
             messageLogConfigError)) {
-        logConfigFallbackWarning(
-            "opensensemap_client",
-            k_open_sense_map_section,
-            "*",
-            "<composite>",
-            "defaults",
-            messageLogConfigError);
+        document.reportFallback(
+            k_open_sense_map_section, "*", "<composite>", "defaults", messageLogConfigError);
     }
 
     parsed.logIncomingMessages = messageLogConfig.enableIncoming;

@@ -100,7 +100,6 @@ void logIncomingPublishRequest(bool enabled, const httplib::Request& request, st
 [[nodiscard]] HttpMqttResult makeNoContentResult(std::string_view packetName = "");
 [[nodiscard]] bool ensureSupportedRequestVersion(bool errorLoggingEnabled, std::string_view operationName, const httplib::Request& request, httplib::Response& response);
 [[nodiscard]] std::string withRawBodyDetail(const std::string& detailText, const httplib::Request& request);
-void logConfigFallbackWarning(std::string_view serviceName, std::string_view sectionName, std::string_view keyName, const std::string& rawValue, const std::string& defaultValue, const std::string& reasonText);
 void applyBoolConfigWithFallback(const IniDocument& iniDocument, bool& configValue, std::string_view sectionName, std::string_view keyName);
 
 } // namespace yaha::http_mqtt_interface_client_internal

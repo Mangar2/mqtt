@@ -6,8 +6,35 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace {
+
+struct RecordedCall {
+    std::string sectionName{};
+    std::string keyName{};
+    std::string rawValue{};
+    std::string defaultValue{};
+    std::string reasonText{};
+};
+
+yaha::ConfigWarningHandler makeProbe(std::vector<RecordedCall>& calls) {
+    return [&calls](
+               const std::string_view /*serviceName*/,
+               const std::string_view sectionName,
+               const std::string_view keyName,
+               const std::string& rawValue,
+               const std::string& defaultValue,
+               const std::string& reasonText) {
+        calls.push_back(RecordedCall{
+            .sectionName = std::string{sectionName},
+            .keyName = std::string{keyName},
+            .rawValue = rawValue,
+            .defaultValue = defaultValue,
+            .reasonText = reasonText});
+    };
+}
 
 std::filesystem::path makeTempDirectory() {
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
@@ -48,15 +75,17 @@ TEST_CASE("ini_document_reads_optional_unsigned_field", "[ini]") {
         "port = 1884\n");
 
     const auto document = yaha::IniDocument::loadFromFile(iniPath);
+    std::vector<RecordedCall> probeCalls{};
+    document.addWarningHandler(makeProbe(probeCalls));
 
-    const auto parsed = document.readUnsigned("mqtt", "port", 1U, 65535U);
-    REQUIRE(parsed.second.empty());
-    REQUIRE(parsed.first.has_value());
-    REQUIRE(*parsed.first == 1884U);
+    const auto parsed = document.readUnsigned("mqtt", "port", 1U, 65535U, "1883");
+    REQUIRE(parsed.has_value());
+    REQUIRE(*parsed == 1884U);
 
-    const auto missingValue = document.readUnsigned("mqtt", "missing", 1U, 65535U);
-    REQUIRE(missingValue.second.empty());
-    REQUIRE_FALSE(missingValue.first.has_value());
+    const auto missingValue = document.readUnsigned("mqtt", "missing", 1U, 65535U, "1883");
+    REQUIRE_FALSE(missingValue.has_value());
+
+    REQUIRE(probeCalls.empty());
 
     removeDirectoryQuiet(tempDir);
 }
@@ -68,10 +97,65 @@ TEST_CASE("ini_document_reports_invalid_unsigned_field", "[ini]") {
         "port = invalid\n");
 
     const auto document = yaha::IniDocument::loadFromFile(iniPath);
+    std::vector<RecordedCall> probeCalls{};
+    document.addWarningHandler(makeProbe(probeCalls));
 
-    const auto parsed = document.readUnsigned("mqtt", "port", 1U, 65535U);
-    REQUIRE_FALSE(parsed.first.has_value());
-    REQUIRE(parsed.second == "invalid unsigned value for 'mqtt.port' (expected 1..65535, got 'invalid')");
+    const auto parsed = document.readUnsigned("mqtt", "port", 1U, 65535U, "1883");
+    REQUIRE_FALSE(parsed.has_value());
+
+    REQUIRE(probeCalls.size() == 1U);
+    const auto& call = probeCalls.front();
+    REQUIRE(call.sectionName == "mqtt");
+    REQUIRE(call.keyName == "port");
+    REQUIRE(call.rawValue == "invalid");
+    REQUIRE(call.defaultValue == "1883");
+    REQUIRE(call.reasonText == "invalid unsigned value for 'mqtt.port' (expected 1..65535, got 'invalid')");
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("ini_document_reads_optional_bool_field", "[ini]") {
+    const auto tempDir = makeTempDirectory();
+    const auto iniPath = writeIniFile(tempDir,
+        "[mqtt]\n"
+        "enabled = yes\n");
+
+    const auto document = yaha::IniDocument::loadFromFile(iniPath);
+    std::vector<RecordedCall> probeCalls{};
+    document.addWarningHandler(makeProbe(probeCalls));
+
+    const auto parsed = document.readBool("mqtt", "enabled", false);
+    REQUIRE(parsed.has_value());
+    REQUIRE(*parsed);
+
+    const auto missingValue = document.readBool("mqtt", "missing", false);
+    REQUIRE_FALSE(missingValue.has_value());
+
+    REQUIRE(probeCalls.empty());
+
+    removeDirectoryQuiet(tempDir);
+}
+
+TEST_CASE("ini_document_reports_invalid_bool_field", "[ini]") {
+    const auto tempDir = makeTempDirectory();
+    const auto iniPath = writeIniFile(tempDir,
+        "[mqtt]\n"
+        "enabled = maybe\n");
+
+    const auto document = yaha::IniDocument::loadFromFile(iniPath);
+    std::vector<RecordedCall> probeCalls{};
+    document.addWarningHandler(makeProbe(probeCalls));
+
+    const auto parsed = document.readBool("mqtt", "enabled", true);
+    REQUIRE_FALSE(parsed.has_value());
+
+    REQUIRE(probeCalls.size() == 1U);
+    const auto& call = probeCalls.front();
+    REQUIRE(call.sectionName == "mqtt");
+    REQUIRE(call.keyName == "enabled");
+    REQUIRE(call.rawValue == "maybe");
+    REQUIRE(call.defaultValue == "true");
+    REQUIRE(call.reasonText == "invalid boolean value for 'mqtt.enabled' (got 'maybe')");
 
     removeDirectoryQuiet(tempDir);
 }

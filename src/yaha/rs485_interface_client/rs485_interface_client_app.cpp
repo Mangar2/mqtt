@@ -379,21 +379,6 @@ struct ParsedInterfaceSegments {
     return true;
 }
 
-void logConfigFallbackWarning(
-    const std::string_view sectionName,
-    const std::string_view keyName,
-    const std::string& rawValue,
-    const std::string& defaultValue,
-    const std::string& reasonText) {
-    std::cerr << "rs485_interface_client[warn] config_fallback"
-              << " section=" << sectionName
-              << " key=" << keyName
-              << " value='" << rawValue << "'"
-              << " default='" << defaultValue << "'"
-              << " reason='" << reasonText << "'"
-              << '\n' << std::flush;
-}
-
 void parseRs485LoggingFlags(
     const IniDocument& document,
     Rs485InterfaceConfig& output) {
@@ -413,12 +398,7 @@ void parseRs485LoggingFlags(
             },
             messageLogConfig,
             errorMessage)) {
-        logConfigFallbackWarning(
-            "rs485interface",
-            "log*",
-            "<composite>",
-            "defaults",
-            errorMessage);
+        document.reportFallback("rs485interface", "log*", "<composite>", "defaults", errorMessage);
         return;
     }
 
@@ -436,122 +416,92 @@ Rs485InterfaceConfig loadRs485InterfaceConfigFromIni(const IniDocument& document
         throw YahaError{"RS485_CONFIG_PARSE_FAILED", "failed to parse rs485 config", "Invalid RS485 client configuration.", errorMessage};
     }
 
-    const auto baudrateResult = document.readUnsigned("rs485interface", "baudrate", 1U, 4000000U);
-    if (!baudrateResult.second.empty()) {
-        const std::string rawValue = document.lastValue("rs485interface", "baudrate").value_or("<missing>");
-        logConfigFallbackWarning("rs485interface", "baudrate", rawValue, std::to_string(parsed.baudrate), baudrateResult.second);
-    }
-    if (baudrateResult.first.has_value()) {
-        parsed.baudrate = static_cast<std::uint32_t>(*baudrateResult.first);
+    const auto baudrateResult = document.readUnsigned(
+        "rs485interface", "baudrate", 1U, 4000000U, std::to_string(parsed.baudrate));
+    if (baudrateResult.has_value()) {
+        parsed.baudrate = static_cast<std::uint32_t>(*baudrateResult);
     }
 
-    const auto myAddressResult = document.readUnsigned("rs485interface", "myAddress", 1U, 127U);
-    if (!myAddressResult.second.empty()) {
-        const std::string rawValue = document.lastValue("rs485interface", "myAddress").value_or("<missing>");
-        logConfigFallbackWarning("rs485interface", "myAddress", rawValue, std::to_string(parsed.myAddress), myAddressResult.second);
-    }
-    if (myAddressResult.first.has_value()) {
-        parsed.myAddress = static_cast<std::uint8_t>(*myAddressResult.first);
+    const auto myAddressResult = document.readUnsigned(
+        "rs485interface", "myAddress", 1U, 127U, std::to_string(parsed.myAddress));
+    if (myAddressResult.has_value()) {
+        parsed.myAddress = static_cast<std::uint8_t>(*myAddressResult);
     }
 
-    const auto maxVersionResult = document.readUnsigned("rs485interface", "maxVersion", 0U, 2U);
-    if (!maxVersionResult.second.empty()) {
-        const std::string rawValue = document.lastValue("rs485interface", "maxVersion").value_or("<missing>");
-        logConfigFallbackWarning("rs485interface", "maxVersion", rawValue, std::to_string(parsed.maxVersion), maxVersionResult.second);
-    }
-    if (maxVersionResult.first.has_value()) {
-        parsed.maxVersion = static_cast<std::uint8_t>(*maxVersionResult.first);
+    const auto maxVersionResult = document.readUnsigned(
+        "rs485interface", "maxVersion", 0U, 2U, std::to_string(parsed.maxVersion));
+    if (maxVersionResult.has_value()) {
+        parsed.maxVersion = static_cast<std::uint8_t>(*maxVersionResult);
     }
 
-    const auto tickDelayResult = document.readUnsigned("rs485interface", "tickDelay", 1U, 600000U);
-    if (!tickDelayResult.second.empty()) {
-        const std::string rawValue = document.lastValue("rs485interface", "tickDelay").value_or("<missing>");
-        logConfigFallbackWarning("rs485interface", "tickDelay", rawValue, std::to_string(parsed.tickDelayMs), tickDelayResult.second);
-    }
-    if (tickDelayResult.first.has_value()) {
-        parsed.tickDelayMs = static_cast<std::uint32_t>(*tickDelayResult.first);
+    const auto tickDelayResult = document.readUnsigned(
+        "rs485interface", "tickDelay", 1U, 600000U, std::to_string(parsed.tickDelayMs));
+    if (tickDelayResult.has_value()) {
+        parsed.tickDelayMs = static_cast<std::uint32_t>(*tickDelayResult);
     }
 
-    const auto timeOfDayResult =
-        document.readUnsigned("rs485interface", "timeOfDayDelayInSeconds", 1U, 86400U);
-    if (!timeOfDayResult.second.empty()) {
-        const std::string rawValue = document.lastValue("rs485interface", "timeOfDayDelayInSeconds").value_or("<missing>");
-        logConfigFallbackWarning(
-            "rs485interface",
-            "timeOfDayDelayInSeconds",
-            rawValue,
-            std::to_string(parsed.timeOfDayDelaySeconds),
-            timeOfDayResult.second);
-    }
-    if (timeOfDayResult.first.has_value()) {
-        parsed.timeOfDayDelaySeconds = static_cast<std::uint32_t>(*timeOfDayResult.first);
+    const auto timeOfDayResult = document.readUnsigned(
+        "rs485interface",
+        "timeOfDayDelayInSeconds",
+        1U,
+        86400U,
+        std::to_string(parsed.timeOfDayDelaySeconds));
+    if (timeOfDayResult.has_value()) {
+        parsed.timeOfDayDelaySeconds = static_cast<std::uint32_t>(*timeOfDayResult);
     }
 
-    const auto qosResult = document.readUnsigned("rs485interface", "qos", 0U, 2U);
-    if (!qosResult.second.empty()) {
-        const std::string rawValue = document.lastValue("rs485interface", "qos").value_or("<missing>");
-        logConfigFallbackWarning("rs485interface", "qos", rawValue, std::to_string(static_cast<unsigned int>(parsed.subscribeQos)), qosResult.second);
-    }
-    if (qosResult.first.has_value()) {
-        parsed.subscribeQos = static_cast<Qos>(*qosResult.first);
+    const auto qosResult = document.readUnsigned(
+        "rs485interface",
+        "qos",
+        0U,
+        2U,
+        std::to_string(static_cast<unsigned int>(parsed.subscribeQos)));
+    if (qosResult.has_value()) {
+        parsed.subscribeQos = static_cast<Qos>(*qosResult);
     }
 
     if (const auto trace = document.lastValue("rs485interface", "trace"); trace.has_value()) {
         if (!parseTraceLevel(trimCopy(*trace), parsed.traceLevel, errorMessage)) {
-            logConfigFallbackWarning("rs485interface", "trace", *trace, parsed.traceLevel, errorMessage);
+            document.reportFallback("rs485interface", "trace", *trace, parsed.traceLevel, errorMessage);
         }
     }
 
     parseRs485LoggingFlags(document, parsed);
 
-    const auto blinkDelayResult =
-        document.readUnsigned("rs485interface", "blinkDelayInSeconds", 1U, 86400U);
-    if (!blinkDelayResult.second.empty()) {
-        const std::string rawValue = document.lastValue("rs485interface", "blinkDelayInSeconds").value_or("<missing>");
-        logConfigFallbackWarning(
-            "rs485interface",
-            "blinkDelayInSeconds",
-            rawValue,
-            std::to_string(parsed.blinkDelaySeconds),
-            blinkDelayResult.second);
-    }
-    if (blinkDelayResult.first.has_value()) {
-        parsed.blinkDelaySeconds = static_cast<std::uint32_t>(*blinkDelayResult.first);
+    const auto blinkDelayResult = document.readUnsigned(
+        "rs485interface", "blinkDelayInSeconds", 1U, 86400U, std::to_string(parsed.blinkDelaySeconds));
+    if (blinkDelayResult.has_value()) {
+        parsed.blinkDelaySeconds = static_cast<std::uint32_t>(*blinkDelayResult);
     }
 
-    const auto temporaryDelayResult =
-        document.readUnsigned("rs485interface", "temporaryOnInSeconds", 1U, 86400U);
-    if (!temporaryDelayResult.second.empty()) {
-        const std::string rawValue = document.lastValue("rs485interface", "temporaryOnInSeconds").value_or("<missing>");
-        logConfigFallbackWarning(
-            "rs485interface",
-            "temporaryOnInSeconds",
-            rawValue,
-            std::to_string(parsed.temporaryOnSeconds),
-            temporaryDelayResult.second);
-    }
-    if (temporaryDelayResult.first.has_value()) {
-        parsed.temporaryOnSeconds = static_cast<std::uint32_t>(*temporaryDelayResult.first);
+    const auto temporaryDelayResult = document.readUnsigned(
+        "rs485interface",
+        "temporaryOnInSeconds",
+        1U,
+        86400U,
+        std::to_string(parsed.temporaryOnSeconds));
+    if (temporaryDelayResult.has_value()) {
+        parsed.temporaryOnSeconds = static_cast<std::uint32_t>(*temporaryDelayResult);
     }
 
     if (!parseInterfacesSection(document, parsed.interfaces, errorMessage)) {
-        logConfigFallbackWarning("rs485interface.interfaces", "*", "<composite>", "empty", errorMessage);
+        document.reportFallback("rs485interface.interfaces", "*", "<composite>", "empty", errorMessage);
         parsed.interfaces.clear();
     }
     if (!parseCommandMapSection(document, "rs485interface.settings", parsed.settings, errorMessage)) {
-        logConfigFallbackWarning("rs485interface.settings", "*", "<composite>", "empty", errorMessage);
+        document.reportFallback("rs485interface.settings", "*", "<composite>", "empty", errorMessage);
         parsed.settings.clear();
     }
     if (!parseCommandMapSection(document, "rs485interface.status", parsed.status, errorMessage)) {
-        logConfigFallbackWarning("rs485interface.status", "*", "<composite>", "empty", errorMessage);
+        document.reportFallback("rs485interface.status", "*", "<composite>", "empty", errorMessage);
         parsed.status.clear();
     }
     if (!parseAddressesSection(document, parsed.addresses, errorMessage)) {
-        logConfigFallbackWarning("rs485interface.addresses", "*", "<composite>", "empty", errorMessage);
+        document.reportFallback("rs485interface.addresses", "*", "<composite>", "empty", errorMessage);
         parsed.addresses.clear();
     }
     if (!parseTopicsSection(document, parsed.topics, errorMessage)) {
-        logConfigFallbackWarning("rs485interface.topics", "*", "<composite>", "empty", errorMessage);
+        document.reportFallback("rs485interface.topics", "*", "<composite>", "empty", errorMessage);
         parsed.topics.clear();
     }
 
@@ -564,7 +514,7 @@ Rs485InterfaceRuntimeConfig loadRs485InterfaceClientRuntimeConfigFromIni(const I
 
     std::string errorMessage{};
     if (!tryLoadMqttClientConfigFromIni(document, parsed.mqttConfig, errorMessage)) {
-        logConfigFallbackWarning("mqtt", "*", "<composite>", "defaults", errorMessage);
+        document.reportFallback("mqtt", "*", "<composite>", "defaults", errorMessage);
     }
 
     if (parsed.rs485Config.logIncomingMessages || parsed.rs485Config.logOutgoingMessages) {

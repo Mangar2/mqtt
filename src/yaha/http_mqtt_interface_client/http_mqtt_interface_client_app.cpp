@@ -241,21 +241,12 @@ bool tryLoadHttpMqttInterfaceClientConfigFromIni(
         configOutput.listenerHost = *maybeHost;
     }
 
-    const auto [maybePort, portError] = iniDocument.readUnsigned(
+    const auto maybePort = iniDocument.readUnsigned(
         k_httpSection,
         k_listenerPortKey,
         1U,
-        65535U);
-    if (!portError.empty()) {
-        const std::string rawValue = iniDocument.lastValue(k_httpSection, k_listenerPortKey).value_or("<missing>");
-        logConfigFallbackWarning(
-            "http_mqtt_interface_client",
-            k_httpSection,
-            k_listenerPortKey,
-            rawValue,
-            std::to_string(configOutput.listenerPort),
-            portError);
-    }
+        65535U,
+        std::to_string(configOutput.listenerPort));
     if (maybePort.has_value()) {
         configOutput.listenerPort = static_cast<std::uint16_t>(*maybePort);
     }
@@ -301,36 +292,19 @@ bool tryLoadHttpMqttInterfaceClientConfigFromIni(
         k_httpSection,
         k_logTracingKey);
 
-    const auto [maybeConnectedClientsReportIntervalSeconds, connectedClientsReportIntervalError] =
-        iniDocument.readUnsigned(
-            k_httpSection,
-            k_connectedClientsReportIntervalSecondsKey,
-            1U,
-            86400U);
-    if (!connectedClientsReportIntervalError.empty()) {
-        const std::string rawValue =
-            iniDocument.lastValue(k_httpSection, k_connectedClientsReportIntervalSecondsKey).value_or("<missing>");
-        logConfigFallbackWarning(
-            "http_mqtt_interface_client",
-            k_httpSection,
-            k_connectedClientsReportIntervalSecondsKey,
-            rawValue,
-            std::to_string(configOutput.connectedClientsReportIntervalSeconds),
-            connectedClientsReportIntervalError);
-    }
+    const auto maybeConnectedClientsReportIntervalSeconds = iniDocument.readUnsigned(
+        k_httpSection,
+        k_connectedClientsReportIntervalSecondsKey,
+        1U,
+        86400U,
+        std::to_string(configOutput.connectedClientsReportIntervalSeconds));
     if (maybeConnectedClientsReportIntervalSeconds.has_value()) {
         configOutput.connectedClientsReportIntervalSeconds = *maybeConnectedClientsReportIntervalSeconds;
     }
 
     std::string mqttErrorMessage{};
     if (!tryLoadMqttClientConfigFromIni(iniDocument, configOutput.mqttConfig, mqttErrorMessage)) {
-        logConfigFallbackWarning(
-            "http_mqtt_interface_client",
-            "mqtt",
-            "*",
-            "<composite>",
-            "defaults",
-            mqttErrorMessage);
+        iniDocument.reportFallback("mqtt", "*", "<composite>", "defaults", mqttErrorMessage);
     }
 
     errorOutput.clear();

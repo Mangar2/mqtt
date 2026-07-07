@@ -5,11 +5,9 @@
 
 #include <chrono>
 #include <cstdint>
-#include <iostream>
 #include <limits>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <utility>
 
 namespace yaha {
@@ -22,22 +20,6 @@ struct SubscriptionMapLoadResult {
     std::optional<SubscriptionMap> subscriptions{};
     std::string errorMessage{};
 };
-
-void logConfigFallbackWarning(
-    const std::string_view serviceName,
-    const std::string_view sectionName,
-    const std::string_view keyName,
-    const std::string& rawValue,
-    const std::string& defaultValue,
-    const std::string& reasonText) {
-    std::cerr << serviceName << "[warn] config_fallback"
-              << " section=" << sectionName
-              << " key=" << keyName
-              << " value='" << rawValue << "'"
-              << " default='" << defaultValue << "'"
-              << " reason='" << reasonText << "'"
-              << '\n' << std::flush;
-}
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 [[nodiscard]] SubscriptionMapLoadResult tryLoadStructuredSourceSubscriptionsFromIni(
@@ -143,80 +125,38 @@ SourceHttpBrokerConfigLoadResult tryLoadSourceHttpBrokerConfigFromIni(
         parsed.listenerBindHost = *listenerBindHost;
     }
 
-    const auto sourcePortResult = document.readUnsigned("sourceHttpBroker", "port", 1U, 65535U);
-    if (!sourcePortResult.second.empty()) {
-        const std::string rawValue = document.lastValue("sourceHttpBroker", "port").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "sourceHttpBroker",
-            "port",
-            rawValue,
-            std::to_string(parsed.brokerPort),
-            sourcePortResult.second);
-    }
-    if (sourcePortResult.first.has_value()) {
-        parsed.brokerPort = static_cast<std::uint16_t>(*sourcePortResult.first);
+    const auto sourcePortResult = document.readUnsigned(
+        "sourceHttpBroker", "port", 1U, 65535U, std::to_string(parsed.brokerPort));
+    if (sourcePortResult.has_value()) {
+        parsed.brokerPort = static_cast<std::uint16_t>(*sourcePortResult);
     }
 
-    const auto listenerPortResult = document.readUnsigned("sourceHttpBroker", "listenerPort", 0U, 65535U);
-    if (!listenerPortResult.second.empty()) {
-        const std::string rawValue = document.lastValue("sourceHttpBroker", "listenerPort").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "sourceHttpBroker",
-            "listenerPort",
-            rawValue,
-            std::to_string(parsed.listenerPort),
-            listenerPortResult.second);
-    }
-    if (listenerPortResult.first.has_value()) {
-        parsed.listenerPort = static_cast<std::uint16_t>(*listenerPortResult.first);
+    const auto listenerPortResult = document.readUnsigned(
+        "sourceHttpBroker", "listenerPort", 0U, 65535U, std::to_string(parsed.listenerPort));
+    if (listenerPortResult.has_value()) {
+        parsed.listenerPort = static_cast<std::uint16_t>(*listenerPortResult);
     }
 
     const auto keepAliveResult = document.readUnsigned(
         "sourceHttpBroker",
         "keepAliveSeconds",
         1U,
-        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()));
-    if (!keepAliveResult.second.empty()) {
-        const std::string rawValue = document.lastValue("sourceHttpBroker", "keepAliveSeconds").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "sourceHttpBroker",
-            "keepAliveSeconds",
-            rawValue,
-            std::to_string(parsed.keepAliveSeconds),
-            keepAliveResult.second);
-    }
-    if (keepAliveResult.first.has_value()) {
-        parsed.keepAliveSeconds = static_cast<std::uint32_t>(*keepAliveResult.first);
+        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()),
+        std::to_string(parsed.keepAliveSeconds));
+    if (keepAliveResult.has_value()) {
+        parsed.keepAliveSeconds = static_cast<std::uint32_t>(*keepAliveResult);
     }
 
-    const auto cleanResult = document.readBool("sourceHttpBroker", "clean");
-    if (!cleanResult.second.empty()) {
-        const std::string rawValue = document.lastValue("sourceHttpBroker", "clean").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "sourceHttpBroker",
-            "clean",
-            rawValue,
-            parsed.clean ? "true" : "false",
-            cleanResult.second);
-    }
-    if (cleanResult.first.has_value()) {
-        parsed.clean = *cleanResult.first;
+    const auto cleanResult = document.readBool("sourceHttpBroker", "clean", parsed.clean);
+    if (cleanResult.has_value()) {
+        parsed.clean = *cleanResult;
     }
 
     SubscriptionMap parsedSubscriptions{};
     const auto structuredSubscriptionsResult = tryLoadStructuredSourceSubscriptionsFromIni(document);
     if (!structuredSubscriptionsResult.subscriptions.has_value()) {
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "subscription",
-            "*",
-            "<composite>",
-            "#=1",
-            structuredSubscriptionsResult.errorMessage);
+        document.reportFallback(
+            "subscription", "*", "<composite>", "#=1", structuredSubscriptionsResult.errorMessage);
     } else {
         parsedSubscriptions = *structuredSubscriptionsResult.subscriptions;
     }
@@ -247,93 +187,47 @@ ReceiverMqttBrokerConfigLoadResult tryLoadReceiverMqttBrokerConfigFromIni(
         parsed.clientId = *clientId;
     }
 
-    const auto receiverPortResult = document.readUnsigned("receiverMqttBroker", "port", 1U, 65535U);
-    if (!receiverPortResult.second.empty()) {
-        const std::string rawValue = document.lastValue("receiverMqttBroker", "port").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "receiverMqttBroker",
-            "port",
-            rawValue,
-            std::to_string(parsed.brokerPort),
-            receiverPortResult.second);
-    }
-    if (receiverPortResult.first.has_value()) {
-        parsed.brokerPort = static_cast<std::uint16_t>(*receiverPortResult.first);
+    const auto receiverPortResult = document.readUnsigned(
+        "receiverMqttBroker", "port", 1U, 65535U, std::to_string(parsed.brokerPort));
+    if (receiverPortResult.has_value()) {
+        parsed.brokerPort = static_cast<std::uint16_t>(*receiverPortResult);
     }
 
     const auto reconnectDelayResult = document.readUnsigned(
         "receiverMqttBroker",
         "reconnectDelayMs",
         1U,
-        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()));
-    if (!reconnectDelayResult.second.empty()) {
-        const std::string rawValue = document.lastValue("receiverMqttBroker", "reconnectDelayMs").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "receiverMqttBroker",
-            "reconnectDelayMs",
-            rawValue,
-            std::to_string(parsed.reconnectDelay.count()),
-            reconnectDelayResult.second);
-    }
-    if (reconnectDelayResult.first.has_value()) {
-        parsed.reconnectDelay = std::chrono::milliseconds{*reconnectDelayResult.first};
+        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()),
+        std::to_string(parsed.reconnectDelay.count()));
+    if (reconnectDelayResult.has_value()) {
+        parsed.reconnectDelay = std::chrono::milliseconds{*reconnectDelayResult};
     }
 
     const auto keepAliveSecondsResult = document.readUnsigned(
         "receiverMqttBroker",
         "keepAliveSeconds",
         1U,
-        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()));
-    if (!keepAliveSecondsResult.second.empty()) {
-        const std::string rawValue = document.lastValue("receiverMqttBroker", "keepAliveSeconds").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "receiverMqttBroker",
-            "keepAliveSeconds",
-            rawValue,
-            std::to_string(parsed.keepAliveInterval.count() / static_cast<long long>(k_milliseconds_per_second)),
-            keepAliveSecondsResult.second);
-    }
-    if (keepAliveSecondsResult.first.has_value()) {
+        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()),
+        std::to_string(parsed.keepAliveInterval.count() / static_cast<long long>(k_milliseconds_per_second)));
+    if (keepAliveSecondsResult.has_value()) {
         parsed.keepAliveInterval = std::chrono::milliseconds{
-            *keepAliveSecondsResult.first * k_milliseconds_per_second};
+            *keepAliveSecondsResult * k_milliseconds_per_second};
     }
 
     const auto loopSleepResult = document.readUnsigned(
         "receiverMqttBroker",
         "loopSleepMs",
         1U,
-        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()));
-    if (!loopSleepResult.second.empty()) {
-        const std::string rawValue = document.lastValue("receiverMqttBroker", "loopSleepMs").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "receiverMqttBroker",
-            "loopSleepMs",
-            rawValue,
-            std::to_string(parsed.loopSleep.count()),
-            loopSleepResult.second);
-    }
-    if (loopSleepResult.first.has_value()) {
-        parsed.loopSleep = std::chrono::milliseconds{*loopSleepResult.first};
+        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()),
+        std::to_string(parsed.loopSleep.count()));
+    if (loopSleepResult.has_value()) {
+        parsed.loopSleep = std::chrono::milliseconds{*loopSleepResult};
     }
 
-    const auto lifecycleTraceResult = document.readBool("receiverMqttBroker", "enableLifecycleTrace");
-    if (!lifecycleTraceResult.second.empty()) {
-        const std::string rawValue =
-            document.lastValue("receiverMqttBroker", "enableLifecycleTrace").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "receiverMqttBroker",
-            "enableLifecycleTrace",
-            rawValue,
-            parsed.enableLifecycleTrace ? "true" : "false",
-            lifecycleTraceResult.second);
-    }
-    if (lifecycleTraceResult.first.has_value()) {
-        parsed.enableLifecycleTrace = *lifecycleTraceResult.first;
+    const auto lifecycleTraceResult = document.readBool(
+        "receiverMqttBroker", "enableLifecycleTrace", parsed.enableLifecycleTrace);
+    if (lifecycleTraceResult.has_value()) {
+        parsed.enableLifecycleTrace = *lifecycleTraceResult;
     }
 
     return {.config = std::move(parsed), .errorMessage = ""};
@@ -342,19 +236,10 @@ ReceiverMqttBrokerConfigLoadResult tryLoadReceiverMqttBrokerConfigFromIni(
 void applyMonitoringAndMessageLogConfig(
     const IniDocument& document,
     BrokerConnectorClientRuntimeConfig& parsed) {
-    const auto sourceTraceResult = document.readBool("monitoring", "sourceLifecycleTrace");
-    if (!sourceTraceResult.second.empty()) {
-        const std::string rawValue = document.lastValue("monitoring", "sourceLifecycleTrace").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "monitoring",
-            "sourceLifecycleTrace",
-            rawValue,
-            parsed.sourceLifecycleConfig.enableTrace ? "true" : "false",
-            sourceTraceResult.second);
-    }
-    if (sourceTraceResult.first.has_value()) {
-        parsed.sourceLifecycleConfig.enableTrace = *sourceTraceResult.first;
+    const auto sourceTraceResult = document.readBool(
+        "monitoring", "sourceLifecycleTrace", parsed.sourceLifecycleConfig.enableTrace);
+    if (sourceTraceResult.has_value()) {
+        parsed.sourceLifecycleConfig.enableTrace = *sourceTraceResult;
     }
 
     MessageLogConfig messageLogConfig{
@@ -372,13 +257,7 @@ void applyMonitoringAndMessageLogConfig(
             },
             messageLogConfig,
             messageLogConfigError)) {
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "monitoring",
-            "log*",
-            "<composite>",
-            "defaults",
-            messageLogConfigError);
+        document.reportFallback("monitoring", "log*", "<composite>", "defaults", messageLogConfigError);
     }
 
     parsed.sourceConfig.logIncomingMessages = messageLogConfig.enableIncoming;
@@ -405,57 +284,30 @@ BrokerConnectorClientRuntimeConfigLoadResult tryLoadBrokerConnectorClientRuntime
         "automation",
         "reconnectDelayMs",
         1U,
-        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()));
-    if (!sourceReconnectResult.second.empty()) {
-        const std::string rawValue = document.lastValue("automation", "reconnectDelayMs").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "automation",
-            "reconnectDelayMs",
-            rawValue,
-            std::to_string(parsed.sourceLifecycleConfig.reconnectDelay.count()),
-            sourceReconnectResult.second);
-    }
-    if (sourceReconnectResult.first.has_value()) {
-        parsed.sourceLifecycleConfig.reconnectDelay = std::chrono::milliseconds{*sourceReconnectResult.first};
+        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()),
+        std::to_string(parsed.sourceLifecycleConfig.reconnectDelay.count()));
+    if (sourceReconnectResult.has_value()) {
+        parsed.sourceLifecycleConfig.reconnectDelay = std::chrono::milliseconds{*sourceReconnectResult};
     }
 
     const auto sourceLoopSleepResult = document.readUnsigned(
         "automation",
         "sourceLoopSleepMs",
         1U,
-        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()));
-    if (!sourceLoopSleepResult.second.empty()) {
-        const std::string rawValue = document.lastValue("automation", "sourceLoopSleepMs").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "automation",
-            "sourceLoopSleepMs",
-            rawValue,
-            std::to_string(parsed.sourceLifecycleConfig.loopSleep.count()),
-            sourceLoopSleepResult.second);
-    }
-    if (sourceLoopSleepResult.first.has_value()) {
-        parsed.sourceLifecycleConfig.loopSleep = std::chrono::milliseconds{*sourceLoopSleepResult.first};
+        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()),
+        std::to_string(parsed.sourceLifecycleConfig.loopSleep.count()));
+    if (sourceLoopSleepResult.has_value()) {
+        parsed.sourceLifecycleConfig.loopSleep = std::chrono::milliseconds{*sourceLoopSleepResult};
     }
 
     const auto sourceKeepAliveResult = document.readUnsigned(
         "automation",
         "sourceKeepAliveIntervalMs",
         1U,
-        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()));
-    if (!sourceKeepAliveResult.second.empty()) {
-        const std::string rawValue = document.lastValue("automation", "sourceKeepAliveIntervalMs").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "automation",
-            "sourceKeepAliveIntervalMs",
-            rawValue,
-            std::to_string(parsed.sourceLifecycleConfig.keepAliveInterval.count()),
-            sourceKeepAliveResult.second);
-    }
-    if (sourceKeepAliveResult.first.has_value()) {
-        parsed.sourceLifecycleConfig.keepAliveInterval = std::chrono::milliseconds{*sourceKeepAliveResult.first};
+        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()),
+        std::to_string(parsed.sourceLifecycleConfig.keepAliveInterval.count()));
+    if (sourceKeepAliveResult.has_value()) {
+        parsed.sourceLifecycleConfig.keepAliveInterval = std::chrono::milliseconds{*sourceKeepAliveResult};
     } else {
         parsed.sourceLifecycleConfig.keepAliveInterval = std::chrono::milliseconds{
             static_cast<std::uint64_t>(parsed.sourceConfig.keepAliveSeconds) * k_milliseconds_per_second};
@@ -465,69 +317,32 @@ BrokerConnectorClientRuntimeConfigLoadResult tryLoadBrokerConnectorClientRuntime
         "automation",
         "maxPublishRetries",
         0U,
-        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()));
-    if (!maxRetryResult.second.empty()) {
-        const std::string rawValue = document.lastValue("automation", "maxPublishRetries").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "automation",
-            "maxPublishRetries",
-            rawValue,
-            std::to_string(parsed.relayPolicyConfig.maxPublishRetries),
-            maxRetryResult.second);
-    }
-    if (maxRetryResult.first.has_value()) {
-        parsed.relayPolicyConfig.maxPublishRetries = static_cast<std::uint32_t>(*maxRetryResult.first);
+        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()),
+        std::to_string(parsed.relayPolicyConfig.maxPublishRetries));
+    if (maxRetryResult.has_value()) {
+        parsed.relayPolicyConfig.maxPublishRetries = static_cast<std::uint32_t>(*maxRetryResult);
     }
 
     const auto backoffResult = document.readUnsigned(
         "automation",
         "publishRetryBackoffMs",
         0U,
-        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()));
-    if (!backoffResult.second.empty()) {
-        const std::string rawValue = document.lastValue("automation", "publishRetryBackoffMs").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "automation",
-            "publishRetryBackoffMs",
-            rawValue,
-            std::to_string(parsed.relayPolicyConfig.publishRetryBackoff.count()),
-            backoffResult.second);
-    }
-    if (backoffResult.first.has_value()) {
-        parsed.relayPolicyConfig.publishRetryBackoff = std::chrono::milliseconds{*backoffResult.first};
+        static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()),
+        std::to_string(parsed.relayPolicyConfig.publishRetryBackoff.count()));
+    if (backoffResult.has_value()) {
+        parsed.relayPolicyConfig.publishRetryBackoff = std::chrono::milliseconds{*backoffResult};
     }
 
-    const auto normalizeQosResult = document.readBool("automation", "normalizeQosToAtLeastOnce");
-    if (!normalizeQosResult.second.empty()) {
-        const std::string rawValue =
-            document.lastValue("automation", "normalizeQosToAtLeastOnce").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "automation",
-            "normalizeQosToAtLeastOnce",
-            rawValue,
-            parsed.relayPolicyConfig.normalizeQosToAtLeastOnce ? "true" : "false",
-            normalizeQosResult.second);
-    }
-    if (normalizeQosResult.first.has_value()) {
-        parsed.relayPolicyConfig.normalizeQosToAtLeastOnce = *normalizeQosResult.first;
+    const auto normalizeQosResult = document.readBool(
+        "automation", "normalizeQosToAtLeastOnce", parsed.relayPolicyConfig.normalizeQosToAtLeastOnce);
+    if (normalizeQosResult.has_value()) {
+        parsed.relayPolicyConfig.normalizeQosToAtLeastOnce = *normalizeQosResult;
     }
 
-    const auto retainResult = document.readBool("automation", "retainPassthrough");
-    if (!retainResult.second.empty()) {
-        const std::string rawValue = document.lastValue("automation", "retainPassthrough").value_or("<missing>");
-        logConfigFallbackWarning(
-            "broker_connector_client",
-            "automation",
-            "retainPassthrough",
-            rawValue,
-            parsed.relayPolicyConfig.retainPassthrough ? "true" : "false",
-            retainResult.second);
-    }
-    if (retainResult.first.has_value()) {
-        parsed.relayPolicyConfig.retainPassthrough = *retainResult.first;
+    const auto retainResult = document.readBool(
+        "automation", "retainPassthrough", parsed.relayPolicyConfig.retainPassthrough);
+    if (retainResult.has_value()) {
+        parsed.relayPolicyConfig.retainPassthrough = *retainResult;
     }
 
     applyMonitoringAndMessageLogConfig(document, parsed);

@@ -6,7 +6,6 @@
 #include <array>
 #include <cstdio>
 #include <cstdint>
-#include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -21,22 +20,6 @@ constexpr std::string_view kPushoverSection{"pushover"};
 constexpr std::string_view kDeviceSection{"device"};
 constexpr std::string_view kSubscriptionSection{"subscription"};
 constexpr std::size_t kCommandReadBufferSize{256U};
-
-void logConfigFallbackWarning(
-    const std::string_view serviceName,
-    const std::string_view sectionName,
-    const std::string_view keyName,
-    const std::string& rawValue,
-    const std::string& defaultValue,
-    const std::string& reasonText) {
-    std::cerr << serviceName << "[warn] config_fallback"
-              << " section=" << sectionName
-              << " key=" << keyName
-              << " value='" << rawValue << "'"
-              << " default='" << defaultValue << "'"
-              << " reason='" << reasonText << "'"
-              << '\n' << std::flush;
-}
 
 [[nodiscard]] std::string shellQuote(const std::string& rawText) {
     std::string quotedText{"'"};
@@ -269,19 +252,10 @@ bool tryLoadPushoverConfigFromIni(
         output.user = *user;
     }
 
-    const auto portResult = document.readUnsigned(kPushoverSection, "port", 1U, 65535U);
-    if (!portResult.second.empty()) {
-        const std::string rawValue = document.lastValue(kPushoverSection, "port").value_or("<missing>");
-        logConfigFallbackWarning(
-            "pushover_client",
-            kPushoverSection,
-            "port",
-            rawValue,
-            std::to_string(output.port),
-            portResult.second);
-    }
-    if (portResult.first.has_value()) {
-        output.port = static_cast<std::uint16_t>(*portResult.first);
+    const auto portResult = document.readUnsigned(
+        kPushoverSection, "port", 1U, 65535U, std::to_string(output.port));
+    if (portResult.has_value()) {
+        output.port = static_cast<std::uint16_t>(*portResult);
     }
 
     if (output.host.empty()) {
@@ -332,13 +306,7 @@ bool tryLoadPushoverClientRuntimeConfigFromIni(
 
     std::string mqttErrorMessage{};
     if (!tryLoadMqttClientConfigFromIni(document, parsed.mqttConfig, mqttErrorMessage)) {
-        logConfigFallbackWarning(
-            "pushover_client",
-            "mqtt",
-            "*",
-            "<composite>",
-            "defaults",
-            mqttErrorMessage);
+        document.reportFallback("mqtt", "*", "<composite>", "defaults", mqttErrorMessage);
     }
 
     MessageLogConfig messageLogConfig{
@@ -356,13 +324,7 @@ bool tryLoadPushoverClientRuntimeConfigFromIni(
             },
             messageLogConfig,
             messageLogConfigError)) {
-        logConfigFallbackWarning(
-            "pushover_client",
-            kPushoverSection,
-            "*",
-            "<composite>",
-            "defaults",
-            messageLogConfigError);
+        document.reportFallback(kPushoverSection, "*", "<composite>", "defaults", messageLogConfigError);
     }
 
     parsed.logIncomingMessages = messageLogConfig.enableIncoming;

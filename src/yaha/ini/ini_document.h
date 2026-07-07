@@ -12,7 +12,6 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 namespace yaha {
@@ -123,32 +122,45 @@ public:
         std::uint64_t maxValue);
 
     /**
-     * @brief Reads one optional unsigned value and returns value/error as function result.
+     * @brief Reads one optional unsigned value, reporting a fallback warning on invalid input.
+     *
+     * A missing key returns `nullopt` without invoking any warning handler (the caller keeps
+     * its own default silently). A present but invalid or out-of-range value returns
+     * `nullopt` and invokes all registered warning handlers via `reportFallback`.
+     *
      * @param sectionName Section name.
      * @param key Key name.
      * @param minValue Lower inclusive bound.
      * @param maxValue Upper inclusive bound.
-     * @return Pair of parsed optional value and error text.
+     * @param defaultValueText Default value text reported to warning handlers on invalid input.
+     * @return Parsed value when present and valid, otherwise `nullopt`.
      */
-    [[nodiscard]] std::pair<std::optional<std::uint64_t>, std::string> readUnsigned(
+    [[nodiscard]] std::optional<std::uint64_t> readUnsigned(
         std::string_view sectionName,
         std::string_view key,
         std::uint64_t minValue,
-        std::uint64_t maxValue) const;
+        std::uint64_t maxValue,
+        const std::string& defaultValueText) const;
 
     /**
-     * @brief Reads one optional boolean value and returns value/error as function result.
+     * @brief Reads one optional boolean value, reporting a fallback warning on invalid input.
      *
      * Accepted true values: true, 1, yes, on
      * Accepted false values: false, 0, no, off
      *
+     * A missing key returns `nullopt` without invoking any warning handler (the caller keeps
+     * its own default silently). A present but invalid value returns `nullopt` and invokes
+     * all registered warning handlers via `reportFallback`.
+     *
      * @param sectionName Section name.
      * @param key Key name.
-     * @return Pair of parsed optional value and error text.
+     * @param defaultValue Default value reported to warning handlers on invalid input.
+     * @return Parsed value when present and valid, otherwise `nullopt`.
      */
-    [[nodiscard]] std::pair<std::optional<bool>, std::string> readBool(
+    [[nodiscard]] std::optional<bool> readBool(
         std::string_view sectionName,
-        std::string_view key) const;
+        std::string_view key,
+        bool defaultValue) const;
 
     /**
      * @brief Registers one additional config-fallback warning handler.

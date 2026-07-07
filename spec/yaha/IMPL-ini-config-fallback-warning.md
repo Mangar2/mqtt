@@ -173,24 +173,37 @@ each of the 16 files listed above:
 - Replace composite-fallback call sites (message-log sub-config, mqtt sub-config failures)
   with `document.reportFallback(...)`.
 
-Status: not started.
+Notable behavior deltas found during migration (both are consistency fixes, not regressions):
+- `message_log_service.cpp` and `mqtt_client_config.cpp` previously hardcoded the wrong
+  service name in their local warning function (`"message_log_service"` / `"mqtt"`
+  regardless of which client actually loaded the config). Now the warning carries the
+  real owning client's `serviceName` (e.g. `"automation_client"`), since it comes from the
+  shared `document.reportFallback`.
+- `remote_service_client_app.cpp`'s `filestore.port` handling previously fired two warnings
+  for one invalid value (the generic one plus a second "missing required setting" one from
+  an always-taken `else` branch). Now only one warning fires per case: the auto-fired one
+  for invalid values, or an explicit `reportFallback` only when the key is truly absent.
+
+Status: implemented.
 
 ### Phase 4: Test and verification pass
 
 - Update client config/app tests that assert on stderr warning text, if any (grep for
-  `config_fallback` / `logConfigFallbackWarning` expectations in tests first).
-- Run `/unit-test` and `/integration-test` per project skills.
-- Run `/build` for affected scopes.
+  `config_fallback` / `logConfigFallbackWarning` expectations in tests first — none found).
+- Run `python3 test/run_coverage_clients.py`: 1152/1152 tests OK, threshold MET (all touched
+  production files, including `ini_document.cpp`, stay >= 80% regions/functions/lines/branches).
 
-Status: not started.
+Status: implemented.
 
 ### Phase 5: Cleanup and guardrails
 
-- Grep confirms no remaining local `logConfigFallbackWarning` definitions anywhere.
-- Grep confirms no remaining call site uses the old `pair<optional<T>, string>` return shape.
+- Grep confirms no remaining local `logConfigFallbackWarning` definitions anywhere (only
+  `src/yaha/ini/ini_document.cpp`'s default handler and its own `SPEC.md` mention it).
+- Grep confirms no remaining call site uses the old `pair<optional<T>, string>` return shape
+  (`.first`/`.second` on a `readUnsigned`/`readBool` result).
 - `src/yaha/ini/SPEC.md` reflects final API.
 
-Status: not started.
+Status: implemented.
 
 ## Acceptance Criteria
 

@@ -5,7 +5,6 @@
 
 #include <cstdint>
 #include <format>
-#include <iostream>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -32,21 +31,6 @@ namespace {
         tokens.push_back(trimCopy(token));
     }
     return tokens;
-}
-
-void logConfigFallbackWarning(
-    const std::string_view sectionName,
-    const std::string_view keyName,
-    const std::string& rawValue,
-    const std::string& defaultValue,
-    const std::string& reasonText) {
-    std::cerr << "serial_device_client[warn] config_fallback"
-              << " section=" << sectionName
-              << " key=" << keyName
-              << " value='" << rawValue << "'"
-              << " default='" << defaultValue << "'"
-              << " reason='" << reasonText << "'"
-              << '\n' << std::flush;
 }
 
 bool requireNonEmptyString(
@@ -282,53 +266,37 @@ bool tryLoadSerialDeviceConfigFromIni(
         return false;
     }
 
-    const auto baudrateResult = document.readUnsigned("serialdevice", "baudrate", 1U, 4000000U);
-    if (!baudrateResult.second.empty()) {
-        const std::string rawValue = document.lastValue("serialdevice", "baudrate").value_or("<missing>");
-        logConfigFallbackWarning(
-            "serialdevice",
-            "baudrate",
-            rawValue,
-            std::to_string(parsed.baudrate),
-            baudrateResult.second);
-    }
-    if (baudrateResult.first.has_value()) {
-        parsed.baudrate = static_cast<std::uint32_t>(*baudrateResult.first);
+    const auto baudrateResult = document.readUnsigned(
+        "serialdevice", "baudrate", 1U, 4000000U, std::to_string(parsed.baudrate));
+    if (baudrateResult.has_value()) {
+        parsed.baudrate = static_cast<std::uint32_t>(*baudrateResult);
     }
 
-    const auto qosResult = document.readUnsigned("serialdevice", "qos", 0U, 2U);
-    if (!qosResult.second.empty()) {
-        const std::string rawValue = document.lastValue("serialdevice", "qos").value_or("<missing>");
-        logConfigFallbackWarning(
-            "serialdevice",
-            "qos",
-            rawValue,
-            std::to_string(static_cast<unsigned int>(parsed.subscribeQos)),
-            qosResult.second);
-    }
-    if (qosResult.first.has_value()) {
-        parsed.subscribeQos = static_cast<Qos>(*qosResult.first);
+    const auto qosResult = document.readUnsigned(
+        "serialdevice",
+        "qos",
+        0U,
+        2U,
+        std::to_string(static_cast<unsigned int>(parsed.subscribeQos)));
+    if (qosResult.has_value()) {
+        parsed.subscribeQos = static_cast<Qos>(*qosResult);
     }
 
-    const auto keepAliveResult = document.readUnsigned("serialdevice", "keepAliveDelayInSeconds", 1U, 86400U);
-    if (!keepAliveResult.second.empty()) {
-        const std::string rawValue = document.lastValue("serialdevice", "keepAliveDelayInSeconds").value_or("<missing>");
-        logConfigFallbackWarning(
-            "serialdevice",
-            "keepAliveDelayInSeconds",
-            rawValue,
-            std::to_string(parsed.keepAliveDelayInSeconds),
-            keepAliveResult.second);
-    }
-    if (keepAliveResult.first.has_value()) {
-        parsed.keepAliveDelayInSeconds = static_cast<std::uint32_t>(*keepAliveResult.first);
+    const auto keepAliveResult = document.readUnsigned(
+        "serialdevice",
+        "keepAliveDelayInSeconds",
+        1U,
+        86400U,
+        std::to_string(parsed.keepAliveDelayInSeconds));
+    if (keepAliveResult.has_value()) {
+        parsed.keepAliveDelayInSeconds = static_cast<std::uint32_t>(*keepAliveResult);
     }
 
     if (const auto trace = document.lastValue("serialdevice", "trace"); trace.has_value()) {
         std::string warningText{};
         const std::string traceValue = trimCopy(*trace);
         if (!parseTraceLevel(traceValue, parsed.traceLevel, warningText)) {
-            logConfigFallbackWarning("serialdevice", "trace", traceValue, parsed.traceLevel, warningText);
+            document.reportFallback("serialdevice", "trace", traceValue, parsed.traceLevel, warningText);
         }
     }
 
@@ -347,12 +315,7 @@ bool tryLoadSerialDeviceConfigFromIni(
             },
             messageLogConfig,
             messageLogError)) {
-        logConfigFallbackWarning(
-            "serialdevice",
-            "log*",
-            "<composite>",
-            "defaults",
-            messageLogError);
+        document.reportFallback("serialdevice", "log*", "<composite>", "defaults", messageLogError);
     }
 
     parsed.logIncomingMessages = messageLogConfig.enableIncoming;
@@ -393,7 +356,7 @@ bool tryLoadSerialDeviceConfigFromIni(
     parseValueMapSection(document, parsed.interfaces["serial"], warningText);
 
     if (!warningText.empty()) {
-        logConfigFallbackWarning("serialdevice", "interfaces", "<composite>", "defaults", warningText);
+        document.reportFallback("serialdevice", "interfaces", "<composite>", "defaults", warningText);
     }
 
     output = std::move(parsed);
@@ -414,12 +377,7 @@ bool tryLoadSerialDeviceClientRuntimeConfigFromIni(
 
     std::string mqttErrorMessage{};
     if (!tryLoadMqttClientConfigFromIni(document, parsed.mqttConfig, mqttErrorMessage)) {
-        logConfigFallbackWarning(
-            "mqtt",
-            "*",
-            "<composite>",
-            "defaults",
-            mqttErrorMessage);
+        document.reportFallback("mqtt", "*", "<composite>", "defaults", mqttErrorMessage);
     }
 
             parsed.mqttConfig.logReason = parsed.serialDeviceConfig.logReason;
