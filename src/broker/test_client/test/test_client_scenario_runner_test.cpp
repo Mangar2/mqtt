@@ -20,7 +20,7 @@
 #include "codec/write_buffer.h"
 #include "network/stream_buffer.h"
 #include "network/tcp_listener.h"
-#include "test_client/test_client_scenario_runner.h"
+#include "broker/test_client/test_client_scenario_runner.h"
 
 namespace mqtt {
 namespace {

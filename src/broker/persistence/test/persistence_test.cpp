@@ -8,27 +8,27 @@
 #include <string>
 #include <vector>
 
-#include "data_model/message/message.h"
-#include "data_model/property/property.h"
-#include "data_model/property/property_id.h"
-#include "data_model/session/inflight_direction.h"
-#include "data_model/session/inflight_entry.h"
-#include "data_model/session/inflight_state.h"
-#include "data_model/session/session_state.h"
-#include "data_model/subscription/retain_handling.h"
-#include "data_model/subscription/subscription.h"
-#include "data_model/subscription/subscription_options.h"
-#include "data_model/types/binary_data.h"
-#include "data_model/types/integers.h"
-#include "data_model/types/qos.h"
-#include "data_model/types/utf8_string.h"
-#include "data_model/types/variable_byte_integer.h"
-#include "persistence/crash_safe_file.h"
-#include "persistence/inflight_persistence.h"
-#include "persistence/persistence_error.h"
-#include "persistence/record_codec.h"
-#include "persistence/retained_message_persistence.h"
-#include "persistence/session_persistence.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/property/property.h"
+#include "broker/data_model/property/property_id.h"
+#include "broker/data_model/session/inflight_direction.h"
+#include "broker/data_model/session/inflight_entry.h"
+#include "broker/data_model/session/inflight_state.h"
+#include "broker/data_model/session/session_state.h"
+#include "broker/data_model/subscription/retain_handling.h"
+#include "broker/data_model/subscription/subscription.h"
+#include "broker/data_model/subscription/subscription_options.h"
+#include "broker/data_model/types/binary_data.h"
+#include "broker/data_model/types/integers.h"
+#include "broker/data_model/types/qos.h"
+#include "broker/data_model/types/utf8_string.h"
+#include "broker/data_model/types/variable_byte_integer.h"
+#include "broker/persistence/crash_safe_file.h"
+#include "broker/persistence/inflight_persistence.h"
+#include "broker/persistence/persistence_error.h"
+#include "broker/persistence/record_codec.h"
+#include "broker/persistence/retained_message_persistence.h"
+#include "broker/persistence/session_persistence.h"
 
 namespace {
 
@@ -677,8 +677,8 @@ TEST_CASE("crash_safe_remove_all_throws_when_file_locked", "[persistence]") {
 //  OfflineQueuePersistence (Module 13.4)
 //
 
-#include "message_router/offline_queue.h"
-#include "persistence/offline_queue_persistence.h"
+#include "broker/message_router/offline_queue.h"
+#include "broker/persistence/offline_queue_persistence.h"
 
 TEST_CASE("offline_queue_persistence_empty_on_no_file", "[persistence]") {
   TempDir tmp;

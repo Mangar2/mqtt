@@ -13,9 +13,9 @@
 #include <thread>
 #include <vector>
 
-#include "executor/connection_job.h"
-#include "executor/job_queue.h"
-#include "executor/job_scheduler.h"
+#include "broker/executor/connection_job.h"
+#include "broker/executor/job_queue.h"
+#include "broker/executor/job_scheduler.h"
 
 namespace mqtt {
 

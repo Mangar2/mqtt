@@ -2,9 +2,9 @@
 
 #include <optional>
 
-#include "connection/outbound_queue_bridge.h"
-#include "data_model/message/message.h"
-#include "outbound_queue/outbound_queue.h"
+#include "broker/connection/outbound_queue_bridge.h"
+#include "broker/data_model/message/message.h"
+#include "broker/outbound_queue/outbound_queue.h"
 
 using namespace mqtt;
 

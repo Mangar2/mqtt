@@ -6,7 +6,7 @@
  * (Module 8.4).
  */
 
-#include "auth/authenticator.h"
+#include "broker/auth/authenticator.h"
 #include <cstdint>
 
 

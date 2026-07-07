@@ -1,19 +1,19 @@
-#include "persistence/retained_message_persistence.h"
+#include "broker/persistence/retained_message_persistence.h"
 
 #include <cstdint>
 #include <span>
 #include <vector>
 
-#include "data_model/property/property.h"
-#include "data_model/property/property_id.h"
-#include "data_model/types/binary_data.h"
-#include "data_model/types/integers.h"
-#include "data_model/types/qos.h"
-#include "data_model/types/utf8_string.h"
-#include "data_model/types/variable_byte_integer.h"
-#include "persistence/crash_safe_file.h"
-#include "persistence/persistence_error.h"
-#include "persistence/record_codec.h"
+#include "broker/data_model/property/property.h"
+#include "broker/data_model/property/property_id.h"
+#include "broker/data_model/types/binary_data.h"
+#include "broker/data_model/types/integers.h"
+#include "broker/data_model/types/qos.h"
+#include "broker/data_model/types/utf8_string.h"
+#include "broker/data_model/types/variable_byte_integer.h"
+#include "broker/persistence/crash_safe_file.h"
+#include "broker/persistence/persistence_error.h"
+#include "broker/persistence/record_codec.h"
 
 namespace mqtt {
 

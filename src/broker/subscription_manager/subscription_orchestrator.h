@@ -9,12 +9,12 @@
 #include <mutex>
 #include <string_view>
 
-#include "authz/acl_engine.h"
-#include "data_model/packet/subscribe_packets.h"
-#include "message_router/message_router.h"
-#include "message_router/shared_subscription_dispatcher.h"
-#include "store/session_store.h"
-#include "store/subscription_store.h"
+#include "broker/authz/acl_engine.h"
+#include "broker/data_model/packet/subscribe_packets.h"
+#include "broker/message_router/message_router.h"
+#include "broker/message_router/shared_subscription_dispatcher.h"
+#include "broker/store/session_store.h"
+#include "broker/store/subscription_store.h"
 
 namespace mqtt {
 

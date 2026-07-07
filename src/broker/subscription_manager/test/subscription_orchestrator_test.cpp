@@ -8,22 +8,22 @@
 #include <utility>
 #include <vector>
 
-#include "authz/acl_engine.h"
-#include "authz/acl_rule.h"
-#include "data_model/message/message.h"
-#include "data_model/packet/subscribe_packets.h"
-#include "data_model/property/property.h"
-#include "data_model/property/property_id.h"
-#include "data_model/types/variable_byte_integer.h"
-#include "message_router/inbound_publish_processor.h"
-#include "message_router/message_router.h"
-#include "message_router/message_router_error.h"
-#include "message_router/offline_queue.h"
-#include "message_router/shared_subscription_dispatcher.h"
-#include "store/retained_message_store.h"
-#include "store/session_store.h"
-#include "store/subscription_store.h"
-#include "subscription_manager/subscription_orchestrator.h"
+#include "broker/authz/acl_engine.h"
+#include "broker/authz/acl_rule.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/packet/subscribe_packets.h"
+#include "broker/data_model/property/property.h"
+#include "broker/data_model/property/property_id.h"
+#include "broker/data_model/types/variable_byte_integer.h"
+#include "broker/message_router/inbound_publish_processor.h"
+#include "broker/message_router/message_router.h"
+#include "broker/message_router/message_router_error.h"
+#include "broker/message_router/offline_queue.h"
+#include "broker/message_router/shared_subscription_dispatcher.h"
+#include "broker/store/retained_message_store.h"
+#include "broker/store/session_store.h"
+#include "broker/store/subscription_store.h"
+#include "broker/subscription_manager/subscription_orchestrator.h"
 
 using namespace mqtt;
 

@@ -26,13 +26,13 @@
 #include "codec/packet/publish_codec.h"
 #include "codec/packet/subscribe_codec.h"
 #include "codec/packet_reader/packet_reader.h"
-#include "data_model/property/property_id.h"
+#include "broker/data_model/property/property_id.h"
 #include "network/stream_buffer.h"
 #include "network/tcp_connection.h"
-#include "test_client/test_client_cli.h"
-#include "test_client/test_client_profile.h"
-#include "test_client/test_client_scenario_runner.h"
-#include "transport/websocket_frame_codec.h"
+#include "broker/test_client/test_client_cli.h"
+#include "broker/test_client/test_client_profile.h"
+#include "broker/test_client/test_client_scenario_runner.h"
+#include "broker/transport/websocket_frame_codec.h"
 
 namespace mqtt {
 namespace {

@@ -9,10 +9,10 @@
 #include <string>
 #include <vector>
 
-#include "auth/authenticator.h"
-#include "data_model/property/property.h"
-#include "data_model/reason_code/reason_code.h"
-#include "data_model/types/binary_data.h"
+#include "broker/auth/authenticator.h"
+#include "broker/data_model/property/property.h"
+#include "broker/data_model/reason_code/reason_code.h"
+#include "broker/data_model/types/binary_data.h"
 
 namespace mqtt {
 

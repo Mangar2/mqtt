@@ -1,11 +1,11 @@
-#include "message_router/message_expiry_controller.h"
+#include "broker/message_router/message_expiry_controller.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
 
-#include "data_model/property/property.h"
-#include "data_model/property/property_id.h"
+#include "broker/data_model/property/property.h"
+#include "broker/data_model/property/property_id.h"
 
 namespace mqtt {
 

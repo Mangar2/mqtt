@@ -7,12 +7,12 @@
 #include <utility>
 #include <vector>
 
-#include "data_model/session/inflight_direction.h"
-#include "data_model/session/inflight_entry.h"
-#include "data_model/session/inflight_state.h"
-#include "data_model/types/qos.h"
-#include "store/inflight_store.h"
-#include "store/store_error.h"
+#include "broker/data_model/session/inflight_direction.h"
+#include "broker/data_model/session/inflight_entry.h"
+#include "broker/data_model/session/inflight_state.h"
+#include "broker/data_model/types/qos.h"
+#include "broker/store/inflight_store.h"
+#include "broker/store/store_error.h"
 
 using namespace mqtt;
 

@@ -8,11 +8,11 @@
 #include <chrono>
 #include <mutex>
 
-#include "data_model/message/message.h"
-#include "monitoring/structured_tracer.h"
-#include "monitoring/sys_topic_publisher.h"
-#include "session_manager/session_manager.h"
-#include "will_manager/will_publisher.h"
+#include "broker/data_model/message/message.h"
+#include "broker/monitoring/structured_tracer.h"
+#include "broker/monitoring/sys_topic_publisher.h"
+#include "broker/session_manager/session_manager.h"
+#include "broker/will_manager/will_publisher.h"
 
 namespace mqtt {
 

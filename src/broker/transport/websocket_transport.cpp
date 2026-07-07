@@ -3,13 +3,13 @@
  * @brief WebSocketTransport implementation (Module 14.2.4).
  */
 
-#include "transport/websocket_transport.h"
+#include "broker/transport/websocket_transport.h"
 
 #include <array>
 #include <cstddef>
 
-#include "transport/transport_error.h"
-#include "transport/websocket_handshake.h"
+#include "broker/transport/transport_error.h"
+#include "broker/transport/websocket_handshake.h"
 
 namespace mqtt {
 

@@ -6,8 +6,8 @@
  */
 
 #include <vector>
-#include "data_model/property/property.h"
-#include "data_model/reason_code/reason_code.h"
+#include "broker/data_model/property/property.h"
+#include "broker/data_model/reason_code/reason_code.h"
 
 namespace mqtt {
 

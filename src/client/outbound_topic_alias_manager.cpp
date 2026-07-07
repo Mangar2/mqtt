@@ -3,8 +3,8 @@
 #include <vector>
 
 #include "client/client_error.h"
-#include "data_model/property/property.h"
-#include "data_model/property/property_id.h"
+#include "broker/data_model/property/property.h"
+#include "broker/data_model/property/property_id.h"
 
 namespace mqtt {
 

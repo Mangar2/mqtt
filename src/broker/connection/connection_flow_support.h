@@ -13,11 +13,11 @@
 
 #include "codec/packet_reader/packet_reader.h"
 #include "codec/write_buffer.h"
-#include "data_model/packet/connect_packet.h"
-#include "data_model/packet/subscribe_packets.h"
-#include "data_model/property/property.h"
-#include "data_model/reason_code/reason_code.h"
-#include "data_model/types/binary_data.h"
+#include "broker/data_model/packet/connect_packet.h"
+#include "broker/data_model/packet/subscribe_packets.h"
+#include "broker/data_model/property/property.h"
+#include "broker/data_model/reason_code/reason_code.h"
+#include "broker/data_model/types/binary_data.h"
 
 namespace mqtt {
 

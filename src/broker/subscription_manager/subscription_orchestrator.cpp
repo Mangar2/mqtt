@@ -1,4 +1,4 @@
-#include "subscription_manager/subscription_orchestrator.h"
+#include "broker/subscription_manager/subscription_orchestrator.h"
 
 #include <optional>
 #include <stdexcept>
@@ -6,10 +6,10 @@
 #include <string_view>
 #include <utility>
 
-#include "data_model/subscription/retain_handling.h"
-#include "message_router/message_router_error.h"
-#include "topic/topic_error.h"
-#include "topic/topic_validator.h"
+#include "broker/data_model/subscription/retain_handling.h"
+#include "broker/message_router/message_router_error.h"
+#include "broker/topic/topic_error.h"
+#include "broker/topic/topic_validator.h"
 
 namespace mqtt {
 

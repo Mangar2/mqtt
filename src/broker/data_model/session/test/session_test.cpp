@@ -1,10 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "data_model/session/inflight_direction.h"
-#include "data_model/session/inflight_entry.h"
-#include "data_model/session/inflight_state.h"
-#include "data_model/session/session_state.h"
-#include "data_model/subscription/subscription.h"
+#include "broker/data_model/session/inflight_direction.h"
+#include "broker/data_model/session/inflight_entry.h"
+#include "broker/data_model/session/inflight_state.h"
+#include "broker/data_model/session/session_state.h"
+#include "broker/data_model/subscription/subscription.h"
 
 using namespace mqtt;
 

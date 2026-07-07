@@ -5,18 +5,18 @@
 #include <optional>
 #include <string>
 
-#include "data_model/packet/connect_packet.h"
-#include "data_model/property/property.h"
-#include "data_model/property/property_id.h"
-#include "data_model/session/session_state.h"
-#include "session_manager/session_expiry_scheduler.h"
-#include "session_manager/session_manager.h"
-#include "session_manager/session_manager_error.h"
-#include "session_manager/session_open_result.h"
-#include "session_manager/session_takeover_handler.h"
-#include "store/inflight_store.h"
-#include "store/session_store.h"
-#include "store/subscription_store.h"
+#include "broker/data_model/packet/connect_packet.h"
+#include "broker/data_model/property/property.h"
+#include "broker/data_model/property/property_id.h"
+#include "broker/data_model/session/session_state.h"
+#include "broker/session_manager/session_expiry_scheduler.h"
+#include "broker/session_manager/session_manager.h"
+#include "broker/session_manager/session_manager_error.h"
+#include "broker/session_manager/session_open_result.h"
+#include "broker/session_manager/session_takeover_handler.h"
+#include "broker/store/inflight_store.h"
+#include "broker/store/session_store.h"
+#include "broker/store/subscription_store.h"
 
 using namespace mqtt;
 using namespace std::chrono_literals;

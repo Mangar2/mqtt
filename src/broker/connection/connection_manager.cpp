@@ -3,7 +3,7 @@
  * @brief ConnectionManager implementation (Module 23).
  */
 
-#include "connection/connection_manager.h"
+#include "broker/connection/connection_manager.h"
 
 #include <chrono>
 #include <stdexcept>
@@ -11,12 +11,12 @@
 
 #include "broker/core/broker.h"
 #include "broker/core/broker_config.h"
-#include "connection/client_handler.h"
-#include "connection/connection_flow_support.h"
-#include "monitoring/structured_tracer.h"
+#include "broker/connection/client_handler.h"
+#include "broker/connection/connection_flow_support.h"
+#include "broker/monitoring/structured_tracer.h"
 #include "network/socket_ops.h"
 #include "network/tcp_connection.h"
-#include "transport/websocket_transport.h"
+#include "broker/transport/websocket_transport.h"
 
 namespace mqtt {
 

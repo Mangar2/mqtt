@@ -19,7 +19,7 @@
 #include "broker/core/broker_config.h"
 #include "broker/core/broker_error.h"
 #include "broker/core/config_loader.h"
-#include "monitoring/trace_level.h"
+#include "broker/monitoring/trace_level.h"
 
 namespace {
 constexpr std::string_view k_version = "0.1.0";

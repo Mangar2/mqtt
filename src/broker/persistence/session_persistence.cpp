@@ -1,14 +1,14 @@
-#include "persistence/session_persistence.h"
+#include "broker/persistence/session_persistence.h"
 
 #include <span>
 #include <vector>
 
-#include "data_model/subscription/retain_handling.h"
-#include "data_model/subscription/subscription.h"
-#include "data_model/subscription/subscription_options.h"
-#include "data_model/types/qos.h"
-#include "persistence/crash_safe_file.h"
-#include "persistence/record_codec.h"
+#include "broker/data_model/subscription/retain_handling.h"
+#include "broker/data_model/subscription/subscription.h"
+#include "broker/data_model/subscription/subscription_options.h"
+#include "broker/data_model/types/qos.h"
+#include "broker/persistence/crash_safe_file.h"
+#include "broker/persistence/record_codec.h"
 
 namespace mqtt {
 

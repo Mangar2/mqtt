@@ -12,10 +12,11 @@
 #include "codec/packet_reader/packet_reader.h"
 #include "codec/read_buffer.h"
 #include "codec/write_buffer.h"
-#include "data_model/property/property_id.h"
-#include "data_model/types/integers.h"
-#include "data_model/types/utf8_string.h"
+#include "broker/data_model/property/property_id.h"
+#include "broker/data_model/types/integers.h"
+#include "broker/data_model/types/utf8_string.h"
 #include "network/stream_buffer.h"
+#include "client_error.h"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -159,7 +160,7 @@ TcpConnection ConnectionNegotiator::dial_tcp(std::string_view host,
     if (candidate_socket < 0) {
       continue;
     }
-    const SocketHandle socket_handle = static_cast<SocketHandle>(candidate_socket);
+    const auto socket_handle = static_cast<SocketHandle>(candidate_socket);
     const int connect_status =
         ::connect(candidate_socket, entry->ai_addr, entry->ai_addrlen);
 #endif
@@ -211,7 +212,7 @@ ConnectionNegotiationResult ConnectionNegotiator::negotiate(
             "expected CONNACK as first response after CONNECT");
       }
 
-      const ConnackPacket &connack_packet = std::get<ConnackPacket>(packet);
+      const auto &connack_packet = std::get<ConnackPacket>(packet);
       if (is_error(connack_packet.reason_code)) {
         throw ClientException(
             ClientError::NegotiationRejected,

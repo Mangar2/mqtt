@@ -3,13 +3,13 @@
  * @brief Runtime trace configuration command parsing (Module 26.4).
  */
 
-#include "monitoring/trace_runtime_command.h"
+#include "broker/monitoring/trace_runtime_command.h"
 
 #include <cctype>
 #include <string>
 #include <string_view>
 
-#include "monitoring/trace_level.h"
+#include "broker/monitoring/trace_level.h"
 
 namespace mqtt {
 

@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-#include "authz/acl_loader.h"
+#include "broker/authz/acl_loader.h"
 
 namespace mqtt {
 

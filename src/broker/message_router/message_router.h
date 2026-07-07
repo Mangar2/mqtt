@@ -13,13 +13,13 @@
 #include <string_view>
 #include <vector>
 
-#include "connection/topic_alias_table.h"
-#include "data_model/message/message.h"
-#include "data_model/subscription/subscription.h"
-#include "message_router/inbound_publish_processor.h"
-#include "message_router/offline_queue.h"
-#include "message_router/shared_subscription_dispatcher.h"
-#include "message_router/subscriber_fanout.h"
+#include "broker/connection/topic_alias_table.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/subscription/subscription.h"
+#include "broker/message_router/inbound_publish_processor.h"
+#include "broker/message_router/offline_queue.h"
+#include "broker/message_router/shared_subscription_dispatcher.h"
+#include "broker/message_router/subscriber_fanout.h"
 
 namespace mqtt {
 

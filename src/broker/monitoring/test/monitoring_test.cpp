@@ -12,13 +12,13 @@
 #include <string>
 #include <vector>
 
-#include "data_model/message/message.h"
-#include "data_model/types/qos.h"
-#include "monitoring/statistics_collector.h"
-#include "monitoring/structured_tracer.h"
-#include "monitoring/sys_topic_publisher.h"
-#include "store/retained_message_store.h"
-#include "store/subscription_store.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/types/qos.h"
+#include "broker/monitoring/statistics_collector.h"
+#include "broker/monitoring/structured_tracer.h"
+#include "broker/monitoring/sys_topic_publisher.h"
+#include "broker/store/retained_message_store.h"
+#include "broker/store/subscription_store.h"
 
 using namespace mqtt;
 using namespace std::chrono_literals;

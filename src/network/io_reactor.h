@@ -11,7 +11,7 @@
 #include <thread>
 #include <unordered_map>
 
-#include "monitoring/structured_tracer.h"
+#include "broker/monitoring/structured_tracer.h"
 
 namespace mqtt {
 

@@ -1,6 +1,6 @@
-#include "connection/receive_maximum.h"
+#include "broker/connection/receive_maximum.h"
 
-#include "connection/connection_error.h"
+#include "broker/connection/connection_error.h"
 
 namespace mqtt {
 

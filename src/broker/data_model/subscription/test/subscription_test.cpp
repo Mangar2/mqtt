@@ -1,9 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "data_model/subscription/retain_handling.h"
-#include "data_model/subscription/shared_subscription.h"
-#include "data_model/subscription/subscription.h"
-#include "data_model/subscription/subscription_options.h"
+#include "broker/data_model/subscription/retain_handling.h"
+#include "broker/data_model/subscription/shared_subscription.h"
+#include "broker/data_model/subscription/subscription.h"
+#include "broker/data_model/subscription/subscription_options.h"
 
 using namespace mqtt;
 

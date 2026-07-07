@@ -8,9 +8,9 @@
 #include <cstdint>
 #include <optional>
 
-#include "data_model/subscription/subscription_options.h"
-#include "data_model/types/qos.h"
-#include "data_model/types/utf8_string.h"
+#include "broker/data_model/subscription/subscription_options.h"
+#include "broker/data_model/types/qos.h"
+#include "broker/data_model/types/utf8_string.h"
 
 namespace mqtt {
 

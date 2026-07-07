@@ -3,7 +3,7 @@
  * @brief Trace level conversion helpers (Module 26).
  */
 
-#include "monitoring/trace_level.h"
+#include "broker/monitoring/trace_level.h"
 
 #include <algorithm>
 #include <cctype>

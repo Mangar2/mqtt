@@ -12,14 +12,14 @@
 
 #include "broker/core/active_connection_registry.h"
 #include "broker/core/enhanced_auth_registry.h"
-#include "data_model/reason_code/reason_code.h"
-#include "message_router/message_router.h"
-#include "message_router/shared_subscription_dispatcher.h"
-#include "monitoring/statistics_collector.h"
-#include "monitoring/structured_tracer.h"
-#include "outbound_queue/outbound_queue.h"
-#include "session_manager/session_manager.h"
-#include "will_manager/will_publisher.h"
+#include "broker/data_model/reason_code/reason_code.h"
+#include "broker/message_router/message_router.h"
+#include "broker/message_router/shared_subscription_dispatcher.h"
+#include "broker/monitoring/statistics_collector.h"
+#include "broker/monitoring/structured_tracer.h"
+#include "broker/outbound_queue/outbound_queue.h"
+#include "broker/session_manager/session_manager.h"
+#include "broker/will_manager/will_publisher.h"
 
 namespace mqtt {
 

@@ -17,7 +17,7 @@
 
 #include "broker/core/broker.h"
 #include "broker/core/broker_config.h"
-#include "connection/connection_manager.h"
+#include "broker/connection/connection_manager.h"
 #include "network/tcp_listener.h"
 
 using namespace mqtt;

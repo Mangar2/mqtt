@@ -13,7 +13,7 @@
 #include <filesystem>
 #include <vector>
 
-#include "data_model/session/session_state.h"
+#include "broker/data_model/session/session_state.h"
 
 namespace mqtt {
 

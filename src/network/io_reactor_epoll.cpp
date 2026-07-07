@@ -2,7 +2,7 @@
 
 #include "network/io_reactor.h"
 
-#include "monitoring/structured_tracer.h"
+#include "broker/monitoring/structured_tracer.h"
 #include <sys/epoll.h>
 #include <fcntl.h>
 #include <unistd.h>

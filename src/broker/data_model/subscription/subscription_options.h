@@ -5,7 +5,7 @@
  * @brief MQTT 5.0 Subscription Options structure (Module 1.6.2).
  */
 
-#include "data_model/subscription/retain_handling.h"
+#include "broker/data_model/subscription/retain_handling.h"
 
 namespace mqtt {
 

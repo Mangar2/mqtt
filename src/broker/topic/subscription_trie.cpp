@@ -1,4 +1,4 @@
-#include "topic/subscription_trie.h"
+#include "broker/topic/subscription_trie.h"
 
 #include <string>
 #include <vector>

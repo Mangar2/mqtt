@@ -7,12 +7,12 @@
 
 #include <string_view>
 
-#include "connection/topic_alias_table.h"
-#include "data_model/message/message.h"
-#include "data_model/reason_code/reason_code.h"
-#include "message_router/message_router.h"
-#include "monitoring/statistics_collector.h"
-#include "monitoring/structured_tracer.h"
+#include "broker/connection/topic_alias_table.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/reason_code/reason_code.h"
+#include "broker/message_router/message_router.h"
+#include "broker/monitoring/statistics_collector.h"
+#include "broker/monitoring/structured_tracer.h"
 
 namespace mqtt {
 

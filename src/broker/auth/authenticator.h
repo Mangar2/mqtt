@@ -6,10 +6,10 @@
  * CallbackAuthenticator plugin mechanism (Module 8.1).
  */
 
-#include "data_model/packet/connect_packet.h"
-#include "data_model/packet/control_packets.h"
-#include "data_model/reason_code/reason_code.h"
-#include "data_model/types/binary_data.h"
+#include "broker/data_model/packet/connect_packet.h"
+#include "broker/data_model/packet/control_packets.h"
+#include "broker/data_model/reason_code/reason_code.h"
+#include "broker/data_model/types/binary_data.h"
 #include <cstdint>
 #include <functional>
 #include <optional>

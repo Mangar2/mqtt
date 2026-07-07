@@ -5,7 +5,7 @@
  * @brief ClientHandler — lean per-connection I/O orchestrator (Module 24).
  */
 
-#include "executor/connection_job.h"
+#include "broker/executor/connection_job.h"
 
 #include <chrono>
 #include <optional>

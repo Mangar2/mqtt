@@ -2,18 +2,18 @@
 
 #include "broker/core/subscribe_facade.h"
 
-#include "authz/acl_rule.h"
-#include "data_model/packet/subscribe_packets.h"
-#include "data_model/reason_code/reason_code.h"
-#include "message_router/inbound_publish_processor.h"
-#include "message_router/message_router.h"
-#include "message_router/offline_queue.h"
-#include "message_router/shared_subscription_dispatcher.h"
-#include "monitoring/structured_tracer.h"
-#include "store/retained_message_store.h"
-#include "store/session_store.h"
-#include "store/subscription_store.h"
-#include "subscription_manager/subscription_orchestrator.h"
+#include "broker/authz/acl_rule.h"
+#include "broker/data_model/packet/subscribe_packets.h"
+#include "broker/data_model/reason_code/reason_code.h"
+#include "broker/message_router/inbound_publish_processor.h"
+#include "broker/message_router/message_router.h"
+#include "broker/message_router/offline_queue.h"
+#include "broker/message_router/shared_subscription_dispatcher.h"
+#include "broker/monitoring/structured_tracer.h"
+#include "broker/store/retained_message_store.h"
+#include "broker/store/session_store.h"
+#include "broker/store/subscription_store.h"
+#include "broker/subscription_manager/subscription_orchestrator.h"
 
 #include <sstream>
 #include <string>

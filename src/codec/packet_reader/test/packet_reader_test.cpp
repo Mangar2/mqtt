@@ -6,12 +6,12 @@
 #include "codec/packet/publish_codec.h"
 #include "codec/packet/subscribe_codec.h"
 #include "codec/packet_reader/packet_reader.h"
-#include "data_model/packet/connect_packet.h"
-#include "data_model/packet/control_packets.h"
-#include "data_model/packet/publish_packets.h"
-#include "data_model/packet/subscribe_packets.h"
-#include "data_model/reason_code/reason_code.h"
-#include "data_model/types/utf8_string.h"
+#include "broker/data_model/packet/connect_packet.h"
+#include "broker/data_model/packet/control_packets.h"
+#include "broker/data_model/packet/publish_packets.h"
+#include "broker/data_model/packet/subscribe_packets.h"
+#include "broker/data_model/reason_code/reason_code.h"
+#include "broker/data_model/types/utf8_string.h"
 #include <vector>
 
 using namespace mqtt;

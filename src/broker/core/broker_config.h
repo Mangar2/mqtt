@@ -11,8 +11,8 @@
 #include <string>
 #include <vector>
 
-#include "authz/acl_loader.h"
-#include "monitoring/trace_level.h"
+#include "broker/authz/acl_loader.h"
+#include "broker/monitoring/trace_level.h"
 
 namespace mqtt {
 

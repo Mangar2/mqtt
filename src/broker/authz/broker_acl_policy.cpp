@@ -3,7 +3,7 @@
  * @brief Broker startup ACL policy helpers.
  */
 
-#include "authz/broker_acl_policy.h"
+#include "broker/authz/broker_acl_policy.h"
 
 namespace mqtt {
 

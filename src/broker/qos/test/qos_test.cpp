@@ -7,16 +7,16 @@
 #include <variant>
 #include <vector>
 
-#include "data_model/message/message.h"
-#include "data_model/packet/publish_packets.h"
-#include "data_model/session/inflight_direction.h"
-#include "data_model/session/inflight_state.h"
-#include "data_model/types/qos.h"
-#include "qos/packet_id_manager.h"
-#include "qos/qos1_state_machine.h"
-#include "qos/qos2_state_machine.h"
-#include "qos/qos_error.h"
-#include "store/inflight_store.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/packet/publish_packets.h"
+#include "broker/data_model/session/inflight_direction.h"
+#include "broker/data_model/session/inflight_state.h"
+#include "broker/data_model/types/qos.h"
+#include "broker/qos/packet_id_manager.h"
+#include "broker/qos/qos1_state_machine.h"
+#include "broker/qos/qos2_state_machine.h"
+#include "broker/qos/qos_error.h"
+#include "broker/store/inflight_store.h"
 
 using namespace mqtt;
 

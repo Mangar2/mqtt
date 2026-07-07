@@ -4,7 +4,7 @@
 #include <fstream>
 #include <string>
 
-#include "test_client/test_client_scenario_runner.h"
+#include "broker/test_client/test_client_scenario_runner.h"
 
 namespace mqtt {
 namespace {

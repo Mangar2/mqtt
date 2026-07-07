@@ -1,4 +1,4 @@
-#include "transport/websocket_handshake.h"
+#include "broker/transport/websocket_handshake.h"
 
 #include <array>
 #include <cstdint>
@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-#include "transport/transport_error.h"
+#include "broker/transport/transport_error.h"
 
 namespace mqtt {
 

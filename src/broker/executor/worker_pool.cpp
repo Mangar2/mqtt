@@ -1,12 +1,12 @@
-#include "executor/worker_pool.h"
+#include "broker/executor/worker_pool.h"
 
 #include <algorithm>
 #include <chrono>
 #include <stdexcept>
 #include <utility>
 
-#include "executor/pool_scaling_policy.h"
-#include "monitoring/structured_tracer.h"
+#include "broker/executor/pool_scaling_policy.h"
+#include "broker/monitoring/structured_tracer.h"
 
 namespace mqtt {
 

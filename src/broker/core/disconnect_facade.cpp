@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "connection/outbound_queue_bridge.h"
+#include "broker/connection/outbound_queue_bridge.h"
 
 namespace mqtt {
 

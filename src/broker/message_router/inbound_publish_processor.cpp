@@ -1,12 +1,12 @@
-#include "message_router/inbound_publish_processor.h"
+#include "broker/message_router/inbound_publish_processor.h"
 
 #include <algorithm>
 #include <cstdint>
 
-#include "authz/broker_acl_policy.h"
-#include "data_model/property/property.h"
-#include "data_model/property/property_id.h"
-#include "message_router/message_router_error.h"
+#include "broker/authz/broker_acl_policy.h"
+#include "broker/data_model/property/property.h"
+#include "broker/data_model/property/property_id.h"
+#include "broker/message_router/message_router_error.h"
 
 namespace mqtt {
 

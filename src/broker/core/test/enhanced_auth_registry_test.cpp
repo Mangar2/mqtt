@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 
-#include "auth/anonymous_authenticator.h"
+#include "broker/auth/anonymous_authenticator.h"
 #include "broker/core/enhanced_auth_registry.h"
 
 namespace mqtt {

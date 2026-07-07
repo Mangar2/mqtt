@@ -20,11 +20,11 @@
 #include <queue>
 #include <vector>
 
-#include "store/store_error.h"
+#include "broker/store/store_error.h"
 
-#include "data_model/session/inflight_direction.h"
-#include "data_model/session/inflight_entry.h"
-#include "data_model/session/inflight_state.h"
+#include "broker/data_model/session/inflight_direction.h"
+#include "broker/data_model/session/inflight_entry.h"
+#include "broker/data_model/session/inflight_state.h"
 
 namespace mqtt {
 

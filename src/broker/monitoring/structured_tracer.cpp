@@ -3,7 +3,7 @@
  * @brief Structured tracer implementation (Module 26).
  */
 
-#include "monitoring/structured_tracer.h"
+#include "broker/monitoring/structured_tracer.h"
 
 #include <ctime>
 #include <iomanip>

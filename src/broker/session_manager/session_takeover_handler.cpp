@@ -1,4 +1,4 @@
-#include "session_manager/session_takeover_handler.h"
+#include "broker/session_manager/session_takeover_handler.h"
 
 namespace mqtt {
 

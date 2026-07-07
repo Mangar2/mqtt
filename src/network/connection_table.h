@@ -11,7 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "connection/connection_session.h"
+#include "broker/connection/connection_session.h"
 #include "network/connection_slot.h"
 
 namespace mqtt {

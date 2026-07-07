@@ -14,13 +14,13 @@
 #include "broker/core/broker_config.h"
 #include "broker/core/connect_result.h"
 #include "codec/write_buffer.h"
-#include "connection/connection_flow_support.h"
-#include "connection/receive_maximum.h"
-#include "connection/topic_alias_table.h"
-#include "data_model/packet/connect_packet.h"
+#include "broker/connection/connection_flow_support.h"
+#include "broker/connection/receive_maximum.h"
+#include "broker/connection/topic_alias_table.h"
+#include "broker/data_model/packet/connect_packet.h"
 #include "network/stream_buffer.h"
 #include "network/tcp_connection.h"
-#include "transport/websocket_transport.h"
+#include "broker/transport/websocket_transport.h"
 
 namespace mqtt {
 

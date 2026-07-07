@@ -1,9 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "data_model/subscription/subscription.h"
-#include "data_model/types/qos.h"
-#include "topic/subscription_trie.h"
-#include "topic/topic_matcher.h"
+#include "broker/data_model/subscription/subscription.h"
+#include "broker/data_model/types/qos.h"
+#include "broker/topic/subscription_trie.h"
+#include "broker/topic/topic_matcher.h"
 
 namespace {
 

@@ -23,9 +23,9 @@
 #include "broker/core/publish_facade.h"
 #include "broker/core/subscribe_facade.h"
 #include "broker/core/tick_handler.h"
-#include "connection/outbound_queue_bridge.h"
-#include "executor/connection_job.h"
-#include "executor/job_scheduler.h"
+#include "broker/connection/outbound_queue_bridge.h"
+#include "broker/executor/connection_job.h"
+#include "broker/executor/job_scheduler.h"
 
 namespace mqtt {
 

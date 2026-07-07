@@ -12,7 +12,7 @@
 #include <string_view>
 
 #include "codec/codec_error.h"
-#include "data_model/reason_code/reason_code.h"
+#include "broker/data_model/reason_code/reason_code.h"
 
 namespace mqtt {
 

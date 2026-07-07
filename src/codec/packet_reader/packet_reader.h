@@ -8,10 +8,10 @@
 #include <variant>
 
 #include "codec/read_buffer.h"
-#include "data_model/packet/connect_packet.h"
-#include "data_model/packet/control_packets.h"
-#include "data_model/packet/publish_packets.h"
-#include "data_model/packet/subscribe_packets.h"
+#include "broker/data_model/packet/connect_packet.h"
+#include "broker/data_model/packet/control_packets.h"
+#include "broker/data_model/packet/publish_packets.h"
+#include "broker/data_model/packet/subscribe_packets.h"
 
 
 namespace mqtt {

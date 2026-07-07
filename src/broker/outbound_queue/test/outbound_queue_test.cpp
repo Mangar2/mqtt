@@ -2,10 +2,10 @@
 
 #include <optional>
 
-#include "data_model/message/message.h"
-#include "data_model/types/qos.h"
-#include "data_model/types/utf8_string.h"
-#include "outbound_queue/outbound_queue.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/types/qos.h"
+#include "broker/data_model/types/utf8_string.h"
+#include "broker/outbound_queue/outbound_queue.h"
 
 using namespace mqtt;
 

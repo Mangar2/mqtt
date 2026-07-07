@@ -11,7 +11,7 @@
 
 #include "client_api/client_api_error.h"
 #include "client/reconnect_controller.h"
-#include "data_model/packet/connect_packet.h"
+#include "broker/data_model/packet/connect_packet.h"
 
 namespace mqtt {
 

@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "data_model/reason_code/reason_code.h"
+#include "broker/data_model/reason_code/reason_code.h"
 
 using namespace mqtt;
 

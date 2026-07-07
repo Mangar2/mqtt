@@ -1,9 +1,9 @@
-#include "topic/topic_validator.h"
+#include "broker/topic/topic_validator.h"
 
 #include <cstddef>
 
-#include "data_model/types/utf8_string.h"
-#include "topic/topic_error.h"
+#include "broker/data_model/types/utf8_string.h"
+#include "broker/topic/topic_error.h"
 
 namespace mqtt {
 

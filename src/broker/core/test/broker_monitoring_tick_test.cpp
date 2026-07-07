@@ -16,14 +16,14 @@
 
 #include "broker/core/broker.h"
 #include "broker/core/broker_config.h"
-#include "connection/topic_alias_table.h"
-#include "data_model/message/message.h"
-#include "data_model/packet/connect_packet.h"
-#include "data_model/property/property_id.h"
-#include "data_model/reason_code/reason_code.h"
-#include "data_model/types/qos.h"
-#include "data_model/types/utf8_string.h"
-#include "outbound_queue/outbound_queue.h"
+#include "broker/connection/topic_alias_table.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/packet/connect_packet.h"
+#include "broker/data_model/property/property_id.h"
+#include "broker/data_model/reason_code/reason_code.h"
+#include "broker/data_model/types/qos.h"
+#include "broker/data_model/types/utf8_string.h"
+#include "broker/outbound_queue/outbound_queue.h"
 
 using namespace mqtt;
 using namespace std::chrono_literals;

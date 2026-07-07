@@ -14,11 +14,10 @@
 #include <unordered_set>
 #include <vector>
 
-#include "client/client_error.h"
-#include "data_model/packet/publish_packets.h"
-#include "data_model/packet/subscribe_packets.h"
-#include "data_model/subscription/subscription.h"
-#include "topic/subscription_trie.h"
+#include "broker/data_model/packet/publish_packets.h"
+#include "broker/data_model/packet/subscribe_packets.h"
+#include "broker/data_model/subscription/subscription.h"
+#include "broker/topic/subscription_trie.h"
 
 namespace mqtt {
 

@@ -1,6 +1,6 @@
-#include "auth/password_authenticator.h"
+#include "broker/auth/password_authenticator.h"
 
-#include "data_model/property/property_id.h"
+#include "broker/data_model/property/property_id.h"
 #include <optional>
 #include <string>
 #include <string_view>

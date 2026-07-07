@@ -1,11 +1,11 @@
-#include "connection/decode_step.h"
+#include "broker/connection/decode_step.h"
 
 #include "codec/codec_error.h"
-#include "connection/connection_error.h"
-#include "connection/connection_flow_support.h"
-#include "connection/connection_session.h"
-#include "connection/handshake_step.h"
-#include "connection/runtime_step.h"
+#include "broker/connection/connection_error.h"
+#include "broker/connection/connection_flow_support.h"
+#include "broker/connection/connection_session.h"
+#include "broker/connection/handshake_step.h"
+#include "broker/connection/runtime_step.h"
 
 namespace mqtt {
 

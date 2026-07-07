@@ -10,9 +10,9 @@
 #include <string_view>
 #include <vector>
 
-#include "data_model/message/message.h"
-#include "data_model/subscription/subscription.h"
-#include "topic/topic_matcher.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/subscription/subscription.h"
+#include "broker/topic/topic_matcher.h"
 
 namespace mqtt {
 

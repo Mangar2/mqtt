@@ -11,8 +11,8 @@
 #include <vector>
 #include "codec/read_buffer.h"
 #include "codec/write_buffer.h"
-#include "data_model/packet/packet_type.h"
-#include "data_model/property/property.h"
+#include "broker/data_model/packet/packet_type.h"
+#include "broker/data_model/property/property.h"
 
 namespace mqtt {
 

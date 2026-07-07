@@ -6,7 +6,7 @@
  * (Module 9.1).
  */
 
-#include "authz/acl_rule.h"
+#include "broker/authz/acl_rule.h"
 #include <shared_mutex>
 #include <string_view>
 #include <vector>

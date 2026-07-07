@@ -9,8 +9,8 @@
 #include <cstddef>
 #include <vector>
 
-#include "data_model/message/message.h"
-#include "outbound_queue/outbound_queue.h"
+#include "broker/data_model/message/message.h"
+#include "broker/outbound_queue/outbound_queue.h"
 
 namespace mqtt {
 

@@ -1,4 +1,4 @@
-#include "connection/runtime_step.h"
+#include "broker/connection/runtime_step.h"
 
 #include <atomic>
 #include <iostream>
@@ -9,12 +9,12 @@
 
 #include "broker/core/broker.h"
 #include "codec/packet/publish_codec.h"
-#include "client_session/client_session.h"
-#include "connection/connection_flow_support.h"
-#include "connection/connection_error.h"
-#include "connection/connection_session.h"
-#include "monitoring/structured_tracer.h"
-#include "qos/qos_error.h"
+#include "broker/client_session/client_session.h"
+#include "broker/connection/connection_flow_support.h"
+#include "broker/connection/connection_error.h"
+#include "broker/connection/connection_session.h"
+#include "broker/monitoring/structured_tracer.h"
+#include "broker/qos/qos_error.h"
 
 namespace mqtt {
 

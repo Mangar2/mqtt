@@ -1,11 +1,11 @@
-#include "message_router/message_router.h"
+#include "broker/message_router/message_router.h"
 
 #include <chrono>
 
-#include "data_model/subscription/retain_handling.h"
-#include "message_router/message_expiry_controller.h"
-#include "message_router/message_router_error.h"
-#include "monitoring/structured_tracer.h"
+#include "broker/data_model/subscription/retain_handling.h"
+#include "broker/message_router/message_expiry_controller.h"
+#include "broker/message_router/message_router_error.h"
+#include "broker/monitoring/structured_tracer.h"
 
 
 namespace mqtt {

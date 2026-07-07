@@ -4,8 +4,8 @@
 #include "codec/fixed_header/fixed_header.h"
 #include "codec/fixed_header/fixed_header_codec.h"
 #include "codec/packet/subscribe_codec.h"
-#include "data_model/packet/subscribe_packets.h"
-#include "data_model/types/utf8_string.h"
+#include "broker/data_model/packet/subscribe_packets.h"
+#include "broker/data_model/types/utf8_string.h"
 #include <vector>
 
 using namespace mqtt;

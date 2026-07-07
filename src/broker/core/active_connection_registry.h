@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "outbound_queue/outbound_queue.h"
+#include "broker/outbound_queue/outbound_queue.h"
 
 namespace mqtt {
 

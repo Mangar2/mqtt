@@ -1,8 +1,8 @@
-#include "connection/topic_alias_table.h"
+#include "broker/connection/topic_alias_table.h"
 
 #include <utility>
 
-#include "connection/connection_error.h"
+#include "broker/connection/connection_error.h"
 
 namespace mqtt {
 

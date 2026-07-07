@@ -6,8 +6,8 @@
  *        (Module 26.4).
  */
 
-#include "data_model/message/message.h"
-#include "monitoring/structured_tracer.h"
+#include "broker/data_model/message/message.h"
+#include "broker/monitoring/structured_tracer.h"
 
 namespace mqtt {
 

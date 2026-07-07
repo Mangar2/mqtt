@@ -1,6 +1,6 @@
-#include "auth/authenticator.h"
+#include "broker/auth/authenticator.h"
 
-#include "auth/auth_error.h"
+#include "broker/auth/auth_error.h"
 
 namespace mqtt {
 

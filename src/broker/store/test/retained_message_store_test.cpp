@@ -1,9 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "data_model/message/message.h"
-#include "data_model/types/binary_data.h"
-#include "data_model/types/utf8_string.h"
-#include "store/retained_message_store.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/types/binary_data.h"
+#include "broker/data_model/types/utf8_string.h"
+#include "broker/store/retained_message_store.h"
 
 using namespace mqtt;
 

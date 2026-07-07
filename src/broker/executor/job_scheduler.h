@@ -10,8 +10,8 @@
 #include <optional>
 #include <unordered_map>
 
-#include "executor/connection_job.h"
-#include "executor/job_queue.h"
+#include "broker/executor/connection_job.h"
+#include "broker/executor/job_queue.h"
 
 namespace mqtt {
 

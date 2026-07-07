@@ -1,15 +1,15 @@
-#include "connection/handshake_step.h"
+#include "broker/connection/handshake_step.h"
 
 #include <chrono>
 #include <memory>
 #include <optional>
 
-#include "auth/authenticator.h"
+#include "broker/auth/authenticator.h"
 #include "broker/core/broker.h"
-#include "client_session/client_session.h"
-#include "connection/connection_flow_support.h"
-#include "connection/connection_session.h"
-#include "outbound_queue/outbound_queue.h"
+#include "broker/client_session/client_session.h"
+#include "broker/connection/connection_flow_support.h"
+#include "broker/connection/connection_session.h"
+#include "broker/outbound_queue/outbound_queue.h"
 
 namespace mqtt {
 

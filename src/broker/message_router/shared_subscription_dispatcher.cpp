@@ -1,4 +1,4 @@
-#include "message_router/shared_subscription_dispatcher.h"
+#include "broker/message_router/shared_subscription_dispatcher.h"
 
 #include <algorithm>
 

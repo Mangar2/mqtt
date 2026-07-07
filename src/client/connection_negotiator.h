@@ -11,9 +11,8 @@
 #include <string_view>
 #include <vector>
 
-#include "client/client_error.h"
-#include "data_model/packet/connect_packet.h"
-#include "data_model/property/property.h"
+#include "broker/data_model/packet/connect_packet.h"
+#include "broker/data_model/property/property.h"
 #include "network/tcp_connection.h"
 
 namespace mqtt {

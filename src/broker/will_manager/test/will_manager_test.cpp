@@ -4,12 +4,12 @@
 #include <string>
 #include <vector>
 
-#include "data_model/message/message.h"
-#include "data_model/reason_code/reason_code.h"
-#include "data_model/types/qos.h"
-#include "will_manager/will_delay_timer.h"
-#include "will_manager/will_publisher.h"
-#include "will_manager/will_store.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/reason_code/reason_code.h"
+#include "broker/data_model/types/qos.h"
+#include "broker/will_manager/will_delay_timer.h"
+#include "broker/will_manager/will_publisher.h"
+#include "broker/will_manager/will_store.h"
 
 using namespace mqtt;
 using namespace std::chrono_literals;

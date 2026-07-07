@@ -1,6 +1,6 @@
-#include "auth/enhanced_auth_handler.h"
+#include "broker/auth/enhanced_auth_handler.h"
 
-#include "auth/auth_error.h"
+#include "broker/auth/auth_error.h"
 #include <algorithm>
 #include <format>
 

@@ -6,9 +6,9 @@
  * enhanced authentication and re-authentication (Module 8.3).
  */
 
-#include "auth/authenticator.h"
-#include "data_model/packet/connect_packet.h"
-#include "data_model/packet/control_packets.h"
+#include "broker/auth/authenticator.h"
+#include "broker/data_model/packet/connect_packet.h"
+#include "broker/data_model/packet/control_packets.h"
 #include <cstdint>
 #include <memory>
 #include <string>

@@ -1,4 +1,4 @@
-#include "persistence/crash_safe_file.h"
+#include "broker/persistence/crash_safe_file.h"
 
 #include <array>
 #include <cstdio>
@@ -7,8 +7,8 @@
 #include <span>
 #include <system_error>
 
-#include "persistence/persistence_error.h"
-#include "persistence/record_codec.h"
+#include "broker/persistence/persistence_error.h"
+#include "broker/persistence/record_codec.h"
 
 namespace mqtt {
 

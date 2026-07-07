@@ -6,8 +6,8 @@
  * at runtime (Module 9.2).
  */
 
-#include "authz/acl_engine.h"
-#include "authz/acl_rule.h"
+#include "broker/authz/acl_engine.h"
+#include "broker/authz/acl_rule.h"
 #include <string>
 #include <vector>
 

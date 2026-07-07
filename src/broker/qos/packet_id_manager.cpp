@@ -1,8 +1,8 @@
-#include "qos/packet_id_manager.h"
+#include "broker/qos/packet_id_manager.h"
 
 #include <limits>
 
-#include "qos/qos_error.h"
+#include "broker/qos/qos_error.h"
 
 namespace mqtt {
 

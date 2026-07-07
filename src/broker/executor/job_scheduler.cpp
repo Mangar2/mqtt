@@ -1,9 +1,9 @@
-#include "executor/job_scheduler.h"
+#include "broker/executor/job_scheduler.h"
 
 #include <string_view>
 #include <utility>
 
-#include "monitoring/structured_tracer.h"
+#include "broker/monitoring/structured_tracer.h"
 
 namespace mqtt {
 

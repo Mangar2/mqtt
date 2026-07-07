@@ -1,6 +1,6 @@
-#include "message_router/offline_queue.h"
+#include "broker/message_router/offline_queue.h"
 
-#include "message_router/message_router_error.h"
+#include "broker/message_router/message_router_error.h"
 
 namespace mqtt {
 

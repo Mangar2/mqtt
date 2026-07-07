@@ -9,10 +9,10 @@
 #include <string>
 #include <string_view>
 
-#include "data_model/message/message.h"
-#include "data_model/packet/publish_packets.h"
-#include "qos/packet_id_manager.h"
-#include "store/inflight_store.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/packet/publish_packets.h"
+#include "broker/qos/packet_id_manager.h"
+#include "broker/store/inflight_store.h"
 
 namespace mqtt {
 

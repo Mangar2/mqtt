@@ -1,8 +1,8 @@
-#include "connection/connection_session.h"
+#include "broker/connection/connection_session.h"
 
 #include <utility>
 
-#include "client_session/client_session.h"
+#include "broker/client_session/client_session.h"
 
 namespace mqtt {
 

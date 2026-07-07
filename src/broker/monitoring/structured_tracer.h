@@ -18,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-#include "monitoring/trace_level.h"
+#include "broker/monitoring/trace_level.h"
 
 namespace mqtt {
 

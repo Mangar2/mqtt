@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "executor/pool_scaling_policy.h"
+#include "broker/executor/pool_scaling_policy.h"
 
 using namespace mqtt;
 

@@ -11,11 +11,10 @@
 #include <unordered_map>
 
 #include "codec/write_buffer.h"
-#include "client/client_error.h"
-#include "data_model/message/message.h"
-#include "data_model/packet/publish_packets.h"
-#include "data_model/session/inflight_entry.h"
-#include "qos/packet_id_manager.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/packet/publish_packets.h"
+#include "broker/data_model/session/inflight_entry.h"
+#include "broker/qos/packet_id_manager.h"
 
 namespace mqtt {
 

@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "network/tcp_connection.h"
-#include "transport/websocket_frame_codec.h"
+#include "broker/transport/websocket_frame_codec.h"
 
 namespace mqtt {
 

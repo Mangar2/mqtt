@@ -8,7 +8,7 @@
 
 #include <cstdint>
 
-#include "data_model/types/qos.h"
+#include "broker/data_model/types/qos.h"
 
 namespace mqtt {
 

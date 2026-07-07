@@ -5,7 +5,7 @@
  * @brief MQTT 5.0 Shared Subscription structure (Module 1.6.3).
  */
 
-#include "data_model/types/utf8_string.h"
+#include "broker/data_model/types/utf8_string.h"
 
 namespace mqtt {
 

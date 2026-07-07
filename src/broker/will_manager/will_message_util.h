@@ -5,9 +5,9 @@
  * @brief Utility functions for converting CONNECT will payloads to WillMessage.
  */
 
-#include "data_model/message/message.h"
-#include "data_model/packet/connect_packet.h"
-#include "data_model/property/property_id.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/packet/connect_packet.h"
+#include "broker/data_model/property/property_id.h"
 
 namespace mqtt {
 

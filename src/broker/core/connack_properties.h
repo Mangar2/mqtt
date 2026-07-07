@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "broker/core/broker_config.h"
-#include "data_model/packet/connect_packet.h"
-#include "data_model/property/property.h"
+#include "broker/data_model/packet/connect_packet.h"
+#include "broker/data_model/property/property.h"
 
 namespace mqtt {
 

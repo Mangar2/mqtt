@@ -9,7 +9,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "data_model/packet/publish_packets.h"
+#include "broker/data_model/packet/publish_packets.h"
 
 namespace mqtt {
 

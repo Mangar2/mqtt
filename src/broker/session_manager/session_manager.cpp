@@ -1,12 +1,12 @@
-#include "session_manager/session_manager.h"
+#include "broker/session_manager/session_manager.h"
 
 #include <format>
 
-#include "data_model/property/property.h"
-#include "data_model/property/property_id.h"
-#include "data_model/session/session_state.h"
-#include "monitoring/structured_tracer.h"
-#include "session_manager/session_manager_error.h"
+#include "broker/data_model/property/property.h"
+#include "broker/data_model/property/property_id.h"
+#include "broker/data_model/session/session_state.h"
+#include "broker/monitoring/structured_tracer.h"
+#include "broker/session_manager/session_manager_error.h"
 
 namespace mqtt {
 

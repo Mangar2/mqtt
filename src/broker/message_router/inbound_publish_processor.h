@@ -11,12 +11,12 @@
 #include <string_view>
 #include <vector>
 
-#include "authz/acl_engine.h"
-#include "connection/topic_alias_table.h"
-#include "data_model/message/message.h"
-#include "store/retained_message_store.h"
-#include "store/subscription_store.h"
-#include "topic/topic_matcher.h"
+#include "broker/authz/acl_engine.h"
+#include "broker/connection/topic_alias_table.h"
+#include "broker/data_model/message/message.h"
+#include "broker/store/retained_message_store.h"
+#include "broker/store/subscription_store.h"
+#include "broker/topic/topic_matcher.h"
 
 namespace mqtt {
 

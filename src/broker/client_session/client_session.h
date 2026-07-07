@@ -15,22 +15,22 @@
 #include <vector>
 
 
-#include "auth/authenticator.h"
-#include "auth/enhanced_auth_handler.h"
+#include "broker/auth/authenticator.h"
+#include "broker/auth/enhanced_auth_handler.h"
 #include "codec/write_buffer.h"
-#include "connection/connection_state.h"
-#include "connection/keep_alive_timer.h"
-#include "connection/receive_maximum.h"
-#include "connection/topic_alias_table.h"
-#include "data_model/message/message.h"
-#include "data_model/packet/connect_packet.h"
-#include "data_model/packet/control_packets.h"
-#include "data_model/packet/publish_packets.h"
-#include "outbound_queue/outbound_queue.h"
-#include "qos/packet_id_manager.h"
-#include "qos/qos1_state_machine.h"
-#include "qos/qos2_state_machine.h"
-#include "store/inflight_store.h"
+#include "broker/connection/connection_state.h"
+#include "broker/connection/keep_alive_timer.h"
+#include "broker/connection/receive_maximum.h"
+#include "broker/connection/topic_alias_table.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/packet/connect_packet.h"
+#include "broker/data_model/packet/control_packets.h"
+#include "broker/data_model/packet/publish_packets.h"
+#include "broker/outbound_queue/outbound_queue.h"
+#include "broker/qos/packet_id_manager.h"
+#include "broker/qos/qos1_state_machine.h"
+#include "broker/qos/qos2_state_machine.h"
+#include "broker/store/inflight_store.h"
 
 namespace mqtt {
 

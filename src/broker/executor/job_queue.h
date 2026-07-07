@@ -11,7 +11,7 @@
 #include <mutex>
 #include <optional>
 
-#include "executor/connection_job.h"
+#include "broker/executor/connection_job.h"
 
 namespace mqtt {
 

@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "monitoring/trace_runtime_command.h"
+#include "broker/monitoring/trace_runtime_command.h"
 
 namespace mqtt {
 

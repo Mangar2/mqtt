@@ -6,19 +6,19 @@
 #include <thread>
 #include <utility>
 
-#include "auth/authenticator.h"
-#include "client_session/client_session.h"
+#include "broker/auth/authenticator.h"
+#include "broker/client_session/client_session.h"
 #include "codec/packet_reader/packet_reader.h"
 #include "codec/read_buffer.h"
-#include "data_model/property/property.h"
-#include "data_model/property/property_id.h"
-#include "data_model/reason_code/reason_code.h"
-#include "data_model/types/binary_data.h"
-#include "data_model/types/qos.h"
-#include "data_model/types/utf8_string.h"
-#include "outbound_queue/outbound_queue.h"
-#include "monitoring/structured_tracer.h"
-#include "store/inflight_store.h"
+#include "broker/data_model/property/property.h"
+#include "broker/data_model/property/property_id.h"
+#include "broker/data_model/reason_code/reason_code.h"
+#include "broker/data_model/types/binary_data.h"
+#include "broker/data_model/types/qos.h"
+#include "broker/data_model/types/utf8_string.h"
+#include "broker/outbound_queue/outbound_queue.h"
+#include "broker/monitoring/structured_tracer.h"
+#include "broker/store/inflight_store.h"
 
 namespace mqtt {
 

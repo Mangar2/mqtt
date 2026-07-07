@@ -20,9 +20,9 @@
 #include <string_view>
 #include <vector>
 
-#include "data_model/types/binary_data.h"
-#include "data_model/types/utf8_string.h"
-#include "persistence/persistence_error.h"
+#include "broker/data_model/types/binary_data.h"
+#include "broker/data_model/types/utf8_string.h"
+#include "broker/persistence/persistence_error.h"
 
 namespace mqtt::record_codec {
 

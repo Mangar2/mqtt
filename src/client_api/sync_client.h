@@ -18,9 +18,9 @@
 #include "client/publish_pipeline.h"
 #include "client/session_state_keeper.h"
 #include "client/subscription_manager.h"
-#include "data_model/message/message.h"
-#include "data_model/packet/connect_packet.h"
-#include "data_model/packet/control_packets.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/packet/connect_packet.h"
+#include "broker/data_model/packet/control_packets.h"
 
 namespace mqtt {
 

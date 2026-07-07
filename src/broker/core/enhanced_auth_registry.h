@@ -13,8 +13,8 @@
 #include <unordered_map>
 #include <utility>
 
-#include "auth/enhanced_auth_handler.h"
-#include "data_model/packet/connect_packet.h"
+#include "broker/auth/enhanced_auth_handler.h"
+#include "broker/data_model/packet/connect_packet.h"
 
 namespace mqtt {
 

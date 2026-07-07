@@ -7,9 +7,9 @@
 
 #include <string_view>
 
-#include "data_model/packet/subscribe_packets.h"
-#include "monitoring/structured_tracer.h"
-#include "subscription_manager/subscription_orchestrator.h"
+#include "broker/data_model/packet/subscribe_packets.h"
+#include "broker/monitoring/structured_tracer.h"
+#include "broker/subscription_manager/subscription_orchestrator.h"
 
 namespace mqtt {
 

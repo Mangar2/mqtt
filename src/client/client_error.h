@@ -11,7 +11,7 @@
 #include <string>
 #include <string_view>
 
-#include "data_model/reason_code/reason_code.h"
+#include "broker/data_model/reason_code/reason_code.h"
 
 namespace mqtt {
 

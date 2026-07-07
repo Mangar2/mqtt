@@ -1,16 +1,16 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "auth/anonymous_authenticator.h"
-#include "auth/auth_error.h"
-#include "auth/authenticator.h"
-#include "auth/enhanced_auth_handler.h"
-#include "auth/password_authenticator.h"
-#include "data_model/packet/connect_packet.h"
-#include "data_model/packet/control_packets.h"
-#include "data_model/property/property_id.h"
-#include "data_model/reason_code/reason_code.h"
-#include "data_model/types/binary_data.h"
-#include "data_model/types/utf8_string.h"
+#include "broker/auth/anonymous_authenticator.h"
+#include "broker/auth/auth_error.h"
+#include "broker/auth/authenticator.h"
+#include "broker/auth/enhanced_auth_handler.h"
+#include "broker/auth/password_authenticator.h"
+#include "broker/data_model/packet/connect_packet.h"
+#include "broker/data_model/packet/control_packets.h"
+#include "broker/data_model/property/property_id.h"
+#include "broker/data_model/reason_code/reason_code.h"
+#include "broker/data_model/types/binary_data.h"
+#include "broker/data_model/types/utf8_string.h"
 
 namespace mqtt {
 

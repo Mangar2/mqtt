@@ -8,7 +8,7 @@
 
 #include "codec/read_buffer.h"
 #include "codec/write_buffer.h"
-#include "data_model/packet/control_packets.h"
+#include "broker/data_model/packet/control_packets.h"
 
 namespace mqtt {
 

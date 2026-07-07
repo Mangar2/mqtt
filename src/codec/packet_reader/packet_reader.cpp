@@ -6,7 +6,7 @@
 #include "codec/packet/control_codec.h"
 #include "codec/packet/publish_codec.h"
 #include "codec/packet/subscribe_codec.h"
-#include "data_model/packet/packet_type.h"
+#include "broker/data_model/packet/packet_type.h"
 
 namespace mqtt {
 

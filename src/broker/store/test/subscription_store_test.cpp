@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "data_model/subscription/subscription.h"
-#include "data_model/types/qos.h"
-#include "store/subscription_store.h"
+#include "broker/data_model/subscription/subscription.h"
+#include "broker/data_model/types/qos.h"
+#include "broker/store/subscription_store.h"
 
 using namespace mqtt;
 

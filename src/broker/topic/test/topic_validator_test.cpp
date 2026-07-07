@@ -2,8 +2,8 @@
 
 #include <string>
 
-#include "topic/topic_error.h"
-#include "topic/topic_validator.h"
+#include "broker/topic/topic_error.h"
+#include "broker/topic/topic_validator.h"
 
 using namespace mqtt;
 

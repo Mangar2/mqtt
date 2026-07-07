@@ -4,9 +4,9 @@
 #include "codec/fixed_header/fixed_header.h"
 #include "codec/fixed_header/fixed_header_codec.h"
 #include "codec/packet/control_codec.h"
-#include "data_model/packet/control_packets.h"
-#include "data_model/property/property.h"
-#include "data_model/types/utf8_string.h"
+#include "broker/data_model/packet/control_packets.h"
+#include "broker/data_model/property/property.h"
+#include "broker/data_model/types/utf8_string.h"
 #include <vector>
 
 using namespace mqtt;

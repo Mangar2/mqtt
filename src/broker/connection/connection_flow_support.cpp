@@ -3,7 +3,7 @@
  * @brief Shared helpers for connection flow phases.
  */
 
-#include "connection/connection_flow_support.h"
+#include "broker/connection/connection_flow_support.h"
 
 #include <cstddef>
 
@@ -12,10 +12,10 @@
 #include "codec/packet/control_codec.h"
 #include "codec/packet/subscribe_codec.h"
 #include "codec/packet_reader/packet_reader.h"
-#include "data_model/packet/packet_type.h"
+#include "broker/data_model/packet/packet_type.h"
 #include "network/stream_buffer.h"
 #include "network/tcp_connection.h"
-#include "transport/websocket_transport.h"
+#include "broker/transport/websocket_transport.h"
 
 namespace mqtt {
 

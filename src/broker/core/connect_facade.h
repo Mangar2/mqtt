@@ -11,15 +11,15 @@
 #include <string_view>
 #include <vector>
 
-#include "auth/auth_error.h"
-#include "auth/authenticator.h"
+#include "broker/auth/auth_error.h"
+#include "broker/auth/authenticator.h"
 #include "broker/core/broker_config.h"
 #include "broker/core/connect_result.h"
 #include "broker/core/enhanced_auth_registry.h"
-#include "data_model/packet/connect_packet.h"
-#include "monitoring/structured_tracer.h"
-#include "session_manager/session_manager.h"
-#include "will_manager/will_publisher.h"
+#include "broker/data_model/packet/connect_packet.h"
+#include "broker/monitoring/structured_tracer.h"
+#include "broker/session_manager/session_manager.h"
+#include "broker/will_manager/will_publisher.h"
 
 namespace mqtt {
 

@@ -1,11 +1,11 @@
-#include "connection/close_step.h"
+#include "broker/connection/close_step.h"
 
 #include <chrono>
 #include <string>
 
 #include "broker/core/broker.h"
-#include "client_session/client_session.h"
-#include "connection/connection_session.h"
+#include "broker/client_session/client_session.h"
+#include "broker/connection/connection_session.h"
 
 namespace mqtt {
 

@@ -3,7 +3,7 @@
  * @brief Stateless connection job processors.
  */
 
-#include "connection/client_handler.h"
+#include "broker/connection/client_handler.h"
 
 #include <algorithm>
 #include <array>
@@ -15,20 +15,20 @@
 
 #include "broker/core/broker.h"
 #include "broker/core/broker_config.h"
-#include "client_session/client_session.h"
-#include "monitoring/structured_tracer.h"
-#include "connection/close_step.h"
-#include "connection/connection_flow_support.h"
-#include "connection/connection_session.h"
-#include "connection/decode_step.h"
-#include "connection/outbound_drain_step.h"
-#include "executor/job_scheduler.h"
+#include "broker/client_session/client_session.h"
+#include "broker/monitoring/structured_tracer.h"
+#include "broker/connection/close_step.h"
+#include "broker/connection/connection_flow_support.h"
+#include "broker/connection/connection_session.h"
+#include "broker/connection/decode_step.h"
+#include "broker/connection/outbound_drain_step.h"
+#include "broker/executor/job_scheduler.h"
 #include "network/connection_slot.h"
 #include "network/connection_table.h"
 #include "network/io_reactor.h"
 #include "network/socket_ops.h"
 #include "network/tcp_connection.h"
-#include "transport/websocket_transport.h"
+#include "broker/transport/websocket_transport.h"
 
 namespace mqtt {
 

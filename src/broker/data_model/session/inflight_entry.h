@@ -8,10 +8,10 @@
 #include <chrono>
 #include <cstdint>
 
-#include "data_model/message/message.h"
-#include "data_model/session/inflight_direction.h"
-#include "data_model/session/inflight_state.h"
-#include "data_model/types/qos.h"
+#include "broker/data_model/message/message.h"
+#include "broker/data_model/session/inflight_direction.h"
+#include "broker/data_model/session/inflight_state.h"
+#include "broker/data_model/types/qos.h"
 
 namespace mqtt {
 

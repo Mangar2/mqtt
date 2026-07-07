@@ -4,7 +4,7 @@
 #include <mutex>
 #include <shared_mutex>
 
-#include "connection/connection_session.h"
+#include "broker/connection/connection_session.h"
 
 namespace mqtt {
 

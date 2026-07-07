@@ -15,9 +15,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "data_model/message/message.h"
+#include "broker/data_model/message/message.h"
 
-#include "data_model/message/message.h"
+#include "broker/data_model/message/message.h"
 
 namespace mqtt {
 

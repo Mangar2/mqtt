@@ -3,7 +3,7 @@
  * @brief Helpers for moving pending outbound messages (Module 24).
  */
 
-#include "connection/outbound_queue_bridge.h"
+#include "broker/connection/outbound_queue_bridge.h"
 
 #include <utility>
 

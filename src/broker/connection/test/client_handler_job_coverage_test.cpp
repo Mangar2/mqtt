@@ -21,20 +21,20 @@
 
 #include "broker/core/broker.h"
 #include "broker/core/broker_config.h"
-#include "auth/authenticator.h"
+#include "broker/auth/authenticator.h"
 #include "codec/packet/connect_codec.h"
-#include "client_session/client_session.h"
-#include "connection/client_handler.h"
-#include "connection/connection_flow_support.h"
-#include "connection/connection_session.h"
-#include "executor/job_queue.h"
-#include "executor/job_scheduler.h"
+#include "broker/client_session/client_session.h"
+#include "broker/connection/client_handler.h"
+#include "broker/connection/connection_flow_support.h"
+#include "broker/connection/connection_session.h"
+#include "broker/executor/job_queue.h"
+#include "broker/executor/job_scheduler.h"
 #include "network/connection_slot.h"
 #include "network/connection_table.h"
 #include "network/io_reactor.h"
 #include "network/socket_ops.h"
 #include "network/tcp_connection.h"
-#include "store/inflight_store.h"
+#include "broker/store/inflight_store.h"
 
 using namespace mqtt;
 

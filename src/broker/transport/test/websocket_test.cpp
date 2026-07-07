@@ -20,10 +20,10 @@
 
 #include "network/tcp_connection.h"
 #include "network/tcp_listener.h"
-#include "transport/transport_error.h"
-#include "transport/websocket_frame_codec.h"
-#include "transport/websocket_handshake.h"
-#include "transport/websocket_transport.h"
+#include "broker/transport/transport_error.h"
+#include "broker/transport/websocket_frame_codec.h"
+#include "broker/transport/websocket_handshake.h"
+#include "broker/transport/websocket_transport.h"
 
 using namespace mqtt;
 

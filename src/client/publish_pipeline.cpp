@@ -5,10 +5,11 @@
 #include <utility>
 
 #include "codec/packet/publish_codec.h"
-#include "data_model/session/inflight_direction.h"
-#include "qos/qos_error.h"
-#include "topic/topic_error.h"
-#include "topic/topic_validator.h"
+#include "broker/data_model/session/inflight_direction.h"
+#include "broker/qos/qos_error.h"
+#include "broker/topic/topic_error.h"
+#include "broker/topic/topic_validator.h"
+#include "client/client_error.h"
 
 namespace mqtt {
 

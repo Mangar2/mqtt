@@ -1,4 +1,4 @@
-#include "transport/websocket_frame_codec.h"
+#include "broker/transport/websocket_frame_codec.h"
 
 #include <algorithm>
 #include <array>
@@ -8,7 +8,7 @@
 #include <span>
 #include <stdexcept>
 
-#include "transport/transport_error.h"
+#include "broker/transport/transport_error.h"
 
 namespace mqtt {
 

@@ -7,10 +7,10 @@
 
 #include <variant>
 #include "property_id.h"
-#include "data_model/types/binary_data.h"
-#include "data_model/types/integers.h"
-#include "data_model/types/utf8_string.h"
-#include "data_model/types/variable_byte_integer.h"
+#include "broker/data_model/types/binary_data.h"
+#include "broker/data_model/types/integers.h"
+#include "broker/data_model/types/utf8_string.h"
+#include "broker/data_model/types/variable_byte_integer.h"
 
 namespace mqtt {
 

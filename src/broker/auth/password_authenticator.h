@@ -6,9 +6,9 @@
  * (Module 8.2).
  */
 
-#include "auth/authenticator.h"
-#include "data_model/types/binary_data.h"
-#include "data_model/types/utf8_string.h"
+#include "broker/auth/authenticator.h"
+#include "broker/data_model/types/binary_data.h"
+#include "broker/data_model/types/utf8_string.h"
 #include <unordered_map>
 
 namespace mqtt {

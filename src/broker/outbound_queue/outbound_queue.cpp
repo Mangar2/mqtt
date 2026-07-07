@@ -3,7 +3,7 @@
  * @brief OutboundQueue implementation (Module 20.1).
  */
 
-#include "outbound_queue/outbound_queue.h"
+#include "broker/outbound_queue/outbound_queue.h"
 
 #include <utility>
 

@@ -8,11 +8,11 @@
 #include <utility>
 #include <vector>
 
-#include "auth/auth_error.h"
+#include "broker/auth/auth_error.h"
 #include "broker/core/connack_properties.h"
-#include "data_model/property/property_id.h"
-#include "session_manager/session_manager_error.h"
-#include "will_manager/will_message_util.h"
+#include "broker/data_model/property/property_id.h"
+#include "broker/session_manager/session_manager_error.h"
+#include "broker/will_manager/will_message_util.h"
 
 namespace mqtt {
 

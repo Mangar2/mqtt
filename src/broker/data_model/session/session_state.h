@@ -8,8 +8,8 @@
 #include <cstdint>
 #include <vector>
 
-#include "data_model/subscription/subscription.h"
-#include "data_model/types/utf8_string.h"
+#include "broker/data_model/subscription/subscription.h"
+#include "broker/data_model/types/utf8_string.h"
 
 namespace mqtt {
 

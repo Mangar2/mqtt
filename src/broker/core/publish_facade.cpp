@@ -2,8 +2,8 @@
 
 #include <string>
 
-#include "data_model/property/property_id.h"
-#include "message_router/message_router_error.h"
+#include "broker/data_model/property/property_id.h"
+#include "broker/message_router/message_router_error.h"
 
 namespace mqtt {
 

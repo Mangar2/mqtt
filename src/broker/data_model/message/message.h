@@ -7,10 +7,10 @@
 
 #include <cstdint>
 #include <vector>
-#include "data_model/property/property.h"
-#include "data_model/types/binary_data.h"
-#include "data_model/types/qos.h"
-#include "data_model/types/utf8_string.h"
+#include "broker/data_model/property/property.h"
+#include "broker/data_model/types/binary_data.h"
+#include "broker/data_model/types/qos.h"
+#include "broker/data_model/types/utf8_string.h"
 
 namespace mqtt {
 

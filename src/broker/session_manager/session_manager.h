@@ -13,13 +13,13 @@
 #include <string_view>
 #include <vector>
 
-#include "data_model/packet/connect_packet.h"
-#include "session_manager/session_expiry_scheduler.h"
-#include "session_manager/session_open_result.h"
-#include "session_manager/session_takeover_handler.h"
-#include "store/inflight_store.h"
-#include "store/session_store.h"
-#include "store/subscription_store.h"
+#include "broker/data_model/packet/connect_packet.h"
+#include "broker/session_manager/session_expiry_scheduler.h"
+#include "broker/session_manager/session_open_result.h"
+#include "broker/session_manager/session_takeover_handler.h"
+#include "broker/store/inflight_store.h"
+#include "broker/store/session_store.h"
+#include "broker/store/subscription_store.h"
 
 namespace mqtt {
 

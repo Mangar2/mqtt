@@ -11,8 +11,8 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "store/retained_message_store.h"
-#include "store/subscription_store.h"
+#include "broker/store/retained_message_store.h"
+#include "broker/store/subscription_store.h"
 
 namespace mqtt {
 

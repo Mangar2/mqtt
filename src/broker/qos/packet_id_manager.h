@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <unordered_set>
 
-#include "data_model/session/inflight_direction.h"
+#include "broker/data_model/session/inflight_direction.h"
 
 namespace mqtt {
 

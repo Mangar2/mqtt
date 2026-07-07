@@ -10,11 +10,11 @@
 #include <utility>
 #include <vector>
 
-#include "authz/broker_acl_policy.h"
+#include "broker/authz/broker_acl_policy.h"
 #include "codec/packet/publish_codec.h"
-#include "data_model/message/message.h"
-#include "message_router/message_router_error.h"
-#include "will_manager/will_message_util.h"
+#include "broker/data_model/message/message.h"
+#include "broker/message_router/message_router_error.h"
+#include "broker/will_manager/will_message_util.h"
 
 namespace mqtt {
 

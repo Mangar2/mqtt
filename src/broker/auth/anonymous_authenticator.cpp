@@ -1,4 +1,4 @@
-#include "auth/anonymous_authenticator.h"
+#include "broker/auth/anonymous_authenticator.h"
 
 namespace mqtt {
 

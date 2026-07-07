@@ -1,10 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "authz/acl_engine.h"
-#include "authz/acl_loader.h"
-#include "authz/broker_acl_policy.h"
-#include "authz/acl_rule.h"
-#include "authz/authz_error.h"
+#include "broker/authz/acl_engine.h"
+#include "broker/authz/acl_loader.h"
+#include "broker/authz/broker_acl_policy.h"
+#include "broker/authz/acl_rule.h"
+#include "broker/authz/authz_error.h"
 
 using namespace mqtt;
 

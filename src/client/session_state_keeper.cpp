@@ -4,8 +4,8 @@
 #include <utility>
 
 #include "client/client_error.h"
-#include "data_model/session/inflight_direction.h"
-#include "store/inflight_store.h"
+#include "broker/data_model/session/inflight_direction.h"
+#include "broker/store/inflight_store.h"
 
 namespace mqtt {
 

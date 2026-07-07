@@ -1,7 +1,7 @@
 #include "codec/properties/properties_codec.h"
 
 #include "codec/primitive/primitive_codec.h"
-#include "data_model/property/property_maps.h"
+#include "broker/data_model/property/property_maps.h"
 
 namespace mqtt {
 

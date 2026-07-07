@@ -1,14 +1,14 @@
-#include "client_session/client_session.h"
+#include "broker/client_session/client_session.h"
 
 #include <chrono>
 #include <stdexcept>
 #include <utility>
 
 #include "codec/packet/publish_codec.h"
-#include "data_model/session/inflight_direction.h"
-#include "data_model/session/inflight_state.h"
-#include "monitoring/structured_tracer.h"
-#include "message_router/message_expiry_controller.h"
+#include "broker/data_model/session/inflight_direction.h"
+#include "broker/data_model/session/inflight_state.h"
+#include "broker/monitoring/structured_tracer.h"
+#include "broker/message_router/message_expiry_controller.h"
 
 namespace mqtt {
 

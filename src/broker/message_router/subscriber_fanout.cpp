@@ -1,10 +1,10 @@
-#include "message_router/subscriber_fanout.h"
+#include "broker/message_router/subscriber_fanout.h"
 
 #include <algorithm>
 
-#include "data_model/property/property.h"
-#include "data_model/property/property_id.h"
-#include "data_model/types/variable_byte_integer.h"
+#include "broker/data_model/property/property.h"
+#include "broker/data_model/property/property_id.h"
+#include "broker/data_model/types/variable_byte_integer.h"
 
 namespace mqtt {
 

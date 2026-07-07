@@ -1,6 +1,6 @@
-#include "connection/connection_state.h"
+#include "broker/connection/connection_state.h"
 
-#include "connection/connection_error.h"
+#include "broker/connection/connection_error.h"
 
 namespace mqtt {
 

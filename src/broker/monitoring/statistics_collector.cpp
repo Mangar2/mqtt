@@ -3,7 +3,7 @@
  * @brief StatisticsCollector implementation (Module 16.1).
  */
 
-#include "monitoring/statistics_collector.h"
+#include "broker/monitoring/statistics_collector.h"
 
 namespace mqtt {
 

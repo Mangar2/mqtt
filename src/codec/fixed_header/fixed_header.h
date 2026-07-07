@@ -6,7 +6,7 @@
  */
 
 #include <cstdint>
-#include "data_model/packet/packet_type.h"
+#include "broker/data_model/packet/packet_type.h"
 
 namespace mqtt {
 

@@ -14,8 +14,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "data_model/subscription/subscription.h"
-#include "topic/topic_matcher.h"
+#include "broker/data_model/subscription/subscription.h"
+#include "broker/topic/topic_matcher.h"
 
 namespace mqtt {
 

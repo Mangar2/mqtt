@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-#include "data_model/session/inflight_entry.h"
+#include "broker/data_model/session/inflight_entry.h"
 
 namespace mqtt {
 

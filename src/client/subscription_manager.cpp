@@ -1,13 +1,13 @@
 #include "client/subscription_manager.h"
 
-#include <algorithm>
 #include <limits>
 #include <utility>
 
-#include "data_model/types/utf8_string.h"
-#include "topic/topic_matcher.h"
-#include "topic/topic_error.h"
-#include "topic/topic_validator.h"
+#include "broker/data_model/types/utf8_string.h"
+#include "broker/topic/topic_matcher.h"
+#include "broker/topic/topic_error.h"
+#include "broker/topic/topic_validator.h"
+#include "client/client_error.h"
 
 namespace mqtt {
 

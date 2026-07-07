@@ -1,8 +1,8 @@
-#include "store/subscription_store.h"
+#include "broker/store/subscription_store.h"
 
 #include <mutex>
 
-#include "topic/topic_matcher.h"
+#include "broker/topic/topic_matcher.h"
 
 namespace mqtt {
 

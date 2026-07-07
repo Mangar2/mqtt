@@ -2,13 +2,13 @@
 
 #include <memory>
 
-#include "auth/authenticator.h"
+#include "broker/auth/authenticator.h"
 #include "broker/core/broker_config.h"
-#include "client_session/client_session.h"
-#include "connection/connection_session.h"
+#include "broker/client_session/client_session.h"
+#include "broker/connection/connection_session.h"
 #include "network/tcp_connection.h"
-#include "outbound_queue/outbound_queue.h"
-#include "store/inflight_store.h"
+#include "broker/outbound_queue/outbound_queue.h"
+#include "broker/store/inflight_store.h"
 
 using namespace mqtt;
 

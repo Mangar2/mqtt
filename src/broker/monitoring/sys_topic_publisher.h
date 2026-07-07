@@ -9,8 +9,8 @@
 #include <chrono>
 #include <functional>
 
-#include "data_model/message/message.h"
-#include "monitoring/statistics_collector.h"
+#include "broker/data_model/message/message.h"
+#include "broker/monitoring/statistics_collector.h"
 
 namespace mqtt {
 

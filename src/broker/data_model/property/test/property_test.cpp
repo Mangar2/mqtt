@@ -1,9 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "data_model/packet/packet_type.h"
-#include "data_model/property/property.h"
-#include "data_model/property/property_id.h"
-#include "data_model/property/property_maps.h"
+#include "broker/data_model/packet/packet_type.h"
+#include "broker/data_model/property/property.h"
+#include "broker/data_model/property/property_id.h"
+#include "broker/data_model/property/property_maps.h"
 
 using namespace mqtt;
 

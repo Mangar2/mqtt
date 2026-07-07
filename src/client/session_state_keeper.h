@@ -10,8 +10,8 @@
 #include <string_view>
 #include <vector>
 
-#include "data_model/session/inflight_entry.h"
-#include "data_model/session/session_state.h"
+#include "broker/data_model/session/inflight_entry.h"
+#include "broker/data_model/session/session_state.h"
 
 namespace mqtt {
 
