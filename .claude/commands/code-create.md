@@ -181,6 +181,8 @@ Before running the test script, call `get_errors` on every file that was created
 
 Absolute gate: compile/build/test is forbidden while any `get_errors` problem is still open. No exceptions, never.
 
+Note: no `get_errors` tool in Claude Code. Diagnostics come as hook reminder after edit. See `/cpp-dev`.
+
 This includes:
 - Short variable/parameter names (< 3 characters)
 - Unused includes

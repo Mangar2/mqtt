@@ -157,6 +157,13 @@ Before declaring any development task as complete, run IDE diagnostics with
 
 This is mandatory no exceptions.
 
+Tool name note: `get_errors` is the GitHub Copilot name for this action. In Claude Code
+there is no directly callable `get_errors` tool — IDE diagnostics arrive automatically as a
+hook reminder after each file edit. Treat that hook reminder as the `get_errors` result: read
+it, fix every reported problem, and keep editing until no diagnostic reminder appears for the
+file. A clean `-Wall -Wextra -Wpedantic -Werror` build is a second, independent confirmation
+but does not replace watching for the hook reminder on each edit.
+
 Required execution sequence:
 
 1. Build the exact list of changed files.

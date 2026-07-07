@@ -6,6 +6,8 @@ Before any compile, build, or test command, run `get_errors` for every changed f
 
 Hard rule: zero problems only. No exceptions, never.
 
+Note: no `get_errors` tool in Claude Code. Diagnostics come as hook reminder after edit. See `/cpp-dev`.
+
 ## ABSOLUTE RULE — NO SOURCE CODE
 
 NEVER read, open, grep, search, or reference any file under src/

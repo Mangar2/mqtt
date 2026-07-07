@@ -124,6 +124,7 @@ TEST_CASE("clear_warning_handlers_removes_default_handler", "[ini]") {
     removeDirectoryQuiet(tempDir);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("report_fallback_forwards_service_name_and_fields", "[ini]") {
     const auto tempDir = makeTempDirectory();
     const auto iniPath = writeIniFile(tempDir, "[mqtt]\nport = 1883\n");

@@ -6,6 +6,8 @@ Before any compile, build, coverage run, or test command, run `get_errors` for e
 
 Hard rule: zero problems required before execution. No exceptions, never.
 
+Note: no `get_errors` tool in Claude Code. Diagnostics come as hook reminder after edit. See `/cpp-dev`.
+
 ## Framework
 
 Catch2 v3 (`Catch2::Catch2WithMain`), already linked to the test target.

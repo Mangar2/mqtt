@@ -134,7 +134,7 @@ Caveman rules. AI only. No deviation. No skipping steps.
 - after two failed fix attempts on different suspects: stop and ask user for more reproduction details, do not guess further
 - on success:
   - mandatory quality gate before done:
-    - run `get_errors` on all changed files and fix all findings first
+    - run `get_errors` on all changed files and fix all findings first (no such tool in Claude Code, use hook reminder after edit, see `/cpp-dev`)
     - run scope-matching coverage script(s):
       - broker scope: `python3 test/run_coverage_broker.py`
       - YAHA client scope: `python3 test/run_coverage_clients.py`

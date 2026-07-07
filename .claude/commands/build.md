@@ -8,6 +8,8 @@ Hard rule: zero problems only. No warning, no hint, no exception.
 
 Never start build/test commands while any `get_errors` problem is still open.
 
+Note: no `get_errors` tool in Claude Code. Diagnostics come as hook reminder after edit. See `/cpp-dev`.
+
 Broker scope (only when working on broker code):
 
 ```sh
