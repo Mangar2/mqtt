@@ -1,370 +1,75 @@
 #include "yaha/automation/rules_tree_json_reader.h"
 
-#include <cctype>
+#include "json/json_error.h"
+#include "json/json_value.h"
+
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <string_view>
 
 namespace yaha {
 namespace {
 
-constexpr int k_hex_alpha_offset{10};
-constexpr unsigned int k_one_byte_max_code_point{0x7FU};
-constexpr unsigned int k_two_byte_max_code_point{0x7FFU};
-constexpr unsigned int k_utf8_two_byte_prefix{0xC0U};
-constexpr unsigned int k_utf8_three_byte_prefix{0xE0U};
-constexpr unsigned int k_utf8_continuation_prefix{0x80U};
-constexpr unsigned int k_utf8_five_bit_mask{0x1FU};
-constexpr unsigned int k_utf8_six_bit_mask{0x3FU};
-constexpr unsigned int k_utf8_four_bit_mask{0x0FU};
-constexpr unsigned int k_utf8_shift_6{6U};
-constexpr unsigned int k_utf8_shift_12{12U};
-
-int hexNibbleValue(const char character) {
-    if (character >= '0' && character <= '9') {
-        return static_cast<int>(character - '0');
+RuleTreeNode convertJsonValueToRuleTreeNode(const mqtt::json::JsonValue& jsonValue) {
+    if (jsonValue.is_null()) {
+        return RuleTreeNode{};
     }
-    if (character >= 'a' && character <= 'f') {
-        return static_cast<int>(character - 'a') + k_hex_alpha_offset;
+    if (jsonValue.is_boolean()) {
+        return RuleTreeNode{jsonValue.as_boolean()};
     }
-    if (character >= 'A' && character <= 'F') {
-        return static_cast<int>(character - 'A') + k_hex_alpha_offset;
+    if (jsonValue.is_number()) {
+        return RuleTreeNode{jsonValue.as_number()};
     }
-    return -1;
-}
-
-void appendUtf8CodePoint(std::string* output, const unsigned int codePoint) {
-    if (codePoint <= k_one_byte_max_code_point) {
-        output->push_back(static_cast<char>(codePoint));
-        return;
-    }
-    if (codePoint <= k_two_byte_max_code_point) {
-        output->push_back(static_cast<char>(
-            k_utf8_two_byte_prefix | ((codePoint >> k_utf8_shift_6) & k_utf8_five_bit_mask)));
-        output->push_back(static_cast<char>(k_utf8_continuation_prefix | (codePoint & k_utf8_six_bit_mask)));
-        return;
-    }
-    output->push_back(static_cast<char>(
-        k_utf8_three_byte_prefix | ((codePoint >> k_utf8_shift_12) & k_utf8_four_bit_mask)));
-    output->push_back(static_cast<char>(
-        k_utf8_continuation_prefix | ((codePoint >> k_utf8_shift_6) & k_utf8_six_bit_mask)));
-    output->push_back(static_cast<char>(k_utf8_continuation_prefix | (codePoint & k_utf8_six_bit_mask)));
-}
-
-class JsonParser {
-public:
-    explicit JsonParser(std::string input)
-        : input_(std::move(input)) {
+    if (jsonValue.is_string()) {
+        return RuleTreeNode{jsonValue.as_string()};
     }
 
-    [[nodiscard]] RuleTreeJsonReadResult parse() {
-        RuleTreeJsonReadResult result;
-
-        try {
-            skipWhitespace();
-            result.root = parseValue();
-            skipWhitespace();
-            if (!atEnd()) {
-                throw makeError("unexpected trailing characters");
-            }
-            result.success = true;
-            return result;
-        } catch (const RuleTreeJsonReadError& error) {
-            result.errors.push_back(error);
-            return result;
+    if (jsonValue.is_array()) {
+        RuleTreeNode::Array arrayValue{};
+        const auto& sourceArray = jsonValue.as_array();
+        arrayValue.reserve(sourceArray.size());
+        for (const auto& elementValue : sourceArray) {
+            arrayValue.push_back(convertJsonValueToRuleTreeNode(elementValue));
         }
-    }
-
-private:
-    [[nodiscard]] bool atEnd() const noexcept {
-        return index_ >= input_.size();
-    }
-
-    [[nodiscard]] char peek() const {
-        return input_[index_];
-    }
-
-    char consume() {
-        const char current = input_[index_];
-        index_ += 1U;
-        if (current == '\n') {
-            line_ += 1U;
-            column_ = 1U;
-        } else {
-            column_ += 1U;
-        }
-        return current;
-    }
-
-    void skipWhitespace() {
-        while (!atEnd() && std::isspace(static_cast<unsigned char>(peek())) != 0) {
-            consume();
-        }
-    }
-
-    [[nodiscard]] RuleTreeJsonReadError makeError(const std::string& message) const {
-        return RuleTreeJsonReadError{.message = message, .line = line_, .column = column_};
-    }
-
-    [[nodiscard]] RuleTreeNode parseValue() {
-        if (atEnd()) {
-            throw makeError("unexpected end of json");
-        }
-
-        const char current = peek();
-        if (current == '{') {
-            return parseObject();
-        }
-        if (current == '[') {
-            return parseArray();
-        }
-        if (current == '"') {
-            return RuleTreeNode{parseString()};
-        }
-        if (current == 't') {
-            parseKeyword("true");
-            return RuleTreeNode{true};
-        }
-        if (current == 'f') {
-            parseKeyword("false");
-            return RuleTreeNode{false};
-        }
-        if (current == 'n') {
-            parseKeyword("null");
-            return RuleTreeNode{};
-        }
-        if (current == '-' || std::isdigit(static_cast<unsigned char>(current)) != 0) {
-            return RuleTreeNode{parseNumber()};
-        }
-
-        throw makeError("invalid json token");
-    }
-
-    [[nodiscard]] RuleTreeNode parseObject() {
-        consume();
-        skipWhitespace();
-
-        RuleTreeNode::Object objectValue;
-        if (!atEnd() && peek() == '}') {
-            consume();
-            return RuleTreeNode{std::move(objectValue)};
-        }
-
-        while (true) {
-            skipWhitespace();
-            if (atEnd() || peek() != '"') {
-                throw makeError("object key must be a string");
-            }
-            const std::string key = parseString();
-
-            skipWhitespace();
-            if (atEnd() || consume() != ':') {
-                throw makeError("missing ':' after object key");
-            }
-
-            skipWhitespace();
-            objectValue.insert({key, parseValue()});
-
-            skipWhitespace();
-            if (atEnd()) {
-                throw makeError("unexpected end in object");
-            }
-            const char separator = consume();
-            if (separator == '}') {
-                break;
-            }
-            if (separator != ',') {
-                throw makeError("object requires ',' or '}'");
-            }
-        }
-
-        return RuleTreeNode{std::move(objectValue)};
-    }
-
-    [[nodiscard]] RuleTreeNode parseArray() {
-        consume();
-        skipWhitespace();
-
-        RuleTreeNode::Array arrayValue;
-        if (!atEnd() && peek() == ']') {
-            consume();
-            return RuleTreeNode{std::move(arrayValue)};
-        }
-
-        while (true) {
-            skipWhitespace();
-            arrayValue.push_back(parseValue());
-
-            skipWhitespace();
-            if (atEnd()) {
-                throw makeError("unexpected end in array");
-            }
-            const char separator = consume();
-            if (separator == ']') {
-                break;
-            }
-            if (separator != ',') {
-                throw makeError("array requires ',' or ']'");
-            }
-        }
-
         return RuleTreeNode{std::move(arrayValue)};
     }
+    RuleTreeNode::Object objectValue{};
+    for (const auto& [keyText, entryValue] : jsonValue.as_object()) {
+        objectValue.emplace(keyText, convertJsonValueToRuleTreeNode(entryValue));
+    }
+    return RuleTreeNode{std::move(objectValue)};
+}
 
-    [[nodiscard]] std::string parseString() {
-        if (consume() != '"') {
-            throw makeError("string must start with quote");
+[[nodiscard]] std::pair<std::size_t, std::size_t> calculateLineAndColumn(
+    const std::string_view text,
+    const std::size_t offsetValue) {
+    std::size_t lineValue{1U};
+    std::size_t columnValue{1U};
+    const std::size_t safeOffset = std::min(offsetValue, text.size());
+
+    for (std::size_t index = 0U; index < safeOffset; ++index) {
+        if (text[index] == '\n') {
+            lineValue += 1U;
+            columnValue = 1U;
+            continue;
         }
-
-        std::string text;
-        while (!atEnd()) {
-            const char current = consume();
-            if (current == '"') {
-                return text;
-            }
-
-            if (current == '\\') {
-                if (atEnd()) {
-                    throw makeError("invalid escape sequence");
-                }
-                const char escaped = consume();
-                switch (escaped) {
-                case '"':
-                case '\\':
-                case '/':
-                    text.push_back(escaped);
-                    break;
-                case 'b':
-                    text.push_back('\b');
-                    break;
-                case 'f':
-                    text.push_back('\f');
-                    break;
-                case 'n':
-                    text.push_back('\n');
-                    break;
-                case 'r':
-                    text.push_back('\r');
-                    break;
-                case 't':
-                    text.push_back('\t');
-                    break;
-                case 'u':
-                    text.append(parseUnicodeEscape());
-                    break;
-                default:
-                    throw makeError("invalid escape sequence");
-                }
-                continue;
-            }
-
-            text.push_back(current);
-        }
-
-        throw makeError("unterminated string");
+        columnValue += 1U;
     }
 
-    [[nodiscard]] std::string parseUnicodeEscape() {
-        if (index_ + 4U > input_.size()) {
-            throw makeError("invalid unicode escape");
-        }
+    return {lineValue, columnValue};
+}
 
-        unsigned int codePoint = 0U;
-        for (std::size_t digitIndex = 0U; digitIndex < 4U; ++digitIndex) {
-            const char digit = consume();
-            const int nibble = hexNibbleValue(digit);
-            if (nibble < 0) {
-                throw makeError("invalid unicode escape");
-            }
-            codePoint = (codePoint << 4U) | static_cast<unsigned int>(nibble);
-        }
-
-        std::string utf8;
-        appendUtf8CodePoint(&utf8, codePoint);
-        return utf8;
-    }
-
-    [[nodiscard]] double parseNumber() {
-        const std::size_t start = index_;
-
-        if (!atEnd() && peek() == '-') {
-            consume();
-        }
-
-        parseIntegerPart();
-        parseFractionPartIfPresent();
-        parseExponentPartIfPresent();
-
-        const std::string text = input_.substr(start, index_ - start);
-        try {
-            return std::stod(text);
-        } catch (...) {
-            throw makeError("number conversion failed");
-        }
-    }
-
-    void parseIntegerPart() {
-        if (atEnd() || std::isdigit(static_cast<unsigned char>(peek())) == 0) {
-            throw makeError("invalid number");
-        }
-
-        if (peek() == '0') {
-            consume();
-            return;
-        }
-
-        while (!atEnd() && std::isdigit(static_cast<unsigned char>(peek())) != 0) {
-            consume();
-        }
-    }
-
-    void parseFractionPartIfPresent() {
-        if (atEnd() || peek() != '.') {
-            return;
-        }
-
-        consume();
-        if (atEnd() || std::isdigit(static_cast<unsigned char>(peek())) == 0) {
-            throw makeError("invalid number fraction");
-        }
-
-        while (!atEnd() && std::isdigit(static_cast<unsigned char>(peek())) != 0) {
-            consume();
-        }
-    }
-
-    void parseExponentPartIfPresent() {
-        if (atEnd() || (peek() != 'e' && peek() != 'E')) {
-            return;
-        }
-
-        consume();
-        if (!atEnd() && (peek() == '+' || peek() == '-')) {
-            consume();
-        }
-
-        if (atEnd() || std::isdigit(static_cast<unsigned char>(peek())) == 0) {
-            throw makeError("invalid number exponent");
-        }
-
-        while (!atEnd() && std::isdigit(static_cast<unsigned char>(peek())) != 0) {
-            consume();
-        }
-    }
-
-    void parseKeyword(const char* keyword) {
-        for (std::size_t i = 0U; keyword[i] != '\0'; ++i) {
-            if (atEnd() || consume() != keyword[i]) {
-                throw makeError("invalid keyword");
-            }
-        }
-    }
-
-    std::string input_;
-    std::size_t index_{0U};
-    std::size_t line_{1U};
-    std::size_t column_{1U};
-};
+[[nodiscard]] RuleTreeJsonReadError buildErrorFromJsonException(
+    const mqtt::json::JsonException& exception,
+    const std::string_view jsonText) {
+    const auto [lineValue, columnValue] = calculateLineAndColumn(jsonText, exception.offset());
+    return RuleTreeJsonReadError{
+        .message = exception.what(),
+        .line = lineValue,
+        .column = columnValue};
+}
 
 [[nodiscard]] std::string readFileText(const std::string& filePath) {
     std::ifstream stream{filePath};
@@ -380,8 +85,20 @@ private:
 } // namespace
 
 RuleTreeJsonReadResult RulesTreeJsonReader::parseJsonText(const std::string& jsonText) {
-    JsonParser parser{jsonText};
-    return parser.parse();
+    RuleTreeJsonReadResult result;
+
+    try {
+        const mqtt::json::JsonValue parsedRoot = mqtt::json::JsonValue::parse(jsonText);
+        result.root = convertJsonValueToRuleTreeNode(parsedRoot);
+        result.success = true;
+        return result;
+    } catch (const mqtt::json::JsonException& exception) {
+        result.errors.push_back(buildErrorFromJsonException(exception, jsonText));
+        return result;
+    } catch (const std::exception& exception) {
+        result.errors.push_back(RuleTreeJsonReadError{.message = exception.what(), .line = 0U, .column = 0U});
+        return result;
+    }
 }
 
 RuleTreeJsonReadResult RulesTreeJsonReader::parseJsonFile(const std::string& filePath) {

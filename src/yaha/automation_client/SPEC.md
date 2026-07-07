@@ -161,7 +161,7 @@ INI error handling:
 | `automation_client_component.h` | IMqttComponent declarations for automation rule sync |
 | `automation_client_component.cpp` | Runtime behavior implementation |
 | `automation_control_topics.h/.cpp` | Topic classification and rule-link extraction helper |
-| `automation_rule_json.h/.cpp` | Rule JSON parse/serialize helper |
+| `automation_rule_json.h/.cpp` | Rule JSON parse/serialize adapter using shared `src/json` `JsonValue` + `RulesTreeJsonReader` |
 | `automation_message_values.h/.cpp` | Message value conversion and logging text helper |
 | `automation_rule_lookup.h/.cpp` | Rule-link path lookup helper |
 | `automation_rule_tree_access.h/.cpp` | Rule-tree object and string-field access helper |

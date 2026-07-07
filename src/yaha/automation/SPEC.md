@@ -92,6 +92,7 @@ Public contract:
 
 Behavior:
 - Parses JSON object/array/string/number/bool/null into `RuleTreeNode` tree.
+- Delegates JSON syntax parsing/escaping/number handling to shared `src/json` `JsonValue::parse` and converts the parsed tree into `RuleTreeNode`.
 - Returns structured read errors including line/column position when parsing fails.
 - Intended to validate full fixture files (for example `test/rules.json`) through `RulesTreeParser`.
 
