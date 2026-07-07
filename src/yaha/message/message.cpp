@@ -1,5 +1,6 @@
 #include "yaha/message/message.h"
 
+#include <array>
 #include <chrono>
 #include <ctime>
 #include <stdexcept>
@@ -19,9 +20,9 @@ std::string current_iso_timestamp() {
     if (ptr != nullptr) {
         utc = *ptr;
     }
-    char buf[k_iso_timestamp_buffer_size];
-    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &utc);
-    return std::string{buf};
+    std::array<char, k_iso_timestamp_buffer_size> timestampBuffer{};
+    std::strftime(timestampBuffer.data(), timestampBuffer.size(), "%Y-%m-%dT%H:%M:%SZ", &utc);
+    return std::string{timestampBuffer.data()};
 }
 
 } // namespace
@@ -59,7 +60,7 @@ void Message::addReason(std::string text) {
 
 void Message::addReason(std::string text, std::string timestamp) {
     reason_.insert(reason_.begin(),
-                   ReasonEntry{std::move(text), std::move(timestamp)});
+                   ReasonEntry{.message = std::move(text), .timestamp = std::move(timestamp)});
 }
 
 void Message::setDup(const bool dup) noexcept {

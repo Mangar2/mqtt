@@ -1,5 +1,6 @@
 #include "yaha/broker_connector/source_http_adapter.h"
 
+#include "json/json_value.h"
 #include "yaha/message/message_log_service.h"
 
 #include <httplib.h>
@@ -8,8 +9,9 @@
 #include <chrono>
 #include <cctype>
 #include <charconv>
-#include <cstdlib>
+#include <cmath>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <ranges>
 #include <sstream>
@@ -21,7 +23,6 @@ namespace yaha {
 
 namespace {
 
-constexpr std::size_t k_escape_capacity_padding{8U};
 constexpr unsigned int k_uint16_max_value{65535U};
 constexpr int k_http_status_ok{200};
 constexpr int k_http_status_no_content{204};
@@ -29,7 +30,6 @@ constexpr int k_http_status_bad_request{400};
 constexpr int k_connect_retry_count{50};
 constexpr int k_connect_retry_delay_ms{20};
 constexpr int k_suback_qos_reject_code{128};
-constexpr int k_decimal_base{10};
 
 std::string trim(const std::string& text) {
     std::size_t first = 0U;
@@ -52,32 +52,10 @@ std::string toLower(std::string text) {
     return text;
 }
 
-std::string escapeJson(const std::string& text) {
-    std::string escaped{};
-    escaped.reserve(text.size() + k_escape_capacity_padding);
-    for (const char chr : text) {
-        switch (chr) {
-            case '"':
-                escaped += "\\\"";
-                break;
-            case '\\':
-                escaped += "\\\\";
-                break;
-            case '\n':
-                escaped += "\\n";
-                break;
-            case '\r':
-                escaped += "\\r";
-                break;
-            case '\t':
-                escaped += "\\t";
-                break;
-            default:
-                escaped.push_back(chr);
-                break;
-        }
-    }
-    return escaped;
+[[nodiscard]] std::string buildSingleFieldJsonText(const std::string& fieldName, const std::string& fieldValue) {
+    mqtt::json::JsonValue::Object rootObject{};
+    rootObject.emplace(fieldName, mqtt::json::JsonValue{fieldValue});
+    return mqtt::json::JsonValue{std::move(rootObject)}.stringify();
 }
 
 bool parseBool(const std::string& text, const bool defaultValue) {
@@ -120,298 +98,72 @@ Qos parseHeaderQos(const httplib::Request& request) {
     return Qos::AtLeastOnce;
 }
 
-bool tryFindObjectRange(const std::string& text,
-                        const std::string& key,
-                        std::size_t& objectStart,
-                        std::size_t& objectEnd) {
-    const std::string keyToken = "\"" + key + "\"";
-    const std::size_t keyPos = text.find(keyToken);
-    if (keyPos == std::string::npos) {
+bool tryParseJsonText(const std::string& jsonText, mqtt::json::JsonValue& parsedValue) {
+    const auto parsed = mqtt::json::JsonValue::try_parse(jsonText);
+    if (!parsed.has_value()) {
         return false;
     }
 
-    std::size_t cursor = text.find(':', keyPos + keyToken.size());
-    if (cursor == std::string::npos) {
-        return false;
-    }
-    ++cursor;
-
-    while (cursor < text.size() && std::isspace(static_cast<unsigned char>(text[cursor])) != 0) {
-        ++cursor;
-    }
-    if (cursor >= text.size() || text[cursor] != '{') {
-        return false;
-    }
-
-    int depth = 0;
-    for (std::size_t pos = cursor; pos < text.size(); ++pos) {
-        const char chr = text[pos];
-        if (chr == '{') {
-            ++depth;
-        } else if (chr == '}') {
-            --depth;
-            if (depth == 0) {
-                objectStart = cursor;
-                objectEnd = pos;
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-bool tryFindArrayRange(const std::string& text,
-                       const std::string& key,
-                       std::size_t& arrayStart,
-                       std::size_t& arrayEnd) {
-    const std::string keyToken = "\"" + key + "\"";
-    const std::size_t keyPos = text.find(keyToken);
-    if (keyPos == std::string::npos) {
-        return false;
-    }
-
-    std::size_t cursor = text.find(':', keyPos + keyToken.size());
-    if (cursor == std::string::npos) {
-        return false;
-    }
-    ++cursor;
-
-    while (cursor < text.size() && std::isspace(static_cast<unsigned char>(text[cursor])) != 0) {
-        ++cursor;
-    }
-    if (cursor >= text.size() || text[cursor] != '[') {
-        return false;
-    }
-
-    int depth = 0;
-    for (std::size_t pos = cursor; pos < text.size(); ++pos) {
-        const char chr = text[pos];
-        if (chr == '[') {
-            ++depth;
-        } else if (chr == ']') {
-            --depth;
-            if (depth == 0) {
-                arrayStart = cursor;
-                arrayEnd = pos;
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-bool tryExtractKeyStringValue(const std::string& objectText,
-                              const std::string& key,
-                              std::string& outValue) {
-    const std::string keyToken = "\"" + key + "\"";
-    const std::size_t keyPos = objectText.find(keyToken);
-    if (keyPos == std::string::npos) {
-        return false;
-    }
-
-    std::size_t cursor = objectText.find(':', keyPos + keyToken.size());
-    if (cursor == std::string::npos) {
-        return false;
-    }
-    ++cursor;
-
-    while (cursor < objectText.size() &&
-           std::isspace(static_cast<unsigned char>(objectText[cursor])) != 0) {
-        ++cursor;
-    }
-    if (cursor >= objectText.size() || objectText[cursor] != '"') {
-        return false;
-    }
-
-    ++cursor;
-    std::string parsed{};
-    while (cursor < objectText.size()) {
-        const char chr = objectText[cursor];
-        if (chr == '\\') {
-            ++cursor;
-            if (cursor >= objectText.size()) {
-                return false;
-            }
-            parsed.push_back(objectText[cursor]);
-            ++cursor;
-            continue;
-        }
-        if (chr == '"') {
-            outValue = std::move(parsed);
-            return true;
-        }
-        parsed.push_back(chr);
-        ++cursor;
-    }
-
-    return false;
-}
-
-bool tryExtractKeyValueToken(const std::string& objectText,
-                             const std::string& key,
-                             std::size_t& tokenStart,
-                             std::size_t& tokenEnd) {
-    const std::string keyToken = "\"" + key + "\"";
-    const std::size_t keyPos = objectText.find(keyToken);
-    if (keyPos == std::string::npos) {
-        return false;
-    }
-
-    std::size_t cursor = objectText.find(':', keyPos + keyToken.size());
-    if (cursor == std::string::npos) {
-        return false;
-    }
-    ++cursor;
-
-    while (cursor < objectText.size() &&
-           std::isspace(static_cast<unsigned char>(objectText[cursor])) != 0) {
-        ++cursor;
-    }
-    if (cursor >= objectText.size()) {
-        return false;
-    }
-
-    tokenStart = cursor;
-    if (objectText[cursor] == '"') {
-        ++cursor;
-        while (cursor < objectText.size()) {
-            if (objectText[cursor] == '\\') {
-                cursor += 2U;
-                continue;
-            }
-            if (objectText[cursor] == '"') {
-                tokenEnd = cursor;
-                return true;
-            }
-            ++cursor;
-        }
-        return false;
-    }
-
-    while (cursor < objectText.size() && objectText[cursor] != ',' && objectText[cursor] != '}') {
-        ++cursor;
-    }
-    tokenEnd = cursor == 0U ? 0U : cursor - 1U;
-    return tokenEnd >= tokenStart;
-}
-
-bool tryParseValueToken(const std::string& objectText,
-                        const std::size_t tokenStart,
-                        const std::size_t tokenEnd,
-                        Value& value) {
-    if (tokenStart >= objectText.size() || tokenEnd >= objectText.size() || tokenStart > tokenEnd) {
-        return false;
-    }
-
-    if (objectText[tokenStart] == '"') {
-        const std::string token = objectText.substr(tokenStart, tokenEnd - tokenStart + 1U);
-        std::string parsed{};
-        if (!tryExtractKeyStringValue("{\"x\": " + token + "}", "x", parsed)) {
-            return false;
-        }
-        value = parsed;
-        return true;
-    }
-
-    const std::string numericText = trim(objectText.substr(tokenStart, tokenEnd - tokenStart + 1U));
-    if (numericText.empty()) {
-        return false;
-    }
-
-    const std::string lowered = toLower(numericText);
-    if (lowered == "true" || lowered == "false" || lowered == "null") {
-        value = lowered;
-        return true;
-    }
-
-    char* parseEnd = nullptr;
-    const double parsedNumber = std::strtod(numericText.c_str(), &parseEnd);
-    if (parseEnd == nullptr || *parseEnd != '\0') {
-        return false;
-    }
-
-    value = parsedNumber;
+    parsedValue = *parsed;
     return true;
 }
 
-std::size_t skipReasonSeparators(const std::string& arrayText, std::size_t cursorPos) {
-    while (cursorPos + 1U < arrayText.size() &&
-           (std::isspace(static_cast<unsigned char>(arrayText[cursorPos])) != 0 ||
-            arrayText[cursorPos] == ',')) {
-        ++cursorPos;
+bool tryConvertJsonValueToMessageValue(const mqtt::json::JsonValue& valueNode, Value& valueOut) {
+    if (valueNode.is_string()) {
+        valueOut = valueNode.as_string();
+        return true;
     }
 
-    return cursorPos;
+    if (valueNode.is_number()) {
+        valueOut = valueNode.as_number();
+        return true;
+    }
+
+    if (valueNode.is_boolean()) {
+        valueOut = valueNode.as_boolean() ? std::string{"true"} : std::string{"false"};
+        return true;
+    }
+
+    if (valueNode.is_null()) {
+        valueOut = std::string{"null"};
+        return true;
+    }
+
+    return false;
 }
 
-std::optional<std::size_t> findObjectEnd(const std::string& text,
-                                         const std::size_t objectStart) {
-    if (objectStart >= text.size() || text[objectStart] != '{') {
-        return std::nullopt;
-    }
+bool tryParseReasonArray(const mqtt::json::JsonValue::Array& reasonArray,
+                         ReasonList& reasonEntries) {
+    reasonEntries.clear();
+    reasonEntries.reserve(reasonArray.size());
+    for (const auto& reasonNode : reasonArray) {
+        if (!reasonNode.is_object() || !reasonNode.contains("message")) {
+            return false;
+        }
 
-    int depth = 0;
-    for (std::size_t cursorPos = objectStart; cursorPos < text.size(); ++cursorPos) {
-        const char currentChar = text[cursorPos];
-        if (currentChar == '{') {
-            ++depth;
-        } else if (currentChar == '}') {
-            --depth;
-            if (depth == 0) {
-                return cursorPos;
+        const mqtt::json::JsonValue& messageNode = reasonNode.at("message");
+        if (!messageNode.is_string()) {
+            return false;
+        }
+
+        const std::string& messageText = messageNode.as_string();
+        if (messageText.empty()) {
+            return false;
+        }
+
+        std::string timestampText{};
+        if (reasonNode.contains("timestamp")) {
+            const mqtt::json::JsonValue& timestampNode = reasonNode.at("timestamp");
+            if (!timestampNode.is_string()) {
+                return false;
             }
-        }
-    }
-
-    return std::nullopt;
-}
-
-std::optional<ReasonEntry> tryParseReasonEntryObject(const std::string& objectText) {
-    std::string messageText{};
-    if (!tryExtractKeyStringValue(objectText, "message", messageText) || messageText.empty()) {
-        return std::nullopt;
-    }
-
-    std::string timestampText{};
-    if (!tryExtractKeyStringValue(objectText, "timestamp", timestampText)) {
-        timestampText.clear();
-    }
-
-    return ReasonEntry{.message = std::move(messageText), .timestamp = std::move(timestampText)};
-}
-
-std::optional<ReasonList> tryParseReasonArray(const std::string& arrayText) {
-    if (arrayText.size() < 2U || arrayText.front() != '[' || arrayText.back() != ']') {
-        return std::nullopt;
-    }
-
-    ReasonList reasonEntries{};
-    std::size_t cursorPos = 1U;
-    while (cursorPos + 1U < arrayText.size()) {
-        cursorPos = skipReasonSeparators(arrayText, cursorPos);
-        if (cursorPos + 1U >= arrayText.size() || arrayText[cursorPos] == ']') {
-            break;
+            timestampText = timestampNode.as_string();
         }
 
-        const std::optional<std::size_t> objectEnd = findObjectEnd(arrayText, cursorPos);
-        if (!objectEnd.has_value()) {
-            return std::nullopt;
-        }
-
-        const std::string objectText = arrayText.substr(cursorPos,
-                                                        *objectEnd - cursorPos + 1U);
-        const std::optional<ReasonEntry> reasonEntry = tryParseReasonEntryObject(objectText);
-        if (!reasonEntry.has_value()) {
-            return std::nullopt;
-        }
-
-        reasonEntries.push_back(*reasonEntry);
-        cursorPos = *objectEnd + 1U;
+        reasonEntries.push_back(ReasonEntry{.message = messageText, .timestamp = timestampText});
     }
 
-    return reasonEntries;
+    return true;
 }
 
 void appendReasonsPreservingOrder(const ReasonList& reasonEntries,
@@ -430,55 +182,69 @@ bool parseIncomingMessageBody(const std::string& payload,
                               const Qos qos,
                               const bool retain,
                               Message& messageOut) {
-    std::size_t messageStart = 0U;
-    std::size_t messageEnd = 0U;
-    std::string body = payload;
-    if (tryFindObjectRange(payload, "message", messageStart, messageEnd)) {
-        body = payload.substr(messageStart, messageEnd - messageStart + 1U);
-    }
-
-    std::string topic{};
-    if (!tryExtractKeyStringValue(body, "topic", topic) || topic.empty()) {
+    mqtt::json::JsonValue parsedRoot{};
+    if (!tryParseJsonText(payload, parsedRoot) || !parsedRoot.is_object()) {
         return false;
     }
 
-    std::size_t tokenStart = 0U;
-    std::size_t tokenEnd = 0U;
-    if (!tryExtractKeyValueToken(body, "value", tokenStart, tokenEnd)) {
+    const mqtt::json::JsonValue* messageNode = &parsedRoot;
+    if (parsedRoot.contains("message")) {
+        const mqtt::json::JsonValue& nestedMessage = parsedRoot.at("message");
+        if (!nestedMessage.is_object()) {
+            return false;
+        }
+        messageNode = &nestedMessage;
+    }
+
+    if (!messageNode->contains("topic") || !messageNode->contains("value")) {
+        return false;
+    }
+
+    const mqtt::json::JsonValue& topicNode = messageNode->at("topic");
+    if (!topicNode.is_string()) {
+        return false;
+    }
+
+    const std::string topic = topicNode.as_string();
+    if (topic.empty()) {
         return false;
     }
 
     Value value{};
-    if (!tryParseValueToken(body, tokenStart, tokenEnd, value)) {
+    if (!tryConvertJsonValueToMessageValue(messageNode->at("value"), value)) {
         return false;
     }
 
     messageOut = Message{topic, std::move(value), qos, retain};
 
-    std::size_t reasonArrayStart = 0U;
-    std::size_t reasonArrayEnd = 0U;
-    if (tryFindArrayRange(body, "reason", reasonArrayStart, reasonArrayEnd)) {
-        const std::string reasonArray = body.substr(reasonArrayStart,
-                                                    reasonArrayEnd - reasonArrayStart + 1U);
-        const std::optional<ReasonList> reasonEntries =
-            tryParseReasonArray(reasonArray);
-        if (!reasonEntries.has_value()) {
-            return false;
-        }
-        appendReasonsPreservingOrder(*reasonEntries, messageOut);
+    if (!messageNode->contains("reason")) {
         return true;
     }
 
-    if (tryExtractKeyValueToken(body, "reason", tokenStart, tokenEnd)) {
-        Value reasonValue{};
-        if (!tryParseValueToken(body, tokenStart, tokenEnd, reasonValue)) {
+    const mqtt::json::JsonValue& reasonNode = messageNode->at("reason");
+    if (reasonNode.is_array()) {
+        ReasonList reasonEntries{};
+        if (!tryParseReasonArray(reasonNode.as_array(), reasonEntries)) {
             return false;
         }
-        if (std::holds_alternative<std::string>(reasonValue)) {
-            const std::string& reasonText = std::get<std::string>(reasonValue);
-            if (!reasonText.empty()) {
-                messageOut.addReason(reasonText);
-            }
+
+        appendReasonsPreservingOrder(reasonEntries, messageOut);
+        return true;
+    }
+
+    if (reasonNode.is_object()) {
+        return false;
+    }
+
+    Value reasonValue{};
+    if (!tryConvertJsonValueToMessageValue(reasonNode, reasonValue)) {
+        return false;
+    }
+
+    if (std::holds_alternative<std::string>(reasonValue)) {
+        const std::string& reasonText = std::get<std::string>(reasonValue);
+        if (!reasonText.empty()) {
+            messageOut.addReason(reasonText);
         }
     }
 
@@ -486,38 +252,32 @@ bool parseIncomingMessageBody(const std::string& payload,
 }
 
 std::optional<std::vector<int>> tryParseQosArray(const std::string& payload) {
-    const std::size_t qosKeyPos = payload.find("\"qos\"");
-    if (qosKeyPos == std::string::npos) {
+    mqtt::json::JsonValue parsedRoot{};
+    if (!tryParseJsonText(payload, parsedRoot) || !parsedRoot.is_object() || !parsedRoot.contains("qos")) {
         return std::nullopt;
     }
 
-    const std::size_t arrayStart = payload.find('[', qosKeyPos);
-    if (arrayStart == std::string::npos) {
+    const mqtt::json::JsonValue& qosNode = parsedRoot.at("qos");
+    if (!qosNode.is_array()) {
         return std::nullopt;
     }
-
-    const std::size_t arrayEnd = payload.find(']', arrayStart);
-    if (arrayEnd == std::string::npos || arrayEnd < arrayStart) {
-        return std::nullopt;
-    }
-
-    const std::string arrayBody = payload.substr(arrayStart + 1U, arrayEnd - arrayStart - 1U);
 
     std::vector<int> qosValues{};
-
-    std::stringstream stream{arrayBody};
-    std::string token{};
-    while (std::getline(stream, token, ',')) {
-        const std::string cleaned = trim(token);
-        if (cleaned.empty()) {
-            continue;
+    qosValues.reserve(qosNode.as_array().size());
+    for (const auto& qosValueNode : qosNode.as_array()) {
+        if (!qosValueNode.is_number()) {
+            return std::nullopt;
         }
 
-        int parsedValue = 0;
-        const char* begin = cleaned.data();
-        const char* end = cleaned.data() + cleaned.size();
-        const auto result = std::from_chars(begin, end, parsedValue, k_decimal_base);
-        if (result.ec != std::errc{} || result.ptr != end) {
+        const double numericValue = qosValueNode.as_number();
+        if (!std::isfinite(numericValue)
+            || numericValue < static_cast<double>(std::numeric_limits<int>::min())
+            || numericValue > static_cast<double>(std::numeric_limits<int>::max())) {
+            return std::nullopt;
+        }
+
+        const int parsedValue = static_cast<int>(numericValue);
+        if (std::fabs(numericValue - static_cast<double>(parsedValue)) > 0.0) {
             return std::nullopt;
         }
 
@@ -642,7 +402,7 @@ bool SourceHttpBrokerAdapter::ping(std::string& errorMessage) {
 
     const auto tryPingWithSendToken = [this](std::string& failureText) -> bool {
         httplib::Client client{config_.brokerHost, static_cast<int>(config_.brokerPort)};
-        const std::string payload = R"({"token":")" + escapeJson(sendToken_) + R"("})";
+        const std::string payload = buildSingleFieldJsonText("token", sendToken_);
         httplib::Headers headers = makeStandardJsonHeaders();
 
         const auto response = client.Put("/pingreq", headers, payload, "application/json");
@@ -722,10 +482,10 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
 
         if (meta.qos != Qos::AtMostOnce && cleanedPacketIdHeader.empty()) {
             std::cout << "  source: publish rejected missing packetid header=\""
-                      << escapeJson(rawPacketIdHeader) << "\" qos=" << static_cast<int>(meta.qos)
+                      << rawPacketIdHeader << "\" qos=" << static_cast<int>(meta.qos)
                       << '\n' << std::flush;
             response.status = k_http_status_bad_request;
-            response.set_content(R"({"error":"bad_publish_packetid"})", "application/json");
+            response.set_content(buildSingleFieldJsonText("error", "bad_publish_packetid"), "application/json");
             return;
         }
 
@@ -734,7 +494,7 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
             std::cout << "  source: publish rejected bad payload body=" << request.body
                       << '\n' << std::flush;
             response.status = k_http_status_bad_request;
-            response.set_content(R"({"error":"bad_publish_payload"})", "application/json");
+            response.set_content(buildSingleFieldJsonText("error", "bad_publish_payload"), "application/json");
             return;
         }
 
@@ -865,19 +625,27 @@ bool SourceHttpBrokerAdapter::sendConnect(std::string& errorMessage, std::string
         return false;
     }
 
-    std::size_t tokenStart = 0U;
-    std::size_t tokenEnd = 0U;
-    if (!tryFindObjectRange(response->body, "token", tokenStart, tokenEnd)) {
+    mqtt::json::JsonValue responseBody{};
+    if (!tryParseJsonText(response->body, responseBody)
+        || !responseBody.is_object()
+        || !responseBody.contains("token")
+        || !responseBody.at("token").is_object()) {
         errorMessage = "source connect response missing token object";
         return false;
     }
 
-    const std::string tokenObject = response->body.substr(tokenStart, tokenEnd - tokenStart + 1U);
-    std::string sendToken{};
-    std::string receiveToken{};
-    if (!tryExtractKeyStringValue(tokenObject, "send", sendToken) ||
-        !tryExtractKeyStringValue(tokenObject, "receive", receiveToken) ||
-        sendToken.empty() || receiveToken.empty()) {
+    const mqtt::json::JsonValue& tokenObject = responseBody.at("token");
+    if (!tokenObject.contains("send")
+        || !tokenObject.contains("receive")
+        || !tokenObject.at("send").is_string()
+        || !tokenObject.at("receive").is_string()) {
+        errorMessage = "source connect response has invalid token fields";
+        return false;
+    }
+
+    std::string sendToken = tokenObject.at("send").as_string();
+    std::string receiveToken = tokenObject.at("receive").as_string();
+    if (sendToken.empty() || receiveToken.empty()) {
         errorMessage = "source connect response has invalid token fields";
         return false;
     }
@@ -953,7 +721,7 @@ bool SourceHttpBrokerAdapter::sendDisconnect() const {
     httplib::Client client{config_.brokerHost, static_cast<int>(config_.brokerPort)};
     httplib::Headers headers = makeStandardJsonHeaders();
 
-    const std::string payload = R"({"clientId":")" + escapeJson(config_.clientId) + R"("})";
+    const std::string payload = buildSingleFieldJsonText("clientId", config_.clientId);
     const auto response = client.Put("/disconnect", headers, payload, "application/json");
     return response && response->status == k_http_status_no_content;
 }
@@ -964,31 +732,25 @@ std::string SourceHttpBrokerAdapter::buildConnectPayload(const SourceHttpBrokerC
     const std::uint64_t keepAliveMilliseconds =
         static_cast<std::uint64_t>(config.keepAliveSeconds) * 1000U;
 
-    std::ostringstream stream{};
-    stream << R"({"clientId":")" << escapeJson(config.clientId) << R"(",)"
-           << R"("host":")" << escapeJson(host) << R"(",)"
-           << "\"port\":" << effectiveListenerPort << ','
-           << R"("clean":)" << (config.clean ? "true" : "false") << ','
-           << R"("keepAlive":)" << keepAliveMilliseconds
-           << '}';
-    return stream.str();
+    mqtt::json::JsonValue::Object rootObject{};
+    rootObject.emplace("clientId", mqtt::json::JsonValue{config.clientId});
+    rootObject.emplace("host", mqtt::json::JsonValue{host});
+    rootObject.emplace("port", mqtt::json::JsonValue{static_cast<double>(effectiveListenerPort)});
+    rootObject.emplace("clean", mqtt::json::JsonValue{config.clean});
+    rootObject.emplace("keepAlive", mqtt::json::JsonValue{static_cast<double>(keepAliveMilliseconds)});
+    return mqtt::json::JsonValue{std::move(rootObject)}.stringify();
 }
 
 std::string SourceHttpBrokerAdapter::buildSubscribePayload(const SourceHttpBrokerConfig& config) {
-    std::ostringstream stream{};
-    stream << R"({"clientId":")" << escapeJson(config.clientId) << R"(","topics":{)";
-
-    bool first = true;
+    mqtt::json::JsonValue::Object topicsObject{};
     for (const auto& [topicFilter, qos] : config.subscribeTopics) {
-        if (!first) {
-            stream << ',';
-        }
-        first = false;
-        stream << '"' << escapeJson(topicFilter) << "\":" << static_cast<int>(qos);
+        topicsObject.emplace(topicFilter, mqtt::json::JsonValue{static_cast<double>(static_cast<int>(qos))});
     }
 
-    stream << "}}";
-    return stream.str();
+    mqtt::json::JsonValue::Object rootObject{};
+    rootObject.emplace("clientId", mqtt::json::JsonValue{config.clientId});
+    rootObject.emplace("topics", mqtt::json::JsonValue{std::move(topicsObject)});
+    return mqtt::json::JsonValue{std::move(rootObject)}.stringify();
 }
 
 } // namespace yaha

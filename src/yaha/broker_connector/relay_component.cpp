@@ -1,5 +1,7 @@
 #include "yaha/broker_connector/relay_component.h"
 
+#include "json/json_value.h"
+
 #include <cctype>
 #include <exception>
 #include <optional>
@@ -13,31 +15,12 @@ namespace yaha {
 namespace {
 
 std::string escapeJsonString(const std::string& inputText) {
-    std::string escaped{};
-    escaped.reserve(inputText.size());
-    for (const char character : inputText) {
-        switch (character) {
-            case '\\':
-                escaped += "\\\\";
-                break;
-            case '"':
-                escaped += "\\\"";
-                break;
-            case '\n':
-                escaped += "\\n";
-                break;
-            case '\r':
-                escaped += "\\r";
-                break;
-            case '\t':
-                escaped += "\\t";
-                break;
-            default:
-                escaped.push_back(character);
-                break;
-        }
+    const std::string quotedText = mqtt::json::JsonValue{inputText}.stringify();
+    if (quotedText.size() < 2U) {
+        return {};
     }
-    return escaped;
+
+    return quotedText.substr(1U, quotedText.size() - 2U);
 }
 
 bool tryFindObjectRange(const std::string& text,

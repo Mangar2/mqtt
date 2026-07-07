@@ -38,7 +38,7 @@ what each `yaha_..._main.cpp` actually includes/instantiates.
 | # | Main entry point | Client directory | Paired component directory | Own JSON? |
 |---|---|---|---|---|
 | 1 | `yaha_automationclient_main.cpp` | `automation_client/` | `automation_client/` (own) + `automation/` | Yes — migrated |
-| 2 | `yaha_brokerconnectorclient_main.cpp` | `broker_connector_client/` | `broker_connector/` | Yes — open |
+| 2 | `yaha_brokerconnectorclient_main.cpp` | `broker_connector_client/` | `broker_connector/` | Yes — migrated |
 | 3 | `yaha_filestoreclient_main.cpp` | `file_store_client/` | `file_store/` | Yes — open |
 | 4 | `yaha_httpmqttinterfaceclient_main.cpp` | `http_mqtt_interface_client/` | `http_mqtt_interface_client/internal/` (own) + `http_mqtt_interface/` | Yes — partially open |
 | 5 | `yaha_msgstoreclient_main.cpp` | `message_store_client/` | `message_store/` | Yes — open |
@@ -63,22 +63,20 @@ dependency" section below.
 - [x] `automation/rules_tree_json_reader.cpp` / `.h` — migrated to
   `JsonValue`.
 
-### 2. broker_connector_client — OPEN
+### 2. broker_connector_client — DONE
 
-- [ ] `broker_connector/relay_component.cpp` — local `escapeJsonString`
-  (line 15), used to embed a topic string in a log/error message.
-- [ ] `broker_connector/source_http_adapter.cpp` — local `escapeJson`
-  (line 55) plus hand-built request/response JSON via raw string
-  concatenation and `R"(...)"` literals:
-  - `buildConnectPayload` (~line 967): `{"clientId":...,"host":...,"port":...,"clean":...,"keepAlive":...}`
-  - `buildSubscribePayload` (~line 978): `{"clientId":...,"topics":{...}}`
-  - ping payload (~line 645): `{"token":"..."}`
-  - error responses (~lines 728, 737): `{"error":"bad_publish_packetid"}`, `{"error":"bad_publish_payload"}`
-  - `makeStandardJsonHeaders` (~line 553) only builds HTTP headers, not JSON
-    body — no change needed there.
-  - This is the client that talks HTTP to the broker connector's own
-    `/connect`, `/subscribe`, `/pingreq`, `/disconnect`, `/publish`
-    endpoints — a full custom mini JSON-RPC layer.
+- [x] `broker_connector/relay_component.cpp` — replaced local JSON string
+  escaping helper with `JsonValue`-based escaping while preserving raw
+  payload rewrite behavior for embedded `message.topic`.
+- [x] `broker_connector/source_http_adapter.cpp` — migrated custom
+  request/response JSON handling to `JsonValue`:
+  - request builders now serialize via `JsonValue::stringify()`
+    (`buildConnectPayload`, `buildSubscribePayload`, ping/disconnect payloads)
+  - callback error responses now serialize JSON error object via `JsonValue`
+  - incoming `/publish` payload parsing now uses `JsonValue::try_parse(...)`
+    (topic/value/reason extraction)
+  - `/connect` token-object parsing and `/subscribe` qos-array parsing now use
+    parsed `JsonValue` object/array access instead of range/token scanning.
 
 ### 3. file_store_client — OPEN
 
@@ -243,9 +241,8 @@ dependency" section below.
    response field extraction + request body build).
 8. `file_store/file_store.cpp` — small, monitoring payload + blob
    passthrough validation.
-9. `broker_connector/relay_component.cpp` +
-   `broker_connector/source_http_adapter.cpp` — moderate size, custom
-   mini JSON-RPC layer for broker connect/subscribe/publish.
+9. ~~`broker_connector/relay_component.cpp` +
+  `broker_connector/source_http_adapter.cpp`~~ — done.
 10. `remote_service/remote_service_component.cpp` +
     `remote_service_http/remote_service_http_adapter.cpp` — largest
     remaining item besides `message_payload_codec`, two duplicate parsers
