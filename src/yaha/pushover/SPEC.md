@@ -52,6 +52,8 @@ Implements `IMqttComponent` behavior:
 ## Request and status behavior
 
 - Request payload fields: `token`, `user`, `message`, `priority`, `title`, `device`.
+- Request payload JSON is built via `mqtt::json::JsonValue` and serialized with
+  `.stringify()`.
 - Priority mapping:
   - message value `"alert"` -> priority `1`
   - every other value -> priority `-1`
@@ -65,6 +67,11 @@ Status publish behavior:
 - error (`HTTP >= 300` or local failure) -> topic `$MONITOR/pushover/error`
 - status payload value is numeric HTTP-like status code.
 - outbound status reason appends original inbound reasons plus one Pushover result reason.
+- Result reason extraction from Pushover HTTP payload parses JSON via
+  `JsonValue::try_parse(...)`:
+  - `status` is used only when present as an integral JSON number
+  - `errors` is used only when present as a JSON array
+  - fallback remains `status=unknown` / `errors=[]` when parse/key/type checks fail.
 
 ## Files
 

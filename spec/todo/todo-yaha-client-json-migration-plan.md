@@ -123,14 +123,13 @@ dependency" section below.
   - Request body building migrated to `JsonValue` object serialization for
     `{ "value": <number> }` payload generation.
 
-### 7. pushover_client — OPEN
+### 7. pushover_client — DONE
 
-- [ ] `pushover/pushover_component.cpp`:
-  - `tryExtractJsonInteger` (~line 54) and `tryExtractJsonArray` (~line 103):
-    manual key-search field extraction from the Pushover API response.
-  - Request payload builder (~line 291): `R"({"token":")" <<
-    escapeJsonString(token) << ...` manual concatenation for
-    token/user/message/title/device fields.
+- [x] `pushover/pushover_component.cpp`:
+  - migrated response parsing (`status`, `errors`) to
+    `JsonValue::try_parse(...)` with object/array/number access.
+  - migrated request payload builder to `JsonValue` object serialization
+    for token/user/message/priority/title/device fields.
 
 ### 8. remote_service_client — OPEN (largest gap besides value_service)
 

@@ -1,11 +1,13 @@
 #include "yaha/pushover/pushover_component.h"
 
-#include "yaha/message/message_payload_codec.h"
+#include "json/json_value.h"
 
+#include <cmath>
 #include <cctype>
 #include <exception>
 #include <format>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <utility>
@@ -51,98 +53,51 @@ void logHttpError(const int statusCode, const std::string& reasonText, const std
     return std::string{textValue.substr(beginIndex, endIndex - beginIndex)};
 }
 
-[[nodiscard]] std::optional<int> tryExtractJsonInteger(const std::string& payloadText, const std::string& keyText) {
-    const std::string token = "\"" + keyText + "\"";
-    const std::size_t keyPosition = payloadText.find(token);
-    if (keyPosition == std::string::npos) {
+[[nodiscard]] std::optional<mqtt::json::JsonValue> tryParseJsonObject(const std::string& payloadText) {
+    auto parsedValue = mqtt::json::JsonValue::try_parse(payloadText);
+    if (!parsedValue.has_value() || !parsedValue->is_object()) {
         return std::nullopt;
     }
-
-    std::size_t parsePosition = keyPosition + token.size();
-    while (parsePosition < payloadText.size()
-           && std::isspace(static_cast<unsigned char>(payloadText[parsePosition])) != 0) {
-        parsePosition += 1U;
-    }
-
-    if (parsePosition >= payloadText.size() || payloadText[parsePosition] != ':') {
-        return std::nullopt;
-    }
-    parsePosition += 1U;
-
-    while (parsePosition < payloadText.size()
-           && std::isspace(static_cast<unsigned char>(payloadText[parsePosition])) != 0) {
-        parsePosition += 1U;
-    }
-
-    if (parsePosition >= payloadText.size()) {
-        return std::nullopt;
-    }
-
-    std::size_t endPosition = parsePosition;
-    if (payloadText[endPosition] == '-') {
-        endPosition += 1U;
-    }
-
-    const std::size_t digitStart = endPosition;
-    while (endPosition < payloadText.size()
-           && std::isdigit(static_cast<unsigned char>(payloadText[endPosition])) != 0) {
-        endPosition += 1U;
-    }
-
-    if (digitStart == endPosition) {
-        return std::nullopt;
-    }
-
-    try {
-        return std::stoi(payloadText.substr(parsePosition, endPosition - parsePosition));
-    } catch (...) {
-        return std::nullopt;
-    }
+    return parsedValue;
 }
 
-[[nodiscard]] std::optional<std::string> tryExtractJsonArray(const std::string& payloadText, const std::string& keyText) {
-    const std::string token = "\"" + keyText + "\"";
-    const std::size_t keyPosition = payloadText.find(token);
-    if (keyPosition == std::string::npos) {
+[[nodiscard]] std::optional<int> tryExtractJsonInteger(const mqtt::json::JsonValue& objectValue,
+                                                       const std::string& keyText) {
+    if (!objectValue.contains(keyText)) {
         return std::nullopt;
     }
 
-    std::size_t parsePosition = keyPosition + token.size();
-    while (parsePosition < payloadText.size()
-           && std::isspace(static_cast<unsigned char>(payloadText[parsePosition])) != 0) {
-        parsePosition += 1U;
-    }
-
-    if (parsePosition >= payloadText.size() || payloadText[parsePosition] != ':') {
-        return std::nullopt;
-    }
-    parsePosition += 1U;
-
-    while (parsePosition < payloadText.size()
-           && std::isspace(static_cast<unsigned char>(payloadText[parsePosition])) != 0) {
-        parsePosition += 1U;
-    }
-
-    if (parsePosition >= payloadText.size() || payloadText[parsePosition] != '[') {
+    const mqtt::json::JsonValue& statusValue = objectValue.at(keyText);
+    if (!statusValue.is_number()) {
         return std::nullopt;
     }
 
-    int depth = 0;
-    std::size_t endPosition = parsePosition;
-    while (endPosition < payloadText.size()) {
-        const char currentChar = payloadText[endPosition];
-        if (currentChar == '[') {
-            depth += 1;
-        } else if (currentChar == ']') {
-            depth -= 1;
-            if (depth == 0) {
-                return payloadText.substr(parsePosition, (endPosition - parsePosition) + 1U);
-            }
-        }
-        endPosition += 1U;
+    const double numericValue = statusValue.as_number();
+    if (!std::isfinite(numericValue) || std::floor(numericValue) != numericValue) {
+        return std::nullopt;
     }
 
-    return std::nullopt;
+    constexpr auto kIntMin = static_cast<double>(std::numeric_limits<int>::min());
+    constexpr auto kIntMax = static_cast<double>(std::numeric_limits<int>::max());
+    if (numericValue < kIntMin || numericValue > kIntMax) {
+        return std::nullopt;
+    }
+
+    return static_cast<int>(numericValue);
+}
+
+[[nodiscard]] std::optional<std::string> tryExtractJsonArray(const mqtt::json::JsonValue& objectValue,
+                                                             const std::string& keyText) {
+    if (!objectValue.contains(keyText)) {
+        return std::nullopt;
+    }
+
+    const mqtt::json::JsonValue& arrayValue = objectValue.at(keyText);
+    if (!arrayValue.is_array()) {
+        return std::nullopt;
+    }
+
+    return arrayValue.stringify();
 }
 
 } // namespace
@@ -287,22 +242,24 @@ std::string PushoverComponent::buildPayload(
     const std::string& title,
     const std::string& bodyText,
     const int priority) {
-    std::ostringstream payload{};
-        payload << R"({"token":")" << escapeJsonString(token)
-            << R"(","user":")" << escapeJsonString(user)
-            << R"(","message":")" << escapeJsonString(bodyText)
-            << R"(","priority":)" << priority
-            << R"(,"title":")" << escapeJsonString(title)
-            << R"(","device":")" << escapeJsonString(device)
-            << R"("})";
-    return payload.str();
+    mqtt::json::JsonValue payload = mqtt::json::JsonValue::object();
+    payload["token"] = mqtt::json::JsonValue{token};
+    payload["user"] = mqtt::json::JsonValue{user};
+    payload["message"] = mqtt::json::JsonValue{bodyText};
+    payload["priority"] = mqtt::json::JsonValue{static_cast<double>(priority)};
+    payload["title"] = mqtt::json::JsonValue{title};
+    payload["device"] = mqtt::json::JsonValue{device};
+    return payload.stringify();
 }
 
 std::string PushoverComponent::buildResultReason(
     const int statusCode,
     const std::string& device,
     const std::string& payloadText) {
-    const auto parsedStatusValue = tryExtractJsonInteger(payloadText, "status");
+    const auto parsedObject = tryParseJsonObject(payloadText);
+    const auto parsedStatusValue = parsedObject.has_value()
+        ? tryExtractJsonInteger(*parsedObject, "status")
+        : std::nullopt;
     const std::string parsedStatus =
         parsedStatusValue.has_value()
             ? std::to_string(*parsedStatusValue)
@@ -312,8 +269,9 @@ std::string PushoverComponent::buildResultReason(
         return std::format("pushover({}) status = {}", device, parsedStatus);
     }
 
-    const std::string parsedErrors =
-        tryExtractJsonArray(payloadText, "errors").value_or("[]");
+    const std::string parsedErrors = parsedObject.has_value()
+        ? tryExtractJsonArray(*parsedObject, "errors").value_or("[]")
+        : "[]";
     return std::format(
         "pushover status({}) = {} errors = {}",
         device,
