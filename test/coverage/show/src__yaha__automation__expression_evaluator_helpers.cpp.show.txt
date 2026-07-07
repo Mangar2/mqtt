@@ -1,0 +1,504 @@
+    1|       |#include "yaha/automation/expression_evaluator_helpers.h"
+    2|       |
+    3|       |#include <algorithm>
+    4|       |#include <cctype>
+    5|       |#include <cmath>
+    6|       |#include <cstdio>
+    7|       |#include <ctime>
+    8|       |
+    9|       |namespace yaha {
+   10|       |namespace {
+   11|       |
+   12|       |constexpr int k_max_minutes_or_seconds{59};
+   13|       |constexpr int k_max_hours{23};
+   14|       |constexpr int k_decimal_base{10};
+   15|       |constexpr int k_millis_scale_one_digit{100};
+   16|       |constexpr int k_millis_scale_two_digits{10};
+   17|       |constexpr int k_seconds_per_hour{3600};
+   18|       |constexpr int k_seconds_per_minute{60};
+   19|       |
+   20|       |constexpr std::size_t k_iso_min_length{20U};
+   21|       |constexpr std::size_t k_iso_year_index{0U};
+   22|       |constexpr std::size_t k_iso_month_index{5U};
+   23|       |constexpr std::size_t k_iso_day_index{8U};
+   24|       |constexpr std::size_t k_iso_hour_index{11U};
+   25|       |constexpr std::size_t k_iso_minute_index{14U};
+   26|       |constexpr std::size_t k_iso_second_index{17U};
+   27|       |constexpr std::size_t k_iso_date_separator_1_index{4U};
+   28|       |constexpr std::size_t k_iso_date_separator_2_index{7U};
+   29|       |constexpr std::size_t k_iso_time_separator_index{10U};
+   30|       |constexpr std::size_t k_iso_hour_separator_index{13U};
+   31|       |constexpr std::size_t k_iso_minute_separator_index{16U};
+   32|       |constexpr std::size_t k_iso_fraction_start_index{19U};
+   33|       |constexpr std::size_t k_iso_year_length{4U};
+   34|       |constexpr std::size_t k_iso_two_digit_length{2U};
+   35|       |constexpr std::size_t k_iso_max_millis_digits{3U};
+   36|       |
+   37|       |struct IsoInstantComponents {
+   38|       |    int yearValue{0};
+   39|       |    int monthValue{0};
+   40|       |    int dayValue{0};
+   41|       |    int hourValue{0};
+   42|       |    int minuteValue{0};
+   43|       |    int secondValue{0};
+   44|       |    int millisecondValue{0};
+   45|       |    int timezoneOffsetSeconds{0};
+   46|       |};
+   47|       |
+   48|       |[[nodiscard]] bool parseFixedUnsignedInt(
+   49|       |    const std::string& textValue,
+   50|       |    const std::size_t startIndex,
+   51|       |    const std::size_t length,
+   52|      6|    int* parsedValue) {
+   53|      6|    if (startIndex + length > textValue.size() || length == 0U) {
+   54|      0|        return false;
+   55|      0|    }
+   56|       |
+   57|      6|    int value = 0;
+   58|     20|    for (std::size_t index = 0U; index < length; ++index) {
+   59|     14|        const char currentChar = textValue[startIndex + index];
+   60|     14|        if (currentChar < '0' || currentChar > '9') {
+   61|      0|            return false;
+   62|      0|        }
+   63|     14|        value = value * k_decimal_base + (currentChar - '0');
+   64|     14|    }
+   65|       |
+   66|      6|    *parsedValue = value;
+   67|      6|    return true;
+   68|      6|}
+   69|       |
+   70|       |[[nodiscard]] bool parseIsoDateTimePrefix(
+   71|       |    const std::string& textValue,
+   72|       |    IsoInstantComponents* components,
+   73|     92|    std::size_t* cursorIndex) {
+   74|     92|    if (textValue.size() < k_iso_min_length) {
+   75|     91|        return false;
+   76|     91|    }
+   77|      1|    if (textValue[k_iso_date_separator_1_index] != '-'
+   78|      1|        || textValue[k_iso_date_separator_2_index] != '-'
+   79|      1|        || textValue[k_iso_time_separator_index] != 'T'
+   80|      1|        || textValue[k_iso_hour_separator_index] != ':'
+   81|      1|        || textValue[k_iso_minute_separator_index] != ':') {
+   82|      0|        return false;
+   83|      0|    }
+   84|       |
+   85|      1|    if (!parseFixedUnsignedInt(textValue, k_iso_year_index, k_iso_year_length, &components->yearValue)
+   86|      1|        || !parseFixedUnsignedInt(textValue, k_iso_month_index, k_iso_two_digit_length, &components->monthValue)
+   87|      1|        || !parseFixedUnsignedInt(textValue, k_iso_day_index, k_iso_two_digit_length, &components->dayValue)
+   88|      1|        || !parseFixedUnsignedInt(textValue, k_iso_hour_index, k_iso_two_digit_length, &components->hourValue)
+   89|      1|        || !parseFixedUnsignedInt(textValue, k_iso_minute_index, k_iso_two_digit_length, &components->minuteValue)
+   90|      1|        || !parseFixedUnsignedInt(textValue, k_iso_second_index, k_iso_two_digit_length, &components->secondValue)) {
+   91|      0|        return false;
+   92|      0|    }
+   93|       |
+   94|      1|    if (components->hourValue < 0 || components->hourValue > k_max_hours
+   95|      1|        || components->minuteValue < 0 || components->minuteValue > k_max_minutes_or_seconds
+   96|      1|        || components->secondValue < 0 || components->secondValue > k_max_minutes_or_seconds) {
+   97|      0|        return false;
+   98|      0|    }
+   99|       |
+  100|      1|    *cursorIndex = k_iso_fraction_start_index;
+  101|      1|    return true;
+  102|      1|}
+  103|       |
+  104|       |[[nodiscard]] bool parseIsoOptionalFraction(
+  105|       |    const std::string& textValue,
+  106|       |    std::size_t* cursorIndex,
+  107|      1|    IsoInstantComponents* components) {
+  108|      1|    if (*cursorIndex >= textValue.size() || textValue[*cursorIndex] != '.') {
+  109|      0|        return true;
+  110|      0|    }
+  111|       |
+  112|      1|    *cursorIndex += 1U;
+  113|      1|    const std::size_t fractionStart = *cursorIndex;
+  114|      4|    while (*cursorIndex < textValue.size() && std::isdigit(static_cast<unsigned char>(textValue[*cursorIndex])) != 0) {
+  115|      3|        *cursorIndex += 1U;
+  116|      3|    }
+  117|       |
+  118|      1|    const std::size_t fractionLength = *cursorIndex - fractionStart;
+  119|      1|    if (fractionLength == 0U) {
+  120|      0|        return false;
+  121|      0|    }
+  122|       |
+  123|      1|    int fractionAccumulator = 0;
+  124|      1|    const std::size_t digitsToUse = std::min<std::size_t>(k_iso_max_millis_digits, fractionLength);
+  125|      4|    for (std::size_t index = 0U; index < digitsToUse; ++index) {
+  126|      3|        fractionAccumulator = fractionAccumulator * k_decimal_base + (textValue[fractionStart + index] - '0');
+  127|      3|    }
+  128|       |
+  129|      1|    if (digitsToUse == 1U) {
+  130|      0|        fractionAccumulator *= k_millis_scale_one_digit;
+  131|      1|    } else if (digitsToUse == 2U) {
+  132|      0|        fractionAccumulator *= k_millis_scale_two_digits;
+  133|      0|    }
+  134|       |
+  135|      1|    components->millisecondValue = fractionAccumulator;
+  136|      1|    return true;
+  137|      1|}
+  138|       |
+  139|       |[[nodiscard]] bool parseIsoTimezoneOffset(
+  140|       |    const std::string& textValue,
+  141|       |    std::size_t* cursorIndex,
+  142|      1|    IsoInstantComponents* components) {
+  143|      1|    if (*cursorIndex >= textValue.size()) {
+  144|      0|        return false;
+  145|      0|    }
+  146|       |
+  147|      1|    if (textValue[*cursorIndex] == 'Z') {
+  148|      1|        *cursorIndex += 1U;
+  149|      1|        components->timezoneOffsetSeconds = 0;
+  150|      1|        return true;
+  151|      1|    }
+  152|       |
+  153|      0|    if (textValue[*cursorIndex] != '+' && textValue[*cursorIndex] != '-') {
+  154|      0|        return false;
+  155|      0|    }
+  156|       |
+  157|      0|    const bool isNegativeOffset = textValue[*cursorIndex] == '-';
+  158|      0|    *cursorIndex += 1U;
+  159|       |
+  160|      0|    int offsetHourValue = 0;
+  161|      0|    int offsetMinuteValue = 0;
+  162|      0|    if (!parseFixedUnsignedInt(textValue, *cursorIndex, k_iso_two_digit_length, &offsetHourValue)) {
+  163|      0|        return false;
+  164|      0|    }
+  165|      0|    *cursorIndex += k_iso_two_digit_length;
+  166|      0|    if (*cursorIndex >= textValue.size() || textValue[*cursorIndex] != ':') {
+  167|      0|        return false;
+  168|      0|    }
+  169|      0|    *cursorIndex += 1U;
+  170|      0|    if (!parseFixedUnsignedInt(textValue, *cursorIndex, k_iso_two_digit_length, &offsetMinuteValue)) {
+  171|      0|        return false;
+  172|      0|    }
+  173|      0|    *cursorIndex += k_iso_two_digit_length;
+  174|       |
+  175|      0|    components->timezoneOffsetSeconds = offsetHourValue * k_seconds_per_hour + offsetMinuteValue * k_seconds_per_minute;
+  176|      0|    if (isNegativeOffset) {
+  177|      0|        components->timezoneOffsetSeconds = -components->timezoneOffsetSeconds;
+  178|      0|    }
+  179|      0|    return true;
+  180|      0|}
+  181|       |
+  182|       |[[nodiscard]] bool tryParseIsoInstantText(
+  183|       |    const std::string& textValue,
+  184|     92|    std::chrono::system_clock::time_point* parsedTimePoint) {
+  185|     92|    IsoInstantComponents components;
+  186|     92|    std::size_t cursorIndex = 0U;
+  187|     92|    if (!parseIsoDateTimePrefix(textValue, &components, &cursorIndex)) {
+  188|     91|        return false;
+  189|     91|    }
+  190|      1|    if (!parseIsoOptionalFraction(textValue, &cursorIndex, &components)) {
+  191|      0|        return false;
+  192|      0|    }
+  193|      1|    if (!parseIsoTimezoneOffset(textValue, &cursorIndex, &components)) {
+  194|      0|        return false;
+  195|      0|    }
+  196|       |
+  197|      1|    if (cursorIndex != textValue.size()) {
+  198|      0|        return false;
+  199|      0|    }
+  200|       |
+  201|      1|    const auto yearMonthDay = std::chrono::year{components.yearValue}
+  202|      1|        / std::chrono::month{static_cast<unsigned>(components.monthValue)}
+  203|      1|        / std::chrono::day{static_cast<unsigned>(components.dayValue)};
+  204|      1|    if (!yearMonthDay.ok()) {
+  205|      0|        return false;
+  206|      0|    }
+  207|       |
+  208|      1|    const auto dayStart = std::chrono::sys_days{yearMonthDay};
+  209|      1|    auto timePoint = std::chrono::system_clock::time_point{dayStart}
+  210|      1|        + std::chrono::hours{components.hourValue}
+  211|      1|        + std::chrono::minutes{components.minuteValue}
+  212|      1|        + std::chrono::seconds{components.secondValue}
+  213|      1|        + std::chrono::milliseconds{components.millisecondValue};
+  214|       |
+  215|      1|    timePoint -= std::chrono::seconds{components.timezoneOffsetSeconds};
+  216|      1|    *parsedTimePoint = timePoint;
+  217|      1|    return true;
+  218|      1|}
+  219|       |
+  220|     20|[[nodiscard]] std::string trimWhitespace(const std::string& textValue) {
+  221|     20|    std::size_t beginIndex = 0U;
+  222|     20|    while (beginIndex < textValue.size()
+  223|     20|        && std::isspace(static_cast<unsigned char>(textValue[beginIndex])) != 0) {
+  224|      0|        beginIndex += 1U;
+  225|      0|    }
+  226|       |
+  227|     20|    std::size_t endIndex = textValue.size();
+  228|     20|    while (endIndex > beginIndex
+  229|     20|        && std::isspace(static_cast<unsigned char>(textValue[endIndex - 1U])) != 0) {
+  230|      0|        endIndex -= 1U;
+  231|      0|    }
+  232|       |
+  233|     20|    return textValue.substr(beginIndex, endIndex - beginIndex);
+  234|     20|}
+  235|       |
+  236|    104|[[nodiscard]] bool tryParseTimeText(const std::string& timeText, std::chrono::seconds* parsedSeconds) {
+  237|    104|    int hourValue = -1;
+  238|    104|    int minuteValue = -1;
+  239|    104|    int secondValue = 0;
+  240|       |
+  241|    104|    if (std::sscanf(timeText.c_str(), "%d:%d:%d", &hourValue, &minuteValue, &secondValue) == 3) {
+  242|      2|        if (hourValue < 0 || minuteValue < 0 || minuteValue > k_max_minutes_or_seconds || secondValue < 0
+  243|      2|            || secondValue > k_max_minutes_or_seconds) {
+  244|      0|            return false;
+  245|      0|        }
+  246|      2|        *parsedSeconds = std::chrono::hours{hourValue} + std::chrono::minutes{minuteValue} + std::chrono::seconds{secondValue};
+  247|      2|        return true;
+  248|      2|    }
+  249|       |
+  250|    102|    if (std::sscanf(timeText.c_str(), "%d:%d", &hourValue, &minuteValue) == 2) {
+  251|     11|        if (hourValue < 0 || minuteValue < 0 || minuteValue > k_max_minutes_or_seconds) {
+  252|      1|            return false;
+  253|      1|        }
+  254|     10|        *parsedSeconds = std::chrono::hours{hourValue} + std::chrono::minutes{minuteValue};
+  255|     10|        return true;
+  256|     11|    }
+  257|       |
+  258|     91|    return false;
+  259|    102|}
+  260|       |
+  261|       |[[nodiscard]] std::optional<std::tm> toLocalCalendarTime(
+  262|     39|    const std::chrono::system_clock::time_point& timePoint) {
+  263|     39|    const std::time_t epochSeconds = std::chrono::system_clock::to_time_t(timePoint);
+  264|     39|    std::tm localCalendarTime{};
+  265|       |#if defined(_WIN32)
+  266|       |    if (localtime_s(&localCalendarTime, &epochSeconds) != 0) {
+  267|       |        return std::nullopt;
+  268|       |    }
+  269|       |#else
+  270|     39|    if (localtime_r(&epochSeconds, &localCalendarTime) == nullptr) {
+  271|      0|        return std::nullopt;
+  272|      0|    }
+  273|     39|#endif
+  274|     39|    return localCalendarTime;
+  275|     39|}
+  276|       |
+  277|       |[[nodiscard]] std::optional<std::chrono::seconds> localTimeOfDay(
+  278|     36|    const std::chrono::system_clock::time_point& timePoint) {
+  279|     36|    const auto localCalendarTime = toLocalCalendarTime(timePoint);
+  280|     36|    if (!localCalendarTime.has_value()) {
+  281|      0|        return std::nullopt;
+  282|      0|    }
+  283|       |
+  284|     36|    return std::chrono::hours{localCalendarTime->tm_hour}
+  285|     36|        + std::chrono::minutes{localCalendarTime->tm_min}
+  286|     36|        + std::chrono::seconds{localCalendarTime->tm_sec};
+  287|     36|}
+  288|       |
+  289|     12|[[nodiscard]] bool isUndefinedReason(const std::string& reasonText) {
+  290|     12|    constexpr std::string_view undefinedSuffix{" (undefined)"};
+  291|     12|    return reasonText.ends_with(undefinedSuffix);
+  292|     12|}
+  293|       |
+  294|       |} // namespace
+  295|       |
+  296|    257|std::string toLower(std::string textValue) {
+  297|    737|    std::ranges::transform(textValue, textValue.begin(), [](const unsigned char charValue) {
+  298|    737|        return static_cast<char>(std::tolower(charValue));
+  299|    737|    });
+  300|    257|    return textValue;
+  301|    257|}
+  302|       |
+  303|     26|bool parseDouble(const std::string& tokenText, double* parsedValue) {
+  304|     26|    std::size_t parsedLength = 0U;
+  305|     26|    try {
+  306|     26|        *parsedValue = std::stod(tokenText, &parsedLength);
+  307|     26|    } catch (...) {
+  308|     10|        return false;
+  309|     10|    }
+  310|     16|    return parsedLength == tokenText.size();
+  311|     26|}
+  312|       |
+  313|     44|std::optional<double> tryNumericLikeJs(const RuntimeValue& runtimeValue) {
+  314|     44|    if (std::holds_alternative<double>(runtimeValue)) {
+  315|     12|        return std::get<double>(runtimeValue);
+  316|     12|    }
+  317|     32|    if (!std::holds_alternative<std::string>(runtimeValue)) {
+  318|     12|        return std::nullopt;
+  319|     12|    }
+  320|       |
+  321|     20|    const std::string trimmedText = trimWhitespace(std::get<std::string>(runtimeValue));
+  322|     20|    if (trimmedText.empty()) {
+  323|      0|        return std::nullopt;
+  324|      0|    }
+  325|       |
+  326|     20|    double parsedValue = 0.0;
+  327|     20|    if (!parseDouble(trimmedText, &parsedValue)) {
+  328|     18|        return std::nullopt;
+  329|     18|    }
+  330|      2|    return parsedValue;
+  331|     20|}
+  332|       |
+  333|       |std::optional<std::chrono::system_clock::time_point> localDayStart(
+  334|      3|    const std::chrono::system_clock::time_point& timePoint) {
+  335|      3|    auto localCalendarTime = toLocalCalendarTime(timePoint);
+  336|      3|    if (!localCalendarTime.has_value()) {
+  337|      0|        return std::nullopt;
+  338|      0|    }
+  339|       |
+  340|      3|    localCalendarTime->tm_hour = 0;
+  341|      3|    localCalendarTime->tm_min = 0;
+  342|      3|    localCalendarTime->tm_sec = 0;
+  343|      3|    localCalendarTime->tm_isdst = -1;
+  344|      3|    const std::time_t localMidnightSeconds = std::mktime(&*localCalendarTime);
+  345|      3|    if (localMidnightSeconds == static_cast<std::time_t>(-1)) {
+  346|      0|        return std::nullopt;
+  347|      0|    }
+  348|      3|    return std::chrono::system_clock::from_time_t(localMidnightSeconds);
+  349|      3|}
+  350|       |
+  351|    144|std::optional<std::chrono::seconds> tryTimeOfDay(const RuntimeValue& runtimeValue) {
+  352|    144|    if (std::holds_alternative<std::chrono::system_clock::time_point>(runtimeValue)) {
+  353|     35|        return localTimeOfDay(std::get<std::chrono::system_clock::time_point>(runtimeValue));
+  354|     35|    }
+  355|       |
+  356|    109|    if (std::holds_alternative<std::string>(runtimeValue)) {
+  357|    104|        const std::string stringValue = std::get<std::string>(runtimeValue);
+  358|    104|        std::chrono::seconds parsedSeconds{};
+  359|    104|        if (tryParseTimeText(stringValue, &parsedSeconds)) {
+  360|     12|            return parsedSeconds;
+  361|     12|        }
+  362|       |
+  363|     92|        std::chrono::system_clock::time_point parsedTimePoint{};
+  364|     92|        if (tryParseIsoInstantText(stringValue, &parsedTimePoint)) {
+  365|      1|            return localTimeOfDay(parsedTimePoint);
+  366|      1|        }
+  367|     92|    }
+  368|       |
+  369|     96|    return std::nullopt;
+  370|    109|}
+  371|       |
+  372|     22|std::string formatTimeText(const std::chrono::seconds secondsValue) {
+  373|     22|    const auto secondCount = secondsValue.count();
+  374|     22|    const auto normalizedSeconds = (secondCount % 86400 + 86400) % 86400;
+  375|     22|    const int hourValue = static_cast<int>(normalizedSeconds / 3600);
+  376|     22|    const int minuteValue = static_cast<int>((normalizedSeconds % 3600) / 60);
+  377|     22|    const int secondValue = static_cast<int>(normalizedSeconds % 60);
+  378|       |
+  379|     22|    std::ostringstream textStream;
+  380|     22|    textStream.fill('0');
+  381|     22|    textStream.width(2);
+  382|     22|    textStream << hourValue << ':';
+  383|     22|    textStream.width(2);
+  384|     22|    textStream << minuteValue << ':';
+  385|     22|    textStream.width(2);
+  386|     22|    textStream << secondValue;
+  387|     22|    return textStream.str();
+  388|     22|}
+  389|       |
+  390|    236|std::string valueToString(const RuntimeValue& runtimeValue) {
+  391|    236|    if (std::holds_alternative<std::string>(runtimeValue)) {
+  392|    147|        return std::get<std::string>(runtimeValue);
+  393|    147|    }
+  394|     89|    if (std::holds_alternative<double>(runtimeValue)) {
+  395|     64|        std::ostringstream textStream;
+  396|     64|        textStream << std::get<double>(runtimeValue);
+  397|     64|        return textStream.str();
+  398|     64|    }
+  399|     25|    if (std::holds_alternative<bool>(runtimeValue)) {
+  400|      4|        return std::get<bool>(runtimeValue) ? "true" : "false";
+  401|      4|    }
+  402|     21|    if (std::holds_alternative<std::chrono::system_clock::time_point>(runtimeValue)) {
+  403|     21|        const auto secondsValue = tryTimeOfDay(runtimeValue);
+  404|     21|        return secondsValue.has_value() ? formatTimeText(*secondsValue) : "time";
+  405|     21|    }
+  406|      0|    return "map";
+  407|     21|}
+  408|       |
+  409|     12|std::string valueTypeToString(const RuntimeValue& runtimeValue) {
+  410|     12|    if (std::holds_alternative<std::string>(runtimeValue)) {
+  411|      8|        return "string";
+  412|      8|    }
+  413|      4|    if (std::holds_alternative<double>(runtimeValue)) {
+  414|      2|        return "number";
+  415|      2|    }
+  416|      2|    if (std::holds_alternative<bool>(runtimeValue)) {
+  417|      2|        return "bool";
+  418|      2|    }
+  419|      0|    if (std::holds_alternative<std::chrono::system_clock::time_point>(runtimeValue)) {
+  420|      0|        return "time";
+  421|      0|    }
+  422|      0|    return "map";
+  423|      0|}
+  424|       |
+  425|     12|std::string extractUndefinedVariableName(const std::string& reasonText) {
+  426|     12|    constexpr std::string_view undefinedSuffix{" (undefined)"};
+  427|     12|    if (!isUndefinedReason(reasonText)) {
+  428|     10|        return {};
+  429|     10|    }
+  430|      2|    return reasonText.substr(0U, reasonText.size() - undefinedSuffix.size());
+  431|     12|}
+  432|       |
+  433|     22|std::string relationOperatorSymbol(const std::string& relationOperator) {
+  434|     22|    if (relationOperator == "gt") {
+  435|     12|        return ">";
+  436|     12|    }
+  437|     10|    if (relationOperator == "lt") {
+  438|      5|        return "<";
+  439|      5|    }
+  440|      5|    if (relationOperator == "ge") {
+  441|      4|        return ">=";
+  442|      4|    }
+  443|      1|    if (relationOperator == "le") {
+  444|      1|        return "<=";
+  445|      1|    }
+  446|      0|    return "?";
+  447|      1|}
+  448|       |
+  449|       |void appendUndefinedCause(
+  450|       |    std::ostringstream* errorText,
+  451|       |    const std::string& leftUndefinedVariable,
+  452|      6|    const std::string& rightUndefinedVariable) {
+  453|      6|    if (leftUndefinedVariable.empty() && rightUndefinedVariable.empty()) {
+  454|      4|        *errorText << "; because operands are neither both numeric nor both time";
+  455|      4|        return;
+  456|      4|    }
+  457|       |
+  458|      2|    *errorText << "; because undefined external variable(s): ";
+  459|      2|    std::string separator;
+  460|      2|    if (!leftUndefinedVariable.empty()) {
+  461|      2|        *errorText << leftUndefinedVariable;
+  462|      2|        separator = ", ";
+  463|      2|    }
+  464|      2|    if (!rightUndefinedVariable.empty()) {
+  465|      0|        *errorText << separator << rightUndefinedVariable;
+  466|      0|    }
+  467|      2|}
+  468|       |
+  469|     27|bool toBool(const RuntimeValue& runtimeValue) {
+  470|     27|    if (std::holds_alternative<bool>(runtimeValue)) {
+  471|     23|        return std::get<bool>(runtimeValue);
+  472|     23|    }
+  473|      4|    if (std::holds_alternative<double>(runtimeValue)) {
+  474|      2|        return std::fabs(std::get<double>(runtimeValue)) > k_numeric_epsilon;
+  475|      2|    }
+  476|      2|    if (std::holds_alternative<std::string>(runtimeValue)) {
+  477|      2|        const std::string loweredValue = toLower(std::get<std::string>(runtimeValue));
+  478|      2|        if (loweredValue == "" || loweredValue == "false" || loweredValue == "off" || loweredValue == "0") {
+  479|      1|            return false;
+  480|      1|        }
+  481|      1|        if (loweredValue == "true" || loweredValue == "on" || loweredValue == "1") {
+  482|      1|            return true;
+  483|      1|        }
+  484|      0|        return true;
+  485|      1|    }
+  486|      0|    return false;
+  487|      2|}
+  488|       |
+  489|     44|bool evalEquals(const RuntimeValue& leftValue, const RuntimeValue& rightValue) {
+  490|     44|    if (std::holds_alternative<double>(leftValue) && std::holds_alternative<double>(rightValue)) {
+  491|      1|        return std::fabs(std::get<double>(leftValue) - std::get<double>(rightValue)) < k_numeric_epsilon;
+  492|      1|    }
+  493|       |
+  494|     43|    const auto leftTime = tryTimeOfDay(leftValue);
+  495|     43|    const auto rightTime = tryTimeOfDay(rightValue);
+  496|     43|    if (leftTime.has_value() && rightTime.has_value()) {
+  497|      1|        return *leftTime == *rightTime;
+  498|      1|    }
+  499|       |
+  500|     42|    return valueToString(leftValue) == valueToString(rightValue);
+  501|     43|}
+  502|       |
+  503|       |} // namespace yaha
+
