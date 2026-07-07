@@ -97,6 +97,64 @@ TEST_CASE("Payload codec parseReasonArray rejects missing message field", "[mess
     REQUIRE_FALSE(parsed.has_value());
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("Payload codec parseValueToken handles scalar JSON tokens", "[message][payload_codec]") {
+    const auto parsedText = yaha::parseValueToken(R"(  "hello\nworld"  )");
+    const auto parsedNumber = yaha::parseValueToken(" 77.5 ");
+    const auto parsedBool = yaha::parseValueToken(" true ");
+    const auto parsedNull = yaha::parseValueToken(" null ");
+
+    REQUIRE(parsedText.has_value());
+    REQUIRE(std::holds_alternative<std::string>(*parsedText));
+    REQUIRE(std::get<std::string>(*parsedText) == "hello\nworld");
+
+    REQUIRE(parsedNumber.has_value());
+    REQUIRE(std::holds_alternative<double>(*parsedNumber));
+    REQUIRE(std::get<double>(*parsedNumber) == k_expected_numeric_value);
+
+    REQUIRE(parsedBool.has_value());
+    REQUIRE(std::holds_alternative<std::string>(*parsedBool));
+    REQUIRE(std::get<std::string>(*parsedBool) == "true");
+
+    REQUIRE(parsedNull.has_value());
+    REQUIRE(std::holds_alternative<std::string>(*parsedNull));
+    REQUIRE(std::get<std::string>(*parsedNull) == "null");
+}
+
+TEST_CASE("Payload codec parseValueToken rejects object array and malformed tokens", "[message][payload_codec]") {
+    const auto parsedObject = yaha::parseValueToken(R"({"a":1})");
+    const auto parsedArray = yaha::parseValueToken("[1,2]");
+    const auto parsedMalformed = yaha::parseValueToken("not-json");
+    const auto parsedEmpty = yaha::parseValueToken("  ");
+
+    REQUIRE_FALSE(parsedObject.has_value());
+    REQUIRE_FALSE(parsedArray.has_value());
+    REQUIRE_FALSE(parsedMalformed.has_value());
+    REQUIRE_FALSE(parsedEmpty.has_value());
+}
+
+TEST_CASE("Payload codec parseReasonArray rejects non-array and non-object entries", "[message][payload_codec]") {
+    const auto parsedObjectRoot = yaha::parseReasonArray(R"({"message":"x"})");
+    const auto parsedNonObjectEntry = yaha::parseReasonArray("[1]");
+
+    REQUIRE_FALSE(parsedObjectRoot.has_value());
+    REQUIRE_FALSE(parsedNonObjectEntry.has_value());
+}
+
+TEST_CASE("Payload codec parseReasonArray rejects empty message and tolerates non-string timestamp", "[message][payload_codec]") {
+    const auto parsedEmptyMessage = yaha::parseReasonArray(
+        R"([{"message":"","timestamp":"2026-01-01T00:00:00Z"}])");
+    const auto parsedNumericTimestamp = yaha::parseReasonArray(
+        R"([{"message":"ok","timestamp":42}])");
+
+    REQUIRE_FALSE(parsedEmptyMessage.has_value());
+
+    REQUIRE(parsedNumericTimestamp.has_value());
+    REQUIRE(parsedNumericTimestamp->size() == 1U);
+    REQUIRE((*parsedNumericTimestamp)[0].message == "ok");
+    REQUIRE((*parsedNumericTimestamp)[0].timestamp.empty());
+}
+
 TEST_CASE("Payload codec validateEnvelopeShape enforces topic and value", "[message][payload_codec]") {
     const std::string validPayload =
         R"({"message":{"topic":"topic/shape","value":"ok"}})";

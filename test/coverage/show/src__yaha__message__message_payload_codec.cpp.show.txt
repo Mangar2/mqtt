@@ -1,0 +1,284 @@
+    1|       |#include "yaha/message/message_payload_codec.h"
+    2|       |
+    3|       |#include <cctype>
+    4|       |#include <cmath>
+    5|       |
+    6|       |#include "json/json_value.h"
+    7|       |
+    8|       |namespace yaha {
+    9|       |
+   10|       |namespace {
+   11|       |
+   12|      1|[[nodiscard]] std::string trimCopy(const std::string& textValue) {
+   13|      1|    std::size_t beginIndex = 0U;
+   14|      1|    while (beginIndex < textValue.size()
+   15|      1|           && std::isspace(static_cast<unsigned char>(textValue[beginIndex])) != 0) {
+   16|      0|        ++beginIndex;
+   17|      0|    }
+   18|       |
+   19|      1|    std::size_t endIndex = textValue.size();
+   20|      1|    while (endIndex > beginIndex
+   21|      1|           && std::isspace(static_cast<unsigned char>(textValue[endIndex - 1U])) != 0) {
+   22|      0|        --endIndex;
+   23|      0|    }
+   24|       |
+   25|      1|    return textValue.substr(beginIndex, endIndex - beginIndex);
+   26|      1|}
+   27|       |
+   28|    149|[[nodiscard]] std::string quoteJsonString(const std::string_view textValue) {
+   29|    149|    return mqtt::json::JsonValue{std::string{textValue}}.stringify();
+   30|    149|}
+   31|       |
+   32|     16|[[nodiscard]] std::optional<Value> parseValueFromJson(const mqtt::json::JsonValue& valueNode) {
+   33|     16|    if (valueNode.is_string()) {
+   34|      6|        return Value{valueNode.as_string()};
+   35|      6|    }
+   36|       |
+   37|     10|    if (valueNode.is_number()) {
+   38|      6|        const double numericValue = valueNode.as_number();
+   39|      6|        if (!std::isfinite(numericValue)) {
+   40|      0|            return std::nullopt;
+   41|      0|        }
+   42|      6|        return Value{numericValue};
+   43|      6|    }
+   44|       |
+   45|      4|    if (valueNode.is_boolean()) {
+   46|      2|        return Value{valueNode.as_boolean() ? std::string{"true"} : std::string{"false"}};
+   47|      2|    }
+   48|       |
+   49|      2|    if (valueNode.is_null()) {
+   50|      0|        return Value{std::string{"null"}};
+   51|      0|    }
+   52|       |
+   53|      2|    return std::nullopt;
+   54|      2|}
+   55|       |
+   56|      5|[[nodiscard]] std::optional<ReasonList> parseReasonArrayValue(const mqtt::json::JsonValue& reasonArrayValue) {
+   57|      5|    if (!reasonArrayValue.is_array()) {
+   58|      0|        return std::nullopt;
+   59|      0|    }
+   60|       |
+   61|      5|    ReasonList reasonEntries{};
+   62|      5|    reasonEntries.reserve(reasonArrayValue.as_array().size());
+   63|       |
+   64|      7|    for (const auto& reasonNode : reasonArrayValue.as_array()) {
+   65|      7|        if (!reasonNode.is_object()) {
+   66|      0|            return std::nullopt;
+   67|      0|        }
+   68|       |
+   69|      7|        const auto& reasonObject = reasonNode.as_object();
+   70|      7|        const auto messageIterator = reasonObject.find("message");
+   71|      7|        if (messageIterator == reasonObject.end()
+   72|      7|            || !messageIterator->second.is_string()) {
+   73|      1|            return std::nullopt;
+   74|      1|        }
+   75|       |
+   76|      6|        const std::string messageText = messageIterator->second.as_string();
+   77|      6|        if (messageText.empty()) {
+   78|      0|            return std::nullopt;
+   79|      0|        }
+   80|       |
+   81|      6|        std::string timestampText{};
+   82|      6|        const auto timestampIterator = reasonObject.find("timestamp");
+   83|      6|        if (timestampIterator != reasonObject.end()
+   84|      6|            && timestampIterator->second.is_string()) {
+   85|      5|            timestampText = timestampIterator->second.as_string();
+   86|      5|        }
+   87|       |
+   88|      6|        reasonEntries.push_back(ReasonEntry{.message = messageText, .timestamp = timestampText});
+   89|      6|    }
+   90|       |
+   91|      4|    return reasonEntries;
+   92|      5|}
+   93|       |
+   94|      4|void appendReasonEntries(const ReasonList& reasonEntries, Message& outputMessage) {
+   95|      6|    for (const ReasonEntry& reasonEntry : reasonEntries) {
+   96|      6|        if (reasonEntry.timestamp.empty()) {
+   97|      1|            outputMessage.addReason(reasonEntry.message);
+   98|      5|        } else {
+   99|      5|            outputMessage.addReason(reasonEntry.message, reasonEntry.timestamp);
+  100|      5|        }
+  101|      6|    }
+  102|      4|}
+  103|       |
+  104|       |} // namespace
+  105|       |
+  106|    622|std::string escapeJsonString(const std::string_view textValue) {
+  107|    622|    const std::string quoted = mqtt::json::JsonValue{std::string{textValue}}.stringify();
+  108|    622|    if (quoted.size() < 2U || quoted.front() != '"' || quoted.back() != '"') {
+  109|      0|        return std::string{};
+  110|      0|    }
+  111|    622|    return quoted.substr(1U, quoted.size() - 2U);
+  112|    622|}
+  113|       |
+  114|     17|std::string serializeReasonArrayOldestFirst(const ReasonList& reasonEntries) {
+  115|     17|    std::string reasonJson{"["};
+  116|       |
+  117|     72|    for (std::size_t reverseIndex = reasonEntries.size(); reverseIndex > 0U; --reverseIndex) {
+  118|     55|        if (reverseIndex != reasonEntries.size()) {
+  119|     38|            reasonJson.push_back(',');
+  120|     38|        }
+  121|       |
+  122|     55|        const ReasonEntry& reasonEntry = reasonEntries[reverseIndex - 1U];
+  123|     55|        reasonJson += std::string{"{\"timestamp\":"}
+  124|     55|            + quoteJsonString(reasonEntry.timestamp)
+  125|     55|            + std::string{",\"message\":"}
+  126|     55|            + quoteJsonString(reasonEntry.message)
+  127|     55|            + "}";
+  128|     55|    }
+  129|       |
+  130|     17|    reasonJson.push_back(']');
+  131|     17|    return reasonJson;
+  132|     17|}
+  133|       |
+  134|     21|std::string buildEnvelopePayload(const Message& messageValue) {
+  135|     21|    std::string payload{"{\"message\":{"};
+  136|     21|    payload += std::string{"\"topic\":"} + quoteJsonString(messageValue.topic());
+  137|       |
+  138|     21|    if (std::holds_alternative<std::string>(messageValue.value())) {
+  139|     18|        payload += std::string{",\"value\":"}
+  140|     18|            + quoteJsonString(std::get<std::string>(messageValue.value()));
+  141|     18|    } else {
+  142|      3|        payload += std::string{",\"value\":"}
+  143|      3|            + std::to_string(std::get<double>(messageValue.value()));
+  144|      3|    }
+  145|       |
+  146|     21|    if (!messageValue.reason().empty()) {
+  147|     16|        payload += std::string{",\"reason\":"}
+  148|     16|            + serializeReasonArrayOldestFirst(messageValue.reason());
+  149|     16|    }
+  150|       |
+  151|     21|    payload += "}}";
+  152|     21|    return payload;
+  153|     21|}
+  154|       |
+  155|      0|std::optional<Value> parseValueToken(const std::string_view valueToken) {
+  156|      0|    const std::string tokenText = trimCopy(std::string{valueToken});
+  157|      0|    if (tokenText.empty()) {
+  158|      0|        return std::nullopt;
+  159|      0|    }
+  160|       |
+  161|      0|    const auto parsedValue = mqtt::json::JsonValue::try_parse(tokenText);
+  162|      0|    if (!parsedValue.has_value()) {
+  163|      0|        return std::nullopt;
+  164|      0|    }
+  165|      0|    if (parsedValue->is_object() || parsedValue->is_array()) {
+  166|      0|        return std::nullopt;
+  167|      0|    }
+  168|       |
+  169|      0|    return parseValueFromJson(*parsedValue);
+  170|      0|}
+  171|       |
+  172|      1|std::optional<ReasonList> parseReasonArray(const std::string_view reasonArrayToken) {
+  173|      1|    const std::string reasonArrayText = trimCopy(std::string{reasonArrayToken});
+  174|       |
+  175|      1|    const auto parsedValue = mqtt::json::JsonValue::try_parse(reasonArrayText);
+  176|      1|    if (!parsedValue.has_value()) {
+  177|      0|        return std::nullopt;
+  178|      0|    }
+  179|       |
+  180|      1|    return parseReasonArrayValue(*parsedValue);
+  181|      1|}
+  182|       |
+  183|       |std::optional<Message> parseEnvelopePayload(const std::string& payloadText,
+  184|       |                                            const std::string& mqttTopic,
+  185|       |                                            const Qos qosLevel,
+  186|       |                                            const bool retainFlag,
+  187|     22|                                            const bool dupFlag) {
+  188|     22|    const auto parsedRoot = mqtt::json::JsonValue::try_parse(payloadText);
+  189|     22|    if (!parsedRoot.has_value() || !parsedRoot->is_object()) {
+  190|     10|        return std::nullopt;
+  191|     10|    }
+  192|       |
+  193|     12|    const auto& rootObject = parsedRoot->as_object();
+  194|     12|    const auto messageIterator = rootObject.find("message");
+  195|     12|    if (messageIterator == rootObject.end() || !messageIterator->second.is_object()) {
+  196|      0|        return std::nullopt;
+  197|      0|    }
+  198|       |
+  199|     12|    const auto& messageObject = messageIterator->second.as_object();
+  200|       |
+  201|     12|    const auto topicIterator = messageObject.find("topic");
+  202|     12|    if (topicIterator == messageObject.end() || !topicIterator->second.is_string()) {
+  203|      0|        return std::nullopt;
+  204|      0|    }
+  205|       |
+  206|     12|    const std::string parsedTopic = topicIterator->second.as_string();
+  207|     12|    if (parsedTopic.empty() || parsedTopic != mqttTopic) {
+  208|      1|        return std::nullopt;
+  209|      1|    }
+  210|       |
+  211|     11|    const auto valueIterator = messageObject.find("value");
+  212|     11|    if (valueIterator == messageObject.end()) {
+  213|      0|        return std::nullopt;
+  214|      0|    }
+  215|       |
+  216|     11|    const std::optional<Value> parsedValue = parseValueFromJson(valueIterator->second);
+  217|     11|    if (!parsedValue.has_value()) {
+  218|      1|        return std::nullopt;
+  219|      1|    }
+  220|       |
+  221|     10|    Message parsedMessage{parsedTopic, *parsedValue, qosLevel, retainFlag, dupFlag};
+  222|       |
+  223|     10|    const auto reasonIterator = messageObject.find("reason");
+  224|     10|    if (reasonIterator == messageObject.end()) {
+  225|      4|        parsedMessage.setRawPayload(payloadText);
+  226|      4|        return parsedMessage;
+  227|      4|    }
+  228|       |
+  229|      6|    if (reasonIterator->second.is_array()) {
+  230|      4|        const std::optional<ReasonList> reasonEntries = parseReasonArrayValue(reasonIterator->second);
+  231|      4|        if (!reasonEntries.has_value()) {
+  232|      0|            return std::nullopt;
+  233|      0|        }
+  234|      4|        appendReasonEntries(*reasonEntries, parsedMessage);
+  235|      4|        parsedMessage.setRawPayload(payloadText);
+  236|      4|        return parsedMessage;
+  237|      4|    }
+  238|       |
+  239|      2|    const std::optional<Value> reasonValue = parseValueFromJson(reasonIterator->second);
+  240|      2|    if (!reasonValue.has_value()) {
+  241|      1|        return std::nullopt;
+  242|      1|    }
+  243|      1|    if (std::holds_alternative<std::string>(*reasonValue)) {
+  244|      1|        const auto& reasonText = std::get<std::string>(*reasonValue);
+  245|      1|        if (!reasonText.empty()) {
+  246|      1|            parsedMessage.addReason(reasonText);
+  247|      1|        }
+  248|      1|    }
+  249|       |
+  250|      1|    parsedMessage.setRawPayload(payloadText);
+  251|      1|    return parsedMessage;
+  252|      2|}
+  253|       |
+  254|      5|bool validateEnvelopeShape(const std::string_view payloadText) {
+  255|      5|    const auto parsedRoot = mqtt::json::JsonValue::try_parse(payloadText);
+  256|      5|    if (!parsedRoot.has_value() || !parsedRoot->is_object()) {
+  257|      0|        return false;
+  258|      0|    }
+  259|       |
+  260|      5|    const auto& rootObject = parsedRoot->as_object();
+  261|      5|    const auto messageIterator = rootObject.find("message");
+  262|      5|    if (messageIterator == rootObject.end() || !messageIterator->second.is_object()) {
+  263|      0|        return false;
+  264|      0|    }
+  265|       |
+  266|      5|    const auto& messageObject = messageIterator->second.as_object();
+  267|      5|    const auto topicIterator = messageObject.find("topic");
+  268|      5|    if (topicIterator == messageObject.end()
+  269|      5|        || !topicIterator->second.is_string()
+  270|      5|        || topicIterator->second.as_string().empty()) {
+  271|      1|        return false;
+  272|      1|    }
+  273|       |
+  274|      4|    const auto valueIterator = messageObject.find("value");
+  275|      4|    if (valueIterator == messageObject.end()) {
+  276|      1|        return false;
+  277|      1|    }
+  278|       |
+  279|      3|    const std::optional<Value> parsedValue = parseValueFromJson(valueIterator->second);
+  280|      3|    return parsedValue.has_value();
+  281|      4|}
+  282|       |
+  283|       |} // namespace yaha
+

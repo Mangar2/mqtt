@@ -34,6 +34,10 @@ Unit tests for Message value-type behavior and validation guarantees.
 | `Payload codec parseEnvelopePayload coerces bool token to string` | backward-compatible token coercion | envelope with value=true | parsed Message value is string "true" |
 | `Payload codec parseEnvelopePayload rejects malformed envelope` | malformed JSON token handling | envelope missing colon in message object | parse returns empty optional |
 | `Payload codec parseReasonArray rejects missing message field` | malformed reason object handling | reason array with entry missing message | parse returns empty optional |
+| `Payload codec parseValueToken handles scalar JSON tokens` | scalar token compatibility path | whitespace padded string/number/bool/null tokens | returns string/double variants with bool/null mapped to string |
+| `Payload codec parseValueToken rejects object array and malformed tokens` | invalid token rejection | object token, array token, malformed text, empty text | parse returns empty optional |
+| `Payload codec parseReasonArray rejects non-array and non-object entries` | reason-array shape guardrails | object root and array with non-object entry | parse returns empty optional |
+| `Payload codec parseReasonArray rejects empty message and tolerates non-string timestamp` | message/timestamp compatibility branch | array entry with empty message and entry with numeric timestamp | empty message rejected, numeric timestamp accepted as empty |
 | `Payload codec validateEnvelopeShape enforces topic and value` | shape validation | valid payload and payloads missing topic/value | true for valid; false for invalid |
 | `Payload codec envelope matches TS reference ordering` | compatibility with TS reference envelope semantics | message with two reasons added in chronological order | built payload contains reasons in same oldest-first order as TS class |
 | `Payload codec parse and rebuild keeps TS compatible envelope` | regression guardrail for canonical behavior | TS-style envelope payload with escaped strings and numeric value | parse succeeds and rebuilt payload keeps canonical message shape and values |
