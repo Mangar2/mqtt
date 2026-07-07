@@ -1,5 +1,7 @@
 #include "yaha/serial_device/serial_device_wire_serializer.h"
 
+#include "json/json_value.h"
+
 #include <stdexcept>
 #include <string>
 
@@ -39,37 +41,21 @@ constexpr std::int64_t k_max_switch_bit_index{8};
     return numericValue;
 }
 
-[[nodiscard]] std::string escapeJsonString(const std::string& inputText) {
-    std::string outputText{};
-    outputText.reserve(inputText.size());
-
-    for (const char characterValue : inputText) {
-        if (characterValue == '"' || characterValue == '\\') {
-            outputText.push_back('\\');
-            outputText.push_back(characterValue);
-            continue;
-        }
-        outputText.push_back(characterValue);
-    }
-
-    return outputText;
-}
-
-[[nodiscard]] std::string endpointToJsonText(const SerialDeviceEndpoint& endpointValue) {
+[[nodiscard]] mqtt::json::JsonValue endpointToJsonValue(const SerialDeviceEndpoint& endpointValue) {
     if (std::holds_alternative<std::monostate>(endpointValue)) {
-        return "null";
+        return mqtt::json::JsonValue{};
     }
     if (std::holds_alternative<std::int64_t>(endpointValue)) {
-        return std::to_string(std::get<std::int64_t>(endpointValue));
+        return mqtt::json::JsonValue{static_cast<double>(std::get<std::int64_t>(endpointValue))};
     }
-    return "\"" + escapeJsonString(std::get<std::string>(endpointValue)) + "\"";
+    return mqtt::json::JsonValue{std::get<std::string>(endpointValue)};
 }
 
-[[nodiscard]] std::string valueToJsonText(const SerialDeviceValue& value) {
+[[nodiscard]] mqtt::json::JsonValue valueToJsonValue(const SerialDeviceValue& value) {
     if (std::holds_alternative<std::int64_t>(value)) {
-        return std::to_string(std::get<std::int64_t>(value));
+        return mqtt::json::JsonValue{static_cast<double>(std::get<std::int64_t>(value))};
     }
-    return "\"" + escapeJsonString(std::get<std::string>(value)) + "\"";
+    return mqtt::json::JsonValue{std::get<std::string>(value)};
 }
 
 [[nodiscard]] std::int64_t leastSignificantBitIndex(const std::int64_t value) {
@@ -107,10 +93,15 @@ constexpr std::int64_t k_max_switch_bit_index{8};
 }
 
 [[nodiscard]] std::string serializeSerialMessage(const SerialDeviceMessage& messageValue) {
-    return std::string{R"({"S":)"} + endpointToJsonText(messageValue.sender) +
-           R"(,"R":)" + endpointToJsonText(messageValue.receiver) +
-           R"(,"C":")" + escapeJsonString(messageValue.command) +
-           R"(","V":)" + valueToJsonText(messageValue.value) + "}";
+    const std::string senderJson = endpointToJsonValue(messageValue.sender).stringify();
+    const std::string receiverJson = endpointToJsonValue(messageValue.receiver).stringify();
+    const std::string commandJson = mqtt::json::JsonValue{messageValue.command}.stringify();
+    const std::string valueJson = valueToJsonValue(messageValue.value).stringify();
+
+    return std::string{R"({"S":)"} + senderJson +
+           R"(,"R":)" + receiverJson +
+           R"(,"C":)" + commandJson +
+           R"(,"V":)" + valueJson + "}";
 }
 
 [[nodiscard]] std::string serializeFs20Message(const SerialDeviceMessage& messageValue) {

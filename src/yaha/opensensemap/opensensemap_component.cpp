@@ -1,5 +1,7 @@
 #include "yaha/opensensemap/opensensemap_component.h"
 
+#include "json/json_value.h"
+
 #include <cmath>
 #include <cctype>
 #include <exception>
@@ -216,9 +218,9 @@ std::optional<double> OpenSenseMapComponent::toNumericValue(const Value& valueVa
 }
 
 std::string OpenSenseMapComponent::makeRequestPayload(const double numericValue) {
-    std::ostringstream stream{};
-    stream << R"({"value":)" << numericValue << '}';
-    return stream.str();
+    mqtt::json::JsonValue payload = mqtt::json::JsonValue::object();
+    payload["value"] = mqtt::json::JsonValue{numericValue};
+    return payload.stringify();
 }
 
 std::string OpenSenseMapComponent::makeRequestPath(
@@ -249,50 +251,21 @@ std::string OpenSenseMapComponent::buildResultReason(
 }
 
 std::string OpenSenseMapComponent::extractJsonMessage(const std::string& payloadText) {
-    const std::string keyText{"\"message\""};
-    const std::size_t keyPosition = payloadText.find(keyText);
-    if (keyPosition == std::string::npos) {
+    const auto parsedJson = mqtt::json::JsonValue::try_parse(payloadText);
+    if (!parsedJson.has_value() || !parsedJson->is_object()) {
         return payloadText;
     }
 
-    std::size_t parsePosition = keyPosition + keyText.size();
-    while (parsePosition < payloadText.size() && std::isspace(static_cast<unsigned char>(payloadText[parsePosition])) != 0) {
-        parsePosition += 1U;
-    }
-
-    if (parsePosition >= payloadText.size() || payloadText[parsePosition] != ':') {
+    if (!parsedJson->contains("message")) {
         return payloadText;
     }
-    parsePosition += 1U;
 
-    while (parsePosition < payloadText.size() && std::isspace(static_cast<unsigned char>(payloadText[parsePosition])) != 0) {
-        parsePosition += 1U;
-    }
-
-    if (parsePosition >= payloadText.size() || payloadText[parsePosition] != '"') {
+    const mqtt::json::JsonValue& messageValue = parsedJson->at("message");
+    if (!messageValue.is_string()) {
         return payloadText;
     }
-    parsePosition += 1U;
 
-    std::string parsedText{};
-    while (parsePosition < payloadText.size()) {
-        const char currentChar = payloadText[parsePosition++];
-        if (currentChar == '"') {
-            return parsedText;
-        }
-
-        if (currentChar == '\\') {
-            if (parsePosition >= payloadText.size()) {
-                break;
-            }
-            parsedText.push_back(payloadText[parsePosition++]);
-            continue;
-        }
-
-        parsedText.push_back(currentChar);
-    }
-
-    return payloadText;
+    return messageValue.as_string();
 }
 
 Message OpenSenseMapComponent::buildStatusMessage(

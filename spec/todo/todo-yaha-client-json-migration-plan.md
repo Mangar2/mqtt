@@ -115,15 +115,13 @@ dependency" section below.
   from manual string concatenation to `JsonValue` object/array construction
   and `.stringify()` (`value`, `reason`, `history`, node arrays, payload wrapper).
 
-### 6. opensensemap_client — OPEN
+### 6. opensensemap_client — DONE
 
-- [ ] `opensensemap/opensensemap_component.cpp`:
-  - `extractJsonMessage` (~line 251): manual `find("\"message\"")` field
-    extraction from the openSenseMap API response instead of
-    `JsonValue::parse(...)["message"]`.
-  - Request body building (~line ~220): `stream << R"({"value":)" <<
-    numericValue << '}';` — trivial today, but should still go through
-    `JsonValue` for consistency.
+- [x] `opensensemap/opensensemap_component.cpp`:
+  - `extractJsonMessage` migrated to `JsonValue::try_parse(...)` with object
+    access for the `message` field (fallback to raw payload kept when parse/key/type fails).
+  - Request body building migrated to `JsonValue` object serialization for
+    `{ "value": <number> }` payload generation.
 
 ### 7. pushover_client — OPEN
 
@@ -155,16 +153,14 @@ dependency" section below.
   handling anywhere in these directories (protocol is binary/RS485-frame
   based, not JSON).
 
-### 10. serial_device_client — PARTIALLY OPEN
+### 10. serial_device_client — DONE
 
 - [x] `serial_device/serial_device_parser.cpp` — already parses incoming
   frames via `mqtt::json::JsonValue::try_parse` / `JsonValue` accessors. Good
   reference example, same directory as the remaining gap below.
-- [ ] `serial_device/serial_device_wire_serializer.cpp` — local
-  `escapeJsonString` (~line 42) plus hand-built outgoing wire JSON:
-  `endpointToJsonText`, `valueToJsonText`, and the final concatenation
-  `{"S":...,"R":...,"C":"...","V":...}` (~lines 58-113). Parsing already
-  uses `JsonValue`; serialization still doesn't.
+- [x] `serial_device/serial_device_wire_serializer.cpp` — migrated string/value
+  escaping and JSON token serialization to `JsonValue` while preserving legacy
+  serial field order (`S`,`R`,`C`,`V`) and wire parity.
 - `serial_device/serial_device_component.cpp` only calls a shared
   `escapeJsonString` for a log line (~line 610) — no structural JSON there.
 
@@ -209,31 +205,3 @@ dependency" section below.
   `escapeJsonString` (line 12) to quote a value for a log line; small,
   worth folding into the same cleanup as `message_payload_codec`.
 
-## Suggested order
-
-1. ~~`automation_client` + `automation/rules_tree_json_reader`~~ — done.
-2. ~~`zwave_client/zwave_client_app.cpp` + `zwave/zwave_service_component.cpp`~~ — done.
-3. ~~`message_store_client` (`message_store_json_parser` +
-  `message_store.cpp` response builder)~~ — done.
-4. `value_service_client` (`value_service/value_service_component.cpp`) —
-   self-contained, same scale/shape as the already-migrated
-   `zwave_client_app.cpp`, good template reuse.
-5. ~~`zwave/zwave_service_component.cpp`~~ — done.
-6. `serial_device/serial_device_wire_serializer.cpp` — small, serializer
-   only, parser side is already done.
-7. `opensensemap/opensensemap_component.cpp`,
-   `pushover/pushover_component.cpp` — small, similar shape (HTTP API
-   response field extraction + request body build).
-8. `file_store/file_store.cpp` — small, monitoring payload + blob
-   passthrough validation.
-9. ~~`broker_connector/relay_component.cpp` +
-  `broker_connector/source_http_adapter.cpp`~~ — done.
-10. `remote_service/remote_service_component.cpp` +
-    `remote_service_http/remote_service_http_adapter.cpp` — largest
-    remaining item besides `message_payload_codec`, two duplicate parsers
-    to consolidate into one `JsonValue`-based implementation.
-11. ~~`http_mqtt_interface/internal/http_mqtt_interface_operations_connect_publish.cpp`
-  + `..._subscriptions.cpp`~~ — done.
-12. `message/message_payload_codec.cpp` (+ `message_log_formatter.cpp`) —
-    shared, highest impact, needs a performance check because it runs per
-    MQTT message across all clients.
