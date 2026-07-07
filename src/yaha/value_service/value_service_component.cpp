@@ -45,10 +45,6 @@ constexpr int k_file_store_write_timeout_seconds{1};
     return "unknown";
 }
 
-[[nodiscard]] bool startsWithText(const std::string& textValue, const std::string& prefix) {
-    return textValue.starts_with(prefix);
-}
-
 [[nodiscard]] bool endsWithSetSuffix(const std::string& textValue) {
     return textValue.size() >= k_set_suffix_size
         && textValue.compare(textValue.size() - k_set_suffix_size, k_set_suffix_size, "/set") == 0;
@@ -259,7 +255,7 @@ void ValueServiceComponent::handleSetMessage(const Message& message) {
 }
 
 bool ValueServiceComponent::isMonitoringTopic(const std::string& topicName) const {
-    return startsWithText(topicName, config_.monitorTopicPrefix + "/");
+    return topicName.starts_with(config_.monitorTopicPrefix + "/");
 }
 
 bool ValueServiceComponent::isSetTopic(const std::string& topicName) {

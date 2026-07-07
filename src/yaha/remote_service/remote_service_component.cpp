@@ -131,10 +131,6 @@ constexpr double kMaxQosNumeric{2.0};
     return true;
 }
 
-[[nodiscard]] bool startsWithText(const std::string& textValue, const std::string& prefix) {
-    return textValue.starts_with(prefix);
-}
-
 [[nodiscard]] bool parseServicesArray(
     const mqtt::json::JsonValue& servicesValue,
     RemoteServiceMap& parsedMap,
@@ -354,7 +350,7 @@ bool RemoteServiceComponent::reloadMappingFromFileStore(const std::string& trigg
 }
 
 bool RemoteServiceComponent::isMonitoringTopic(const std::string& topicName) const {
-    return startsWithText(topicName, config_.monitorTopicPrefix + "/");
+    return topicName.starts_with(config_.monitorTopicPrefix + "/");
 }
 
 bool RemoteServiceComponent::isMatchingMappingReloadEvent(const Message& message) const {

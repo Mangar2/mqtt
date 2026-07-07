@@ -11,7 +11,6 @@
 
 namespace yaha::automation_control_topics {
 
-[[nodiscard]] bool startsWithText(const std::string& textValue, const std::string& prefix);
 [[nodiscard]] bool endsWithSetSuffix(const std::string& textValue);
 [[nodiscard]] bool endsWithDebugSuffix(const std::string& textValue);
 [[nodiscard]] bool isDeletePayloadText(const std::string& payload);

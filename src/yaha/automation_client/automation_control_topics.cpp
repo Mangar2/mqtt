@@ -12,10 +12,6 @@ constexpr std::size_t k_debug_suffix_length{6U};
 
 } // namespace
 
-bool startsWithText(const std::string& textValue, const std::string& prefix) {
-    return textValue.starts_with(prefix);
-}
-
 bool endsWithSetSuffix(const std::string& textValue) {
     return textValue.size() >= k_management_suffix_length
         && textValue.compare(textValue.size() - k_management_suffix_length, k_management_suffix_length, "/set") == 0;
@@ -38,22 +34,22 @@ bool isDeletePayloadText(const std::string& payload) {
 }
 
 bool isMonitoringTopic(const std::string& topicName, const std::string& monitorTopicPrefix) {
-    return startsWithText(topicName, monitorTopicPrefix + "/");
+    return topicName.starts_with(monitorTopicPrefix + "/");
 }
 
 bool isManagementTopic(const std::string& topicName, const std::string& managementTopicPrefix) {
-    return startsWithText(topicName, managementTopicPrefix + "/") && endsWithSetSuffix(topicName);
+    return topicName.starts_with(managementTopicPrefix + "/") && endsWithSetSuffix(topicName);
 }
 
 bool isDebugTopic(const std::string& topicName, const std::string& debugTopicPrefix) {
-    return startsWithText(topicName, debugTopicPrefix) && endsWithDebugSuffix(topicName);
+    return topicName.starts_with(debugTopicPrefix) && endsWithDebugSuffix(topicName);
 }
 
 std::optional<std::string> extractRuleNameFromManagementTopic(
     const std::string& topicName,
     const std::string& managementTopicPrefix) {
     const std::string prefix = managementTopicPrefix + "/";
-    if (!startsWithText(topicName, prefix) || !endsWithSetSuffix(topicName)) {
+    if (!topicName.starts_with(prefix) || !endsWithSetSuffix(topicName)) {
         return std::nullopt;
     }
 
@@ -99,7 +95,7 @@ std::optional<std::vector<std::string>> extractRulePathSegmentsFromManagementTop
 std::optional<std::string> extractRuleLinkFromDebugTopic(
     const std::string& topicName,
     const std::string& debugTopicPrefix) {
-    if (!startsWithText(topicName, debugTopicPrefix) || !endsWithDebugSuffix(topicName)) {
+    if (!topicName.starts_with(debugTopicPrefix) || !endsWithDebugSuffix(topicName)) {
         return std::nullopt;
     }
 

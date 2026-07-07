@@ -292,12 +292,12 @@ python3 test/check_duplicate_functions.py
   - src/yaha/mqtt_client/mqtt_client.cpp:28
   - src/yaha/zwave_controller/zwave_controller_topic_utils.cpp:51
 
-- [ ] `startsWith` (3 occurrences)
+- [x] `startsWith` (3 occurrences)
   - src/yaha/file_store/file_store.cpp:33
   - src/yaha/message_store/message_store.cpp:73
   - src/yaha/zwave/zwave_service_component.cpp:31
 
-- [ ] `startsWithText` (4 occurrences)
+- [x] `startsWithText` (4 occurrences)
   - src/yaha/automation_client/automation_control_topics.cpp:13
   - src/yaha/opensensemap/opensensemap_component.cpp:20
   - src/yaha/remote_service/remote_service_component.cpp:132

@@ -32,10 +32,6 @@ std::int64_t nowMilliseconds() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(sinceEpoch).count();
 }
 
-bool startsWith(const std::string& text, const std::string& prefix) {
-    return text.starts_with(prefix);
-}
-
 std::string joinTopic(const std::string& prefix, const std::string& suffix) {
     if (prefix.empty()) {
         return suffix;
@@ -316,7 +312,7 @@ FileStore::SnapshotBuildResult FileStore::buildSnapshot() const {
         }
 
         const std::string filename = directoryEntry.path().filename().string();
-        if (filename.find(".bak.") != std::string::npos || startsWith(filename, ".")) {
+        if (filename.find(".bak.") != std::string::npos || filename.starts_with(".")) {
             continue;
         }
 
@@ -400,7 +396,7 @@ FileStore::WritePayloadResult FileStore::writeKeyPayload(
             }
             const std::string backupName = directoryEntry.path().filename().string();
             const std::string prefix = result.filename + ".bak.";
-            if (startsWith(backupName, prefix)) {
+            if (backupName.starts_with(prefix)) {
                 backups.push_back(directoryEntry.path());
             }
         }

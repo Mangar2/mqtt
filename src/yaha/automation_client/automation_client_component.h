@@ -7,7 +7,7 @@
 
 #include "yaha/automation/rules_tree_parser.h"
 #include "yaha/automation/expression_evaluator.h"
-#include "yaha/automation_client/rule_runtime_engine.h"
+#include "yaha/automation_client_rule_runtime/rule_runtime_engine.h"
 #include "yaha/message/message.h"
 #include "yaha/mqtt_component/mqtt_component.h"
 

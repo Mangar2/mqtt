@@ -19,10 +19,6 @@ constexpr int kHttpStatusNotFound{404};
 constexpr int kHttpStatusUnprocessableEntity{422};
 constexpr int kHttpStatusInternalServerError{500};
 
-[[nodiscard]] bool startsWithText(const std::string& textValue, const std::string& prefixText) {
-    return textValue.starts_with(prefixText);
-}
-
 [[nodiscard]] std::string valueToText(const Value& valueVariant) {
     if (std::holds_alternative<std::string>(valueVariant)) {
         return std::get<std::string>(valueVariant);
@@ -236,7 +232,7 @@ std::string OpenSenseMapComponent::buildResultReason(
     std::ostringstream valueText{};
     valueText << numericValue;
 
-    if (startsWithText(result.contentType, "application/json")) {
+    if (result.contentType.starts_with("application/json")) {
         const std::string jsonMessage = extractJsonMessage(result.payload);
         if (!jsonMessage.empty()) {
             return std::format("{}({}): {}", topicName, valueText.str(), jsonMessage);

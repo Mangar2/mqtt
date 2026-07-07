@@ -86,6 +86,7 @@ list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_zwaveclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha_serialdeviceclient_main\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/automation/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/automation_client/.+\\.cpp$")
+list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/automation_client_rule_runtime/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/broker_connector/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/broker_connector_client/.+\\.cpp$")
 list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/yaha/file_store/.+\\.cpp$")
@@ -118,6 +119,7 @@ list(FILTER MQTT_ALL_SOURCES EXCLUDE REGEX "/openzwave_runtime_driver_port\\.cpp
 file(GLOB_RECURSE YAHA_AUTOMATION_SOURCES CONFIGURE_DEPENDS
     "src/yaha/automation/*.cpp"
     "src/yaha/automation_client/*.cpp"
+    "src/yaha/automation_client_rule_runtime/*.cpp"
 )
 list(FILTER YAHA_AUTOMATION_SOURCES EXCLUDE REGEX "/test/")
 

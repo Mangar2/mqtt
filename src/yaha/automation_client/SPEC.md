@@ -169,7 +169,7 @@ INI error handling:
 | `automation_publish_failure_text.h/.cpp` | Publish failure-category text mapping helper |
 | `automation_client_app.h` | Runtime config mapping declarations |
 | `automation_client_app.cpp` | Runtime config mapping implementation |
-| `rule_runtime_engine.h/.cpp` | Runtime rule-gate, event-history, and delivery-control helper |
+| `../automation_client_rule_runtime/rule_runtime_engine.h/.cpp` | Runtime rule-gate orchestrator and public API (extracted module) |
 | `test/TEST_SPEC.md` | Unit test specification |
 | `test/automation_client_component_test.cpp` | Component unit tests |
 | `test/automation_client_rule_runtime_test.cpp` | Runtime gate and delivery-control unit tests |

@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "yaha/automation_client/rule_runtime_engine.h"
+#include "yaha/automation_client_rule_runtime/rule_runtime_engine.h"
 
 #include <array>
 #include <chrono>

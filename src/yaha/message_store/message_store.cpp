@@ -72,10 +72,6 @@ std::string toLower(std::string value) {
     return value;
 }
 
-bool startsWith(const std::string& text, const std::string& prefix) {
-    return text.starts_with(prefix);
-}
-
 std::uint32_t parseUnsignedHeaderOrDefault(const std::string& text, std::uint32_t defaultValue);
 bool parseBoolHeaderToken(const std::string& value, bool defaultValue);
 
@@ -178,7 +174,7 @@ bool isWithinRequestedLevel(const std::string& topic,
     }
 
     const std::string prefixedPath = normalizedPrefix + "/";
-    if (!startsWith(normalizedTopic, prefixedPath)) {
+    if (!normalizedTopic.starts_with(prefixedPath)) {
         return false;
     }
 
@@ -789,7 +785,7 @@ void MessageStore::handleHttpRequest(MessageStore& store,
     std::string topicPrefixEncoded;
     if (request.path == basePath) {
         topicPrefixEncoded.clear();
-    } else if (startsWith(request.path, basePath + "/")) {
+    } else if (request.path.starts_with(basePath + "/")) {
         topicPrefixEncoded = request.path.substr(basePath.size() + 1U);
     } else {
         setHttpErrorResponse(response,
@@ -854,7 +850,7 @@ void MessageStore::handleHttpOptionsRequest(const std::string& basePath,
                                             httplib::Response& response) {
     applyStoreCorsHeaders(response, true);
 
-    if (request.path == basePath || startsWith(request.path, basePath + "/")) {
+    if (request.path == basePath || request.path.starts_with(basePath + "/")) {
         response.status = k_http_status_no_content;
         response.set_content("", "text/plain");
         return;

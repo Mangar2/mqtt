@@ -30,10 +30,6 @@ constexpr double kNumericCommandTolerance = 1e-9;
     return std::string{prefix} + "/" + std::string{suffix};
 }
 
-[[nodiscard]] bool startsWith(const std::string_view text, const std::string_view prefix) {
-    return text.size() >= prefix.size() && text.substr(0U, prefix.size()) == prefix;
-}
-
 [[nodiscard]] std::optional<std::string> extractJsonStringField(const std::string& payloadText,
                                                                 const std::string& fieldName) {
     const auto parsedValue = mqtt::json::JsonValue::try_parse(payloadText);
@@ -607,7 +603,7 @@ bool ZwaveServiceComponent::handleFileStoreMonitorReload(const Message& message)
     }
 
     const std::string monitorTopicPrefix = config_.fileStoreMonitorTopicPrefix + "/";
-    if (!startsWith(message.topic(), monitorTopicPrefix)) {
+    if (!message.topic().starts_with(monitorTopicPrefix)) {
         return false;
     }
 
