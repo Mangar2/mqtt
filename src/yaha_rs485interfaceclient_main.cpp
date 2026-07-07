@@ -96,7 +96,7 @@ int main(int argc, char* argv[]) {
 
     yaha::IniDocument configDocument{};
     try {
-        configDocument = yaha::IniDocument::loadFromFile(cliOptions.configPath);
+        configDocument = yaha::IniDocument::loadFromFile(cliOptions.configPath, "rs485interface");
     } catch (const std::exception& exceptionValue) {
         std::cerr << yaha::YahaError{
             "RS485_MAIN_CONFIG_LOAD_FAILED",

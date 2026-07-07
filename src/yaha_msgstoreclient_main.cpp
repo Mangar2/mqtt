@@ -548,7 +548,7 @@ int runConfiguredRuntime(const CliOptions& cliOptions) {
     yaha::IniDocument configDocument{};
     std::string errorMessage{};
     try {
-        configDocument = yaha::IniDocument::loadFromFile(configPath);
+        configDocument = yaha::IniDocument::loadFromFile(configPath, "message_store_client");
     } catch (const std::exception& exceptionValue) {
         std::cerr << "Failed to load config file '" << configPath.string()
                   << "': " << exceptionValue.what() << '\n';

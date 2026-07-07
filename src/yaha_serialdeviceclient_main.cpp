@@ -98,7 +98,7 @@ int main(int argumentCount, char* argumentValues[]) {
 
     yaha::IniDocument configDocument{};
     try {
-        configDocument = yaha::IniDocument::loadFromFile(cliOptions.configPath);
+        configDocument = yaha::IniDocument::loadFromFile(cliOptions.configPath, "serialdevice");
     } catch (const std::exception& exceptionValue) {
         std::cerr << yaha::YahaError{
             "SERIALDEVICE_MAIN_CONFIG_LOAD_FAILED",

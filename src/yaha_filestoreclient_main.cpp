@@ -32,6 +32,7 @@ void printUsage() {
               << std::flush;
 }
 
+// NOLINTNEXTLINE(modernize-avoid-c-arrays)
 CliParseResult tryParseCli(const int argc, char* argv[]) {
     CliParseResult result{};
     for (int argIndex = 1; argIndex < argc; ++argIndex) {
@@ -102,7 +103,7 @@ int main(int argc, char* argv[]) {
 
     yaha::IniDocument configDocument{};
     try {
-        configDocument = yaha::IniDocument::loadFromFile(cliOptions.configPath);
+        configDocument = yaha::IniDocument::loadFromFile(cliOptions.configPath, "file_store_client");
     } catch (const std::exception& exceptionValue) {
         std::cerr << "Failed to load config file '" << cliOptions.configPath.string()
                   << "': " << exceptionValue.what() << '\n';

@@ -25,6 +25,7 @@ void printUsage() {
               << std::flush;
 }
 
+// NOLINTNEXTLINE(modernize-avoid-c-arrays)
 bool tryParseCli(const int argc, char* argv[], CliOptions& options, std::string& errorText) {
     for (int argIndex = 1; argIndex < argc; ++argIndex) {
         const std::string argument{argv[argIndex]};
@@ -88,7 +89,7 @@ int main(int argc, char* argv[]) {
 
     yaha::IniDocument configDocument{};
     try {
-        configDocument = yaha::IniDocument::loadFromFile(cliOptions.configPath);
+        configDocument = yaha::IniDocument::loadFromFile(cliOptions.configPath, "broker_connector_client");
     } catch (const std::exception& exceptionValue) {
         std::cerr << "Failed to load config file '" << cliOptions.configPath.string()
                   << "': " << exceptionValue.what() << '\n';

@@ -156,7 +156,7 @@ Status: implemented.
 - Test call sites keep relying on the default parameter unless a test specifically exercises
   warning-handler/service-name behavior (no mass edit of ~50 test files required).
 
-Status: not started.
+Status: implemented.
 
 ### Phase 3: Change `readUnsigned`/`readBool` signature and migrate client config files
 
