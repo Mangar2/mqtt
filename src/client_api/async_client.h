@@ -16,11 +16,10 @@
 #include <thread>
 #include <vector>
 
-#include "client/subscription_manager.h"
 #include "client_api/sync_client.h"
+#include "client_api/client_api_error.h"
 #include "broker/data_model/message/message.h"
 #include "broker/data_model/packet/connect_packet.h"
-#include "broker/data_model/packet/control_packets.h"
 
 namespace mqtt {
 

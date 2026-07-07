@@ -4,6 +4,8 @@
 
 #include "broker/data_model/property/property_id.h"
 
+#include "client_api_error.h"
+
 namespace mqtt {
 
 namespace {

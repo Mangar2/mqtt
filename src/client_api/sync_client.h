@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "client_api/client_config.h"
-#include "client_api/client_api_error.h"
 #include "client/client_error.h"
 #include "client/publish_pipeline.h"
 #include "client/session_state_keeper.h"

@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "client_api/sync_client.h"
+#include "client_api/client_api_error.h"
 
 namespace mqtt {
 

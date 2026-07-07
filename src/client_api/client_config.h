@@ -9,7 +9,6 @@
 #include <optional>
 #include <string>
 
-#include "client_api/client_api_error.h"
 #include "client/reconnect_controller.h"
 #include "broker/data_model/packet/connect_packet.h"
 

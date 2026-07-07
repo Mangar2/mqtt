@@ -16,8 +16,8 @@
 #include <vector>
 
 #include "client/connection_negotiator.h"
+#include "client/client_error.h"
 #include "client_api/client_config.h"
-#include "codec/packet/connect_codec.h"
 #include "codec/packet/control_codec.h"
 #include "codec/packet/publish_codec.h"
 #include "codec/packet/subscribe_codec.h"

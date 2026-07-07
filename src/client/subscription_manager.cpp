@@ -7,7 +7,7 @@
 #include "broker/topic/topic_matcher.h"
 #include "broker/topic/topic_error.h"
 #include "broker/topic/topic_validator.h"
-#include "client/client_error.h"
+#include "client_error.h"
 
 namespace mqtt {
 

@@ -5,8 +5,8 @@
 #include <stdexcept>
 #include <string>
 
-#include "broker/test_client/test_client_cli.h"
-#include "broker/test_client/test_client_profile.h"
+#include "test_client/test_client_cli.h"
+#include "test_client/test_client_profile.h"
 
 namespace mqtt {
 
