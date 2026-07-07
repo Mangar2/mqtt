@@ -14,8 +14,8 @@
 #include <unistd.h>
 #endif
 
-#include "broker/broker.h"
-#include "broker/broker_config.h"
+#include "broker/core/broker.h"
+#include "broker/core/broker_config.h"
 #include "connection/topic_alias_table.h"
 #include "data_model/message/message.h"
 #include "data_model/packet/connect_packet.h"

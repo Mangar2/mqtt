@@ -13,9 +13,9 @@
 
 #include "auth/auth_error.h"
 #include "auth/authenticator.h"
-#include "broker/broker_config.h"
-#include "broker/connect_result.h"
-#include "broker/enhanced_auth_registry.h"
+#include "broker/core/broker_config.h"
+#include "broker/core/connect_result.h"
+#include "broker/core/enhanced_auth_registry.h"
 #include "data_model/packet/connect_packet.h"
 #include "monitoring/structured_tracer.h"
 #include "session_manager/session_manager.h"

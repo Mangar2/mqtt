@@ -4,8 +4,8 @@
 #include <optional>
 #include <utility>
 
-#include "broker/broker.h"
-#include "broker/broker_config.h"
+#include "broker/core/broker.h"
+#include "broker/core/broker_config.h"
 #include "codec/packet/connect_codec.h"
 #include "codec/packet_reader/packet_reader.h"
 #include "codec/read_buffer.h"

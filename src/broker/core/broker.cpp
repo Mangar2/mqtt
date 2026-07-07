@@ -4,7 +4,7 @@
  *        delegation to extracted facades.
  */
 
-#include "broker/broker.h"
+#include "broker/core/broker.h"
 
 #include <atomic>
 #include <chrono>
@@ -14,15 +14,15 @@
 #include <utility>
 #include <vector>
 
-#include "broker/broker_error.h"
-#include "broker/broker_module_factory.h"
-#include "broker/connect_facade.h"
-#include "broker/disconnect_facade.h"
-#include "broker/enhanced_auth_registry.h"
-#include "broker/persistence_coordinator.h"
-#include "broker/publish_facade.h"
-#include "broker/subscribe_facade.h"
-#include "broker/tick_handler.h"
+#include "broker/core/broker_error.h"
+#include "broker/core/broker_module_factory.h"
+#include "broker/core/connect_facade.h"
+#include "broker/core/disconnect_facade.h"
+#include "broker/core/enhanced_auth_registry.h"
+#include "broker/core/persistence_coordinator.h"
+#include "broker/core/publish_facade.h"
+#include "broker/core/subscribe_facade.h"
+#include "broker/core/tick_handler.h"
 #include "connection/outbound_queue_bridge.h"
 #include "executor/connection_job.h"
 #include "executor/job_scheduler.h"

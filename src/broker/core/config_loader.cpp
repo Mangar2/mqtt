@@ -4,7 +4,7 @@
  *        (Module 15.1.1).
  */
 
-#include "broker/config_loader.h"
+#include "broker/core/config_loader.h"
 
 #include <algorithm>
 #include <array>
@@ -13,7 +13,7 @@
 #include <sstream>
 #include <string>
 
-#include "broker/broker_error.h"
+#include "broker/core/broker_error.h"
 
 namespace mqtt {
 

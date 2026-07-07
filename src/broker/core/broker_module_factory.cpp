@@ -1,4 +1,4 @@
-#include "broker/broker_module_factory.h"
+#include "broker/core/broker_module_factory.h"
 
 #include <algorithm>
 #include <chrono>

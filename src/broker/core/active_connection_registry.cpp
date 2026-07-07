@@ -1,4 +1,4 @@
-#include "broker/active_connection_registry.h"
+#include "broker/core/active_connection_registry.h"
 
 namespace mqtt {
 

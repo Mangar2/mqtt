@@ -11,8 +11,8 @@
 #include <optional>
 #include <vector>
 
-#include "broker/broker_config.h"
-#include "broker/connect_result.h"
+#include "broker/core/broker_config.h"
+#include "broker/core/connect_result.h"
 #include "codec/write_buffer.h"
 #include "connection/connection_flow_support.h"
 #include "connection/receive_maximum.h"

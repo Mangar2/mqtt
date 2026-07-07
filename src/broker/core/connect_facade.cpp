@@ -1,4 +1,4 @@
-#include "broker/connect_facade.h"
+#include "broker/core/connect_facade.h"
 
 #include <atomic>
 #include <format>
@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "auth/auth_error.h"
-#include "broker/connack_properties.h"
+#include "broker/core/connack_properties.h"
 #include "data_model/property/property_id.h"
 #include "session_manager/session_manager_error.h"
 #include "will_manager/will_message_util.h"

@@ -15,10 +15,10 @@
 #include <unistd.h>
 #endif
 
-#include "broker/broker.h"
-#include "broker/broker_config.h"
-#include "broker/broker_error.h"
-#include "broker/config_loader.h"
+#include "broker/core/broker.h"
+#include "broker/core/broker_config.h"
+#include "broker/core/broker_error.h"
+#include "broker/core/config_loader.h"
 #include "monitoring/trace_level.h"
 
 namespace {

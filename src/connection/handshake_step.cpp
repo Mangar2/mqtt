@@ -5,7 +5,7 @@
 #include <optional>
 
 #include "auth/authenticator.h"
-#include "broker/broker.h"
+#include "broker/core/broker.h"
 #include "client_session/client_session.h"
 #include "connection/connection_flow_support.h"
 #include "connection/connection_session.h"

@@ -3,7 +3,7 @@
  * @brief CONNACK property assembly helpers for broker handshake responses.
  */
 
-#include "broker/connack_properties.h"
+#include "broker/core/connack_properties.h"
 
 #include "data_model/property/property_id.h"
 

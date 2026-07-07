@@ -9,8 +9,8 @@
 #include <stdexcept>
 #include <vector>
 
-#include "broker/broker.h"
-#include "broker/broker_config.h"
+#include "broker/core/broker.h"
+#include "broker/core/broker_config.h"
 #include "connection/client_handler.h"
 #include "connection/connection_flow_support.h"
 #include "monitoring/structured_tracer.h"

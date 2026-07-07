@@ -13,8 +13,8 @@
 #include <utility>
 #include <vector>
 
-#include "broker/broker.h"
-#include "broker/broker_config.h"
+#include "broker/core/broker.h"
+#include "broker/core/broker_config.h"
 #include "client_session/client_session.h"
 #include "monitoring/structured_tracer.h"
 #include "connection/close_step.h"

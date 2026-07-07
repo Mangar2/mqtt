@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-#include "broker/broker_config.h"
+#include "broker/core/broker_config.h"
 
 namespace mqtt {
 

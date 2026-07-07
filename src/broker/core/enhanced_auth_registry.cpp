@@ -1,4 +1,4 @@
-#include "broker/enhanced_auth_registry.h"
+#include "broker/core/enhanced_auth_registry.h"
 
 namespace mqtt {
 

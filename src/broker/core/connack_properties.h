@@ -8,7 +8,7 @@
 
 #include <vector>
 
-#include "broker/broker_config.h"
+#include "broker/core/broker_config.h"
 #include "data_model/packet/connect_packet.h"
 #include "data_model/property/property.h"
 

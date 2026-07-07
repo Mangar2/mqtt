@@ -3,7 +3,7 @@
 #include <memory>
 
 #include "auth/authenticator.h"
-#include "broker/broker_config.h"
+#include "broker/core/broker_config.h"
 #include "client_session/client_session.h"
 #include "connection/connection_session.h"
 #include "network/tcp_connection.h"

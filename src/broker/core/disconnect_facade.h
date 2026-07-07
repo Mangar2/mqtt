@@ -10,8 +10,8 @@
 #include <optional>
 #include <string_view>
 
-#include "broker/active_connection_registry.h"
-#include "broker/enhanced_auth_registry.h"
+#include "broker/core/active_connection_registry.h"
+#include "broker/core/enhanced_auth_registry.h"
 #include "data_model/reason_code/reason_code.h"
 #include "message_router/message_router.h"
 #include "message_router/shared_subscription_dispatcher.h"

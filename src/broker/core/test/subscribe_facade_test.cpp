@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "broker/subscribe_facade.h"
+#include "broker/core/subscribe_facade.h"
 
 #include "authz/acl_rule.h"
 #include "data_model/packet/subscribe_packets.h"

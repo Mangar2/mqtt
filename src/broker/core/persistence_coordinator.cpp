@@ -1,4 +1,4 @@
-#include "broker/persistence_coordinator.h"
+#include "broker/core/persistence_coordinator.h"
 
 #include <vector>
 
