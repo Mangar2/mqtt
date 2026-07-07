@@ -113,9 +113,9 @@ Implemented version `1.0` operation pairs:
 - unsubscribe / onUnsubscribe
 
 Implemented behavior highlights:
-
 - Connect request forces `keepAlive=0` when option is absent.
 - Connect result validation enforces status, headers, payload shape, present flag, mqttcode rules, and token tuple.
+- V1 outgoing request bodies (connect/disconnect/publish/pubrel/subscribe/unsubscribe) are serialized via `mqtt::json::JsonValue`.
 - Publish request forwards `Message.rawPayload()` unchanged when present; otherwise it serializes token plus `message` fields (`topic`, `value`, `reason`) with qos/dup/retain headers.
 - Publish result validation enforces qos-dependent ack packet rules and optional packetid echo.
 - Pubrel response returns `packet=pubcomp` and optional packetid echo.

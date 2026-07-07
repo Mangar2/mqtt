@@ -1,8 +1,8 @@
 #include "yaha/http_mqtt_interface/internal/http_mqtt_interface_operations_internal.h"
 
 #include "yaha/http_mqtt_interface/http_mqtt_interface_contracts.h"
+#include "json/json_value.h"
 
-#include <format>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -19,10 +19,16 @@ HttpMqttRequestData buildSubscribeV1Request(
     requestData.headers = makeStandardJsonHeaders();
     requestData.headers["version"] = std::string{k_versionValue};
     requestData.headers["packetid"] = std::to_string(packetId);
-    requestData.payload = std::format(
-        R"({{"clientId":"{}","topics":{}}})",
-        escapeJsonString(clientId),
-        serializeTopics(topicsInput));
+
+    mqtt::json::JsonValue::Object payloadObject{};
+    payloadObject.emplace("clientId", mqtt::json::JsonValue{clientId});
+
+    const auto topicsObject = mqtt::json::JsonValue::try_parse(serializeTopics(topicsInput));
+    if (!topicsObject.has_value() || !topicsObject->is_object()) {
+        throw std::runtime_error{"subscribe request: failed to serialize topics"};
+    }
+    payloadObject.emplace("topics", *topicsObject);
+    requestData.payload = mqtt::json::JsonValue{std::move(payloadObject)}.stringify();
 
     requestData.resultCheck = [expectedPacketId = packetId](const HttpMqttResult& resultInput) {
         validateStatusCode(resultInput, k_httpStatusOk, "subscribe result");
@@ -57,7 +63,14 @@ HttpMqttResult buildSubscribeV1Response(
         resultOutput.headers["packetid"] = std::to_string(*packetId);
     }
 
-    resultOutput.payload = std::format("{{\"qos\":{}}}", serializeUInt8Array(resultInput));
+    const auto qosArray = mqtt::json::JsonValue::try_parse(serializeUInt8Array(resultInput));
+    if (!qosArray.has_value() || !qosArray->is_array()) {
+        throw std::runtime_error{"subscribe response: failed to serialize qos values"};
+    }
+
+    mqtt::json::JsonValue::Object payloadObject{};
+    payloadObject.emplace("qos", *qosArray);
+    resultOutput.payload = mqtt::json::JsonValue{std::move(payloadObject)}.stringify();
     return resultOutput;
 }
 
@@ -69,10 +82,16 @@ HttpMqttRequestData buildUnsubscribeV1Request(
     requestData.headers = makeStandardJsonHeaders();
     requestData.headers["version"] = std::string{k_versionValue};
     requestData.headers["packetid"] = std::to_string(packetId);
-    requestData.payload = std::format(
-        R"({{"topics":{},"clientId":"{}"}})",
-        serializeTopics(topicsInput),
-        escapeJsonString(clientId));
+
+    mqtt::json::JsonValue::Object payloadObject{};
+    payloadObject.emplace("clientId", mqtt::json::JsonValue{clientId});
+
+    const auto topicsObject = mqtt::json::JsonValue::try_parse(serializeTopics(topicsInput));
+    if (!topicsObject.has_value() || !topicsObject->is_object()) {
+        throw std::runtime_error{"unsubscribe request: failed to serialize topics"};
+    }
+    payloadObject.emplace("topics", *topicsObject);
+    requestData.payload = mqtt::json::JsonValue{std::move(payloadObject)}.stringify();
 
     requestData.resultCheck = [expectedPacketId = packetId](const HttpMqttResult& resultInput) {
         if (resultInput.statusCode != k_httpStatusOk &&

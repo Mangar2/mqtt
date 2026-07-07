@@ -72,61 +72,33 @@ std::string decodeTopicSlashEscapes(const std::string_view topicInput) {
 }
 
 std::string escapeJsonString(const std::string_view valueText) {
-    std::string escapedText{};
-    escapedText.reserve(valueText.size() + k_escapeReservePadding);
-    for (const char currentChar : valueText) {
-        switch (currentChar) {
-            case '"':
-                escapedText += "\\\"";
-                break;
-            case '\\':
-                escapedText += "\\\\";
-                break;
-            case '\n':
-                escapedText += "\\n";
-                break;
-            case '\r':
-                escapedText += "\\r";
-                break;
-            case '\t':
-                escapedText += "\\t";
-                break;
-            default:
-                escapedText.push_back(currentChar);
-                break;
-        }
+    const std::string quotedText = mqtt::json::JsonValue{std::string{valueText}}.stringify();
+    if (quotedText.size() < 2U) {
+        return {};
     }
 
-    return escapedText;
+    return quotedText.substr(1U, quotedText.size() - 2U);
 }
 
 std::string messageValueToJson(const Value& valueInput) {
     if (std::holds_alternative<std::string>(valueInput)) {
-        return std::format("\"{}\"", escapeJsonString(std::get<std::string>(valueInput)));
+        return mqtt::json::JsonValue{std::get<std::string>(valueInput)}.stringify();
     }
 
-    std::ostringstream outputStream{};
-    outputStream << std::get<double>(valueInput);
-    return outputStream.str();
+    return mqtt::json::JsonValue{std::get<double>(valueInput)}.stringify();
 }
 
 std::string reasonToJson(const Message& messageInput) {
-    std::ostringstream outputStream{};
-    outputStream << '[';
-    bool firstEntry = true;
+    mqtt::json::JsonValue::Array reasonArray{};
+    reasonArray.reserve(messageInput.reason().size());
     for (const auto& reasonEntry : messageInput.reason()) {
-        if (!firstEntry) {
-            outputStream << ',';
-        }
-        firstEntry = false;
-        outputStream << std::format(
-            R"({{"message":"{}","timestamp":"{}"}})",
-            escapeJsonString(reasonEntry.message),
-            escapeJsonString(reasonEntry.timestamp));
+        mqtt::json::JsonValue::Object reasonObject{};
+        reasonObject.emplace("message", mqtt::json::JsonValue{reasonEntry.message});
+        reasonObject.emplace("timestamp", mqtt::json::JsonValue{reasonEntry.timestamp});
+        reasonArray.emplace_back(std::move(reasonObject));
     }
-    outputStream << ']';
 
-    return outputStream.str();
+    return mqtt::json::JsonValue{std::move(reasonArray)}.stringify();
 }
 
 namespace {
@@ -288,20 +260,11 @@ std::optional<bool> parseRetainField(const std::string_view textInput) {
 }
 
 std::string serializeTopics(const HttpMqttTopics& topicsInput) {
-    std::ostringstream outputStream{};
-    outputStream << '{';
-
-    bool firstEntry = true;
+    mqtt::json::JsonValue::Object topicsObject{};
     for (const auto& [topicFilter, qosValue] : topicsInput) {
-        if (!firstEntry) {
-            outputStream << ',';
-        }
-        firstEntry = false;
-        outputStream << std::format("\"{}\":{}", escapeJsonString(topicFilter), static_cast<int>(qosValue));
+        topicsObject.emplace(topicFilter, mqtt::json::JsonValue{static_cast<double>(static_cast<int>(qosValue))});
     }
-
-    outputStream << '}';
-    return outputStream.str();
+    return mqtt::json::JsonValue{std::move(topicsObject)}.stringify();
 }
 
 std::string serializeUInt8Array(const std::vector<std::uint8_t>& valuesInput) {

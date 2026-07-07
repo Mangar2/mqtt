@@ -1,11 +1,11 @@
 #include "yaha/http_mqtt_interface/internal/http_mqtt_interface_operations_internal.h"
 
 #include "yaha/http_mqtt_interface/http_mqtt_interface_contracts.h"
+#include "json/json_value.h"
 
 #include <charconv>
 #include <format>
 #include <optional>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -40,27 +40,25 @@ HttpMqttRequestData buildConnectV1Request(const HttpMqttConnectOptions& optionsI
     requestData.headers["version"] = std::string{k_versionValue};
 
     const std::uint32_t keepAliveValue = optionsInput.keepAlive.value_or(0U);
-    std::ostringstream outputStream{};
-    outputStream << '{';
-    outputStream << std::format("\"clean\":{}", optionsInput.clean ? "true" : "false");
-    outputStream << std::format(",\"keepAlive\":{}", static_cast<unsigned long long>(keepAliveValue));
+    mqtt::json::JsonValue::Object payloadObject{};
+    payloadObject.emplace("clean", mqtt::json::JsonValue{optionsInput.clean});
+    payloadObject.emplace("keepAlive", mqtt::json::JsonValue{static_cast<double>(keepAliveValue)});
     if (optionsInput.clientId.has_value()) {
-        outputStream << std::format(R"(,"clientId":"{}")", escapeJsonString(*optionsInput.clientId));
+        payloadObject.emplace("clientId", mqtt::json::JsonValue{*optionsInput.clientId});
     }
     if (optionsInput.host.has_value()) {
-        outputStream << std::format(R"(,"host":"{}")", escapeJsonString(*optionsInput.host));
+        payloadObject.emplace("host", mqtt::json::JsonValue{*optionsInput.host});
     }
     if (optionsInput.port.has_value()) {
-        outputStream << std::format(",\"port\":{}", static_cast<unsigned int>(*optionsInput.port));
+        payloadObject.emplace("port", mqtt::json::JsonValue{static_cast<double>(*optionsInput.port)});
     }
     if (optionsInput.user.has_value()) {
-        outputStream << std::format(R"(,"user":"{}")", escapeJsonString(*optionsInput.user));
+        payloadObject.emplace("user", mqtt::json::JsonValue{*optionsInput.user});
     }
     if (optionsInput.password.has_value()) {
-        outputStream << std::format(R"(,"password":"{}")", escapeJsonString(*optionsInput.password));
+        payloadObject.emplace("password", mqtt::json::JsonValue{*optionsInput.password});
     }
-    outputStream << '}';
-    requestData.payload = outputStream.str();
+    requestData.payload = mqtt::json::JsonValue{std::move(payloadObject)}.stringify();
 
     requestData.resultCheck = [](const HttpMqttResult& resultInput) {
         validateStatusCode(resultInput, k_httpStatusOk, "connect result");
@@ -111,21 +109,18 @@ HttpMqttResult buildConnectV1Response(const HttpMqttConnectResult& resultInput) 
     resultOutput.headers["packet"] = "connack";
     resultOutput.headers["version"] = std::string{k_versionValue};
 
-    std::ostringstream outputStream{};
-    outputStream << '{';
+    mqtt::json::JsonValue::Object payloadObject{};
     if (resultInput.mqttCode.has_value()) {
-        outputStream << std::format(
-            "\"mqttcode\":{},",
-            static_cast<unsigned int>(*resultInput.mqttCode));
+        payloadObject.emplace("mqttcode", mqtt::json::JsonValue{static_cast<double>(*resultInput.mqttCode)});
     }
-    outputStream << std::format("\"present\":{}", static_cast<unsigned int>(resultInput.present));
-    outputStream << std::format(
-        R"(,"token":{{"send":"{}","receive":"{}"}})",
-        escapeJsonString(resultInput.token.send),
-        escapeJsonString(resultInput.token.receive));
-    outputStream << '}';
+    payloadObject.emplace("present", mqtt::json::JsonValue{static_cast<double>(resultInput.present)});
 
-    resultOutput.payload = outputStream.str();
+    mqtt::json::JsonValue::Object tokenObject{};
+    tokenObject.emplace("send", mqtt::json::JsonValue{resultInput.token.send});
+    tokenObject.emplace("receive", mqtt::json::JsonValue{resultInput.token.receive});
+    payloadObject.emplace("token", mqtt::json::JsonValue{std::move(tokenObject)});
+
+    resultOutput.payload = mqtt::json::JsonValue{std::move(payloadObject)}.stringify();
     return resultOutput;
 }
 
@@ -133,7 +128,10 @@ HttpMqttRequestData buildDisconnectV1Request(const std::string& clientId) {
     HttpMqttRequestData requestData{};
     requestData.headers = makeStandardJsonHeaders();
     requestData.headers["version"] = std::string{k_versionValue};
-    requestData.payload = std::format(R"({{"clientId":"{}"}})", escapeJsonString(clientId));
+
+    mqtt::json::JsonValue::Object payloadObject{};
+    payloadObject.emplace("clientId", mqtt::json::JsonValue{clientId});
+    requestData.payload = mqtt::json::JsonValue{std::move(payloadObject)}.stringify();
     requestData.resultCheck = [](const HttpMqttResult& resultInput) {
         validateStatusCode(resultInput, k_httpStatusNoContent, "disconnect result");
     };
@@ -170,12 +168,25 @@ HttpMqttRequestData buildPublishV1Request(const HttpMqttPublishOptions& optionsI
     if (optionsInput.message.rawPayload().has_value()) {
         requestData.payload = *optionsInput.message.rawPayload();
     } else {
-        requestData.payload = std::format(
-            R"({{"token":"{}","message":{{"topic":"{}","value":{},"reason":{}}}}})",
-            escapeJsonString(optionsInput.token),
-            escapeJsonString(optionsInput.message.topic()),
-            messageValueToJson(optionsInput.message.value()),
-            reasonToJson(optionsInput.message));
+        mqtt::json::JsonValue::Object messageObject{};
+        messageObject.emplace("topic", mqtt::json::JsonValue{optionsInput.message.topic()});
+
+        const auto valueNode = mqtt::json::JsonValue::try_parse(messageValueToJson(optionsInput.message.value()));
+        if (!valueNode.has_value()) {
+            throw std::runtime_error{"publish request: failed to build value payload"};
+        }
+        messageObject.emplace("value", *valueNode);
+
+        const auto reasonNode = mqtt::json::JsonValue::try_parse(reasonToJson(optionsInput.message));
+        if (!reasonNode.has_value()) {
+            throw std::runtime_error{"publish request: failed to build reason payload"};
+        }
+        messageObject.emplace("reason", *reasonNode);
+
+        mqtt::json::JsonValue::Object payloadObject{};
+        payloadObject.emplace("token", mqtt::json::JsonValue{optionsInput.token});
+        payloadObject.emplace("message", mqtt::json::JsonValue{std::move(messageObject)});
+        requestData.payload = mqtt::json::JsonValue{std::move(payloadObject)}.stringify();
     }
 
     requestData.resultCheck = [expectedQos = qosNumber, expectedPacketId = optionsInput.packetId](
@@ -240,7 +251,9 @@ HttpMqttRequestData buildPubrelV1Request(const HttpMqttPubrelOptions& optionsInp
         requestData.headers["packetid"] = std::to_string(*optionsInput.packetId);
     }
 
-    requestData.payload = std::format(R"({{"token":"{}"}})", escapeJsonString(optionsInput.token));
+    mqtt::json::JsonValue::Object payloadObject{};
+    payloadObject.emplace("token", mqtt::json::JsonValue{optionsInput.token});
+    requestData.payload = mqtt::json::JsonValue{std::move(payloadObject)}.stringify();
     requestData.resultCheck = [expectedPacketId = optionsInput.packetId](const HttpMqttResult& resultInput) {
         validateStatusCode(resultInput, k_httpStatusNoContent, "pubrel result");
         validatePacketIdMatch(resultInput, expectedPacketId, "pubrel result");

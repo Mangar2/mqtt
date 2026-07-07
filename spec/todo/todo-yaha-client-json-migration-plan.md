@@ -40,7 +40,7 @@ what each `yaha_..._main.cpp` actually includes/instantiates.
 | 1 | `yaha_automationclient_main.cpp` | `automation_client/` | `automation_client/` (own) + `automation/` | Yes — migrated |
 | 2 | `yaha_brokerconnectorclient_main.cpp` | `broker_connector_client/` | `broker_connector/` | Yes — migrated |
 | 3 | `yaha_filestoreclient_main.cpp` | `file_store_client/` | `file_store/` | Yes — migrated |
-| 4 | `yaha_httpmqttinterfaceclient_main.cpp` | `http_mqtt_interface_client/` | `http_mqtt_interface_client/internal/` (own) + `http_mqtt_interface/` | Yes — partially open |
+| 4 | `yaha_httpmqttinterfaceclient_main.cpp` | `http_mqtt_interface_client/` | `http_mqtt_interface_client/internal/` (own) + `http_mqtt_interface/` | Yes — migrated |
 | 5 | `yaha_msgstoreclient_main.cpp` | `message_store_client/` | `message_store/` | Yes — open |
 | 6 | `yaha_opensensemapclient_main.cpp` | `opensensemap_client/` | `opensensemap/` | Yes — open |
 | 7 | `yaha_pushoverclient_main.cpp` | `pushover_client/` | `pushover/` | Yes — open |
@@ -88,26 +88,21 @@ dependency" section below.
   - Text response wrapping on read path now uses
     `JsonValue{body}.stringify()` (also for legacy untyped payload files).
 
-### 4. http_mqtt_interface_client — PARTIALLY OPEN
+### 4. http_mqtt_interface_client — DONE
 
 - [x] `http_mqtt_interface/http_mqtt_interface_contracts.cpp` and
   `internal/http_mqtt_interface_operations_helpers.cpp` — already use
   `JsonValue` (e.g. `requireJsonObjectPayload` uses
   `JsonValue::try_parse`).
-- [ ] `internal/http_mqtt_interface_operations_connect_publish.cpp` — still
-  builds outgoing broker request bodies by hand via `std::format` +
-  `escapeJsonString`, e.g. connect payload (~line 48-60), publish payload
-  (~line 175-178 using `messageValueToJson`/`reasonToJson`), disconnect
-  payload (~line 243).
-- [ ] `internal/http_mqtt_interface_operations_subscriptions.cpp` — same
-  pattern for subscribe/unsubscribe request bodies (~lines 19-107).
-- [ ] `messageValueToJson` / `reasonToJson` in
-  `internal/http_mqtt_interface_operations_helpers.cpp` (~lines 103-125) —
-  hand-built value/reason JSON fragments instead of building a `JsonValue`
-  tree and calling `.stringify()`.
-- This client is the most-migrated one already; the remaining gap is
-  specifically the *outgoing request body* builders, not the response
-  parsing (which is already on `JsonValue`).
+- [x] `internal/http_mqtt_interface_operations_connect_publish.cpp` —
+  outgoing request bodies now built via `JsonValue` object serialization
+  (connect/publish/disconnect/pubrel).
+- [x] `internal/http_mqtt_interface_operations_subscriptions.cpp` —
+  subscribe/unsubscribe request payloads now built via `JsonValue`
+  serialization.
+- [x] `messageValueToJson` / `reasonToJson` in
+  `internal/http_mqtt_interface_operations_helpers.cpp` — now implemented
+  with `JsonValue`-based serialization.
 
 ### 5. message_store_client — OPEN
 
@@ -241,9 +236,8 @@ dependency" section below.
     `remote_service_http/remote_service_http_adapter.cpp` — largest
     remaining item besides `message_payload_codec`, two duplicate parsers
     to consolidate into one `JsonValue`-based implementation.
-11. `http_mqtt_interface/internal/http_mqtt_interface_operations_connect_publish.cpp`
-    + `..._subscriptions.cpp` — outgoing request body builders only;
-    response parsing is already done.
+11. ~~`http_mqtt_interface/internal/http_mqtt_interface_operations_connect_publish.cpp`
+  + `..._subscriptions.cpp`~~ — done.
 12. `message/message_payload_codec.cpp` (+ `message_log_formatter.cpp`) —
     shared, highest impact, needs a performance check because it runs per
     MQTT message across all clients.
