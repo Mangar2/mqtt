@@ -1,4 +1,5 @@
 #include "yaha/zwave/zwave_service_component.h"
+#include "json/json_value.h"
 #include "yaha/message/message_payload_codec.h"
 #include "yaha/message/message_log_service.h"
 
@@ -35,65 +36,17 @@ constexpr double kNumericCommandTolerance = 1e-9;
 
 [[nodiscard]] std::optional<std::string> extractJsonStringField(const std::string& payloadText,
                                                                 const std::string& fieldName) {
-    const std::string keyToken = "\"" + fieldName + "\"";
-    const std::size_t keyPosition = payloadText.find(keyToken);
-    if (keyPosition == std::string::npos) {
+    const auto parsedValue = mqtt::json::JsonValue::try_parse(payloadText);
+    if (!parsedValue.has_value() || !parsedValue->is_object() || !parsedValue->contains(fieldName)) {
         return std::nullopt;
     }
 
-    std::size_t cursor = payloadText.find(':', keyPosition + keyToken.size());
-    if (cursor == std::string::npos) {
+    const mqtt::json::JsonValue& keyValue = parsedValue->at(fieldName);
+    if (!keyValue.is_string()) {
         return std::nullopt;
     }
-    cursor += 1U;
 
-    while (cursor < payloadText.size()
-        && std::isspace(static_cast<unsigned char>(payloadText[cursor])) != 0) {
-        cursor += 1U;
-    }
-
-    if (cursor >= payloadText.size() || payloadText[cursor] != '"') {
-        return std::nullopt;
-    }
-    cursor += 1U;
-
-    std::string value{};
-    while (cursor < payloadText.size()) {
-        const char currentCharacter = payloadText[cursor++];
-        if (currentCharacter == '"') {
-            return value;
-        }
-        if (currentCharacter != '\\') {
-            value.push_back(currentCharacter);
-            continue;
-        }
-
-        if (cursor >= payloadText.size()) {
-            return std::nullopt;
-        }
-
-        const char escapedCharacter = payloadText[cursor++];
-        switch (escapedCharacter) {
-            case '"':
-            case '\\':
-            case '/':
-                value.push_back(escapedCharacter);
-                break;
-            case 'n':
-                value.push_back('\n');
-                break;
-            case 'r':
-                value.push_back('\r');
-                break;
-            case 't':
-                value.push_back('\t');
-                break;
-            default:
-                return std::nullopt;
-        }
-    }
-
-    return std::nullopt;
+    return keyValue.as_string();
 }
 
 [[nodiscard]] Message withPublishFlags(const Message& input, const Qos qos, const bool retain) {
@@ -167,15 +120,15 @@ constexpr double kNumericCommandTolerance = 1e-9;
 }
 
 [[nodiscard]] std::string encodeKnownNodesJson(const std::vector<std::uint16_t>& nodeIds) {
-    std::string json{"{\"nodes\":["};
-    for (std::size_t index = 0U; index < nodeIds.size(); ++index) {
-        json.append(std::to_string(nodeIds[index]));
-        if (index + 1U < nodeIds.size()) {
-            json.push_back(',');
-        }
+    mqtt::json::JsonValue::Array nodesJsonArray{};
+    nodesJsonArray.reserve(nodeIds.size());
+    for (const std::uint16_t nodeId : nodeIds) {
+        nodesJsonArray.emplace_back(static_cast<double>(nodeId));
     }
-    json.append("]}");
-    return json;
+
+    mqtt::json::JsonValue::Object rootJsonObject{};
+    rootJsonObject.emplace("nodes", mqtt::json::JsonValue{std::move(nodesJsonArray)});
+    return mqtt::json::JsonValue{std::move(rootJsonObject)}.stringify();
 }
 
 } // namespace

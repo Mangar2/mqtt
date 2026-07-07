@@ -99,7 +99,7 @@ that orchestrates MQTT routing and controller lifecycle.
 	- never sorts reasons by timestamp
 	- routes to `controller.setValue(topic, value, reasons)`
 - FileStore monitor topics (`<fileStoreMonitorTopicPrefix>/...`):
-	- parse string payload JSON field `keyPath`
+	- parse payload with `mqtt::json::JsonValue::try_parse(...)` and read string field `keyPath`
 	- if `keyPath == settingsKeyPath`, invoke `setFileStoreReloadCallback(...)` loader callback
 	- on successful callback result, call `setDeviceConfiguration(...)` with loaded rows so runtime subscriptions are replaced by the new snapshot
 	- on callback failure, keep existing runtime mapping and log `zwave_service[error] op=filestore_reload ...`
@@ -126,7 +126,7 @@ that orchestrates MQTT routing and controller lifecycle.
 	- `system/zwave/addnode` value `off`
 	- `system/zwave/scan` value `off`
 	- `system/zwave/requestnodeinfo` value `off`
-	- `$MONITOR/zwave/nodes/known` value JSON string `{"nodes":[<nodeId>,...]}` from controller known-node snapshot (configured + runtime-discovered)
+	- `$MONITOR/zwave/nodes/known` value JSON string `{"nodes":[<nodeId>,...]}` serialized via `mqtt::json::JsonValue` from controller known-node snapshot (configured + runtime-discovered)
 	- reason `zwave restarted`
 - `run()` then calls `controller.requestConfigParametersForAllNodes()`.
 - request-config exceptions are contained and emitted as deterministic

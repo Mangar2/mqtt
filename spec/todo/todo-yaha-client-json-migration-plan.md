@@ -48,7 +48,7 @@ what each `yaha_..._main.cpp` actually includes/instantiates.
 | 9 | `yaha_rs485interfaceclient_main.cpp` | `rs485_interface_client/` | `rs485_interface/`, `rs485_protocol/`, `rs485_state/` | No |
 | 10 | `yaha_serialdeviceclient_main.cpp` | `serial_device_client/` | `serial_device/` | Partially — parse side done, build side open |
 | 11 | `yaha_valueserviceclient_main.cpp` | `value_service_client/` | `value_service/` | Yes — open |
-| 12 | `yaha_zwaveclient_main.cpp` | `zwave_client/` | `zwave_client/` (own, migrated) + `zwave/` | Partially — client done, component open |
+| 12 | `yaha_zwaveclient_main.cpp` | `zwave_client/` | `zwave_client/` (own, migrated) + `zwave/` | Yes — migrated |
 
 `mqtt_client/` is **not** one of the 12 clients (no `yaha_..._main.cpp` of its
 own) — it is shared infrastructure used by all 12 clients, see the "shared
@@ -199,18 +199,15 @@ dependency" section below.
     given its similarity to the already-completed `zwave_client_app.cpp`
     migration (same author style, same scale).
 
-### 12. zwave_client — PARTIALLY OPEN
+### 12. zwave_client — DONE
 
 - [x] `zwave_client/zwave_client_app.cpp` / `.h` — migrated to `JsonValue`
   (`json/json_error.h`, `json/json_value.h` now included).
-- [ ] `zwave/zwave_service_component.cpp` — the paired domain component
-  still has its own hand-rolled JSON:
-  - `encodeKnownNodesJson` (~line 169): manual
-    `{"nodes":[...]}` builder.
-  - `extractJsonStringField` (~line 36): manual field extraction, used to
-    read `keyPath` from FileStore payloads (~line 666).
-  - The client-app migration is done, but the sibling component it's wired
-    to in `yaha_zwaveclient_main.cpp` is not.
+- [x] `zwave/zwave_service_component.cpp` — migrated to `JsonValue`:
+  - `encodeKnownNodesJson` now builds object/array via `JsonValue` and
+    serializes with `.stringify()`.
+  - `extractJsonStringField` now parses payload via
+    `JsonValue::try_parse(...)` and reads the `keyPath` field from an object.
 
 ## 2. Shared dependency used by (almost) every client — flagged separately
 
@@ -231,15 +228,14 @@ dependency" section below.
 ## Suggested order
 
 1. ~~`automation_client` + `automation/rules_tree_json_reader`~~ — done.
-2. ~~`zwave_client/zwave_client_app.cpp`~~ — done; still need
-   `zwave/zwave_service_component.cpp` (small, 2 functions).
+2. ~~`zwave_client/zwave_client_app.cpp` + `zwave/zwave_service_component.cpp`~~ — done.
 3. `message_store_client` (`message_store_json_parser` +
    `message_store.cpp` response builder) — self-contained, moderate size,
    HTTP request/response path, not per-MQTT-message hot path.
 4. `value_service_client` (`value_service/value_service_component.cpp`) —
    self-contained, same scale/shape as the already-migrated
    `zwave_client_app.cpp`, good template reuse.
-5. `zwave/zwave_service_component.cpp` — small leftover from item 2.
+5. ~~`zwave/zwave_service_component.cpp`~~ — done.
 6. `serial_device/serial_device_wire_serializer.cpp` — small, serializer
    only, parser side is already done.
 7. `opensensemap/opensensemap_component.cpp`,
