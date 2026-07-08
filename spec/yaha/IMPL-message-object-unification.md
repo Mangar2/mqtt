@@ -170,7 +170,9 @@ Status: done.
   that pins down `MessageTree::addData` as the only tree-write entrypoint and asserts it is
   `Message`-typed, so a future change can't silently reintroduce `MessageSnapshot` into the write path.
 
-Status: not started.
+Status: done. Regression test placed in `message_tree_guards_and_parsing_test.cpp` instead (small,
+purpose-matching file; `message_tree_test.cpp`/`message_store_test.cpp` already exceed the project's
+1000-line file limit and must not be extended further).
 
 ### Phase E: Logging unification (finding F, and closing the gap from IMPL-message-logging-unification.md)
 

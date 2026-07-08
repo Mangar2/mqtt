@@ -20,6 +20,11 @@ namespace yaha {
 
 /**
  * @brief Snapshot node used by diff query mode.
+ *
+ * Purpose-built HTTP diff-query DTO only: the caller sends its last-known state as a list of
+ * `MessageSnapshot` values, and the store returns what changed (see `getNodes()`/`snapshotEquals()`).
+ * It must never be used to represent an incoming MQTT message — the tree write path
+ * (`MessageTree::addData`) is `Message`-typed and must stay that way.
  */
 struct MessageSnapshot {
     std::string topic;                          ///< Full topic path.

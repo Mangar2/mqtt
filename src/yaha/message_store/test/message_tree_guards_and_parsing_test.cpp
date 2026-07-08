@@ -4,6 +4,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "yaha/message/message.h"
@@ -84,4 +85,18 @@ TEST_CASE("message_tree_read_compressed_rejects_unknown_history_entry_type", "[m
         "mystery\n"};
 
     REQUIRE_FALSE(tree.readCompressed(stream));
+}
+
+TEST_CASE("message_tree_add_data_is_the_only_message_typed_write_entrypoint", "[message_store]") {
+    static_assert(std::is_same_v<decltype(&yaha::MessageTree::addData),
+                                 void (yaha::MessageTree::*)(const yaha::Message&)>,
+                  "MessageTree::addData must stay the sole Message-typed tree-write entrypoint; "
+                  "MessageSnapshot is a diff-query DTO and must never be accepted by the write path.");
+
+    yaha::MessageTree tree = makeTree();
+    tree.addData(yaha::Message{"home/light", std::string{"on"}});
+
+    const std::vector<yaha::MessageTreeNode> nodes = tree.getSection("", 10U, false, false);
+    REQUIRE(nodes.size() == 1U);
+    REQUIRE(nodes.front().topic == "home/light");
 }

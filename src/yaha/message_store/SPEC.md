@@ -19,7 +19,7 @@ recent valid file on startup, and manages periodic saves.
 ```cpp
 struct MessageTreeConfig;
 struct MessageTreeHistoryEntry;
-struct MessageTreeSnapshotNode;
+struct MessageSnapshot;
 class MessageTreeNode;
 ```
 
@@ -28,12 +28,17 @@ class MessageTreeNode;
 | Member | Signature | Notes |
 |--------|-----------|-------|
 | ctor | `MessageTree(MessageTreeConfig)` | configuration + time provider |
-| `addData` | `void(const Message&)` | insert/update one topic node |
+| `addData` | `void(const Message&)` | insert/update one topic node; the sole tree-write entrypoint, `Message`-typed only (see boundary note below) |
 | `getSection` | `vector<MessageTreeNode>(const string&, uint32_t, bool, bool) const` | prefix + depth query |
-| `getNodes` | `vector<MessageTreeNode>(const vector<MessageTreeSnapshotNode>&, bool, bool) const` | returns changed nodes for provided snapshot topics only |
+| `getNodes` | `vector<MessageTreeNode>(const vector<MessageSnapshot>&, bool, bool) const` | returns changed nodes for provided snapshot topics only |
 | `cleanup` | `size_t(uint32_t)` | removes stale nodes older than N days |
 | `replaceAllNodes` | `void(const vector<MessageTreeNode>&)` | replaces full tree from persisted snapshot |
 | `compressionStats` | `CompressionStats() const` | returns internal history compression counters |
+
+`MessageSnapshot` boundary: it is a purpose-built HTTP diff-query DTO (caller sends last-known
+state, store returns what changed via `getNodes`/`queryNodes`), never a message-transport type.
+`addData` is the only tree-write entrypoint and is guarded to stay `Message`-typed by a
+compile-time regression test (`message_tree_guards_and_parsing_test.cpp`).
 
 ### Class `MessageTreePersistence`
 
@@ -66,7 +71,7 @@ class MessageTreeNode;
 | `run` | `void()` | restore, start HTTP callback, start periodic persistence |
 | `close` | `void()` | stop HTTP callback, stop periodic persistence, final persist |
 | `querySection` | `vector<MessageTreeNode>(...) const` | read API used by future HTTP step |
-| `queryNodes` | `vector<MessageTreeNode>(const vector<MessageTreeSnapshotNode>&, bool, bool) const` | snapshot diff read API |
+| `queryNodes` | `vector<MessageTreeNode>(const vector<MessageSnapshot>&, bool, bool) const` | snapshot diff read API |
 | `queryCompressionStats` | `MessageTree::CompressionStats() const` | thread-safe internal compression counters |
 | `persistSnapshotNow` | `optional<filesystem::path>()` | thread-safe immediate snapshot persist returning written path |
 
@@ -264,6 +269,7 @@ class MessageTreeNode;
 | `string_directory.cpp` | StringDirectory implementation |
 | `test/TEST_SPEC.md` | Unit test specification |
 | `test/message_tree_test.cpp` | Unit tests |
+| `test/message_tree_guards_and_parsing_test.cpp` | Constructor guards, compressed-stream parsing rejection, and `MessageSnapshot` write-path boundary regression test |
 | `test/message_tree_persistence_test.cpp` | Persistence unit tests |
 | `test/message_store_test.cpp` | MessageStore component tests |
 | `test/string_directory_test.cpp` | StringDirectory unit tests |
