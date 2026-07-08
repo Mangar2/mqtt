@@ -399,8 +399,8 @@ TEST_CASE("source_adapter_connect_subscribe_and_callback_publish", "[broker_conn
         REQUIRE(callbackMessages.front().rawPayload().has_value());
         REQUIRE(*callbackMessages.front().rawPayload() ==
             "{\"token\":\"send-token\",\"message\":{\"topic\":\"home/kitchen/temp\",\"value\":21.5,\"reason\":[{\"message\":\"sensor update\",\"timestamp\":\"2026-05-08T10:00:00Z\"}]}}");
+        REQUIRE(callbackMessages.front().qos() == yaha::Qos::AtLeastOnce);
         REQUIRE(callbackMeta.size() == 1U);
-        REQUIRE(callbackMeta.front().qos == yaha::Qos::AtLeastOnce);
         REQUIRE(callbackMeta.front().packetId.has_value());
         REQUIRE(*callbackMeta.front().packetId == 7U);
     }
@@ -666,10 +666,13 @@ TEST_CASE("source_adapter_qos0_publish_with_dup_retain_flags", "[broker_connecto
     yaha::SourceHttpBrokerAdapter adapter{config};
 
     std::mutex callbackMutex{};
+    std::vector<yaha::Message> callbackMessages{};
     std::vector<yaha::SourcePublishMeta> metaValues{};
-    adapter.setIncomingPublishCallback([&callbackMutex, &metaValues](const yaha::Message&,
-                                                                      const yaha::SourcePublishMeta& meta) {
+    adapter.setIncomingPublishCallback([&callbackMutex, &callbackMessages, &metaValues](
+                                          const yaha::Message& message,
+                                          const yaha::SourcePublishMeta& meta) {
         std::lock_guard<std::mutex> lock{callbackMutex};
+        callbackMessages.push_back(message);
         metaValues.push_back(meta);
     });
 
@@ -695,10 +698,11 @@ TEST_CASE("source_adapter_qos0_publish_with_dup_retain_flags", "[broker_connecto
 
     {
         std::lock_guard<std::mutex> lock{callbackMutex};
+        REQUIRE(callbackMessages.size() == 1U);
+        REQUIRE(callbackMessages.front().qos() == yaha::Qos::AtMostOnce);
+        REQUIRE(callbackMessages.front().retain());
+        REQUIRE(callbackMessages.front().dup());
         REQUIRE(metaValues.size() == 1U);
-        REQUIRE(metaValues.front().qos == yaha::Qos::AtMostOnce);
-        REQUIRE(metaValues.front().retain);
-        REQUIRE(metaValues.front().dup);
         REQUIRE_FALSE(metaValues.front().packetId.has_value());
     }
 
@@ -758,10 +762,10 @@ TEST_CASE("source_adapter_publish_invalid_bool_headers_fallback_to_false", "[bro
     yaha::SourceHttpBrokerAdapter adapter{config};
 
     std::mutex callbackMutex{};
-    std::optional<yaha::SourcePublishMeta> lastMeta{};
-    adapter.setIncomingPublishCallback([&callbackMutex, &lastMeta](const yaha::Message&, const yaha::SourcePublishMeta& meta) {
+    std::optional<yaha::Message> lastMessage{};
+    adapter.setIncomingPublishCallback([&callbackMutex, &lastMessage](const yaha::Message& message, const yaha::SourcePublishMeta&) {
         std::lock_guard<std::mutex> lock{callbackMutex};
-        lastMeta = meta;
+        lastMessage = message;
     });
 
     std::string errorMessage{};
@@ -780,9 +784,9 @@ TEST_CASE("source_adapter_publish_invalid_bool_headers_fallback_to_false", "[bro
 
     {
         std::lock_guard<std::mutex> lock{callbackMutex};
-        REQUIRE(lastMeta.has_value());
-        REQUIRE_FALSE(lastMeta->retain);
-        REQUIRE_FALSE(lastMeta->dup);
+        REQUIRE(lastMessage.has_value());
+        REQUIRE_FALSE(lastMessage->retain());
+        REQUIRE_FALSE(lastMessage->dup());
     }
 
     adapter.close();

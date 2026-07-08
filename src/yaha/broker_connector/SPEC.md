@@ -28,11 +28,12 @@ This module now provides complete source-to-receiver forwarding logic through `I
 
 ### Struct `SourcePublishMeta`
 
+Source transport metadata beyond what the delivered `Message` already carries. `qos`/`retain`/`dup`
+live on the `Message` itself (`Message::qos()`/`retain()`/`dup()`); this struct only carries
+ack/handshake bookkeeping that is not message content.
+
 | Field | Type | Meaning |
 |------|------|---------|
-| `qos` | `Qos` | Source message qos |
-| `retain` | `bool` | Source retain flag |
-| `dup` | `bool` | Source duplicate flag |
 | `packetId` | `std::optional<std::uint16_t>` | Source packet id if present |
 
 ### Class `SourceHttpBrokerAdapter`
@@ -58,14 +59,6 @@ This module now provides complete source-to-receiver forwarding logic through `I
 | `close` | `void()` | stops loop and closes adapter |
 | `isRunning` | `bool() const` | returns lifecycle loop state |
 
-### Struct `ReceiverPublishOptions`
-
-| Field | Type | Meaning |
-|------|------|---------|
-| `qos` | `Qos` | Effective outgoing receiver qos |
-| `retain` | `bool` | Effective outgoing retain flag |
-| `dup` | `bool` | Effective outgoing dup flag (QoS>0 only) |
-
 ### Struct `ReceiverMqttBrokerConfig`
 
 | Field | Type | Meaning |
@@ -86,7 +79,7 @@ This module now provides complete source-to-receiver forwarding logic through `I
 | dtor | `virtual ~ReceiverPublishPort()` | virtual cleanup |
 | `start` | `bool(std::string&)` | starts receiver runtime |
 | `close` | `void()` | stops receiver runtime |
-| `publish` | `bool(const Message&, const ReceiverPublishOptions&, std::string&)` | publishes one mapped message |
+| `publish` | `bool(const Message&, std::string&)` | publishes one message; qos/retain/dup are read from the message itself |
 | `isConnected` | `bool() const` | receiver connection state |
 
 ### Class `ReceiverMqttPublishPort`
@@ -98,7 +91,7 @@ This module now provides complete source-to-receiver forwarding logic through `I
 | dtor | `~ReceiverMqttPublishPort()` | closes runtime |
 | `start` | `bool(std::string&)` | starts internal sink component and `YahaMqttClient` |
 | `close` | `void()` | closes client runtime |
-| `publish` | `bool(const Message&, const ReceiverPublishOptions&, std::string&)` | forwards with effective qos/retain |
+| `publish` | `bool(const Message&, std::string&)` | forwards message unchanged to `YahaMqttClient` |
 | `isConnected` | `bool() const` | reports `YahaMqttClient` connection state |
 
 ### Struct `RelayPolicyConfig`
@@ -148,7 +141,7 @@ Token usage from `/connect` response:
 
 JSON handling in source adapter:
 - Request payloads (`/connect`, `/subscribe`, `/pingreq`, `/disconnect`) are built via `mqtt::json::JsonValue` and serialized with `.stringify()`.
-- Callback `/publish` bodies are parsed via `mqtt::json::JsonValue::try_parse(...)` and mapped to YAHA `Message`/`SourcePublishMeta`.
+- Callback `/publish` bodies are parsed via `mqtt::json::JsonValue::try_parse(...)` and mapped to a fully-populated YAHA `Message` (topic/value/reason/qos/retain/dup); `SourcePublishMeta` only carries the packet id alongside it.
 - `/connect` token-object and `/subscribe` qos-array response bodies are parsed via `JsonValue` object/array access.
 
 Adapter listener handles callbacks:
@@ -175,7 +168,7 @@ Compatibility note (legacy broker deviation):
 
 ## Data model
 
-Incoming callback payload is normalized to YAHA `Message` and `SourcePublishMeta`.
+Incoming callback payload is normalized to a YAHA `Message` (topic/value/reason/qos/retain/dup); `SourcePublishMeta` only adds the packet id for ack correlation.
 If callback payload contains a `reason` field, reason entries are mapped into `Message.reason()` and forwarded unchanged through relay + receiver publish port.
 The original callback JSON body is additionally preserved in `Message.rawPayload()` and forwarded unchanged to the receiver broker publish path.
 
@@ -196,7 +189,7 @@ On successful handshake, lifecycle trace logs include concrete source broker res
 `BrokerConnectorComponent` forwarding path:
 1. Rejects forwarding when not running or no publish callback is wired.
 2. Increments `received` counter for each accepted source callback.
-3. Maps source metadata to outgoing `Message` fields:
+3. Maps source `Message` fields (`message.qos()`/`retain()`/`dup()`) to outgoing `Message` fields:
 	- topic mapping: legacy source topics with prefix `$SYS/` are rewritten to `status/` (`$SYS/a/b -> status/a/b`) before receiver publish
 	- when topic mapping rewrites `$SYS/...` to `status/...`, forwarded `Message.rawPayload()` is rewritten so embedded `message.topic` matches the mapped MQTT topic (topic value escaping is produced via `JsonValue` string serialization)
 	- qos mapping: `0 -> 0`, `1/2 -> 1` when normalization is enabled

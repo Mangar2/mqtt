@@ -110,10 +110,8 @@ public:
     }
 
     [[nodiscard]] bool publish(const yaha::Message& message,
-                               const yaha::ReceiverPublishOptions& options,
                                std::string& errorMessage) override {
         lastPublishedMessage_ = message;
-        lastPublishOptions_ = options;
         publishCallCount_ += 1;
 
         if (!started_) {
@@ -145,15 +143,10 @@ public:
         return lastPublishedMessage_;
     }
 
-    [[nodiscard]] yaha::ReceiverPublishOptions lastPublishOptions() const {
-        return lastPublishOptions_;
-    }
-
 private:
     bool started_{false};
     int publishCallCount_{0};
     yaha::Message lastPublishedMessage_{"", std::string{}};
-    yaha::ReceiverPublishOptions lastPublishOptions_{};
     std::vector<bool> publishResults_{};
 };
 
@@ -178,13 +171,9 @@ TEST_CASE("receiver_publish_port_start_publish_and_close", "[broker_connector]")
         return port.isConnected();
     }, std::chrono::milliseconds{k_wait_timeout_ms}));
 
-    yaha::Message message{"home/sensor/temp", k_temperature_21_5, yaha::Qos::AtMostOnce, false};
-    yaha::ReceiverPublishOptions options{};
-    options.qos = yaha::Qos::ExactlyOnce;
-    options.retain = true;
-    options.dup = true;
+    yaha::Message message{"home/sensor/temp", k_temperature_21_5, yaha::Qos::ExactlyOnce, true, true};
 
-    REQUIRE(port.publish(message, options, errorMessage));
+    REQUIRE(port.publish(message, errorMessage));
     REQUIRE(transportState.publishCalls.load() == 1);
 
     {
@@ -216,8 +205,7 @@ TEST_CASE("receiver_publish_port_disconnected_publish_returns_false", "[broker_c
     REQUIRE(port.start(errorMessage));
 
     yaha::Message message{"home/sensor/temp", k_temperature_21_5};
-    yaha::ReceiverPublishOptions options{};
-    REQUIRE_FALSE(port.publish(message, options, errorMessage));
+    REQUIRE_FALSE(port.publish(message, errorMessage));
     REQUIRE(errorMessage.find("receiver publish failed") != std::string::npos);
 
     port.close();
@@ -234,8 +222,7 @@ TEST_CASE("receiver_publish_port_publish_before_start_returns_false", "[broker_c
 
     std::string errorMessage{};
     yaha::Message message{"home/sensor/temp", k_temperature_20_0};
-    yaha::ReceiverPublishOptions options{};
-    REQUIRE_FALSE(port.publish(message, options, errorMessage));
+    REQUIRE_FALSE(port.publish(message, errorMessage));
     REQUIRE(errorMessage == "receiver publish runtime not started");
 
     port.close();
@@ -262,10 +249,7 @@ TEST_CASE("receiver_publish_port_start_is_idempotent_and_preserves_reason", "[br
     message.addReason("updated", "2026-05-01T12:00:00Z");
     message.setRawPayload(R"({"token":"send-token","message":{"topic":"home/sensor/temp","value":"ok","reason":[{"message":"updated","timestamp":"2026-05-01T12:00:00Z"}]}})");
 
-    yaha::ReceiverPublishOptions options{};
-    options.qos = yaha::Qos::AtLeastOnce;
-    options.retain = false;
-    REQUIRE(port.publish(message, options, errorMessage));
+    REQUIRE(port.publish(message, errorMessage));
 
     {
         std::lock_guard<std::mutex> lock{transportState.publishRecordsMutex};
@@ -313,11 +297,8 @@ TEST_CASE("relay_component_forwards_message_with_mapped_options", "[broker_conne
     component.run();
 
     yaha::SourcePublishMeta sourceMeta{};
-    sourceMeta.qos = yaha::Qos::ExactlyOnce;
-    sourceMeta.retain = true;
-    sourceMeta.dup = true;
 
-    yaha::Message sourceMessage{"home/door/state", std::string{"open"}, yaha::Qos::ExactlyOnce, true};
+    yaha::Message sourceMessage{"home/door/state", std::string{"open"}, yaha::Qos::ExactlyOnce, true, true};
     sourceMessage.addReason("src-reason", "2026-05-01T12:00:00Z");
     sourceMessage.setRawPayload(R"({"token":"send-token","message":{"topic":"home/door/state","value":"open","reason":[{"message":"src-reason","timestamp":"2026-05-01T12:00:00Z"}]}})");
 
@@ -369,7 +350,6 @@ TEST_CASE("relay_component_retries_then_succeeds", "[broker_connector]") {
     component.run();
 
     yaha::SourcePublishMeta sourceMeta{};
-    sourceMeta.qos = yaha::Qos::AtLeastOnce;
 
     yaha::Message sourceMessage{"home/light/state", std::string{"on"}};
     REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
@@ -405,7 +385,6 @@ TEST_CASE("relay_component_counts_failed_after_retry_budget", "[broker_connector
     component.run();
 
     yaha::SourcePublishMeta sourceMeta{};
-    sourceMeta.qos = yaha::Qos::AtLeastOnce;
 
     yaha::Message sourceMessage{"home/light/state", std::string{"on"}};
     REQUIRE_FALSE(component.onIncomingPublish(sourceMessage, sourceMeta));
@@ -426,7 +405,6 @@ TEST_CASE("relay_component_rejects_when_not_running", "[broker_connector]") {
     REQUIRE_FALSE(component.isRunning());
 
     yaha::SourcePublishMeta sourceMeta{};
-    sourceMeta.qos = yaha::Qos::AtLeastOnce;
     yaha::Message sourceMessage{"home/light/state", std::string{"on"}};
 
     REQUIRE_FALSE(component.onIncomingPublish(sourceMessage, sourceMeta));
@@ -466,11 +444,8 @@ TEST_CASE("relay_component_supports_passthrough_qos_with_backoff", "[broker_conn
     REQUIRE(component.isRunning());
 
     yaha::SourcePublishMeta sourceMeta{};
-    sourceMeta.qos = yaha::Qos::ExactlyOnce;
-    sourceMeta.retain = true;
-    sourceMeta.dup = true;
 
-    yaha::Message sourceMessage{"home/scene", std::string{"movie"}, yaha::Qos::ExactlyOnce, true};
+    yaha::Message sourceMessage{"home/scene", std::string{"movie"}, yaha::Qos::ExactlyOnce, true, true};
     REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
     REQUIRE(sink.messages.size() == 2U);
     REQUIRE(sink.messages.back().qos() == yaha::Qos::ExactlyOnce);
@@ -502,10 +477,8 @@ TEST_CASE("relay_component_with_source_adapter_covers_lifecycle_and_reason_copy"
     component.run();
 
     yaha::SourcePublishMeta sourceMeta{};
-    sourceMeta.qos = yaha::Qos::ExactlyOnce;
-    sourceMeta.retain = true;
 
-    yaha::Message sourceMessage{"home/reason", std::string{"x"}, yaha::Qos::AtMostOnce, false};
+    yaha::Message sourceMessage{"home/reason", std::string{"x"}, yaha::Qos::ExactlyOnce, true};
     sourceMessage.addReason("r1", "2026-05-01T00:00:00Z");
     REQUIRE_FALSE(component.onIncomingPublish(sourceMessage, sourceMeta));
 
@@ -563,7 +536,6 @@ TEST_CASE("relay_component_retries_on_non_std_exception", "[broker_connector]") 
     component.run();
 
     yaha::SourcePublishMeta sourceMeta{};
-    sourceMeta.qos = yaha::Qos::AtLeastOnce;
     yaha::Message sourceMessage{"home/retry/nonstd", std::string{"ok"}};
 
     REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
@@ -586,11 +558,8 @@ TEST_CASE("relay_component_clears_dup_for_qos0_output", "[broker_connector]") {
     component.run();
 
     yaha::SourcePublishMeta sourceMeta{};
-    sourceMeta.qos = yaha::Qos::AtMostOnce;
-    sourceMeta.retain = false;
-    sourceMeta.dup = true;
 
-    yaha::Message sourceMessage{"home/qos0", std::string{"v"}, yaha::Qos::AtMostOnce, false};
+    yaha::Message sourceMessage{"home/qos0", std::string{"v"}, yaha::Qos::AtMostOnce, false, true};
     REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
     REQUIRE(published.size() == 1U);
     REQUIRE(published.front().qos() == yaha::Qos::AtMostOnce);
@@ -612,7 +581,6 @@ TEST_CASE("relay_component_preserves_source_value_exactly", "[broker_connector]"
     component.run();
 
     yaha::SourcePublishMeta sourceMeta{};
-    sourceMeta.qos = yaha::Qos::AtLeastOnce;
 
     const std::string textValue{"  on\\toff  "};
     yaha::Message sourceTextMessage{"home/value/text", textValue, yaha::Qos::AtLeastOnce, false};
@@ -639,7 +607,6 @@ TEST_CASE("relay_component_maps_legacy_sys_topic_prefix_to_status", "[broker_con
     component.run();
 
     yaha::SourcePublishMeta sourceMeta{};
-    sourceMeta.qos = yaha::Qos::AtLeastOnce;
 
     yaha::Message sourceMessage{"$SYS/a/b", std::string{"v"}, yaha::Qos::AtLeastOnce, false};
     sourceMessage.setRawPayload(
@@ -667,7 +634,6 @@ TEST_CASE("relay_component_maps_exact_sys_topic_to_status_and_skips_malformed_pa
     component.run();
 
     yaha::SourcePublishMeta sourceMeta{};
-    sourceMeta.qos = yaha::Qos::AtLeastOnce;
 
     yaha::Message sourceMessage{"$SYS", std::string{"ok"}, yaha::Qos::AtLeastOnce, false};
     sourceMessage.setRawPayload("not-a-forward-envelope");
@@ -692,7 +658,6 @@ TEST_CASE("relay_component_rewrites_status_topic_with_json_escaping", "[broker_c
     component.run();
 
     yaha::SourcePublishMeta sourceMeta{};
-    sourceMeta.qos = yaha::Qos::AtLeastOnce;
 
     const std::string sourceTopic{"$SYS/a\\b\"c\n\r\td"};
     yaha::Message sourceMessage{sourceTopic, std::string{"v"}, yaha::Qos::AtLeastOnce, false};

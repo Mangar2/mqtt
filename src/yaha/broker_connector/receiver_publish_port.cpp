@@ -98,7 +98,6 @@ void ReceiverMqttPublishPort::close() {
 }
 
 bool ReceiverMqttPublishPort::publish(const Message& message,
-                                      const ReceiverPublishOptions& options,
                                       std::string& errorMessage) {
     std::lock_guard<std::mutex> lock{runtime_state_mutex_};
     if (impl_ == nullptr || impl_->mqttClient == nullptr || !impl_->mqttClient->isRunning()) {
@@ -107,7 +106,7 @@ bool ReceiverMqttPublishPort::publish(const Message& message,
     }
 
     try {
-        impl_->mqttClient->publish(applyPublishOptions(message, options));
+        impl_->mqttClient->publish(message);
         return true;
     } catch (const std::exception& exceptionValue) {
         errorMessage = std::string{"receiver publish failed: "} + exceptionValue.what();
@@ -139,20 +138,6 @@ ReceiverMqttPublishPort::toClientConfig(const ReceiverMqttBrokerConfig& config) 
     result.enableLifecycleTrace = config.enableLifecycleTrace;
     result.enableMessageTrace = config.enableMessageTrace;
     return result;
-}
-
-Message ReceiverMqttPublishPort::applyPublishOptions(const Message& message,
-                                                     const ReceiverPublishOptions& options) {
-    const bool targetDup = options.dup && options.qos != Qos::AtMostOnce;
-    Message mapped{message.topic(), message.value(), options.qos, options.retain, targetDup};
-    if (message.rawPayload().has_value()) {
-        mapped.setRawPayload(*message.rawPayload());
-    }
-    for (const auto& reasonEntry : message.reason()) {
-        mapped.addReason(reasonEntry.message, reasonEntry.timestamp);
-    }
-
-    return mapped;
 }
 
 } // namespace yaha

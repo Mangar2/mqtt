@@ -56,8 +56,7 @@ struct HttpMqttConnectOptions {
  */
 struct HttpMqttPublishOptions {
     std::string token{};                           ///< Session token.
-    Message message{"", std::string{}};          ///< MQTT message.
-    std::optional<bool> dup{};                     ///< Optional dup flag.
+    Message message{"", std::string{}};          ///< MQTT message; qos/retain/dup are read from it directly.
     std::optional<std::uint16_t> packetId{};       ///< Optional packet id.
 };
 

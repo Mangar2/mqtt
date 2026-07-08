@@ -17,15 +17,6 @@
 namespace yaha {
 
 /**
- * @brief Publish options passed from relay component to receiver publish port.
- */
-struct ReceiverPublishOptions {
-    Qos qos{Qos::AtLeastOnce};            ///< Effective outgoing qos.
-    bool retain{false};                   ///< Effective outgoing retain flag.
-    bool dup{false};                      ///< Effective outgoing dup flag (QoS > 0 only).
-};
-
-/**
  * @brief Receiver broker runtime configuration mapped to YahaMqttClient.
  */
 struct ReceiverMqttBrokerConfig {
@@ -68,13 +59,11 @@ public:
 
     /**
      * @brief Publishes one message to receiver broker.
-     * @param message Message to publish.
-     * @param options Effective publish options for this attempt.
+     * @param message Message to publish; qos/retain/dup are read from the message itself.
      * @param errorMessage Human-readable failure text on publish failure.
      * @return True when publish was accepted by transport.
      */
     [[nodiscard]] virtual bool publish(const Message& message,
-                                       const ReceiverPublishOptions& options,
                                        std::string& errorMessage) = 0;
 
     /**
@@ -131,13 +120,11 @@ public:
 
     /**
      * @brief Publishes one message through YahaMqttClient.
-     * @param message Relay message.
-     * @param options Effective publish options.
+     * @param message Relay message; qos/retain/dup are read from the message itself.
      * @param errorMessage Human-readable failure text on error.
      * @return True when publish callback completed without exception.
      */
     [[nodiscard]] bool publish(const Message& message,
-                               const ReceiverPublishOptions& options,
                                std::string& errorMessage) override;
 
     /**
@@ -150,8 +137,6 @@ private:
     struct Impl;
 
     static YahaMqttClient::Config toClientConfig(const ReceiverMqttBrokerConfig& config);
-    static Message applyPublishOptions(const Message& message,
-                                       const ReceiverPublishOptions& options);
 
     ReceiverMqttBrokerConfig config_{};
     YahaMqttClient::Transport transport_{};

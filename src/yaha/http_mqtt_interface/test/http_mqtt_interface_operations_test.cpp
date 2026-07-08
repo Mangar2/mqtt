@@ -88,7 +88,6 @@ void verifyPhase7Publish(const yaha::HttpMqttInterfaces& interfaces) {
         yaha::HttpMqttPublishOptions{
             .token = "send-token",
             .message = yaha::Message{"alpha/value", std::string{"payload"}, yaha::Qos::ExactlyOnce, false},
-            .dup = false,
             .packetId = static_cast<std::uint16_t>(k_packetIdPublish)}
     );
     const yaha::HttpMqttResult publishResult = makeResult(
@@ -261,12 +260,12 @@ TEST_CASE("publish_v1_request_and_result_check_qos1", "[http_mqtt_interface]") {
     const yaha::HttpMqttPublishOptions options{
         .token = "token-a",
         .message = message,
-        .dup = false,
         .packetId = 7U};
 
     const yaha::HttpMqttRequestData requestData = interfaces.publish("1.0", options);
 
     REQUIRE(requestData.headers.at("qos") == "1");
+    REQUIRE(requestData.headers.at("dup") == "0");
     REQUIRE(requestData.headers.at("packetid") == "7");
 
     const yaha::HttpMqttResult response = makeResult(
@@ -276,6 +275,19 @@ TEST_CASE("publish_v1_request_and_result_check_qos1", "[http_mqtt_interface]") {
     );
 
     REQUIRE_NOTHROW(requestData.resultCheck(response));
+}
+
+TEST_CASE("publish_v1_request_sets_dup_header_from_message", "[http_mqtt_interface]") {
+    const yaha::HttpMqttInterfaces interfaces = yaha::makeHttpMqttInterfacesV1();
+    yaha::Message message{"topic/demo", std::string{"value"}, yaha::Qos::AtLeastOnce, false, true};
+    const yaha::HttpMqttPublishOptions options{
+        .token = "token-a",
+        .message = message,
+        .packetId = 7U};
+
+    const yaha::HttpMqttRequestData requestData = interfaces.publish("1.0", options);
+
+    REQUIRE(requestData.headers.at("dup") == "1");
 }
 
 TEST_CASE("publish_v1_request_preserves_raw_payload_without_rebuild", "[http_mqtt_interface]") {
@@ -288,7 +300,6 @@ TEST_CASE("publish_v1_request_preserves_raw_payload_without_rebuild", "[http_mqt
     const yaha::HttpMqttPublishOptions options{
         .token = "token-a",
         .message = message,
-        .dup = false,
         .packetId = 7U};
 
     const yaha::HttpMqttRequestData requestData = interfaces.publish("1.0", options);

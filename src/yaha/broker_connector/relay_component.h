@@ -20,10 +20,12 @@ namespace yaha {
  * @brief Runtime policy settings for relay behavior.
  */
 struct RelayPolicyConfig {
-    std::uint32_t maxPublishRetries{3U};                   ///< Retry attempts after first failed publish.
-    std::chrono::milliseconds publishRetryBackoff{100};    ///< Sleep between publish retries.
-    bool normalizeQosToAtLeastOnce{true};                  ///< Map source qos 1/2 to outgoing qos 1.
-    bool retainPassthrough{true};                          ///< Preserve source retain flag when true.
+    static constexpr std::chrono::milliseconds k_default_publish_retry_backoff{100};
+
+    std::uint32_t maxPublishRetries{3U};                             ///< Retry attempts after first failed publish.
+    std::chrono::milliseconds publishRetryBackoff{k_default_publish_retry_backoff}; ///< Sleep between publish retries.
+    bool normalizeQosToAtLeastOnce{true};                            ///< Map source qos 1/2 to outgoing qos 1.
+    bool retainPassthrough{true};                                    ///< Preserve source retain flag when true.
 };
 
 /**
@@ -49,7 +51,7 @@ public:
     /**
      * @brief Destructor that closes the component.
      */
-    ~BrokerConnectorComponent();
+    ~BrokerConnectorComponent() override;
 
     BrokerConnectorComponent(const BrokerConnectorComponent&) = delete;
     BrokerConnectorComponent& operator=(const BrokerConnectorComponent&) = delete;
@@ -92,8 +94,8 @@ public:
 
     /**
      * @brief Handles one incoming source publish and forwards it with retry policy.
-     * @param message Source message.
-     * @param sourceMeta Source transport metadata.
+     * @param message Source message; carries qos/retain/dup directly.
+     * @param sourceMeta Source transport metadata beyond message content (packet id bookkeeping).
      * @return True when forwarding succeeded.
      */
     [[nodiscard]] bool onIncomingPublish(const Message& message,

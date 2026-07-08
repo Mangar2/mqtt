@@ -42,13 +42,13 @@ struct SourceHttpBrokerConfig {
 };
 
 /**
- * @brief Source metadata for one inbound publish callback.
+ * @brief Source transport metadata for one inbound publish callback, beyond what `Message` carries.
+ *
+ * `qos`/`retain`/`dup` live on the delivered `Message` itself (see `Message::qos()`/`retain()`/
+ * `dup()`); this struct only carries ack/handshake bookkeeping that is not message content.
  */
 struct SourcePublishMeta {
-    Qos qos{Qos::AtLeastOnce};
-    bool retain{false};
-    bool dup{false};
-    std::optional<std::uint16_t> packetId{};
+    std::optional<std::uint16_t> packetId{};  ///< Packet id for QoS1/2 PUBACK/PUBREC correlation.
 };
 
 /**

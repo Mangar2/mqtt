@@ -263,7 +263,6 @@ HttpMqttResult handlePublishCompatibilityRequest(
     const HttpMqttPublishOptions mappedOptions{
         .token = requestInput.token,
         .message = mappedMessage,
-        .dup = std::nullopt,
         .packetId = readPacketIdHeader(requestInput.headers)};
     const HttpMqttRequestData mappedRequest = interfaces.publish(k_versionValue, mappedOptions);
     mappedMessage.setRawPayload(mappedRequest.payload);

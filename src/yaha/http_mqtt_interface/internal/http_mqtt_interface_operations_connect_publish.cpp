@@ -156,7 +156,7 @@ HttpMqttRequestData buildPublishV1Request(const HttpMqttPublishOptions& optionsI
 
     const int qosNumber = static_cast<int>(optionsInput.message.qos());
     const bool retainEnabled = optionsInput.message.retain();
-    const bool dupEnabled = optionsInput.dup.value_or(false);
+    const bool dupEnabled = optionsInput.message.dup();
 
     requestData.headers["qos"] = std::to_string(qosNumber);
     requestData.headers["retain"] = retainEnabled ? "1" : "0";

@@ -12,7 +12,6 @@
 #include <iostream>
 #include <limits>
 #include <memory>
-#include <ranges>
 #include <sstream>
 #include <thread>
 #include <utility>
@@ -159,6 +158,7 @@ void appendReasonsPreservingOrder(const ReasonList& reasonEntries,
 bool parseIncomingMessageBody(const std::string& payload,
                               const Qos qos,
                               const bool retain,
+                              const bool dup,
                               Message& messageOut) {
     mqtt::json::JsonValue parsedRoot{};
     if (!tryParseJsonText(payload, parsedRoot) || !parsedRoot.is_object()) {
@@ -193,7 +193,7 @@ bool parseIncomingMessageBody(const std::string& payload,
         return false;
     }
 
-    messageOut = Message{topic, std::move(value), qos, retain};
+    messageOut = Message{topic, std::move(value), qos, retain, dup};
 
     if (!messageNode->contains("reason")) {
         return true;
@@ -447,10 +447,11 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
     server_ = std::make_unique<httplib::Server>();
 
     server_->Put("/publish", [this](const httplib::Request& request, httplib::Response& response) {
+        const Qos qos = parseHeaderQos(request);
+        const bool retain = parseBool(request.get_header_value("retain"), false);
+        const bool dup = parseBool(request.get_header_value("dup"), false);
+
         SourcePublishMeta meta{};
-        meta.qos = parseHeaderQos(request);
-        meta.retain = parseBool(request.get_header_value("retain"), false);
-        meta.dup = parseBool(request.get_header_value("dup"), false);
         const std::string rawPacketIdHeader = request.get_header_value("packetid");
         const std::string cleanedPacketIdHeader = mqtt::helper::trim(rawPacketIdHeader);
         std::uint16_t packetId = 0U;
@@ -458,9 +459,9 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
             meta.packetId = packetId;
         }
 
-        if (meta.qos != Qos::AtMostOnce && cleanedPacketIdHeader.empty()) {
+        if (qos != Qos::AtMostOnce && cleanedPacketIdHeader.empty()) {
             std::cout << "  source: publish rejected missing packetid header=\""
-                      << rawPacketIdHeader << "\" qos=" << static_cast<int>(meta.qos)
+                      << rawPacketIdHeader << "\" qos=" << static_cast<int>(qos)
                       << '\n' << std::flush;
             response.status = k_http_status_bad_request;
             response.set_content(buildSingleFieldJsonText("error", "bad_publish_packetid"), "application/json");
@@ -468,7 +469,7 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
         }
 
         Message message{"", std::string{}};
-        if (!parseIncomingMessageBody(request.body, meta.qos, meta.retain, message)) {
+        if (!parseIncomingMessageBody(request.body, qos, retain, dup, message)) {
             std::cout << "  source: publish rejected bad payload body=" << request.body
                       << '\n' << std::flush;
             response.status = k_http_status_bad_request;
@@ -485,18 +486,10 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
                 .includeReasonChain = true,
             };
 
-            Message logMessage{message.topic(), message.value(), meta.qos, meta.retain, meta.dup};
-            for (const auto& reasonEntry : std::views::reverse(message.reason())) {
-                logMessage.addReason(reasonEntry.message, reasonEntry.timestamp);
-            }
-            if (message.rawPayload().has_value()) {
-                logMessage.setRawPayload(*message.rawPayload());
-            }
-
             if (const auto line = buildMessageLogLine(
                     "broker_connector_source",
                     MessageLogDirection::Incoming,
-                    logMessage,
+                    message,
                     k_log_config);
                 line.has_value()) {
                 std::cout << *line;
@@ -524,9 +517,9 @@ bool SourceHttpBrokerAdapter::startListener(std::string& errorMessage) {
         if (!rawPacketIdHeader.empty()) {
             response.set_header("packetid", rawPacketIdHeader);
         }
-        if (meta.qos == Qos::AtLeastOnce) {
+        if (qos == Qos::AtLeastOnce) {
             response.set_header("packet", "puback");
-        } else if (meta.qos == Qos::ExactlyOnce) {
+        } else if (qos == Qos::ExactlyOnce) {
             response.set_header("packet", "pubrec");
         }
     });

@@ -260,7 +260,7 @@ bool BrokerConnectorComponent::isRunning() const {
 }
 
 Message BrokerConnectorComponent::toForwardMessage(const Message& message,
-                                                   const SourcePublishMeta& sourceMeta) const {
+                                                   [[maybe_unused]] const SourcePublishMeta& sourceMeta) const {
     constexpr std::string_view k_sys_topic_prefix{"$SYS/"};
 
     const std::string& sourceTopic = message.topic();
@@ -273,13 +273,13 @@ Message BrokerConnectorComponent::toForwardMessage(const Message& message,
 
     Qos targetQos = Qos::AtLeastOnce;
     if (config_.normalizeQosToAtLeastOnce) {
-        targetQos = sourceMeta.qos == Qos::AtMostOnce ? Qos::AtMostOnce : Qos::AtLeastOnce;
+        targetQos = message.qos() == Qos::AtMostOnce ? Qos::AtMostOnce : Qos::AtLeastOnce;
     } else {
-        targetQos = sourceMeta.qos;
+        targetQos = message.qos();
     }
 
-    const bool targetRetain = config_.retainPassthrough ? sourceMeta.retain : false;
-    const bool targetDup = sourceMeta.dup && targetQos != Qos::AtMostOnce;
+    const bool targetRetain = config_.retainPassthrough ? message.retain() : false;
+    const bool targetDup = message.dup() && targetQos != Qos::AtMostOnce;
 
     Message mapped{targetTopic, message.value(), targetQos, targetRetain, targetDup};
     if (message.rawPayload().has_value()) {

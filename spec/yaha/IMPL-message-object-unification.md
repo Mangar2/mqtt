@@ -143,7 +143,7 @@ Status: done.
   `broker_connector/test/relay_component_test.cpp`, receiver-publish-port tests, `http_mqtt_interface`
   tests referencing `HttpMqttPublishOptions.dup`.
 
-Status: not started.
+Status: done.
 
 ### Phase C: Remove `relay_component.cpp` envelope bypass (finding D)
 
