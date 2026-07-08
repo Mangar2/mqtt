@@ -2,6 +2,8 @@
 
 #include "helper/string_helper.h"
 #include "json/json_value.h"
+#include "yaha/message/message_log_service.h"
+#include "yaha/message/message_payload_codec.h"
 
 #include <cmath>
 #include <exception>
@@ -22,19 +24,37 @@ constexpr int kHttpSuccessThreshold{300};
 constexpr int kAlertPriority{1};
 constexpr int kDefaultPriority{-1};
 
-void logError(const std::string& reasonText, const std::string& topicName) {
-    std::cerr << "pushover[error]"
-              << " topic=" << topicName
-              << " reason=" << reasonText
-              << '\n' << std::flush;
+void logError(const std::string& reasonText, const Message& message) {
+    constexpr MessageLogConfig kLogConfig{
+        .enableIncoming = true,
+        .enableOutgoing = false,
+        .includeReasonChain = true,
+    };
+
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "pushover", MessageLogDirection::Incoming, message, kLogConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cerr << *logLine << " reason=\"" << escapeJsonString(reasonText) << "\"\n" << std::flush;
 }
 
-void logHttpError(const int statusCode, const std::string& reasonText, const std::string& topicName) {
-    std::cerr << "pushover[error]"
-              << " topic=" << topicName
-              << " httpStatus=" << statusCode
-              << " reason=" << reasonText
-              << '\n' << std::flush;
+void logHttpError(const int statusCode, const std::string& reasonText, const Message& message) {
+    constexpr MessageLogConfig kLogConfig{
+        .enableIncoming = true,
+        .enableOutgoing = false,
+        .includeReasonChain = true,
+    };
+
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "pushover", MessageLogDirection::Incoming, message, kLogConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cerr << *logLine << " httpStatus=" << statusCode
+              << " reason=\"" << escapeJsonString(reasonText) << "\"\n" << std::flush;
 }
 
 [[nodiscard]] std::optional<mqtt::json::JsonValue> tryParseJsonObject(const std::string& payloadText) {
@@ -109,7 +129,7 @@ void PushoverComponent::handleMessage(const Message& message) {
 
     if (!requestSender_) {
         constexpr const char* kReasonText = "pushover request sender callback is missing";
-        logError(kReasonText, message.topic());
+        logError(kReasonText, message);
         publishStatusMessage(buildStatusMessage(
             kHttpStatusInternalServerError,
             message.reason(),
@@ -119,7 +139,7 @@ void PushoverComponent::handleMessage(const Message& message) {
 
     if (config_.devices.empty()) {
         constexpr const char* kReasonText = "pushover devices are not configured";
-        logError(kReasonText, message.topic());
+        logError(kReasonText, message);
         publishStatusMessage(buildStatusMessage(
             kHttpStatusUnprocessableEntity,
             message.reason(),
@@ -145,13 +165,13 @@ void PushoverComponent::handleMessage(const Message& message) {
             const PushoverHttpResult result = requestSender_(config_.path, payload);
             const std::string resultReason = buildResultReason(result.statusCode, device, result.payload);
             if (result.statusCode >= kHttpSuccessThreshold) {
-                logHttpError(result.statusCode, resultReason, message.topic());
+                logHttpError(result.statusCode, resultReason, message);
             }
             publishStatusMessage(buildStatusMessage(result.statusCode, message.reason(), resultReason));
         } catch (const std::exception& exceptionValue) {
             const std::string reasonText =
                 std::format("pushover request failed for device {}: {}", device, exceptionValue.what());
-            logError(reasonText, message.topic());
+            logError(reasonText, message);
             publishStatusMessage(buildStatusMessage(
                 kHttpStatusInternalServerError,
                 message.reason(),
@@ -159,7 +179,7 @@ void PushoverComponent::handleMessage(const Message& message) {
         } catch (...) {
             const std::string reasonText =
                 std::format("pushover request failed for device {}: unknown", device);
-            logError(reasonText, message.topic());
+            logError(reasonText, message);
             publishStatusMessage(buildStatusMessage(
                 kHttpStatusInternalServerError,
                 message.reason(),

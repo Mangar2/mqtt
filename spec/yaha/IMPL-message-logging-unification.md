@@ -143,6 +143,12 @@ Remove local duplicate message formatting helpers once each client is migrated.
 
 Status:
 - Completed on 2026-05-19.
+- Status correction (2026-07-08): `rs485_interface` was verified against current code by
+  `spec/yaha/IMPL-message-object-unification.md` (Phase E) and found to have **no** message-flow
+  logging at all — only RS485-wire-level trace (`buildLegacyLoggingInfo`) existed. Fixed in that
+  plan's Phase E: added `logIncomingMessageIfEnabled`/`logOutgoingMessageIfEnabled` using
+  `buildMessageLogLine`/`message_log_service`, gated by the existing `logIncomingMessages`/
+  `logOutgoingMessages` config fields. Now genuinely complete.
 
 ## Phase 4: Client adoption wave B
 
@@ -156,6 +162,15 @@ Replace partial/plain reason output with full reason chain output.
 
 Status:
 - Completed on 2026-05-19.
+- Status correction (2026-07-08): `broker_connector` was verified against current code by
+  `spec/yaha/IMPL-message-object-unification.md` (Phase E) and found only partially done —
+  `source_http_adapter.cpp` (source receive path) did use `buildMessageLogLine` correctly, but
+  `relay_component.cpp`/`receiver_publish_port.cpp` (receiver send path) had **no** message-flow
+  log line at all, only numeric `RelayCounters`. Fixed in that plan's Phase E: added
+  `logIncomingMessageIfEnabled`/`logOutgoingMessageIfEnabled` to `BrokerConnectorComponent`
+  (component `broker_connector_relay`), gated by new `RelayPolicyConfig.logIncomingMessages`/
+  `logOutgoingMessages` fields wired from the existing `monitoring.logIncomingMessage`/
+  `logOutgoingMessage` INI keys. Now genuinely complete for both source and relay legs.
 
 ## Phase 5: Config unification and compatibility lock
 

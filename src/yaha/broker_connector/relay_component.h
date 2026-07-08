@@ -26,6 +26,8 @@ struct RelayPolicyConfig {
     std::chrono::milliseconds publishRetryBackoff{k_default_publish_retry_backoff}; ///< Sleep between publish retries.
     bool normalizeQosToAtLeastOnce{true};                            ///< Map source qos 1/2 to outgoing qos 1.
     bool retainPassthrough{true};                                    ///< Preserve source retain flag when true.
+    bool logIncomingMessages{false};                                 ///< Enables structured incoming message-flow logging.
+    bool logOutgoingMessages{false};                                 ///< Enables structured outgoing message-flow logging.
 };
 
 /**
@@ -116,6 +118,9 @@ public:
 private:
     [[nodiscard]] Message toForwardMessage(const Message& message,
                                            const SourcePublishMeta& sourceMeta) const;
+
+    void logIncomingMessageIfEnabled(const Message& message) const;
+    void logOutgoingMessageIfEnabled(const Message& message) const;
 
     RelayPolicyConfig config_{};
 

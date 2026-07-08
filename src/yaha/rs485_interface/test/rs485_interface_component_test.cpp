@@ -412,3 +412,65 @@ TEST_CASE("rs485_interface_component_numeric_state_cache_and_cached_blink_path",
     REQUIRE_NOTHROW(component.handleMessage(yaha::Message{"house/room/device/power/blink", k_blink_cycles_numeric}));
     REQUIRE_NOTHROW(component.close());
 }
+
+TEST_CASE("rs485_interface_component_logs_incoming_message_when_enabled", "[rs485_interface]") {
+    yaha::Rs485InterfaceConfig config = makeComponentConfig();
+    config.logIncomingMessages = true;
+
+    yaha::Rs485InterfaceComponent component{config};
+
+    std::ostringstream captured{};
+    std::streambuf* oldBuffer = std::cout.rdbuf(captured.rdbuf());
+
+    component.handleMessage(yaha::Message{"house/room/device/power/set", std::string{"on"}});
+
+    std::cout.rdbuf(oldBuffer);
+
+    const std::string output = captured.str();
+    REQUIRE(output.find("component=\"rs485_interface\" direction=\"incoming\"") != std::string::npos);
+    REQUIRE(output.find("topic=\"house/room/device/power/set\"") != std::string::npos);
+    REQUIRE(output.find("qos=1 retain=false dup=false") != std::string::npos);
+}
+
+TEST_CASE("rs485_interface_component_logs_outgoing_message_when_enabled", "[rs485_interface]") {
+    yaha::Rs485InterfaceConfig config = makeComponentConfig();
+    config.logOutgoingMessages = true;
+
+    yaha::Rs485InterfaceComponent component{config};
+    component.setPublishCallback([](const yaha::Message&) {
+        return yaha::PublishResult::ok();
+    });
+
+    yaha::Rs485SerialMessage serial{};
+    serial.sender = k_device_address;
+    serial.receiver = k_my_address;
+    serial.command = 'P';
+    serial.value = k_value_on;
+    serial.version = 1U;
+    serial.reply = false;
+
+    std::ostringstream captured{};
+    std::streambuf* oldBuffer = std::cout.rdbuf(captured.rdbuf());
+
+    component.feedSerialBytes(yaha::encodeRs485SerialMessage(serial));
+
+    std::cout.rdbuf(oldBuffer);
+
+    const std::string output = captured.str();
+    REQUIRE(output.find("component=\"rs485_interface\" direction=\"outgoing\"") != std::string::npos);
+    REQUIRE(output.find("topic=\"house/room/device/power\"") != std::string::npos);
+}
+
+TEST_CASE("rs485_interface_component_does_not_log_when_disabled", "[rs485_interface]") {
+    yaha::Rs485InterfaceComponent component{makeComponentConfig()};
+
+    std::ostringstream captured{};
+    std::streambuf* oldBuffer = std::cout.rdbuf(captured.rdbuf());
+
+    component.handleMessage(yaha::Message{"house/room/device/power/set", std::string{"on"}});
+
+    std::cout.rdbuf(oldBuffer);
+
+    const std::string output = captured.str();
+    REQUIRE(output.find("component=\"rs485_interface\"") == std::string::npos);
+}

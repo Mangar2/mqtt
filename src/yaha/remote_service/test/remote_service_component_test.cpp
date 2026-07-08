@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <iostream>
 #include <mutex>
 #include <stdexcept>
 #include <sstream>
@@ -546,6 +547,80 @@ TEST_CASE("remote_service_component_publish_command_calls_callback_with_resolved
         REQUIRE(published[0].topic() == "house/kitchen/light/set");
         REQUIRE(std::get<std::string>(published[0].value()) == "on");
     }
+
+    component.close();
+}
+
+TEST_CASE("remote_service_component_logs_outgoing_message_when_enabled", "[remote_service]") {
+    const std::uint16_t listenPort = reserveFreeLocalPort();
+    FileStoreMappingMockServer fileStore{listenPort, "/remoteservice/mapping"};
+    fileStore.setPayload(
+        R"({"services":[{"path":"/light","devices":{"kitchen":"house/kitchen/light/set"},"reason":"switch"}]})");
+
+    yaha::RemoteServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = listenPort;
+    config.mappingKeyPath = "/remoteservice/mapping";
+    config.logOutgoingMessages = true;
+
+    yaha::RemoteServiceComponent component{config};
+    component.run();
+    component.setPublishCallback([](const yaha::Message&) {
+    });
+
+    const yaha::RemoteServiceCommandRequest requestData{
+        .path = "/light",
+        .deviceId = "kitchen",
+        .state = std::string{"on"},
+        .token = "token-3"};
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousStdoutBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    const yaha::RemoteServiceCommandResult result = component.publishCommand(requestData);
+
+    std::cout.rdbuf(previousStdoutBuffer);
+
+    REQUIRE(result.isSuccess());
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find("component=\"remote_service\" direction=\"outgoing\"") != std::string::npos);
+    REQUIRE(logText.find("topic=\"house/kitchen/light/set\"") != std::string::npos);
+
+    component.close();
+}
+
+TEST_CASE("remote_service_component_does_not_log_when_disabled", "[remote_service]") {
+    const std::uint16_t listenPort = reserveFreeLocalPort();
+    FileStoreMappingMockServer fileStore{listenPort, "/remoteservice/mapping"};
+    fileStore.setPayload(
+        R"({"services":[{"path":"/light","devices":{"kitchen":"house/kitchen/light/set"},"reason":"switch"}]})");
+
+    yaha::RemoteServiceConfig config{};
+    config.fileStoreHost = "127.0.0.1";
+    config.fileStorePort = listenPort;
+    config.mappingKeyPath = "/remoteservice/mapping";
+
+    yaha::RemoteServiceComponent component{config};
+    component.run();
+    component.setPublishCallback([](const yaha::Message&) {
+    });
+
+    const yaha::RemoteServiceCommandRequest requestData{
+        .path = "/light",
+        .deviceId = "kitchen",
+        .state = std::string{"on"},
+        .token = "token-3"};
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousStdoutBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    const yaha::RemoteServiceCommandResult result = component.publishCommand(requestData);
+
+    std::cout.rdbuf(previousStdoutBuffer);
+
+    REQUIRE(result.isSuccess());
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find("component=\"remote_service\"") == std::string::npos);
 
     component.close();
 }

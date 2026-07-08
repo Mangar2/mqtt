@@ -178,6 +178,7 @@ private:
     [[nodiscard]] bool reloadMappingFromFileStore(const std::string& triggerText);
     [[nodiscard]] bool isMonitoringTopic(const std::string& topicName) const;
     [[nodiscard]] bool isMatchingMappingReloadEvent(const Message& message) const;
+    void logOutgoingMessageIfEnabled(const Message& message) const;
 
     RemoteServiceConfig config_{};
 

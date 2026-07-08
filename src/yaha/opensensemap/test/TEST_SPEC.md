@@ -27,10 +27,12 @@
 - Input: message for configured sensor.
 - Expected: one status publish on `$MONITOR/opensensemap/error` with status code `500`.
 
-6. `handle_message_reports_error_when_publish_callback_missing`
+6. `handle_message_reports_error_when_publish_callback_missing` (test file: `handle_message_publishes_error_when_sender_callback_missing`)
 - Scenario: incoming message arrives without configured publish callback.
 - Input: message for known sensor.
-- Expected: internal handling fails gracefully with callback-missing reason.
+- Expected: internal handling fails gracefully with callback-missing reason, and `logError` emits a
+  structured stderr line via shared `buildMessageLogLine` (`component="opensensemap" direction="incoming"`,
+  topic, plus `reason="..."`).
 
 7. `handle_message_reports_error_on_unknown_exception`
 - Scenario: sender callback throws a non-std exception type.

@@ -262,6 +262,8 @@ void applyMonitoringAndMessageLogConfig(
 
     parsed.sourceConfig.logIncomingMessages = messageLogConfig.enableIncoming;
     parsed.receiverConfig.enableMessageTrace = messageLogConfig.enableOutgoing;
+    parsed.relayPolicyConfig.logIncomingMessages = messageLogConfig.enableIncoming;
+    parsed.relayPolicyConfig.logOutgoingMessages = messageLogConfig.enableOutgoing;
 }
 
 BrokerConnectorClientRuntimeConfigLoadResult tryLoadBrokerConnectorClientRuntimeConfigFromIni(

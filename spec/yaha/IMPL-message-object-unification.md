@@ -43,6 +43,10 @@ This plan treats `rs485_interface` and `broker_connector` (relay/receiver side) 
 finishes them, rather than assuming the earlier "Completed" marker is reliable. Once finished, that
 status table in `IMPL-message-logging-unification.md` should be corrected too (see Phase E below).
 
+Resolved in Phase E (2026-07-08): both gaps closed and `IMPL-message-logging-unification.md`
+corrected with status-correction notes under its Phase 3 (`rs485_interface`) and Phase 4
+(`broker_connector`) sections.
+
 ## Scope
 
 ### Confirmed already Message-based (out of scope)
@@ -197,7 +201,7 @@ Migrate the following onto `buildMessageLogLine`/`message_log_service` (pattern 
 - Once done, correct the status table in `IMPL-message-logging-unification.md` for `rs485_interface`
   and `broker_connector` receiver/relay side.
 
-Status: not started.
+Status: done.
 
 ### Phase F: Documentation sync
 

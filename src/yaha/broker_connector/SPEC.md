@@ -102,6 +102,8 @@ ack/handshake bookkeeping that is not message content.
 | `publishRetryBackoff` | `std::chrono::milliseconds` | Delay between retry attempts |
 | `normalizeQosToAtLeastOnce` | `bool` | Maps source qos 1/2 to outgoing qos 1 |
 | `retainPassthrough` | `bool` | Keep or clear source retain flag |
+| `logIncomingMessages` | `bool` | Enables structured incoming message-flow logging (component `broker_connector_relay`) |
+| `logOutgoingMessages` | `bool` | Enables structured outgoing message-flow logging (component `broker_connector_relay`) |
 
 ### Struct `RelayCounters`
 
@@ -188,7 +190,9 @@ On successful handshake, lifecycle trace logs include concrete source broker res
 
 `BrokerConnectorComponent` forwarding path:
 1. Rejects forwarding when not running or no publish callback is wired.
-2. Increments `received` counter for each accepted source callback.
+2. Increments `received` counter for each accepted source callback and emits a structured incoming
+   message-flow log line (component `broker_connector_relay`, via `buildMessageLogLine`) when
+   `RelayPolicyConfig.logIncomingMessages` is enabled.
 3. `toForwardMessage` builds the outgoing `Message` via `message.clone()` plus `setTopic()`/`setQos()`/
    `setRetain()`/`setDup()` (no field-by-field reconstruction, no manual reason-copy loop — `clone()`
    already copies the reason chain and `rawPayload` correctly):
@@ -203,7 +207,9 @@ On successful handshake, lifecycle trace logs include concrete source broker res
 	- retain mapping: source retain passthrough or forced false, read from `message.retain()`
 	- dup mapping: source `dup` (`message.dup()`) is forwarded for QoS>0, forced false for QoS0
 4. Calls `PublishCallback` (generic mqtt client boundary) with bounded retries.
-5. Increments `forwarded` on success or `failed` after retry budget is exhausted.
+5. On success, emits a structured outgoing message-flow log line for the mapped message when
+   `RelayPolicyConfig.logOutgoingMessages` is enabled, then increments `forwarded`; increments `failed`
+   after the retry budget is exhausted.
 
 ## Threading model
 

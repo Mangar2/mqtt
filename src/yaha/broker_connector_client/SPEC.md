@@ -74,10 +74,12 @@ Protocol and domain logic remain in `broker_connector/`. Runtime orchestration i
 ### Section `[monitoring]`
 
 - `sourceLifecycleTrace` bool
-- `logIncomingMessage` bool (optional, default `true`, controls source publish-recv logs)
-- `logOutgoingMessage` bool (optional, default `true`, controls receiver mqtt sent/recv trace logs)
+- `logIncomingMessage` bool (optional, default `true`, controls source publish-recv logs and
+  `RelayPolicyConfig.logIncomingMessages` structured relay logging)
+- `logOutgoingMessage` bool (optional, default `true`, controls receiver mqtt sent/recv trace logs and
+  `RelayPolicyConfig.logOutgoingMessages` structured relay logging)
 
-Monitoring message-log booleans are mapped through shared message-log INI helper (`tryLoadMessageLogConfigFromIni`) with unchanged legacy singular key names.
+Monitoring message-log booleans are mapped through shared message-log INI helper (`tryLoadMessageLogConfigFromIni`) with unchanged legacy singular key names, and now drive both the source/receiver logging paths and the relay component's own `broker_connector_relay` message-flow log lines.
 
 ## Default handling
 

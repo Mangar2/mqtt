@@ -126,6 +126,7 @@ bool tryLoadRemoteServiceClientRuntimeConfigFromIni(
     parsed.logIncomingMessages = messageLogConfig.enableIncoming;
     parsed.logOutgoingMessages = messageLogConfig.enableOutgoing;
     parsed.mqttConfig.logReason = messageLogConfig.includeReasonChain;
+    parsed.remoteServiceConfig.logOutgoingMessages = messageLogConfig.enableOutgoing;
 
     output = std::move(parsed);
     errorMessage.clear();

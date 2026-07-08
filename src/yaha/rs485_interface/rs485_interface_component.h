@@ -87,6 +87,9 @@ private:
     [[nodiscard]] std::string readCachedTopicState(const std::string& topic) const;
     void updateTopicStateCache(const Message& message);
 
+    void logIncomingMessageIfEnabled(const Message& message) const;
+    void logOutgoingMessageIfEnabled(const Message& message) const;
+
     Rs485InterfaceConfig config_{};
     Rs485TopicMapper mapper_;
     Rs485Scheduler scheduler_;

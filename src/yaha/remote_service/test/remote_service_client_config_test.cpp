@@ -209,6 +209,7 @@ TEST_CASE("remote_service_runtime_config_parses_message_logging_flags", "[remote
     REQUIRE(runtimeConfig.logIncomingMessages);
     REQUIRE(runtimeConfig.logOutgoingMessages);
     REQUIRE(runtimeConfig.mqttConfig.logReason);
+    REQUIRE(runtimeConfig.remoteServiceConfig.logOutgoingMessages);
 }
 
 TEST_CASE("remote_service_runtime_config_falls_back_on_invalid_message_logging_flags", "[remote_service]") {

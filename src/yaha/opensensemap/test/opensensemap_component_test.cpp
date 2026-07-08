@@ -3,7 +3,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <iostream>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -158,6 +160,7 @@ TEST_CASE("handle_message_publishes_error_when_sender_throws", "[opensensemap]")
     REQUIRE(published->reason()[0].message.find("network down") != std::string::npos);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("handle_message_publishes_error_when_sender_callback_missing", "[opensensemap]") {
     std::optional<yaha::Message> published{};
     yaha::OpenSenseMapComponent component{makeConfig(), yaha::OpenSenseMapRequestSender{}};
@@ -168,12 +171,22 @@ TEST_CASE("handle_message_publishes_error_when_sender_callback_missing", "[opens
     });
     component.run();
 
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousStderrBuffer = std::cerr.rdbuf(capturedOutput.rdbuf());
+
     component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueOne});
+
+    std::cerr.rdbuf(previousStderrBuffer);
 
     REQUIRE(published.has_value());
     REQUIRE(published->topic() == "$MONITOR/opensensemap/error");
     REQUIRE(std::get<double>(published->value()) == kStatusInternalServerError);
     REQUIRE(published->reason().front().message.find("callback is missing") != std::string::npos);
+
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find("component=\"opensensemap\" direction=\"incoming\"") != std::string::npos);
+    REQUIRE(logText.find("topic=\"house/living/temperature\"") != std::string::npos);
+    REQUIRE(logText.find("reason=\"opensensemap request sender callback is missing\"") != std::string::npos);
 }
 
 TEST_CASE("handle_message_ignores_input_when_component_not_running", "[opensensemap]") {

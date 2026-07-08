@@ -7,8 +7,10 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <iostream>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -682,6 +684,60 @@ TEST_CASE("relay_component_rewrites_status_topic_with_json_escaping", "[broker_c
 
     const std::string& rewritten = *published.front().rawPayload();
     CHECK(rewritten.find("status/a\\\\b\\\"c\\n\\r\\td") != std::string::npos);
+
+    component.close();
+}
+
+TEST_CASE("relay_component_logs_incoming_and_outgoing_messages_when_enabled", "[broker_connector]") {
+    yaha::RelayPolicyConfig config{};
+    config.maxPublishRetries = 0U;
+    config.logIncomingMessages = true;
+    config.logOutgoingMessages = true;
+
+    yaha::BrokerConnectorComponent component{config};
+    component.setPublishCallback([](const yaha::Message&) {
+    });
+    component.run();
+
+    yaha::SourcePublishMeta sourceMeta{};
+    yaha::Message sourceMessage{"home/log/topic", std::string{"on"}};
+
+    std::ostringstream captured{};
+    std::streambuf* oldBuffer = std::cout.rdbuf(captured.rdbuf());
+
+    REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
+
+    std::cout.rdbuf(oldBuffer);
+
+    const std::string output = captured.str();
+    REQUIRE(output.find("component=\"broker_connector_relay\" direction=\"incoming\"") != std::string::npos);
+    REQUIRE(output.find("component=\"broker_connector_relay\" direction=\"outgoing\"") != std::string::npos);
+    REQUIRE(output.find("topic=\"home/log/topic\"") != std::string::npos);
+
+    component.close();
+}
+
+TEST_CASE("relay_component_does_not_log_when_disabled", "[broker_connector]") {
+    yaha::RelayPolicyConfig config{};
+    config.maxPublishRetries = 0U;
+
+    yaha::BrokerConnectorComponent component{config};
+    component.setPublishCallback([](const yaha::Message&) {
+    });
+    component.run();
+
+    yaha::SourcePublishMeta sourceMeta{};
+    yaha::Message sourceMessage{"home/log/topic", std::string{"on"}};
+
+    std::ostringstream captured{};
+    std::streambuf* oldBuffer = std::cout.rdbuf(captured.rdbuf());
+
+    REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
+
+    std::cout.rdbuf(oldBuffer);
+
+    const std::string output = captured.str();
+    REQUIRE(output.find("component=\"broker_connector_relay\"") == std::string::npos);
 
     component.close();
 }

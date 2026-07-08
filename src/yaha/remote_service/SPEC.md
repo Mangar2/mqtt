@@ -19,6 +19,7 @@ monitor-triggered reload, and phase-3 command resolution/publish handoff API.
 | `fileStoreHost` | `std::string` | `127.0.0.1` | FileStore HTTP endpoint host |
 | `fileStorePort` | `std::uint16_t` | `8210` | FileStore HTTP endpoint port |
 | `mappingKeyPath` | `std::string` | empty | Required FileStore key path for service mapping payload |
+| `logOutgoingMessages` | `bool` | `false` | Enables structured outgoing message-flow logging (component `remote_service`) for published commands |
 
 ### Struct `RemoteServiceServiceMapping`
 
@@ -142,7 +143,8 @@ Lifecycle logging:
 - `publishCommand()` calls `resolveCommand()` and publishes resolved message via injected callback.
 - Callback missing or callback exception returns `PublishFailed`.
 - Callback missing, callback exception, and callback non-success results emit structured error logs (`remote_service[error] op=publish_command ...`).
-- Callback success returns `Success`.
+- Callback success emits a structured outgoing message-flow log line via shared `buildMessageLogLine`
+  (component `remote_service`) when `RemoteServiceConfig.logOutgoingMessages` is enabled, then returns `Success`.
 
 Phase-4 integration note:
 

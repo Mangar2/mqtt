@@ -3,6 +3,7 @@
 #include "httplib.h"
 #include "json/json_value.h"
 #include "yaha/error_handling/yaha_error.h"
+#include "yaha/message/message_log_service.h"
 
 #include <algorithm>
 #include <chrono>
@@ -61,40 +62,19 @@ std::string joinTopic(const std::string& prefix, const std::string& suffix) {
     return "unknown";
 }
 
-[[nodiscard]] std::string valueToLogText(const Value& messageValue) {
-    if (std::holds_alternative<std::string>(messageValue)) {
-        return std::get<std::string>(messageValue);
+void logMessage(const MessageLogDirection direction, const Message& message) {
+    constexpr MessageLogConfig k_log_config{
+        .enableIncoming = true,
+        .enableOutgoing = true,
+        .includeReasonChain = true,
+    };
+
+    const std::optional<std::string> logLine = buildMessageLogLine("file_store", direction, message, k_log_config);
+    if (!logLine.has_value()) {
+        return;
     }
 
-    std::ostringstream textStream;
-    textStream << std::get<double>(messageValue);
-    return textStream.str();
-}
-
-[[nodiscard]] std::string qosToLogText(const Qos qosValue) {
-    switch (qosValue) {
-        case Qos::AtMostOnce:
-            return "0";
-        case Qos::AtLeastOnce:
-            return "1";
-        case Qos::ExactlyOnce:
-            return "2";
-    }
-
-    return "unknown";
-}
-
-void logMessage(const char* directionText, const Message& message) {
-    std::cout << "file_store[" << directionText << "] topic=" << message.topic()
-              << " qos=" << qosToLogText(message.qos())
-              << " retain=" << (message.retain() ? "1" : "0")
-              << " value=" << valueToLogText(message.value());
-
-    if (!message.reason().empty()) {
-        std::cout << " reason=\"" << message.reason().front().message << '"';
-    }
-
-    std::cout << '\n' << std::flush;
+    std::cout << *logLine << '\n' << std::flush;
 }
 
 void logFileIo(const std::string& operationText,
@@ -149,7 +129,7 @@ SubscriptionMap FileStore::getSubscriptions() const {
 
 void FileStore::handleMessage(const Message& message) {
     processPendingMonitoringQueue();
-    logMessage("in", message);
+    logMessage(MessageLogDirection::Incoming, message);
 }
 
 void FileStore::setPublishCallback(PublishCallback callback) {
@@ -547,7 +527,7 @@ bool FileStore::tryPublishMonitoringMessage(const std::string& eventType,
             return false;
         }
 
-        logMessage("out", monitoringMessage);
+        logMessage(MessageLogDirection::Outgoing, monitoringMessage);
         return true;
     } catch (const std::exception& exceptionValue) {
         logMonitoringFailure(eventType,

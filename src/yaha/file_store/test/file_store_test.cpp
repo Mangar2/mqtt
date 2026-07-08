@@ -668,6 +668,28 @@ TEST_CASE("handle_message_is_noop", "[file_store]") {
     REQUIRE(store.getSubscriptions().empty());
 }
 
+TEST_CASE("handle_message_logs_incoming_with_full_reason_chain", "[file_store]") {
+    yaha::FileStoreConfig config{};
+    config.serverPort = 0U;
+    yaha::FileStore store{config};
+
+    yaha::Message message{"topic/a", std::string{"payload"}};
+    message.addReason("first", "2026-01-01T00:00:00Z");
+    message.addReason("second", "2026-01-02T00:00:00Z");
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousStdoutBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    store.handleMessage(message);
+
+    std::cout.rdbuf(previousStdoutBuffer);
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find("component=\"file_store\" direction=\"incoming\"") != std::string::npos);
+    REQUIRE(logText.find("topic=\"topic/a\"") != std::string::npos);
+    REQUIRE(logText.find("\"message\":\"second\"") != std::string::npos);
+    REQUIRE(logText.find("\"message\":\"first\"") != std::string::npos);
+}
+
 TEST_CASE("http_post_emits_monitoring_changed_event", "[file_store]") {
     const auto tempDir = makeTempDirectory();
     DirectoryCleanupGuard dirGuard{tempDir};
@@ -703,6 +725,38 @@ TEST_CASE("http_post_emits_monitoring_changed_event", "[file_store]") {
     const auto& payloadText = std::get<std::string>(events.front().value());
     REQUIRE(payloadText.find("\"keyPath\":\"/automation/rules\"") != std::string::npos);
     REQUIRE(payloadText.find("\"filename\":") == std::string::npos);
+}
+
+TEST_CASE("monitoring_publish_success_logs_outgoing_message", "[file_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::FileStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.directory = tempDir;
+
+    yaha::FileStore store{config};
+    store.setPublishCallback([](const yaha::Message&) {
+    });
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousStdoutBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    StoreCloseGuard storeGuard{&store};
+    store.run();
+    REQUIRE(waitForHttpReady(config.serverPort));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    const auto postResponse = client.Post("/automation/rules", "{\"ok\":true}", "application/json");
+    REQUIRE(postResponse != nullptr);
+    REQUIRE(postResponse->status == 200);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds{50});
+
+    std::cout.rdbuf(previousStdoutBuffer);
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find("component=\"file_store\" direction=\"outgoing\"") != std::string::npos);
+    REQUIRE(logText.find("topic=\"$MONITOR/FileStore/changed\"") != std::string::npos);
 }
 
 TEST_CASE("watcher_emits_created_changed_deleted_events", "[file_store]") {
@@ -866,7 +920,7 @@ TEST_CASE("monitoring_publish_throw_logs_out_fail_without_false_success", "[file
     std::cout.rdbuf(previousStdoutBuffer);
     const std::string logText = capturedOutput.str();
     REQUIRE(logText.find("file_store[out-fail] eventType=changed") != std::string::npos);
-    REQUIRE(logText.find("file_store[out] topic=$MONITOR/FileStore/changed") == std::string::npos);
+    REQUIRE(logText.find("component=\"file_store\" direction=\"outgoing\"") == std::string::npos);
 }
 
 TEST_CASE("monitoring_publish_result_failure_logs_structured_category", "[file_store]") {

@@ -1,8 +1,10 @@
 #include "yaha/broker_connector/relay_component.h"
 
+#include "yaha/message/message_log_service.h"
 #include "yaha/message/message_payload_codec.h"
 
 #include <exception>
+#include <iostream>
 #include <string_view>
 #include <thread>
 #include <utility>
@@ -83,12 +85,15 @@ bool BrokerConnectorComponent::onIncomingPublish(const Message& message,
         callback = publishCallback_;
     }
 
+    logIncomingMessageIfEnabled(message);
+
     const Message outgoingMessage = toForwardMessage(message, sourceMeta);
 
     std::uint32_t attempt = 0U;
     while (true) {
         try {
             callback(outgoingMessage);
+            logOutgoingMessageIfEnabled(outgoingMessage);
             std::lock_guard<std::mutex> lock{relay_state_mutex_};
             counters_.forwarded += 1U;
             return true;
@@ -157,6 +162,44 @@ Message BrokerConnectorComponent::toForwardMessage(const Message& message,
     }
 
     return mapped;
+}
+
+void BrokerConnectorComponent::logIncomingMessageIfEnabled(const Message& message) const {
+    const MessageLogConfig logConfig{
+        .enableIncoming = config_.logIncomingMessages,
+        .enableOutgoing = false,
+        .includeReasonChain = true,
+    };
+
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "broker_connector_relay",
+        MessageLogDirection::Incoming,
+        message,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cout << *logLine << '\n' << std::flush;
+}
+
+void BrokerConnectorComponent::logOutgoingMessageIfEnabled(const Message& message) const {
+    const MessageLogConfig logConfig{
+        .enableIncoming = false,
+        .enableOutgoing = config_.logOutgoingMessages,
+        .includeReasonChain = true,
+    };
+
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "broker_connector_relay",
+        MessageLogDirection::Outgoing,
+        message,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cout << *logLine << '\n' << std::flush;
 }
 
 } // namespace yaha

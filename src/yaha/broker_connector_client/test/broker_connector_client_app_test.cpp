@@ -112,6 +112,8 @@ TEST_CASE("load_runtime_config_parses_source_receiver_and_automation", "[broker_
     REQUIRE(config.relayPolicyConfig.publishRetryBackoff.count() == 350);
     REQUIRE_FALSE(config.relayPolicyConfig.normalizeQosToAtLeastOnce);
     REQUIRE_FALSE(config.relayPolicyConfig.retainPassthrough);
+    REQUIRE_FALSE(config.relayPolicyConfig.logIncomingMessages);
+    REQUIRE_FALSE(config.relayPolicyConfig.logOutgoingMessages);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -143,6 +145,8 @@ TEST_CASE("load_runtime_config_uses_defaults_when_optional_keys_missing", "[brok
     REQUIRE(config.receiverConfig.enableMessageTrace);
     REQUIRE(config.relayPolicyConfig.maxPublishRetries == 3U);
     REQUIRE(config.relayPolicyConfig.normalizeQosToAtLeastOnce);
+    REQUIRE(config.relayPolicyConfig.logIncomingMessages);
+    REQUIRE(config.relayPolicyConfig.logOutgoingMessages);
 }
 
 TEST_CASE("load_runtime_config_falls_back_on_invalid_bool_field", "[broker_connector_client]") {

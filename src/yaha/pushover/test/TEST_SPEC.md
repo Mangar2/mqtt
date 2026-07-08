@@ -27,20 +27,24 @@
 - Input: message for configured subscription.
 - Expected: status publish on `$MONITOR/pushover/error` with status code `422`.
 
-6. `handle_message_reports_error_when_publish_callback_missing`
+6. `handle_message_reports_error_when_publish_callback_missing` (test file: `handle_message_publishes_error_when_sender_callback_missing`)
 - Scenario: incoming message arrives without publish callback.
 - Input: message for configured subscription.
-- Expected: processing fails with callback-missing reason.
+- Expected: processing fails with callback-missing reason, and `logError` emits a structured
+  stderr line via shared `buildMessageLogLine` (`component="pushover" direction="incoming"`,
+  topic, plus `reason="..."`).
 
 7. `handle_message_reports_unknown_exception_from_sender`
 - Scenario: sender throws non-std exception.
 - Input: message for configured subscription.
 - Expected: unknown exception reported via error status topic.
 
-8. `handle_message_parses_error_reason_from_response_payload`
+8. `handle_message_parses_error_reason_from_response_payload` (test file: `handle_message_formats_error_payload_arrays_for_http_failure`)
 - Scenario: sender returns non-success response with JSON reason payload.
 - Input: message for configured subscription.
-- Expected: published reason contains parsed remote error text.
+- Expected: published reason contains parsed remote error text, and `logHttpError` emits a
+  structured stderr line via shared `buildMessageLogLine` (`component="pushover" direction="incoming"`,
+  plus `httpStatus=500`).
 
 9. `handle_message_ignores_input_when_not_running`
 - Scenario: message handled before run-state.

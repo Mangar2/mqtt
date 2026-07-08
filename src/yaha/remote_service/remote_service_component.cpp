@@ -1,6 +1,7 @@
 #include "yaha/remote_service/remote_service_component.h"
 
 #include "json/json_value.h"
+#include "yaha/message/message_log_service.h"
 
 #include "httplib.h"
 
@@ -429,6 +430,8 @@ RemoteServiceCommandResult RemoteServiceComponent::publishCommand(
                 .status = RemoteServiceCommandStatus::PublishFailed,
                 .resolvedMessage = resolutionResult.resolvedMessage};
         }
+
+        logOutgoingMessageIfEnabled(*resolutionResult.resolvedMessage);
     } catch (const std::exception& exceptionValue) {
         std::cout << "remote_service[error] op=publish_command reason=exception"
                   << " path=" << request.path
@@ -450,6 +453,25 @@ RemoteServiceCommandResult RemoteServiceComponent::publishCommand(
     }
 
     return resolutionResult;
+}
+
+void RemoteServiceComponent::logOutgoingMessageIfEnabled(const Message& message) const {
+    const MessageLogConfig logConfig{
+        .enableIncoming = false,
+        .enableOutgoing = config_.logOutgoingMessages,
+        .includeReasonChain = true,
+    };
+
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "remote_service",
+        MessageLogDirection::Outgoing,
+        message,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cout << *logLine << '\n' << std::flush;
 }
 
 } // namespace yaha

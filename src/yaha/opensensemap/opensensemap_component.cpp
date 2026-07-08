@@ -1,6 +1,8 @@
 #include "yaha/opensensemap/opensensemap_component.h"
 
 #include "json/json_value.h"
+#include "yaha/message/message_log_service.h"
+#include "yaha/message/message_payload_codec.h"
 
 #include <cmath>
 #include <cctype>
@@ -30,18 +32,36 @@ constexpr int kHttpStatusInternalServerError{500};
 }
 
 void logError(const std::string& reasonText, const Message& message) {
-    std::cerr << "opensensemap[error]"
-              << " topic=" << message.topic()
-              << " reason=" << reasonText
-              << '\n' << std::flush;
+    constexpr MessageLogConfig kLogConfig{
+        .enableIncoming = true,
+        .enableOutgoing = false,
+        .includeReasonChain = true,
+    };
+
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "opensensemap", MessageLogDirection::Incoming, message, kLogConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cerr << *logLine << " reason=\"" << escapeJsonString(reasonText) << "\"\n" << std::flush;
 }
 
 void logHttpError(const int statusCode, const std::string& reasonText, const Message& message) {
-    std::cerr << "opensensemap[error]"
-              << " topic=" << message.topic()
-              << " httpStatus=" << statusCode
-              << " reason=" << reasonText
-              << '\n' << std::flush;
+    constexpr MessageLogConfig kLogConfig{
+        .enableIncoming = true,
+        .enableOutgoing = false,
+        .includeReasonChain = true,
+    };
+
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "opensensemap", MessageLogDirection::Incoming, message, kLogConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cerr << *logLine << " httpStatus=" << statusCode
+              << " reason=\"" << escapeJsonString(reasonText) << "\"\n" << std::flush;
 }
 
 void logUploadSuppressed(const std::string& topicName,

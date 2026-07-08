@@ -2,7 +2,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <iostream>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -158,6 +160,7 @@ TEST_CASE("handle_message_publishes_error_when_no_device_is_configured", "[pusho
     REQUIRE(std::get<double>(published->value()) == kStatusUnprocessableEntity);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("handle_message_publishes_error_when_sender_callback_missing", "[pushover]") {
     std::optional<yaha::Message> published{};
     yaha::PushoverComponent component{makeConfig(), yaha::PushoverRequestSender{}};
@@ -168,12 +171,22 @@ TEST_CASE("handle_message_publishes_error_when_sender_callback_missing", "[pusho
     });
     component.run();
 
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousStderrBuffer = std::cerr.rdbuf(capturedOutput.rdbuf());
+
     component.handleMessage(yaha::Message{"$MONITOR/incident/warn", std::string{"warning"}});
+
+    std::cerr.rdbuf(previousStderrBuffer);
 
     REQUIRE(published.has_value());
     REQUIRE(published->topic() == "$MONITOR/pushover/error");
     REQUIRE(std::get<double>(published->value()) == kStatusError);
     REQUIRE(published->reason().front().message.find("callback is missing") != std::string::npos);
+
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find("component=\"pushover\" direction=\"incoming\"") != std::string::npos);
+    REQUIRE(logText.find("topic=\"$MONITOR/incident/warn\"") != std::string::npos);
+    REQUIRE(logText.find("reason=\"pushover request sender callback is missing\"") != std::string::npos);
 }
 
 TEST_CASE("handle_message_formats_error_payload_arrays_for_http_failure", "[pushover]") {
@@ -197,11 +210,20 @@ TEST_CASE("handle_message_formats_error_payload_arrays_for_http_failure", "[push
     });
     component.run();
 
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousStderrBuffer = std::cerr.rdbuf(capturedOutput.rdbuf());
+
     component.handleMessage(yaha::Message{"$MONITOR/incident/fail", std::string{"warning"}});
+
+    std::cerr.rdbuf(previousStderrBuffer);
 
     REQUIRE(published.has_value());
     REQUIRE(published->topic() == "$MONITOR/pushover/error");
     REQUIRE(published->reason().front().message.find("errors = [\" first \",\"second\"]") != std::string::npos);
+
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find("component=\"pushover\" direction=\"incoming\"") != std::string::npos);
+    REQUIRE(logText.find("httpStatus=500") != std::string::npos);
 }
 
 TEST_CASE("handle_message_ignores_input_when_component_not_running", "[pushover]") {

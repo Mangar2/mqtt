@@ -55,7 +55,9 @@ Mapping rules:
 - `filestore.filename -> RemoteServiceConfig.mappingKeyPath`
 - `filestore.topicPrefix -> RemoteServiceConfig.monitorTopicPrefix`
 - `remoteservice.logIncomingMessages -> RemoteServiceClientRuntimeConfig.logIncomingMessages`
-- `remoteservice.logOutgoingMessages -> RemoteServiceClientRuntimeConfig.logOutgoingMessages`
+- `remoteservice.logOutgoingMessages -> RemoteServiceClientRuntimeConfig.logOutgoingMessages` and
+  `RemoteServiceConfig.logOutgoingMessages` (drives `RemoteServiceComponent`'s own structured
+  outgoing message-flow log for published commands, component `remote_service`)
 - `remoteservice.logReason -> YahaMqttClient::Config.logReason`
 
 Logging precedence for this client:

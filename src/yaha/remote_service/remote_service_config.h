@@ -26,6 +26,7 @@ struct RemoteServiceConfig {
     std::string fileStoreHost{"127.0.0.1"}; ///< FileStore HTTP host.
     std::uint16_t fileStorePort{kDefaultRemoteServiceFileStorePort}; ///< FileStore HTTP port.
     std::string mappingKeyPath{}; ///< Required FileStore key path for service mapping payload.
+    bool logOutgoingMessages{false}; ///< Enables structured outgoing message-flow logging for published commands.
 };
 
 } // namespace yaha
