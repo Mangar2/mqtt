@@ -216,3 +216,11 @@ Status:
 
 - Risk: backward-compat config drift between clients.
   - Mitigation: one shared mapping helper plus per-client compatibility tests.
+
+## Related Plans
+
+- [spec/yaha/IMPL-message-object-unification.md](IMPL-message-object-unification.md) — its
+  Phase E re-verified this plan's Phase 3 (`rs485_interface`) and Phase 4 (`broker_connector`)
+  against current code, found both only partially adopted despite being marked complete here,
+  and finished the missing `logIncomingMessageIfEnabled`/`logOutgoingMessageIfEnabled` wiring.
+  See the "Status correction (2026-07-08)" notes above.

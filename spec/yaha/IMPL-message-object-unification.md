@@ -213,7 +213,12 @@ Status: done.
 - Cross-link this document from `spec/message-format-unification-plan.md` and
   `IMPL-message-logging-unification.md` so the plan history stays discoverable.
 
-Status: not started.
+Status: done.
+- `SPEC-message.md` Fields table now lists `dup`.
+- `src/yaha/message/SPEC.md` "No external dependencies" note now lists `<optional>` alongside
+  `<cstdint>`, `<string>`, `<variant>`, `<vector>`.
+- `spec/message-format-unification-plan.md` and `IMPL-message-logging-unification.md` each gained
+  a "Related Plans" section cross-linking back to this document.
 
 ## Explicitly out of scope
 

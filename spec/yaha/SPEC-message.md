@@ -20,6 +20,7 @@ Normative format reference:
 | reason  | ReasonEntry[]      | no       | —       | Ordered list of reasons explaining why the value was set (trace chain)  |
 | qos     | 0 \| 1 \| 2        | no       | 1       | MQTT quality of service level                                           |
 | retain  | boolean            | no       | false   | Whether the broker should retain this message for new subscribers       |
+| dup     | boolean            | no       | false   | Whether this is a re-delivery of a message the transport already sent   |
 
 ## Reason chain
 

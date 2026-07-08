@@ -121,3 +121,10 @@ Status:
 - No private per-client envelope parser/builder logic remains.
 - Specs and tests are synchronized and explicit.
 - Workspace Problems panel shows zero errors/warnings for changed files.
+
+## Related Plans
+
+- [spec/yaha/IMPL-message-object-unification.md](spec/yaha/IMPL-message-object-unification.md) —
+  follow-up plan that removes remaining parallel qos/retain/dup carriers alongside `Message`,
+  closes the `broker_connector` envelope-bypass gap, and unifies message-flow logging across
+  clients on top of the shared format established here.

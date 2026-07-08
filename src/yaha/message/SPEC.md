@@ -147,7 +147,7 @@ INI compatibility mapping contract:
 - `validate()` rejects: empty topic, ReasonEntry with empty message field.
 - Envelope payload parser/builder functions are the shared format utility for YAHA modules and
     must be reused instead of private per-module envelope implementations.
-- No external dependencies. Header includes only: `<string>`, `<variant>`, `<vector>`, `<cstdint>`.
+- No external dependencies. Header includes only: `<cstdint>`, `<optional>`, `<string>`, `<variant>`, `<vector>`.
 
 ## Files
 
