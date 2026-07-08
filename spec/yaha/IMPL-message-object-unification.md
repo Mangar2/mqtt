@@ -159,7 +159,7 @@ Status: done.
 - Update `relay_component_test.cpp`: cover multi-entry reason chains through a topic rewrite (this is
   the case the current bug silently breaks) and confirm no substring-based rewriting remains.
 
-Status: not started.
+Status: done.
 
 ### Phase D: Guard `MessageSnapshot` boundary (decision 2 above)
 

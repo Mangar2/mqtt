@@ -2,6 +2,7 @@
 
 #include "yaha/broker_connector/receiver_publish_port.h"
 #include "yaha/broker_connector/relay_component.h"
+#include "yaha/message/message_payload_codec.h"
 
 #include <atomic>
 #include <chrono>
@@ -609,19 +610,27 @@ TEST_CASE("relay_component_maps_legacy_sys_topic_prefix_to_status", "[broker_con
     yaha::SourcePublishMeta sourceMeta{};
 
     yaha::Message sourceMessage{"$SYS/a/b", std::string{"v"}, yaha::Qos::AtLeastOnce, false};
-    sourceMessage.setRawPayload(
-        R"({"token":"receivebroker-connector-source","message":{"topic":"$SYS/a/b","value":"v","reason":[{"message":"received from source","timestamp":"2026-05-15T21:40:26.003Z"},{"message":"received by broker","timestamp":"2026-05-15T21:40:26.007Z"}]}})");
+    sourceMessage.addReason("received from source", "2026-05-15T21:40:26.003Z");
+    sourceMessage.addReason("received by broker", "2026-05-15T21:40:26.007Z");
+    sourceMessage.setRawPayload("stale-envelope-must-be-rebuilt-on-topic-rewrite");
+
     REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
     REQUIRE(published.size() == 1U);
     REQUIRE(published.front().topic() == "status/a/b");
+    REQUIRE(published.front().reason().size() == 2U);
+    REQUIRE(published.front().reason().front().message == "received by broker");
+    REQUIRE(published.front().reason().back().message == "received from source");
+
+    yaha::Message expectedEnvelopeSource = sourceMessage.clone();
+    expectedEnvelopeSource.setTopic("status/a/b");
     REQUIRE(published.front().rawPayload().has_value());
-    REQUIRE(*published.front().rawPayload() ==
-        "{\"token\":\"receivebroker-connector-source\",\"message\":{\"topic\":\"status/a/b\",\"value\":\"v\",\"reason\":[{\"message\":\"received from source\",\"timestamp\":\"2026-05-15T21:40:26.003Z\"},{\"message\":\"received by broker\",\"timestamp\":\"2026-05-15T21:40:26.007Z\"}]}}");
+    REQUIRE(*published.front().rawPayload() == yaha::buildEnvelopePayload(expectedEnvelopeSource));
 
     component.close();
 }
 
-TEST_CASE("relay_component_maps_exact_sys_topic_to_status_and_skips_malformed_payload", "[broker_connector]") {
+TEST_CASE("relay_component_maps_exact_sys_topic_to_status_and_rebuilds_envelope_when_original_is_malformed",
+          "[broker_connector]") {
     yaha::RelayPolicyConfig config{};
     config.normalizeQosToAtLeastOnce = true;
     config.maxPublishRetries = 0U;
@@ -640,7 +649,11 @@ TEST_CASE("relay_component_maps_exact_sys_topic_to_status_and_skips_malformed_pa
     REQUIRE(component.onIncomingPublish(sourceMessage, sourceMeta));
     REQUIRE(published.size() == 1U);
     CHECK(published.front().topic() == "status");
-    CHECK_FALSE(published.front().rawPayload().has_value());
+
+    yaha::Message expectedEnvelopeSource = sourceMessage.clone();
+    expectedEnvelopeSource.setTopic("status");
+    REQUIRE(published.front().rawPayload().has_value());
+    CHECK(*published.front().rawPayload() == yaha::buildEnvelopePayload(expectedEnvelopeSource));
 
     component.close();
 }

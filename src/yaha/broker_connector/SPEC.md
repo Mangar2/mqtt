@@ -189,12 +189,19 @@ On successful handshake, lifecycle trace logs include concrete source broker res
 `BrokerConnectorComponent` forwarding path:
 1. Rejects forwarding when not running or no publish callback is wired.
 2. Increments `received` counter for each accepted source callback.
-3. Maps source `Message` fields (`message.qos()`/`retain()`/`dup()`) to outgoing `Message` fields:
+3. `toForwardMessage` builds the outgoing `Message` via `message.clone()` plus `setTopic()`/`setQos()`/
+   `setRetain()`/`setDup()` (no field-by-field reconstruction, no manual reason-copy loop — `clone()`
+   already copies the reason chain and `rawPayload` correctly):
 	- topic mapping: legacy source topics with prefix `$SYS/` are rewritten to `status/` (`$SYS/a/b -> status/a/b`) before receiver publish
-	- when topic mapping rewrites `$SYS/...` to `status/...`, forwarded `Message.rawPayload()` is rewritten so embedded `message.topic` matches the mapped MQTT topic (topic value escaping is produced via `JsonValue` string serialization)
-	- qos mapping: `0 -> 0`, `1/2 -> 1` when normalization is enabled
-	- retain mapping: source retain passthrough or forced false
-	- dup mapping: source `dup` is forwarded for QoS>0, forced false for QoS0
+	- when topic mapping changes the topic and a `rawPayload` is present, it is re-serialized via
+	  `message_payload_codec::buildEnvelopePayload(mapped)` (topic/value/reason taken from the mapped
+	  `Message` itself) instead of substring surgery on the original bytes; this also means a malformed
+	  original `rawPayload` no longer suppresses lossless forwarding — a fresh canonical envelope is
+	  always produced when the topic changes. The unchanged-topic case keeps passing the cloned
+	  `rawPayload` through byte-identical.
+	- qos mapping: `0 -> 0`, `1/2 -> 1` when normalization is enabled, read from `message.qos()`
+	- retain mapping: source retain passthrough or forced false, read from `message.retain()`
+	- dup mapping: source `dup` (`message.dup()`) is forwarded for QoS>0, forced false for QoS0
 4. Calls `PublishCallback` (generic mqtt client boundary) with bounded retries.
 5. Increments `forwarded` on success or `failed` after retry budget is exhausted.
 
