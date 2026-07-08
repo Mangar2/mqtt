@@ -63,6 +63,18 @@ void Message::addReason(std::string text, std::string timestamp) {
                    ReasonEntry{.message = std::move(text), .timestamp = std::move(timestamp)});
 }
 
+void Message::setTopic(std::string topic) {
+    topic_ = std::move(topic);
+}
+
+void Message::setQos(const Qos qos) noexcept {
+    qos_ = qos;
+}
+
+void Message::setRetain(const bool retain) noexcept {
+    retain_ = retain;
+}
+
 void Message::setDup(const bool dup) noexcept {
     dup_ = dup;
 }

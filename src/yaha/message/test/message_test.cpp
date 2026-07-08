@@ -145,3 +145,65 @@ TEST_CASE("Message dup flag can be constructed and updated", "[message]") {
     msg.setDup(false);
     REQUIRE_FALSE(msg.dup());
 }
+
+TEST_CASE("Message setTopic mutates only topic", "[message]") {
+    Message msg{"home/light", std::string{"on"}, Qos::ExactlyOnce, true, true};
+
+    msg.setTopic("home/light/renamed");
+
+    REQUIRE(msg.topic() == "home/light/renamed");
+    REQUIRE(msg.qos() == Qos::ExactlyOnce);
+    REQUIRE(msg.retain());
+    REQUIRE(msg.dup());
+}
+
+TEST_CASE("Message setQos mutates only qos", "[message]") {
+    Message msg{"home/light", std::string{"on"}, Qos::AtMostOnce, true, true};
+
+    msg.setQos(Qos::ExactlyOnce);
+
+    REQUIRE(msg.qos() == Qos::ExactlyOnce);
+    REQUIRE(msg.topic() == "home/light");
+    REQUIRE(msg.retain());
+    REQUIRE(msg.dup());
+}
+
+TEST_CASE("Message setRetain mutates only retain", "[message]") {
+    Message msg{"home/light", std::string{"on"}, Qos::AtLeastOnce, false, true};
+
+    msg.setRetain(true);
+
+    REQUIRE(msg.retain());
+    REQUIRE(msg.topic() == "home/light");
+    REQUIRE(msg.qos() == Qos::AtLeastOnce);
+    REQUIRE(msg.dup());
+}
+
+TEST_CASE("Message clone then setTopic setQos setRetain setDup leaves reason chain and rawPayload untouched",
+          "[message]") {
+    Message original{"source/topic", std::string{"v"}, Qos::AtMostOnce, false, false};
+    original.addReason("first", "2024-01-01T00:00:00Z");
+    original.addReason("second", "2024-01-02T00:00:00Z");
+    original.setRawPayload("{\"raw\":true}");
+
+    Message mapped = original.clone();
+    mapped.setTopic("target/topic");
+    mapped.setQos(Qos::ExactlyOnce);
+    mapped.setRetain(true);
+    mapped.setDup(true);
+
+    REQUIRE(mapped.topic() == "target/topic");
+    REQUIRE(mapped.qos() == Qos::ExactlyOnce);
+    REQUIRE(mapped.retain());
+    REQUIRE(mapped.dup());
+    REQUIRE(mapped.reason().size() == 2U);
+    REQUIRE(mapped.reason()[0].message == "second");
+    REQUIRE(mapped.reason()[1].message == "first");
+    REQUIRE(mapped.rawPayload().has_value());
+    REQUIRE(*mapped.rawPayload() == "{\"raw\":true}");
+
+    REQUIRE(original.topic() == "source/topic");
+    REQUIRE(original.qos() == Qos::AtMostOnce);
+    REQUIRE_FALSE(original.retain());
+    REQUIRE_FALSE(original.dup());
+}

@@ -125,7 +125,10 @@ INI compatibility mapping contract:
 | `isOn()` | `bool () const noexcept` | true for value == 1.0, "on", "ON", "true" |
 | `addReason(text)` | `void (string)` | prepends entry with auto-generated ISO 8601 UTC timestamp |
 | `addReason(text, ts)` | `void (string, string)` | prepends entry with caller-supplied timestamp |
-| `setDup(dup)` | `void (bool)` | updates MQTT DUP flag |
+| `setTopic(topic)` | `void (string)` | updates MQTT topic in place |
+| `setQos(qos)` | `void (Qos) noexcept` | updates MQTT QoS level in place |
+| `setRetain(retain)` | `void (bool) noexcept` | updates MQTT retain flag in place |
+| `setDup(dup)` | `void (bool) noexcept` | updates MQTT DUP flag |
 | `setRawPayload(payload)` | `void (string)` | stores original transport payload bytes as string |
 | `clearRawPayload()` | `void () noexcept` | removes optional raw payload |
 | `clone()` | `Message () const` | returns a deep copy (value semantics) |
@@ -133,6 +136,10 @@ INI compatibility mapping contract:
 
 ## Constraints
 
+- Callers deriving a modified copy use `clone()` combined with `setTopic()`/`setQos()`/
+    `setRetain()`/`setDup()` instead of reconstructing a `Message` field by field; `clone()` already
+    copies the reason chain and `rawPayload` correctly, so this pattern never needs a manual
+    reason-copy loop.
 - Value semantics: `Message` is copyable and movable; pass by `const&` for reading, by value when modifying.
 - Reason list: index 0 is the most recent entry; each `addReason` call inserts at the front.
 - DUP flag is part of message state and can be propagated by transports for QoS>0 duplicate-delivery semantics.

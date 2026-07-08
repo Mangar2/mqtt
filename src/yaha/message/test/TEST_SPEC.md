@@ -22,6 +22,10 @@ Unit tests for Message value-type behavior and validation guarantees.
 | `Message validate rejects ReasonEntry with empty message` | reason validation | reason entry with empty message | throws invalid_argument |
 | `Message qos AtMostOnce construction` | QoS enum path | qos=AtMostOnce | qos getter returns enum value |
 | `Message dup flag can be constructed and updated` | DUP state API | construct with dup=true then setDup(false) | dup getter reflects both states |
+| `Message setTopic mutates only topic` | topic mutator | construct then setTopic | topic getter reflects new value, other fields unchanged |
+| `Message setQos mutates only qos` | qos mutator | construct then setQos | qos getter reflects new value, other fields unchanged |
+| `Message setRetain mutates only retain` | retain mutator | construct then setRetain | retain getter reflects new value, other fields unchanged |
+| `Message clone then setTopic setQos setRetain setDup leaves reason chain and rawPayload untouched` | combined clone+mutate documentation case | clone with reason chain + rawPayload, apply all four setters on the clone | clone's topic/qos/retain/dup match new values, reason order and rawPayload unchanged, original untouched |
 
 ## Payload codec test cases
 
