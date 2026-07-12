@@ -79,6 +79,7 @@ private:
     struct SessionState;
 
     [[nodiscard]] std::optional<std::shared_ptr<SessionState>> findSession(const std::string& token) const;
+    void disconnectExistingSessionForClientId(const std::string& clientId);
     [[nodiscard]] static std::string createToken();
 
     YahaMqttClient::Config baseConfig_{};

@@ -2,6 +2,7 @@
 
 #include "yaha/http_mqtt_interface_client/http_mqtt_session_manager.h"
 
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <optional>
@@ -104,6 +105,47 @@ TEST_CASE("http_mqtt_session_manager_connect_overrides_and_disconnect_via_receiv
     REQUIRE(manager.disconnect(tokens.receiveToken, errorText));
     REQUIRE_FALSE(manager.hasSession(tokens.sendToken));
     REQUIRE_FALSE(manager.hasSession(tokens.receiveToken));
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("http_mqtt_session_manager_reconnect_same_clientid_supersedes_old_session", "[http_mqtt_interface_client]") {
+    auto disconnectCallCount = std::make_shared<int>(0);
+
+    yaha::HttpMqttSessionManager manager{
+        makeBaseConfig(),
+        [disconnectCallCount]() {
+            yaha::YahaMqttClient::Transport transport{};
+            transport.connect = [](const yaha::YahaMqttClient::Config&) { return true; };
+            transport.disconnect = [disconnectCallCount]() { ++(*disconnectCallCount); };
+            transport.isConnected = []() { return true; };
+            return transport;
+        }};
+
+    yaha::HttpMqttSessionConnectRequest request{};
+    request.clientId = "ESP8266/LR/motion";
+
+    yaha::HttpMqttSessionConnectTokens firstTokens{};
+    std::string errorText{};
+    REQUIRE(manager.connect(request, firstTokens, errorText));
+
+    yaha::HttpMqttSessionConnectTokens secondTokens{};
+    REQUIRE(manager.connect(request, secondTokens, errorText));
+
+    // The superseded session must be torn down and removed, not left behind as an orphan.
+    REQUIRE(*disconnectCallCount == 1);
+    REQUIRE_FALSE(manager.hasSession(firstTokens.sendToken));
+    REQUIRE_FALSE(manager.hasSession(firstTokens.receiveToken));
+    REQUIRE(manager.hasSession(secondTokens.sendToken));
+    REQUIRE(manager.hasSession(secondTokens.receiveToken));
+
+    const std::vector<yaha::HttpMqttSessionSnapshot> snapshots = manager.listSessions();
+    const auto matchingSessions = std::count_if(
+        snapshots.begin(),
+        snapshots.end(),
+        [](const yaha::HttpMqttSessionSnapshot& snapshot) {
+            return snapshot.clientId == "ESP8266/LR/motion";
+        });
+    REQUIRE(matchingSessions == 1);
 }
 
 TEST_CASE("http_mqtt_session_manager_connect_failure_paths", "[http_mqtt_interface_client]") {

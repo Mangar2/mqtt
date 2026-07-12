@@ -49,6 +49,8 @@ bool HttpMqttSessionManager::connect(
         return false;
     }
 
+    disconnectExistingSessionForClientId(request.clientId);
+
     auto session = std::make_shared<SessionState>();
     session->transport = transportFactory_();
     session->clientId = request.clientId;
@@ -364,6 +366,38 @@ std::vector<HttpMqttSessionSnapshot> HttpMqttSessionManager::listSessions() cons
     }
 
     return snapshots;
+}
+
+void HttpMqttSessionManager::disconnectExistingSessionForClientId(const std::string& clientId) {
+    std::shared_ptr<SessionState> existingSession{};
+    {
+        std::lock_guard<std::mutex> lock{sessionsMutex_};
+        const auto byClientId = sendTokenByClientId_.find(clientId);
+        if (byClientId == sendTokenByClientId_.end()) {
+            return;
+        }
+
+        const auto bySendToken = sessionsBySendToken_.find(byClientId->second);
+        if (bySendToken != sessionsBySendToken_.end()) {
+            existingSession = bySendToken->second;
+            sessionsByReceiveToken_.erase(existingSession->receiveToken);
+            sessionsBySendToken_.erase(bySendToken);
+        }
+        sendTokenByClientId_.erase(byClientId);
+    }
+
+    if (!existingSession) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> operationLock{existingSession->operationMutex};
+    try {
+        if (existingSession->transport.disconnect) {
+            existingSession->transport.disconnect();
+        }
+    } catch (...) {
+        // Best-effort teardown of the superseded session; the new connect proceeds regardless.
+    }
 }
 
 std::optional<std::shared_ptr<HttpMqttSessionManager::SessionState>> HttpMqttSessionManager::findSession(
