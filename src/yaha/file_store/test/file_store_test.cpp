@@ -669,9 +669,24 @@ TEST_CASE("handle_message_is_noop", "[file_store]") {
     REQUIRE(store.getSubscriptions().empty());
 }
 
-TEST_CASE("handle_message_logs_incoming_with_full_reason_chain", "[file_store]") {
+TEST_CASE("handle_message_does_not_log_incoming_by_default", "[file_store]") {
     yaha::FileStoreConfig config{};
     config.serverPort = 0U;
+    yaha::FileStore store{config};
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousStdoutBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    store.handleMessage(yaha::Message{"topic/a", std::string{"payload"}});
+
+    std::cout.rdbuf(previousStdoutBuffer);
+    REQUIRE(capturedOutput.str().empty());
+}
+
+TEST_CASE("handle_message_logs_incoming_with_full_reason_chain_when_enabled", "[file_store]") {
+    yaha::FileStoreConfig config{};
+    config.serverPort = 0U;
+    config.logIncomingMessages = true;
     yaha::FileStore store{config};
 
     yaha::Message message{"topic/a", std::string{"payload"}};
@@ -760,6 +775,40 @@ TEST_CASE("monitoring_publish_success_logs_outgoing_message", "[file_store]") {
     REQUIRE(logText.find(yaha::test::messageLogLinePrefix(
         "file_store", yaha::MessageLogDirection::Outgoing, "$MONITOR/FileStore/changed"))
         != std::string::npos);
+}
+
+TEST_CASE("monitoring_publish_success_does_not_log_outgoing_message_when_disabled", "[file_store]") {
+    const auto tempDir = makeTempDirectory();
+    DirectoryCleanupGuard dirGuard{tempDir};
+
+    yaha::FileStoreConfig config{};
+    config.serverPort = reserveFreeLocalPort();
+    config.directory = tempDir;
+    config.logOutgoingMessages = false;
+
+    yaha::FileStore store{config};
+    store.setPublishCallback([](const yaha::Message&) {
+    });
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousStdoutBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    StoreCloseGuard storeGuard{&store};
+    store.run();
+    REQUIRE(waitForHttpReady(config.serverPort));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(config.serverPort)};
+    const auto postResponse = client.Post("/automation/rules", "{\"ok\":true}", "application/json");
+    REQUIRE(postResponse != nullptr);
+    REQUIRE(postResponse->status == 200);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds{50});
+
+    std::cout.rdbuf(previousStdoutBuffer);
+    const std::string logText = capturedOutput.str();
+    REQUIRE(logText.find(yaha::test::messageLogLinePrefix(
+        "file_store", yaha::MessageLogDirection::Outgoing, "$MONITOR/FileStore/changed"))
+        == std::string::npos);
 }
 
 TEST_CASE("watcher_emits_created_changed_deleted_events", "[file_store]") {

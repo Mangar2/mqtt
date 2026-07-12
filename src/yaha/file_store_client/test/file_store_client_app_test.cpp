@@ -69,6 +69,8 @@ TEST_CASE("load_config_parses_mqtt_filestore_and_monitoring_sections", "[file_st
         "directory = data-store\n"
         "keepFiles = 5\n"
         "maxKeyLength = 120\n"
+        "logIncomingMessages = true\n"
+        "logOutgoingMessages = false\n"
         "\n"
         "[monitoring]\n"
         "enabled = true\n"
@@ -97,10 +99,13 @@ TEST_CASE("load_config_parses_mqtt_filestore_and_monitoring_sections", "[file_st
     REQUIRE(config.storeConfig.monitoring.qos == yaha::Qos::ExactlyOnce);
     REQUIRE(config.storeConfig.monitoring.retain);
     REQUIRE(config.storeConfig.monitoring.watchIntervalMs == 250U);
+    REQUIRE(config.storeConfig.logIncomingMessages);
+    REQUIRE_FALSE(config.storeConfig.logOutgoingMessages);
 
     removeDirectoryQuiet(tempDir);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("load_config_uses_defaults_when_sections_missing", "[file_store_client]") {
     const auto tempDir = makeTempDirectory();
     const auto configPath = writeConfigFile(tempDir,
@@ -115,6 +120,8 @@ TEST_CASE("load_config_uses_defaults_when_sections_missing", "[file_store_client
     REQUIRE(config.storeConfig.maxKeyLength == 100U);
     REQUIRE(config.storeConfig.monitoring.enabled);
     REQUIRE(config.storeConfig.monitoring.qos == yaha::Qos::AtLeastOnce);
+    REQUIRE_FALSE(config.storeConfig.logIncomingMessages);
+    REQUIRE(config.storeConfig.logOutgoingMessages);
 
     removeDirectoryQuiet(tempDir);
 }

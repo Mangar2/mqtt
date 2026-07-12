@@ -28,6 +28,8 @@ Implements a standalone key/value HTTP store with MQTT monitoring publishes.
 | `monitoring` | `FileStoreMonitoringConfig` | default | Monitoring behavior |
 | `httpStartCallback` | `std::function<void()>` | empty | Optional test hook |
 | `httpStopCallback` | `std::function<void()>` | empty | Optional test hook |
+| `logIncomingMessages` | `bool` | `false` | Enables structured incoming message-flow logging (component name `file_store`) |
+| `logOutgoingMessages` | `bool` | `true` | Enables structured outgoing message-flow logging for monitoring publishes (component name `file_store`) |
 
 ### Class `FileStore` : `IMqttComponent`
 
@@ -37,7 +39,7 @@ Implements a standalone key/value HTTP store with MQTT monitoring publishes.
 | dtor | `~FileStore() override` | Calls `close()` |
 | static mapper | `encodeKeyPathToFilename(const std::string&) -> std::string` | Deterministic key-to-filename mapping |
 | subscriptions | `getSubscriptions() const -> SubscriptionMap` | Returns empty map |
-| inbound | `handleMessage(const Message&)` | No-op |
+| inbound | `handleMessage(const Message&)` | Logs incoming message when `logIncomingMessages` is enabled; otherwise no-op (never invoked in production since `getSubscriptions()` is always empty) |
 | publish callback | `setPublishCallback(PublishCallback)` | Stores callback for monitoring emits |
 | lifecycle start | `run()` | Starts HTTP listener and watcher loop |
 | lifecycle stop | `close()` | Stops watcher and HTTP listener |
@@ -74,11 +76,14 @@ Implements a standalone key/value HTTP store with MQTT monitoring publishes.
 - Failed monitoring sends are queued in bounded retry queue and retried on later activity cycles.
 - Retry exhaustion emits explicit structured failure log and drops event.
 - Message logging:
-  - logs every inbound MQTT message via shared `buildMessageLogLine` (`file_store <- <topic> : ...`)
-    before handling, with the full reason chain (not just the first entry)
+  - logs inbound MQTT messages via shared `buildMessageLogLine` (`file_store <- <topic> : ...`)
+    before handling, with the full reason chain, gated by `logIncomingMessages` (default `false`);
+    never fires in production since `getSubscriptions()` is always empty
   - logs outbound monitoring success via shared `buildMessageLogLine` (`file_store -> <topic> : ...`)
-    only after callback confirms send
+    only after callback confirms send, gated by `logOutgoingMessages` (default `true`, preserving
+    prior always-on behavior)
   - logs outbound monitoring failure as `file_store[out-fail]` with event type, topic, category, reason, and payload
+    (unconditional, not gated by `logOutgoingMessages`)
 - File I/O logging:
   - logs read/write lifecycle to `std::cout` (`file_store[file-io] ...`)
   - includes operation (`read|write`), key path, encoded filename, status (`start|ok|error`), and optional error detail

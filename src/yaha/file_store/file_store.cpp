@@ -62,21 +62,6 @@ std::string joinTopic(const std::string& prefix, const std::string& suffix) {
     return "unknown";
 }
 
-void logMessage(const MessageLogDirection direction, const Message& message) {
-    constexpr MessageLogConfig k_log_config{
-        .enableIncoming = true,
-        .enableOutgoing = true,
-        .includeReasonChain = true,
-    };
-
-    const std::optional<std::string> logLine = buildMessageLogLine("file_store", direction, message, k_log_config);
-    if (!logLine.has_value()) {
-        return;
-    }
-
-    std::cout << *logLine << '\n' << std::flush;
-}
-
 void logFileIo(const std::string& operationText,
                const std::string& keyPath,
                const std::string& filename,
@@ -129,7 +114,7 @@ SubscriptionMap FileStore::getSubscriptions() const {
 
 void FileStore::handleMessage(const Message& message) {
     processPendingMonitoringQueue();
-    logMessage(MessageLogDirection::Incoming, message);
+    logIncomingMessageIfEnabled(message);
 }
 
 void FileStore::setPublishCallback(PublishCallback callback) {
@@ -527,7 +512,7 @@ bool FileStore::tryPublishMonitoringMessage(const std::string& eventType,
             return false;
         }
 
-        logMessage(MessageLogDirection::Outgoing, monitoringMessage);
+        logOutgoingMessageIfEnabled(monitoringMessage);
         return true;
     } catch (const std::exception& exceptionValue) {
         logMonitoringFailure(eventType,
@@ -603,6 +588,44 @@ void FileStore::logMonitoringFailure(const std::string& eventType,
               << " payload=" << payload
               << '\n'
               << std::flush;
+}
+
+void FileStore::logIncomingMessageIfEnabled(const Message& message) const {
+    const MessageLogConfig logConfig{
+        .enableIncoming = config_.logIncomingMessages,
+        .enableOutgoing = false,
+        .includeReasonChain = true,
+    };
+
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "file_store",
+        MessageLogDirection::Incoming,
+        message,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cout << *logLine << '\n' << std::flush;
+}
+
+void FileStore::logOutgoingMessageIfEnabled(const Message& message) const {
+    const MessageLogConfig logConfig{
+        .enableIncoming = false,
+        .enableOutgoing = config_.logOutgoingMessages,
+        .includeReasonChain = true,
+    };
+
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        "file_store",
+        MessageLogDirection::Outgoing,
+        message,
+        logConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cout << *logLine << '\n' << std::flush;
 }
 
 std::string FileStore::toLower(std::string text) {

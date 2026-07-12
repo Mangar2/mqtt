@@ -29,7 +29,7 @@ Supported INI sections:
 - `[server]`
   - `host`, `port`
 - `[filestore]`
-  - `directory`, `keepFiles`, `maxKeyLength`
+  - `directory`, `keepFiles`, `maxKeyLength`, `logIncomingMessages`, `logOutgoingMessages`
 - `[monitoring]`
   - `enabled`, `topicPrefix`, `qos`, `retain`, `watchIntervalMs`
 
@@ -40,6 +40,11 @@ Validation and fallback behavior:
 - `monitoring.watchIntervalMs` uses `1..uint32_max` (removed arbitrary upper cap).
 - Runtime config load does not fail when MQTT sub-loader rejects one value;
   FileStore keeps MQTT defaults and logs warning context.
+- `filestore.logIncomingMessages`/`logOutgoingMessages` are parsed through the shared
+  message-log INI helper (`tryLoadMessageLogConfigFromIni`), same as every other YAHA
+  client's own message-flow logging flags. Defaults (`false`/`true` respectively) preserve
+  prior behavior: incoming logging was previously unavailable (off), outgoing monitoring
+  logging was previously always on.
 
 ## Files
 

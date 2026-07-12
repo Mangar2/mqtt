@@ -1,11 +1,11 @@
 #include "yaha/file_store_client/file_store_client_app.h"
 
+#include "yaha/message/message_log_service.h"
 #include "yaha/mqtt_client/mqtt_client_config.h"
 
 #include <cstdint>
 #include <limits>
 #include <string>
-#include <utility>
 
 namespace yaha {
 
@@ -75,6 +75,27 @@ FileStoreConfigLoadResult loadFileStoreConfigFromIni(const IniDocument& document
         std::to_string(result.config.monitoring.watchIntervalMs));
     if (watchIntervalResult.has_value()) {
         result.config.monitoring.watchIntervalMs = static_cast<std::uint32_t>(*watchIntervalResult);
+    }
+
+    MessageLogConfig messageLogConfig{
+        .enableIncoming = result.config.logIncomingMessages,
+        .enableOutgoing = result.config.logOutgoingMessages,
+        .includeReasonChain = true,
+    };
+    std::string messageLogErrorMessage{};
+    if (!tryLoadMessageLogConfigFromIni(
+            document,
+            MessageLogIniKeys{
+                .incomingEnabled = MessageLogIniBoolKey{.section = "filestore", .key = "logIncomingMessages"},
+                .outgoingEnabled = MessageLogIniBoolKey{.section = "filestore", .key = "logOutgoingMessages"},
+                .includeReasonChain = std::nullopt,
+            },
+            messageLogConfig,
+            messageLogErrorMessage)) {
+        document.reportFallback("filestore", "log*", "<composite>", "defaults", messageLogErrorMessage);
+    } else {
+        result.config.logIncomingMessages = messageLogConfig.enableIncoming;
+        result.config.logOutgoingMessages = messageLogConfig.enableOutgoing;
     }
 
     result.errorMessage.clear();

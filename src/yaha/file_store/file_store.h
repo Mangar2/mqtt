@@ -66,6 +66,8 @@ struct FileStoreConfig {
     FileStoreMonitoringConfig monitoring{};
     std::function<void()> httpStartCallback;
     std::function<void()> httpStopCallback;
+    bool logIncomingMessages{false};  ///< Enables structured incoming message-flow logging.
+    bool logOutgoingMessages{true};   ///< Enables structured outgoing (monitoring) message-flow logging.
 };
 
 /**
@@ -284,6 +286,18 @@ private:
                                      const std::string& payload,
                                      const std::string& categoryText,
                                      const std::string& reasonText);
+
+    /**
+     * @brief Logs one incoming MQTT message when `logIncomingMessages` is enabled.
+     * @param message Incoming MQTT message.
+     */
+    void logIncomingMessageIfEnabled(const Message& message) const;
+
+    /**
+     * @brief Logs one outgoing monitoring publish when `logOutgoingMessages` is enabled.
+     * @param message Outgoing monitoring MQTT message.
+     */
+    void logOutgoingMessageIfEnabled(const Message& message) const;
 
     /**
      * @brief Converts one ASCII string to lowercase.
