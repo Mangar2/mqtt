@@ -89,7 +89,7 @@ ack/handshake bookkeeping that is not message content.
 | ctor | `ReceiverMqttPublishPort(ReceiverMqttBrokerConfig)` | uses default broker transport factory |
 | ctor | `ReceiverMqttPublishPort(ReceiverMqttBrokerConfig, YahaMqttClient::Transport)` | transport injection for tests |
 | dtor | `~ReceiverMqttPublishPort()` | closes runtime |
-| `start` | `bool(std::string&)` | starts internal sink component and `YahaMqttClient` |
+| `start` | `bool(std::string&)` | starts internal sink component and `YahaMqttClient`; internally maps `ReceiverMqttBrokerConfig` to `YahaMqttClient::Config` with `preserveRawEnvelopePayload = true` so relayed messages keep their raw envelope text for lossless byte-for-byte forwarding (see `src/yaha/mqtt_client/SPEC.md`) |
 | `close` | `void()` | closes client runtime |
 | `publish` | `bool(const Message&, std::string&)` | forwards message unchanged to `YahaMqttClient` |
 | `isConnected` | `bool() const` | reports `YahaMqttClient` connection state |

@@ -42,6 +42,7 @@ public:
         bool enableLifecycleTrace{true};
         bool enableMessageTrace{false};
         bool logReason{true};
+        bool preserveRawEnvelopePayload{false};  ///< Keep Message::rawPayload() on inbound envelope messages; only clients that re-forward messages byte-for-byte (e.g. broker_connector receiver) need this.
         bool willEnabled{false};
         std::string willTopic{};
         Value willValue{std::string{}};

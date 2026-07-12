@@ -89,6 +89,8 @@ public:
 
         disconnectLocked();
 
+        preserveRawEnvelopePayload_ = config.preserveRawEnvelopePayload;
+
         mqtt::ClientConfig clientConfig{};
         clientConfig.broker_host = config.brokerHost;
         clientConfig.broker_port = config.brokerPort;
@@ -469,13 +471,16 @@ private:
         const std::string payloadText(packet.payload.data.begin(), packet.payload.data.end());
         const Qos qosLevel = toYahaQos(packet.qos);
 
-        const std::optional<Message> forwardedEnvelope =
+        std::optional<Message> forwardedEnvelope =
             parseEnvelopePayload(payloadText,
                                  packet.topic.value,
                                  qosLevel,
                                  packet.retain,
                                  packet.dup);
         if (forwardedEnvelope.has_value()) {
+            if (!preserveRawEnvelopePayload_) {
+                forwardedEnvelope->clearRawPayload();
+            }
             return *forwardedEnvelope;
         }
 
@@ -543,6 +548,7 @@ private:
     std::deque<Message> pendingIncoming_{};
     bool connected_{false};
     std::uint16_t nextPacketId_{1U};
+    bool preserveRawEnvelopePayload_{false};
 };
 
 } // namespace

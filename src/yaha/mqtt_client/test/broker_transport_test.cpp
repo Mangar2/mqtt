@@ -580,31 +580,27 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
     CHECK(std::get<std::string>(received_messages[3].value()) == "sensor");
     REQUIRE(received_messages[3].reason().size() == 1U);
     CHECK(received_messages[3].reason().front().message == "src");
-    REQUIRE(received_messages[3].rawPayload().has_value());
-    CHECK(*received_messages[3].rawPayload() == k_forwarded_inbound_payload);
+    CHECK_FALSE(received_messages[3].rawPayload().has_value());
 
     CHECK(received_messages[4].topic() == "transport/forwarded_numeric");
     REQUIRE(std::holds_alternative<double>(received_messages[4].value()));
     CHECK(std::get<double>(received_messages[4].value()) == k_forwarded_numeric_value);
     REQUIRE(received_messages[4].reason().size() == 1U);
     CHECK(received_messages[4].reason().front().message == "manual");
-    REQUIRE(received_messages[4].rawPayload().has_value());
-    CHECK(*received_messages[4].rawPayload() == k_forwarded_numeric_reason_payload);
+    CHECK_FALSE(received_messages[4].rawPayload().has_value());
 
     CHECK(received_messages[5].topic() == "transport/forwarded_bool");
     REQUIRE(std::holds_alternative<std::string>(received_messages[5].value()));
     CHECK(std::get<std::string>(received_messages[5].value()) == "true");
     CHECK(received_messages[5].reason().empty());
-    REQUIRE(received_messages[5].rawPayload().has_value());
-    CHECK(*received_messages[5].rawPayload() == k_forwarded_bool_payload);
+    CHECK_FALSE(received_messages[5].rawPayload().has_value());
 
     CHECK(received_messages[6].topic() == "transport/forwarded_escaped");
     REQUIRE(std::holds_alternative<std::string>(received_messages[6].value()));
     CHECK(std::get<std::string>(received_messages[6].value()) == "line\nvalue");
     REQUIRE(received_messages[6].reason().size() == 1U);
     CHECK(received_messages[6].reason().front().message == "plain");
-    REQUIRE(received_messages[6].rawPayload().has_value());
-    CHECK(*received_messages[6].rawPayload() == k_forwarded_escaped_payload);
+    CHECK_FALSE(received_messages[6].rawPayload().has_value());
 
     CHECK(received_messages[7].topic() == "transport/forwarded_invalid");
     REQUIRE(std::holds_alternative<std::string>(received_messages[7].value()));
@@ -647,6 +643,46 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
 
     CHECK_FALSE(transport.isConnected());
 
+    fake_broker.stop();
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("broker_transport_preserves_raw_envelope_payload_when_opted_in", "[mqtt_client]") {
+    FakeBrokerForTransportTest fake_broker{};
+    fake_broker.start();
+
+    yaha::YahaMqttClient::Transport transport = yaha::makeBrokerTransport();
+
+    yaha::YahaMqttClient::Config config{};
+    config.brokerHost = "127.0.0.1";
+    config.brokerPort = fake_broker.port();
+    config.clientId = "transport-test-client-raw-opt-in";
+    config.keepAliveInterval = std::chrono::seconds{k_keep_alive_seconds};
+    config.preserveRawEnvelopePayload = true;
+
+    REQUIRE(transport.connect(config));
+    transport.subscribe("transport/#", yaha::Qos::AtLeastOnce);
+
+    std::vector<yaha::Message> received_messages{};
+    const auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds{k_poll_deadline_ms};
+    while (received_messages.size() < k_expected_incoming_messages &&
+           std::chrono::steady_clock::now() < deadline) {
+        const std::optional<yaha::Message> maybe_message = transport.pollIncoming();
+        if (maybe_message.has_value()) {
+            received_messages.push_back(*maybe_message);
+        }
+    }
+
+    REQUIRE(received_messages.size() == k_expected_incoming_messages);
+    CHECK(received_messages[0].topic() == "transport/number");
+    CHECK_FALSE(received_messages[0].rawPayload().has_value());
+
+    CHECK(received_messages[3].topic() == "transport/forwarded");
+    REQUIRE(received_messages[3].rawPayload().has_value());
+    CHECK(*received_messages[3].rawPayload() == k_forwarded_inbound_payload);
+
+    transport.disconnect();
     fake_broker.stop();
 }
 

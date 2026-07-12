@@ -137,6 +137,8 @@ ReceiverMqttPublishPort::toClientConfig(const ReceiverMqttBrokerConfig& config) 
     result.loopSleep = config.loopSleep;
     result.enableLifecycleTrace = config.enableLifecycleTrace;
     result.enableMessageTrace = config.enableMessageTrace;
+    // Relay re-publishes received messages byte-for-byte via rawPayload(); other clients never read it.
+    result.preserveRawEnvelopePayload = true;
     return result;
 }
 

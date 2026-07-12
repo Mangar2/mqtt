@@ -88,7 +88,7 @@ the callback contract into real TCP MQTT packet I/O.
 	- serialization and forwarded-envelope parsing are delegated to shared utilities in `yaha/message/message_payload_codec.*`.
 - Broker transport publish waits for broker acknowledgements on QoS1/QoS2 (`PUBACK` for QoS1, `PUBREC` + `PUBCOMP` for QoS2) before returning.
 - If broker ACK is missing within timeout during publish (`PUBACK`/`PUBREC`/`PUBCOMP`), broker transport disconnects and throws.
-- Broker transport inbound path parses forwarded payload envelopes into internal `Message.topic()/value()/reason()` fields for runtime semantics while preserving the exact original payload text in `Message.rawPayload()` for lossless forwarding.
+- Broker transport inbound path parses forwarded payload envelopes into internal `Message.topic()/value()/reason()` fields for runtime semantics. The exact original payload text is preserved in `Message.rawPayload()` only when `Config.preserveRawEnvelopePayload` is `true` (default `false`); this is opt-in for clients that re-forward messages byte-for-byte (e.g. `broker_connector`'s receiver client, see `src/yaha/broker_connector/SPEC.md`). All other clients receive envelope messages with `rawPayload()` cleared, so `raw=...` does not appear in their message logs even though the payload was envelope-shaped on the wire.
 - Forwarded envelope parsing decodes JSON string escapes (`\\n`, `\\t`, `\\r`, `\\b`, `\\f`, `\\u00XX`) into internal message text values.
 - Broker transport maps `Message.dup()` to MQTT PUBLISH DUP on outgoing packets for QoS>0 and normalizes DUP to false for QoS0.
 - Broker transport preserves incoming MQTT PUBLISH DUP in the produced `Message` objects.
