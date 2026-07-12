@@ -127,7 +127,19 @@ TEST_CASE("rs485_runtime_config_parses_mqtt_connection_fields",
   REQUIRE(runtimeConfig.mqttConfig.brokerHost == "127.0.0.1");
   REQUIRE(runtimeConfig.mqttConfig.brokerPort == 1883U);
   REQUIRE(runtimeConfig.mqttConfig.clientId == "rs485-client");
-  REQUIRE(runtimeConfig.mqttConfig.enableMessageTrace == true);
+}
+
+TEST_CASE("rs485_runtime_config_does_not_force_mqtt_client_message_trace",
+          "[rs485_interface]") {
+  // rs485interface.logIncomingMessages/logOutgoingMessages already make the
+  // rs485_interface component emit its own message-flow log line for every
+  // message. Forcing on mqttConfig.enableMessageTrace as a side effect makes
+  // mqtt_client log the exact same message a second time (bug: duplicate
+  // "mqtt_client -> ..." / "rs485_interface -> ..." log pairs for one message).
+  const auto runtimeConfig = loadValidRuntimeConfig();
+
+  REQUIRE(runtimeConfig.rs485Config.logIncomingMessages == true);
+  REQUIRE(runtimeConfig.mqttConfig.enableMessageTrace == false);
 }
 
 TEST_CASE("rs485_runtime_config_parses_interfaces_and_value_map",

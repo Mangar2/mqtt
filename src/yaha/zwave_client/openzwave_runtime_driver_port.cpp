@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <limits>
 #include <stdexcept>
@@ -58,8 +59,18 @@ constexpr std::uint16_t kNodeIdUpperBound = 255U;
 }
 
 [[nodiscard]] std::string defaultConfigDirectory() {
-    for (const std::string& candidate : std::array<std::string, 3U>{
+    if (const char* configuredPath = std::getenv("YAHA_OPENZWAVE_CONFIG_PATH");
+        configuredPath != nullptr && configuredPath[0] != '\0') {
+        if (!std::filesystem::exists(configuredPath)) {
+            throw std::runtime_error(std::string{"OpenZWave config path not found: "} + configuredPath);
+        }
+        return configuredPath;
+    }
+
+    for (const std::string& candidate : std::array<std::string, 5U>{
              "config",
+             "../third_party/openzwave/config",
+             "third_party/openzwave/config",
              "/usr/local/etc/openzwave",
              "/usr/share/openzwave/config"}) {
         if (std::filesystem::exists(candidate)) {
@@ -67,7 +78,9 @@ constexpr std::uint16_t kNodeIdUpperBound = 255U;
         }
     }
 
-    return "config";
+    throw std::runtime_error(
+        "OpenZWave config path not found. Set YAHA_OPENZWAVE_CONFIG_PATH or deploy "
+        "third_party/openzwave/config next to the service install root.");
 }
 
 [[nodiscard]] bool isPollingAllowedClass(const std::uint16_t classId) {

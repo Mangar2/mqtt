@@ -210,7 +210,12 @@ int main(int argc, char* argv[]) {
         std::exit(2);
     });
     driverPort->bindController(*controller);
-    driverPort->start();
+    try {
+        driverPort->start();
+    } catch (const std::exception& exceptionValue) {
+        std::cerr << "Failed to start OpenZWave driver: " << exceptionValue.what() << '\n';
+        return 1;
+    }
 
     yaha::ZwaveServiceComponent component{runtimeConfig.zwaveConfig, controller};
     component.setFileStoreReloadCallback([&runtimeConfig](std::vector<yaha::ZwaveDeviceConfig>& loadedDevices,

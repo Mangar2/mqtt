@@ -487,10 +487,6 @@ Rs485InterfaceRuntimeConfig loadRs485InterfaceClientRuntimeConfigFromIni(const I
         document.reportFallback("mqtt", "*", "<composite>", "defaults", errorMessage);
     }
 
-    if (parsed.rs485Config.logIncomingMessages || parsed.rs485Config.logOutgoingMessages) {
-        parsed.mqttConfig.enableMessageTrace = true;
-    }
-
     return parsed;
 }
 
