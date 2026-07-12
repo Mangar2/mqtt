@@ -357,7 +357,7 @@ bool tryLoadOpenSenseMapClientRuntimeConfigFromIni(
     }
 
     MessageLogConfig messageLogConfig{
-        .enableIncoming = parsed.logIncomingMessages,
+        .enableIncoming = parsed.openSenseMapConfig.logIncomingMessages,
         .enableOutgoing = false,
         .includeReasonChain = true,
     };
@@ -374,7 +374,7 @@ bool tryLoadOpenSenseMapClientRuntimeConfigFromIni(
             k_open_sense_map_section, "*", "<composite>", "defaults", messageLogConfigError);
     }
 
-    parsed.logIncomingMessages = messageLogConfig.enableIncoming;
+    parsed.openSenseMapConfig.logIncomingMessages = messageLogConfig.enableIncoming;
     parsed.mqttConfig.logReason = messageLogConfig.includeReasonChain;
 
     output = std::move(parsed);

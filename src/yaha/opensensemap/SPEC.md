@@ -36,6 +36,7 @@ OpenSenseMap and publishes operation status to `$SYS/opensensemap/*` topics.
 | `useTls` | `bool` | `true` | Request transport mode hint |
 | `subscribeQos` | `Qos` | `Qos::AtLeastOnce` | Subscription QoS |
 | `sensors` | `std::vector<OpenSenseMapSensorConfig>` | empty | Sensor mapping list |
+| `logIncomingMessages` | `bool` | `false` | Logs every incoming message (topic/value/reason) to stdout in broker-format, regardless of guard/error outcome |
 
 ### Type alias `OpenSenseMapRequestSender`
 
@@ -46,7 +47,8 @@ OpenSenseMap and publishes operation status to `$SYS/opensensemap/*` topics.
 Implements `IMqttComponent` behavior:
 
 - `getSubscriptions()` returns all configured sensor topic mappings with configured QoS.
-- `handleMessage(...)` resolves sensor by topic, converts value to number, posts payload
+- `handleMessage(...)` logs the incoming message first (if `logIncomingMessages` is enabled),
+  then resolves sensor by topic, converts value to number, posts payload
   `{"value": <number>}` to OpenSenseMap, and publishes status result message.
 - If a sensor has `minUploadIntervalSeconds > 0`, uploads are rate-guarded per sensor id:
   - the first message uploads immediately
@@ -56,6 +58,13 @@ Implements `IMqttComponent` behavior:
 - `run()` enables message processing.
 - `close()` disables message processing.
 - `setPublishCallback(...)` stores runtime MQTT publish callback.
+
+## Log tag
+
+All stdout/stderr log lines emitted by this component are prefixed `opensensemap_client` (not
+`opensensemap`) so they are unambiguously identifiable as coming from this local client process,
+not from the remote OpenSenseMap service (e.g. `opensensemap_client[warn] ... action=ignore`,
+`opensensemap_client <- <topic> : <value>`).
 
 ## Status publish behavior
 

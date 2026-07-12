@@ -131,6 +131,5 @@ Test location: kept in existing `src/yaha/mqtt_client/test/broker_transport_test
 unit test suite location for this module; no separate repro script needed since the mechanism is
 deterministic and fully covered by the existing fake-broker-based test harness).
 
-Status: fix implemented and verified by automated tests; awaiting user's manual confirmation
-against the original reported symptom (automation_client log no longer showing `raw=...` for
-regular inbound sensor messages) before closing.
+Status: CLOSED. User confirmed on the live system: automation_client log no longer shows
+`raw=...` for regular inbound messages. Original reported symptom resolved.

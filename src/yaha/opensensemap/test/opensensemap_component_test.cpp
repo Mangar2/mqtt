@@ -187,7 +187,7 @@ TEST_CASE("handle_message_publishes_error_when_sender_callback_missing", "[opens
 
     const std::string logText = capturedOutput.str();
     REQUIRE(logText.find(yaha::test::messageLogLinePrefix(
-        "opensensemap", yaha::MessageLogDirection::Incoming, "house/living/temperature"))
+        "opensensemap_client", yaha::MessageLogDirection::Incoming, "house/living/temperature"))
         != std::string::npos);
     REQUIRE(logText.find("reason=\"opensensemap request sender callback is missing\"") != std::string::npos);
 }
@@ -303,4 +303,63 @@ TEST_CASE("handle_message_ignores_too_frequent_uploads_per_sensor", "[opensensem
 
     REQUIRE(requestCalls == 1U);
     REQUIRE(publishCalls == 1U);
+}
+
+TEST_CASE("handle_message_logs_incoming_message_when_enabled_even_when_guard_suppresses_upload", "[opensensemap]") {
+    auto config = makeConfig();
+    config.logIncomingMessages = true;
+    config.sensors[0].minUploadIntervalSeconds = kMinUploadIntervalSeconds;
+
+    std::size_t requestCalls = 0U;
+    yaha::OpenSenseMapComponent component{
+        std::move(config),
+        [&requestCalls](const std::string&, const std::string&) {
+            requestCalls += 1U;
+            return yaha::OpenSenseMapHttpResult{.statusCode = kHttpStatusCreated};
+        }};
+
+    component.setPublishCallback([](const yaha::Message&) {
+        return yaha::PublishResult::ok();
+    });
+    component.run();
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousStdoutBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueOne});
+    component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueOne});
+
+    std::cout.rdbuf(previousStdoutBuffer);
+
+    REQUIRE(requestCalls == 1U);
+
+    const std::string logText = capturedOutput.str();
+    const std::string expectedPrefix = yaha::test::messageLogLinePrefix(
+        "opensensemap_client", yaha::MessageLogDirection::Incoming, "house/living/temperature");
+    const std::size_t firstOccurrence = logText.find(expectedPrefix);
+    REQUIRE(firstOccurrence != std::string::npos);
+    const std::size_t secondOccurrence = logText.find(expectedPrefix, firstOccurrence + 1U);
+    REQUIRE(secondOccurrence != std::string::npos);
+}
+
+TEST_CASE("handle_message_does_not_log_incoming_message_when_disabled", "[opensensemap]") {
+    yaha::OpenSenseMapComponent component{
+        makeConfig(),
+        [](const std::string&, const std::string&) {
+            return yaha::OpenSenseMapHttpResult{.statusCode = kHttpStatusCreated};
+        }};
+
+    component.setPublishCallback([](const yaha::Message&) {
+        return yaha::PublishResult::ok();
+    });
+    component.run();
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousStdoutBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    component.handleMessage(yaha::Message{"house/living/temperature", kPayloadValueOne});
+
+    std::cout.rdbuf(previousStdoutBuffer);
+
+    REQUIRE(capturedOutput.str().empty());
 }

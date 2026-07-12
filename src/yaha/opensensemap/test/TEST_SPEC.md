@@ -31,8 +31,8 @@
 - Scenario: incoming message arrives without configured publish callback.
 - Input: message for known sensor.
 - Expected: internal handling fails gracefully with callback-missing reason, and `logError` emits a
-  structured stderr line via shared `buildMessageLogLine` (`opensensemap <- <topic> :`, asserted via
-  `yaha::test::messageLogLinePrefix`, plus `reason="..."`).
+  structured stderr line via shared `buildMessageLogLine` (`opensensemap_client <- <topic> :`, asserted
+  via `yaha::test::messageLogLinePrefix`, plus `reason="..."`).
 
 7. `handle_message_reports_error_on_unknown_exception`
 - Scenario: sender callback throws a non-std exception type.
@@ -63,3 +63,14 @@
 - Scenario: sensor upload interval guard is configured.
 - Input: two immediate messages for same sensor with `minUploadIntervalSeconds > 0`.
 - Expected: second message is ignored, no additional request sender call, and no additional status publish.
+
+13. `handle_message_logs_incoming_message_when_enabled_even_when_guard_suppresses_upload`
+- Scenario: `logIncomingMessages = true` and upload interval guard configured.
+- Input: two immediate messages for the same sensor.
+- Expected: both messages produce an `opensensemap_client <- <topic> :` stdout line even though the
+  second upload is guard-suppressed (proves the incoming log is independent of the guard/error path).
+
+14. `handle_message_does_not_log_incoming_message_when_disabled`
+- Scenario: `logIncomingMessages` left at default (`false`).
+- Input: one successful message.
+- Expected: stdout stays empty.

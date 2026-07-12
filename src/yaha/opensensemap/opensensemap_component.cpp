@@ -21,6 +21,9 @@ constexpr int kHttpStatusNotFound{404};
 constexpr int kHttpStatusUnprocessableEntity{422};
 constexpr int kHttpStatusInternalServerError{500};
 
+// Log tag identifies this local client process, not the remote OpenSenseMap service.
+constexpr const char* kLogTag{"opensensemap_client"};
+
 [[nodiscard]] std::string valueToText(const Value& valueVariant) {
     if (std::holds_alternative<std::string>(valueVariant)) {
         return std::get<std::string>(valueVariant);
@@ -39,7 +42,7 @@ void logError(const std::string& reasonText, const Message& message) {
     };
 
     const std::optional<std::string> logLine = buildMessageLogLine(
-        "opensensemap", MessageLogDirection::Incoming, message, kLogConfig);
+        kLogTag, MessageLogDirection::Incoming, message, kLogConfig);
     if (!logLine.has_value()) {
         return;
     }
@@ -55,7 +58,7 @@ void logHttpError(const int statusCode, const std::string& reasonText, const Mes
     };
 
     const std::optional<std::string> logLine = buildMessageLogLine(
-        "opensensemap", MessageLogDirection::Incoming, message, kLogConfig);
+        kLogTag, MessageLogDirection::Incoming, message, kLogConfig);
     if (!logLine.has_value()) {
         return;
     }
@@ -68,7 +71,7 @@ void logUploadSuppressed(const std::string& topicName,
                          const std::string& sensorIdentifier,
                          const std::uint64_t elapsedSeconds,
                          const std::uint32_t minUploadIntervalSeconds) {
-    std::cerr << "opensensemap[warn]"
+    std::cerr << kLogTag << "[warn]"
               << " topic=" << topicName
               << " sensorId=" << sensorIdentifier
               << " reason=upload interval guard active"
@@ -100,6 +103,8 @@ void OpenSenseMapComponent::handleMessage(const Message& message) {
             return;
         }
     }
+
+    logIncomingMessageIfEnabled(message);
 
     const auto sensorConfig = findSensorForTopic(message.topic());
     if (!sensorConfig.has_value()) {
@@ -327,10 +332,29 @@ bool OpenSenseMapComponent::shouldIgnoreBecauseUploadTooFrequent(
     return false;
 }
 
+void OpenSenseMapComponent::logIncomingMessageIfEnabled(const Message& message) const {
+    if (!config_.logIncomingMessages) {
+        return;
+    }
+
+    constexpr MessageLogConfig kLogConfig{
+        .enableIncoming = true,
+        .enableOutgoing = false,
+        .includeReasonChain = true,
+    };
+    const std::optional<std::string> logLine = buildMessageLogLine(
+        kLogTag, MessageLogDirection::Incoming, message, kLogConfig);
+    if (!logLine.has_value()) {
+        return;
+    }
+
+    std::cout << *logLine << '\n' << std::flush;
+}
+
 void OpenSenseMapComponent::publishStatusMessage(const Message& statusMessage) const {
     std::lock_guard<std::mutex> publishLock{publishMutex_};
     if (!publishCallback_) {
-        std::cout << "opensensemap[error] publish_callback_missing"
+        std::cout << kLogTag << "[error] publish_callback_missing"
                   << " topic=" << statusMessage.topic() << '\n' << std::flush;
         return;
     }
@@ -340,7 +364,7 @@ void OpenSenseMapComponent::publishStatusMessage(const Message& statusMessage) c
         return;
     }
 
-    std::cout << "opensensemap[error] status_publish_failed"
+    std::cout << kLogTag << "[error] status_publish_failed"
               << " topic=" << statusMessage.topic()
               << " reason=" << result.reason
               << '\n' << std::flush;

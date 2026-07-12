@@ -52,6 +52,7 @@ struct OpenSenseMapConfig {
     bool useTls{true};                                           ///< Enables HTTPS sender mode.
     Qos subscribeQos{Qos::AtLeastOnce};                          ///< Subscription QoS for sensor topics.
     std::vector<OpenSenseMapSensorConfig> sensors{};             ///< Configured sensor mappings.
+    bool logIncomingMessages{false};                              ///< Logs every incoming message handled by this component.
 };
 
 /**
@@ -122,6 +123,7 @@ private:
     [[nodiscard]] bool shouldIgnoreBecauseUploadTooFrequent(const OpenSenseMapSensorConfig& sensorConfig,
                                                             std::uint64_t& elapsedSecondsOut);
     void publishStatusMessage(const Message& statusMessage) const;
+    void logIncomingMessageIfEnabled(const Message& message) const;
 
     OpenSenseMapConfig config_{};
     OpenSenseMapRequestSender requestSender_{};

@@ -19,9 +19,8 @@ namespace yaha {
  * @brief Runtime config model for standalone OpenSenseMap client process.
  */
 struct OpenSenseMapClientRuntimeConfig {
-    OpenSenseMapConfig openSenseMapConfig{};   ///< OpenSenseMap domain config.
+    OpenSenseMapConfig openSenseMapConfig{};   ///< OpenSenseMap domain config (carries logIncomingMessages).
     YahaMqttClient::Config mqttConfig{};       ///< Generic MQTT runtime config.
-    bool logIncomingMessages{false};           ///< Enable inbound MQTT message logs in broker-format.
 };
 
 /**

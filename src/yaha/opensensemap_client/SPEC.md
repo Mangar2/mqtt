@@ -32,6 +32,11 @@ HTTP request sender factory used by `yahaopensensemapclient`.
 - `port` (optional, default `443`, range `1..65535`)
 - `qos` (optional, default `1`, range `0..2`)
 - `useTls` (optional, default `true`)
+- `logIncomingMessages` (optional, default `false`) — parsed into `openSenseMapConfig.logIncomingMessages`,
+  makes the component log every incoming message to stdout regardless of guard/error outcome
+- `logReason` (optional, default `true`) — parsed into `mqttConfig.logReason`, controls reason-chain
+  detail for the generic `mqttConfig.enableMessageTrace` trace (only active with the `--trace-messages`
+  CLI flag; independent of `logIncomingMessages`)
 
 ### Repeated section `[sensor]`
 

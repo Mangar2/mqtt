@@ -427,7 +427,7 @@ TEST_CASE("load_runtime_config_parses_opensensemap_message_logging_flags", "[ope
 
     REQUIRE(yaha::tryLoadOpenSenseMapClientRuntimeConfigFromIni(document, runtimeConfig, errorMessage));
     REQUIRE(errorMessage.empty());
-    REQUIRE(runtimeConfig.logIncomingMessages);
+    REQUIRE(runtimeConfig.openSenseMapConfig.logIncomingMessages);
     REQUIRE(runtimeConfig.mqttConfig.logReason);
 }
 
@@ -455,7 +455,7 @@ TEST_CASE("load_runtime_config_falls_back_on_invalid_opensensemap_logging_flags"
 
     REQUIRE(yaha::tryLoadOpenSenseMapClientRuntimeConfigFromIni(document, runtimeConfig, errorMessage));
     REQUIRE(errorMessage.empty());
-    REQUIRE_FALSE(runtimeConfig.logIncomingMessages);
+    REQUIRE_FALSE(runtimeConfig.openSenseMapConfig.logIncomingMessages);
     REQUIRE(runtimeConfig.mqttConfig.logReason);
 }
 
@@ -482,7 +482,7 @@ TEST_CASE("load_runtime_config_ignores_mqtt_log_reason_for_opensensemap_logging"
 
     REQUIRE(yaha::tryLoadOpenSenseMapClientRuntimeConfigFromIni(document, runtimeConfig, errorMessage));
     REQUIRE(errorMessage.empty());
-    REQUIRE(runtimeConfig.logIncomingMessages);
+    REQUIRE(runtimeConfig.openSenseMapConfig.logIncomingMessages);
     REQUIRE(runtimeConfig.mqttConfig.logReason);
 }
 
