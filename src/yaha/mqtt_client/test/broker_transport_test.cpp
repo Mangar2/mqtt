@@ -564,6 +564,7 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
     REQUIRE(received_messages.size() == k_expected_incoming_messages);
     CHECK(received_messages[0].topic() == "transport/number");
     REQUIRE(std::holds_alternative<double>(received_messages[0].value()));
+    CHECK_FALSE(received_messages[0].rawPayload().has_value());
 
     CHECK(received_messages[1].topic() == "transport/text");
     REQUIRE(std::holds_alternative<std::string>(received_messages[1].value()));
@@ -609,8 +610,7 @@ TEST_CASE("broker_transport_connect_poll_publish_and_unsubscribe_roundtrip",
     REQUIRE(std::holds_alternative<std::string>(received_messages[7].value()));
     CHECK(std::get<std::string>(received_messages[7].value()) == k_forwarded_invalid_value_payload);
     CHECK(received_messages[7].reason().empty());
-    REQUIRE(received_messages[7].rawPayload().has_value());
-    CHECK(*received_messages[7].rawPayload() == k_forwarded_invalid_value_payload);
+    CHECK_FALSE(received_messages[7].rawPayload().has_value());
 
     transport.publish(yaha::Message{"out/qos0", std::string{"a"}, yaha::Qos::AtMostOnce, false});
     transport.publish(yaha::Message{"out/qos1", std::string{"b"}, yaha::Qos::AtLeastOnce, true, true});

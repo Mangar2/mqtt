@@ -479,13 +479,11 @@ private:
             return *forwardedEnvelope;
         }
 
-        Message incomingMessage{packet.topic.value,
-                                decodePayloadValue(packet.payload),
-                                qosLevel,
-                                packet.retain,
-                                packet.dup};
-        incomingMessage.setRawPayload(payloadText);
-        return incomingMessage;
+        return Message{packet.topic.value,
+                       decodePayloadValue(packet.payload),
+                       qosLevel,
+                       packet.retain,
+                       packet.dup};
     }
 
     std::optional<mqtt::AnyPacket> readNextPacketLocked(const std::uint32_t timeoutMs) {
