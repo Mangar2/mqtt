@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "json/json_value.h"
+#include "yaha/message/test/message_log_test_support.h"
 #include "yaha/serial_device/serial_device_component.h"
 
 #include <atomic>
@@ -410,8 +411,12 @@ TEST_CASE("serial_device_runtime_logs_incoming_and_outgoing_messages_in_yaha_for
 
     std::cout.rdbuf(previousBuffer);
     const std::string logText = capturedOutput.str();
-    REQUIRE(logText.find("component=\"serial_device\" direction=\"incoming\" topic=\"demo/topic/set\"") != std::string::npos);
-    REQUIRE(logText.find("component=\"serial_device\" direction=\"outgoing\" topic=\"demo/topic\"") != std::string::npos);
+    REQUIRE(logText.find(yaha::test::messageLogLinePrefix(
+        "serial_device", yaha::MessageLogDirection::Incoming, "demo/topic/set"))
+        != std::string::npos);
+    REQUIRE(logText.find(yaha::test::messageLogLinePrefix(
+        "serial_device", yaha::MessageLogDirection::Outgoing, "demo/topic"))
+        != std::string::npos);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)

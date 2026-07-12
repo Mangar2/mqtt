@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "yaha/message/test/message_log_test_support.h"
 #include "yaha/mqtt_client/mqtt_client.h"
 #include "yaha/mqtt_client/mqtt_client_runtime.h"
 
@@ -563,15 +564,15 @@ TEST_CASE("message_trace_escapes_string_and_formats_numeric_values", "[mqtt_clie
     const std::string output = captured.str();
     REQUIRE(output.find("mqtt: start clientId=") != std::string::npos);
     REQUIRE(output.find("mqtt: connected clientId=") != std::string::npos);
-        REQUIRE(output.find("mqtt: component=\"mqtt_client\" direction=\"incoming\" topic=\"home/trace/in\"")
-            != std::string::npos);
-        REQUIRE(output.find("value=21.500000") != std::string::npos);
-        REQUIRE(output.find("mqtt: component=\"mqtt_client\" direction=\"outgoing\" topic=\"home/trace/out\"")
-            != std::string::npos);
-        REQUIRE(output.find("value=\"payload\"") != std::string::npos);
+    REQUIRE(output.find("mqtt: " + yaha::test::messageLogLinePrefix(
+        "mqtt_client", yaha::MessageLogDirection::Incoming, "home/trace/in"))
+        != std::string::npos);
+    REQUIRE(output.find("mqtt: " + yaha::test::messageLogLinePrefix(
+        "mqtt_client", yaha::MessageLogDirection::Outgoing, "home/trace/out"))
+        != std::string::npos);
     REQUIRE(output.find("raw=\"line1\\n\\\"x\\\"\\\\tab\\t\"") != std::string::npos);
-        REQUIRE(output.find("\"message\":\"received from arduino\"") != std::string::npos);
-        REQUIRE(output.find("\"message\":\"received by broker\"") != std::string::npos);
+    REQUIRE(output.find("\"message\":\"received from arduino\"") != std::string::npos);
+    REQUIRE(output.find("\"message\":\"received by broker\"") != std::string::npos);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)

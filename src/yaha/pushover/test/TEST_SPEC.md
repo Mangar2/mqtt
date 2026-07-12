@@ -31,8 +31,8 @@
 - Scenario: incoming message arrives without publish callback.
 - Input: message for configured subscription.
 - Expected: processing fails with callback-missing reason, and `logError` emits a structured
-  stderr line via shared `buildMessageLogLine` (`component="pushover" direction="incoming"`,
-  topic, plus `reason="..."`).
+  stderr line via shared `buildMessageLogLine` (`pushover <- <topic> :`, asserted via
+  `yaha::test::messageLogLinePrefix`, plus `reason="..."`).
 
 7. `handle_message_reports_unknown_exception_from_sender`
 - Scenario: sender throws non-std exception.
@@ -43,8 +43,8 @@
 - Scenario: sender returns non-success response with JSON reason payload.
 - Input: message for configured subscription.
 - Expected: published reason contains parsed remote error text, and `logHttpError` emits a
-  structured stderr line via shared `buildMessageLogLine` (`component="pushover" direction="incoming"`,
-  plus `httpStatus=500`).
+  structured stderr line via shared `buildMessageLogLine` (`pushover <- <topic> :`, asserted via
+  `yaha::test::messageLogLinePrefix`, plus `httpStatus=500`).
 
 9. `handle_message_ignores_input_when_not_running`
 - Scenario: message handled before run-state.

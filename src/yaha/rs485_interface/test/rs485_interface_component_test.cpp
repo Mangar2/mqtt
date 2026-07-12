@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "yaha/message/test/message_log_test_support.h"
 #include "yaha/rs485_interface/rs485_interface_component.h"
 
 #include <algorithm>
@@ -427,9 +428,9 @@ TEST_CASE("rs485_interface_component_logs_incoming_message_when_enabled", "[rs48
     std::cout.rdbuf(oldBuffer);
 
     const std::string output = captured.str();
-    REQUIRE(output.find("component=\"rs485_interface\" direction=\"incoming\"") != std::string::npos);
-    REQUIRE(output.find("topic=\"house/room/device/power/set\"") != std::string::npos);
-    REQUIRE(output.find("qos=1 retain=false dup=false") != std::string::npos);
+    REQUIRE(output.find(yaha::test::messageLogLinePrefix(
+        "rs485_interface", yaha::MessageLogDirection::Incoming, "house/room/device/power/set"))
+        != std::string::npos);
 }
 
 TEST_CASE("rs485_interface_component_logs_outgoing_message_when_enabled", "[rs485_interface]") {
@@ -457,8 +458,9 @@ TEST_CASE("rs485_interface_component_logs_outgoing_message_when_enabled", "[rs48
     std::cout.rdbuf(oldBuffer);
 
     const std::string output = captured.str();
-    REQUIRE(output.find("component=\"rs485_interface\" direction=\"outgoing\"") != std::string::npos);
-    REQUIRE(output.find("topic=\"house/room/device/power\"") != std::string::npos);
+    REQUIRE(output.find(yaha::test::messageLogLinePrefix(
+        "rs485_interface", yaha::MessageLogDirection::Outgoing, "house/room/device/power"))
+        != std::string::npos);
 }
 
 TEST_CASE("rs485_interface_component_does_not_log_when_disabled", "[rs485_interface]") {
@@ -472,5 +474,5 @@ TEST_CASE("rs485_interface_component_does_not_log_when_disabled", "[rs485_interf
     std::cout.rdbuf(oldBuffer);
 
     const std::string output = captured.str();
-    REQUIRE(output.find("component=\"rs485_interface\"") == std::string::npos);
+    REQUIRE(output.find("rs485_interface") == std::string::npos);
 }

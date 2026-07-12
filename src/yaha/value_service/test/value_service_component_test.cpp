@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "yaha/message/test/message_log_test_support.h"
 #include "yaha/value_service/value_service_component.h"
 
 namespace {
@@ -268,8 +269,12 @@ TEST_CASE("value_service_logs_incoming_and_outgoing_messages", "[value_service]"
     std::cout.rdbuf(previousBuffer);
 
     const std::string logText = capturedOutput.str();
-    REQUIRE(logText.find("component=\"value_service\" direction=\"incoming\" topic=\"house/light/set\"") != std::string::npos);
-    REQUIRE(logText.find("component=\"value_service\" direction=\"outgoing\" topic=\"house/light\"") != std::string::npos);
+    REQUIRE(logText.find(yaha::test::messageLogLinePrefix(
+        "value_service", yaha::MessageLogDirection::Incoming, "house/light/set"))
+        != std::string::npos);
+    REQUIRE(logText.find(yaha::test::messageLogLinePrefix(
+        "value_service", yaha::MessageLogDirection::Outgoing, "house/light"))
+        != std::string::npos);
 
     component.close();
 }
@@ -576,7 +581,9 @@ TEST_CASE("value_service_publish_throw_logs_out_fail_without_false_success", "[v
     std::cerr.rdbuf(previousBuffer);
 
     const std::string logText = capturedOutput.str();
-    REQUIRE(logText.find("component=\"value_service\" direction=\"outgoing\" topic=\"house/light\"") != std::string::npos);
+    REQUIRE(logText.find(yaha::test::messageLogLinePrefix(
+        "value_service", yaha::MessageLogDirection::Outgoing, "house/light"))
+        != std::string::npos);
     REQUIRE(logText.find("event=publish_failed") != std::string::npos);
     REQUIRE(logText.find("category=retained_value") != std::string::npos);
 
@@ -610,7 +617,9 @@ TEST_CASE("value_service_publish_result_failure_logs_category", "[value_service]
     std::cerr.rdbuf(previousBuffer);
 
     const std::string logText = capturedOutput.str();
-    REQUIRE(logText.find("component=\"value_service\" direction=\"outgoing\" topic=\"house/light\"") != std::string::npos);
+    REQUIRE(logText.find(yaha::test::messageLogLinePrefix(
+        "value_service", yaha::MessageLogDirection::Outgoing, "house/light"))
+        != std::string::npos);
     REQUIRE(logText.find("event=publish_failed") != std::string::npos);
     REQUIRE(logText.find("category=ack_timeout") != std::string::npos);
 

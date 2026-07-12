@@ -3,6 +3,7 @@
 #include "yaha/broker_connector/receiver_publish_port.h"
 #include "yaha/broker_connector/relay_component.h"
 #include "yaha/message/message_payload_codec.h"
+#include "yaha/message/test/message_log_test_support.h"
 
 #include <atomic>
 #include <chrono>
@@ -710,9 +711,12 @@ TEST_CASE("relay_component_logs_incoming_and_outgoing_messages_when_enabled", "[
     std::cout.rdbuf(oldBuffer);
 
     const std::string output = captured.str();
-    REQUIRE(output.find("component=\"broker_connector_relay\" direction=\"incoming\"") != std::string::npos);
-    REQUIRE(output.find("component=\"broker_connector_relay\" direction=\"outgoing\"") != std::string::npos);
-    REQUIRE(output.find("topic=\"home/log/topic\"") != std::string::npos);
+    REQUIRE(output.find(yaha::test::messageLogLinePrefix(
+        "broker_connector_relay", yaha::MessageLogDirection::Incoming, "home/log/topic"))
+        != std::string::npos);
+    REQUIRE(output.find(yaha::test::messageLogLinePrefix(
+        "broker_connector_relay", yaha::MessageLogDirection::Outgoing, "home/log/topic"))
+        != std::string::npos);
 
     component.close();
 }
@@ -737,7 +741,7 @@ TEST_CASE("relay_component_does_not_log_when_disabled", "[broker_connector]") {
     std::cout.rdbuf(oldBuffer);
 
     const std::string output = captured.str();
-    REQUIRE(output.find("component=\"broker_connector_relay\"") == std::string::npos);
+    REQUIRE(output.find("broker_connector_relay") == std::string::npos);
 
     component.close();
 }

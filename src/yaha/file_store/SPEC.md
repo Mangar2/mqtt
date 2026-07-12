@@ -74,10 +74,10 @@ Implements a standalone key/value HTTP store with MQTT monitoring publishes.
 - Failed monitoring sends are queued in bounded retry queue and retried on later activity cycles.
 - Retry exhaustion emits explicit structured failure log and drops event.
 - Message logging:
-  - logs every inbound MQTT message via shared `buildMessageLogLine` (component `file_store`,
-    `direction="incoming"`) before handling, with the full reason chain (not just the first entry)
-  - logs outbound monitoring success via shared `buildMessageLogLine` (`direction="outgoing"`) only
-    after callback confirms send
+  - logs every inbound MQTT message via shared `buildMessageLogLine` (`file_store <- <topic> : ...`)
+    before handling, with the full reason chain (not just the first entry)
+  - logs outbound monitoring success via shared `buildMessageLogLine` (`file_store -> <topic> : ...`)
+    only after callback confirms send
   - logs outbound monitoring failure as `file_store[out-fail]` with event type, topic, category, reason, and payload
 - File I/O logging:
   - logs read/write lifecycle to `std::cout` (`file_store[file-io] ...`)

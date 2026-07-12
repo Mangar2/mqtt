@@ -77,7 +77,7 @@ that orchestrates MQTT routing and controller lifecycle.
 ## Inbound routing
 
 `handleMessage(...)`:
-- optional inbound message-flow log line via shared message logging service (`component="zwave_service" direction="incoming" ...`) when `logIncomingMessages=true`
+- optional inbound message-flow log line via shared message logging service (`zwave_service <- <topic> : ...`) when `logIncomingMessages=true`
 - important event/error logs `zwave_service[event|error] ...` when `logLevel>=1`
 - remove-failed topic -> `controller.removeFailedNode(...)`
 	- success status: `system/zwave/removefailednode` value `deleted`
@@ -112,7 +112,7 @@ that orchestrates MQTT routing and controller lifecycle.
 - Outbound messages are emitted with configured publish flags:
 	- `qos = config.qos`
 	- `retain = config.retain`
-- optional outbound message-flow log line via shared message logging service (`component="zwave_service" direction="outgoing" ...`) only after successful callback publish when `logOutgoingMessages=true`
+- optional outbound message-flow log line via shared message logging service (`zwave_service -> <topic> : ...`) only after successful callback publish when `logOutgoingMessages=true`
 - outgoing message trace logs stay independent from `logLevel`
 - Publish callback missing/non-success/exception branches emit deterministic
 	shared structured outgoing logs with `event=publish_failed`, reason markers, and optional category/detail metadata.

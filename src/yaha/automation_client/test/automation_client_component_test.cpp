@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "yaha/automation_client/automation_client_component.h"
+#include "yaha/message/test/message_log_test_support.h"
 
 namespace {
 
@@ -597,7 +598,8 @@ TEST_CASE("automation_component_publish_failure_logs_out_fail_without_false_out_
     std::cerr.rdbuf(previousStderrBuffer);
 
     const std::string logOutput = capturedOutput.str();
-    REQUIRE(logOutput.find("component=\"automation_client\" direction=\"outgoing\" topic=\"house/light/set\"")
+    REQUIRE(logOutput.find(yaha::test::messageLogLinePrefix(
+        "automation_client", yaha::MessageLogDirection::Outgoing, "house/light/set"))
         != std::string::npos);
     REQUIRE(logOutput.find("event=publish_failed") != std::string::npos);
 
@@ -928,9 +930,11 @@ TEST_CASE("automation_component_logs_incoming_and_outgoing_messages_when_enabled
     std::cout.rdbuf(previousBuffer);
 
     const std::string logOutput = capturedOutput.str();
-        REQUIRE(logOutput.find("component=\"automation_client\" direction=\"incoming\" topic=\"$MONITOR/presence/set\"")
+        REQUIRE(logOutput.find(yaha::test::messageLogLinePrefix(
+            "automation_client", yaha::MessageLogDirection::Incoming, "$MONITOR/presence/set"))
             != std::string::npos);
-        REQUIRE(logOutput.find("component=\"automation_client\" direction=\"outgoing\" topic=\"house/light/set\"")
+        REQUIRE(logOutput.find(yaha::test::messageLogLinePrefix(
+            "automation_client", yaha::MessageLogDirection::Outgoing, "house/light/set"))
             != std::string::npos);
     REQUIRE(logOutput.find("Rule: rules/presenceOn") != std::string::npos);
 

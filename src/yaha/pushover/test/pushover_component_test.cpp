@@ -1,5 +1,7 @@
 #include "yaha/pushover/pushover_component.h"
 
+#include "yaha/message/test/message_log_test_support.h"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <iostream>
@@ -184,8 +186,9 @@ TEST_CASE("handle_message_publishes_error_when_sender_callback_missing", "[pusho
     REQUIRE(published->reason().front().message.find("callback is missing") != std::string::npos);
 
     const std::string logText = capturedOutput.str();
-    REQUIRE(logText.find("component=\"pushover\" direction=\"incoming\"") != std::string::npos);
-    REQUIRE(logText.find("topic=\"$MONITOR/incident/warn\"") != std::string::npos);
+    REQUIRE(logText.find(yaha::test::messageLogLinePrefix(
+        "pushover", yaha::MessageLogDirection::Incoming, "$MONITOR/incident/warn"))
+        != std::string::npos);
     REQUIRE(logText.find("reason=\"pushover request sender callback is missing\"") != std::string::npos);
 }
 
@@ -222,7 +225,9 @@ TEST_CASE("handle_message_formats_error_payload_arrays_for_http_failure", "[push
     REQUIRE(published->reason().front().message.find("errors = [\" first \",\"second\"]") != std::string::npos);
 
     const std::string logText = capturedOutput.str();
-    REQUIRE(logText.find("component=\"pushover\" direction=\"incoming\"") != std::string::npos);
+    REQUIRE(logText.find(yaha::test::messageLogLinePrefix(
+        "pushover", yaha::MessageLogDirection::Incoming, "$MONITOR/incident/fail"))
+        != std::string::npos);
     REQUIRE(logText.find("httpStatus=500") != std::string::npos);
 }
 

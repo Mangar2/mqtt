@@ -63,8 +63,16 @@ Unit tests for Message value-type behavior and validation guarantees.
 | `Message log formatter emits deterministic required field order` | schema ordering contract | message with string value and one reason | log line field order follows required sequence |
 | `Message log formatter escapes control characters deterministically` | escape contract | message value/reason text with quote, backslash, newline, tab | escaped output uses JSON-compatible tokens |
 | `Message log formatter emits full reason chain` | reason completeness contract | message with multiple reason entries | all reasons rendered in message order |
+| `Message log formatter omits false flags and uses incoming arrow` | flag-suppression + arrow contract | message with retain=false, dup=false, incoming direction | `<-` arrow used; no `component=`/`direction=`/`topic=`/`value=` labels; no `retain`/`dup` tokens |
 | `Message log service can omit reason chain by config` | optional reason rendering branch | includeReasonChain=false | reason field omitted or empty per contract |
 | `Message log service ini loader keeps defaults when keys are missing` | compatibility default behavior for shared INI mapping helper | empty INI and non-default initial config | loader keeps existing enable/disable defaults |
 | `Message log service ini loader parses plural legacy keys` | compatibility with existing plural per-section keys | `[automation] logIncomingMessages/logOutgoingMessages` and `[messagestore] logReason` | incoming/outgoing/reason flags mapped exactly as configured |
 | `Message log service ini loader parses singular legacy monitoring keys` | compatibility with existing broker-connector monitoring keys | `[monitoring] logIncomingMessage/logOutgoingMessage` | incoming/outgoing flags mapped exactly as configured |
 | `Message log service ini loader reports invalid bool key` | shared helper propagates existing field-specific bool parse errors | invalid bool token on configured key | loader fails and returns key-specific parse error |
+
+## Shared test support
+
+`message_log_test_support.h` is not a test file; it is a header-only helper (`yaha::test::messageLogArrow`,
+`yaha::test::messageLogLinePrefix`) that every YAHA client's test suite includes to assert message-flow
+log-line presence/absence without hardcoding the formatter's literal syntax. See `SPEC.md` for the
+contract this decouples client tests from.

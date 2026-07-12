@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "yaha/message/test/message_log_test_support.h"
 #include "yaha/zwave/zwave_service_component.h"
 
 #include <algorithm>
@@ -585,7 +586,8 @@ TEST_CASE("publish_without_callback_logs_error", "[zwave_service]") {
     service.run();
     std::cout.rdbuf(previousBuffer);
 
-        REQUIRE(outputStream.str().find("component=\"zwave_service\" direction=\"outgoing\"")
+        REQUIRE(outputStream.str().find(yaha::test::messageLogArrow(
+            "zwave_service", yaha::MessageLogDirection::Outgoing))
             != std::string::npos);
         REQUIRE(outputStream.str().find("event=publish_failed reason=callback_missing")
             != std::string::npos);
@@ -604,7 +606,8 @@ TEST_CASE("publish_failure_result_logs_error", "[zwave_service]") {
     service.run();
     std::cout.rdbuf(previousBuffer);
 
-        REQUIRE(outputStream.str().find("component=\"zwave_service\" direction=\"outgoing\"")
+        REQUIRE(outputStream.str().find(yaha::test::messageLogArrow(
+            "zwave_service", yaha::MessageLogDirection::Outgoing))
             != std::string::npos);
         REQUIRE(outputStream.str().find("event=publish_failed reason=publish_rejected")
             != std::string::npos);
@@ -625,7 +628,8 @@ TEST_CASE("publish_callback_exception_logs_error", "[zwave_service]") {
     service.run();
     std::cout.rdbuf(previousBuffer);
 
-        REQUIRE(outputStream.str().find("component=\"zwave_service\" direction=\"outgoing\"")
+        REQUIRE(outputStream.str().find(yaha::test::messageLogArrow(
+            "zwave_service", yaha::MessageLogDirection::Outgoing))
             != std::string::npos);
         REQUIRE(outputStream.str().find("event=publish_failed reason=exception")
             != std::string::npos);
@@ -646,7 +650,8 @@ TEST_CASE("publish_callback_unknown_exception_logs_error", "[zwave_service]") {
     service.run();
     std::cout.rdbuf(previousBuffer);
 
-        REQUIRE(outputStream.str().find("component=\"zwave_service\" direction=\"outgoing\"")
+        REQUIRE(outputStream.str().find(yaha::test::messageLogArrow(
+            "zwave_service", yaha::MessageLogDirection::Outgoing))
             != std::string::npos);
         REQUIRE(outputStream.str().find("event=publish_failed reason=exception")
             != std::string::npos);
@@ -673,9 +678,11 @@ TEST_CASE("logging_flags_emit_incoming_and_outgoing_lines", "[zwave_service]") {
     std::cout.rdbuf(previousBuffer);
 
     const std::string logText = outputStream.str();
-        REQUIRE(logText.find("component=\"zwave_service\" direction=\"incoming\" topic=\"home/phase6/lamp/set\"")
+        REQUIRE(logText.find(yaha::test::messageLogLinePrefix(
+            "zwave_service", yaha::MessageLogDirection::Incoming, "home/phase6/lamp/set"))
             != std::string::npos);
-        REQUIRE(logText.find("component=\"zwave_service\" direction=\"outgoing\" topic=\"home/phase6/lamp\"")
+        REQUIRE(logText.find(yaha::test::messageLogLinePrefix(
+            "zwave_service", yaha::MessageLogDirection::Outgoing, "home/phase6/lamp"))
             != std::string::npos);
 }
 
@@ -703,8 +710,10 @@ TEST_CASE("log_level_one_emits_important_events_without_forcing_message_traces",
     REQUIRE(logText.find("zwave_service[event] op=run detail=\"startup\"") != std::string::npos);
     REQUIRE(logText.find("zwave_service[event] op=addnode detail=\"request received\"") != std::string::npos);
     REQUIRE(logText.find("zwave_service[event] op=addnode detail=\"request forwarded\"") != std::string::npos);
-    CHECK(logText.find("component=\"zwave_service\" direction=\"incoming\"") == std::string::npos);
-    CHECK(logText.find("component=\"zwave_service\" direction=\"outgoing\"") == std::string::npos);
+    CHECK(logText.find(yaha::test::messageLogArrow(
+        "zwave_service", yaha::MessageLogDirection::Incoming)) == std::string::npos);
+    CHECK(logText.find(yaha::test::messageLogArrow(
+        "zwave_service", yaha::MessageLogDirection::Outgoing)) == std::string::npos);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)

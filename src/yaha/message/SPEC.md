@@ -99,10 +99,29 @@ Implementation status:
     `message_log_service.*`.
 
 Deterministic formatting contract:
-- Required field order in one log line: `component`, `direction`, `topic`, `value`, `qos`, `retain`, `dup`, `reason`.
-- Optional fields (`raw`, transport metadata) append after required fields in stable order.
+- Human-readable single-line-summary format: `{component} {arrow} {topic} : {value} qos={qos}[ retain][ dup]`,
+    followed by a newline and `reason={reasonChain}[ raw={rawPayload}]` on its own line.
+- `arrow` is `->` for `MessageLogDirection::Outgoing` and `<-` for `MessageLogDirection::Incoming`.
+- `component` and `topic` are emitted as plain unquoted text (no `component=`/`topic=`/`direction=`/`value=` labels).
+- `retain` and `dup` are only emitted (as bare tokens, no `=true`/`=false`) when the corresponding flag is `true`;
+    absence of the token means `false`.
+- The `reason=` (and optional `raw=`) tail is emitted after an embedded `\n` so it renders as its own log line
+    under line-oriented log sinks (syslog/journald).
 - String escaping uses the same JSON-compatible escaping rules as message payload helpers.
 - Full reason output must preserve `Message.reason()` order and must never be flattened to one plain string in unified paths.
+
+Shared test support:
+- `test/message_log_test_support.h` exports `yaha::test::messageLogArrow(component, direction)` and
+    `yaha::test::messageLogLinePrefix(component, direction, topic)`, the only sanctioned way for any
+    YAHA client's test suite to assert that a message-flow log line was (or was not) emitted.
+- Client-level tests must call these helpers instead of hardcoding the formatter's literal syntax
+    (arrow characters, separators, quoting). This keeps format-syntax knowledge in this module only;
+    a future formatting change updates this header plus `message_log_formatter.cpp`, not every client
+    test file.
+- Client-level tests must not re-assert formatter-internal contract details already covered by
+    `test/message_log_formatter_test.cpp` (field order, flag suppression, quoting/escaping) — they
+    only verify that the client invoked logging for the right component/direction/topic and that
+    disabled/filtered logging stays silent.
 
 INI compatibility mapping contract:
 - shared helper `tryLoadMessageLogConfigFromIni(...)` maps per-client boolean INI keys into `MessageLogConfig`.

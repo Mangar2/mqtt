@@ -12,12 +12,8 @@ namespace {
     return "\"" + escapeJsonString(valueText) + "\"";
 }
 
-[[nodiscard]] std::string boolToLogText(const bool flagValue) {
-    return flagValue ? "true" : "false";
-}
-
-[[nodiscard]] std::string directionToLogText(const MessageLogDirection direction) {
-    return direction == MessageLogDirection::Incoming ? "incoming" : "outgoing";
+[[nodiscard]] std::string directionToArrowText(const MessageLogDirection direction) {
+    return direction == MessageLogDirection::Incoming ? "<-" : "->";
 }
 
 [[nodiscard]] std::string valueToLogToken(const Value& valueVariant) {
@@ -54,14 +50,20 @@ std::string formatMessageLogLine(const std::string_view componentName,
                                  const MessageLogDirection direction,
                                  const Message& message,
                                  const bool includeReasonChain) {
-    std::string line = "component=" + quoteLogString(componentName)
-        + " direction=" + quoteLogString(directionToLogText(direction))
-        + " topic=" + quoteLogString(message.topic())
-        + " value=" + valueToLogToken(message.value())
-        + " qos=" + std::to_string(static_cast<unsigned int>(message.qos()))
-        + " retain=" + boolToLogText(message.retain())
-        + " dup=" + boolToLogText(message.dup())
-        + " reason=" + reasonChainToLogToken(message.reason(), includeReasonChain);
+    std::string line = std::string{componentName}
+        + " " + directionToArrowText(direction)
+        + " " + message.topic()
+        + " : " + valueToLogToken(message.value())
+        + " qos=" + std::to_string(static_cast<unsigned int>(message.qos()));
+
+    if (message.retain()) {
+        line += " retain";
+    }
+    if (message.dup()) {
+        line += " dup";
+    }
+
+    line += "\nreason=" + reasonChainToLogToken(message.reason(), includeReasonChain);
 
     if (message.rawPayload().has_value()) {
         line += " raw=" + quoteLogString(*message.rawPayload());

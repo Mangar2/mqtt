@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "yaha/message/test/message_log_test_support.h"
+
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -454,7 +456,9 @@ TEST_CASE("http_mqtt_interface_component_logs_broker_publish_error_when_ack_miss
     std::cerr.rdbuf(previousErrorBuffer);
 
     const std::string outputText = capturedOutput.str();
-    REQUIRE(outputText.find("component=\"http_mqtt_interface_client\" direction=\"outgoing\"") != std::string::npos);
+    REQUIRE(outputText.find(yaha::test::messageLogArrow(
+        "http_mqtt_interface_client", yaha::MessageLogDirection::Outgoing))
+        != std::string::npos);
     REQUIRE(outputText.find("event=broker_publish_failed") != std::string::npos);
     REQUIRE(outputText.find("detail=message_was_sent_but_broker_reported_no_ack") != std::string::npos);
 

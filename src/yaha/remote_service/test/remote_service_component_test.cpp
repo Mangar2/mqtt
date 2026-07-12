@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "httplib.h"
+#include "yaha/message/test/message_log_test_support.h"
 
 #include <chrono>
 #include <cstdint>
@@ -583,8 +584,9 @@ TEST_CASE("remote_service_component_logs_outgoing_message_when_enabled", "[remot
 
     REQUIRE(result.isSuccess());
     const std::string logText = capturedOutput.str();
-    REQUIRE(logText.find("component=\"remote_service\" direction=\"outgoing\"") != std::string::npos);
-    REQUIRE(logText.find("topic=\"house/kitchen/light/set\"") != std::string::npos);
+    REQUIRE(logText.find(yaha::test::messageLogLinePrefix(
+        "remote_service", yaha::MessageLogDirection::Outgoing, "house/kitchen/light/set"))
+        != std::string::npos);
 
     component.close();
 }
@@ -620,7 +622,7 @@ TEST_CASE("remote_service_component_does_not_log_when_disabled", "[remote_servic
 
     REQUIRE(result.isSuccess());
     const std::string logText = capturedOutput.str();
-    REQUIRE(logText.find("component=\"remote_service\"") == std::string::npos);
+    REQUIRE(logText.find("remote_service") == std::string::npos);
 
     component.close();
 }

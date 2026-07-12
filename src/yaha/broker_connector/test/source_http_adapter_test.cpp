@@ -2,6 +2,7 @@
 
 #include "yaha/broker_connector/source_http_adapter.h"
 #include "yaha/broker_connector/source_lifecycle_manager.h"
+#include "yaha/message/test/message_log_test_support.h"
 
 #include <httplib.h>
 
@@ -406,9 +407,9 @@ TEST_CASE("source_adapter_connect_subscribe_and_callback_publish", "[broker_conn
     }
 
     std::cout.rdbuf(previousOutputBuffer);
-    REQUIRE(outputStream.str().find("component=\"broker_connector_source\" direction=\"incoming\"")
+    REQUIRE(outputStream.str().find(yaha::test::messageLogLinePrefix(
+                "broker_connector_source", yaha::MessageLogDirection::Incoming, "home/kitchen/temp"))
             != std::string::npos);
-    REQUIRE(outputStream.str().find("topic=\"home/kitchen/temp\"") != std::string::npos);
     REQUIRE(outputStream.str().find("packetid=7") != std::string::npos);
 
     adapter.close();

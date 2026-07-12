@@ -31,8 +31,8 @@
 - Scenario: incoming message arrives without configured publish callback.
 - Input: message for known sensor.
 - Expected: internal handling fails gracefully with callback-missing reason, and `logError` emits a
-  structured stderr line via shared `buildMessageLogLine` (`component="opensensemap" direction="incoming"`,
-  topic, plus `reason="..."`).
+  structured stderr line via shared `buildMessageLogLine` (`opensensemap <- <topic> :`, asserted via
+  `yaha::test::messageLogLinePrefix`, plus `reason="..."`).
 
 7. `handle_message_reports_error_on_unknown_exception`
 - Scenario: sender callback throws a non-std exception type.

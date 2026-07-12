@@ -3,6 +3,7 @@
 #include "httplib.h"
 
 #include "yaha/file_store/file_store.h"
+#include "yaha/message/test/message_log_test_support.h"
 
 #include <chrono>
 #include <cstdint>
@@ -684,8 +685,9 @@ TEST_CASE("handle_message_logs_incoming_with_full_reason_chain", "[file_store]")
 
     std::cout.rdbuf(previousStdoutBuffer);
     const std::string logText = capturedOutput.str();
-    REQUIRE(logText.find("component=\"file_store\" direction=\"incoming\"") != std::string::npos);
-    REQUIRE(logText.find("topic=\"topic/a\"") != std::string::npos);
+    REQUIRE(logText.find(yaha::test::messageLogLinePrefix(
+        "file_store", yaha::MessageLogDirection::Incoming, "topic/a"))
+        != std::string::npos);
     REQUIRE(logText.find("\"message\":\"second\"") != std::string::npos);
     REQUIRE(logText.find("\"message\":\"first\"") != std::string::npos);
 }
@@ -755,8 +757,9 @@ TEST_CASE("monitoring_publish_success_logs_outgoing_message", "[file_store]") {
 
     std::cout.rdbuf(previousStdoutBuffer);
     const std::string logText = capturedOutput.str();
-    REQUIRE(logText.find("component=\"file_store\" direction=\"outgoing\"") != std::string::npos);
-    REQUIRE(logText.find("topic=\"$MONITOR/FileStore/changed\"") != std::string::npos);
+    REQUIRE(logText.find(yaha::test::messageLogLinePrefix(
+        "file_store", yaha::MessageLogDirection::Outgoing, "$MONITOR/FileStore/changed"))
+        != std::string::npos);
 }
 
 TEST_CASE("watcher_emits_created_changed_deleted_events", "[file_store]") {
@@ -920,7 +923,9 @@ TEST_CASE("monitoring_publish_throw_logs_out_fail_without_false_success", "[file
     std::cout.rdbuf(previousStdoutBuffer);
     const std::string logText = capturedOutput.str();
     REQUIRE(logText.find("file_store[out-fail] eventType=changed") != std::string::npos);
-    REQUIRE(logText.find("component=\"file_store\" direction=\"outgoing\"") == std::string::npos);
+    REQUIRE(logText.find(yaha::test::messageLogArrow(
+        "file_store", yaha::MessageLogDirection::Outgoing))
+        == std::string::npos);
 }
 
 TEST_CASE("monitoring_publish_result_failure_logs_structured_category", "[file_store]") {
