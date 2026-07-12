@@ -151,14 +151,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    const bool enableMessageLogsFromConfig =
-        runtimeConfig.logIncomingMessages || runtimeConfig.logOutgoingMessages;
-    runtimeConfig.mqttConfig.enableMessageTrace =
-        cliOptions.enableMessageTrace || enableMessageLogsFromConfig;
-
-    if (runtimeConfig.mqttConfig.enableMessageTrace && enableMessageLogsFromConfig && !cliOptions.enableMessageTrace) {
-        std::cout << "  startup: mqtt message logging enabled via remoteservice.logIncomingMessages/logOutgoingMessages\n";
-    }
+    runtimeConfig.mqttConfig.enableMessageTrace = cliOptions.enableMessageTrace;
 
     printStartupSummary(cliOptions.configPath, runtimeConfig);
 

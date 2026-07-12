@@ -91,14 +91,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    const bool enableMessageTraceFromConfig =
-        runtimeConfig.logIncomingMessages || runtimeConfig.logOutgoingMessages;
-    runtimeConfig.mqttConfig.enableMessageTrace =
-        cliOptions.enableMessageTrace || enableMessageTraceFromConfig;
-
-    if (runtimeConfig.mqttConfig.enableMessageTrace && enableMessageTraceFromConfig && !cliOptions.enableMessageTrace) {
-        std::cout << "  startup: message logging enabled via pushover.logIncomingMessages/logOutgoingMessages\n";
-    }
+    runtimeConfig.mqttConfig.enableMessageTrace = cliOptions.enableMessageTrace;
 
     yaha::PushoverComponent component{
         runtimeConfig.pushoverConfig,
