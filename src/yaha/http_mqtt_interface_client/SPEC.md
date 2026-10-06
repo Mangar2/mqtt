@@ -137,6 +137,10 @@ Publish broker-forward logging:
 - when a token-bound session has legacy listener metadata from connect (`host`/`port`),
 	compatibility publish additionally forwards the mapped publish packet to that listener via
 	`PUT /publish` to preserve legacy TypeScript `onPublish` callback flow
+- legacy dispatch thread polls all registered listener sessions; when a listener session no longer
+	exists (closed or replaced by duplicate clientId connect) its listener entry is removed once and
+	a `receive_dispatch` event `stale listener removed` is logged instead of repeated errors
+- legacy dispatch thread sleeps the idle interval after every round without a delivered message
 
 Native PUT error mapping:
 

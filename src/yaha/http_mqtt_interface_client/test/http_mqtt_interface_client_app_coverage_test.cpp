@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <map>
@@ -226,6 +227,54 @@ TEST_CASE("http_mqtt_interface_component_forwards_listener_and_reports_connected
     const std::string outputText = capturedOutput.str();
     REQUIRE(outputText.find("listener_forward") != std::string::npos);
     REQUIRE(outputText.find("connected_clients_report") != std::string::npos);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("http_mqtt_interface_component_removes_stale_listener_after_duplicate_connect", "[http_mqtt_interface_client]") {
+    const std::uint16_t httpPort = reserveFreeLocalPort();
+    const std::uint16_t callbackPort = reserveFreeLocalPort();
+
+    SessionMockFactory sessionFactory{};
+
+    std::ostringstream capturedOutput{};
+    std::streambuf* previousOutputBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+    yaha::HttpMqttInterfaceClientConfig config{};
+    config.listenerHost = "127.0.0.1";
+    config.listenerPort = httpPort;
+    config.logEvents = true;
+    config.logErrors = true;
+
+    yaha::HttpMqttInterfaceClientComponent component{config, sessionFactory.makeFactory()};
+    component.run();
+    REQUIRE(waitForHttpServer(httpPort));
+
+    httplib::Client client{"127.0.0.1", static_cast<int>(httpPort)};
+    configureHttpClientTimeouts(client);
+
+    const std::string connectBody =
+        std::string{R"({"clientId":"duplicate-listener-client","host":"127.0.0.1","port":)"} +
+        std::to_string(callbackPort) +
+        R"(})";
+    const auto firstConnect = client.Put("/connect", connectBody, "application/json");
+    REQUIRE(firstConnect != nullptr);
+    REQUIRE(firstConnect->status == k_status_ok);
+    const auto secondConnect = client.Put("/connect", connectBody, "application/json");
+    REQUIRE(secondConnect != nullptr);
+    REQUIRE(secondConnect->status == k_status_ok);
+
+    // Several dispatch rounds: stale entry must be removed once, not reported per round.
+    std::this_thread::sleep_for(std::chrono::milliseconds{k_wait_attempts * k_wait_sleep_ms});
+
+    component.close();
+    std::cout.rdbuf(previousOutputBuffer);
+
+    const std::string outputText = capturedOutput.str();
+    const std::string staleMarker{"stale listener removed"};
+    const std::size_t firstStale = outputText.find(staleMarker);
+    REQUIRE(firstStale != std::string::npos);
+    REQUIRE(outputText.find(staleMarker, firstStale + staleMarker.size()) == std::string::npos);
+    REQUIRE(outputText.find("unknown token") == std::string::npos);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)

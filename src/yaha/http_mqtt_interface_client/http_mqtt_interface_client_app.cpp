@@ -125,6 +125,7 @@ void HttpMqttInterfaceClientComponent::run() {
                 continue;
             }
 
+            bool dispatchedAny = false;
             for (const auto& snapshot : snapshots) {
                 const auto& sendToken = std::get<0>(snapshot);
                 const auto& receiveToken = std::get<1>(snapshot);
@@ -133,7 +134,13 @@ void HttpMqttInterfaceClientComponent::run() {
                 std::optional<Message> receivedMessage{};
                 std::string receiveError{};
                 if (!impl_->sessionManager.receive(receiveToken, receivedMessage, receiveError)) {
-                    if (!receiveError.empty()) {
+                    if (!impl_->sessionManager.hasSession(receiveToken)) {
+                        // Session was replaced or closed: drop stale listener so it is not polled again.
+                        std::lock_guard<std::mutex> lock{impl_->legacyListenerMutex};
+                        impl_->legacyListenerBySendToken.erase(sendToken);
+                        impl_->receiveTokenBySendToken.erase(sendToken);
+                        logHttpMqttEvent(impl_->config.logEvents, "receive_dispatch", "stale listener removed token=" + sendToken);
+                    } else if (!receiveError.empty()) {
                         logHttpMqttError(impl_->config.logErrors, "receive_dispatch", "session receive failed", receiveError);
                     }
                     continue;
@@ -142,6 +149,7 @@ void HttpMqttInterfaceClientComponent::run() {
                 if (!receivedMessage.has_value()) {
                     continue;
                 }
+                dispatchedAny = true;
 
                 logBrokerIncomingMessage(
                     impl_->config.logBrokerMessages,
@@ -161,6 +169,10 @@ void HttpMqttInterfaceClientComponent::run() {
                     sendToken,
                     *receivedMessage,
                     forwarded);
+            }
+
+            if (!dispatchedAny) {
+                std::this_thread::sleep_for(std::chrono::milliseconds{k_legacy_dispatch_idle_sleep_ms});
             }
         }
     });
