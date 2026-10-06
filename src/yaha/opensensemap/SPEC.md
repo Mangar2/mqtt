@@ -54,7 +54,8 @@ Implements `IMqttComponent` behavior:
   - the first message uploads immediately
   - messages arriving before the configured interval elapsed are ignored
   - ignored messages are not queued, persisted, or retried
-  - ignored messages write one warning log line and do not publish `$MONITOR/opensensemap/*` status
+  - ignored messages write one info log line (expected, config-driven behavior, not an error) and
+    do not publish `$MONITOR/opensensemap/*` status
 - `run()` enables message processing.
 - `close()` disables message processing.
 - `setPublishCallback(...)` stores runtime MQTT publish callback.
@@ -63,8 +64,10 @@ Implements `IMqttComponent` behavior:
 
 All stdout/stderr log lines emitted by this component are prefixed `opensensemap_client` (not
 `opensensemap`) so they are unambiguously identifiable as coming from this local client process,
-not from the remote OpenSenseMap service (e.g. `opensensemap_client[warn] ... action=ignore`,
-`opensensemap_client <- <topic> : <value>`).
+not from the remote OpenSenseMap service (e.g. `opensensemap_client[info] ... action=ignore`,
+`opensensemap_client <- <topic> : <value>`). The upload-guard suppression line uses level `info`
+(stdout), not `warn`/`error`, because it reports expected, config-driven behavior rather than a
+problem.
 
 ## Status publish behavior
 

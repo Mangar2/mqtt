@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -318,20 +319,20 @@ TEST_CASE("opensensemap_request_sender_parses_successful_curl_output", "[opensen
 }
 
 TEST_CASE("opensensemap_request_sender_throws_on_non_zero_curl_exit", "[opensensemap_client]") {
-    const auto fakeCurlDirectory = makeFakeCurlDirectory("exit 2");
-    const ScopedPathPrefix scopedPath{fakeCurlDirectory};
-
+    // Injected executor: no process spawn, so the test cannot fall back to real curl or hit the runner timeout.
     const yaha::OpenSenseMapConfig config{
         .boxIdentifier = "box-abc",
         .host = "example.org",
         .port = 443U,
         .useTls = true,
     };
-    const auto sender = yaha::makeOpenSenseMapRequestSender(config);
+    const auto sender = yaha::makeOpenSenseMapRequestSender(
+        config,
+        [](const std::string& /*commandText*/) {
+            return std::pair<int, std::string>{2, std::string{}};
+        });
 
     REQUIRE_THROWS(sender("/boxes/box-abc/sensor-1", "{\"value\":12}"));
-
-    removeDirectoryQuiet(fakeCurlDirectory);
 }
 
 TEST_CASE("opensensemap_request_sender_throws_on_missing_metadata", "[opensensemap_client]") {

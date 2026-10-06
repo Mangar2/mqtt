@@ -71,7 +71,7 @@ void logUploadSuppressed(const std::string& topicName,
                          const std::string& sensorIdentifier,
                          const std::uint64_t elapsedSeconds,
                          const std::uint32_t minUploadIntervalSeconds) {
-    std::cerr << kLogTag << "[warn]"
+    std::cout << kLogTag << "[info]"
               << " topic=" << topicName
               << " sensorId=" << sensorIdentifier
               << " reason=upload interval guard active"

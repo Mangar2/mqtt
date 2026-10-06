@@ -49,7 +49,7 @@
 
 10. `opensensemap_request_sender_throws_on_non_zero_curl_exit`
 - Scenario: curl command exits with non-zero code.
-- Input: stub curl exits with error.
+- Input: injected command executor returns exit status 2 (no process spawn).
 - Expected: sender throws runtime error.
 
 11. `opensensemap_request_sender_throws_on_missing_metadata`
