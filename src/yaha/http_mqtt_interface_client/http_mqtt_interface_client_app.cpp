@@ -198,6 +198,12 @@ void HttpMqttInterfaceClientComponent::run() {
                 waitedMs += static_cast<std::uint32_t>(k_connected_clients_report_sleep_step_ms);
             }
 
+            for (const auto& expiredClientId :
+                 impl_->sessionManager.expireIdleSessions(std::chrono::steady_clock::now())) {
+                logHttpMqttEvent(
+                    impl_->config.logEvents, "session_expired", "keep-alive exceeded clientId=" + expiredClientId);
+            }
+
             const auto sessions = impl_->sessionManager.listSessions();
             logConnectedClientsReport(impl_->config.logEvents, sessions);
         }

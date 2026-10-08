@@ -671,6 +671,7 @@ HttpMqttInterfaceClientComponent::HttpMqttInterfaceClientComponent(
                               return;
                           }
 
+                          impl_->sessionManager.markActivity(token);
                           std::optional<Message> receivedMessage{};
                           std::string receiveError{};
                           if (!impl_->sessionManager.receive(token, receivedMessage, receiveError)) {

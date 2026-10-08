@@ -43,6 +43,12 @@ Additional command behavior:
 	addressed by tokens returned from `PUT /connect`
 - session manager uses one broker transport per connected HTTP client session
 	and forwards command operations to broker transport directly
+- session keep-alive expiry: a session connected with `keepAliveSeconds` (or legacy `keepAlive`)
+	is removed and disconnected from the broker when its client shows no activity for more than
+	1.5 times the keep-alive; activity is ping, publish, subscribe, unsubscribe and client-driven
+	`PUT /receive`; internal legacy dispatcher polling is not activity; sessions without keep-alive
+	never expire; expiry is checked on every connected-clients report interval and logged as
+	`session_expired` event
 
 Publish forwarding path uses only IMqttComponent publish callback contract.
 No direct broker transport callback bundle is owned in this module.

@@ -4,10 +4,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -346,4 +348,79 @@ TEST_CASE("http_mqtt_session_manager_reject_codes_snapshot_and_additional_failur
         REQUIRE_FALSE(manager.disconnect(tokens.sendToken, errorText));
         REQUIRE(errorText == "unknown broker disconnect failure");
     }
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("http_mqtt_session_manager_expires_sessions_after_keep_alive_grace", "[http_mqtt_interface_client]") {
+    constexpr std::uint32_t keepAliveSeconds{10U};
+    constexpr std::chrono::seconds withinGrace{14};
+    constexpr std::chrono::seconds beyondGrace{16};
+    constexpr std::chrono::hours farFuture{24};
+
+    auto disconnectCount = std::make_shared<int>(0);
+    yaha::HttpMqttSessionManager manager{
+        makeBaseConfig(),
+        [disconnectCount]() {
+            yaha::YahaMqttClient::Transport transport{};
+            transport.connect = [](const yaha::YahaMqttClient::Config&) { return true; };
+            transport.disconnect = [disconnectCount]() { ++(*disconnectCount); };
+            transport.ping = []() {};
+            transport.isConnected = []() { return true; };
+            return transport;
+        }};
+
+    yaha::HttpMqttSessionConnectRequest keepAliveRequest{};
+    keepAliveRequest.clientId = "keep-alive-client";
+    keepAliveRequest.keepAliveSeconds = keepAliveSeconds;
+    yaha::HttpMqttSessionConnectRequest silentRequest{};
+    silentRequest.clientId = "no-keep-alive-client";
+
+    yaha::HttpMqttSessionConnectTokens keepAliveTokens{};
+    yaha::HttpMqttSessionConnectTokens silentTokens{};
+    std::string errorText{};
+    REQUIRE(manager.connect(keepAliveRequest, keepAliveTokens, errorText));
+    REQUIRE(manager.connect(silentRequest, silentTokens, errorText));
+
+    const auto connectedAt = std::chrono::steady_clock::now();
+    REQUIRE(manager.expireIdleSessions(connectedAt + withinGrace).empty());
+
+    manager.markActivity(keepAliveTokens.receiveToken);
+    REQUIRE(manager.ping(keepAliveTokens.sendToken, errorText));
+    const auto activeAt = std::chrono::steady_clock::now();
+    REQUIRE(manager.expireIdleSessions(activeAt + withinGrace).empty());
+
+    const auto expired = manager.expireIdleSessions(activeAt + beyondGrace);
+    REQUIRE(expired == std::vector<std::string>{"keep-alive-client"});
+    REQUIRE(*disconnectCount == 1);
+    REQUIRE_FALSE(manager.hasSession(keepAliveTokens.sendToken));
+    REQUIRE_FALSE(manager.hasSession(keepAliveTokens.receiveToken));
+    std::string resolvedToken{};
+    REQUIRE_FALSE(manager.resolveSendTokenByClientId("keep-alive-client", resolvedToken));
+
+    REQUIRE(manager.expireIdleSessions(activeAt + farFuture).empty());
+    REQUIRE(manager.hasSession(silentTokens.sendToken));
+}
+
+TEST_CASE("http_mqtt_session_manager_expiry_tolerates_failing_disconnect", "[http_mqtt_interface_client]") {
+    constexpr std::chrono::hours farFuture{1};
+
+    yaha::HttpMqttSessionManager manager{
+        makeBaseConfig(),
+        []() {
+            yaha::YahaMqttClient::Transport transport{};
+            transport.connect = [](const yaha::YahaMqttClient::Config&) { return true; };
+            transport.disconnect = []() { throw std::runtime_error{"broker gone"}; };
+            return transport;
+        }};
+
+    yaha::HttpMqttSessionConnectRequest request{};
+    request.clientId = "vanished-client";
+    request.keepAliveSeconds = 1U;
+    yaha::HttpMqttSessionConnectTokens tokens{};
+    std::string errorText{};
+    REQUIRE(manager.connect(request, tokens, errorText));
+
+    const auto expired = manager.expireIdleSessions(std::chrono::steady_clock::now() + farFuture);
+    REQUIRE(expired == std::vector<std::string>{"vanished-client"});
+    REQUIRE_FALSE(manager.hasSession(tokens.sendToken));
 }

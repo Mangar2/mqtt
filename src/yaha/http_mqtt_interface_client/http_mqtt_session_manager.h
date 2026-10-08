@@ -3,6 +3,7 @@
 #include "yaha/message/message.h"
 #include "yaha/mqtt_client/mqtt_client.h"
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -70,6 +71,27 @@ public:
 
     [[nodiscard]] bool ping(const std::string& token, std::string& errorOut);
 
+    /**
+     * @brief Records client activity for keep-alive expiry.
+     *
+     * Ping, publish, subscribe and unsubscribe record activity themselves. Callers use this
+     * for client-driven receive requests; internal dispatcher polling must not call it.
+     *
+     * @param token Send or receive token of the session.
+     */
+    void markActivity(const std::string& token);
+
+    /**
+     * @brief Removes sessions whose client stayed silent longer than 1.5 times its keep-alive.
+     *
+     * Sessions connected without keep-alive never expire. Expired sessions are disconnected
+     * from the broker and their tokens become unknown.
+     *
+     * @param now Current steady-clock time.
+     * @return Client identifiers of the expired sessions.
+     */
+    [[nodiscard]] std::vector<std::string> expireIdleSessions(std::chrono::steady_clock::time_point now);
+
     [[nodiscard]] bool hasSession(const std::string& token) const;
     [[nodiscard]] bool resolveClientIdByToken(const std::string& token, std::string& clientIdOut) const;
     [[nodiscard]] bool resolveSendTokenByClientId(const std::string& clientId, std::string& tokenOut) const;
@@ -79,6 +101,12 @@ private:
     struct SessionState;
 
     [[nodiscard]] std::optional<std::shared_ptr<SessionState>> findSession(const std::string& token) const;
+    /**
+     * @brief Looks up a session and records client activity on it.
+     * @param token Send or receive token of the session.
+     * @return Session when found, otherwise empty.
+     */
+    [[nodiscard]] std::optional<std::shared_ptr<SessionState>> findActiveSession(const std::string& token) const;
     void disconnectExistingSessionForClientId(const std::string& clientId);
     [[nodiscard]] static std::string createToken();
 

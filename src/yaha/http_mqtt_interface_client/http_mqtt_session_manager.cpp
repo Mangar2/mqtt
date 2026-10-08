@@ -16,6 +16,14 @@ namespace {
 
 constexpr std::uint8_t k_subscribe_reject_code{128U};
 constexpr std::uint8_t k_unsubscribe_no_subscription{17U};
+// MQTT rule: a client is considered gone after 1.5 times its keep-alive without activity.
+constexpr std::int64_t k_keep_alive_grace_numerator{3};
+constexpr std::int64_t k_keep_alive_grace_denominator{2};
+constexpr std::int64_t k_milliseconds_per_second{1000};
+
+[[nodiscard]] std::int64_t toSteadyMilliseconds(const std::chrono::steady_clock::time_point timePoint) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(timePoint.time_since_epoch()).count();
+}
 
 } // namespace
 
@@ -24,6 +32,8 @@ struct HttpMqttSessionManager::SessionState {
     std::string clientId{};
     std::string sendToken{};
     std::string receiveToken{};
+    std::uint32_t keepAliveSeconds{0U};
+    std::atomic<std::int64_t> lastActivityMs{0};
     std::mutex operationMutex{};
 };
 
@@ -54,6 +64,8 @@ bool HttpMqttSessionManager::connect(
     auto session = std::make_shared<SessionState>();
     session->transport = transportFactory_();
     session->clientId = request.clientId;
+    session->keepAliveSeconds = request.keepAliveSeconds.value_or(0U);
+    session->lastActivityMs = toSteadyMilliseconds(std::chrono::steady_clock::now());
     session->sendToken = createToken();
     session->receiveToken = createToken();
 
@@ -136,7 +148,7 @@ bool HttpMqttSessionManager::subscribe(
     errorOut.clear();
     resultCodes.clear();
 
-    const auto maybeSession = findSession(token);
+    const auto maybeSession = findActiveSession(token);
     if (!maybeSession.has_value()) {
         errorOut = "unknown token";
         return false;
@@ -172,7 +184,7 @@ bool HttpMqttSessionManager::unsubscribe(
     errorOut.clear();
     resultCodes.clear();
 
-    const auto maybeSession = findSession(token);
+    const auto maybeSession = findActiveSession(token);
     if (!maybeSession.has_value()) {
         errorOut = "unknown token";
         return false;
@@ -202,7 +214,7 @@ bool HttpMqttSessionManager::unsubscribe(
 
 bool HttpMqttSessionManager::publish(const std::string& token, const Message& message, std::string& errorOut) {
     errorOut.clear();
-    const auto maybeSession = findSession(token);
+    const auto maybeSession = findActiveSession(token);
     if (!maybeSession.has_value()) {
         errorOut = "unknown token";
         return false;
@@ -263,7 +275,7 @@ bool HttpMqttSessionManager::receive(
 
 bool HttpMqttSessionManager::ping(const std::string& token, std::string& errorOut) {
     errorOut.clear();
-    const auto maybeSession = findSession(token);
+    const auto maybeSession = findActiveSession(token);
     if (!maybeSession.has_value()) {
         errorOut = "unknown token";
         return false;
@@ -289,6 +301,51 @@ bool HttpMqttSessionManager::ping(const std::string& token, std::string& errorOu
     }
 
     return true;
+}
+
+void HttpMqttSessionManager::markActivity(const std::string& token) {
+    (void)findActiveSession(token);
+}
+
+std::vector<std::string> HttpMqttSessionManager::expireIdleSessions(const std::chrono::steady_clock::time_point now) {
+    const std::int64_t nowMs = toSteadyMilliseconds(now);
+    std::vector<std::shared_ptr<SessionState>> expiredSessions{};
+    {
+        std::lock_guard<std::mutex> lock{sessionsMutex_};
+        for (auto bySendToken = sessionsBySendToken_.begin(); bySendToken != sessionsBySendToken_.end();) {
+            const std::shared_ptr<SessionState>& session = bySendToken->second;
+            const std::int64_t graceMs = static_cast<std::int64_t>(session->keepAliveSeconds) *
+                                         k_milliseconds_per_second * k_keep_alive_grace_numerator /
+                                         k_keep_alive_grace_denominator;
+            if (session->keepAliveSeconds == 0U || nowMs - session->lastActivityMs.load() <= graceMs) {
+                ++bySendToken;
+                continue;
+            }
+
+            expiredSessions.push_back(session);
+            sessionsByReceiveToken_.erase(session->receiveToken);
+            if (const auto byClientId = sendTokenByClientId_.find(session->clientId);
+                byClientId != sendTokenByClientId_.end() && byClientId->second == session->sendToken) {
+                sendTokenByClientId_.erase(byClientId);
+            }
+            bySendToken = sessionsBySendToken_.erase(bySendToken);
+        }
+    }
+
+    std::vector<std::string> expiredClientIds{};
+    expiredClientIds.reserve(expiredSessions.size());
+    for (const auto& session : expiredSessions) {
+        expiredClientIds.push_back(session->clientId);
+        std::lock_guard<std::mutex> operationLock{session->operationMutex};
+        try {
+            if (session->transport.disconnect) {
+                session->transport.disconnect();
+            }
+        } catch (...) {
+            // Best-effort teardown of an abandoned session; it is already unregistered.
+        }
+    }
+    return expiredClientIds;
 }
 
 bool HttpMqttSessionManager::hasSession(const std::string& token) const {
@@ -410,6 +467,15 @@ std::optional<std::shared_ptr<HttpMqttSessionManager::SessionState>> HttpMqttSes
         return byReceive->second;
     }
     return std::nullopt;
+}
+
+std::optional<std::shared_ptr<HttpMqttSessionManager::SessionState>> HttpMqttSessionManager::findActiveSession(
+    const std::string& token) const {
+    auto maybeSession = findSession(token);
+    if (maybeSession.has_value()) {
+        (*maybeSession)->lastActivityMs = toSteadyMilliseconds(std::chrono::steady_clock::now());
+    }
+    return maybeSession;
 }
 
 std::string HttpMqttSessionManager::createToken() {
