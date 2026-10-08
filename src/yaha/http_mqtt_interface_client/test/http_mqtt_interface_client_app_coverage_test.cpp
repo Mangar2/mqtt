@@ -156,8 +156,9 @@ TEST_CASE("http_mqtt_interface_component_forwards_listener_and_reports_connected
         response.status = k_status_no_content;
     });
 
+    REQUIRE(callbackServer.bind_to_port("127.0.0.1", callbackPort));
     std::thread callbackThread([&]() {
-        callbackServer.listen("127.0.0.1", callbackPort);
+        callbackServer.listen_after_bind();
     });
     std::this_thread::sleep_for(std::chrono::milliseconds{k_callback_startup_wait_ms});
 

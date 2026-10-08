@@ -77,8 +77,9 @@ public:
             response.set_content(payloadText_, "application/json");
         });
 
+        REQUIRE(server_.bind_to_port("127.0.0.1", static_cast<int>(port_)));
         serverThread_ = std::thread([this]() {
-            server_.listen("127.0.0.1", static_cast<int>(port_));
+            server_.listen_after_bind();
         });
 
         REQUIRE(waitForHttpServer(port_));

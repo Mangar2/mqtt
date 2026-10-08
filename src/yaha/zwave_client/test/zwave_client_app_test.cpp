@@ -40,8 +40,8 @@ public:
       response.set_content("", "text/plain");
     });
 
-    serverThread_ = std::thread(
-        [this] { server_.listen("127.0.0.1", static_cast<int>(port_)); });
+    REQUIRE(server_.bind_to_port("127.0.0.1", static_cast<int>(port_)));
+    serverThread_ = std::thread([this] { server_.listen_after_bind(); });
 
     std::this_thread::sleep_for(kServerStartWait);
   }

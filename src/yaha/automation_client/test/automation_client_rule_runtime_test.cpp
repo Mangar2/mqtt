@@ -76,8 +76,9 @@ public:
             response.set_header("Connection", "close");
         });
 
-        serverThread_ = std::thread([this, portValue]() {
-            server_.listen("127.0.0.1", static_cast<int>(portValue));
+        REQUIRE(server_.bind_to_port("127.0.0.1", static_cast<int>(portValue)));
+        serverThread_ = std::thread([this]() {
+            server_.listen_after_bind();
         });
 
         REQUIRE(waitForHttpServer(portValue));
