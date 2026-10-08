@@ -22,6 +22,7 @@ constexpr int k_wait_attempts{40};
 constexpr int k_http_ok_status{200};
 constexpr int k_http_internal_server_error_status{500};
 constexpr int k_wait_sleep_ms{10};
+constexpr int k_health_timeout_microseconds{200000};
 constexpr double k_non_integral_test_value{21.5};
 constexpr double k_integral_test_value{21.0};
 constexpr std::size_t k_retry_trigger_messages{5U};
@@ -39,6 +40,8 @@ constexpr std::size_t k_retry_trigger_messages{5U};
 
 bool waitForHttpServer(const std::uint16_t port) {
     httplib::Client client{"127.0.0.1", static_cast<int>(port)};
+    client.set_connection_timeout(0, k_health_timeout_microseconds);
+    client.set_read_timeout(0, k_health_timeout_microseconds);
     for (int attempt = 0; attempt < k_wait_attempts; ++attempt) {
         if (const auto response = client.Get("/health")) {
             return response->status == k_http_ok_status;
@@ -74,8 +77,11 @@ public:
             response.set_content("", "text/plain");
         });
 
+        // Bind synchronously before any client connects: with an unbound port a localhost
+        // client can self-connect (source port == destination port) and wait forever.
+        REQUIRE(server_.bind_to_port("127.0.0.1", static_cast<int>(port_)));
         serverThread_ = std::thread([this]() {
-            server_.listen("127.0.0.1", static_cast<int>(port_));
+            server_.listen_after_bind();
         });
 
         REQUIRE(waitForHttpServer(port_));

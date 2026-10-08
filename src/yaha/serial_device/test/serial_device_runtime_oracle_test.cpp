@@ -4,6 +4,7 @@
 #include "yaha/message/test/message_log_test_support.h"
 #include "yaha/serial_device/serial_device_component.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cctype>
 #include <chrono>
@@ -12,6 +13,7 @@
 #include <fstream>
 #include <mutex>
 #include <sstream>
+#include <streambuf>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -23,6 +25,51 @@ constexpr std::uint32_t k_poll_max_tries{100U};
 constexpr std::chrono::milliseconds k_short_wait{10};
 constexpr std::uint32_t k_open_fail_retry_count{1U};
 constexpr double k_non_integer_value{1.5};
+
+constexpr std::chrono::milliseconds k_log_poll_interval{10};
+
+// Thread-safe capture buffer: component worker threads and the test thread log concurrently,
+// and a plain std::stringbuf is not safe for concurrent writers.
+class ThreadSafeCaptureBuffer final : public std::streambuf {
+public:
+    [[nodiscard]] std::string snapshot() const {
+        std::lock_guard<std::mutex> lock{mutex_};
+        return text_;
+    }
+
+protected:
+    int_type overflow(int_type character) override {
+        if (traits_type::eq_int_type(character, traits_type::eof())) {
+            return traits_type::not_eof(character);
+        }
+        std::lock_guard<std::mutex> lock{mutex_};
+        text_.push_back(traits_type::to_char_type(character));
+        return character;
+    }
+
+    std::streamsize xsputn(const char_type* data, std::streamsize count) override {
+        std::lock_guard<std::mutex> lock{mutex_};
+        text_.append(data, static_cast<std::size_t>(count));
+        return count;
+    }
+
+private:
+    mutable std::mutex mutex_{};
+    std::string text_{};
+};
+
+[[nodiscard]] bool waitForCapturedText(const ThreadSafeCaptureBuffer& buffer, const std::vector<std::string>& expected) {
+    for (std::uint32_t attempt = 0U; attempt < k_poll_max_tries; ++attempt) {
+        const std::string text = buffer.snapshot();
+        if (std::ranges::all_of(expected, [&text](const std::string& part) {
+                return text.find(part) != std::string::npos;
+            })) {
+            return true;
+        }
+        std::this_thread::sleep_for(k_log_poll_interval);
+    }
+    return false;
+}
 
 class FakeSerialTransport final : public yaha::ISerialDeviceTransport {
 public:
@@ -441,17 +488,20 @@ TEST_CASE("serial_device_runtime_internal_trace_logs_keepalive_and_status_reply_
         return yaha::PublishResult::ok();
     });
 
-    std::ostringstream capturedOutput{};
-    std::streambuf* previousBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+    ThreadSafeCaptureBuffer capturedOutput{};
+    std::streambuf* previousBuffer = std::cout.rdbuf(&capturedOutput);
 
     component.run();
     transport->emit(R"({"S":"main","R":"gateway","K":"a","V":1})");
-    std::this_thread::sleep_for(k_short_wait);
+    const bool allLogged = waitForCapturedText(
+        capturedOutput,
+        {" at -> serial", "serial -> Interface: serial Sender: main Receiver: gateway Command: a Value: 1"});
     component.close();
 
     std::cout.rdbuf(previousBuffer);
 
-    const std::string logText = capturedOutput.str();
+    REQUIRE(allLogged);
+    const std::string logText = capturedOutput.snapshot();
     REQUIRE(logText.find(" at -> serial") != std::string::npos);
     REQUIRE(logText.find("data: {\"S\":\"main\",\"R\":\"gateway\",\"K\":\"a\",\"V\":1}") != std::string::npos);
     REQUIRE(logText.find("serial -> Interface: serial Sender: main Receiver: gateway Command: a Value: 1") != std::string::npos);

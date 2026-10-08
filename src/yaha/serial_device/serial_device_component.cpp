@@ -54,6 +54,12 @@ constexpr std::size_t k_trace_time_buffer_size{16U};
     return outputMessage;
 }
 
+// Writes one complete trace line with a single stream call so lines from the keepalive
+// thread and the receive path cannot interleave inside each other.
+void writeTraceLine(const std::string& lineText) {
+    std::cout << (lineText + '\n') << std::flush;
+}
+
 [[nodiscard]] std::string traceTimestampNow() {
     const auto now = std::chrono::system_clock::now();
     const std::time_t nowTime = std::chrono::system_clock::to_time_t(now);
@@ -423,7 +429,7 @@ void SerialDeviceComponent::traceRawSerialDataIfEnabled(const std::string& seria
         return;
     }
 
-    std::cout << traceTimestampNow() << " data: " << serialData << '\n' << std::flush;
+    writeTraceLine(traceTimestampNow() + " data: " + serialData);
 }
 
 void SerialDeviceComponent::traceParsedSerialMessageIfEnabled(const SerialDeviceMessage& serialMessage) const {
@@ -431,7 +437,7 @@ void SerialDeviceComponent::traceParsedSerialMessageIfEnabled(const SerialDevice
         return;
     }
 
-    std::cout << traceTimestampNow() << " serial -> " << serialMessage.toString() << '\n' << std::flush;
+    writeTraceLine(traceTimestampNow() + " serial -> " + serialMessage.toString());
 }
 
 void SerialDeviceComponent::traceSendPayloadIfEnabled(const std::string& serialString) const {
@@ -442,7 +448,7 @@ void SerialDeviceComponent::traceSendPayloadIfEnabled(const std::string& serialS
         return;
     }
 
-    std::cout << traceTimestampNow() << " " << serialString << " -> serial" << '\n' << std::flush;
+    writeTraceLine(traceTimestampNow() + " " + serialString + " -> serial");
 }
 
 void SerialDeviceComponent::openSerialInterface() {

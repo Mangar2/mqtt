@@ -192,6 +192,7 @@ Behavior:
   - `internal`: raw serial chunk `<HH:MM:SS> data: <chunk>`
   - `messages|internal`: parsed serial message `<HH:MM:SS> serial -> <SerialDeviceMessage::toString()>`
   - `internal`: outgoing serial payload `<HH:MM:SS> <payload> -> serial` (includes keep-alive `at`)
+  - each trace line is written with one stream call so concurrent keep-alive and receive traces never interleave within a line
 - message-flow logging uses shared YAHA message-log service format (`component="serial_device"`) and is controlled by `logIncomingMessages` / `logOutgoingMessages` / `logReason`.
 - publish callback failures emit structured `event=publish_failed` logs with category/reason metadata.
 
