@@ -27,6 +27,7 @@ Skills only here:
 /yaha-spec: YAHA specification workflow
 /yaha-log: YAHA logging workflow
 /yaha-client-architektur: YAHA client main architecture workflow
+/product-problem: analyse product problems on yahapi via message store and service logs
 
 ## Project Plan
 
