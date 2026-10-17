@@ -15,7 +15,7 @@ Find cause with evidence. Fix only after user agrees.
 - no commands for hours is normal. evidence of failure = command present in store but no reaction
 - absence of log line is weak evidence. prefer store timestamps and history
 - never change fixed addresses. httpmqtt port 8183 on 192.168.0.4 is used by field devices (ESP8266). broker 1883
-- yaha2 192.168.0.183 is unfinished backup. yahapi services must not depend on yaha2. no passwordless sudo on yaha2
+- yaha2 192.168.0.183 is unfinished backup. yahapi services must not depend on yaha2. ssh pi@yaha2. passwordless sudo (since 2026-10-17)
 - before change: check what else uses it (ports, topics, files). before claiming done: measure again
 - report to user in user language
 
@@ -29,6 +29,8 @@ Find cause with evidence. Fix only after user agrees.
 - service log: journalctl -u <service>. journal rotates fast under flood
 
 ## Message store
+
+Prefer MCP server yaha (mcp__yaha__yaha_*) for store history, values, rules, publish. Doc tools/yaha_mcp/README.md. curl below is fallback
 
 msgstore subscribes #, $SYS/#, $MONITOR/#. keeps current value plus bounded history per topic.
 Reachable via nginx: http://192.168.0.4/store/<topic prefix>
@@ -86,6 +88,8 @@ reason list shows origin, oldest first:
 9. after fix: measure same evidence again. say result honest
 
 ## Known pitfalls
+
+- never query /store with history true and levelAmount > 0 on big prefix or root. msgstore builds whole history in RAM. 2026-10-17 root query: msgstore 800 MB, OOM kill, restart, 1 min data lost. history only per single topic levelAmount 0
 
 - config reload in services unsubscribes and resubscribes all topics. frequent reloads can drop subscriptions while connection stays up
 - crash looping service with filestore sync posts settings each start. filestore publishes change. other services reload

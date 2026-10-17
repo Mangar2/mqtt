@@ -49,6 +49,7 @@ mqtt/
 ├ spec/         # Project-level specification files (implementation-plan.md)
 ├ build/        # CMake build output — never read or modify manually
 ├ .claude/      # Skill files and settings
+├ tools/        # Developer tools (tools/yaha_mcp: MCP server for YAHA HTTP interface)
 ├ CMakeLists.txt
 ├ CMakePresets.json
 └ CLAUDE.md
@@ -57,3 +58,8 @@ src/ modules organised as subdirectories mirroring implementation plan
 Each directory has SPEC.md description — navigate via those files
 
 Before coding read code-create.md skill.
+
+## YAHA live system access
+
+MCP server `yaha` (tools mcp__yaha__yaha_*) reads message history, current values and configuration and can publish.
+Usage and rules: tools/yaha_mcp/README.md
